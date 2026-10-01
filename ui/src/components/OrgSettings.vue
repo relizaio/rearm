@@ -415,6 +415,11 @@
                         v-if="isOrgAdmin && myUser.installationType !== 'OSS'">
                         <IntegrityInbox :org-uuid="orgResolved"/>
                     </n-tab-pane>
+                    <!-- No edition gate: the model catalogue and its pricing are CE-shared, as the
+                         rest of the model ontology is. Admin-only because pricing is org-wide. -->
+                    <n-tab-pane name="models" tab="Models" v-if="isOrgAdmin">
+                        <AiModelCatalogueOfOrg :org-uuid="orgResolved"/>
+                    </n-tab-pane>
                     </n-tabs>
                 </div>
                 <n-modal
@@ -533,6 +538,7 @@
                                 :components="orgComponents"
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
+                                :boards="orgBoards"
                                 :lock-org-type="selectedUser.uuid === myUser.uuid"
                                 :show-admin-approvals="true"
                             />
@@ -662,6 +668,7 @@
                                 :components="orgComponents"
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
+                                :boards="orgBoards"
                             />
                         </n-flex>
                         <n-space style="margin-top: 20px;">
@@ -696,7 +703,7 @@
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2300"
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2560"
                                 class="table-hover">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -754,6 +761,7 @@
                     </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
                     <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
                     <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
@@ -988,6 +996,36 @@
                                 Save Ignore Patterns
                             </n-button>
                         </n-space>
+                    </n-form>
+                </div>
+                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                    <h5>Agent Review Items</h5>
+                    <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
+                    <n-form>
+                        <n-form-item label="Priority levels">
+                            <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
+                                            :min="1" :max="10" style="width: 120px;"/>
+                            <span class="ml-2 text-muted">
+                                1 is highest. Validated when a document is published, so lowering
+                                this leaves older rounds carrying higher numbers — they are still
+                                shown rather than hidden.
+                            </span>
+                        </n-form-item>
+                    </n-form>
+                </div>
+                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                    <h5>Agent Sessions</h5>
+                    <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
+                    <n-form>
+                        <n-form-item label="Idle close (hours)">
+                            <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
+                                            :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
+                            <span class="ml-2 text-muted">
+                                Any call with a session's id counts as activity. The session is warned two hours
+                                before it closes (half the window when shorter); one that holds a task or a
+                                coordinator seat is given twice the window. Its tasks go back to the queue.
+                            </span>
+                        </n-form-item>
                     </n-form>
                 </div>
                 <div class="adminSettingsBlock mt-4">
@@ -1339,6 +1377,7 @@ import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
+import { hardEndCell } from '@/utils/cliSessionLifetime'
 import { DASHBOARD_VIEWS, DASHBOARD_VIEW_LABELS, DashboardView, dashboardViewToWire } from '@/utils/dashboardView'
 import constants from '../utils/constants'
 import { buildUserGroupUpdateInput } from '../utils/userGroupUpdateInput'
@@ -1351,18 +1390,23 @@ import NotificationHistory from './NotificationHistory.vue'
 import CreateApprovalPolicy from './CreateApprovalPolicy.vue'
 import CreateApprovalEntry from './CreateApprovalEntry.vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
+import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
+import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
+import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 
 const route = useRoute()
 const router = useRouter()
@@ -1395,6 +1439,7 @@ async function loadTabSpecificData (tabName: string) {
         await Promise.all([
             loadUsers(),
             loadPerspectives(),
+            loadBoardNames(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value),
             ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
@@ -1458,12 +1503,13 @@ const keySessions: Ref<any[]> = ref([])
 async function showKeySessions (row: any) {
     keySessionsKey.value = row
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } createdDate expiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
+        const resp: any = await graphqlClient.query({ query: gql`query cliSessionsOfKey($apiKeyUuid: ID!) { cliSessionsOfKey(apiKeyUuid: $apiKeyUuid) { uuid status user requestedFrom deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } createdDate expiresDate hardExpiresDate lastUsedDate } }`, variables: { apiKeyUuid: row.uuid }, fetchPolicy: 'network-only' })
         keySessions.value = (resp.data.cliSessionsOfKey || []).map((s: any) => { const u = users.value.find((x: any) => x.uuid === s.user); return Object.assign({}, s, {
             userName: u ? (u.name || u.email) : (s.user || ''),
             createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
             lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
-            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '' }) })
+            expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '',
+            hardEndDisplay: hardEndCell(s.hardExpiresDate, (d: Date) => d.toLocaleString('en-CA')) }) })
         showKeySessionsModal.value = true
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
@@ -1484,6 +1530,7 @@ const keySessionFields: Ref<any> = ref([
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
     { key: 'expiresDisplay', width: 170, title: 'Expires' },
+    { key: 'hardEndDisplay', width: 170, title: 'Ends (key limit)' },
     { key: 'controls', title: 'Manage', render: (row: any) => h(NButton, { size: 'tiny', type: 'error', onClick: () => revokeKeySession(row) }, { default: () => 'Revoke' }) }
 ])
 
@@ -1554,6 +1601,8 @@ type SidPurlMode = 'DISABLED' | 'ENABLED_STRICT' | 'ENABLED_FLEXIBLE'
 
 const orgSettings = reactive({
     justificationMandatory: false,
+    reviewItemPriorityLevels: 3,
+    agentSessionIdleCloseHours: IDLE_CLOSE_HOURS_DEFAULT,
     branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION',
     vexComplianceFramework: 'NONE' as 'NONE' | 'CISA',
     sidPurlMode: 'DISABLED' as SidPurlMode,
@@ -1842,6 +1891,47 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
 const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
 const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
+
+// ---- declared names (task RD3-11): the name an API_KEYS file knows a key by, and the apply that last wrote it ----
+const showDeclareModal = ref(false)
+const declareKey: Ref<any> = ref(null)
+function openDeclareKey (row: any) {
+    declareKey.value = row
+    showDeclareModal.value = true
+}
+async function releaseKeyName (row: any) {
+    try {
+        await graphqlClient.mutate({ mutation: gql`mutation releaseApiKeyName($apiKeyUuid: ID!, $name: String) { declareApiKey(apiKeyUuid: $apiKeyUuid, name: $name) { uuid declaredName } }`, variables: releasePayload(row.uuid), fetchPolicy: 'no-cache' })
+        notify('success', 'Released', `The name ${row.declaredName} was released`)
+        await loadProgrammaticAccessKeys(false)
+    } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
+}
+const apiKeyDeclaredColumn = {
+    key: 'declaredName', width: 260, title: 'Declared As',
+    render: (row: any) => {
+        const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
+        if (row.declarative) {
+            lines.push(h('div', h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h('span', { class: 'subtle' }, declaredSourceLabel(row.declarative)),
+                default: () => 'Last written by an API_KEYS apply' + (declaredSourceDetail(row.declarative) ? ': ' + declaredSourceDetail(row.declarative) : '')
+            })))
+        }
+        const life = secretExpiresLabel(row.secretExpiresDays)
+        if (life) lines.push(h('div', { class: 'subtle' }, life))
+        const actions: any[] = []
+        if (canDeclareKey(row, isOrgAdmin.value)) {
+            actions.push(h(NButton, { size: 'tiny', style: 'margin-right: 4px;', onClick: () => openDeclareKey(row) }, { default: () => row.declaredName ? 'Rename…' : 'Declare as…' }))
+        }
+        if (canReleaseKeyName(row, isOrgAdmin.value)) {
+            actions.push(h(NPopconfirm, { positiveText: 'Release', negativeText: 'Cancel', onPositiveClick: () => releaseKeyName(row) }, {
+                trigger: () => h(NButton, { size: 'tiny', type: 'warning' }, { default: () => 'Release name' }),
+                default: () => `Release the name ${row.declaredName}? The next API_KEYS apply naming it creates a new key instead of updating this one.`
+            }))
+        }
+        if (actions.length) lines.push(h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions))
+        return h('div', lines)
+    }
+}
 /** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
 async function createOrgKey (apiType: string, notes: string | null, label: string) {
     let created: any
@@ -1990,6 +2080,7 @@ const freeFormKeyFields: Ref<any> = ref([
         width: 180,
         title: 'Notes'
     },
+    apiKeyDeclaredColumn,
     {
         key: 'boundAgents',
         width: 200,
@@ -2258,6 +2349,16 @@ function userGroupRowClassName(row: any) {
 
 // Perspectives
 const perspectives: Ref<any[]> = ref([])
+// The org's boards ({ uuid, name }) for the Per-Board section and for naming BOARD grants (task 428b4a71).
+const orgBoards: Ref<any[]> = ref([])
+async function loadBoardNames () {
+    try {
+        orgBoards.value = await store.dispatch('fetchAgentBoardNamesOfOrg', orgResolved.value) ?? []
+    } catch (e) {
+        console.warn('permissions editor: the org\'s boards are unavailable to this user', e)
+        orgBoards.value = []
+    }
+}
 const newPerspective: Ref<any> = ref({
     name: ''
 })
@@ -2552,7 +2653,7 @@ async function showPerspectiveComponentsModalFn(perspectiveUuid: string, perspec
         const response = await graphqlClient.query({
             query: gql`
                 query componentsOfPerspective($perspectiveUuid: ID!) {
-                    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+                    componentsOfPerspective(perspectiveUuid: $perspectiveUuid, kinds: [GENERIC, HELM]) {
                         uuid
                         name
                         org
@@ -2890,6 +2991,8 @@ const userFields = [
                     } else if (p.scope === 'PERSPECTIVE' && p.object) {
                         const persp = perspectives.value.find((persp: any) => persp.uuid === p.object)
                         objectName = persp?.name || p.object
+                    } else if (p.scope === 'BOARD' && p.object) {
+                        objectName = boardNameOf(orgBoards.value, p.object) ?? p.object
                     } else if (p.scope === 'COMPONENT' && p.object) {
                         const comp = store.getters.componentById(p.object)
                         objectName = comp?.name || p.object
@@ -3745,6 +3848,8 @@ async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
+    orgSettings.reviewItemPriorityLevels = s?.reviewItemPriorityLevels ?? 3
+    orgSettings.agentSessionIdleCloseHours = idleCloseHoursOf(s)
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
     orgSettings.vexComplianceFramework = s?.vexComplianceFramework || 'NONE'
     orgSettings.sidPurlMode = (s?.sidPurlMode as SidPurlMode) || 'DISABLED'
@@ -3794,6 +3899,8 @@ async function saveOrgSettings() {
                         }
                         settings {
                             justificationMandatory
+                            reviewItemPriorityLevels
+                            agentSessionIdleCloseHours
                             branchSuffixMode
                             vexComplianceFramework
                             sidPurlMode
@@ -3809,6 +3916,8 @@ async function saveOrgSettings() {
                 orgUuid: orgResolved.value,
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
+                    reviewItemPriorityLevels: orgSettings.reviewItemPriorityLevels,
+                    agentSessionIdleCloseHours: orgSettings.agentSessionIdleCloseHours,
                     branchSuffixMode: orgSettings.branchSuffixMode,
                     vexComplianceFramework: orgSettings.vexComplianceFramework,
                     sidPurlMode: orgSettings.sidPurlMode,
@@ -3959,6 +4068,11 @@ async function resolveScopedObjectName(scope: string, objectId: string): Promise
     const cached = scopedObjectNameCache.get(cacheKey)
     if (cached) return cached
 
+    if (scope === 'BOARD') {
+        // Not cached: the board list loads with the editor, and an early miss must not stick.
+        return boardNameOf(orgBoards.value, objectId) ?? objectId
+    }
+
     if (scope === 'PERSPECTIVE') {
         const perspective = perspectives.value.find((p: any) => p.uuid === objectId)
         const resolved = perspective ? perspective.name : objectId
@@ -4012,6 +4126,7 @@ async function editUser(email: string) {
     selectedUser.value = commonFunctions.deepCopy(user[0])
     await Promise.all([
         loadPerspectives(),
+        loadBoardNames(),
         store.dispatch('fetchComponents', orgResolved.value),
         store.dispatch('fetchProducts', orgResolved.value)
     ])
@@ -4024,7 +4139,8 @@ async function editUser(email: string) {
             perm = up
         } else if (up.scope === 'INSTANCE' && up.org === orgResolved.value) {
             instancePermissions.value[up.object] = up.type
-        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT') && up.org === orgResolved.value) {
+        } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'BOARD') && up.org === orgResolved.value) {
+            // BOARD among them: the save replaces the whole set, so a grant left out here is dropped (task 428b4a71).
             const objectName = await resolveScopedObjectName(up.scope, up.object)
             scopedPerms.push({
                 scope: up.scope,
@@ -4330,6 +4446,7 @@ async function editUserGroup(groupUuid: string) {
         selectedUserGroup.value = commonFunctions.deepCopy(group)
         await Promise.all([
             loadPerspectives(),
+            loadBoardNames(),
             store.dispatch('fetchComponents', orgResolved.value),
             store.dispatch('fetchProducts', orgResolved.value)
         ])
@@ -4346,7 +4463,7 @@ async function editUserGroup(groupUuid: string) {
                         functions: p.functions || [],
                         approvals: p.approvals || []
                     }
-                } else if ((p.scope === 'PERSPECTIVE' || p.scope === 'COMPONENT' || p.scope === 'INSTANCE') && p.org === orgResolved.value) {
+                } else if (editorKeepsScope(p.scope) && p.org === orgResolved.value) {
                     const objectName = await resolveScopedObjectName(p.scope, p.object)
                     scopedPerms.push({
                         scope: p.scope,
@@ -4563,6 +4680,10 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     status
                                     holder
                                     adminDisabled
+                                    sessionMaxMinutes
+                                    declaredName
+                                    secretExpiresDays
+                                    declarative { appliedAt source { repo path commit } }
                                     federation { provider issuer owner repository repositoryUri repositoryId ownerId pinnedDate lastRef lastRunId lastActor }
                                     secrets { slot active createdDate lastUsedDate expiresDate }
                                     boundAgents {

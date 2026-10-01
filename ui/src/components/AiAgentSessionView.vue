@@ -9,6 +9,22 @@
             <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">
                 {{ session.status }}
             </n-tag>
+            <!-- A stuck session (an agent that died holding tasks) is otherwise released only by the
+                 idle autoclose. BOARD_WRITE on a board it worked, or the org admin, as the server
+                 requires (task RD2-5); hidden, not disabled, for anyone else. -->
+            <n-popconfirm v-if="canForceClose(session, isAdmin, orgBoards)" @positive-click="forceClose">
+                <template #trigger>
+                    <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
+                </template>
+                <div>Returns every task this session holds to the queue and closes the session.</div>
+                <n-input v-model:value="closeReasonInput" size="small" class="forceclose-reason" placeholder="Reason (optional)" />
+            </n-popconfirm>
+            <n-tooltip v-if="isIdleWarned(session)" trigger="hover" :width="320">
+                <template #trigger>
+                    <n-tag size="small" type="warning" class="idle-warned">Closing idle</n-tag>
+                </template>
+                <span data-testid="idle-warning">{{ idleWarningText(session, formatDate) }}</span>
+            </n-tooltip>
             <code class="dim">{{ session.uuid }}</code>
             <span class="dim">·</span>
             <a v-if="agent" @click.prevent="openAgent" href="#">
@@ -34,12 +50,78 @@
 
         <n-tabs type="segment" v-model:value="tab" animated>
             <n-tab-pane name="overview" tab="Overview">
+                <n-card size="small" title="Usage" style="margin-bottom: 14px;">
+                    <agent-usage-summary
+                        :usage="session.usageTotals"
+                        :completeness="session.usageCompleteness"
+                        :model-mismatch="session.modelMismatch"
+                        empty-hint=" — this agent is running without the usage hooks installed"
+                    />
+                </n-card>
                 <n-descriptions :column="1" bordered label-placement="left" label-align="left" :label-style="metaLabelStyle">
                     <n-descriptions-item label="Status">
                         <n-tag :type="session.status === 'OPEN' ? 'info' : 'default'" size="small">{{ session.status }}</n-tag>
                     </n-descriptions-item>
                     <n-descriptions-item label="Title">{{ session.title || '—' }}</n-descriptions-item>
                     <n-descriptions-item label="Client session ID"><code>{{ session.clientSessionId }}</code></n-descriptions-item>
+                    <n-descriptions-item label="Provider sessions">
+                        <div v-if="session.providerSessions?.length" class="provider-sessions">
+                            <div v-for="ps in session.providerSessions" :key="ps.provider + ':' + ps.id" class="provider-session">
+                                <n-tag size="tiny" :bordered="false">{{ ps.provider }}</n-tag>
+                                <code class="copyable" title="Copy" @click="copyText(ps.id)">{{ ps.id }}</code>
+                                <template v-if="ps.remoteId">
+                                    <span class="dim">remote</span>
+                                    <code class="copyable" title="Copy" @click="copyText(ps.remoteId)">{{ ps.remoteId }}</code>
+                                </template>
+                            </div>
+                        </div>
+                        <span v-else class="dim">— not reported</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Signed in via">
+                        <template v-if="origin">
+                            <span>{{ authMethodLabel }}</span>
+                            <template v-if="origin.federation">
+                                <span class="dim"> · </span>
+                                <code>{{ origin.federation.repository }}</code>
+                                <span v-if="origin.federation.ref" class="dim"> @ {{ origin.federation.ref }}</span>
+                                <span v-if="origin.federation.runId" class="dim"> · run {{ origin.federation.runId }}</span>
+                                <span v-if="origin.federation.actor" class="dim"> · by {{ origin.federation.actor }}</span>
+                            </template>
+                        </template>
+                        <span v-else class="dim">— not recorded (session predates it)</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Owner">
+                        <template v-if="origin.ownerUser">
+                            <span>{{ ownerName }}</span>
+                            <n-tooltip trigger="hover" :width="320">
+                                <template #trigger>
+                                    <n-tag size="tiny" :bordered="false" class="model-assert-tag">{{ ownerSourceLabel }}</n-tag>
+                                </template>
+                                {{ ownerSourceTip }}
+                            </n-tooltip>
+                        </template>
+                        <span v-else class="dim">— no one: {{ noOwnerReason }}</span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Device">
+                        <div class="provider-sessions">
+                            <div v-for="row in deviceRows" :key="row.label" class="provider-session">
+                                <n-tag size="tiny" :bordered="false">{{ row.label }}</n-tag>
+                                <code v-if="row.device.hostname">{{ row.device.hostname }}</code>
+                                <span v-else-if="origin.restricted" class="dim">host hidden</span>
+                                <span class="dim">{{ [row.device.os, row.device.timeZone, row.device.client].filter(Boolean).join(' · ') }}</span>
+                                <span v-if="row.device.observedIp" class="dim">seen from <code>{{ row.device.observedIp }}</code></span>
+                            </div>
+                            <span v-if="!deviceRows.length" class="dim">— not reported</span>
+                        </div>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="origin" label="Seen from">
+                        <code v-if="origin.observedIp">{{ origin.observedIp }}</code>
+                        <span v-else-if="origin.restricted" class="dim">hidden</span>
+                        <span v-else class="dim">—</span>
+                        <div v-if="origin.restricted" class="dim restricted-note">
+                            Hostnames and addresses are visible to org admins and the session's owner.
+                        </div>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Model">
                         <template v-if="session.primaryModel">
                             <span>{{ modelLabel }}</span>
@@ -53,9 +135,25 @@
                         <span v-else class="dim">—</span>
                     </n-descriptions-item>
                     <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
-                    <n-descriptions-item label="Started">{{ formatDate(session.startedAt) }}</n-descriptions-item>
-                    <n-descriptions-item label="Closed">{{ formatDate(session.closedAt) }}</n-descriptions-item>
-                    <n-descriptions-item label="Last activity">{{ formatDate(session.lastActivityAt) }}</n-descriptions-item>
+                    <n-descriptions-item label="Started"><agent-time :at="session.startedAt"/></n-descriptions-item>
+                    <n-descriptions-item label="Closed"><agent-time :at="session.closedAt"/></n-descriptions-item>
+                    <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
+                        <span class="close-attribution">{{ closeAttribution(session) }}</span>
+                    </n-descriptions-item>
+                    <!-- What the session worked, linked (RD2-11): its boards, and its tasks by key and title. -->
+                    <n-descriptions-item v-if="session.boardsWorked?.length" label="Boards worked" :span="2">
+                        <span v-for="b in session.boardsWorked" :key="b" class="worked" data-testid="board-worked">
+                            <router-link :to="{ name: 'AiAgentsOfOrg', params: { orguuid: session.org }, query: { tab: 'boards', board: b } }">
+                                {{ boardNames[b] ?? b.slice(0, 8) }}</router-link>
+                        </span>
+                    </n-descriptions-item>
+                    <n-descriptions-item v-if="session.tasksWorked?.length" label="Tasks worked" :span="2">
+                        <span v-for="t in session.tasksWorked" :key="t.uuid" class="worked" data-testid="task-worked">
+                            <router-link :to="taskPagePath(t.uuid)">{{ t.key ? t.key + ' · ' : '' }}{{ t.title }}</router-link>
+                            <span v-if="t.role" class="dim"> ({{ t.role }})</span>
+                        </span>
+                    </n-descriptions-item>
+                    <n-descriptions-item label="Last activity"><agent-time :at="session.lastActivityAt"/></n-descriptions-item>
                     <n-descriptions-item label="Commits"><strong>{{ session.commits?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Artifacts"><strong>{{ session.artifacts?.length ?? 0 }}</strong></n-descriptions-item>
                     <n-descriptions-item label="Releases"><strong>{{ releaseRows.length }}</strong></n-descriptions-item>
@@ -118,6 +216,8 @@
             ></prism-editor>
         </n-modal>
     </div>
+    <!-- The wait ends in what the server said (RD2-9), never a spinner that keeps turning. -->
+    <n-alert v-else-if="sessionError" type="error" :title="sessionError" data-testid="session-error"/>
     <n-spin v-else size="small"/>
 </template>
 
@@ -125,7 +225,15 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NSpace, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
+import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
+import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
+import { taskPagePath, ts } from '@/utils/agentTaskFormat'
+import { lifecycleWord } from '@/utils/agentWords'
+import { isOrgAdmin } from '@/utils/agentReopen'
+import AgentUsageSummary from './AgentUsageSummary.vue'
+import AgentTime from './AgentTime.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'
@@ -137,6 +245,15 @@ const store = useStore()
 const route = useRoute()
 const router = useRouter()
 const notification = useNotification()
+
+async function copyText (text: string) {
+    try {
+        await navigator.clipboard.writeText(text)
+        notification.success({ content: 'Copied', duration: 1500 })
+    } catch (e: any) {
+        notification.error({ content: `Copy failed: ${e?.message ?? e}` })
+    }
+}
 
 const sessionUuid = computed(() => route.params.uuid as string)
 const session = ref<any>(null)
@@ -191,9 +308,57 @@ const releaseRows = computed<any[]>(() => {
 const prRows = computed<any[]>(() => session.value?.pullRequests ?? [])
 
 // Model surfacing (v1a). The model is a property of the chat, recorded on
-// the session — see Session.primaryModel. modelAssertion is DECLARED today
-// (the agent self-reported the model string via the CLI); RUNTIME_OBSERVED
-// is reserved for host-side hooks that read the runtime's own record.
+// the session — see Session.primaryModel. modelAssertion starts at DECLARED
+// (the agent self-reported the model string via the CLI) and the server
+// upgrades it to RUNTIME_OBSERVED once usage reports arrive from a source
+// that is not the agent's own claim — a transcript, an OTEL collector or the
+// provider — and they resolve to the model the session declared. A
+// disagreement does not upgrade it; it sets modelMismatch instead, which the
+// usage card badges.
+const orgUsers = ref<any[]>([])
+const origin = computed<any>(() => session.value?.origin ?? null)
+
+const AUTH_METHOD_LABELS: Record<string, string> = {
+    KEY_SECRET: 'API key secret',
+    CLI_LOGIN: 'CLI login',
+    FEDERATED: 'Federated identity'
+}
+const authMethodLabel = computed<string>(() => {
+    const o = origin.value
+    if (!o) return ''
+    const base = AUTH_METHOD_LABELS[o.authMethod] ?? o.authMethod
+    return o.authMethod === 'FEDERATED' && o.federation?.provider ? `${base} (${o.federation.provider})` : base
+})
+
+const ownerName = computed<string>(() => {
+    const uuid = origin.value?.ownerUser
+    const u = orgUsers.value.find((x: any) => x.uuid === uuid)
+    return u ? (u.name || u.email || uuid) : uuid
+})
+// The three sources make different claims, and the wording has to keep them apart: a holder
+// answers for a secret, not for who was at the keyboard.
+const OWNER_SOURCE: Record<string, { label: string, tip: string }> = {
+    CLI_LOGIN: { label: 'signed in', tip: 'This person approved the CLI login the session was opened through.' },
+    USER_KEY: { label: 'personal key', tip: 'The session was opened with this person\'s personal API key.' },
+    KEY_HOLDER: { label: 'key holder', tip: 'This person holds the Free Form key the session used. They answer for the secret; anyone they gave it to could have opened the session.' }
+}
+const ownerSourceLabel = computed<string>(() => OWNER_SOURCE[origin.value?.ownerSource]?.label ?? '')
+const ownerSourceTip = computed<string>(() => OWNER_SOURCE[origin.value?.ownerSource]?.tip ?? '')
+const noOwnerReason = computed<string>(() => {
+    const m = origin.value?.authMethod
+    if (m === 'FEDERATED') return 'a federated identity, not a person'
+    return 'a shared key names the key, not who used it'
+})
+
+const deviceRows = computed<{ label: string, device: any }[]>(() => {
+    const o = origin.value
+    if (!o) return []
+    const rows: { label: string, device: any }[] = []
+    if (o.reportedDevice) rows.push({ label: 'reported', device: o.reportedDevice })
+    if (o.loginDevice) rows.push({ label: 'at login', device: o.loginDevice })
+    return rows
+})
+
 const modelLabel = computed<string>(() => {
     const m = session.value?.primaryModel
     if (!m) return '—'
@@ -214,7 +379,7 @@ const ASSERTION_LABELS: Record<string, string> = {
 
 const ASSERTION_TIPS: Record<string, string> = {
     DECLARED: 'Declared: the agent self-reported this model via the CLI. ReARM trusts the agent\'s word; it is not independently verified, and does not carry the authority of the session\'s commit signatures.',
-    RUNTIME_OBSERVED: 'Observed: the model was read from the runtime\'s own record. This label does not carry the authority of the session\'s commit signatures.',
+    RUNTIME_OBSERVED: 'Observed: this model was seen in the session\'s own usage reports — from a transcript, a collector or the provider, never from the agent\'s own claim — and it agrees with what the session declared. This label does not carry the authority of the session\'s commit signatures.',
 }
 
 const assertionLabel = computed<string>(() =>
@@ -225,10 +390,55 @@ const assertionTip = computed<string>(() =>
 
 onMounted(load)
 
+const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
+const closing = ref(false)
+const closeReasonInput = ref('')
+// The org's boards the reader sees, with their myPermissions: read only when they decide whether a
+// non-admin may force-close (task RD2-5). A failed read offers nothing, as the server would refuse.
+const orgBoards = ref<any[]>([])
+// Board names for the boards the session worked; a board the reader cannot list keeps its short id.
+const boardNames = ref<Record<string, string>>({})
+async function forceClose () {
+    closing.value = true
+    try {
+        await store.dispatch('forceCloseAgentSession', { sessionUuid: session.value.uuid, reason: forceCloseReason(closeReasonInput.value) })
+        closeReasonInput.value = ''
+        notification.success({ content: 'Session closed; its tasks went back to the queue', duration: 4000 })
+        await load()
+    } catch (e: any) {
+        notification.error({ content: `Could not force-close: ${e?.message ?? e}`, duration: 8000 })
+    } finally {
+        closing.value = false
+    }
+}
+
+const sessionError = ref<string | null>(null)
+
 async function load () {
-    session.value = await store.dispatch('fetchSession', sessionUuid.value)
+    sessionError.value = null
+    try {
+        session.value = await store.dispatch('fetchSession', sessionUuid.value)
+    } catch (e: any) {
+        session.value = null
+        sessionError.value = sessionLoadErrorText(e)
+        return
+    }
+    if (!session.value) {
+        sessionError.value = sessionLoadErrorText(null)
+        return
+    }
+    orgBoards.value = forceCloseNeedsBoards(session.value, isAdmin.value)
+        ? await store.dispatch('fetchAgentBoardsOfOrg', session.value.org).catch(() => []) ?? []
+        : []
+    // Board names from the tasks worked, which carry them: no second read of the boards (RD2-11).
+    boardNames.value = Object.fromEntries((session.value?.tasksWorked ?? []).filter((t: any) => t.boardName)
+        .map((t: any) => [t.board, t.boardName]))
     if (session.value?.agent) {
         agent.value = await store.dispatch('fetchAgent', session.value.agent).catch(() => null)
+    }
+    if (session.value?.origin?.ownerUser && session.value?.org) {
+        // A reader who cannot list the org's users still sees the owner, as a uuid.
+        orgUsers.value = await store.dispatch('fetchUsers', session.value.org).catch(() => []) ?? []
     }
     const commitUuids: string[] = session.value?.commits ?? []
     const artifactUuids: string[] = session.value?.artifacts ?? []
@@ -333,8 +543,14 @@ async function downloadArtifact (a: any) {
     }
 }
 
+/** The session page's times in the board surfaces' one format (RD2-23); text-only uses such as the idle line. */
 function formatDate (s: string | null | undefined) {
-    return s ? new Date(s).toLocaleString('en-CA') : '—'
+    return ts(s)
+}
+
+/** A time cell: the one format, the full timestamp on hover. */
+function timeCell (s: string | null | undefined) {
+    return s ? h(AgentTime, { at: s }) : '—'
 }
 
 function openPolicy (uuid: string) {
@@ -359,7 +575,7 @@ function renderSignatureBadge (sig: any) {
         sig.format ? `format: ${sig.format}` : '',
         sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
         sig.keyFingerprint ? `fp: ${sig.keyFingerprint}` : '',
-        sig.verifiedAt ? `verified: ${new Date(sig.verifiedAt).toLocaleString('en-CA')}` : '',
+        sig.verifiedAt ? `verified: ${ts(sig.verifiedAt)}` : '',
     ].filter(Boolean).join(' · ')
     return h(NTooltip, {}, {
         trigger: () => h(NTag, { size: 'tiny', type: tone, bordered: false }, { default: () => state }),
@@ -405,7 +621,7 @@ const commitColumns: DataTableColumns<any> = [
                 const label = rel.componentDetails?.name
                     ? `${rel.componentDetails.name} ${rel.version || ''}`.trim()
                     : (rel.version || rel.uuid.slice(0, 8))
-                const lc = rel.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => rel.lifecycle }) : null
+                const lc = rel.lifecycle ? h(NTag, { size: 'small', bordered: false, title: rel.lifecycle }, { default: () => lifecycleWord(rel.lifecycle) }) : null
                 const link = h('a', {
                     href: '#',
                     onClick: (e: Event) => { e.preventDefault(); router.push({ name: 'ReleaseView', params: { uuid: rel.uuid } }) },
@@ -417,7 +633,7 @@ const commitColumns: DataTableColumns<any> = [
             }))
         },
     },
-    { title: 'Date', key: 'dateActual', width: 170, render: (row: any) => row.dateActual ? new Date(row.dateActual).toLocaleString('en-CA') : '—' },
+    { title: 'Date', key: 'dateActual', width: 170, render: (row: any) => timeCell(row.dateActual) },
 ]
 
 function externalUri (a: any): string | null {
@@ -492,13 +708,13 @@ const releaseColumns: DataTableColumns<any> = [
         title: 'Lifecycle',
         key: 'lifecycle',
         width: 160,
-        render: (row: any) => row.lifecycle ? h(NTag, { size: 'small', bordered: false }, { default: () => row.lifecycle }) : '—',
+        render: (row: any) => row.lifecycle ? h(NTag, { size: 'small', bordered: false, title: row.lifecycle }, { default: () => lifecycleWord(row.lifecycle) }) : '—',
     },
     {
         title: 'Created',
         key: 'createdDate',
         width: 170,
-        render: (row: any) => row.createdDate ? new Date(row.createdDate).toLocaleString('en-CA') : '—',
+        render: (row: any) => timeCell(row.createdDate),
     },
 ]
 
@@ -525,7 +741,7 @@ const prColumns: DataTableColumns<any> = [
         title: 'Created',
         key: 'prCreatedDate',
         width: 170,
-        render: (row: any) => row.prCreatedDate ? new Date(row.prCreatedDate).toLocaleString('en-CA') : '—',
+        render: (row: any) => timeCell(row.prCreatedDate),
     },
 ]
 
@@ -554,12 +770,15 @@ const policyColumns: DataTableColumns<any> = [
         },
     },
     { title: 'Message', key: 'message', render: (row: any) => row.message || '—' },
-    { title: 'Evaluated', key: 'evaluatedAt', width: 170, render: (row: any) => row.evaluatedAt ? new Date(row.evaluatedAt).toLocaleString('en-CA') : '—' },
+    { title: 'Evaluated', key: 'evaluatedAt', width: 170, render: (row: any) => timeCell(row.evaluatedAt) },
 ]
 </script>
 
 <style scoped>
+.worked { margin-right: 12px; display: inline-block; }
 .aiAgentSessionView { padding: 16px; }
+.forceclose-reason { margin-top: 6px; }
+.idle-warned { margin-left: 4px; }
 .editor {
     background: #fffefe;
     color: #3a3838;
@@ -585,6 +804,10 @@ const policyColumns: DataTableColumns<any> = [
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
+.provider-sessions { display: flex; flex-direction: column; gap: 4px; }
+.provider-session { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
+.copyable { cursor: pointer; }
+.restricted-note { font-size: 12px; margin-top: 2px; }
 .agent-id { font-family: monospace; font-size: 11px; }
 .empty { color: var(--n-text-color-3, #666); font-style: italic; padding: 12px 0; }
 .mt-1 { margin-top: 8px; font-size: 12px; }

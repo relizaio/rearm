@@ -1,0 +1,266 @@
+// A task's linked PRs as the board shows them (task 9af9d722): a task whose roles have passed waits
+// in DELIVERING until every linked PR has merged. Pure, so the chip rules are testable alone.
+
+export interface PrChip {
+    url: string
+    /** owner/repo/pull/N, or the URL's tail */
+    label: string
+    /** merged | open | closed | unregistered | abandoned | superseded */
+    state: string
+    /** naive-ui tag type */
+    type: 'success' | 'warning' | 'error' | 'default'
+    title: string
+    /** Declared superseded by its replacement (task RD3-13): the row is struck through, the successor named. */
+    superseded?: boolean
+    /**
+     * The head the newest passing review or test covered against the PR's current head (task
+     * 3b97ccfd), when the read carries them; moved when the PR is past the tested head.
+     */
+    heads?: string
+    moved?: boolean
+    /**
+     * "base moved: N commits since your round" (task RD4-2): commits CI reported on the PR's target branch since
+     * the task's newest round began. Only for a PR registered here, and only when the base moved; it says nothing
+     * about whether the PR still merges.
+     */
+    baseMoved?: string
+}
+
+/** A PR URL as the board matches it: no query, fragment, trailing slash or .git, and case-folded. */
+export function prKey (url: string): string {
+    return String(url ?? '').trim().replace(/[?#].*$/, '').replace(/\/+$/, '').replace(/\.git$/, '').toLowerCase()
+}
+
+const short = (sha: string): string => String(sha ?? '').slice(0, 7)
+
+function sameCommit (a: string, b: string): boolean {
+    const x = String(a ?? '').toLowerCase()
+    const y = String(b ?? '').toLowerCase()
+    return !!x && !!y && (x.startsWith(y) || y.startsWith(x))
+}
+
+/** The tested and current heads of one PR, in words; empty when the read carries neither. */
+export function headLine (tested: string | undefined, head: string | undefined): { heads?: string, moved?: boolean } {
+    if (tested && head) {
+        return sameCommit(tested, head)
+            ? { heads: `tested ${short(tested)} · the PR is at it`, moved: false }
+            : { heads: `tested ${short(tested)} · now ${short(head)}: moved past the tested head`, moved: true }
+    }
+    if (tested) return { heads: `tested ${short(tested)}` }
+    if (head) return { heads: `head ${short(head)} · no passing review or test names a head` }
+    return {}
+}
+
+/** The base-moved line of one PR (task RD4-2); nothing when the count is unknown (null) or zero. */
+export function baseMovedLine (baseMovedBy: number | null | undefined): { baseMoved?: string } {
+    if (typeof baseMovedBy !== 'number' || baseMovedBy < 1) return {}
+    return { baseMoved: `base moved: ${baseMovedBy} ${baseMovedBy === 1 ? 'commit' : 'commits'} since your round` }
+}
+
+export function shortPr (url: string): string {
+    const parts = String(url ?? '').replace(/\/+$/, '').split('/')
+    return parts.slice(-4).join('/')
+}
+
+/**
+ * One chip per linked PR, from the server's resolved pullRequests when present; a task read without
+ * them (an older query) still shows its prUrls, as unknown.
+ */
+export function prChips (task: any): PrChip[] {
+    const resolved: any[] = task?.pullRequests ?? []
+    const tested = new Map<string, string>((task?.testedHeads ?? []).map((t: any) => [prKey(t.pr), t.head]))
+    if (resolved.length) {
+        // A declaration settles the chip (task 18c5c293); the heads line stays on it (task 3b97ccfd).
+        return resolved.map((pr: any) => ({ ...(declarationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head),
+            ...baseMovedLine(pr.baseMovedBy) }))
+    }
+    return (task?.prUrls ?? []).map((url: string) => ({ url, label: shortPr(url), state: 'linked', type: 'default',
+        title: 'linked PR' }))
+}
+
+function actorName (a: any): string {
+    if (!a) return 'someone'
+    return a.name || [String(a.kind ?? '').toLowerCase(), String(a.uuid ?? '').slice(0, 8)].filter(Boolean).join(' ')
+}
+
+/** "#694" for a PR URL ending in its number; the short form otherwise. */
+export function prNumber (url: string | null | undefined): string {
+    const tail = String(url ?? '').replace(/\/+$/, '').split('/').pop() ?? ''
+    return /^\d+$/.test(tail) ? `#${tail}` : shortPr(String(url ?? ''))
+}
+
+/**
+ * A PR whose delivery was declared (task 18c5c293): merged where this ReARM cannot see it, or
+ * abandoned. The newest declaration settles it, whatever the row says.
+ */
+export function declarationChip (pr: any): PrChip | null {
+    const a = pr?.declaration
+    if (!a) return null
+    const note = a.note ? `: ${a.note}` : ''
+    if (a.outcome === 'SUPERSEDED') {
+        return { url: pr.url, label: shortPr(pr.url), state: 'superseded', type: 'default', superseded: true,
+            title: `superseded by ${prNumber(a.supersededBy)}, declared by ${actorName(a.by)}${note}` }
+    }
+    if (a.outcome === 'ABANDONED') {
+        return { url: pr.url, label: shortPr(pr.url), state: 'abandoned', type: 'error',
+            title: `declared abandoned by ${actorName(a.by)}${note}` }
+    }
+    return { url: pr.url, label: shortPr(pr.url), state: 'merged', type: 'success',
+        title: `declared by ${actorName(a.by)} at ${String(a.commit ?? '').slice(0, 7)}${note}` }
+}
+
+/** How a board proves delivery (task 18c5c293): the form's options, one line of help each. */
+export const DELIVERY_MODE_OPTIONS: { value: string, label: string, help: string }[] = [
+    { value: 'PR_ROWS', label: 'PRs registered here (default)',
+        help: 'A linked PR delivers when its row on this ReARM merges, or when it is declared.' },
+    { value: 'DECLARED', label: 'PRs registered elsewhere',
+        help: 'Each linked PR is declared as merged (task declare-delivery); a merged row here counts too.' },
+    { value: 'NONE', label: 'No PRs',
+        help: 'The task completes at its last pass; awaiting a declaration, once a push or release is declared.' }
+]
+
+/** Who merges a board's PRs (task 71a3dd22): the form's options, one line of help each. */
+export const MERGE_BY_OPTIONS: { value: string, label: string, help: string }[] = [
+    { value: 'COORDINATOR', label: 'the coordinator',
+        help: 'The coordinator merges; the board has to list PR_MERGE among what the coordinator covers.' },
+    { value: 'ROLE', label: 'a role',
+        help: 'The named role merges; it has to be active and carry PR_MERGE.' },
+    { value: 'PERSON', label: 'a person',
+        help: 'A person merges; agents leave passed tasks in DELIVERING and say when one waits.' }
+]
+
+export const MERGE_METHOD_OPTIONS: { value: string, label: string }[] = [
+    { value: 'MERGE', label: 'merge commit (default)' },
+    { value: 'SQUASH', label: 'squash' },
+    { value: 'REBASE', label: 'rebase' },
+    { value: 'FAST_FORWARD', label: 'fast-forward' }
+]
+
+export const MERGE_ORDER_OPTIONS: { value: string, label: string }[] = [
+    { value: 'NOTE_ORDER', label: 'as the notes say (default)' },
+    { value: 'OLDEST_PASS_FIRST', label: 'oldest pass first' }
+]
+
+/** The form's merge fields: `by` is COORDINATOR, ROLE or PERSON, the role's name apart. */
+export interface MergeDraft {
+    by: string | null
+    byRole: string
+    method: string | null
+    atTestedHead: boolean
+    requireDeclaration: boolean
+    order: string | null
+}
+
+/** A board's declared merge procedure as the form edits it; nothing declared is every default. */
+export function mergeDraftOf (policy: any): MergeDraft {
+    const m = policy?.merge ?? null
+    const by: string | null = m?.by ?? null
+    const isRole = typeof by === 'string' && by.trim().toUpperCase().startsWith('ROLE:')
+    return {
+        by: isRole ? 'ROLE' : by,
+        byRole: isRole ? by!.trim().slice(5).trim() : '',
+        method: m?.method ?? null,
+        atTestedHead: m?.atTestedHead !== false,
+        requireDeclaration: !!m?.requireDeclaration,
+        order: m?.order ?? null
+    }
+}
+
+/**
+ * The merge procedure the form sends: only what differs from the defaults, null when nothing does.
+ * A role without a name is not sent; requireDeclaration is not sent on a DECLARED board, which declares
+ * every merge and refuses false.
+ */
+export function mergeOf (draft: MergeDraft, mode: string | null | undefined): Record<string, any> | null {
+    const by = draft.by === 'ROLE' ? (draft.byRole.trim() ? 'ROLE:' + draft.byRole.trim() : null) : draft.by
+    const merge = {
+        by,
+        method: draft.method,
+        atTestedHead: draft.atTestedHead ? null : false,
+        requireDeclaration: mode === 'DECLARED' || !draft.requireDeclaration ? null : true,
+        order: draft.order
+    }
+    return Object.values(merge).every(v => v === null) ? null : merge
+}
+
+/**
+ * What the form sends as deliveryPolicy: nothing when the draft matches the board, null to restore
+ * the default, else the policy. Declare only means something on NONE, so it is sent only there. The
+ * merge procedure (task 71a3dd22) travels with it; without a draft the board's own is kept.
+ */
+export function deliveryPolicyPatch (original: any, mode: string | null | undefined, awaitDeclaration: boolean, draft?: MergeDraft):
+    { changed: boolean, value: { mode: string | null, awaitDeclaration: boolean, merge?: Record<string, any> } | null } {
+    const before = original?.deliveryPolicy ?? null
+    const m = mode || null
+    const merge = draft ? mergeOf(draft, m) : (before?.merge ? mergeOf(mergeDraftOf(before), m) : null)
+    const value = m || merge
+        ? { mode: m, awaitDeclaration: m === 'NONE' && !!awaitDeclaration, ...(merge ? { merge } : {}) }
+        : null
+    const beforeMerge = before?.merge ? mergeOf(mergeDraftOf(before), before.mode ?? null) : null
+    const same = (before === null && value === null) ||
+        (before !== null && value !== null && (before.mode ?? null) === value.mode && !!before.awaitDeclaration === value.awaitDeclaration &&
+            JSON.stringify(beforeMerge) === JSON.stringify(merge))
+    return { changed: !same, value }
+}
+
+/** The state chip of one resolved PR. */
+function chipOf (pr: any): PrChip {
+    if (!pr.registered) {
+        return { url: pr.url, label: shortPr(pr.url), state: 'unregistered', type: 'default',
+            title: 'CI has not reported this PR, so the board cannot see it merge' }
+    }
+    const s = String(pr.state ?? '').toUpperCase()
+    if (s === 'MERGED') {
+        return { url: pr.url, label: shortPr(pr.url), state: 'merged', type: 'success',
+            title: `merged (CI)${pr.targetBranch ? ' into ' + pr.targetBranch : ''}${pr.mergedDate ? ' · ' + pr.mergedDate : ''}` }
+    }
+    if (s === 'CLOSED') {
+        return { url: pr.url, label: shortPr(pr.url), state: 'closed', type: 'error',
+            title: 'closed without merging' }
+    }
+    return { url: pr.url, label: shortPr(pr.url), state: 'open', type: 'warning',
+        title: `open${pr.targetBranch ? ' against ' + pr.targetBranch : ''}` }
+}
+
+// ---------- declaring a delivery from the page (task RD2-10) ----------
+
+/** A commit as the server takes one: 7 to 40 hex characters. */
+export const COMMIT_SHA = /^[0-9a-fA-F]{7,40}$/
+
+/** What the commit field says before the server does; null when it is fine. */
+export function commitProblem (commit: string | null | undefined): string | null {
+    const c = String(commit ?? '').trim()
+    if (!c) return 'The merge commit is required'
+    return COMMIT_SHA.test(c) ? null : 'A commit is 7 to 40 hex characters'
+}
+
+/** A PR a person can still awaitDeclaration: linked, not yet merged or abandoned. */
+export function declarable (chip: PrChip): boolean {
+    return chip.state !== 'merged' && chip.state !== 'abandoned' && chip.state !== 'superseded'
+}
+
+export interface DeclarationDraft {
+    unit: string
+    commit: string
+    note: string
+    outcome: 'DELIVERED' | 'ABANDONED'
+}
+
+/** A draft for a PR (unit pre-filled with its URL), or for a board with no PRs (unit free text). */
+export function declarationDraftOf (unit: string | null, outcome: 'DELIVERED' | 'ABANDONED' = 'DELIVERED'): DeclarationDraft {
+    return { unit: unit ?? '', commit: '', note: '', outcome }
+}
+
+/**
+ * The agentTaskDeclareDelivery variables for a draft, or null while it cannot be sent: a unit always; a
+ * DELIVERED one also a commit of 7 to 40 hex; an ABANDONED one a note saying why.
+ */
+export function declarationPayload (task: any, d: DeclarationDraft):
+    { task: any, unit: string, commit: string | null, outcome: string, note: string | null } | null {
+    const unit = d.unit.trim()
+    if (!unit) return null
+    if (d.outcome === 'DELIVERED' && commitProblem(d.commit)) return null
+    if (d.outcome === 'ABANDONED' && !d.note.trim()) return null
+    return { task, unit, commit: d.outcome === 'DELIVERED' ? d.commit.trim() : null, outcome: d.outcome,
+        note: d.note.trim() || null }
+}

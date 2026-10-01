@@ -1,0 +1,89 @@
+<template>
+    <n-drawer :show="task !== null" :width="560" placement="right"
+              @update:show="(v: boolean) => { if (!v) emit('close') }">
+        <n-drawer-content v-if="task" closable>
+            <template #header>
+                <task-title :task="task" :board="board" :roles="roles" clamp/>
+            </template>
+
+            <!-- A preview (gaps §1.26): what a person needs to decide whether to open the task,
+                 and the verbs that must stay one click away -- a gate verdict, a release, the
+                 task actions. Review item rounds, questions, documents and history are on the page. -->
+            <div class="tsecs">
+                <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
+                <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
+                             :can-operate="canOperate(board)" :board="board"
+                             @human-review="p => emit('human-review', p)"
+                             @human-signoff="p => emit('human-signoff', p)"
+                             @lift-hold="p => emit('lift-hold', p)"
+                             @require-review="p => emit('require-review', p)"/>
+                <!-- What the task waits on, for every reader (RD2-7). -->
+                <task-open-questions :task="task" :roles="roles"/>
+                <task-actions v-if="canOperate(board)" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
+                              @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
+                              @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
+                              @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
+                              @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
+                              @unassign="p => emit('unassign', p)"
+                              @set-work-level="p => emit('set-work-level', p)"
+                              @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
+                              @declare-delivery="p => emit('declare-delivery', p)"
+                              @set-budget="p => emit('set-budget', p)"/>
+                <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
+                              @open="t => emit('open', t)"/>
+            </div>
+        </n-drawer-content>
+    </n-drawer>
+</template>
+
+<script lang="ts" setup>
+import { RouterLink } from 'vue-router'
+import { NDrawer, NDrawerContent } from 'naive-ui'
+import TaskActions from './task/TaskActions.vue'
+import TaskHeader from './task/TaskHeader.vue'
+import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
+import TaskSummary from './task/TaskSummary.vue'
+import TaskTitle from './task/TaskTitle.vue'
+import { taskPagePath } from '@/utils/agentTaskFormat'
+import { canOperate } from '@/utils/agentBoardAccess'
+
+defineProps<{
+    task: any | null
+    tasks: any[]
+    agentNames: Record<string, string>
+    roles?: any[]
+    board?: any
+    priorityLevels?: number
+    /** Org admin: may reopen a completed task (the server's rule for agentTaskReopen). */
+    canReopen?: boolean
+}>()
+const emit = defineEmits<{
+    (e: 'close'): void
+    (e: 'open', task: any): void
+    (e: 'human-review', p: { task: any, accept: boolean, note: string, reviewItems?: any[],
+        about?: { specification: string } | null }): void
+    (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
+    (e: 'lift-hold', p: { task: any, note: string, role?: string }): void
+    (e: 'require-review', p: { task: any, value: boolean }): void
+    (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
+    (e: 'order', p: { task: any, orderIndex: number }): void
+    (e: 'set-budget', p: { task: any, budgetMicros: number | null }): void
+    (e: 'complete', p: { task: any, note: string, skipRequiredRoles: boolean }): void
+    (e: 'cancel', p: { task: any, note: string }): void
+    (e: 'reopen', p: { task: any, role: string, reason: string }): void
+    (e: 'decide', p: { task: any, specification: string, decisions: any[],
+        about?: { specification: string } | null }): void
+    (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
+    (e: 'set-work-level', p: { task: any, workLevel: number | null }): void
+    (e: 'set-group', p: { task: any, group: string | null }): void
+    (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
+    (e: 'declare-delivery', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
+    (e: 'operator-hold', p: { task: any, reason: string }): void
+    (e: 'unassign', p: { task: any, reason: string }): void
+}>()
+</script>
+
+<style scoped lang="scss">
+.tsecs { display: flex; flex-direction: column; gap: 16px; }
+.openpage { align-self: flex-start; font-weight: 600; font-size: 13px; }
+</style>

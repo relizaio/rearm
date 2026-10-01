@@ -1,0 +1,198 @@
+// @vitest-environment happy-dom
+//
+// Force-closing a session from its page (task 6fdc5a37): offered to an org admin on an OPEN
+// session, confirmed, then the page reloads the session. RD2-5: also to a person with BOARD_WRITE
+// on a board the session worked.
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { flushPromises, mount } from '@vue/test-utils'
+
+const dispatch = vi.fn()
+const notifyError = vi.fn()
+const getters: any = {}
+vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters }) }))
+vi.mock('vue-router', () => ({ useRoute: () => ({ params: { uuid: 's1' } }), useRouter: () => ({ push: vi.fn() }) }))
+vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ success: vi.fn(), error: notifyError }) }))
+// fetchClient pulls in the Keycloak client, which waits for a login that never comes here.
+vi.mock('@/utils/fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
+vi.mock('vue-prism-editor', () => ({ PrismEditor: { template: '<div/>' } }))
+vi.mock('vue-prism-editor/dist/prismeditor.min.css', () => ({}))
+vi.mock('prismjs/themes/prism-tomorrow.css', () => ({}))
+
+const { default: SessionView } = await import('./AiAgentSessionView.vue')
+
+// The confirm's popover is teleported; a stub shows its trigger, its body (the reason) and a button that confirms.
+const confirm = { emits: ['positive-click'], template: '<div class="pc"><slot name="trigger"/><slot/><button class="pc__yes" @click="$emit(\'positive-click\')"/></div>' }
+const stubs = { NPopconfirm: confirm, Popconfirm: confirm }
+
+function session (status: string) {
+    return { uuid: 's1', org: 'o1', status, title: 't', commits: [], artifacts: [], agent: null }
+}
+
+function asAdmin (admin: boolean) {
+    getters.myuser = { permissions: { permissions: admin ? [{ org: 'o1', scope: 'ORGANIZATION', type: 'ADMIN' }] : [] } }
+}
+
+describe('session force close', () => {
+    beforeEach(() => { dispatch.mockReset(); notifyError.mockReset() })
+
+    it('is offered to an admin on an open session only', async () => {
+        for (const [status, admin, shown] of [['OPEN', true, true], ['OPEN', false, false], ['CLOSED', true, false]] as const) {
+            asAdmin(admin)
+            dispatch.mockImplementation(async (a: string) => a === 'fetchSession' ? session(status) : [])
+            const w = mount(SessionView, { global: { stubs } })
+            await flushPromises()
+            expect(w.find('.forceclose').exists(), `${status} admin=${admin}`).toBe(shown)
+        }
+    })
+
+    it('closes on confirm and reloads the session', async () => {
+        asAdmin(true)
+        let status = 'OPEN'
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') return session(status)
+            if (a === 'forceCloseAgentSession') { status = 'CLOSED'; return { uuid: 's1', status } }
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: null })
+        expect(dispatch.mock.calls.filter(c => c[0] === 'fetchSession')).toHaveLength(2)
+        expect(w.find('.forceclose').exists(), 'a closed session offers nothing').toBe(false)
+    })
+
+    it('sends the reason the admin typed and shows who closed it', async () => {
+        asAdmin(true)
+        let closed = false
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') {
+                return closed
+                    ? { ...session('CLOSED'), closedBy: { kind: 'USER', uuid: 'u1', name: 'pm@example.com' }, closeReason: 'force-closed by pm@example.com: agent crashed' }
+                    : session('OPEN')
+            }
+            if (a === 'forceCloseAgentSession') { closed = true; return { uuid: 's1', status: 'CLOSED' } }
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        await w.find('.forceclose-reason input').setValue('  agent crashed ')
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: 'agent crashed' })
+        // The closer named once (RD2-11): the reason already says who.
+        expect(w.find('.close-attribution').text()).toBe('Force-closed by pm@example.com: agent crashed')
+    })
+
+    it('flags an open session the sweep has warned', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('OPEN'), idleWarnedAt: '2026-09-26T10:00:00Z' } : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('.idle-warned').exists()).toBe(true)
+    })
+
+    // RD2-5: the board personas, with the session having worked board A.
+    function onBoards (boards: any[]) {
+        return async (a: string) => {
+            if (a === 'fetchSession') return { ...session('OPEN'), boardsWorked: ['A'] }
+            if (a === 'fetchAgentBoardsOfOrg') return boards
+            return []
+        }
+    }
+
+    it('is offered to BOARD_WRITE on a board the session worked, not to its reader', async () => {
+        for (const [perms, shown] of [[['BOARD_READ', 'BOARD_WRITE'], true], [['BOARD_READ'], false]] as const) {
+            asAdmin(false)
+            dispatch.mockReset()
+            dispatch.mockImplementation(onBoards([{ uuid: 'A', myPermissions: perms }]))
+            const w = mount(SessionView, { global: { stubs } })
+            await flushPromises()
+            expect(w.find('.forceclose').exists(), perms.join(',')).toBe(shown)
+            expect(dispatch).toHaveBeenCalledWith('fetchAgentBoardsOfOrg', 'o1')
+        }
+    })
+
+    it('reads the boards only when they decide, and offers nothing when the read fails', async () => {
+        asAdmin(true)
+        dispatch.mockImplementation(onBoards([]))
+        mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(dispatch.mock.calls.some(c => c[0] === 'fetchAgentBoardsOfOrg'), 'an admin needs no boards').toBe(false)
+
+        asAdmin(false)
+        dispatch.mockReset()
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') return { ...session('OPEN'), boardsWorked: ['A'] }
+            if (a === 'fetchAgentBoardsOfOrg') throw new Error('Not authorized')
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('.forceclose').exists()).toBe(false)
+    })
+
+    it('says so when the server still refuses', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'forceCloseAgentSession') throw new Error('Not authorized')
+            return onBoards([{ uuid: 'A', myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }])(a)
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(notifyError).toHaveBeenCalledWith(expect.objectContaining({ content: 'Could not force-close: Not authorized' }))
+    })
+})
+
+// RD2-11: the page lists what the session worked, linked -- its boards by name and its tasks by key, title and role.
+describe('what a session worked', () => {
+    beforeEach(() => { dispatch.mockReset() })
+
+    it('lists the boards and tasks, the board named from its tasks', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('CLOSED'), boardsWorked: ['b1', 'b2'], tasksWorked: [
+                { uuid: 't2', key: 'RD-2', title: 'second', role: 'tester', board: 'b1', boardName: 'Dogfood' },
+                { uuid: 't1', key: 'RD-1', title: 'first', role: 'coder', board: 'b1', boardName: 'Dogfood' },
+            ] }
+            : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        const boards = w.findAll('[data-testid="board-worked"]').map(b => b.text())
+        expect(boards).toEqual(['Dogfood', 'b2'], 'a board with no readable task shows its short id')
+        const tasks = w.findAll('[data-testid="task-worked"]').map(t => t.text().replace(/\s+/g, ' '))
+        expect(tasks).toEqual(['RD-2 · second (tester)', 'RD-1 · first (coder)'])
+        expect(dispatch.mock.calls.map(c => c[0])).not.toContain('fetchAgentBoard', 'the names come with the session')
+    })
+
+    it('shows neither row for a session that worked nothing', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession' ? { ...session('OPEN'), boardsWorked: [], tasksWorked: [] } : [])
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('[data-testid="board-worked"]').exists()).toBe(false)
+        expect(w.find('[data-testid="task-worked"]').exists()).toBe(false)
+    })
+})
+
+// RD2-15: the closing-idle tooltip on the page gives the close time and names no CLI verb.
+describe('a session closing idle', () => {
+    beforeEach(() => { dispatch.mockReset() })
+
+    it('says when it closes and what a person may do', async () => {
+        asAdmin(false)
+        dispatch.mockImplementation(async (a: string) => a === 'fetchSession'
+            ? { ...session('OPEN'), idleWarnedAt: '2026-09-27T20:00:00Z', idleCloseAt: '2026-09-27T22:00:00Z' } : [])
+        const tip = { template: '<span class="tt"><slot name="trigger"/><span class="tt__body"><slot/></span></span>' }
+        const w = mount(SessionView, { global: { stubs: { ...stubs, NTooltip: tip, Tooltip: tip } } })
+        await flushPromises()
+        expect(w.find('.idle-warned').text()).toBe('Closing idle')
+        const text = w.find('[data-testid="idle-warning"]').text()
+        expect(text).toMatch(/^Warned .+; closes at .+ unless the agent calls again\. A person with Board write may force-close it now\.$/)
+        expect(w.text()).not.toContain('rearm agent session touch')
+    })
+})
+

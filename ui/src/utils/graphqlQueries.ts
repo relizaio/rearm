@@ -81,6 +81,7 @@ const MULTI_RELEASE_GQL_DATA = `
         uuid
         name
         type
+        kind
         nature
         resourceGroup
     }
@@ -104,6 +105,7 @@ const MULTI_RELEASE_GQL_DATA = `
         release
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -135,6 +137,7 @@ const BRANCH_RELEASE_LIST_GQL_DATA = `
         removable
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -534,7 +537,7 @@ query FetchInstanceStatus($orgUuid: ID!) {
 
 const COMPONENTS_OF_PERSPECTIVE_GQL = gql`
 query ComponentsOfPerspective($perspectiveUuid: ID!) {
-    componentsOfPerspective(perspectiveUuid: $perspectiveUuid) {
+    componentsOfPerspective(perspectiveUuid: $perspectiveUuid, kinds: [GENERIC, HELM]) {
         uuid
         name
         type
@@ -764,6 +767,31 @@ const singleReleaseDataNoParent = `
     createdDate
     org
     hardware
+    document {
+        specification
+        path
+        digest
+        mediaType
+        indexPath
+        task
+        session
+        round
+        elements { elements { id } }
+        reviewItems {
+            kind
+            round
+            verdict
+            counts { passed failed skipped }
+            reviewItems {
+                id
+                priority
+                status
+                title
+                location { path line ref }
+                resolvedBy
+            }
+        }
+    }
     artifacts
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}
@@ -944,6 +972,7 @@ const singleReleaseDataNoParent = `
         }
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -1103,7 +1132,11 @@ const SINGLE_RELEASE_GQL_DATA_LIGHT = `
         nature
         resourceGroup
     }
-    tags
+    tags {
+        key
+        value
+        removable
+    }
 `
 
 const COMPONENT_FULL_DATA = `
@@ -1118,6 +1151,7 @@ const COMPONENT_FULL_DATA = `
     # its own drift-guarded document in utils/componentDeviceWindow.ts.
     deviceClass
     kind
+    agentBoard { uuid name taskPrefix readable }
     versionSchema
     marketingVersionSchema
     versionType
@@ -1314,6 +1348,7 @@ const BRANCH_GQL_DATA = `
             uuid
             name
             type
+            kind
         }
         branch {
             uuid
@@ -1393,6 +1428,7 @@ query FetchReleaseInProducts($releaseID: ID!, $orgID: ID) {
                 versionSchema
             }
             metrics {
+                dtrackFetchStatus
                 critical
                 high
                 medium
@@ -1497,6 +1533,7 @@ const singleReleaseProductNoParent = `
         type
     }
     metrics {
+        dtrackFetchStatus
         lastScanned
         firstScanned
         critical
@@ -1540,6 +1577,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 type
             }
             metrics {
+                dtrackFetchStatus
                 lastScanned
                 firstScanned
                 critical
@@ -1576,6 +1614,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                         type
                     }
                     metrics {
+                        dtrackFetchStatus
                         lastScanned
                         firstScanned
                         critical
@@ -1772,6 +1811,7 @@ const MARKETING_RELEASE_GQL_DATA = `
     devReleaseDetails {
         version
         metrics {
+            dtrackFetchStatus
             lastScanned
             firstScanned
             critical
@@ -1817,6 +1857,7 @@ const USER_GQL_DATA = `
     githubId
     oauthId
     installationType
+    defaultDashboard
     permissions {
         permissions {
             org
@@ -1843,8 +1884,8 @@ query EnvironmentTypes($orgUuid: ID!) {
 }`
 
 const RELEASES_BY_DATE_RANGE_GQL = gql`
-query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
-    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
+query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
+    releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`
@@ -1865,8 +1906,8 @@ query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
     }
 }`
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
-query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType) {
-    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType) {
+query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
+    releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
     }
 }`

@@ -64,11 +64,11 @@
                             <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ rel.lifecycle }}</span>
                         </span>
                         <span
-                            v-if="getPendingStatus(rel).kind !== 'ready'"
+                            v-if="showsScanBadge(getPendingStatus(rel))"
                             :title="getPendingStatus(rel).title"
                             :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'rejected' ? '#d03050' : getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
                         >{{ getPendingStatus(rel).label }}</span>
-                        <n-space :size="1" v-else-if="rel.metrics?.lastScanned" style="flex-shrink: 0;">
+                        <n-space :size="1" v-else-if="getPendingStatus(rel).kind === 'ready' && rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ rel.metrics.critical }}</span>
                             <span title="High Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.HIGH, cursor: 'pointer' }" @click="openVulnModal(rel, 'HIGH', ['Vulnerability', 'Weakness'])">{{ rel.metrics.high }}</span>
                             <span title="Medium Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.MEDIUM, cursor: 'pointer' }" @click="openVulnModal(rel, 'MEDIUM', ['Vulnerability', 'Weakness'])">{{ rel.metrics.medium }}</span>
@@ -122,7 +122,8 @@ import graphqlClient from '@/utils/graphql'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { isDtrackConfiguredForOrg, getReleaseScanStatus, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { isDtrackConfiguredForOrg, getReleaseScanStatus, showsScanBadge, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { recentReleasesKinds } from '@/utils/agentDocumentsView'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -141,9 +142,15 @@ const props = withDefaults(defineProps<{
      * `componentType` in to keep the URL the source of truth.
      */
     componentType?: 'COMPONENT' | 'PRODUCT' | null
+    /**
+     * RD4-10: the widget lists software only, so a board's document rounds stay off the home page.
+     * A caller that wants the rounds too (the full most-recent-releases page) passes true.
+     */
+    includeDocuments?: boolean
 }>(), {
     showFullPageIcon: true,
-    componentType: null
+    componentType: null,
+    includeDocuments: false
 })
 
 const store = useStore()
@@ -215,7 +222,8 @@ async function fetchReleases() {
                     startDate: startDate.toISOString(),
                     endDate: endDate.toISOString(),
                     limit: effectiveLimit.value,
-                    componentType: effectiveComponentType.value
+                    componentType: effectiveComponentType.value,
+                    componentKinds: recentReleasesKinds(props.includeDocuments)
                 },
                 fetchPolicy: 'no-cache'
             })
@@ -228,7 +236,8 @@ async function fetchReleases() {
                     startDate: startDate.toISOString(),
                     endDate: endDate.toISOString(),
                     limit: effectiveLimit.value,
-                    componentType: effectiveComponentType.value
+                    componentType: effectiveComponentType.value,
+                    componentKinds: recentReleasesKinds(props.includeDocuments)
                 },
                 fetchPolicy: 'no-cache'
             })
@@ -280,6 +289,7 @@ function formatDateTime(dateStr: string): string {
 watch(() => props.perspectiveUuid, () => fetchReleases())
 watch(() => [props.startDate, props.endDate], () => fetchReleases())
 watch(() => props.limit, () => fetchReleases())
+watch(() => props.includeDocuments, () => fetchReleases())
 watch(() => props.componentType, (val) => {
     if (val !== undefined) localComponentType.value = val
     fetchReleases()

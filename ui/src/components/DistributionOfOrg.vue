@@ -409,7 +409,7 @@ const orgHasHardware = ref(false)
 const orgHasSamd = ref(false)
 async function loadOrgClassification () {
     try {
-        const resp: any = await graphqlClient.query({ query: gql`query componentsClassification($o: ID!) { components(orgUuid: $o, componentType: ANY) { uuid nature deviceClass } }`, variables: { o: orguuid.value }, fetchPolicy: 'no-cache' })
+        const resp: any = await graphqlClient.query({ query: gql`query componentsClassification($o: ID!) { components(orgUuid: $o, componentType: ANY, kinds: [GENERIC, HELM]) { uuid nature deviceClass } }`, variables: { o: orguuid.value }, fetchPolicy: 'no-cache' })
         const comps: any[] = resp.data.components || []
         orgHasHardware.value = comps.some(isHardware)
         orgHasSamd.value = comps.some(isSamd)

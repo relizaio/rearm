@@ -240,8 +240,22 @@ const PERMISSION_FUNCTIONS: string[] = [
     // Gate the declarative configuration surface (export / apply of spec
     // files through the programmatic API). WRITE implies READ.
     'CONFIGURATION_READ',
-    'CONFIGURATION_WRITE'
+    'CONFIGURATION_WRITE',
+    // Gate a task board (board-permissions.md §2.2): BOARD_READ reads it,
+    // BOARD_AGENT works it (task next, assign, sign off, publish),
+    // BOARD_WRITE runs it (register, authorize, holds, the coordinator
+    // seat). BOARD_AGENT and BOARD_WRITE imply BOARD_READ. Offered on the
+    // organization, a perspective (it covers the boards hanging off it)
+    // and a board; never on a product or component, where they mean
+    // nothing. Floor READ_ONLY, so not offered at ESSENTIAL_READ.
+    'BOARD_READ',
+    'BOARD_AGENT',
+    'BOARD_WRITE'
 ]
+// The board functions, and what a grant on one board (scope BOARD) offers:
+// the board functions and the configuration pair a board file needs.
+const BOARD_FUNCTIONS: string[] = ['BOARD_READ', 'BOARD_AGENT', 'BOARD_WRITE']
+const BOARD_SCOPE_FUNCTIONS: string[] = [...BOARD_FUNCTIONS, 'CONFIGURATION_READ', 'CONFIGURATION_WRITE']
 // Functions that are grantable at the ESSENTIAL_READ permission type.
 // Most org-wide functions only make sense alongside READ_ONLY/READ_WRITE
 // (you can't usefully grant DEVOPS_WRITE to a user without write
@@ -325,6 +339,8 @@ export default {
     PermissionTypesWithAdmin: PERMISSION_TYPES_WITH_ADMIN,
     PermissionFunctions: PERMISSION_FUNCTIONS,
     EssentialReadPermissionFunctions: ESSENTIAL_READ_PERMISSION_FUNCTIONS,
+    BoardFunctions: BOARD_FUNCTIONS,
+    BoardScopeFunctions: BOARD_SCOPE_FUNCTIONS,
     IdentifierTypes: IDENTIFIER_TYPES,
     SpecificationTypes: SPECIFICATION_TYPES,
     ComplianceDocumentTypes: COMPLIANCE_DOCUMENT_TYPES

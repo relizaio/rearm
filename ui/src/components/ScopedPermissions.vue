@@ -117,6 +117,59 @@
             </n-space>
         </div>
 
+        <!-- Per-Board Permissions (scope BOARD, board-permissions.md §5; task 428b4a71). After the
+             perspectives: the two scopes that hold other things sit together. A grant on a board the
+             editor cannot list shows its uuid and stays, so a save keeps it. -->
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)">
+            <n-h5>
+                <n-text depth="1">
+                    Per-Board Permissions:
+                </n-text>
+            </n-h5>
+        </n-space>
+        <div v-if="orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)" data-testid="board-permissions">
+            <n-space vertical>
+                <n-card v-for="sp in scopedBoardPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;"
+                        data-testid="board-permission-card">
+                    <n-space align="center" justify="space-between" style="width: 100%;">
+                        <n-space align="center" :size="6">
+                            <n-text strong>{{ boardNameOf(boardList, sp.objectId) ?? sp.objectId }}</n-text>
+                            <n-text v-if="!boardNameOf(boardList, sp.objectId)" depth="3" style="font-size: 12px;">board not found</n-text>
+                        </n-space>
+                        <n-icon class="clickable" size="18" data-testid="board-permission-remove"
+                                @click="removeScopedPermission('BOARD', sp.objectId)"><CloseIcon /></n-icon>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center">
+                        <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
+                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                            <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
+                        </n-radio-group>
+                    </n-space>
+                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                        <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
+                        <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
+                            <n-checkbox v-for="f in boardFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                                <permission-function-label :f="f" />
+                            </n-checkbox>
+                        </n-checkbox-group>
+                    </n-space>
+                </n-card>
+                <n-space align="center">
+                    <n-select
+                        v-model:value="newBoardId"
+                        :options="availableBoardOptions"
+                        placeholder="Add board..."
+                        style="min-width: 250px;"
+                        filterable
+                        clearable
+                        data-testid="board-permission-select"
+                    />
+                    <n-button size="small" type="primary" :disabled="!newBoardId" data-testid="board-permission-add"
+                              @click="addScopedPermission('BOARD')">Add</n-button>
+                </n-space>
+            </n-space>
+        </div>
+
         <!-- Per-Product Permissions -->
         <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && products.length">
             <n-h5>
@@ -141,7 +194,7 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                            <n-checkbox v-for="f in componentScopedFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
                                     <permission-function-label :f="f" />
                                 </n-checkbox>
                         </n-checkbox-group>
@@ -191,7 +244,7 @@
                     <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
-                            <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
+                            <n-checkbox v-for="f in componentScopedFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
                                     <permission-function-label :f="f" />
                                 </n-checkbox>
                         </n-checkbox-group>
@@ -322,6 +375,7 @@ import { QuestionCircle20Regular } from '@vicons/fluent'
 import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import PermissionFunctionLabel from '@/components/PermissionFunctionLabel.vue'
+import { boardNameOf, boardScopeFunctions, isBoardFunction } from '@/utils/boardPermissions'
 
 interface ApprovalRole {
     id: string
@@ -373,6 +427,11 @@ interface Props {
     showAdminApprovals?: boolean
     /** when set, only these functions are offered anywhere in the editor (the owner's own functions) */
     allowedFunctions?: string[]
+    /**
+     * The org's boards ({ uuid, name }) for the Per-Board section. Left out, the editor reads them
+     * itself (agentBoardsOfOrg, which an org admin sees whole).
+     */
+    boards?: any[]
     modelValue: {
         orgPermission: OrgPermission
         scopedPermissions: ScopedPermission[]
@@ -424,6 +483,26 @@ const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
     (!props.showSbomProbing || f !== 'LIFECYCLE_UPDATE')
 ))
 
+// Products and components never carry the board functions: a grant there means nothing to a board.
+// A perspective does -- it covers the boards hanging off it -- so it keeps the list above.
+const componentScopedFunctions = computed(() => scopedPermissionFunctions.value.filter(f => !isBoardFunction(f)))
+
+// A board card offers the board functions and the configuration pair a board file needs.
+const boardFunctions = computed(() => boardScopeFunctions(props.allowedFunctions))
+
+// The boards to grant on: the prop when given, else the org's boards read here.
+const loadedBoards = ref<any[]>([])
+const boardList = computed(() => props.boards ?? loadedBoards.value)
+watch(() => props.orgUuid, async (org: string) => {
+    if (props.boards || !org) return
+    try {
+        loadedBoards.value = await store.dispatch('fetchAgentBoardNamesOfOrg', org) ?? []
+    } catch {
+        // the picker is empty; a grant already there still shows, by uuid
+        loadedBoards.value = []
+    }
+}, { immediate: true })
+
 // Cluster / instance grants are DevOps-only. The visible function set tracks
 // the radio's permission type: READ_ONLY exposes (and pre-selects) DEVOPS_READ,
 // READ_WRITE exposes (and pre-selects) both. NONE hides the section.
@@ -438,6 +517,7 @@ const newProductId = ref<string | null>(null)
 const newComponentId = ref<string | null>(null)
 const newInstanceId = ref<string | null>(null)
 const newClusterId = ref<string | null>(null)
+const newBoardId = ref<string | null>(null)
 const orgFunctionPermissionTypes = ['ESSENTIAL_READ', 'READ_ONLY', 'READ_WRITE']
 const previousOrgPermissionType = ref<string>(orgPermission.value.type)
 
@@ -460,6 +540,17 @@ watch(() => props.modelValue, (val: Props['modelValue']) => {
 const scopedPerspectivePermissions = computed(() =>
     scopedPermissions.value.filter(sp => sp.scope === 'PERSPECTIVE')
 )
+
+const scopedBoardPermissions = computed(() =>
+    scopedPermissions.value.filter(sp => sp.scope === 'BOARD')
+)
+
+const availableBoardOptions = computed(() => {
+    const usedIds = new Set(scopedBoardPermissions.value.map(sp => sp.objectId))
+    return boardList.value
+        .filter((b: any) => !usedIds.has(b.uuid))
+        .map((b: any) => ({ label: b.name, value: b.uuid }))
+})
 
 const productIds = computed(() => new Set(props.products.map((p: any) => p.uuid)))
 
@@ -598,6 +689,9 @@ function addScopedPermission(scope: string) {
     } else if (scope === 'CLUSTER') {
         id = newClusterId.value
         source = props.clusters
+    } else if (scope === 'BOARD') {
+        id = newBoardId.value
+        source = boardList.value
     } else {
         id = newComponentId.value
         source = props.components
@@ -636,6 +730,8 @@ function addScopedPermission(scope: string) {
         newInstanceId.value = null
     } else if (scope === 'CLUSTER') {
         newClusterId.value = null
+    } else if (scope === 'BOARD') {
+        newBoardId.value = null
     } else {
         newComponentId.value = null
     }

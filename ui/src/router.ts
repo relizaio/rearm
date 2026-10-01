@@ -57,22 +57,37 @@ const routes : any[] = [
     {
         path: '/aiAgentsOfOrg/:orguuid',
         name: 'AiAgentsOfOrg',
-        component: () => import('@/components/AiAgentsOfOrg.vue')
+        component: () => import('@/components/AiAgentsOfOrg.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
     },
     {
         path: '/aiAgentsTableOfOrg/:orguuid',
         name: 'AiAgentsTableOfOrg',
-        component: () => import('@/components/AiAgentsTableOfOrg.vue')
+        component: () => import('@/components/AiAgentsTableOfOrg.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
     },
     {
         path: '/aiAgent/:uuid',
         name: 'AiAgentView',
-        component: () => import('@/components/AiAgentView.vue')
+        component: () => import('@/components/AiAgentView.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
     },
     {
         path: '/aiAgentSession/:uuid',
         name: 'AiAgentSessionView',
-        component: () => import('@/components/AiAgentSessionView.vue')
+        component: () => import('@/components/AiAgentSessionView.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
+    },
+    {
+        path: '/aiAgentTask/:uuid',
+        name: 'AiAgentTaskPage',
+        component: () => import('@/components/AiAgentTaskPage.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
     },
     {
         // AI Agent Policies list moved under Org Settings → Policies → inner
@@ -91,7 +106,9 @@ const routes : any[] = [
     {
         path: '/aiAgentPolicy/:uuid',
         name: 'AiAgentPolicyView',
-        component: () => import('@/components/AiAgentPolicyView.vue')
+        component: () => import('@/components/AiAgentPolicyView.vue'),
+        // Lights AI Agents in the side nav (RD2-19).
+        meta: { nav: 'aiAgents' }
     },
     {
         // Committers list moved under Org Settings → Committers tab. Redirect

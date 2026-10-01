@@ -1,0 +1,89 @@
+<template>
+    <div v-if="task.questionStack?.length" class="dsec">
+        <div class="dsec__h">Waiting on</div>
+        <div class="qstack">
+            <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
+                <span class="qstack__depth">{{ i + 1 }}</span>
+                <span v-if="frameKind(task, f) === 'reviewItems'" class="qstack__items">{{ reviewItemsFrameLabel(task, f, u => roleName(roles, u)) }}</span>
+                <span v-else>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}<template
+                    v-if="frameRound(f)"> · questions round {{ frameRound(f)?.round ?? '?' }}<template
+                    v-if="aboutLabel(frameRound(f))"> · {{ aboutLabel(frameRound(f)) }}</template></template></span>
+                <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">{{
+                    frameKind(task, f) === 'reviewItems' ? 'review items' : 'questions' }}</router-link>
+                <span class="qstack__time"><agent-time :at="f.askedAt"/></span>
+            </div>
+        </div>
+        <div v-if="!task.questionStack[task.questionStack.length - 1].answeringRole"
+             class="qstack__note">
+            The board found no role that produces what the newest question is about, so
+            it is with the coordinator to name one or escalate.
+        </div>
+
+        <!--
+            Answering is a round of the BOARD_QUESTIONS index, not a note: that is what the
+            asking agent reads as a pinned input when the task comes back to it. A
+            note would be prose it cannot pin, and the loop would ask again.
+        -->
+        <div v-if="answerable.length" class="qans">
+            <div class="dsec__h" style="margin-top: 4px">Answer</div>
+            <!-- A task the coordinator seat parked (RD4-17): answering the questions answers the seat's question too. -->
+            <div v-if="actingAnswers(task)" class="qstack__note" data-testid="acting-answers">
+                {{ actingAnswers(task) }}
+            </div>
+            <div v-for="f in answerable" :key="f.id" class="qans__row">
+                <div class="qans__id">
+                    <span class="qans__tag">{{ f.id }}</span>
+                    <span class="qans__title">{{ f.title }}</span>
+                </div>
+                <n-input v-model:value="answers[f.id]" size="small" type="textarea"
+                         :autosize="{ minRows: 1, maxRows: 4 }"
+                         :placeholder="`Answer to ${f.id}`"/>
+                <n-checkbox v-model:checked="withdrawn[f.id]" size="small">
+                    does not apply (say why above)
+                </n-checkbox>
+            </div>
+            <n-input v-model:value="answerAll" size="small" type="textarea"
+                     :autosize="{ minRows: 1, maxRows: 4 }"
+                     placeholder="Same answer to all of them"
+                     style="margin-top: 8px"/>
+            <n-space style="margin-top: 8px">
+                <n-button size="small" type="primary" :disabled="!canAnswer"
+                          @click="emit('answer', answerPayload)">
+                    {{ task.hold ? 'Answer and lift' : 'Answer' }}
+                </n-button>
+            </n-space>
+        </div>
+    </div>
+</template>
+
+<script lang="ts" setup>
+// The question stack the task is waiting on, and a person's answer to it.
+import AgentTime from '../AgentTime.vue'
+import { computed, ref } from 'vue'
+import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
+import { roleName } from '@/utils/agentTaskFormat'
+import { actingAnswers } from '@/utils/agentOperatorQuestion'
+import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
+import { aboutLabel, reviewItemsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
+
+const props = defineProps<{ task: any, roles?: any[] }>()
+const emit = defineEmits<{ (e: 'answer', p: AnswerPayload): void }>()
+
+const answers = ref<Record<string, string>>({})
+const withdrawn = ref<Record<string, boolean>>({})
+const answerAll = ref('')
+
+const answerable = computed(() => answerableQuestions(props.task))
+const rounds = computed(() => questionRounds(props.task, props.roles))
+function frameRound (f: any) {
+    return f?.questionsRelease ? rounds.value.find(r => r.release === f.questionsRelease) ?? null : null
+}
+const answerPayload = computed(() => answerPayloadOf(props.task, answerable.value, answers.value,
+    withdrawn.value, answerAll.value))
+const canAnswer = computed(() =>
+    answerPayload.value.answers.length > 0 || !!answerPayload.value.answerAll)
+</script>
+
+<style scoped lang="scss">
+@use './taskSections';
+</style>

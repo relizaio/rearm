@@ -30,6 +30,8 @@
                     </table>
                     <h5 style="margin-top: 16px;">Notes</h5>
                     <p>{{ notes || '—' }}</p>
+                    <h5 style="margin-top: 16px;">Device login</h5>
+                    <SessionLimitEditor :api-key="apiKey" :notify="notify" @saved="emit('saved')" />
                 </n-spin>
                 <n-space style="margin-top: 20px;"><n-button @click="emit('update:show', false)">Close</n-button></n-space>
             </div>
@@ -47,6 +49,7 @@
                         :components="orgComponents"
                         :instances="orgInstances"
                         :clusters="orgClusters"
+                        :boards="orgBoards"
                         :show-sbom-probing="true"
                     />
                 </n-spin>
@@ -77,6 +80,7 @@
                             :components="orgComponents"
                             :instances="orgInstances"
                             :clusters="orgClusters"
+                            :boards="orgBoards"
                             :show-sbom-probing="true"
                         />
                     </n-spin>
@@ -84,6 +88,9 @@
                         <n-button type="success" :disabled="loading" @click="savePermissions">Save Permissions</n-button>
                         <n-button @click="emit('update:show', false)">Cancel</n-button>
                     </n-space>
+                </n-tab-pane>
+                <n-tab-pane name="device-login" tab="Device Login">
+                    <SessionLimitEditor :api-key="apiKey" :notify="notify" @saved="emit('saved')" />
                 </n-tab-pane>
                 <n-tab-pane name="notes" tab="Notes">
                     <p style="color: #555; margin-top: 0;">Free-text notes for this key: what it is used for, where it lives, expiry.</p>
@@ -103,7 +110,8 @@
 /**
  * Permissions + notes editor for an RBAC key (FREEFORM or USER). Loads the org's perspectives,
  * components, products and instances itself, so it can be used from org settings and from the
- * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey.
+ * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey,
+ * and the device-login session limit through setApiKeySessionMaxMinutes (SessionLimitEditor).
  */
 import { NModal, NTabs, NTabPane, NSpace, NButton, NInput, NSpin, NAlert, NFormItem } from 'naive-ui'
 import { ref, computed, watch } from 'vue'
@@ -113,6 +121,8 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import ScopedPermissions from './ScopedPermissions.vue'
+import SessionLimitEditor from './SessionLimitEditor.vue'
+import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 
 const props = defineProps<{
     show: boolean
@@ -132,6 +142,11 @@ const editTab = ref('permissions')
 const loading = ref(false)
 const notes = ref('')
 const perspectives = ref<any[]>([])
+// The org's boards for the Per-Board section and for naming a BOARD grant (task 428b4a71).
+const orgBoards = ref<any[]>([])
+async function loadBoards () {
+    orgBoards.value = await store.dispatch('fetchAgentBoardNamesOfOrg', props.orgUuid) ?? []
+}
 const scoped = ref<{ orgPermission: any, scopedPermissions: any[] }>({ orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] })
 
 const approvalRoles = computed(() => store.getters.orgById(props.orgUuid)?.approvalRoles || [])
@@ -178,6 +193,7 @@ async function loadPerspectives () {
 }
 
 async function resolveScopedObjectName (scope: string, objectId: string): Promise<string> {
+    if (scope === 'BOARD') return boardNameOf(orgBoards.value, objectId) ?? objectId
     if (scope === 'PERSPECTIVE') {
         const p = perspectives.value.find((x: any) => x.uuid === objectId); return p ? p.name : objectId
     }
@@ -229,7 +245,7 @@ async function sendRequest () {
  * must not surface as an unhandled rejection from the watch that calls load().
  */
 async function loadOrgObjects () {
-    const loads: Promise<any>[] = [loadPerspectives(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
+    const loads: Promise<any>[] = [loadPerspectives(), loadBoards(), store.dispatch('fetchComponents', props.orgUuid), store.dispatch('fetchProducts', props.orgUuid)]
     if (store.getters.myuser?.installationType !== 'OSS') loads.push(store.dispatch('fetchInstances', props.orgUuid))
     const results = await Promise.allSettled(loads)
     for (const r of results) if (r.status === 'rejected') console.warn('permissions editor: an org object list is unavailable to this user', r.reason?.message || r.reason)
@@ -255,7 +271,9 @@ async function load () {
         for (const up of (props.apiKey.permissions?.permissions || [])) {
             if (up.scope === 'ORGANIZATION' && up.org === props.orgUuid) {
                 orgPerm = { type: up.type, functions: up.functions || [], approvals: up.approvals || [] }
-            } else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'INSTANCE') && up.org === props.orgUuid) {
+            } else if (editorKeepsScope(up.scope) && up.org === props.orgUuid) {
+                // Every object scope the editor shows, BOARD among them: a save replaces the whole set,
+                // so a grant left out here would be dropped by it.
                 scopedPerms.push({ scope: up.scope, objectId: up.object, objectName: await resolveScopedObjectName(up.scope, up.object), type: up.type, functions: up.functions || [], approvals: up.approvals || [] })
             }
         }

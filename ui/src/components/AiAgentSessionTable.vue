@@ -9,14 +9,16 @@
 <script setup lang="ts">
 import { h, computed } from 'vue'
 import { NDataTable, NTag, DataTableColumns } from 'naive-ui'
+import AgentTime from './AgentTime.vue'
 
 const props = defineProps<{
     rows: any[]
     onOpen: (uuid: string) => void
 }>()
 
-function fmt (s: string | null | undefined): string {
-    return s ? new Date(s).toLocaleString('en-CA') : '—'
+/** A time in the board surfaces' one format, the full timestamp on hover (RD2-23). */
+function fmt (s: string | null | undefined) {
+    return h(AgentTime, { at: s })
 }
 
 const columns = computed<DataTableColumns<any>>(() => [

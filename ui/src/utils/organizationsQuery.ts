@@ -17,6 +17,8 @@ import gql from 'graphql-tag'
  */
 const ORGANIZATIONS_CORE_SETTINGS = `
                                     justificationMandatory
+                                    reviewItemPriorityLevels
+                                    agentSessionIdleCloseHours
                                     branchSuffixMode
                                     vexComplianceFramework
                                     sidPurlMode

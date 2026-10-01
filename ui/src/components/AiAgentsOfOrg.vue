@@ -15,6 +15,8 @@
 
         <n-spin v-if="loading" size="small"/>
 
+        <n-tabs type="line" animated :value="activeTab" @update:value="setActiveTab">
+        <n-tab-pane name="agents" tab="Agents">
         <n-space vertical :size="20">
             <!-- KPI row (cross-cutting dashboard metrics) -->
             <div class="kpis" v-if="kpis">
@@ -151,6 +153,11 @@
                 />
             </div>
         </n-space>
+        </n-tab-pane>
+        <n-tab-pane name="boards" tab="Task boards">
+            <AiAgentBoardsPanel :org-uuid="orgUuid" />
+        </n-tab-pane>
+        </n-tabs>
 
         <n-modal v-model:show="showEditName" preset="card" title="Edit agent display name" style="width: 480px;">
             <n-input v-model:value="nameDraft" placeholder="Display name (blank = use registration name)"
@@ -173,9 +180,10 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
+import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
+import AiAgentBoardsPanel from '@/components/AiAgentBoardsPanel.vue'
 
 const store = useStore()
 const route = useRoute()
@@ -222,6 +230,17 @@ async function saveName () {
         savingName.value = false
     }
 }
+// Top-level tab lives in the query string so "AI Agents > Task
+// boards" is linkable; the boards panel adds ?board= and ?view=.
+const activeTab = ref<string>(route.query.tab === 'boards' ? 'boards' : 'agents')
+
+function setActiveTab (v: string) {
+    activeTab.value = v
+    const q: Record<string, string> = { ...(route.query as Record<string, string>), tab: v }
+    if (v !== 'boards') { delete q.board; delete q.view }
+    router.replace({ query: q }).catch(() => { /* duplicate navigation is fine */ })
+}
+
 const loading = ref<boolean>(false)
 const kpis = ref<any>(null)
 const agents = ref<any[]>([])

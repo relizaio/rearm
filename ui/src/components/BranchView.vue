@@ -249,7 +249,18 @@
                     </n-icon>
                 </p>
                 <div v-if="modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
-                    <n-data-table :data="modifiedBranch.effectiveDependencies" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
+                    <n-data-table :data="dependencyGroups.software" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
+                    <!-- A board's document components, which a target's base branch carries from before the board
+                         owned them (task 36d0549e): collapsed at the end, each linking to its component page. -->
+                    <n-collapse v-if="dependencyGroups.documents.length" class="documentDependencies">
+                        <n-collapse-item :title="`Documents (${dependencyGroups.documents.length})`" name="documents">
+                            <div v-for="d in dependencyGroups.documents" :key="d.component?.uuid" class="documentDependency">
+                                <router-link :to="{ name: 'ComponentsOfOrg', params: { orguuid: branchData.org, compuuid: d.component?.uuid } }">
+                                    {{ d.component?.name }}
+                                </router-link>
+                            </div>
+                        </n-collapse-item>
+                    </n-collapse>
                 </div>
                 <div v-else class="empty-state">
                     <p style="text-align: center; padding: 40px; color: #999;">
@@ -423,7 +434,7 @@ export default {
 import { ComputedRef, computed, Ref, reactive, ref, h, watch, nextTick } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { NAlert, NButton, NCheckbox, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NCollapse, NCollapseItem, NForm, NFormItem, NInput, NModal, NPagination, NPopover, NSelect, NotificationType, useNotification, SelectOption, NDataTable, NIcon, NSpace, NSpin, NTag, NTooltip, DataTableColumns, NSelect as NSelectComponent, NDropdown} from 'naive-ui'
 import AddComponent from './AddComponent.vue'
 import CreateRelease from './CreateRelease.vue'
 import ReleaseView from './ReleaseView.vue'
@@ -441,6 +452,7 @@ import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
 import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
 import Swal from 'sweetalert2'
+import { splitDocumentDependencies } from '@/utils/agentDocumentsView'
 import { SwalData } from '@/utils/commonFunctions'
 
 async function loadEnvironmentTypes (org: string) {
@@ -517,6 +529,8 @@ const marketingVersionEnabled: ComputedRef<boolean> = computed((): any => {
     return branchData.value.componentDetails.versionType === 'MARKETING'
 })
 const modifiedBranch: Ref<any> = ref({})
+// Software in the dependency table; a board's document components in a collapsed group after it.
+const dependencyGroups = computed(() => splitDocumentDependencies(modifiedBranch.value?.effectiveDependencies))
 const originalBranch: Ref<any> = ref({})
 const customBranchVersionSchema = ref('')
 

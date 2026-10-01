@@ -48,7 +48,12 @@
                 </n-form-item>
                 <n-form-item label="Guarded action" required>
                     <n-select v-model:value="draft.action" :options="actionOptions"/>
-                    <template #feedback>
+                    <template v-if="draft.action === 'RELEASE_APPROVAL'" #feedback>
+                        Checked on every approval, from a person in the UI or a key through the API, before
+                        anything is recorded. <code>action.approvals</code> lists the entries being set;
+                        <code>action.actor.kind</code> says whether a person, a key or the system is acting.
+                    </template>
+                    <template v-else #feedback>
                         <strong>Every</strong> forward lifecycle move up to Shipped is checked — Draft to
                         Assembled, Assembled to Ready to Ship, Ready to Ship to Shipped — not just the
                         last one. In Block mode any of those moves is refused while the condition is
@@ -108,6 +113,8 @@
                         <div>
                             <div class="sample-label">
                                 {{ s.label }}
+                                <n-tag v-if="s.action !== 'RELEASE_PROMOTION'" size="tiny" :bordered="false" type="info"
+                                       style="margin-left: 4px">{{ guardedActionLabel(s.action) }}</n-tag>
                                 <n-tooltip trigger="hover" style="max-width: 460px;">
                                     <template #trigger>
                                         <n-icon size="14" style="cursor: help; margin-left: 4px; vertical-align: middle;"><QuestionMark/></n-icon>
@@ -130,10 +137,11 @@
 
 <script setup lang="ts">
 import { computed, h, onMounted, reactive, ref } from 'vue'
+import { GUARD_SAMPLES, GUARD_VARIABLE_DOCS, GUARDED_ACTION_OPTIONS, GuardSample, guardedActionLabel } from '@/utils/actionGuardActions'
 import { useStore } from 'vuex'
 import {
     NAlert, NButton, NDataTable, NForm, NFormItem, NIcon, NInput, NModal, NPopconfirm, NRadio,
-    NRadioGroup, NSelect, NSpace, NTooltip, useNotification
+    NRadioGroup, NSelect, NSpace, NTag, NTooltip, useNotification
 } from 'naive-ui'
 import { CirclePlus, QuestionMark, Edit as EditIcon, Trash } from '@vicons/tabler'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
@@ -188,20 +196,8 @@ const headings = computed(() => {
     }
 })
 
-const actionOptions = [
-    { label: 'Release promotion — moving a release forward through its lifecycle', value: 'RELEASE_PROMOTION' }
-]
-
-// action.* exists only where a guard is being written, so it is passed in rather
-// than living in the shared variable list the release rules also use.
-const guardVariableDocs = [
-    {
-        name: 'action.targetLifecycle',
-        snippet: 'action.targetLifecycle == "READY_TO_SHIP"',
-        display: 'action.targetLifecycle',
-        desc: 'string — the lifecycle being moved to. release.lifecycle is still the one being left, which is what lets a guard govern one transition and leave the rest alone.'
-    }
-]
+const actionOptions = GUARDED_ACTION_OPTIONS
+const guardVariableDocs = GUARD_VARIABLE_DOCS
 
 // Ranks shown in the help tooltip, using the lifecycle names the rest of the UI uses. Kept next
 // to the samples because every sample that says ">= n" is really saying "at least this lifecycle".
@@ -214,70 +210,7 @@ const maturityRanks = [
     { value: -1, lifecycles: 'Rejected, Cancelled' }
 ]
 
-const samples = [
-    {
-        label: 'Every dependency has reached Ready to Ship',
-        cel: 'release.dependencies.all(d, d.maturity >= 3)',
-        help: 'Refuses every forward move — including Draft to Assembled — while any dependency is'
-            + ' still at Pending, Draft or Assembled (or Rejected/Cancelled). A dependency that has'
-            + ' moved on to Shipped still satisfies it, because the rank asks for "at least Ready to'
-            + ' Ship". A release with no dependencies passes: all() over an empty list is true.'
-    },
-    {
-        label: 'Documents held to a higher standard than code',
-        cel: 'release.dependencies.all(d, d.specification == "TEST_PLAN" ? d.maturity >= 3 : d.maturity >= 2)',
-        help: 'Dependencies whose component carries the TEST_PLAN specification identifier must have'
-            + ' reached Ready to Ship; everything else only has to be Assembled. The rule a single'
-            + ' setting cannot express.'
-    },
-    {
-        label: 'Only the move to Shipped is governed',
-        cel: 'action.targetLifecycle != "GENERAL_AVAILABILITY" || release.dependencies.all(d, d.maturity >= 3)',
-        help: 'Moves to Assembled and to Ready to Ship are allowed whatever the dependencies are'
-            + ' doing; the condition only applies when the promotion target is Shipped. This is how'
-            + ' you narrow a guard to one transition instead of all of them.'
-    },
-    {
-        label: 'Every dependency has Shipped and is still supported',
-        cel: 'release.dependencies.all(d, d.maturity >= 4 && d.supported)',
-        help: 'Rank 4 is Shipped or later. supported is false at End of Support, End of Life,'
-            + ' Rejected and Cancelled, so a dependency that shipped and was later withdrawn fails'
-            + ' this — which the rank alone cannot express, since End of Life still ranks 4.'
-    },
-    {
-        label: 'Every dependency is at least Assembled',
-        cel: 'release.dependencies.all(d, d.maturity >= 2)',
-        help: 'Nothing still at Pending or Draft underneath this release. The loosest useful bar,'
-            + ' and a reasonable first rule to adopt in Warn mode.'
-    },
-    {
-        label: 'Third-party dependencies are exempt',
-        cel: 'release.dependencies.all(d, d.external || d.maturity >= 3)',
-        help: 'external is true for releases held against the external-components org. They are not'
-            + ' yours to promote, so holding your release to their lifecycle would be a rule nobody'
-            + ' in your organization can satisfy.'
-    },
-    {
-        label: 'A software requirements specification exists and has reached Ready to Ship',
-        cel: 'release.dependencies.exists(d, d.specification == "SRS" && d.maturity >= 3)',
-        help: 'exists(), not all(): this one demands that such a dependency is actually there, so a'
-            + ' release with no dependencies at all is refused rather than passing vacuously.'
-    },
-    {
-        label: 'A test plan is at exactly Ready to Ship — not still in Draft, not already Shipped',
-        cel: 'release.dependencies.all(d, d.specification != "TEST_PLAN" || d.lifecycle == "READY_TO_SHIP")',
-        help: 'Lifecycle equality rather than a rank, for the case where one exact state is the rule.'
-            + ' A test plan that has moved on to Shipped fails this, which is the point — but it is'
-            + ' also why a rank is the better default for most rules.'
-    },
-    {
-        label: 'Nothing promotes with an open critical or known-exploited finding',
-        cel: 'release.criticalVulns == 0 && release.kevCount == 0',
-        help: 'About this release rather than its dependencies. Findings come from scans, so at'
-            + ' creation time — before anything has been scanned — the counts are 0 and this passes'
-            + ' vacuously; it bites on the promotions that follow.'
-    }
-]
+const samples = GUARD_SAMPLES
 
 const guardExampleDocs = samples.map(s => s.cel)
 
@@ -290,7 +223,12 @@ const modeLabel = (m: string) => {
     return 'Off'
 }
 
-const applySample = (s: { cel: string }) => { draft.cel = s.cel }
+// The sample's action with its expression: used under the other action it would read keys that
+// action is not given and refuse every call.
+const applySample = (s: GuardSample) => {
+    draft.action = s.action
+    draft.cel = s.cel
+}
 
 const resetDraft = () => {
     draft.name = ''
@@ -379,7 +317,7 @@ const persist = async (next: any[], successMsg: string) => {
 const columns = computed(() => {
     const cols: any[] = [
         { title: 'Name', key: 'name' },
-        { title: 'Action', key: 'action', width: 180, render: (row: any) => row.action === 'RELEASE_PROMOTION' ? 'Release promotion' : row.action },
+        { title: 'Action', key: 'action', width: 180, render: (row: any) => guardedActionLabel(row.action) },
         {
             title: 'Mode',
             key: 'mode',

@@ -4,6 +4,7 @@ import gql from 'graphql-tag'
 import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
+import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
 import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
@@ -13,6 +14,190 @@ import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
 const VIEW_STORAGE_KEY = 'relizaView'
 
+// The board and task selections, shared by the list reads and the single reads so the task page
+// and the board panel see the same shape. validate:graphql expands these where they are
+// interpolated.
+const AGENT_BOARD_SELECTION = `
+    coordinatorCapabilities
+    effectiveDocumentPaths
+    uuid
+    name
+    description
+    status
+    sources
+    documentsRepo { uuid uri }
+    documentPaths
+    documentsRoot
+    documents { prefix shared root }
+    perspectives
+    perspectiveNames
+    myPermissions
+    taskPrefix
+    taskPrefixHistory
+    coordinatorPrompt
+    missingCapabilities
+    events { kind message actor { kind uuid name } eventAt }
+    pause { level reason pausedBy { kind uuid name } pausedAt }
+    coordinatorSeat { session agent claimedAt }
+    perAgentWipLimit
+    priorityType
+    target
+    targetDetails { uuid name type }
+    defaultWorkLevel
+    defaultInputResolution
+    blockingPriority
+    completionPriority
+    budgetMicros
+    softAlertPercent
+    cycleCap
+    noProgressRepeatsToStop
+    humanQueueAgeMinutes
+    coordinatorStopLift
+    deliveryPolicy { mode awaitDeclaration merge { by method atTestedHead requireDeclaration order } }
+    effectiveDeliveryPolicy { merge { by method atTestedHead requireDeclaration order } }
+    effectiveDeliveryPolicy { mode awaitDeclaration }
+    effectiveCoordinatorStopLift
+    eventRetentionDays
+    staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes investigationOverdueMinutes }
+    ladder { levels { number name description } prompt }
+    createdDate
+    declarative { specHash appliedAt source { repo path commit } }
+    groups { uuid key name description order dependsOn defaultWorkLevel status createdAt
+        progress { total done open complete } spentMicros }
+`
+
+const AGENT_TASK_SELECTION = `
+    uuid
+    key
+    number
+    board
+    org
+    kind
+    investigation { commissionedBy { role roleUuid session task by { kind uuid name } } deliverable role roleUuid
+        review reviewUuid deadline returnTo report completedAt }
+    reportsReturned { investigation investigationKey report session role at reoffered cancelled note }
+    externalRef
+    title
+    description
+    sourceUrl
+    status
+    role
+    orderIndex
+    dependsOn
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo linked { prUrl by at } }
+    requireHumanReview
+    assignment { session agent role assignedAt promptVersion }
+    signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
+    documents {
+        uuid
+        version
+        lifecycle
+        component
+        createdDate
+        sourceCodeEntryDetails { commit commitMessage vcsRepository { uri name } }
+        document {
+            specification
+            path
+            digest
+            mediaType
+            indexPath
+            task
+            session
+            round
+            advisory
+            publishedByRole
+            supersededBy
+            elements {
+                grammarVersion
+                digest
+                elements { id family title parent level traces { verb target } assumes speculative contentDigest line }
+                warnings { code elementId message }
+            }
+            elementChecks {
+                catalogueVersion
+                digest
+                scope { checked releases { release specification elementsDigest lifecycle } }
+                results { check result blocking reason offences { elementId release message } }
+            }
+            reviewItems {
+                kind
+                round
+                verdict
+                counts { passed failed skipped }
+                reviewItems {
+                    id
+                    priority
+                    status
+                    title
+                    location { path line ref element }
+                    resolvedBy
+                    resolution
+                    decidedBy { kind uuid name }
+                    decidedIn
+                    decidedAt
+                    correction
+                }
+                about { specification release }
+            }
+        }
+    }
+    openReviewItems {
+        id
+        priority
+        status
+        title
+        location { path line ref element }
+        resolvedBy
+        resolution
+        decidedBy { kind uuid name }
+        decidedAt
+        correction
+    }
+    openQuestions {
+        id
+        priority
+        status
+        title
+        location { path line ref element }
+        resolvedBy
+        resolution
+    }
+    parentTask
+    childTasks
+    sessions
+    registeredBySession
+    statusHistory { from to at trigger actor { kind uuid name } note linked { prUrl by at } }
+    orderSetBy { kind uuid name }
+    orderSetAt
+    requiredRolesSkipped
+    reopenedAt
+    reopenCount
+    reopens { role at reason by { kind uuid name } }
+    pullRequests { url state targetBranch mergedDate registered baseMovedBy
+        declaration { unit commit outcome by { kind uuid name } at note supersededBy } }
+    deliveries { unit commit outcome by { kind uuid name } at note supersededBy }
+    budgetMicros
+    budgetSetBy { kind uuid name }
+    budgetSetAt
+    workLevel
+    effectiveWorkLevel
+    workLevelSetBy { kind uuid name }
+    workLevelSetAt
+    group { uuid key name }
+    tags { key value }
+    waitingOnGroups
+    coordinatorEstimateMicros
+    spentMicros
+    requiredStrength
+    strengthSetBy { kind uuid name }
+    strengthSetAt
+    questionStack { askingRole askingSession askingAgent questionsRelease answeringRole askedAt }
+    prUrls
+    createdDate
+    completedAt
+`
 
 const storeObject : any = {
     state () {
@@ -638,7 +823,9 @@ const storeObject : any = {
             const perspectiveUuid = context.state.iam.perspectiveUuid
             const variables: any = { 
                 orgUuid: orgid,
-                componentType: 'COMPONENT'
+                componentType: 'COMPONENT',
+                // Software only: a board's BOARD_DOCUMENT components are shown inside their board (task 36d0549e).
+                kinds: SOFTWARE_KINDS
             }
             
             // Add perspective parameter if non-default perspective is selected
@@ -648,8 +835,8 @@ const storeObject : any = {
             
             const response = await graphqlClient.query({
                 query: gql`
-                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
-                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
+                    query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID, $kinds: [ComponentKind]) {
+                        components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective, kinds: $kinds) {
                             ${graphqlQueries.ComponentShortData}
                         }
                     }`,
@@ -2509,6 +2696,878 @@ const storeObject : any = {
             })
             return response.data.agent
         },
+        /** The org's boards by uuid and name, for the permission editors' board picker (task 428b4a71). */
+        async fetchAgentBoardNamesOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardNamesOfOrg($orgUuid: ID!) {
+                        agentBoardsOfOrg(orgUuid: $orgUuid) { uuid name }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardsOfOrg ?? []
+        },
+        async fetchAgentBoardsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardsOfOrg($orgUuid: ID!) {
+                        agentBoardsOfOrg(orgUuid: $orgUuid) {
+                            ${AGENT_BOARD_SELECTION}
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardsOfOrg
+        },
+        async fetchAgentBoardSpec (context: any, boardUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardSpec($boardUuid: ID!) {
+                        agentBoardSpec(boardUuid: $boardUuid) {
+                            kind
+                            version
+                            name
+                            description
+                            target
+                            defaultWorkLevel
+                            defaultInputResolution
+                            priorityType
+                            perAgentWipLimit
+                            sources
+                            documentsRepo
+                            documentPaths
+                            coordinatorPrompt
+                            coordinatorCapabilities
+                            roles {
+                                name
+                                prompt
+                                orderIndex
+                                wipLimit
+                                requireDistinctAgent
+                                blindReview
+                                active
+                                kind
+                                necessity
+                                humanGate
+                                requiredCapabilities
+                                requiredInputs {
+                                    kind
+                                    specification
+                                    scope
+                                    component
+                                    minLifecycle
+                                    resolution
+                                }
+                                producesOutputs {
+                                    specification
+                                    scope
+                                    required
+                                }
+                                commissions { roles intake defaultBudgetMicros review }
+                            }
+                        }
+                    }`,
+                variables: { boardUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardSpec
+        },
+        async createAgentBoard (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardCreate($orgUuid: ID!, $input: AgentBoardInput!) {
+                        agentBoardCreate(orgUuid: $orgUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardCreate
+        },
+        async updateAgentBoard (context: any, payload: { boardUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardUpdate($boardUuid: ID!, $input: AgentBoardInput!) {
+                        agentBoardUpdate(boardUuid: $boardUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardUpdate
+        },
+        async setAgentBoardOperatorPause (context: any, payload: { boardUuid: string, pause: boolean, reason?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardOperatorPause($boardUuid: ID!, $pause: Boolean!, $reason: String) {
+                        agentBoardOperatorPause(boardUuid: $boardUuid, pause: $pause, reason: $reason) {
+                            uuid
+                            pause { level reason }
+                        }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, pause: payload.pause, reason: payload.reason ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardOperatorPause
+        },
+        async forceCloseAgentSession (context: any, payload: { sessionUuid: string, reason?: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentSessionForceClose($sessionUuid: ID!, $reason: String) {
+                        agentSessionForceClose(sessionUuid: $sessionUuid, reason: $reason) { uuid status closedAt closeReason }
+                    }`,
+                variables: { sessionUuid: payload.sessionUuid, reason: payload.reason ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentSessionForceClose
+        },
+        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
+                        agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
+                            ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
+                        }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTasksOfBoard
+        },
+        /** The element check catalogue (elements.md §7): what each check means, for the report view. */
+        async fetchElementCheckCatalogue () {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query elementCheckCatalogue { elementCheckCatalogue { name description skipsWhen } }`,
+            })
+            return response.data.elementCheckCatalogue ?? []
+        },
+        /** Re-run a document's element checks in its current scope; the report's release comes back. */
+        async runAgentElementChecks (context: any, releaseUuid: string) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentElementCheckRun($releaseUuid: ID!) {
+                        agentElementCheckRun(releaseUuid: $releaseUuid) {
+                            uuid
+                            lifecycle
+                            document {
+                                specification
+                                round
+                                elementChecks {
+                                    catalogueVersion
+                                    digest
+                                    scope { checked releases { release specification elementsDigest lifecycle } }
+                                    results { check result blocking reason offences { elementId release message } }
+                                }
+                            }
+                        }
+                    }`,
+                variables: { releaseUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentElementCheckRun
+        },
+        async fetchAgentTask (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTask($uuid: ID!) {
+                        agentTask(uuid: $uuid) {
+                            ${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask
+        },
+        /**
+         * The task a document round belongs to, for its release page (RD2-24): its key and board, and the
+         * newest element check report of each of its documents -- the round's own among them. Null when the person
+         * may not read the task.
+         */
+        async fetchDocumentRoundTask (context: any, taskUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query documentRoundTask($ts: [ID!]!) {
+                        agentTasksByUuid(taskUuids: $ts) {
+                            uuid key board
+                            elementChecks { scope { checked } results { check result blocking } }
+                        }
+                    }`,
+                variables: { ts: [taskUuid] },
+                fetchPolicy: 'no-cache'
+            })
+            return (response.data.agentTasksByUuid ?? [])[0] ?? null
+        },
+        /**
+         * A document component's rounds (task 36d0549e): the releases of its base branch with what each
+         * round is, and the keys of their tasks -- best-effort, since reading a task needs its board.
+         */
+        async fetchDocumentRounds (context: any, branchUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query documentRounds($branch: ID!) {
+                        releases(branchFilter: $branch) {
+                            uuid version lifecycle createdDate
+                            document { specification round path task }
+                        }
+                    }`,
+                variables: { branch: branchUuid },
+                fetchPolicy: 'no-cache'
+            })
+            const releases = response.data.releases ?? []
+            const taskUuids = [...new Set(releases.map((r: any) => r.document?.task).filter(Boolean))]
+            const taskKeys: Record<string, string> = {}
+            if (taskUuids.length) {
+                try {
+                    const t = await graphqlClient.query({
+                        query: gql`
+                            query documentRoundTasks($ts: [ID!]!) {
+                                agentTasksByUuid(taskUuids: $ts) { uuid key }
+                            }`,
+                        variables: { ts: taskUuids.slice(0, 100) },
+                        fetchPolicy: 'no-cache'
+                    })
+                    for (const task of t.data.agentTasksByUuid ?? []) if (task.key) taskKeys[task.uuid] = task.key
+                } catch {
+                    // without the board's read, a round names its task by uuid
+                }
+            }
+            return { releases, taskKeys }
+        },
+        /** What no key can do on a board (task 5c70990d); read for the selected board only. */
+        async fetchAgentBoardCoverage (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardCoverage($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            missingCoverage { function message }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.missingCoverage ?? []
+        },
+        /** What a board has produced, per document series (task 36d0549e): its own read, off the board list. */
+        async fetchAgentBoardDocumentSeries (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardDocumentSeries($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            documentSeries {
+                                specification
+                                component { uuid name }
+                                latestRound { round version lifecycle path task release }
+                                roundsCount
+                                openReviewItems
+                                elementCheckVerdict
+                                elementCheckCounts { pass fail skip blockingFailed }
+                            }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.documentSeries ?? []
+        },
+        async fetchAgentBoard (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoard($uuid: ID!) {
+                        agentBoard(uuid: $uuid) {
+                            ${AGENT_BOARD_SELECTION}
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard
+        },
+        /**
+         * What only the server knows about an element of a task (elements.md §8): what depends on it
+         * across the board, and which rounds changed it. One task, through agentTask (rearm-saas#607),
+         * which the task page already reads by; boardUuid and status are no longer needed.
+         */
+        async fetchAgentTaskElementView (context: any, payload: { boardUuid?: string, taskUuid: string, status?: string, element: string, depth?: number }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskElementView($taskUuid: ID!, $element: String!, $depth: Int) {
+                        agentTask(uuid: $taskUuid) {
+                            uuid
+                            dependentsOf(element: $element, depth: $depth) {
+                                element found count truncated
+                                dependents {
+                                    distance
+                                    via { from to kind }
+                                    element { id family title release specification line }
+                                }
+                            }
+                            elementHistory(element: $element) { release round specification contentDigest line changed }
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, element: payload.element, depth: payload.depth },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask ?? null
+        },
+        async fetchAgentTaskRoleConfigsOfBoard (context: any, boardUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRoleConfigsOfBoard($boardUuid: ID!) {
+                        agentTaskRoleConfigsOfBoard(boardUuid: $boardUuid) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            wipLimit
+                            requireDistinctAgent
+                            blindReview
+                            active
+                            requiredCapabilities
+                            kind
+                            necessity
+                            humanGate
+                            producesOutputs { specification scope required }
+                            commissions { roles intake defaultBudgetMicros review }
+                            requiredStrength
+                            strengthHeadroom
+                            strengthCategory
+                            hopBudgetMicros
+                            modelStrengths { model strength }
+                        }
+                    }`,
+                variables: { boardUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigsOfBoard
+        },
+        /**
+         * Earlier revisions of a task, board or role config, newest first (22ddc644; org admin).
+         * The selections keep to what a snapshot holds: computed fields such as a task's documents
+         * or usage would be read against today's data, not the revision's.
+         */
+        async fetchAgentRevisions (context: any, payload: { kind: 'task' | 'board' | 'role', uuid: string, limit?: number, offset?: number }) {
+            const queries = {
+                task: gql`
+                    query agentTaskHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentTaskHistory(taskUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            task {
+                                uuid
+                                title
+                                status
+                                role
+                                orderIndex
+                                dependsOn
+                                hold { level kind gateRole reason heldBy { kind uuid name } heldAt }
+                                requireHumanReview
+                                assignment { session agent role assignedAt promptVersion }
+                                signOffs { role agent session signedOffAt outcome note }
+                                returns { role session reason description returnedAt }
+                                statusHistory { from to at trigger actor { kind uuid name } note }
+                                orderSetBy { kind uuid name }
+                                orderSetAt
+                                budgetMicros
+                                coordinatorEstimateMicros
+                                spentMicros
+                                requiredStrength
+                                strengthSetBy { kind uuid name }
+                                prUrls
+                                reopenCount
+                                completedAt
+                            }
+                        }
+                    }`,
+                board: gql`
+                    query agentBoardHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentBoardHistory(boardUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            board {
+                                uuid
+                                name
+                                description
+                                status
+                                sources
+                                documentPaths
+                                coordinatorPrompt
+                                coordinatorCapabilities
+                                pause { level reason pausedBy { kind uuid name } pausedAt }
+                                perAgentWipLimit
+                                budgetMicros
+                                softAlertPercent
+                                cycleCap
+                                noProgressRepeatsToStop
+                                blockingPriority
+                                completionPriority
+                                priorityType
+                                target
+                                defaultWorkLevel
+                                defaultInputResolution
+                                declarative { specHash appliedAt source { repo path commit } }
+                            }
+                        }
+                    }`,
+                role: gql`
+                    query agentRoleConfigHistory($uuid: ID!, $limit: Int, $offset: Int) {
+                        agentRoleConfigHistory(roleConfigUuid: $uuid, limit: $limit, offset: $offset) {
+                            revision
+                            at
+                            roleConfig {
+                                uuid
+                                name
+                                prompt
+                                orderIndex
+                                wipLimit
+                                requireDistinctAgent
+                                blindReview
+                                active
+                                requiredCapabilities
+                                kind
+                                necessity
+                                humanGate
+                                hopBudgetMicros
+                                requiredStrength
+                                strengthHeadroom
+                                strengthCategory
+                                producesOutputs { specification scope required }
+                                requiredInputs { kind specification scope component minLifecycle resolution }
+                            }
+                        }
+                    }`,
+            }
+            const field = { task: 'agentTaskHistory', board: 'agentBoardHistory', role: 'agentRoleConfigHistory' }[payload.kind]
+            const response = await graphqlClient.query({
+                query: queries[payload.kind],
+                variables: { uuid: payload.uuid, limit: payload.limit ?? 20, offset: payload.offset ?? 0 },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data[field] ?? []
+        },
+        async fetchAgentTaskRolePresetsOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskRolePresetsOfOrg($orgUuid: ID!) {
+                        agentTaskRolePresetsOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            name
+                            prompt
+                            orderIndex
+                            wipLimit
+                            requireDistinctAgent
+                            blindReview
+                            active
+                            requiredCapabilities
+                            kind
+                            necessity
+                            humanGate
+                            commissions { roles intake defaultBudgetMicros review }
+                            requiredStrength
+                            strengthHeadroom
+                            strengthCategory
+                            hopBudgetMicros
+                            modelStrengths { model strength }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetsOfOrg
+        },
+        async setAgentTaskRolePreset (context: any, payload: { orgUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRolePresetSet($orgUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRolePresetSet(orgUuid: $orgUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRolePresetSet
+        },
+        async agentTaskHumanReview (context: any, payload: { taskUuid: string, accept: boolean, note?: string,
+            reviewItems?: any[], about?: { specification: string, release?: string } | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskHumanReview($taskUuid: ID!, $accept: Boolean!, $note: String, $reviewItems: [BoardReviewItemDecisionInput!], $about: BoardReviewItemsAboutInput) {
+                        agentTaskHumanReview(taskUuid: $taskUuid, accept: $accept, note: $note, reviewItems: $reviewItems, about: $about) { uuid status role }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    accept: payload.accept,
+                    note: payload.note ?? null,
+                    reviewItems: payload.reviewItems?.length ? payload.reviewItems : null,
+                    about: payload.about ?? null
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskHumanReview
+        },
+        // Declarative boards: apply a board or presets file (declarative-boards brief §6). The spec is
+        // sent as parsed -- a null clears a field, an absent one leaves it -- so it is never reshaped.
+        async agentBoardApplySpec (context: any, payload: { orgUuid: string, spec: any, dryRun: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardApplySpec($orgUuid: ID!, $spec: BoardSpecInput!, $dryRun: Boolean) {
+                        agentBoardApplySpec(orgUuid: $orgUuid, spec: $spec, dryRun: $dryRun) {
+                            kind dryRun specHash created updated unchanged archived errors
+                            changes { kind name action fields message warnings }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardApplySpec
+        },
+        async agentRolePresetsApplySpec (context: any, payload: { orgUuid: string, spec: any, dryRun: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentRolePresetsApplySpec($orgUuid: ID!, $spec: RolePresetsSpecInput!, $dryRun: Boolean) {
+                        agentRolePresetsApplySpec(orgUuid: $orgUuid, spec: $spec, dryRun: $dryRun) {
+                            kind dryRun specHash created updated unchanged archived errors
+                            changes { kind name action fields message warnings }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentRolePresetsApplySpec
+        },
+        // Operator actions: people run a board without a coordinator (operator-actions brief §2).
+        async agentTaskRegister (context: any, payload: { boardUuid: string, input: { title: string,
+            description?: string | null, externalRef?: string | null, sourceUrl?: string | null,
+            group?: string | null, tags?: { key: string }[] | null, workLevel?: number | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRegister($boardUuid: ID!, $input: AgentTaskUserRegisterInput!) {
+                        agentTaskRegister(boardUuid: $boardUuid, input: $input) { uuid status }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRegister
+        },
+        /**
+         * A person commissions an investigation (task RD4-12): a new INVESTIGATION task for a role that produces
+         * BOARD_INVESTIGATION_REPORT, from a task (its report comes back pinned there) or from none.
+         */
+        async agentTaskCommission (context: any, payload: { input: { boardUuid: string, role: string, title: string,
+            brief?: string | null, fromTask?: string | null, budgetMicros?: number | null, deadline?: string | null,
+            review?: string | null, returnTo?: string | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskCommission($input: AgentTaskCommissionInput!) {
+                        agentTaskCommission(input: $input) { uuid key status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskCommission
+        },
+        async agentTaskAuthorize (context: any, payload: { taskUuid: string, role: string, orderIndex?: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskAuthorize($taskUuid: ID!, $role: String!, $orderIndex: Int) {
+                        agentTaskAuthorize(taskUuid: $taskUuid, role: $role, orderIndex: $orderIndex) { uuid status role }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, role: payload.role, orderIndex: payload.orderIndex ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskAuthorize
+        },
+        /** A task's budget, in micros; null clears it (task 6f1b348d). Org admin. */
+        async agentTaskSetBudget (context: any, payload: { taskUuid: string, budgetMicros: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetBudget($taskUuid: ID!, $budgetMicros: Long) {
+                        agentTaskSetBudget(taskUuid: $taskUuid, budgetMicros: $budgetMicros) {
+                            uuid status budgetMicros budgetSetBy { kind uuid name } budgetSetAt
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetBudget
+        },
+        async agentTaskOrder (context: any, payload: { taskUuid: string, orderIndex: number }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskOrder($taskUuid: ID!, $orderIndex: Int!) {
+                        agentTaskOrder(taskUuid: $taskUuid, orderIndex: $orderIndex) { uuid orderIndex }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskOrder
+        },
+        async agentTaskComplete (context: any, payload: { taskUuid: string, note?: string, skipRequiredRoles?: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskComplete($taskUuid: ID!, $note: String, $skipRequiredRoles: Boolean) {
+                        agentTaskComplete(taskUuid: $taskUuid, note: $note, skipRequiredRoles: $skipRequiredRoles) { uuid status }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    note: payload.note || null,
+                    skipRequiredRoles: payload.skipRequiredRoles ?? false
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskComplete
+        },
+        async agentTaskCancel (context: any, payload: { taskUuid: string, note?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskCancel($taskUuid: ID!, $note: String) {
+                        agentTaskCancel(taskUuid: $taskUuid, note: $note) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, note: payload.note || null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskCancel
+        },
+        async agentTaskReopen (context: any, payload: { taskUuid: string, role: string, reason: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskReopen($taskUuid: ID!, $role: String!, $reason: String!) {
+                        agentTaskReopen(taskUuid: $taskUuid, role: $role, reason: $reason) { uuid status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskReopen
+        },
+        async agentTaskDecideReviewItems (context: any, payload: { taskUuid: string, specification: string,
+            decisions: any[], about?: { specification: string, release?: string } | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskDecideReviewItems($taskUuid: ID!, $specification: SpecificationType!, $decisions: [BoardReviewItemDecisionInput!]!, $about: BoardReviewItemsAboutInput) {
+                        agentTaskDecideReviewItems(taskUuid: $taskUuid, specification: $specification, decisions: $decisions, about: $about) { uuid status role }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    specification: payload.specification,
+                    decisions: payload.decisions,
+                    about: payload.about ?? null
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskDecideReviewItems
+        },
+        async agentTaskHumanSignOff (context: any, payload: { taskUuid: string, outcome: string, note?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskHumanSignOff($taskUuid: ID!, $outcome: AgentSignOffOutcome!, $note: String) {
+                        agentTaskHumanSignOff(taskUuid: $taskUuid, outcome: $outcome, note: $note) { uuid status }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, outcome: payload.outcome, note: payload.note ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskHumanSignOff
+        },
+        async agentTaskAnswer (context: any, payload: { taskUuid: string,
+            answers?: { id: string, status: string, resolution: string }[], answerAll?: string,
+            liftHold?: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskAnswer($taskUuid: ID!, $answers: [BoardReviewItemAnswerInput!], $answerAll: String, $liftHold: Boolean) {
+                        agentTaskAnswer(taskUuid: $taskUuid, answers: $answers, answerAll: $answerAll, liftHold: $liftHold) { uuid status role }
+                    }`,
+                variables: {
+                    taskUuid: payload.taskUuid,
+                    answers: payload.answers?.length ? payload.answers : null,
+                    answerAll: payload.answerAll ?? null,
+                    liftHold: payload.liftHold ?? true
+                },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskAnswer
+        },
+        async agentBoardReseedCoordinatorPrompt (context: any, payload: { boardUuid: string, presetName: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardReseedCoordinatorPrompt($boardUuid: ID!, $presetName: String!) {
+                        agentBoardReseedCoordinatorPrompt(boardUuid: $boardUuid, presetName: $presetName) { uuid coordinatorPrompt }
+                    }`,
+                variables: { boardUuid: payload.boardUuid, presetName: payload.presetName },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardReseedCoordinatorPrompt
+        },
+        /**
+         * A person's declaration of a delivery unit (RD2-10, the verb of task 18c5c293): a linked PR merged
+         * where this ReARM cannot see it, a push or release on a board without PRs, or a unit abandoned.
+         * BOARD_WRITE on the task's board.
+         */
+        async agentTaskDeclareDelivery (context: any, payload: { taskUuid: string, unit: string, commit: string | null,
+            outcome: string, note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskDeclareDelivery($taskUuid: ID!, $unit: String!, $commit: String,
+                        $outcome: AgentDeliveryOutcome, $note: String) {
+                        agentTaskDeclareDelivery(taskUuid: $taskUuid, unit: $unit, commit: $commit, outcome: $outcome, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskDeclareDelivery
+        },
+        /** A person declares a linked PR superseded by its replacement (task RD3-13, RD3-18). BOARD_WRITE. */
+        async agentTaskSupersedePullRequest (context: any, payload: { taskUuid: string, oldUrl: string, byUrl: string,
+            note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSupersedePullRequest($taskUuid: ID!, $oldUrl: String!, $byUrl: String!, $note: String) {
+                        agentTaskSupersedePullRequest(taskUuid: $taskUuid, oldUrl: $oldUrl, byUrl: $byUrl, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSupersedePullRequest
+        },
+        /** A task's work level, a rung of the board's ladder (task RD3-6); null clears it to the default (RD2-1). BOARD_WRITE. */
+        async agentTaskSetWorkLevel (context: any, payload: { taskUuid: string, workLevel: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetWorkLevel($taskUuid: ID!, $workLevel: Int) {
+                        agentTaskSetWorkLevel(taskUuid: $taskUuid, workLevel: $workLevel) {
+                            uuid workLevel effectiveWorkLevel workLevelSetBy { kind uuid name } workLevelSetAt
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, workLevel: payload.workLevel },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetWorkLevel
+        },
+        /**
+         * Create or edit a board's group by key (task RD2-29); status CLOSED closes it. CONFIGURATION_WRITE
+         * and BOARD_WRITE on the board. The refusal comes back as the error's message.
+         */
+        async agentBoardGroupSet (context: any, payload: { boardUuid: string, group: { key: string, uuid?: string | null,
+            name?: string | null, description?: string | null, order?: number | null, dependsOn?: string[] | null,
+            defaultWorkLevel?: number | null, status?: string | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardGroupSet($boardUuid: ID!, $group: TaskGroupInput!) {
+                        agentBoardGroupSet(boardUuid: $boardUuid, group: $group) {
+                            uuid key name description order dependsOn defaultWorkLevel status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardGroupSet
+        },
+        /** Delete an empty group; refused while a task names it (task RD2-29). */
+        async agentBoardGroupDelete (context: any, payload: { boardUuid: string, key: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentBoardGroupDelete($boardUuid: ID!, $key: String!) {
+                        agentBoardGroupDelete(boardUuid: $boardUuid, key: $key)
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardGroupDelete
+        },
+        /** Move a task into a group by key, or out of every group with null (task RD2-29). BOARD_WRITE. */
+        async agentTaskSetGroup (context: any, payload: { taskUuid: string, group: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetGroup($taskUuid: ID!, $group: String) {
+                        agentTaskSetGroup(taskUuid: $taskUuid, group: $group) {
+                            uuid group { uuid key name } waitingOnGroups
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, group: payload.group },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetGroup
+        },
+        /** Replace a task's tags (task RD2-29). BOARD_WRITE. */
+        async agentTaskSetTags (context: any, payload: { taskUuid: string, tags: { key: string, value?: string | null }[] }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetTags($taskUuid: ID!, $tags: [TagRecordInput!]!) {
+                        agentTaskSetTags(taskUuid: $taskUuid, tags: $tags) { uuid tags { key value } }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, tags: payload.tags },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetTags
+        },
+        /** A task's required model strength; null clears it (task 6fdc5a37). Org admin. */
+        async agentTaskSetStrength (context: any, payload: { taskUuid: string, requiredStrength: number | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskSetStrength($taskUuid: ID!, $requiredStrength: Float) {
+                        agentTaskSetStrength(taskUuid: $taskUuid, requiredStrength: $requiredStrength) {
+                            uuid requiredStrength strengthSetBy { kind uuid name } strengthSetAt
+                        }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, requiredStrength: payload.requiredStrength },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskSetStrength
+        },
+        async agentTaskOperatorHold (context: any, payload: { taskUuid: string, hold: boolean, reason?: string, role?: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskOperatorHold($taskUuid: ID!, $hold: Boolean!, $reason: String, $role: String) {
+                        agentTaskOperatorHold(taskUuid: $taskUuid, hold: $hold, reason: $reason, role: $role) { uuid status role }
+                    }`,
+                variables: { taskUuid: payload.taskUuid, hold: payload.hold, reason: payload.reason ?? null,
+                    role: payload.role ?? null },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskOperatorHold
+        },
+        /** A person with BOARD_WRITE unassigns a stalled assignment, back to the queue (task RD3-4). */
+        async agentTaskUnassign (context: any, payload: { taskUuid: string, reason: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskUnassign($taskUuid: ID!, $reason: String!) {
+                        agentTaskUnassign(taskUuid: $taskUuid, reason: $reason) { uuid status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskUnassign
+        },
+        async agentTaskRequireHumanReview (context: any, payload: { taskUuid: string, value: boolean }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRequireHumanReview($taskUuid: ID!, $value: Boolean!) {
+                        agentTaskRequireHumanReview(taskUuid: $taskUuid, value: $value) { uuid requireHumanReview }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRequireHumanReview
+        },
+        async setAgentTaskRoleConfig (context: any, payload: { boardUuid: string, input: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskRoleConfigSet($boardUuid: ID!, $input: AgentTaskRoleConfigInput!) {
+                        agentTaskRoleConfigSet(boardUuid: $boardUuid, input: $input) { uuid name }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskRoleConfigSet
+        },
         async fetchSessionsOfOrg (context: any, payload: { orgUuid: string, statuses?: string[] }) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2535,6 +3594,284 @@ const storeObject : any = {
             })
             return response.data.sessionsOfOrg
         },
+        // ---------- Agent usage ----------
+        // Board and org rollups are period queries, so they are actions rather
+        // than fields on an already-fetched object: the window is chosen in the
+        // UI and re-fetched when it changes.
+        /**
+         * The Usage tab's breakdown (RD2-8): by role, by session, the coordinator seat and what no
+         * hop owns, from the same rows and prices as agentBoardUsage, so the parts add up to it.
+         */
+        async fetchAgentBoardSpendBreakdown (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardSpendBreakdown($uuid: ID!, $from: DateTime, $to: DateTime) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            spendBreakdown(from: $from, to: $to) {
+                                totalMicros costComplete coordinatorEstimateMicros unattributedMicros from to
+                                byRole { role costMicros closedHops openHops tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports } }
+                                bySession { session agent role costMicros tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports } }
+                            }
+                        }
+                    }`,
+                variables: { uuid: payload.boardUuid, from: payload.from, to: payload.to },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.spendBreakdown ?? null
+        },
+        /** Who works the board (task RD3-5): the Agents tab's rows over the window. */
+        async fetchAgentBoardAgents (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardAgents($uuid: ID!, $from: DateTime, $to: DateTime) {
+                        agentBoard(uuid: $uuid) {
+                            uuid
+                            agents(from: $from, to: $to) {
+                                session agent agentName roles lastPollAt lastOfferAt lastActivityAt tasksCompleted
+                                costMicros cacheShare
+                                state { kind taskUuid taskKey since closedBy { kind uuid name } }
+                                tokens { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports }
+                                stale { rule message }
+                            }
+                        }
+                    }`,
+                variables: { uuid: payload.boardUuid, from: payload.from, to: payload.to },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoard?.agents ?? []
+        },
+        async fetchAgentBoardUsage (context: any, payload: { boardUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentBoardUsage($boardUuid: ID!, $from: DateTime!, $to: DateTime!) {
+                        agentBoardUsage(boardUuid: $boardUuid, from: $from, to: $to) {
+                    inputTokens
+                    outputTokens
+                    cacheReadTokens
+                    cacheWriteTokens
+                    requests
+                    turns
+                    toolCalls
+                    wallSeconds
+                    reports
+                    derivedCostMicros
+                    priceVersions
+                    costComplete
+                    byModel {
+                        model
+                        modelName
+                        inputTokens
+                        outputTokens
+                        cacheReadTokens
+                        cacheWriteTokens
+                        requests
+                        turns
+                        derivedCostMicros
+                    }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentBoardUsage
+        },
+        async fetchOrganizationAgentUsage (context: any, payload: { orgUuid: string, from: string, to: string }) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query organizationAgentUsage($orgUuid: ID!, $from: DateTime!, $to: DateTime!) {
+                        organizationAgentUsage(orgUuid: $orgUuid, from: $from, to: $to) {
+                    inputTokens
+                    outputTokens
+                    cacheReadTokens
+                    cacheWriteTokens
+                    requests
+                    turns
+                    toolCalls
+                    wallSeconds
+                    reports
+                    derivedCostMicros
+                    priceVersions
+                    costComplete
+                    byModel {
+                        model
+                        modelName
+                        inputTokens
+                        outputTokens
+                        cacheReadTokens
+                        cacheWriteTokens
+                        requests
+                        turns
+                        derivedCostMicros
+                    }
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.organizationAgentUsage
+        },
+
+        // ---------- Model catalogue ----------
+        async fetchModelOntologiesOfOrg (context: any, orgUuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query modelOntologiesOfOrg($orgUuid: ID!) {
+                        modelOntologiesOfOrg(orgUuid: $orgUuid) {
+                            uuid
+                            org
+                            name
+                            version
+                            publisher
+                            description
+                            canonicalId
+                            aliases
+                            facts {
+                                contextWindow
+                                maxOutputTokens
+                                modalities
+                                hostingKind
+                                releaseDate
+                                deprecatedAt
+                                knowledgeCutoff
+                            }
+                            tier
+                            strength
+                            strengthByRole { category strength }
+                            resolution
+                            modelCardSpecVersion
+                            notes
+                            createdDate
+                            pricing {
+                                uuid
+                                effectiveFrom
+                                effectiveTo
+                                currency
+                                unit
+                                inputMicros
+                                outputMicros
+                                cacheReadMicros
+                                cacheWriteMicros
+                                reasoningMicros
+                                appliesTo {
+                                    contextAboveTokens
+                                    contextVariant
+                                    serviceTier
+                                    hosting
+                                    reasoning
+                                }
+                                source
+                                note
+                            }
+                            mergeCandidates {
+                                uuid
+                                name
+                                version
+                                canonicalId
+                                resolution
+                            }
+                            declaredVersion
+                            suggestedCanonicalId
+                            usage(days: 30) { sessions lines days }
+                        }
+                    }`,
+                variables: { orgUuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.modelOntologiesOfOrg
+        },
+        async addModelPricing (context: any, payload: { modelOntologyUuid: string, entry: any }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation addModelPricing($modelOntologyUuid: ID!, $entry: PricingEntryInput!) {
+                        addModelPricing(modelOntologyUuid: $modelOntologyUuid, entry: $entry) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.addModelPricing
+        },
+        async expireModelPricing (context: any, payload: { modelOntologyUuid: string, entryUuid: string, effectiveTo: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation expireModelPricing($modelOntologyUuid: ID!, $entryUuid: ID!, $effectiveTo: DateTime!) {
+                        expireModelPricing(modelOntologyUuid: $modelOntologyUuid, entryUuid: $entryUuid, effectiveTo: $effectiveTo) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.expireModelPricing
+        },
+        async applyModelCataloguePreset (context: any, payload: { orgUuid: string, canonicalId: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation applyModelCataloguePreset($orgUuid: ID!, $canonicalId: String!) {
+                        applyModelCataloguePreset(orgUuid: $orgUuid, canonicalId: $canonicalId) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.applyModelCataloguePreset
+        },
+        async updateModelOntologyStrength (context: any, input: { uuid: string, strength: number | null,
+            strengthByRole: { category: string, strength: number }[] }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateModelOntologyStrength($input: ModelOntologyUpdateInput!) {
+                        updateModelOntology(input: $input) {
+                            uuid
+                            strength
+                            strengthByRole { category strength }
+                        }
+                    }`,
+                variables: { input },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.updateModelOntology
+        },
+        /**
+         * An operator's edit to a catalogue row (RD2-27): the uuid and only what changed -- name,
+         * version and canonical id re-resolve the row. A refusal comes back as the error's message.
+         */
+        async updateModelOntology (context: any, input: Record<string, any>) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation updateModelOntology($input: ModelOntologyUpdateInput!) {
+                        updateModelOntology(input: $input) {
+                            uuid name version canonicalId resolution publisher tier strength description notes
+                        }
+                    }`,
+                variables: { input },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.updateModelOntology
+        },
+        /** The bundled catalogue's entries: what a row's canonical id may link to (RD2-27). */
+        async fetchModelCatalogueBundle () {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query modelCatalogueBundle {
+                        modelCatalogueBundle { canonicalId name version publisher }
+                    }`,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.modelCatalogueBundle
+        },
+        async mergeModelOntology (context: any, payload: { from: string, into: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation mergeModelOntology($from: ID!, $into: ID!) {
+                        mergeModelOntology(from: $from, into: $into) {
+                            uuid
+                        }
+                    }`,
+                variables: payload
+            })
+            return response.data.mergeModelOntology
+        },
         async fetchSession (context: any, uuid: string) {
             const response = await graphqlClient.query({
                 query: gql`
@@ -2550,6 +3887,30 @@ const storeObject : any = {
                             startedAt
                             closedAt
                             lastActivityAt
+                            closedBy { kind uuid name }
+                            closeReason
+                            idleWarnedAt
+                            idleCloseAt
+                            boardsWorked
+                            tasksWorked { uuid key title role board boardName }
+                            providerSessions {
+                                provider
+                                id
+                                remoteId
+                                reportedAt
+                            }
+                            origin {
+                                authMethod
+                                cliSession
+                                ownerUser
+                                ownerSource
+                                observedIp
+                                capturedAt
+                                restricted
+                                loginDevice { hostname os timeZone client observedIp }
+                                reportedDevice { hostname os timeZone client }
+                                federation { provider repository ref sha workflowRef event environment actor runId }
+                            }
                             artifacts
                             commits
                             primaryModel {
@@ -2559,6 +3920,32 @@ const storeObject : any = {
                                 publisher
                             }
                             modelAssertion
+                            usageCompleteness
+                            modelMismatch
+                            usageTotals {
+                                inputTokens
+                                outputTokens
+                                cacheReadTokens
+                                cacheWriteTokens
+                                requests
+                                turns
+                                toolCalls
+                                wallSeconds
+                                reports
+                                derivedCostMicros
+                                costComplete
+                                byModel {
+                                    model
+                                    modelName
+                                    inputTokens
+                                    outputTokens
+                                    cacheReadTokens
+                                    cacheWriteTokens
+                                    requests
+                                    turns
+                                    derivedCostMicros
+                                }
+                            }
                             policyEvents {
                                 policyUuid
                                 policyName
@@ -2863,6 +4250,7 @@ const storeObject : any = {
         },
     },
 }
+
 
 const store = createStore(storeObject)
 
