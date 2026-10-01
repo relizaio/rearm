@@ -20,7 +20,12 @@
             <div class="dsec__h">Reports returned</div>
             <div v-for="r in returned" :key="r.investigation" class="deprow invrow" data-testid="report-returned">
                 <span class="deplab">{{ r.investigationKey ?? r.investigation }}</span>
-                <span>
+                <span v-if="r.cancelled" data-testid="report-returned-cancelled">
+                    cancelled: no report, this task no longer waits on it<span v-if="r.reoffered">; offered back to {{ r.role }}</span>
+                    <span v-if="r.note"> · {{ r.note }}</span>
+                    · <agent-time :at="r.at"/>
+                </span>
+                <span v-else>
                     report pinned as an input<span v-if="r.reoffered">, offered back to {{ r.role }}</span>
                     · <agent-time :at="r.at"/>
                 </span>
@@ -31,7 +36,7 @@
 
 <script lang="ts" setup>
 // An investigation's block and its report (task RD4-12), and on a task that commissioned one, the reports that
-// came back to it.
+// came back to it -- a cancelled investigation among them, with its note (design round 2 §2).
 import { computed } from 'vue'
 import AgentTime from '../AgentTime.vue'
 import { investigationLines, isInvestigation, reportOf } from '@/utils/agentInvestigation'

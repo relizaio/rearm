@@ -73,7 +73,7 @@ const AGENT_TASK_SELECTION = `
     kind
     investigation { commissionedBy { role roleUuid session task by { kind uuid name } } deliverable role roleUuid
         review reviewUuid deadline returnTo report completedAt }
-    reportsReturned { investigation investigationKey report session role at reoffered }
+    reportsReturned { investigation investigationKey report session role at reoffered cancelled note }
     externalRef
     title
     description
