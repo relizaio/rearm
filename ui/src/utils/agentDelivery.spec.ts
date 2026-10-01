@@ -62,48 +62,48 @@ describe('shortPr', () => {
     })
 })
 
-describe('delivery modes and attestations (task 18c5c293)', () => {
-    it('reads an attested PR as merged or abandoned, whatever its row says', () => {
+describe('delivery modes and declarations (task 18c5c293)', () => {
+    it('reads a declared PR as merged or abandoned, whatever its row says', () => {
         const chips = prChips({ pullRequests: [
             { url: 'https://github.com/acme/app/pull/1', state: null, registered: false,
-                attestation: { outcome: 'DELIVERED', commit: 'abcdef0123456', by: { kind: 'SESSION', uuid: '83922fa1-307e', name: null }, note: 'merged on reliza' } },
+                declaration: { outcome: 'DELIVERED', commit: 'abcdef0123456', by: { kind: 'SESSION', uuid: '83922fa1-307e', name: null }, note: 'merged on reliza' } },
             { url: 'https://github.com/acme/app/pull/2', state: 'OPEN', registered: true,
-                attestation: { outcome: 'ABANDONED', by: { kind: 'USER', name: 'pavel@reliza.io' }, note: 'superseded' } },
+                declaration: { outcome: 'ABANDONED', by: { kind: 'USER', name: 'pavel@reliza.io' }, note: 'superseded' } },
             { url: 'https://github.com/acme/app/pull/3', state: 'MERGED', targetBranch: 'main', registered: true }
         ] })
-        expect(chips[0]).toMatchObject({ state: 'merged', type: 'success', title: 'attested by session 83922fa1 at abcdef0: merged on reliza' })
-        expect(chips[1]).toMatchObject({ state: 'abandoned', type: 'error', title: 'attested abandoned by pavel@reliza.io: superseded' })
+        expect(chips[0]).toMatchObject({ state: 'merged', type: 'success', title: 'declared by session 83922fa1 at abcdef0: merged on reliza' })
+        expect(chips[1]).toMatchObject({ state: 'abandoned', type: 'error', title: 'declared abandoned by pavel@reliza.io: superseded' })
         expect(chips[2].title).toBe('merged (CI) into main')
     })
 
-    it('keeps the tested-head line on an attested chip (with task 3b97ccfd)', () => {
+    it('keeps the tested-head line on a declared chip (with task 3b97ccfd)', () => {
         const A = 'aaaaaaa1111111111111111111111111111111aa'
         const B = 'bbbbbbb2222222222222222222222222222222bb'
         const chips = prChips({
             testedHeads: [{ pr: 'https://github.com/acme/app/pull/1', head: A }, { pr: 'https://github.com/acme/app/pull/2', head: A }],
             pullRequests: [
                 { url: 'https://github.com/acme/app/pull/1', state: 'OPEN', registered: true, head: B,
-                    attestation: { outcome: 'DELIVERED', commit: 'ccccccc3', by: { kind: 'USER', name: 'op' }, note: null } },
+                    declaration: { outcome: 'DELIVERED', commit: 'ccccccc3', by: { kind: 'USER', name: 'op' }, note: null } },
                 { url: 'https://github.com/acme/app/pull/2', state: null, registered: false,
-                    attestation: { outcome: 'DELIVERED', commit: A, by: { kind: 'USER', name: 'op' }, note: null } }
+                    declaration: { outcome: 'DELIVERED', commit: A, by: { kind: 'USER', name: 'op' }, note: null } }
             ]
         })
-        expect(chips[0]).toMatchObject({ state: 'merged', title: 'attested by op at ccccccc',
+        expect(chips[0]).toMatchObject({ state: 'merged', title: 'declared by op at ccccccc',
             heads: 'tested aaaaaaa · now bbbbbbb: moved past the tested head', moved: true })
-        expect(chips[1]).toMatchObject({ state: 'merged', title: 'attested by op at aaaaaaa', heads: 'tested aaaaaaa' })
+        expect(chips[1]).toMatchObject({ state: 'merged', title: 'declared by op at aaaaaaa', heads: 'tested aaaaaaa' })
     })
 
     it('offers the three modes with help, and sends the policy only when changed', () => {
-        expect(DELIVERY_MODE_OPTIONS.map(o => o.value)).toEqual(['PR_ROWS', 'ATTESTED', 'NONE'])
+        expect(DELIVERY_MODE_OPTIONS.map(o => o.value)).toEqual(['PR_ROWS', 'DECLARED', 'NONE'])
         expect(DELIVERY_MODE_OPTIONS.every(o => o.help.length > 20)).toBe(true)
         expect(deliveryPolicyPatch({ deliveryPolicy: null }, null, false)).toEqual({ changed: false, value: null })
-        expect(deliveryPolicyPatch({ deliveryPolicy: null }, 'ATTESTED', true)).toEqual({ changed: true, value: { mode: 'ATTESTED', attest: false } })
-        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'NONE', attest: true } }, 'NONE', true).changed).toBe(false)
-        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'NONE', attest: true } }, 'NONE', false))
-            .toEqual({ changed: true, value: { mode: 'NONE', attest: false } })
-        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'ATTESTED' } }, null, false))
+        expect(deliveryPolicyPatch({ deliveryPolicy: null }, 'DECLARED', true)).toEqual({ changed: true, value: { mode: 'DECLARED', awaitDeclaration: false } })
+        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'NONE', awaitDeclaration: true } }, 'NONE', true).changed).toBe(false)
+        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'NONE', awaitDeclaration: true } }, 'NONE', false))
+            .toEqual({ changed: true, value: { mode: 'NONE', awaitDeclaration: false } })
+        expect(deliveryPolicyPatch({ deliveryPolicy: { mode: 'DECLARED' } }, null, false))
             .toEqual({ changed: true, value: null })
-        expect(deliveryPolicyPatch(null, 'PR_ROWS', false)).toEqual({ changed: true, value: { mode: 'PR_ROWS', attest: false } })
+        expect(deliveryPolicyPatch(null, 'PR_ROWS', false)).toEqual({ changed: true, value: { mode: 'PR_ROWS', awaitDeclaration: false } })
     })
 })
 
@@ -118,32 +118,32 @@ describe('the merge procedure (task 71a3dd22)', () => {
 
     it('reads a declared procedure into the form and sends only what differs from the defaults', () => {
         const defaults = mergeDraftOf(null)
-        expect(defaults).toEqual({ by: null, byRole: '', method: null, atTestedHead: true, requireAttestation: false, order: null })
+        expect(defaults).toEqual({ by: null, byRole: '', method: null, atTestedHead: true, requireDeclaration: false, order: null })
         expect(mergeOf(defaults, 'PR_ROWS')).toBeNull()
         const declared = mergeDraftOf({ merge: { by: 'ROLE:releaser', method: 'SQUASH', atTestedHead: false,
-            requireAttestation: true, order: 'OLDEST_PASS_FIRST' } })
+            requireDeclaration: true, order: 'OLDEST_PASS_FIRST' } })
         expect(declared).toEqual({ by: 'ROLE', byRole: 'releaser', method: 'SQUASH', atTestedHead: false,
-            requireAttestation: true, order: 'OLDEST_PASS_FIRST' })
+            requireDeclaration: true, order: 'OLDEST_PASS_FIRST' })
         expect(mergeOf(declared, 'PR_ROWS')).toEqual({ by: 'ROLE:releaser', method: 'SQUASH', atTestedHead: false,
-            requireAttestation: true, order: 'OLDEST_PASS_FIRST' })
-        expect(mergeOf(declared, 'ATTESTED')!.requireAttestation).toBeNull()
+            requireDeclaration: true, order: 'OLDEST_PASS_FIRST' })
+        expect(mergeOf(declared, 'DECLARED')!.requireDeclaration).toBeNull()
         expect(mergeOf({ ...defaults, by: 'ROLE', byRole: '  ' }, null)).toBeNull()
         expect(mergeOf({ ...defaults, by: 'PERSON' }, null)).toEqual({ by: 'PERSON', method: null, atTestedHead: null,
-            requireAttestation: null, order: null })
+            requireDeclaration: null, order: null })
     })
 
     it('patches deliveryPolicy with the procedure, and keeps the board\'s when the form has none', () => {
         const squash = { ...mergeDraftOf(null), by: 'COORDINATOR', method: 'SQUASH' }
         expect(deliveryPolicyPatch({ deliveryPolicy: null }, null, false, squash)).toEqual({ changed: true,
-            value: { mode: null, attest: false, merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: null,
-                requireAttestation: null, order: null } } })
-        const board = { deliveryPolicy: { mode: 'PR_ROWS', attest: false,
-            merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: true, requireAttestation: false, order: null } } }
+            value: { mode: null, awaitDeclaration: false, merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: null,
+                requireDeclaration: null, order: null } } })
+        const board = { deliveryPolicy: { mode: 'PR_ROWS', awaitDeclaration: false,
+            merge: { by: 'COORDINATOR', method: 'SQUASH', atTestedHead: true, requireDeclaration: false, order: null } } }
         expect(deliveryPolicyPatch(board, 'PR_ROWS', false, mergeDraftOf(board.deliveryPolicy)).changed).toBe(false)
         expect(deliveryPolicyPatch(board, 'PR_ROWS', false, mergeDraftOf(null))).toEqual({ changed: true,
-            value: { mode: 'PR_ROWS', attest: false } })
-        expect(deliveryPolicyPatch(board, 'ATTESTED', false).value!.merge).toEqual({ by: 'COORDINATOR', method: 'SQUASH',
-            atTestedHead: null, requireAttestation: null, order: null })
+            value: { mode: 'PR_ROWS', awaitDeclaration: false } })
+        expect(deliveryPolicyPatch(board, 'DECLARED', false).value!.merge).toEqual({ by: 'COORDINATOR', method: 'SQUASH',
+            atTestedHead: null, requireDeclaration: null, order: null })
         expect(deliveryPolicyPatch(board, null, false, mergeDraftOf(null))).toEqual({ changed: true, value: null })
     })
 })

@@ -4,9 +4,13 @@ import { enumWord, holdPhrase, holdWord, levelWord, lifecycleWord, outcomeWord, 
 
 describe('agentWords', () => {
     it('names specification types', () => {
-        expect(specWord('REVIEW_FINDINGS')).toBe('review findings')
+        expect(specWord('BOARD_REVIEW_ITEMS')).toBe('review items')
+        expect(specWord('BOARD_ELEMENT_CHECK_REPORT')).toBe('element check report')
+        expect(specWord('BOARD_QUESTIONS')).toBe('questions')
+        expect(specWord(null)).toBe('')
         expect(specWord('DETAILED_DESIGN')).toBe('detailed design')
-        expect(specWord('TEST_REPORT')).toBe('test report')
+        expect(specWord('BOARD_TEST_REPORT')).toBe('test report')
+        expect(enumWord('BOARD_TEST_REPORT')).toBe('board test report')
         expect(specWord('ARCHITECTURE')).toBe('architecture')
     })
 

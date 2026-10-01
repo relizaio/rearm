@@ -12,7 +12,7 @@ const LADDER = { levels: [{ number: 0, name: 'requirements' }, { number: 1, name
 const board = {
     ladder: LADDER,
     groups: [
-        { uuid: 'g2', key: 'ui-work', name: 'Front end', order: 2, dependsOn: ['core-work'], status: 'OPEN', defaultLevel: 2,
+        { uuid: 'g2', key: 'ui-work', name: 'Front end', order: 2, dependsOn: ['core-work'], status: 'OPEN', defaultWorkLevel: 2,
             progress: { total: 4, done: 1, open: 3, complete: false }, spentMicros: 1_250_000 },
         { uuid: 'g1', key: 'core-work', name: 'Core services', order: 1, dependsOn: [], status: 'OPEN',
             progress: { total: 5, done: 3, open: 2, complete: false }, spentMicros: 0 },
@@ -51,12 +51,12 @@ describe('AgentBoardGroupsPanel', () => {
         await w.find('[data-testid="group-key"] input').setValue(' Docs-Work ')
         await w.find('[data-testid="group-name"] input').setValue('Docs')
         ;(w.vm as any).draft.dependsOn = ['ui-work']
-        ;(w.vm as any).draft.defaultLevel = 1
+        ;(w.vm as any).draft.defaultWorkLevel = 1
         await nextTick()
         await w.find('[data-testid="group-save"]').trigger('click')
         await flushPromises()
         expect(saveGroup).toHaveBeenCalledWith({ key: 'docs-work', name: 'Docs', description: null, dependsOn: ['ui-work'],
-            defaultLevel: 1, status: 'OPEN' })
+            defaultWorkLevel: 1, status: 'OPEN' })
         expect(w.find('[data-testid="group-form"]').exists()).toBe(false, 'the form closes on save')
     })
 
@@ -85,10 +85,10 @@ describe('AgentBoardGroupsPanel', () => {
         const w = mount(Panel, { props: { board, canConfigure: true, saveGroup }, global })
         const row = (k: string) => w.find(`[data-testid="group-row"][data-key="${k}"]`)
         await row('ui-work').find('[data-testid="group-edit"]').trigger('click')
-        expect((w.vm as any).draft).toMatchObject({ uuid: 'g2', key: 'ui-work', dependsOn: ['core-work'], defaultLevel: 2 })
+        expect((w.vm as any).draft).toMatchObject({ uuid: 'g2', key: 'ui-work', dependsOn: ['core-work'], defaultWorkLevel: 2 })
         await w.find('[data-testid="group-save"]').trigger('click')
         await flushPromises()
-        expect(saveGroup).toHaveBeenLastCalledWith(expect.objectContaining({ uuid: 'g2', key: 'ui-work', defaultLevel: 2 }))
+        expect(saveGroup).toHaveBeenLastCalledWith(expect.objectContaining({ uuid: 'g2', key: 'ui-work', defaultWorkLevel: 2 }))
         await row('core-work').find('[data-testid="group-close"]').trigger('click')
         expect(saveGroup).toHaveBeenLastCalledWith({ key: 'core-work', status: 'CLOSED' })
         expect(row('old-work').find('[data-testid="group-close"]').text()).toBe('Reopen')
@@ -141,7 +141,7 @@ describe('AgentBoardGroupsPanel', () => {
             await w.find('[data-testid="group-save"]').trigger('click')
             await flushPromises()
             expect(saveGroup).toHaveBeenCalledOnce()
-            expect(saveGroup.mock.calls[0][0]).not.toHaveProperty('defaultLevel')
+            expect(saveGroup.mock.calls[0][0]).not.toHaveProperty('defaultWorkLevel')
         })
 
         it('shows the default level field with a ladder', async () => {

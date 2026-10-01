@@ -1,7 +1,7 @@
-// Task level on the surfaces people read (RD2-1): the depth in the product tree a task belongs to.
+// Task work level on the surfaces people read (RD2-1): the depth in the product tree a task belongs to.
 //
 // The server resolves the level a board reads -- the task's own, else its group's default, else the
-// board's default -- and serves it as effectiveLevel; what is worked out here is only how it reads (a
+// board's default -- and serves it as effectiveWorkLevel; what is worked out here is only how it reads (a
 // chip, a tooltip, a lane) and what the editor sends. Pure, so every surface shares one rule and it is
 // testable.
 //
@@ -62,25 +62,25 @@ export function ladderHint (board?: any): string {
 }
 
 /**
- * The level the board reads: the served effectiveLevel, else the task's own, else its group's default,
+ * The level the board reads: the served effectiveWorkLevel, else the task's own, else its group's default,
  * else the board default, else 0 -- and null on a board without a ladder, whatever the task carries
  * (task RD3-6).
  */
 export function levelOf (task: any, board?: any): number | null {
     if (!hasLadder(board)) return null
-    if (task?.effectiveLevel != null) return task.effectiveLevel
-    if (task?.level != null) return task.level
+    if (task?.effectiveWorkLevel != null) return task.effectiveWorkLevel
+    if (task?.workLevel != null) return task.workLevel
     const groupLevel = task?.group?.key
-        ? (board?.groups ?? []).find((g: any) => g?.key === task.group.key)?.defaultLevel
+        ? (board?.groups ?? []).find((g: any) => g?.key === task.group.key)?.defaultWorkLevel
         : null
     if (groupLevel != null) return groupLevel
-    return board?.defaultTaskLevel ?? 0
+    return board?.defaultWorkLevel ?? 0
 }
 
 /** Where the level comes from: the task itself, a default (its group's or the board's), or nowhere. */
 export function levelSource (task: any, board?: any): 'set' | 'default' | null {
     if (levelOf(task, board) == null) return null
-    return task?.level != null ? 'set' : 'default'
+    return task?.workLevel != null ? 'set' : 'default'
 }
 
 /** The chip: "2 · objects", or null for a task with no level (no chip), and always without a ladder. */
@@ -90,25 +90,25 @@ export function taskLevelLabel (task: any, board?: any): string | null {
 
 /**
  * The chip's tooltip: "level 2 · objects: what the objects are (board default)", "(group default)"
- * when its group gives it, or "(set by <actor>)" when the task carries its own. actorName names levelSetBy.
+ * when its group gives it, or "(set by <actor>)" when the task carries its own. actorName names workLevelSetBy.
  */
 export function levelTooltip (task: any, board?: any, actorName?: (a: any) => string): string | null {
     const l = levelOf(task, board)
     if (l == null) return null
     const description = ladderOf(board).find(r => r.number === l)?.description
-    const head = `level ${levelLabel(l, board)}${description ? ': ' + description : ''}`
+    const head = `work level ${levelLabel(l, board)}${description ? ': ' + description : ''}`
     if (levelSource(task, board) === 'default') {
         const fromGroup = task?.group?.key
-            && (board?.groups ?? []).find((g: any) => g?.key === task.group.key)?.defaultLevel === l
+            && (board?.groups ?? []).find((g: any) => g?.key === task.group.key)?.defaultWorkLevel === l
         return `${head} (${fromGroup ? 'group' : 'board'} default)`
     }
-    return task?.levelSetBy && actorName ? `${head} (set by ${actorName(task.levelSetBy)})` : head
+    return task?.workLevelSetBy && actorName ? `${head} (set by ${actorName(task.workLevelSetBy)})` : head
 }
 
 /** The editor's placeholder: what the task reads with no level of its own. */
 export function levelPlaceholder (board?: any): string {
     if (!hasLadder(board)) return 'none'
-    return `board default ${levelLabel(board?.defaultTaskLevel ?? 0, board)}`
+    return `board default ${levelLabel(board?.defaultWorkLevel ?? 0, board)}`
 }
 
 /**
@@ -117,15 +117,15 @@ export function levelPlaceholder (board?: any): string {
  */
 export function levelToSet (task: any, draft: number | null | undefined, board?: any): number | undefined {
     if (draft == null || !Number.isInteger(draft) || !ladderOf(board).some(r => r.number === draft)) return undefined
-    return draft === task?.level ? undefined : draft
+    return draft === task?.workLevel ? undefined : draft
 }
 
 /**
- * Whether a filter text names this task's level: "L2", "l2" and "level 2" all match level 2; a
+ * Whether a filter text names this task's work level: "L2", "l2", "level 2" and "work level 2" all match level 2; a
  * text that names no level matches nothing here (the caller matches it against the rest).
  */
 export function matchesLevel (task: any, board: any, text: string | null | undefined): boolean {
-    const m = /^\s*(?:l|level\s*)(\d)\s*$/i.exec(text ?? '')
+    const m = /^\s*(?:l|(?:work\s*)?level\s*)(\d)\s*$/i.exec(text ?? '')
     return !!m && levelOf(task, board) === Number(m[1])
 }
 
@@ -135,9 +135,9 @@ export function passesLevel (task: any, board: any, level: number | null | undef
 }
 
 /** A board default for the form's input: sent only when changed; blank sends null (clears it). */
-export function defaultLevelPatch (board: any, draft: number | null | undefined): { changed: boolean, value: number | null } {
+export function defaultWorkLevelPatch (board: any, draft: number | null | undefined): { changed: boolean, value: number | null } {
     const next = draft == null ? null : draft
-    return { changed: next !== (board?.defaultTaskLevel ?? null), value: next }
+    return { changed: next !== (board?.defaultWorkLevel ?? null), value: next }
 }
 
 // ---------- grouping the kanban (by level, RD2-1; by task group, RD2-31) ----------
@@ -156,7 +156,7 @@ interface Grouping {
 export const GROUPINGS: Record<string, Grouping> = {
     level: {
         keyOf: (t, b) => levelOf(t, b),
-        label: (k, b) => k == null ? 'no level' : levelLabel(Number(k), b)!,
+        label: (k, b) => k == null ? 'no work level' : levelLabel(Number(k), b)!,
     },
     // A lane per task group in the board's order, "Ungrouped" last (RD2-31).
     group: {
@@ -169,7 +169,7 @@ export const GROUPINGS: Record<string, Grouping> = {
 /** The group-by options the toggle offers: none, then every grouping -- by level only on a board with a ladder. */
 export function groupByOptions (board?: any): { label: string, value: string }[] {
     return [{ label: 'none', value: 'none' },
-        ...Object.keys(GROUPINGS).filter(k => k !== 'level' || hasLadder(board)).map(k => ({ label: k, value: k }))]
+        ...Object.keys(GROUPINGS).filter(k => k !== 'level' || hasLadder(board)).map(k => ({ label: k === 'level' ? 'work level' : k, value: k }))]
 }
 
 /** The grouping in effect: the one asked for, or 'none' for by-level on a board without a ladder (task RD3-6). */

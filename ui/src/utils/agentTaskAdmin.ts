@@ -18,10 +18,10 @@ export function holdPayload (task: any, reason: string | null | undefined): { ta
 }
 
 /**
- * The release to send (task RD3-4): an ASSIGNED task back to the queue for the same role, with the
+ * The unassign to send (task RD3-4): an ASSIGNED task back to the queue for the same role, with the
  * reason the server requires; null when either is missing.
  */
-export function releasePayload (task: any, reason: string | null | undefined): { task: any, reason: string } | null {
+export function unassignPayload (task: any, reason: string | null | undefined): { task: any, reason: string } | null {
     const r = (reason ?? '').trim()
     return r && task?.status === 'ASSIGNED' ? { task, reason: r } : null
 }
@@ -88,13 +88,13 @@ function prRow (task: any, url: string): any {
 }
 
 /**
- * Whether a row offers "Declare superseded": its tracker reports it closed and unmerged, and no attestation
- * already settles it as delivered or superseded (one attested abandoned may be superseded, RD3-13).
+ * Whether a row offers "Declare superseded": its tracker reports it closed and unmerged, and no declaration
+ * already settles it as delivered or superseded (one declared abandoned may be superseded, RD3-13).
  */
 export function offersSupersede (task: any, url: string): boolean {
     const pr = prRow(task, url)
     if (!pr || pr.state !== 'CLOSED') return false
-    const outcome = pr.attestation?.outcome
+    const outcome = pr.declaration?.outcome
     return outcome !== 'SUPERSEDED' && outcome !== 'DELIVERED'
 }
 

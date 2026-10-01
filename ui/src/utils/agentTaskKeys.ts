@@ -16,24 +16,24 @@ export function reviewBannerLabel (t: any): string {
 export interface BoardOption {
     label: string
     value: string
-    /** The board carries a lock: the picker says so beside its name. */
-    locked: boolean
+    /** The board carries a pause: the picker says so beside its name. */
+    paused: boolean
 }
 
-/** The board picker's options: "<prefix> · <name>", each locked board flagged. */
+/** The board picker's options: "<prefix> · <name>", each paused board flagged. */
 export function boardPickerOptions (boards: any[] | null | undefined): BoardOption[] {
     return (boards ?? []).filter(b => b?.uuid).map(b => ({
         label: b.taskPrefix ? `${b.taskPrefix} · ${b.name}` : b.name,
         value: b.uuid,
-        locked: !!b.lock,
+        paused: !!b.pause,
     }))
 }
 
-/** An option as the picker draws it: its label, and a "locked" tag after it on a locked board. */
+/** An option as the picker draws it: its label, and a "paused" tag after it on a paused board. */
 export function renderBoardOption (option: BoardOption): VNode {
     return h('span', { class: 'boardopt' }, [
         option.label,
-        option.locked ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left: 6px',
-            'data-testid': 'board-option-locked' }, { default: () => 'locked' }) : null,
+        option.paused ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left: 6px',
+            'data-testid': 'board-option-paused' }, { default: () => 'paused' }) : null,
     ])
 }

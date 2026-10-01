@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { DocumentRelease } from '@/utils/agentDocuments'
 import {
-    documentDefining, elementsOf, findingElement, findingsByElement, historyRows, linkCounts, linksIn,
+    documentDefining, elementsOf, reviewItemElement, reviewItemsByElement, historyRows, linkCounts, linksIn,
     linksOut, taskElementsOf, warningsOf,
 } from '@/utils/agentElements'
 
@@ -12,7 +12,7 @@ function doc (uuid: string, spec: string, round: number, elements: any[], extra:
         uuid,
         lifecycle: extra.lifecycle ?? 'DRAFT',
         sourceCodeEntryDetails: repo,
-        document: { specification: spec, round, path: `docs/${spec.toLowerCase()}.md`, elements: { elements, warnings: extra.warnings ?? [] }, findings: extra.findings ?? null },
+        document: { specification: spec, round, path: `docs/${spec.toLowerCase()}.md`, elements: { elements, warnings: extra.warnings ?? [] }, reviewItems: extra.reviewItems ?? null },
     }
 }
 
@@ -25,9 +25,9 @@ const note = doc('n1', 'DETAILED_DESIGN', 1, [
     { id: 'FN-1', traces: [{ verb: 'satisfies', target: 'REQ-1' }], assumes: ['ADR-7'], line: 2 },
     { id: 'FN-2', parent: 'REQ-2', line: 9 },
 ])
-const review = doc('r1', 'REVIEW_FINDINGS', 1, [], {
-    findings: {
-        findings: [
+const review = doc('r1', 'BOARD_REVIEW_ITEMS', 1, [], {
+    reviewItems: {
+        reviewItems: [
             { id: 'F-2', priority: 2, status: 'OPEN', title: 'vague', location: { element: 'REQ-2', path: 'docs/architecture.md', line: 8 } },
             { id: 'F-1', priority: 1, status: 'OPEN', title: 'wrong', location: { element: 'REQ-2' } },
             { id: 'F-3', priority: 1, status: 'RESOLVED', title: 'done', location: { element: 'REQ-1' } },
@@ -87,18 +87,18 @@ describe('links', () => {
     })
 })
 
-describe('findings about an element', () => {
+describe('review items about an element', () => {
     it('are the open ones of the newest rounds, most urgent first', () => {
-        const by = findingsByElement(documents)
+        const by = reviewItemsByElement(documents)
         expect(by.get('REQ-2')?.map(f => f.id)).toEqual(['F-1', 'F-2'])
         expect(by.has('REQ-1')).toBe(false)
         expect([...by.keys()]).toEqual(['REQ-2'])
     })
 
-    it('reads the element a finding names', () => {
-        expect(findingElement({ location: { element: 'REQ-2' } })).toBe('REQ-2')
-        expect(findingElement({ location: { path: 'a.java' } })).toBeNull()
-        expect(findingElement(null)).toBeNull()
+    it('reads the element a review item names', () => {
+        expect(reviewItemElement({ location: { element: 'REQ-2' } })).toBe('REQ-2')
+        expect(reviewItemElement({ location: { path: 'a.java' } })).toBeNull()
+        expect(reviewItemElement(null)).toBeNull()
     })
 })
 

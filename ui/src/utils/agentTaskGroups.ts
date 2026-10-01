@@ -12,7 +12,7 @@ export interface TaskGroup {
     description?: string | null
     order?: number | null
     dependsOn?: string[] | null
-    defaultLevel?: number | null
+    defaultWorkLevel?: number | null
     status?: 'OPEN' | 'CLOSED' | null
     progress?: { total?: number | null, done?: number | null, open?: number | null, complete?: boolean | null } | null
     spentMicros?: number | null
@@ -237,14 +237,14 @@ export function groupLayers (board: any): Map<string, number> {
  * What the New task form adds to a registration (task RD2-31): the group ("none" sends nothing), the
  * tags typed as free text, and the level. Only what was set is sent.
  */
-export function registerGroupFields (draft: { group?: string | null, tagsText?: string | null, level?: number | null }):
-    { group?: string, tags?: { key: string }[], level?: number } {
-    const out: { group?: string, tags?: { key: string }[], level?: number } = {}
+export function registerGroupFields (draft: { group?: string | null, tagsText?: string | null, workLevel?: number | null }):
+    { group?: string, tags?: { key: string }[], workLevel?: number } {
+    const out: { group?: string, tags?: { key: string }[], workLevel?: number } = {}
     const group = groupToSend(draft.group)
     if (group) out.group = group
     const tags = parseTags(draft.tagsText)
     if (tags.length) out.tags = tags.map(key => ({ key }))
-    if (draft.level != null && Number.isInteger(draft.level)) out.level = draft.level
+    if (draft.workLevel != null && Number.isInteger(draft.workLevel)) out.workLevel = draft.workLevel
     return out
 }
 
@@ -257,7 +257,7 @@ export interface GroupDraft {
     name: string
     description: string
     dependsOn: string[]
-    defaultLevel: number | null
+    defaultWorkLevel: number | null
     status: 'OPEN' | 'CLOSED'
 }
 
@@ -269,7 +269,7 @@ export function groupDraftOf (g?: TaskGroup | null): GroupDraft {
         name: g?.name ?? '',
         description: g?.description ?? '',
         dependsOn: [...(g?.dependsOn ?? [])],
-        defaultLevel: g?.defaultLevel ?? null,
+        defaultWorkLevel: g?.defaultWorkLevel ?? null,
         status: g?.status === 'CLOSED' ? 'CLOSED' : 'OPEN',
     }
 }
@@ -286,10 +286,10 @@ export function groupInputOf (d: GroupDraft, opts: { withLevel?: boolean } = {})
         name: d.name.trim() || null,
         description: d.description.trim() || null,
         dependsOn: [...d.dependsOn],
-        defaultLevel: d.defaultLevel,
+        defaultWorkLevel: d.defaultWorkLevel,
         status: d.status,
     }
-    if (opts.withLevel === false) delete input.defaultLevel
+    if (opts.withLevel === false) delete input.defaultWorkLevel
     if (d.uuid) input.uuid = d.uuid
     return input
 }
@@ -315,13 +315,13 @@ export function groupKeyTaken (board: any, d: GroupDraft): string | null {
 }
 
 /** Which field of the form a refusal is about, so it shows beside it; null for the form as a whole. */
-export function groupFieldOfError (message: string | null | undefined): 'key' | 'name' | 'dependsOn' | 'defaultLevel' | null {
+export function groupFieldOfError (message: string | null | undefined): 'key' | 'name' | 'dependsOn' | 'defaultWorkLevel' | null {
     const m = (message ?? '').toLowerCase()
     if (!m) return null
     if (m.includes('group key') || m.includes('exists on this board') || m.includes('key is immutable')) return 'key'
     if (m.includes('depends on') || m.includes('group cycle')) return 'dependsOn'
     // A level off the board's ladder, or on a board without one (task RD3-6).
-    if (m.includes('level is') || m.includes('ladder')) return 'defaultLevel'
+    if (m.includes('level is') || m.includes('ladder')) return 'defaultWorkLevel'
     if (m.includes('group name')) return 'name'
     return null
 }

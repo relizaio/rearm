@@ -1,14 +1,14 @@
 // What the task drawer shows as its preview (gaps §1.26): enough for a person to decide whether to
 // open the task page, and nothing that needs a page to read -- counts rather than tables, one line
 // per concern.
-import { DocumentRelease, Finding, INDEXED_TYPES, latestRound } from './agentDocuments'
+import { DocumentRelease, ReviewItem, INDEXED_TYPES, latestRound } from './agentDocuments'
 import { costLabel, formatTokenSplit, formatTokens, taskSpendLabel, totalTokens } from './agentUsage'
 import { agentName, dur, roleName, ts } from './agentTaskFormat'
 import { aboutLabel, latestQuestionRound } from './agentQuestionRounds'
 
 export type TaskSummary = {
-    /** Open findings of the newest round of each indexed type, counted by priority, P1 first. */
-    openFindings: { priority: number | null, count: number }[]
+    /** Open review items of the newest round of each indexed type, counted by priority, P1 first. */
+    openReviewItems: { priority: number | null, count: number }[]
     openQuestions: number
     /**
      * The open questions in one line: how many, who asked, in which round, about what (gaps
@@ -26,7 +26,7 @@ function openQuestionsLine (task: any, roles: any[] | null | undefined, stack: a
     const n = (task?.openQuestions ?? []).length
     if (!n) return null
     const latest = latestQuestionRound(task, roles)
-    // No QUESTIONS round on the read (an older task): the newest frame still says who asked.
+    // No BOARD_QUESTIONS round on the read (an older task): the newest frame still says who asked.
     const asker = latest?.askedBy?.roleName
         ?? (stack.length ? roleName(roles, stack[stack.length - 1].askingRole) || null : null)
     const detail = [latest?.round != null ? `round ${latest.round}` : '', aboutLabel(latest)].filter(Boolean)
@@ -41,13 +41,13 @@ export function taskSummary (task: any, tasks: any[], roles: any[] | null | unde
     const byPriority = new Map<number | null, number>()
     for (const spec of INDEXED_TYPES) {
         const round = latestRound(documents, spec)
-        for (const f of (round?.document?.findings?.findings ?? []) as Finding[]) {
+        for (const f of (round?.document?.reviewItems?.reviewItems ?? []) as ReviewItem[]) {
             if (f.status !== 'OPEN') continue
             const p = typeof f.priority === 'number' ? f.priority : null
             byPriority.set(p, (byPriority.get(p) ?? 0) + 1)
         }
     }
-    const openFindings = [...byPriority.entries()]
+    const openReviewItems = [...byPriority.entries()]
         .sort((a, b) => (a[0] ?? Number.MAX_SAFE_INTEGER) - (b[0] ?? Number.MAX_SAFE_INTEGER))
         .map(([priority, count]) => ({ priority, count }))
 
@@ -69,7 +69,7 @@ export function taskSummary (task: any, tasks: any[], roles: any[] | null | unde
     const a = task?.assignment
     const usage = task?.usage
     return {
-        openFindings,
+        openReviewItems,
         openQuestions: (task?.openQuestions ?? []).length,
         questions: openQuestionsLine(task, roles, stack),
         latestDocuments,

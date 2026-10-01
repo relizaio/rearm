@@ -1,9 +1,9 @@
 // A board's documents as the UI shows them (board-documents.md §5, task 36d0549e): inside their board,
 // out of the org's component lists and pickers, and on a component page that speaks the document's
 // language. Access is unchanged (board-permissions.md D18); this is presentation only.
-import { lifecycleWord } from './agentWords'
+import { lifecycleWord, specWord } from './agentWords'
 
-/** The kinds the component lists and pickers show: software. DOCUMENT components are shown inside their board. */
+/** The kinds the component lists and pickers show: software. BOARD_DOCUMENT components are shown inside their board. */
 export const SOFTWARE_KINDS = ['GENERIC', 'HELM']
 
 /**
@@ -15,7 +15,7 @@ export function recentReleasesKinds (includeDocuments: boolean): string[] | null
 }
 
 export function isDocumentComponent (c: { kind?: string | null } | null | undefined): boolean {
-    return c?.kind === 'DOCUMENT'
+    return c?.kind === 'BOARD_DOCUMENT'
 }
 
 /**
@@ -61,22 +61,22 @@ export function latestLabel (latest: { round?: number | null, version?: string |
     return `round ${latest.round ?? '?'}` + (latest.version ? ` · v${latest.version}` : '')
 }
 
-export interface CheckCounts { pass: number, fail: number, skip: number, blockingFailed: number }
+export interface ElementCheckCounts { pass: number, fail: number, skip: number, blockingFailed: number }
 
 /**
  * The verdict of a check report from its counts, the one rule the task page and the Documents tab share
  * (RD2-24): FAIL when a blocking check failed, WARN when only a non-blocking one did, PASS otherwise. The
- * server's checkVerdict is read from its counts by the same rule.
+ * server's elementCheckVerdict is read from its counts by the same rule.
  */
-export function checkVerdictOf (c: CheckCounts): 'FAIL' | 'WARN' | 'PASS' {
+export function elementCheckVerdictOf (c: ElementCheckCounts): 'FAIL' | 'WARN' | 'PASS' {
     if (c.blockingFailed > 0) return 'FAIL'
     return c.fail > 0 ? 'WARN' : 'PASS'
 }
 
 /** "7 pass · 1 fail · 2 skip", as the task page words it; the verdict beside it; '—' when unchecked. */
-export function checksLine (counts: CheckCounts | null | undefined, fallbackVerdict?: string | null): { line: string, verdict: string | null } {
+export function elementChecksLine (counts: ElementCheckCounts | null | undefined, fallbackVerdict?: string | null): { line: string, verdict: string | null } {
     if (!counts) return { line: fallbackVerdict ?? '—', verdict: fallbackVerdict ?? null }
-    return { line: `${counts.pass} pass · ${counts.fail} fail · ${counts.skip} skip`, verdict: checkVerdictOf(counts) }
+    return { line: `${counts.pass} pass · ${counts.fail} fail · ${counts.skip} skip`, verdict: elementCheckVerdictOf(counts) }
 }
 
 /**
@@ -107,25 +107,25 @@ export interface SeriesRow {
     latest: string
     lifecycle: string
     roundsCount: number
-    openFindings: number | null
-    checkVerdict: string | null
+    openReviewItems: number | null
+    elementCheckVerdict: string | null
     /** "7 pass · 1 fail · 2 skip", or the verdict alone from a server without counts, or '—'. */
-    checks: string
+    elementChecks: string
 }
 
 /** The board page's Documents section: one row per document series. */
 export function documentSeriesRows (series: any[] | null | undefined): SeriesRow[] {
     return (series ?? []).map(s => ({
         specification: s.specification,
-        label: String(s.specification ?? '').toLowerCase().replace(/_/g, ' '),
+        label: specWord(s.specification),
         component: s.component?.uuid ?? '',
         componentName: s.component?.name ?? s.component?.uuid ?? '',
         latest: latestLabel(s.latestRound),
         lifecycle: lifecycleWord(s.latestRound?.lifecycle),
         roundsCount: s.roundsCount ?? 0,
-        openFindings: s.openFindings ?? null,
-        checkVerdict: s.checkCounts ? checkVerdictOf(s.checkCounts) : s.checkVerdict ?? null,
-        checks: checksLine(s.checkCounts, s.checkVerdict).line,
+        openReviewItems: s.openReviewItems ?? null,
+        elementCheckVerdict: s.elementCheckCounts ? elementCheckVerdictOf(s.elementCheckCounts) : s.elementCheckVerdict ?? null,
+        elementChecks: elementChecksLine(s.elementCheckCounts, s.elementCheckVerdict).line,
     }))
 }
 
@@ -137,31 +137,31 @@ export interface DocumentRoundView {
     taskPath: string | null
     boardPath: string | null
     /** "2 open · 5 items" for an index round; null for prose. */
-    findings: string | null
-    checks: { line: string, verdict: string | null } | null
+    reviewItems: string | null
+    elementChecks: { line: string, verdict: string | null } | null
     elementsCount: number | null
 }
 
 /**
  * A round's release page (RD2-24): what the round is, where it sits, and what it said -- instead of the
- * software layout. The task comes from the round's own read of it (key, board, and its CHECK_REPORT rounds);
+ * software layout. The task comes from the round's own read of it (key, board, and its BOARD_ELEMENT_CHECK_REPORT rounds);
  * without that read the task is named by its uuid's first eight.
  */
 export function documentRoundView (release: any, task: any, orgUuid: string | null | undefined,
-    checks: CheckCounts | null): DocumentRoundView | null {
+    elementChecks: ElementCheckCounts | null): DocumentRoundView | null {
     const d = release?.document
     if (!d) return null
-    const items: any[] = d.findings?.findings ?? []
+    const items: any[] = d.reviewItems?.reviewItems ?? []
     const open = items.filter(f => f?.status === 'OPEN').length
     return {
-        specification: String(d.specification ?? '').toLowerCase().replace(/_/g, ' '),
+        specification: specWord(d.specification),
         round: d.round ?? null,
         path: d.path ?? '',
         taskLabel: d.task ? (task?.key ?? String(d.task).slice(0, 8)) : null,
         taskPath: d.task ? `/aiAgentTask/${d.task}` : null,
         boardPath: task?.board && orgUuid ? `/aiAgentsOfOrg/${orgUuid}?tab=boards&board=${task.board}` : null,
-        findings: d.findings ? `${open} open · ${items.length} item${items.length === 1 ? '' : 's'}` : null,
-        checks: checks ? checksLine(checks) : null,
+        reviewItems: d.reviewItems ? `${open} open · ${items.length} item${items.length === 1 ? '' : 's'}` : null,
+        elementChecks: elementChecks ? elementChecksLine(elementChecks) : null,
         elementsCount: d.elements?.elements ? d.elements.elements.length : null,
     }
 }

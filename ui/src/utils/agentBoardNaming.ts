@@ -141,9 +141,9 @@ export function documentsRootPlaceholder (shared: boolean): string {
  * documents block, the default level, the level ladder, the target, or neither (null, shown as a
  * notification).
  */
-export function boardFieldOfError (message?: string | null): 'taskPrefix' | 'documents' | 'defaultTaskLevel' | 'ladder' | 'target' | null {
+export function boardFieldOfError (message?: string | null): 'taskPrefix' | 'documents' | 'defaultWorkLevel' | 'ladder' | 'target' | null {
     const m = message ?? ''
-    if (/defaultTaskLevel/.test(m)) return 'defaultTaskLevel'
+    if (/defaultWorkLevel/.test(m)) return 'defaultWorkLevel'
     // The ladder (task RD3-6): a rung unnamed or named twice, too many, or removed while levels are set.
     if (/settings\.ladder/.test(m)) return 'ladder'
     if (/taskPrefix|task-key prefix/.test(m)) return 'taskPrefix'

@@ -3,20 +3,20 @@
          report table when opened. Re-run asks the board to check again in the current scope. -->
     <div v-if="report" class="chk">
         <div class="chk__line" :class="{ 'chk__line--blocked': summary.blockingFailed.length }" @click="open = !open">
-            <span class="chk__label">checks</span>
+            <span class="chk__label">element checks</span>
             <span>{{ summaryLine(summary) }}</span>
             <span v-if="round" class="chk__meta">· report round {{ round }}</span>
             <n-tag v-if="summary.blockingFailed.length" size="tiny" :bordered="false" type="error"
                    title="Hand-over is refused while these fail">blocks: {{ summary.blockingFailed.join(', ') }}</n-tag>
             <n-tag v-if="stale" size="tiny" :bordered="false" type="warning"
                    title="An input has a newer document since this report; re-run to check against it">stale</n-tag>
-            <n-button v-if="canRerun" size="tiny" quaternary :loading="running" data-testid="check-rerun"
+            <n-button v-if="canRerun" size="tiny" quaternary :loading="running" data-testid="element-check-rerun"
                       @click.stop="rerun">Re-run</n-button>
         </div>
         <div v-if="error" class="chk__error">{{ error }}</div>
         <table v-if="open" class="chk__table">
             <tr v-for="r in report.results ?? []" :key="r.check ?? ''">
-                <td class="chk__check" :title="describeCheck(catalogue, r.check)"><code>{{ r.check }}</code></td>
+                <td class="chk__check" :title="describeElementCheck(catalogue, r.check)"><code>{{ r.check }}</code></td>
                 <td><n-tag size="tiny" :bordered="false" :type="resultType(r.result)">{{ r.result }}</n-tag></td>
                 <td class="chk__meta">{{ r.blocking ? 'blocking' : '' }}</td>
                 <td>
@@ -44,9 +44,9 @@ import { useStore } from 'vuex'
 import type { DocumentRelease } from '@/utils/agentDocuments'
 import { documentFileUrl } from '@/utils/agentDocuments'
 import {
-    CatalogueEntry, CheckReport, describeCheck, isStale, latestReportFor, offencesByElement, reportOf, resultType,
+    CatalogueEntry, ElementCheckReport, describeElementCheck, isStale, latestReportFor, offencesByElement, reportOf, resultType,
     summarise, summaryLine,
-} from '@/utils/agentChecks'
+} from '@/utils/agentElementChecks'
 
 const props = defineProps<{
     /** The document the report is about. */
@@ -60,7 +60,7 @@ const props = defineProps<{
 const store = useStore()
 // The catalogue is static: read once for every report on the page, for the check descriptions.
 const catalogue = ref<CatalogueEntry[]>([])
-if (!cataloguePromise) cataloguePromise = store.dispatch('fetchCheckCatalogue').catch(() => [])
+if (!cataloguePromise) cataloguePromise = store.dispatch('fetchElementCheckCatalogue').catch(() => [])
 cataloguePromise.then((c: CatalogueEntry[]) => { catalogue.value = c ?? [] })
 const open = ref(false)
 const running = ref(false)
@@ -69,7 +69,7 @@ const error = ref<string | null>(null)
 const fresh = ref<DocumentRelease | null>(null)
 
 const reportRelease = computed(() => fresh.value ?? latestReportFor(props.documents, props.release.uuid))
-const report = computed<CheckReport | null>(() => reportOf(reportRelease.value))
+const report = computed<ElementCheckReport | null>(() => reportOf(reportRelease.value))
 const round = computed(() => reportRelease.value?.document?.round ?? null)
 const summary = computed(() => summarise(report.value))
 const stale = computed(() => isStale(report.value, props.documents))
@@ -87,10 +87,10 @@ async function rerun () {
     running.value = true
     error.value = null
     try {
-        fresh.value = await store.dispatch('runAgentChecks', props.release.uuid)
+        fresh.value = await store.dispatch('runAgentElementChecks', props.release.uuid)
         open.value = true
     } catch (e: any) {
-        error.value = 'Could not re-run the checks: ' + (e?.message ?? e)
+        error.value = 'Could not re-run the element checks: ' + (e?.message ?? e)
     } finally {
         running.value = false
     }

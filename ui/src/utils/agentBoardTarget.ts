@@ -9,14 +9,14 @@ export interface TargetOption { label: string, value: string, type: string }
 export const TARGET_HINT = 'the node the board builds'
 
 /**
- * The form's choices: the organization's software components, by name. A board's own DOCUMENT
+ * The form's choices: the organization's software components, by name. A board's own BOARD_DOCUMENT
  * components are never offered (the store asks for software kinds only; one that carries its kind
  * is left out here too), nor archived ones. The board's current target is kept when the list does
  * not have it (another perspective, say), so Edit still shows it by name, not as a uuid.
  */
 export function boardTargetOptions (components: any[] | null | undefined, current?: any | null): TargetOption[] {
     const opts = (components ?? [])
-        .filter(c => c?.uuid && c?.status !== 'ARCHIVED' && c?.kind !== 'DOCUMENT')
+        .filter(c => c?.uuid && c?.status !== 'ARCHIVED' && c?.kind !== 'BOARD_DOCUMENT')
         .map(c => ({ label: String(c.name ?? c.uuid), value: String(c.uuid), type: String(c.type ?? 'COMPONENT') }))
     if (current?.uuid && !opts.some(o => o.value === current.uuid)) {
         opts.push({ label: String(current.name ?? String(current.uuid).slice(0, 8)), value: String(current.uuid), type: String(current.type ?? 'COMPONENT') })

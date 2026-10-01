@@ -11,7 +11,7 @@ vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) })
 
 const prBoard = { deliveryPolicy: { mode: 'PULL_REQUEST' } }
 const abandoned = { url: 'https://github.com/relizaio/rearm-saas/pull/692', state: 'OPEN',
-    attestation: { outcome: 'ABANDONED', note: 'superseded by #694' } }
+    declaration: { outcome: 'ABANDONED', note: 'superseded by #694' } }
 const merged = { url: 'https://github.com/relizaio/rearm-saas/pull/694', state: 'MERGED' }
 
 function completeButton (task: any) {

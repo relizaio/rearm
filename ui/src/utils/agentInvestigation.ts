@@ -5,16 +5,16 @@
 import { dollarsToMicros, microsToDollars } from './agentBudget'
 import type { Option } from './agentTaskOptions'
 
-export const INVESTIGATION_REPORT = 'INVESTIGATION_REPORT'
+export const BOARD_INVESTIGATION_REPORT = 'BOARD_INVESTIGATION_REPORT'
 
 /** Whether the task is an investigation. */
 export function isInvestigation (task: any): boolean {
     return task?.kind === 'INVESTIGATION' && !!task?.investigation
 }
 
-/** Whether a role may be asked for a report: it produces INVESTIGATION_REPORT at TASK scope. */
+/** Whether a role may be asked for a report: it produces BOARD_INVESTIGATION_REPORT at TASK scope. */
 export function producesReport (role: any): boolean {
-    return (role?.producesOutputs ?? []).some((o: any) => o?.specification === INVESTIGATION_REPORT
+    return (role?.producesOutputs ?? []).some((o: any) => o?.specification === BOARD_INVESTIGATION_REPORT
         && (o?.scope ?? 'TASK') === 'TASK')
 }
 
@@ -98,7 +98,7 @@ export function investigationLines (task: any, taskKeyOf: (uuid: string) => stri
 
 /** The report release among the task's documents: the one the investigation completed with, else its newest. */
 export function reportOf (task: any): any | null {
-    const docs = (task?.documents ?? []).filter((d: any) => d?.document?.specification === INVESTIGATION_REPORT
+    const docs = (task?.documents ?? []).filter((d: any) => d?.document?.specification === BOARD_INVESTIGATION_REPORT
         && !d?.document?.supersededBy)
     if (!docs.length) return null
     const done = task?.investigation?.report

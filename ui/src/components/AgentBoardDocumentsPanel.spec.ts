@@ -14,9 +14,9 @@ describe('AgentBoardDocumentsPanel', () => {
                 orgUuid: 'o1',
                 series: [
                     { specification: 'ARCHITECTURE', component: { uuid: 'c1', name: 'rd-architecture' },
-                        latestRound: { round: 2, version: '5', lifecycle: 'ASSEMBLED' }, roundsCount: 5, openFindings: null, checkVerdict: 'PASS' },
-                    { specification: 'REVIEW_FINDINGS', component: { uuid: 'c2', name: 'rd-review_findings' },
-                        latestRound: { round: 1, version: '1', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openFindings: 3, checkVerdict: null },
+                        latestRound: { round: 2, version: '5', lifecycle: 'ASSEMBLED' }, roundsCount: 5, openReviewItems: null, elementCheckVerdict: 'PASS' },
+                    { specification: 'BOARD_REVIEW_ITEMS', component: { uuid: 'c2', name: 'rd-board-review-items' },
+                        latestRound: { round: 1, version: '1', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openReviewItems: 3, elementCheckVerdict: null },
                 ],
             },
             global: { stubs },
@@ -26,7 +26,7 @@ describe('AgentBoardDocumentsPanel', () => {
         expect(rows[0].text()).toContain('architecture')
         expect(rows[0].text()).toContain('rd-architecture')
         expect(rows[0].text()).toContain('PASS')
-        expect(rows[1].text()).toContain('review findings')
+        expect(rows[1].text()).toContain('review items')
         expect(rows[1].text()).toContain('3')
         expect(rows[0].find('.rl').attributes('href')).toContain('"compuuid":"c1"')
     })
@@ -38,12 +38,12 @@ describe('AgentBoardDocumentsPanel', () => {
     })
 })
 
-// RD2-24: the Checks cell says what the task page says, with the verdict by the same rule.
-describe('the Documents tab\'s checks', () => {
-    it('counts the checks and gives the verdict from the counts', () => {
+// RD2-24: the Element checks cell says what the task page says, with the verdict by the same rule.
+describe('the Documents tab\'s element checks', () => {
+    it('counts the element checks and gives the verdict from the counts', () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', series: [{ specification: 'ARCHITECTURE', component: { uuid: 'c1', name: 'arch' },
-            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openFindings: null,
-            checkVerdict: 'FAIL', checkCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }] }, global: { stubs } })
+            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, roundsCount: 1, openReviewItems: null,
+            elementCheckVerdict: 'FAIL', elementCheckCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }] }, global: { stubs } })
         const cells = w.findAll('.boardDocuments__row td').map(c => c.text())
         expect(cells).toContain('round 1 · v0')
         expect(cells).toContain('assembled')

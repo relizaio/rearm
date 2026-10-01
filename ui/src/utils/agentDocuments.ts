@@ -1,9 +1,11 @@
-// Presentation helpers for document handoff: the documents a hop produced, and the findings
+// Presentation helpers for document handoff: the documents a hop produced, and the review items
 // still open on a task.
 //
-// Pure and dependency-free, so the awkward parts — turning a canonical repository string back into
-// a browsable URL, and ordering findings whose priority scale is per-org — are testable without
+// Pure, reading only the board's words (agentWords), so the awkward parts — turning a canonical repository string back into
+// a browsable URL, and ordering review items whose priority scale is per-org — are testable without
 // mounting anything.
+
+import { specWord } from './agentWords'
 
 export interface DocumentRef {
     specification?: string | null
@@ -14,11 +16,11 @@ export interface DocumentRef {
     task?: string | null
     session?: string | null
     round?: number | null
-    findings?: Record<string, any> | null
+    reviewItems?: Record<string, any> | null
     /** The element index of a prose document (gaps §2.A); see agentElements.ts. */
     elements?: Record<string, any> | null
-    /** On a CHECK_REPORT round: the element checks' report; see agentChecks.ts. */
-    checks?: Record<string, any> | null
+    /** On a BOARD_ELEMENT_CHECK_REPORT round: the element checks' report; see agentElementChecks.ts. */
+    elementChecks?: Record<string, any> | null
     /** A round a role published on a task it did not hold (task e97fde56). */
     advisory?: boolean | null
     /** The role the round was published as; absent on older rounds. */
@@ -43,7 +45,7 @@ export interface DocumentRelease {
     } | null
 }
 
-export interface Finding {
+export interface ReviewItem {
     id?: string | null
     priority?: number | null
     status?: string | null
@@ -56,19 +58,19 @@ export interface Finding {
     decidedIn?: string | null
     decidedAt?: string | null
     /**
-     * Filed by a person approving at a gate (task cac71351): open work the task was approved past.
+     * Filed by a person accepting at a gate (task cac71351): open work the task was accepted past.
      * Never blocks routing or completion. Written by the server.
      */
     correction?: boolean | null
 }
 
-/** Whether a finding is a correction: open work that never blocks. */
-export function isCorrection (f?: Finding | null): boolean {
+/** Whether a review item is a correction: open work that never blocks. */
+export function isCorrection (f?: ReviewItem | null): boolean {
     return f?.correction === true
 }
 
-/** Types whose releases carry a findings index. */
-export const INDEXED_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT']
+/** Types whose releases carry a review item index. */
+export const INDEXED_TYPES = ['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT']
 
 export function isIndexed (spec?: string | null): boolean {
     return !!spec && INDEXED_TYPES.includes(spec)
@@ -113,13 +115,13 @@ export function documentFileUrl (release?: DocumentRelease | null): string | nul
 
 /** The verdict an indexed document recorded, or null. */
 export function documentVerdict (release?: DocumentRelease | null): string | null {
-    const v = release?.document?.findings?.verdict
+    const v = release?.document?.reviewItems?.verdict
     return typeof v === 'string' ? v : null
 }
 
 /** Counts from a test report envelope, when present. */
 export function testCounts (release?: DocumentRelease | null): { passed: number, failed: number, skipped: number } | null {
-    const c = release?.document?.findings?.counts
+    const c = release?.document?.reviewItems?.counts
     if (!c || typeof c !== 'object') return null
     return {
         passed: Number(c.passed ?? 0),
@@ -153,24 +155,24 @@ export function replacedByLabel (release?: DocumentRelease | null, documents?: (
 export function documentLabel (release?: DocumentRelease | null): string {
     const spec = release?.document?.specification
     if (!spec) return '—'
-    const pretty = (s: string) => s.toLowerCase().replace(/_/g, ' ')
+    const pretty = specWord
     // A round filed under one kind with another kind's index inside: before task bc7fc25a the board
-    // unwound a tester's or reviewer's findings frame into a QUESTIONS-filed round. It is named by
+    // unwound a tester's or reviewer's review item frame into a BOARD_QUESTIONS-filed round. It is named by
     // what it holds, as the board's round, and not given a questions round number it never was.
-    const kind = (release?.document?.findings as any)?.kind
+    const kind = (release?.document?.reviewItems as any)?.kind
     if (kind && kind !== spec) return `${pretty(kind)} · board round (filed as ${pretty(spec)})`
     const round = release?.document?.round
     return round ? `${pretty(spec)} · round ${round}` : pretty(spec)
 }
 
 /**
- * Findings of one index, newest-first ordering being the caller's job.
+ * Review items of one index, newest-first ordering being the caller's job.
  *
  * Returns [] rather than null for anything unindexed, so a caller can concatenate without guards.
  */
-export function findingsOf (release?: DocumentRelease | null): Finding[] {
-    const f = release?.document?.findings?.findings
-    return Array.isArray(f) ? f as Finding[] : []
+export function reviewItemsOf (release?: DocumentRelease | null): ReviewItem[] {
+    const f = release?.document?.reviewItems?.reviewItems
+    return Array.isArray(f) ? f as ReviewItem[] : []
 }
 
 /** Lifecycles in which a round is not a round yet, or no longer one: a reservation mid-cut or abandoned. */
@@ -182,48 +184,48 @@ const UNSETTLED = ['PENDING', 'CANCELLED', 'REJECTED']
  */
 export function latestRound (documents: DocumentRelease[] | null | undefined, spec: string): DocumentRelease | null {
     // A replaced version is never the newest of its round (task RD4-7).
-    return (documents ?? []).find(d => d?.document?.specification === spec && !!d?.document?.findings
+    return (documents ?? []).find(d => d?.document?.specification === spec && !!d?.document?.reviewItems
         && !d?.document?.supersededBy && !UNSETTLED.includes(d?.lifecycle ?? '')) ?? null
 }
 
-/** Task states in which a person may decide findings; on a hold the server also refuses a new blocking item. */
+/** Task states in which a person may decide review items; on a hold the server also refuses a new blocking item. */
 export const DECIDABLE_STATUSES = ['QUEUED', 'AWAITING_COORDINATOR', 'ON_HOLD']
 
 /**
- * The open findings that stop a person completing a task: over the newest REVIEW_FINDINGS and
- * TEST_REPORT rounds, at or above the board's completion priority (1 is highest, so at or above
- * means a number no greater than it). A null threshold, or a finding with no priority, counts every
+ * The open review items that stop a person completing a task: over the newest BOARD_REVIEW_ITEMS and
+ * BOARD_TEST_REPORT rounds, at or above the board's completion priority (1 is highest, so at or above
+ * means a number no greater than it). A null threshold, or a review item with no priority, counts every
  * open item. A correction never counts. Mirrors the server's check so the complete dialog can offer
  * to decide them first.
  */
 export function completionBlockers (documents: DocumentRelease[] | null | undefined,
-    completionPriority?: number | null): { specification: string, finding: Finding }[] {
-    const out: { specification: string, finding: Finding }[] = []
+    completionPriority?: number | null): { specification: string, reviewItem: ReviewItem }[] {
+    const out: { specification: string, reviewItem: ReviewItem }[] = []
     for (const spec of INDEXED_TYPES) {
-        for (const f of sortFindings(openFindingsOf(latestRound(documents, spec)))) {
+        for (const f of sortReviewItems(openReviewItemsOf(latestRound(documents, spec)))) {
             if (isCorrection(f)) continue
             if (completionPriority == null || typeof f.priority !== 'number' || f.priority <= completionPriority) {
-                out.push({ specification: spec, finding: f })
+                out.push({ specification: spec, reviewItem: f })
             }
         }
     }
     return out
 }
 
-/** Open findings only. */
-export function openFindingsOf (release?: DocumentRelease | null): Finding[] {
-    return findingsOf(release).filter(f => f?.status === 'OPEN')
+/** Open review items only. */
+export function openReviewItemsOf (release?: DocumentRelease | null): ReviewItem[] {
+    return reviewItemsOf(release).filter(f => f?.status === 'OPEN')
 }
 
 /**
- * Sort findings for display: priority ascending (1 is highest), then id.
+ * Sort review items for display: priority ascending (1 is highest), then id.
  *
  * A priority outside the org's current scale still sorts as the integer it is, rather than being
  * dropped or pushed to the end. Lowering the level count is validated at publish only, so history
- * legitimately carries higher numbers and a reader that hid them would hide real findings.
+ * legitimately carries higher numbers and a reader that hid them would hide real review items.
  */
-export function sortFindings (findings: Finding[]): Finding[] {
-    return [...findings].sort((a, b) => {
+export function sortReviewItems (reviewItems: ReviewItem[]): ReviewItem[] {
+    return [...reviewItems].sort((a, b) => {
         const pa = typeof a?.priority === 'number' ? a.priority : Number.MAX_SAFE_INTEGER
         const pb = typeof b?.priority === 'number' ? b.priority : Number.MAX_SAFE_INTEGER
         if (pa !== pb) return pa - pb
@@ -231,19 +233,19 @@ export function sortFindings (findings: Finding[]): Finding[] {
     })
 }
 
-/** Findings grouped by priority, lowest number first. */
-export function groupByPriority (findings: Finding[]): { priority: number | null, findings: Finding[] }[] {
-    const groups = new Map<number | null, Finding[]>()
-    for (const f of sortFindings(findings)) {
+/** Review items grouped by priority, lowest number first. */
+export function groupByPriority (reviewItems: ReviewItem[]): { priority: number | null, reviewItems: ReviewItem[] }[] {
+    const groups = new Map<number | null, ReviewItem[]>()
+    for (const f of sortReviewItems(reviewItems)) {
         const p = typeof f?.priority === 'number' ? f.priority : null
         if (!groups.has(p)) groups.set(p, [])
         groups.get(p)!.push(f)
     }
-    return Array.from(groups.entries()).map(([priority, fs]) => ({ priority, findings: fs }))
+    return Array.from(groups.entries()).map(([priority, fs]) => ({ priority, reviewItems: fs }))
 }
 
-/** Where a finding points, as a short string. */
-export function findingLocation (f?: Finding | null): string {
+/** Where a review item points, as a short string. */
+export function reviewItemLocation (f?: ReviewItem | null): string {
     const loc = f?.location
     if (!loc) return ''
     if (loc.ref) return String(loc.ref)
@@ -252,11 +254,11 @@ export function findingLocation (f?: Finding | null): string {
 }
 
 /**
- * Everything a finding's location says, for its tooltip: the file position and the ref together,
+ * Everything a review item's location says, for its tooltip: the file position and the ref together,
  * "path:line — ref". The short form above shows the ref alone when there is one, so without this
- * the path of a finding with a ref would be shown nowhere.
+ * the path of a review item with a ref would be shown nowhere.
  */
-export function findingLocationFull (f?: Finding | null): string {
+export function reviewItemLocationFull (f?: ReviewItem | null): string {
     const loc = f?.location
     if (!loc) return ''
     const at = loc.path ? (loc.line ? `${loc.path}:${loc.line}` : String(loc.path)) : ''
@@ -264,7 +266,7 @@ export function findingLocationFull (f?: Finding | null): string {
     return at && ref ? `${at} — ${ref}` : (at || ref)
 }
 
-/** Tag colour for a finding status. */
+/** Tag colour for a review item status. */
 export function statusType (status?: string | null): 'success' | 'warning' | 'error' | 'info' | 'default' {
     switch (status) {
     case 'OPEN': return 'error'
@@ -298,7 +300,7 @@ export function outputsOfHop (outputs: string[] | null | undefined,
 
 /** Path templates the server falls back to, shown as placeholders in board settings. */
 /** The built-in index types, which every board's template form lists. */
-export const INDEX_DOCUMENT_TYPES = ['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS']
+export const INDEX_DOCUMENT_TYPES = ['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT', 'BOARD_QUESTIONS']
 
 /**
  * The placeholders a path template takes (board-documents.md §3): the task's key (RD-42), the round,

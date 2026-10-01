@@ -172,9 +172,9 @@ describe('lanes and the PERT', () => {
 
 describe('the New task form', () => {
     it('sends the group, the tags and the level only when set', () => {
-        expect(registerGroupFields({ group: NO_GROUP, tagsText: ' ', level: null })).toEqual({})
-        expect(registerGroupFields({ group: 'core-work', tagsText: 'Client-Req, urgent', level: 0 }))
-            .toEqual({ group: 'core-work', tags: [{ key: 'client-req' }, { key: 'urgent' }], level: 0 })
+        expect(registerGroupFields({ group: NO_GROUP, tagsText: ' ', workLevel: null })).toEqual({})
+        expect(registerGroupFields({ group: 'core-work', tagsText: 'Client-Req, urgent', workLevel: 0 }))
+            .toEqual({ group: 'core-work', tags: [{ key: 'client-req' }, { key: 'urgent' }], workLevel: 0 })
         expect(registerGroupFields({})).toEqual({})
     })
 })
@@ -185,16 +185,16 @@ describe('the groups tab\'s form', () => {
         d.key = ' Core-Work '
         d.name = ' Core '
         expect(groupInputOf(d)).toEqual({ key: 'core-work', name: 'Core', description: null, dependsOn: [],
-            defaultLevel: null, status: 'OPEN' })
-        const edit = groupDraftOf({ uuid: 'g1', key: 'ui-work', dependsOn: ['core-work'], defaultLevel: 2, status: 'CLOSED' })
+            defaultWorkLevel: null, status: 'OPEN' })
+        const edit = groupDraftOf({ uuid: 'g1', key: 'ui-work', dependsOn: ['core-work'], defaultWorkLevel: 2, status: 'CLOSED' })
         expect(groupInputOf(edit)).toEqual({ uuid: 'g1', key: 'ui-work', name: null, description: null,
-            dependsOn: ['core-work'], defaultLevel: 2, status: 'CLOSED' })
+            dependsOn: ['core-work'], defaultWorkLevel: 2, status: 'CLOSED' })
     })
 
     it('leaves the default level out on a board without a ladder, which keeps it (task RD3-6)', () => {
-        const edit = groupDraftOf({ uuid: 'g1', key: 'ui-work', defaultLevel: 2, status: 'OPEN' })
-        expect(groupInputOf(edit, { withLevel: false })).not.toHaveProperty('defaultLevel')
-        expect(groupInputOf(edit, { withLevel: true }).defaultLevel).toBe(2)
+        const edit = groupDraftOf({ uuid: 'g1', key: 'ui-work', defaultWorkLevel: 2, status: 'OPEN' })
+        expect(groupInputOf(edit, { withLevel: false })).not.toHaveProperty('defaultWorkLevel')
+        expect(groupInputOf(edit, { withLevel: true }).defaultWorkLevel).toBe(2)
     })
 
     it('offers every other group as a dependency', () => {
@@ -208,8 +208,8 @@ describe('the groups tab\'s form', () => {
         expect(groupFieldOfError('group ui-work is referenced by 2 tasks; its key is immutable')).toBe('key')
         expect(groupFieldOfError('group a depends on itself')).toBe('dependsOn')
         expect(groupFieldOfError('group cycle: a → b → a')).toBe('dependsOn')
-        expect(groupFieldOfError('level is 0 to 9')).toBe('defaultLevel')
-        expect(groupFieldOfError("level 4 is not on this board's ladder: 0 requirements, 1 solution")).toBe('defaultLevel')
+        expect(groupFieldOfError('level is 0 to 9')).toBe('defaultWorkLevel')
+        expect(groupFieldOfError("level 4 is not on this board's ladder: 0 requirements, 1 solution")).toBe('defaultWorkLevel')
         expect(groupFieldOfError('A group name is one line')).toBe('name')
         expect(groupFieldOfError('Not authorized')).toBeNull()
         expect(groupFieldOfError(null)).toBeNull()

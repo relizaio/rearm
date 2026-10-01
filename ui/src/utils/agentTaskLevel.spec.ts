@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
-    defaultLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, ladderOf,
+    defaultWorkLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, ladderOf,
     levelFromQuery, levelLabel, levelName, levelOf, levelOptions, levelPlaceholder, levelSource, levelToSet, levelTooltip,
     matchesLevel, MAX_LADDER_LEVELS, MAX_LEVEL, passesLevel, refWithLevel, taskLevelLabel, withLevelQuery,
 } from './agentTaskLevel'
@@ -12,9 +12,9 @@ const LADDER = { levels: [
     { number: 2, name: 'objects', description: null },
     { number: 3, name: 'components', description: null },
 ], prompt: null }
-const board = { defaultTaskLevel: 1, ladder: LADDER }
+const board = { defaultWorkLevel: 1, ladder: LADDER }
 const laddered = { ladder: LADDER }
-const noLadder = { defaultTaskLevel: 1 }
+const noLadder = { defaultWorkLevel: 1 }
 const actor = (a: any) => a?.name ?? '?'
 
 describe('the ladder', () => {
@@ -55,83 +55,83 @@ describe('the ladder', () => {
 
 describe('the level a board reads', () => {
     it('is the served effective level, else the task\'s own, else its group\'s, else the board default, else 0', () => {
-        expect(levelOf({ effectiveLevel: 2, level: null }, board)).toBe(2)
-        expect(levelOf({ level: 3 }, board)).toBe(3)
-        expect(levelOf({ level: null }, board)).toBe(1)
-        expect(levelOf({ level: null }, laddered), 'a ladder board defaults to 0').toBe(0)
-        expect(levelOf({ level: null, group: { key: 'ui' } }, { ...board, groups: [{ key: 'ui', defaultLevel: 2 }] })).toBe(2)
-        expect(levelOf({ level: 0 }, board)).toBe(0)
-        expect(levelSource({ level: 0 }, board)).toBe('set')
-        expect(levelSource({ level: null }, board)).toBe('default')
+        expect(levelOf({ effectiveWorkLevel: 2, workLevel: null }, board)).toBe(2)
+        expect(levelOf({ workLevel: 3 }, board)).toBe(3)
+        expect(levelOf({ workLevel: null }, board)).toBe(1)
+        expect(levelOf({ workLevel: null }, laddered), 'a ladder board defaults to 0').toBe(0)
+        expect(levelOf({ workLevel: null, group: { key: 'ui' } }, { ...board, groups: [{ key: 'ui', defaultWorkLevel: 2 }] })).toBe(2)
+        expect(levelOf({ workLevel: 0 }, board)).toBe(0)
+        expect(levelSource({ workLevel: 0 }, board)).toBe('set')
+        expect(levelSource({ workLevel: null }, board)).toBe('default')
     })
 
     it('is nothing on a board without a ladder, whatever the task kept', () => {
-        expect(levelOf({ effectiveLevel: 2, level: 2 }, noLadder)).toBeNull()
-        expect(levelOf({ level: 3 }, {})).toBeNull()
-        expect(levelSource({ level: 3 }, noLadder)).toBeNull()
-        expect(taskLevelLabel({ level: 3 }, noLadder)).toBeNull()
-        expect(levelTooltip({ level: 3 }, noLadder, actor)).toBeNull()
+        expect(levelOf({ effectiveWorkLevel: 2, workLevel: 2 }, noLadder)).toBeNull()
+        expect(levelOf({ workLevel: 3 }, {})).toBeNull()
+        expect(levelSource({ workLevel: 3 }, noLadder)).toBeNull()
+        expect(taskLevelLabel({ workLevel: 3 }, noLadder)).toBeNull()
+        expect(levelTooltip({ workLevel: 3 }, noLadder, actor)).toBeNull()
     })
 
     it('reads as a chip with the rung\'s name', () => {
-        expect(taskLevelLabel({ level: 2 }, board)).toBe('2 · objects')
-        expect(taskLevelLabel({ level: null }, board)).toBe('1 · solution')
-        expect(taskLevelLabel({ level: null }, laddered)).toBe('0 · requirements')
+        expect(taskLevelLabel({ workLevel: 2 }, board)).toBe('2 · objects')
+        expect(taskLevelLabel({ workLevel: null }, board)).toBe('1 · solution')
+        expect(taskLevelLabel({ workLevel: null }, laddered)).toBe('0 · requirements')
     })
 
     it('names the rung and its description in the tooltip and says where the level comes from', () => {
-        expect(levelTooltip({ level: null }, { ...board, defaultTaskLevel: 0 }, actor))
-            .toBe('level 0 · requirements: what the client asked for (board default)')
-        expect(levelTooltip({ level: 3, levelSetBy: { name: 'pavel' } }, board, actor)).toBe('level 3 · components (set by pavel)')
-        expect(levelTooltip({ level: null, group: { key: 'ui' } }, { ...board, groups: [{ key: 'ui', defaultLevel: 2 }] }, actor))
-            .toBe('level 2 · objects (group default)')
-        expect(levelTooltip({ level: 7 }, board, actor)).toBe('level 7', 'past the ladder')
+        expect(levelTooltip({ workLevel: null }, { ...board, defaultWorkLevel: 0 }, actor))
+            .toBe('work level 0 · requirements: what the client asked for (board default)')
+        expect(levelTooltip({ workLevel: 3, workLevelSetBy: { name: 'pavel' } }, board, actor)).toBe('work level 3 · components (set by pavel)')
+        expect(levelTooltip({ workLevel: null, group: { key: 'ui' } }, { ...board, groups: [{ key: 'ui', defaultWorkLevel: 2 }] }, actor))
+            .toBe('work level 2 · objects (group default)')
+        expect(levelTooltip({ workLevel: 7 }, board, actor)).toBe('work level 7', 'past the ladder')
     })
 })
 
 describe('the editor', () => {
     it('sends a rung of the ladder that differs, and nothing else', () => {
-        expect(levelToSet({ level: null }, 2, board)).toBe(2)
-        expect(levelToSet({ level: null }, 0, board)).toBe(0)
-        expect(levelToSet({ level: 2 }, 2, board)).toBeUndefined()
-        expect(levelToSet({ level: null }, null, board)).toBeUndefined()
-        expect(levelToSet({ level: null }, 4, board), 'off the ladder').toBeUndefined()
-        expect(levelToSet({ level: null }, -1, board)).toBeUndefined()
-        expect(levelToSet({ level: null }, 1.5, board)).toBeUndefined()
-        expect(levelToSet({ level: null }, 1, noLadder), 'no ladder, no level').toBeUndefined()
-        expect(levelPlaceholder({ ...board, defaultTaskLevel: 2 })).toBe('board default 2 · objects')
+        expect(levelToSet({ workLevel: null }, 2, board)).toBe(2)
+        expect(levelToSet({ workLevel: null }, 0, board)).toBe(0)
+        expect(levelToSet({ workLevel: 2 }, 2, board)).toBeUndefined()
+        expect(levelToSet({ workLevel: null }, null, board)).toBeUndefined()
+        expect(levelToSet({ workLevel: null }, 4, board), 'off the ladder').toBeUndefined()
+        expect(levelToSet({ workLevel: null }, -1, board)).toBeUndefined()
+        expect(levelToSet({ workLevel: null }, 1.5, board)).toBeUndefined()
+        expect(levelToSet({ workLevel: null }, 1, noLadder), 'no ladder, no level').toBeUndefined()
+        expect(levelPlaceholder({ ...board, defaultWorkLevel: 2 })).toBe('board default 2 · objects')
         expect(levelPlaceholder(laddered)).toBe('board default 0 · requirements')
         expect(levelPlaceholder(noLadder)).toBe('none')
     })
 
     it('the board default is sent only when changed; blank sends null', () => {
-        expect(defaultLevelPatch({ defaultTaskLevel: 1 }, 1)).toEqual({ changed: false, value: 1 })
-        expect(defaultLevelPatch({ defaultTaskLevel: 1 }, 3)).toEqual({ changed: true, value: 3 })
-        expect(defaultLevelPatch({ defaultTaskLevel: 1 }, null)).toEqual({ changed: true, value: null })
-        expect(defaultLevelPatch(null, null)).toEqual({ changed: false, value: null })
-        expect(defaultLevelPatch(null, 0)).toEqual({ changed: true, value: 0 })
+        expect(defaultWorkLevelPatch({ defaultWorkLevel: 1 }, 1)).toEqual({ changed: false, value: 1 })
+        expect(defaultWorkLevelPatch({ defaultWorkLevel: 1 }, 3)).toEqual({ changed: true, value: 3 })
+        expect(defaultWorkLevelPatch({ defaultWorkLevel: 1 }, null)).toEqual({ changed: true, value: null })
+        expect(defaultWorkLevelPatch(null, null)).toEqual({ changed: false, value: null })
+        expect(defaultWorkLevelPatch(null, 0)).toEqual({ changed: true, value: 0 })
     })
 })
 
 describe('filters, lanes and the URL', () => {
     it('matches "L2" and "level 2", never without a ladder', () => {
-        for (const text of ['L2', 'l2', 'level 2', 'Level2', ' L2 ']) expect(matchesLevel({ level: 2 }, laddered, text), text).toBe(true)
-        expect(matchesLevel({ level: null }, { ...board, defaultTaskLevel: 2 }, 'L2')).toBe(true)
-        expect(matchesLevel({ level: 3 }, laddered, 'L2')).toBe(false)
-        expect(matchesLevel({ level: 2 }, laddered, 'fix L2 bug')).toBe(false)
-        expect(matchesLevel({ level: 2 }, laddered, '')).toBe(false)
-        expect(matchesLevel({ level: 2 }, noLadder, 'L2')).toBe(false)
+        for (const text of ['L2', 'l2', 'level 2', 'Level2', ' L2 ', 'work level 2', 'Work Level 2']) expect(matchesLevel({ workLevel: 2 }, laddered, text), text).toBe(true)
+        expect(matchesLevel({ workLevel: null }, { ...board, defaultWorkLevel: 2 }, 'L2')).toBe(true)
+        expect(matchesLevel({ workLevel: 3 }, laddered, 'L2')).toBe(false)
+        expect(matchesLevel({ workLevel: 2 }, laddered, 'fix L2 bug')).toBe(false)
+        expect(matchesLevel({ workLevel: 2 }, laddered, '')).toBe(false)
+        expect(matchesLevel({ workLevel: 2 }, noLadder, 'L2')).toBe(false)
     })
 
     it('filters the kanban by level only on a board with a ladder', () => {
-        expect(passesLevel({ level: 2 }, board, 2)).toBe(true)
-        expect(passesLevel({ level: 3 }, board, 2)).toBe(false)
-        expect(passesLevel({ level: 3 }, board, null)).toBe(true)
-        expect(passesLevel({ level: 3 }, noLadder, 2), 'a filter left in the URL is ignored').toBe(true)
+        expect(passesLevel({ workLevel: 2 }, board, 2)).toBe(true)
+        expect(passesLevel({ workLevel: 3 }, board, 2)).toBe(false)
+        expect(passesLevel({ workLevel: 3 }, board, null)).toBe(true)
+        expect(passesLevel({ workLevel: 3 }, noLadder, 2), 'a filter left in the URL is ignored').toBe(true)
     })
 
     it('groups by level in ascending order, named, each lane counted', () => {
-        const tasks = [{ uuid: 'a', level: 3 }, { uuid: 'b', level: null }, { uuid: 'c', level: 0 }, { uuid: 'd', level: 3 }]
+        const tasks = [{ uuid: 'a', workLevel: 3 }, { uuid: 'b', workLevel: null }, { uuid: 'c', workLevel: 0 }, { uuid: 'd', workLevel: 3 }]
         const lanes = groupTasks(tasks, 'level', laddered)
         expect(lanes.map(l => l.key)).toEqual(['0', '3'], 'an unset task reads 0 on a ladder board')
         expect(lanes.map(l => l.label)).toEqual(['0 · requirements (2)', '3 · components (2)'])
@@ -142,8 +142,9 @@ describe('filters, lanes and the URL', () => {
     })
 
     it('offers no grouping by level without a ladder, and falls back to none', () => {
-        const tasks = [{ uuid: 'a', level: 3 }, { uuid: 'b', level: null }]
+        const tasks = [{ uuid: 'a', workLevel: 3 }, { uuid: 'b', workLevel: null }]
         expect(groupByOptions(board).map(o => o.value)).toEqual(['none', 'level', 'group'])
+        expect(groupByOptions(board).map(o => o.label)).toEqual(['none', 'work level', 'group'])
         expect(groupByOptions(noLadder).map(o => o.value)).toEqual(['none', 'group'])
         expect(groupingFor('level', noLadder)).toBe('none')
         expect(groupingFor('level', board)).toBe('level')
@@ -162,8 +163,8 @@ describe('filters, lanes and the URL', () => {
     })
 
     it('puts the named level after a small card\'s reference, nothing without a ladder', () => {
-        expect(refWithLevel('RD2-1', { level: 2 }, board)).toBe('RD2-1 · 2 · objects')
-        expect(refWithLevel('RD2-1', { level: null }, laddered)).toBe('RD2-1 · 0 · requirements')
-        expect(refWithLevel('RD2-1', { level: 2 }, noLadder)).toBe('RD2-1')
+        expect(refWithLevel('RD2-1', { workLevel: 2 }, board)).toBe('RD2-1 · 2 · objects')
+        expect(refWithLevel('RD2-1', { workLevel: null }, laddered)).toBe('RD2-1 · 0 · requirements')
+        expect(refWithLevel('RD2-1', { workLevel: 2 }, noLadder)).toBe('RD2-1')
     })
 })

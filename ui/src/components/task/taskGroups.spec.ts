@@ -22,7 +22,7 @@ const board = {
 
 describe('the header', () => {
     it('shows the group after the key and level, in its colour', () => {
-        const w = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-9', level: 1, group: { key: 'ui-work', name: 'Front end' },
+        const w = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-9', workLevel: 1, group: { key: 'ui-work', name: 'Front end' },
             tags: [] }), board } })
         const chip = w.find('[data-testid="group-chip"]')
         expect(chip.text()).toBe('ui-work')

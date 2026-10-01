@@ -35,7 +35,7 @@ describe('agent revisions', () => {
     })
 
     it('treats key order inside objects as no change, and names arrays that changed at the same length', () => {
-        expect(diffSnapshots({ lock: { level: 'HARD', reason: 'x' } }, { lock: { reason: 'x', level: 'HARD' } })).toEqual([])
+        expect(diffSnapshots({ pause: { level: 'HARD', reason: 'x' } }, { pause: { reason: 'x', level: 'HARD' } })).toEqual([])
         const d = diffSnapshots({ signOffs: [{ role: 'a' }] }, { signOffs: [{ role: 'b' }] })
         expect(d[0].before).toBe('1 item')
         expect(d[0].after).toBe('1 item (changed)')
@@ -93,7 +93,7 @@ describe('agent revisions', () => {
         expect(handedOver[0]).toMatchObject({ key: 'assignment', change: 'removed', before: 'coder · session 83922fa1', after: '—' })
         expect(describeValue({ __typename: 'AgentTaskHold', level: 'OPERATOR', kind: 'HUMAN_GATE', reason: 'review the pass' }, 'hold'))
             .toBe('operator human gate: review the pass')
-        expect(describeValue({ level: 'COORDINATOR', reason: 'intake paused' }, 'lock')).toBe('coordinator: intake paused')
+        expect(describeValue({ level: 'COORDINATOR', reason: 'intake paused' }, 'pause')).toBe('coordinator: intake paused')
         expect(describeValue({ session: '83922fa1-307e-41c5', agent: 'x' }, 'coordinatorSeat')).toBe('session 83922fa1')
         expect(describeValue({ __typename: 'AgentActor', kind: 'USER', uuid: 'cdd0c98c-cd0b', name: 'pavel@reliza.io' }, 'orderSetBy'))
             .toBe('pavel@reliza.io')
@@ -110,8 +110,8 @@ describe('agent revisions', () => {
         expect(revisionSummary('task', { status: 'ON_HOLD', hold: { kind: 'human_gate', level: 'operator' } }))
             .toEqual(['on hold', 'held at the human gate'])
         expect(revisionSummary('task', { hold: { kind: 'MANUAL', level: 'OPERATOR' } })).toEqual(['operator hold'])
-        expect(revisionSummary('board', { status: 'ACTIVE', lock: { level: 'SOFT' }, cycleCap: 3 }))
-            .toEqual(['active', 'lock soft', 'cycle cap 3'])
+        expect(revisionSummary('board', { status: 'ACTIVE', pause: { level: 'SOFT' }, cycleCap: 3 }))
+            .toEqual(['active', 'pause soft', 'cycle cap 3'])
         expect(revisionSummary('role', { active: false, orderIndex: 10, prompt: 'abc' }))
             .toEqual(['inactive', 'order 10', 'prompt 3 chars'])
         expect(revisionSummary('task', null)).toEqual(['unreadable snapshot'])

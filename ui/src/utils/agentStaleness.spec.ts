@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import { STALENESS_FIELDS, STALENESS_KEYS, stalenessDraftOf, stalenessPatch, stalenessProblem } from './agentStaleness'
 import { disabledReason } from './agentTaskHints'
-import { releasePayload } from './agentTaskAdmin'
+import { unassignPayload } from './agentTaskAdmin'
 
 describe('agentStaleness', () => {
     it('reads a board block, or none, into a draft of every threshold', () => {
@@ -28,22 +28,22 @@ describe('agentStaleness', () => {
     })
 })
 
-describe('releasing an assignment', () => {
+describe('unassigning', () => {
     const operator = { myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
     it('is offered on an assigned task, to a person with BOARD_WRITE, with a reason', () => {
         const assigned = { status: 'ASSIGNED' }
-        expect(disabledReason('release', assigned, operator, { releaseReason: 'the agent is gone' })).toBeNull()
-        expect(disabledReason('release', assigned, operator, { releaseReason: ' ' })).toBe('say why the assignment is released')
-        expect(disabledReason('release', { status: 'QUEUED' }, operator, { releaseReason: 'x' }))
-            .toBe('only an assigned task has an assignment to release')
-        expect(disabledReason('release', assigned, { myPermissions: ['BOARD_READ'] }, { releaseReason: 'x' }))
-            .toBe('releasing an assignment needs BOARD_WRITE on this board')
+        expect(disabledReason('unassign', assigned, operator, { unassignReason: 'the agent is gone' })).toBeNull()
+        expect(disabledReason('unassign', assigned, operator, { unassignReason: ' ' })).toBe('say why it is unassigned')
+        expect(disabledReason('unassign', { status: 'QUEUED' }, operator, { unassignReason: 'x' }))
+            .toBe('only an assigned task can be unassigned')
+        expect(disabledReason('unassign', assigned, { myPermissions: ['BOARD_READ'] }, { unassignReason: 'x' }))
+            .toBe('unassigning needs BOARD_WRITE on this board')
     })
 
     it('sends the task and the trimmed reason, or nothing without one', () => {
         const task = { uuid: 't-1', status: 'ASSIGNED' }
-        expect(releasePayload(task, '  gone  ')).toEqual({ task, reason: 'gone' })
-        expect(releasePayload(task, '')).toBeNull()
-        expect(releasePayload({ uuid: 't-1', status: 'QUEUED' }, 'gone')).toBeNull()
+        expect(unassignPayload(task, '  gone  ')).toEqual({ task, reason: 'gone' })
+        expect(unassignPayload(task, '')).toBeNull()
+        expect(unassignPayload({ uuid: 't-1', status: 'QUEUED' }, 'gone')).toBeNull()
     })
 })

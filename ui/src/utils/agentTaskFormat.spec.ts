@@ -87,8 +87,8 @@ describe('agentTaskFormat', () => {
     it('words a status-history row, with routing\'s reason when it wrote one', () => {
         const routing = { kind: 'SYSTEM', name: 'routing' }
         expect(statusRowWords({ from: 'QUEUED', to: 'QUEUED', trigger: 'AUTHORIZE', actor: routing,
-            note: 'findings decided; back to designer' }))
-            .toEqual({ arrow: 'queued → queued', routing: 'routing: findings decided; back to designer', trigger: 'authorize' })
+            note: 'review items decided; back to designer' }))
+            .toEqual({ arrow: 'queued → queued', routing: 'routing: review items decided; back to designer', trigger: 'authorize' })
         expect(statusRowWords({ from: 'QUEUED', to: 'QUEUED', trigger: 'AUTHORIZE', actor: routing, note: null }).routing)
             .toBeNull()
         expect(statusRowWords({ from: 'PENDING_INTAKE', to: 'QUEUED', trigger: 'AUTHORIZE',

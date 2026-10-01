@@ -12,7 +12,7 @@ function release (uuid: string, version: string, extra: Record<string, any> = {}
     return { uuid, version, lifecycle: 'DRAFT', component: 'c1', createdDate: '2026-09-29T09:00:00Z',
         sourceCodeEntryDetails: null,
         document: { specification: 'DETAILED_DESIGN', path: 'impl/RD-1/notes-2.md', digest: uuid, mediaType: 'text/markdown',
-            task: 't1', session: 's1', round: 2, elements: null, checks: null, findings: null, ...extra } }
+            task: 't1', session: 's1', round: 2, elements: null, elementChecks: null, reviewItems: null, ...extra } }
 }
 
 describe('a replaced version in the task documents', () => {

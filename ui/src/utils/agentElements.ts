@@ -1,5 +1,5 @@
 // Presentation helpers for a document's elements (gaps §2.A, task 7e55b4a5; elements.md §8): the
-// element list under a document, the links in and out of an element, the findings about it, and
+// element list under a document, the links in and out of an element, the review items about it, and
 // which rounds changed it.
 //
 // Pure and dependency-free like agentDocuments.ts. The server serves each document's element index
@@ -7,8 +7,8 @@
 // carries, so opening an element costs a request only for what the server alone knows -- dependents
 // across the board, and the element's history.
 
-import type { DocumentRelease, Finding } from '@/utils/agentDocuments'
-import { documentFileUrl, latestRound, openFindingsOf, sortFindings } from '@/utils/agentDocuments'
+import type { DocumentRelease, ReviewItem } from '@/utils/agentDocuments'
+import { documentFileUrl, latestRound, openReviewItemsOf, sortReviewItems } from '@/utils/agentDocuments'
 
 export interface ElementLink {
     verb?: string | null
@@ -110,13 +110,13 @@ export function linkCounts (elements: Element[]): Map<string, { in: number, out:
 }
 
 /**
- * Open findings that name an element, per element id: over the newest REVIEW_FINDINGS and
- * TEST_REPORT rounds, which carry forward everything still open.
+ * Open review items that name an element, per element id: over the newest BOARD_REVIEW_ITEMS and
+ * BOARD_TEST_REPORT rounds, which carry forward everything still open.
  */
-export function findingsByElement (documents: DocumentRelease[] | null | undefined): Map<string, Finding[]> {
-    const out = new Map<string, Finding[]>()
-    for (const spec of ['REVIEW_FINDINGS', 'TEST_REPORT']) {
-        for (const f of sortFindings(openFindingsOf(latestRound(documents, spec)))) {
+export function reviewItemsByElement (documents: DocumentRelease[] | null | undefined): Map<string, ReviewItem[]> {
+    const out = new Map<string, ReviewItem[]>()
+    for (const spec of ['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT']) {
+        for (const f of sortReviewItems(openReviewItemsOf(latestRound(documents, spec)))) {
             const id = (f?.location as any)?.element
             if (!id) continue
             if (!out.has(id)) out.set(id, [])
@@ -126,8 +126,8 @@ export function findingsByElement (documents: DocumentRelease[] | null | undefin
     return out
 }
 
-/** The element a finding names, or null. */
-export function findingElement (f?: Finding | null): string | null {
+/** The element a review item names, or null. */
+export function reviewItemElement (f?: ReviewItem | null): string | null {
     const id = (f?.location as any)?.element
     return typeof id === 'string' && id ? id : null
 }

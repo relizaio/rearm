@@ -5,7 +5,7 @@
             <thead>
                 <tr>
                     <th>Document</th><th>Component</th><th>Latest</th><th>State</th><th>Rounds</th>
-                    <th>Open findings</th><th>Checks</th>
+                    <th>Open review items</th><th>Element checks</th>
                 </tr>
             </thead>
             <tbody>
@@ -21,10 +21,10 @@
                     <td>{{ r.latest }}</td>
                     <td>{{ r.lifecycle }}</td>
                     <td>{{ r.roundsCount }}</td>
-                    <td>{{ r.openFindings ?? '—' }}</td>
+                    <td>{{ r.openReviewItems ?? '—' }}</td>
                     <!-- The task page's summary, the verdict by the same rule beside it (RD2-24). -->
-                    <td class="boardDocuments__checks" :data-verdict="r.checkVerdict ?? undefined">
-                        {{ r.checks }}<span v-if="r.checkVerdict && r.checks !== r.checkVerdict" class="boardDocuments__verdict"> · {{ r.checkVerdict }}</span>
+                    <td class="boardDocuments__checks" :data-verdict="r.elementCheckVerdict ?? undefined">
+                        {{ r.elementChecks }}<span v-if="r.elementCheckVerdict && r.elementChecks !== r.elementCheckVerdict" class="boardDocuments__verdict"> · {{ r.elementCheckVerdict }}</span>
                     </td>
                 </tr>
             </tbody>

@@ -1,4 +1,4 @@
-// The DOCUMENT component view and the lists (task 36d0549e), checked in the views' sources: the
+// The BOARD_DOCUMENT component view and the lists (task 36d0549e), checked in the views' sources: the
 // components are too large to mount here, and these are the lines the design names.
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'node:fs'
@@ -7,7 +7,7 @@ import { resolve } from 'node:path'
 const src = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
 
 describe('documents view contract', () => {
-    it('ComponentView shows the document panel and hides the software ones for a DOCUMENT component', () => {
+    it('ComponentView shows the document panel and hides the software ones for a BOARD_DOCUMENT component', () => {
         const cv = src('ComponentView.vue')
         // The panel sits below the component's title (RD2-24 run 1, T-2), and a document shows no charts.
         const panel = cv.indexOf('<document-component-panel v-if="isDocument"')
@@ -51,7 +51,7 @@ describe('documents view contract', () => {
         expect(rv).toContain('const isDocumentRound = computed(() => !!release.value?.document)')
         expect(rv).toContain('<div class="container" v-if="isDocumentRound && documentRound" data-testid="document-round">')
         for (const field of ['label="Document"', 'label="Round"', 'label="File"', 'data-testid="round-task"',
-            'data-testid="round-board"', 'label="Findings"', 'data-testid="round-checks"', 'label="Elements"']) {
+            'data-testid="round-board"', 'label="Review items"', 'data-testid="round-element-checks"', 'label="Elements"']) {
             expect(rv, field).toContain(field)
         }
         // the four software panels: vulnerabilities, the SBOM changes and BOM components, deliverables, VEX

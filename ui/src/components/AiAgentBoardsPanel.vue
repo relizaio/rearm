@@ -36,23 +36,23 @@
 
         <!-- A refusal says so (RD2-9): the list is what the person may read, so an empty one is "none
              yet" only for an org admin, and a board link to a board not listed is a board they cannot open. -->
-        <n-alert v-if="hiddenBoard" type="warning" :bordered="false" class="lockbanner" data-testid="hidden-board">
+        <n-alert v-if="hiddenBoard" type="warning" :bordered="false" class="boardbanner" data-testid="hidden-board">
             {{ hiddenBoardText(hiddenBoard) }}
         </n-alert>
         <div v-if="!boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>
 
         <template v-if="currentBoard">
-            <!-- Lock banner + operator lock controls -->
+            <!-- Pause banner + operator pause controls -->
             <n-alert
-                v-if="isLocked"
-                :type="currentBoard.lock.level === 'OPERATOR' ? 'error' : 'warning'"
-                class="lockbanner"
+                v-if="isPaused"
+                :type="currentBoard.pause.level === 'OPERATOR' ? 'error' : 'warning'"
+                class="boardbanner"
             >
-                Board locked ({{ currentBoard.lock.level }}) — no new assignments.
-                <template v-if="currentBoard.lock.reason"> Reason: {{ currentBoard.lock.reason }}.</template>
-                <template v-if="actorLabel(currentBoard.lock.lockedBy)"> Held by {{ actorLabel(currentBoard.lock.lockedBy) }}.</template>
-                <BoardLockControl v-if="currentBoard.lock.level === 'OPERATOR' && canOperate(currentBoard)"
-                                  action="unlock" :board="currentBoard" :when="formatEventTime" @unlock="operatorLock(false)"/>
+                Board paused ({{ currentBoard.pause.level }}) — no new assignments.
+                <template v-if="currentBoard.pause.reason"> Reason: {{ currentBoard.pause.reason }}.</template>
+                <template v-if="actorLabel(currentBoard.pause.pausedBy)"> Paused by {{ actorLabel(currentBoard.pause.pausedBy) }}.</template>
+                <BoardPauseControl v-if="currentBoard.pause.level === 'OPERATOR' && canOperate(currentBoard)"
+                                  action="resume" :board="currentBoard" :when="formatEventTime" @resume="operatorPause(false)"/>
             </n-alert>
             <div class="boardmeta">
                 <n-tooltip v-if="currentBoard.declarative" trigger="hover">
@@ -95,9 +95,9 @@
                      0 unless set (task RD3-6). -->
                 <n-tooltip v-if="hasLadder(currentBoard)" trigger="hover">
                     <template #trigger>
-                        <span class="wipchip" data-testid="default-level-chip">default level {{ levelLabel(currentBoard.defaultTaskLevel ?? 0, currentBoard) }}</span>
+                        <span class="wipchip" data-testid="default-level-chip">default work level {{ levelLabel(currentBoard.defaultWorkLevel ?? 0, currentBoard) }}</span>
                     </template>
-                    Tasks without a level of their own, or of their group, read level {{ currentBoard.defaultTaskLevel ?? 0 }}.
+                    Tasks without a work level of their own, or of their group, read work level {{ currentBoard.defaultWorkLevel ?? 0 }}.
                     The ladder: {{ ladderHint(currentBoard) }}.
                 </n-tooltip>
                 <n-tooltip v-for="w in agentWip" :key="w.agent" trigger="hover">
@@ -110,13 +110,13 @@
                         ? 'At the per-agent WIP limit — this agent gets no new assignments until a task leaves ASSIGNED.'
                         : 'Concurrently assigned tasks vs the board per-agent limit.' }}
                 </n-tooltip>
-                <BoardLockControl v-if="!isLocked && canOperate(currentBoard)" action="lock" :board="currentBoard"
-                                  :when="formatEventTime" @lock="p => operatorLock(true, p.reason)"/>
+                <BoardPauseControl v-if="!isPaused && canOperate(currentBoard)" action="pause" :board="currentBoard"
+                                  :when="formatEventTime" @pause="p => operatorPause(true, p.reason)"/>
             </div>
             <!-- One warning for what the board lacks (task 5c70990d): the delivery loop's capabilities,
                  then what no key can do on the board. -->
             <n-alert v-if="boardWarningShown(currentBoard.missingCapabilities, missingCoverage)" type="warning"
-                     class="lockbanner" data-testid="board-warning">
+                     class="boardbanner" data-testid="board-warning">
                 <div v-if="currentBoard.missingCapabilities?.length">
                     Delivery loop incomplete: no active role or the coordinator covers
                     {{ currentBoard.missingCapabilities.join(', ') }} — give a role the capability, or declare
@@ -124,8 +124,8 @@
                 </div>
                 <div v-for="line in coverageLines(missingCoverage)" :key="line" class="coverage-line">{{ line }}</div>
             </n-alert>
-            <!-- A person who can approve is asked to; a reader is told the board waits on a person (RD2-6). -->
-            <n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="lockbanner"
+            <!-- A person who can accept is asked to; a reader is told the board waits on a person (RD2-6). -->
+            <n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="boardbanner"
                      data-testid="review-banner">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting your review:
                 <n-button v-for="t in awaitingHumanReview" :key="t.uuid" size="tiny" quaternary
@@ -133,14 +133,14 @@
                     {{ reviewBannerLabel(t) }}
                 </n-button>
             </n-alert>
-            <n-alert v-else-if="awaitingHumanReview.length" type="info" class="lockbanner" data-testid="review-banner-info">
+            <n-alert v-else-if="awaitingHumanReview.length" type="info" class="boardbanner" data-testid="review-banner-info">
                 {{ awaitingHumanReview.length }} task{{ awaitingHumanReview.length > 1 ? 's' : '' }} awaiting human review.
             </n-alert>
             <n-collapse v-if="currentBoard.events?.length" class="eventsfeed">
                 <n-collapse-item :title="`Board events (${currentBoard.events.length})`" name="ev">
                     <div v-for="(e, i) in [...currentBoard.events].reverse()" :key="i" class="evrow">
                         <n-tag size="tiny" :bordered="false"
-                               :type="e.kind === 'ALERT' ? 'error' : e.kind === 'LOCKED' ? 'warning' : 'default'">{{ e.kind }}</n-tag>
+                               :type="e.kind === 'ALERT' ? 'error' : e.kind === 'PAUSED' ? 'warning' : 'default'">{{ e.kind }}</n-tag>
                         <span class="evmsg">{{ e.message }}</span>
                         <span class="evmeta">{{ actorLabel(e.actor) }} · <agent-time :at="e.eventAt"/></span>
                     </div>
@@ -159,7 +159,7 @@
                 </n-radio-group>
                 <!-- Only on a board with a ladder, its rungs by name (task RD3-6). -->
                 <n-select v-if="hasLadder(currentBoard)" :value="levelFilter" :options="levelOptions(currentBoard)" size="small" clearable
-                          placeholder="any level" style="width: 170px" data-testid="level-filter"
+                          placeholder="any work level" style="width: 170px" data-testid="level-filter"
                           @update:value="setLevelFilter"/>
                 <!-- The group and tag filters (RD2-31), in the URL as ?group=core-work&tag=client-req. -->
                 <n-select v-if="currentBoard?.groups?.length" :value="groupFilter" :options="groupFilterOptions" size="small" clearable
@@ -271,12 +271,12 @@
                 :board="currentBoard" :priority-levels="priorityLevels"
                 @close="selectedTask = null" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
-                @operator-release="operatorRelease" @require-review="requireReview"
+                @lift-hold="liftHold" @require-review="requireReview"
                 @authorize="authorizeTask" @order="orderTask"
-                @complete="completeTask" @cancel="cancelTask" @decide="decideFindings"
-                @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-level="setLevel"
-                @release-assignment="releaseAssignment"
-                @set-group="setGroup" @set-tags="setTags" @delivered="delivered"
+                @complete="completeTask" @cancel="cancelTask" @decide="decideReviewItems"
+                @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget" @set-work-level="setWorkLevel"
+                @unassign="unassign"
+                @set-group="setGroup" @set-tags="setTags" @declare-delivery="declareDelivery"
                 :can-reopen="canReopen" @reopen="reopenTask"/>
 
             <!-- A person registers a task directly; on a board with sources it names the issue, so
@@ -306,7 +306,7 @@
                                  ? 'Tracker issue, e.g. github:owner/repo#42 (required)'
                                  : 'Tracker issue (optional)'"/>
                     <n-input v-model:value="registering.sourceUrl" placeholder="Link (optional)"/>
-                    <!-- Group, tags and level (RD2-31): a group takes new tasks only while OPEN. -->
+                    <!-- Group, tags and work level (RD2-31): a group takes new tasks only while OPEN. -->
                     <n-select v-if="currentBoard.groups?.length" v-model:value="registering.group" data-testid="new-task-group"
                               :options="groupOptions(currentBoard, { openOnly: true, none: true })" placeholder="Group: none"/>
                     <n-input v-model:value="registering.tagsText" data-testid="new-task-tags"
@@ -315,9 +315,9 @@
                     <n-text v-if="tagsProblem(parseTags(registering.tagsText))" type="error" style="font-size: 12px; margin-top: -6px;">
                         {{ tagsProblem(parseTags(registering.tagsText)) }}
                     </n-text>
-                    <!-- A level only on a board with a ladder, one of its rungs (task RD3-6). -->
-                    <n-select v-if="hasLadder(currentBoard)" v-model:value="registering.level" :options="levelOptions(currentBoard)" clearable
-                              data-testid="new-task-level" :placeholder="`Level: ${levelPlaceholder(currentBoard)}`"/>
+                    <!-- A work level only on a board with a ladder, one of its rungs (task RD3-6). -->
+                    <n-select v-if="hasLadder(currentBoard)" v-model:value="registering.workLevel" :options="levelOptions(currentBoard)" clearable
+                              data-testid="new-task-level" :placeholder="`Work level: ${levelPlaceholder(currentBoard)}`"/>
                     <n-space justify="end">
                         <n-button size="small" @click="registering = null">Cancel</n-button>
                         <n-button size="small" type="primary" :disabled="!canRegister" @click="registerTask">
@@ -413,23 +413,23 @@
                             {{ f.help }}
                         </n-tooltip>
                     </label>
-                    <!-- RD2-1: the level a task without its own reads; blank clears it, to 0. Only with a ladder,
+                    <!-- RD2-1: the work level a task without its own reads; blank clears it, to 0. Only with a ladder,
                          one of the rungs being edited below (task RD3-6). -->
-                    <label v-if="draftLevelOptions(editingBoard.ladderDraft).length" class="fcell"><span class="flabel">default level</span>
-                        <n-select v-model:value="editingBoard.defaultTaskLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"
+                    <label v-if="draftLevelOptions(editingBoard.ladderDraft).length" class="fcell"><span class="flabel">default work level</span>
+                        <n-select v-model:value="editingBoard.defaultWorkLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"
                                   clearable :placeholder="draftLevelOptions(editingBoard.ladderDraft)[0].label" data-testid="board-default-level"
-                                  :status="boardFieldErrors.defaultTaskLevel ? 'error' : undefined"/>
+                                  :status="boardFieldErrors.defaultWorkLevel ? 'error' : undefined"/>
                     </label>
                 </div>
-                <n-text v-if="boardFieldErrors.defaultTaskLevel" type="error" data-testid="board-default-level-error"
-                        style="font-size: 12px; margin-top: -6px;">{{ boardFieldErrors.defaultTaskLevel }}</n-text>
+                <n-text v-if="boardFieldErrors.defaultWorkLevel" type="error" data-testid="board-default-level-error"
+                        style="font-size: 12px; margin-top: -6px;">{{ boardFieldErrors.defaultWorkLevel }}</n-text>
                 <!-- task RD3-6: the level ladder, opt-in; replaced whole when it changed, removed when emptied. -->
                 <AgentBoardLadderEditor v-model="editingBoard.ladderDraft" :error="boardFieldErrors.ladder"/>
                 <!-- task c0a2134c: on (the default, null) a no-progress or cycle-cap stop parks for the
-                     coordinator first, which may release it once per stop kind per task or escalate it. -->
-                <n-checkbox :checked="editingBoard.coordinatorStopRelease !== false" data-testid="board-stop-release"
-                            @update:checked="(v: boolean) => { editingBoard.coordinatorStopRelease = v }">
-                    the coordinator may release a no-progress or cycle-cap stop once per task
+                     coordinator first, which may lift it once per stop kind per task or escalate it. -->
+                <n-checkbox :checked="editingBoard.coordinatorStopLift !== false" data-testid="board-stop-lift"
+                            @update:checked="(v: boolean) => { editingBoard.coordinatorStopLift = v }">
+                    the coordinator may lift a no-progress or cycle-cap stop once per task
                 </n-checkbox>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
                     Blank budget: no board limit. Blank priorities: strict, every open item counts. The
@@ -442,8 +442,8 @@
                 <n-space :size="8" align="center" data-testid="board-delivery">
                     <n-select v-model:value="editingBoard.deliveryMode" :options="deliveryModeOptions" clearable
                               placeholder="PRs registered here (default)" size="small" style="min-width: 280px"/>
-                    <n-checkbox v-if="editingBoard.deliveryMode === 'NONE'" v-model:checked="editingBoard.deliveryAttest">
-                        wait for a push or release to be attested
+                    <n-checkbox v-if="editingBoard.deliveryMode === 'NONE'" v-model:checked="editingBoard.deliveryAwaitDeclaration">
+                        wait for a push or release to be declared
                     </n-checkbox>
                 </n-space>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">{{ deliveryModeHelp }}</n-text>
@@ -458,10 +458,10 @@
                     <n-select v-model:value="editingBoard.merge.order" :options="mergeOrderOptions" clearable
                               placeholder="as the notes say (default)" size="small" style="min-width: 220px"/>
                     <n-checkbox v-model:checked="editingBoard.merge.atTestedHead">only at the tested head</n-checkbox>
-                    <n-checkbox :checked="editingBoard.deliveryMode === 'ATTESTED' || editingBoard.merge.requireAttestation"
-                                :disabled="editingBoard.deliveryMode === 'ATTESTED'"
-                                @update:checked="(v: boolean) => { editingBoard.merge.requireAttestation = v }">
-                        attest every merge
+                    <n-checkbox :checked="editingBoard.deliveryMode === 'DECLARED' || editingBoard.merge.requireDeclaration"
+                                :disabled="editingBoard.deliveryMode === 'DECLARED'"
+                                @update:checked="(v: boolean) => { editingBoard.merge.requireDeclaration = v }">
+                        declare every merge
                     </n-checkbox>
                 </n-space>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">{{ mergeByHelp }}</n-text>
@@ -538,7 +538,7 @@
                     <n-input v-for="row in templateTypeRows" :key="row.spec"
                              v-model:value="editingBoard.documentPaths[row.spec]"
                              :placeholder="row.placeholder" style="margin-bottom: 4px;">
-                        <template #prefix><span class="flabel">{{ row.spec.toLowerCase().replace(/_/g, ' ') }}</span></template>
+                        <template #prefix><span class="flabel">{{ specWord(row.spec) }}</span></template>
                     </n-input>
                     <n-text depth="3" style="font-size: 11.5px;">
                         Placeholders: <template v-for="p in PATH_PLACEHOLDERS" :key="p"><code>{{ p }}</code> </template>
@@ -997,7 +997,7 @@ import { boardPickerOptions, renderBoardOption, reviewBannerLabel } from '@/util
 import { boardTargetOptions, targetChip, targetMissing, targetOf, targetOptionType, targetPatch, TARGET_HINT } from '@/utils/agentBoardTarget'
 import { boardCan, canConfigure, canConfigureRead, canOperate, specRefusal, subscribeOffer } from '@/utils/agentBoardAccess'
 import { boardWarningShown, coverageLines } from '@/utils/agentBoardCoverage'
-import { defaultLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, levelFromQuery,
+import { defaultWorkLevelPatch, groupByFromQuery, groupByOptions, groupingFor, groupTasks, hasLadder, ladderHint, levelFromQuery,
     levelLabel, levelOptions, levelPlaceholder, levelTooltip, passesLevel, taskLevelLabel, withLevelQuery } from '@/utils/agentTaskLevel'
 import { draftLevelOptions, ladderDraftOf, ladderPatch, ladderProblem } from '@/utils/agentLadder'
 import AgentBoardLadderEditor from '@/components/AgentBoardLadderEditor.vue'
@@ -1018,7 +1018,8 @@ const templateTypeRows = computed(() => templateRows(
     editingBoard.value && !editingBoardIsNew.value && editingBoard.value.uuid === selectedBoard.value ? roles.value : [],
     editingBoard.value?.effectiveDocumentPaths))
 import AiAgentTaskDetailDrawer from '@/components/AiAgentTaskDetailDrawer.vue'
-import BoardLockControl from '@/components/BoardLockControl.vue'
+import BoardPauseControl from '@/components/BoardPauseControl.vue'
+import { specWord } from '@/utils/agentWords'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 import AiAgentRevisionHistory from '@/components/AiAgentRevisionHistory.vue'
@@ -1247,7 +1248,7 @@ const priorityOptions = [
 const sortedPresets = computed(() =>
     [...presets.value].sort((a, b) => (a.orderIndex ?? 0) - (b.orderIndex ?? 0)))
 
-/** The board's times in the one format (RD2-23); a function prop for the lock control's line. */
+/** The board's times in the one format (RD2-23); a function prop for the pause control's line. */
 function formatEventTime (iso: string | null | undefined): string {
     return iso ? ts(iso) : ''
 }
@@ -1318,9 +1319,9 @@ async function reseedCoordinator (presetName: string) {
 // A person's verbs on a task, shared with the task page. A verdict that hands the task on closes
 // the drawer; any other action reloads and keeps the drawer on the same task.
 const {
-    humanReview, humanSignOff, operatorRelease, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags, delivered, releaseAssignment,
+    humanReview, humanSignOff, liftHold, authorizeTask, orderTask,
+    completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, setBudget, setWorkLevel,
+    setGroup, setTags, declareDelivery, unassign,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
     if (!keepOpen) selectedTask.value = null
     await refreshBoardContent()
@@ -1328,10 +1329,10 @@ const {
 })
 
 const priorityLevels = computed(() =>
-    store.getters.orgById(props.orgUuid)?.settings?.findingPriorityLevels ?? 3)
+    store.getters.orgById(props.orgUuid)?.settings?.reviewItemPriorityLevels ?? 3)
 
 const registering = ref<{ title: string, description: string, externalRef: string, sourceUrl: string,
-    group?: string | null, tagsText?: string, level?: number | null } | null>(null)
+    group?: string | null, tagsText?: string, workLevel?: number | null } | null>(null)
 const canRegister = computed(() => !!registering.value?.title.trim()
     && !taskTitleProblem(registering.value.title) && !taskDescriptionProblem(registering.value.description)
     && !tagsProblem(parseTags(registering.value.tagsText))
@@ -1339,7 +1340,7 @@ const canRegister = computed(() => !!registering.value?.title.trim()
 
 /** A new task's draft, from the header or the empty board's hint (RD2-13). */
 function newTask () {
-    registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }
+    registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', workLevel: null }
 }
 
 // The kanban's columns at a laptop's width (RD2-13): empty columns fold until opened; each lane's strip says how
@@ -1421,11 +1422,11 @@ function depLabel (t: any): string {
     return title.length > 16 ? title.slice(0, 15) + '…' : title
 }
 
-// "<prefix> · <name>", a locked board tagged (RD2-22).
+// "<prefix> · <name>", a paused board tagged (RD2-22).
 const boardOptions = computed(() => boardPickerOptions(boards.value))
 const currentBoard = computed(() => boards.value.find(b => b.uuid === selectedBoard.value) ?? null)
-const isLocked = computed(() => {
-    const lvl = currentBoard.value?.lock?.level
+const isPaused = computed(() => {
+    const lvl = currentBoard.value?.pause?.level
     return !!lvl && lvl !== 'NONE'
 })
 const activeRoles = computed(() =>
@@ -1534,7 +1535,7 @@ const TaskCard = defineComponent({
                 waitsOnLabel(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waits-on' },
                         { default: () => waitsOnLabel(p.t, tasks.value) }),
-                    default: () => 'Not assignable until every dependency is COMPLETED; the server releases it automatically.',
+                    default: () => 'Not assignable until every dependency is COMPLETED; the server queues it automatically.',
                 }) : null,
                 // A linked PR moved past the head its passing test named (RD2-13): re-test before merging.
                 prChips(p.t).some((c: any) => c.moved) ? h(NTooltip, { trigger: 'hover' }, {
@@ -1740,11 +1741,11 @@ async function refreshBoardContent () {
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
-const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultTaskLevel?: string, target?: string, ladder?: string }>({})
+const boardFieldErrors = ref<{ taskPrefix?: string, documents?: string, defaultWorkLevel?: string, target?: string, ladder?: string }>({})
 
 // The target picker's list (task RD2-4): the org's software components, read (cache-first) when the
 // form opens. Read into the form, not off the store getter, which also holds components fetched one
-// by one, a board's DOCUMENT components among them. Also read quietly with the panel, so the header
+// by one, a board's BOARD_DOCUMENT components among them. Also read quietly with the panel, so the header
 // chip can name the target on a server that does not resolve targetDetails (T-1).
 const targetComponents = ref<any[]>([])
 async function loadTargetComponents (quiet = false) {
@@ -1773,7 +1774,7 @@ function startEditBoard (b: any | null) {
         coordinatorCapabilities: [...(b.coordinatorCapabilities ?? [])],
         perspectives: [...(b.perspectives ?? [])],
         taskPrefix: b.taskPrefix ?? '', heldTaskPrefix: b.taskPrefix ?? '', documentsDraft: documentsDraftOf(b),
-        deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAttest: !!b.deliveryPolicy?.attest,
+        deliveryMode: b.deliveryPolicy?.mode ?? null, deliveryAwaitDeclaration: !!b.deliveryPolicy?.awaitDeclaration,
         merge: mergeDraftOf(b.deliveryPolicy) }
         : { name: '', description: '', sources: [], coordinatorPrompt: '', perAgentWipLimit: 2,
             priorityType: 'LAX', seedFromPresets: true, documentsRepo: '', documentPaths: {},
@@ -1889,7 +1890,7 @@ async function saveBoard () {
         const ladder = ladderPatch(original?.ladder, editingBoard.value.ladderDraft)
         if (ladder !== undefined) input.settings = { ...(input.settings ?? {}), ladder }
         // Only when changed; cleared restores the default, PR_ROWS (task 18c5c293).
-        const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAttest,
+        const delivery = deliveryPolicyPatch(original, editingBoard.value.deliveryMode, !!editingBoard.value.deliveryAwaitDeclaration,
             editingBoard.value.merge)
         if (delivery.changed) input.deliveryPolicy = delivery.value
         // Only when changed; the documents block goes whole, an explicit empty root as '' (task fceb1e57).
@@ -1898,8 +1899,8 @@ async function saveBoard () {
         const documents = documentsPatch(original, editingBoard.value.documentsDraft)
         if (documents !== undefined) input.documents = documents
         // Only when changed; blank sends null, which clears it (RD2-1).
-        const defaultLevel = defaultLevelPatch(original, editingBoard.value.defaultTaskLevel)
-        if (defaultLevel.changed) input.defaultTaskLevel = defaultLevel.value
+        const defaultWorkLevel = defaultWorkLevelPatch(original, editingBoard.value.defaultWorkLevel)
+        if (defaultWorkLevel.changed) input.defaultWorkLevel = defaultWorkLevel.value
         boardFieldErrors.value = {}
         if (editingBoardIsNew.value) {
             input.name = editingBoard.value.name.trim()
@@ -2037,14 +2038,14 @@ async function savePreset () {
     }
 }
 
-/** Lock with the reason the in-page form asked for, or unlock once confirmed (RD2-17). */
-async function operatorLock (lock: boolean, reason?: string) {
+/** Pause with the reason the in-page form asked for, or resume once confirmed (RD2-17). */
+async function operatorPause (pause: boolean, reason?: string) {
     try {
-        await store.dispatch('setAgentBoardOperatorLock', { boardUuid: selectedBoard.value, lock, reason })
-        notification.success({ content: lock ? 'Board locked (OPERATOR)' : 'Board unlocked', duration: 3000 })
+        await store.dispatch('setAgentBoardOperatorPause', { boardUuid: selectedBoard.value, pause, reason })
+        notification.success({ content: pause ? 'Board paused (OPERATOR)' : 'Board resumed', duration: 3000 })
         await refreshBoards()
     } catch (e: any) {
-        notification.error({ content: `Lock change failed: ${e?.message ?? e}`, duration: 8000 })
+        notification.error({ content: `Pause change failed: ${e?.message ?? e}`, duration: 8000 })
     }
 }
 </script>
@@ -2068,7 +2069,7 @@ async function operatorLock (lock: boolean, reason?: string) {
     .hint { color: #888; font-size: 12px; margin: 0 0 12px; }
     .addbtn { margin-top: 10px; }
     .flabel { color: #888; font-size: 12px; }
-    .lockbanner { margin-bottom: 10px; }
+    .boardbanner { margin-bottom: 10px; }
     .eventsfeed { margin-bottom: 10px; }
     .evrow {
         display: flex;

@@ -9,7 +9,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 import TaskActions from './TaskActions.vue'
 import TaskDependencies from './TaskDependencies.vue'
 import TaskDocuments from './TaskDocuments.vue'
-import TaskFindings from './TaskFindings.vue'
+import TaskReviewItems from './TaskReviewItems.vue'
 import TaskHeader from './TaskHeader.vue'
 import TaskPullRequests from './TaskPullRequests.vue'
 import TaskQuestions from './TaskQuestions.vue'
@@ -27,30 +27,30 @@ const { default: Page } = await import('../AiAgentTaskPage.vue')
 
 /** Which section emits which event. */
 const EMITTERS: [any, string, string[]][] = [
-    [TaskHeader, 'TaskHeader', ['human-review', 'human-signoff', 'operator-release', 'require-review']],
-    [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-level',
-        'set-group', 'set-tags', 'delivered', 'release-assignment']],
+    [TaskHeader, 'TaskHeader', ['human-review', 'human-signoff', 'lift-hold', 'require-review']],
+    [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-work-level',
+        'set-group', 'set-tags', 'declare-delivery', 'unassign']],
     [TaskDependencies, 'TaskDependencies', ['open']],
     [TaskSummary, 'TaskSummary', ['open']],
-    [TaskFindings, 'TaskFindings', ['decide', 'open-element']],
+    [TaskReviewItems, 'TaskReviewItems', ['decide', 'open-element']],
     [TaskQuestions, 'TaskQuestions', ['answer']],
-    [TaskPullRequests, 'TaskPullRequests', ['delivered', 'supersede']],
+    [TaskPullRequests, 'TaskPullRequests', ['declare-delivery', 'supersede']],
 ]
 
 /** What the board panel listens to on the drawer, bar close. */
-const DRAWER_EVENTS = ['open', 'human-review', 'human-signoff', 'operator-release', 'require-review',
-    'authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-level',
-    'set-group', 'set-tags', 'delivered', 'release-assignment']
+const DRAWER_EVENTS = ['open', 'human-review', 'human-signoff', 'lift-hold', 'require-review',
+    'authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-work-level',
+    'set-group', 'set-tags', 'declare-delivery', 'unassign']
 
 /** The store action the page runs for each event ('open' navigates instead). */
 const PAGE_ACTIONS: Record<string, string> = {
     'human-review': 'agentTaskHumanReview', 'human-signoff': 'agentTaskHumanSignOff',
-    'operator-release': 'agentTaskOperatorHold', 'require-review': 'agentTaskRequireHumanReview',
+    'lift-hold': 'agentTaskOperatorHold', 'require-review': 'agentTaskRequireHumanReview',
     authorize: 'agentTaskAuthorize', order: 'agentTaskOrder', complete: 'agentTaskComplete',
-    cancel: 'agentTaskCancel', reopen: 'agentTaskReopen', decide: 'agentTaskDecideFindings',
+    cancel: 'agentTaskCancel', reopen: 'agentTaskReopen', decide: 'agentTaskDecideReviewItems',
     answer: 'agentTaskAnswer', 'set-strength': 'agentTaskSetStrength', 'operator-hold': 'agentTaskOperatorHold', 'set-budget': 'agentTaskSetBudget',
-    'set-level': 'agentTaskSetLevel', 'set-group': 'agentTaskSetGroup', 'set-tags': 'agentTaskSetTags',
-    delivered: 'agentTaskDelivered', 'release-assignment': 'agentTaskReleaseAssignment',
+    'set-work-level': 'agentTaskSetWorkLevel', 'set-group': 'agentTaskSetGroup', 'set-tags': 'agentTaskSetTags',
+    'declare-delivery': 'agentTaskDeclareDelivery', 'unassign': 'agentTaskUnassign',
     supersede: 'agentTaskSupersedePullRequest',
 }
 
@@ -117,7 +117,7 @@ describe('task section events', () => {
                     continue
                 }
                 section.vm.$emit(e, { task, role: 'coder', value: true, orderIndex: 1, note: '', reason: 'r',
-                    specification: 'REVIEW_FINDINGS', decisions: [], answers: [], approve: true, outcome: 'PASSED' })
+                    specification: 'BOARD_REVIEW_ITEMS', decisions: [], answers: [], accept: true, outcome: 'PASSED' })
                 await flushPromises()
                 expect(dispatch.mock.calls.map(c => c[0]), `${name} → ${e}`).toContain(PAGE_ACTIONS[e])
             }

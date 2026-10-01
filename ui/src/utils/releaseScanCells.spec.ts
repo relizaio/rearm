@@ -11,7 +11,7 @@ const status = (kind: ReleaseScanStatus['kind']): ReleaseScanStatus => ({ kind, 
 
 describe('release scan cells (RD4-11)', () => {
     it('render nothing for a release that is never scanned: no badge, no circles', () => {
-        const row = { componentDetails: { kind: 'DOCUMENT' }, metrics }
+        const row = { componentDetails: { kind: 'BOARD_DOCUMENT' }, metrics }
         expect(renderVulnerabilityCells(row, status('not-applicable'), open)).toEqual([])
         expect(renderViolationCells(row, status('not-applicable'), open)).toEqual([])
     })

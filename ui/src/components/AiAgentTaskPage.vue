@@ -18,8 +18,8 @@
             <div class="tpage">
                 <div class="tpage__main tsecs">
                     <task-investigation :task="task" :tasks="tasks"/>
-                    <task-findings :task="task" :roles="roles" :priority-levels="priorityLevels" :board="board"
-                                   @decide="decideFindings" @open-element="openElement"/>
+                    <task-review-items :task="task" :roles="roles" :priority-levels="priorityLevels" :board="board"
+                                   @decide="decideReviewItems" @open-element="openElement"/>
                     <task-open-questions :task="task" :roles="roles"/>
                     <task-questions v-if="canReopen" :task="task" :roles="roles" @answer="answerQuestions"/>
                     <task-answered-questions :task="task" :roles="roles"/>
@@ -33,18 +33,18 @@
                     <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels"
                                  :can-operate="canReopen" :board="board"
                                  @human-review="humanReview" @human-signoff="humanSignOff"
-                                 @operator-release="operatorRelease" @require-review="requireReview"/>
+                                 @lift-hold="liftHold" @require-review="requireReview"/>
                     <task-actions v-if="canReopen" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                                   @authorize="authorizeTask" @order="orderTask" @complete="completeTask"
-                                  @cancel="cancelTask" @reopen="reopenTask" @decide="decideFindings"
+                                  @cancel="cancelTask" @reopen="reopenTask" @decide="decideReviewItems"
                                   @set-strength="setStrength" @operator-hold="operatorHold" @set-budget="setBudget"
-                                  @release-assignment="releaseAssignment"
-                                  @set-level="setLevel" @set-group="setGroup" @set-tags="setTags" @delivered="delivered"/>
+                                  @unassign="unassign"
+                                  @set-work-level="setWorkLevel" @set-group="setGroup" @set-tags="setTags" @declare-delivery="declareDelivery"/>
                     <task-commission v-if="canReopen" :task="task" :board="board" :roles="roles" @commission="commission"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
-                    <task-pull-requests :task="task" :can-operate="canReopen" @delivered="delivered" @supersede="supersedePr"/>
+                    <task-pull-requests :task="task" :can-operate="canReopen" @declare-delivery="declareDelivery" @supersede="supersedePr"/>
                 </div>
             </div>
         </template>
@@ -66,7 +66,7 @@ import TaskInvestigation from './task/TaskInvestigation.vue'
 import TaskDependencies from './task/TaskDependencies.vue'
 import AiAgentRevisionHistory from './AiAgentRevisionHistory.vue'
 import TaskDocuments from './task/TaskDocuments.vue'
-import TaskFindings from './task/TaskFindings.vue'
+import TaskReviewItems from './task/TaskReviewItems.vue'
 import TaskHeader from './task/TaskHeader.vue'
 import TaskHistory from './task/TaskHistory.vue'
 import TaskHops from './task/TaskHops.vue'
@@ -101,7 +101,7 @@ const loading = ref(false)
 const loadError = ref<string | null>(null)
 
 const priorityLevels = computed<number>(() =>
-    store.getters?.orgById?.(task.value?.org)?.settings?.findingPriorityLevels ?? 3)
+    store.getters?.orgById?.(task.value?.org)?.settings?.reviewItemPriorityLevels ?? 3)
 // The operator verbs, reopen included, need BOARD_WRITE on the task's board (task d8e7bd7e).
 const canReopen = computed<boolean>(() => canOperate(board.value))
 // The revisions read (agentTaskHistory) reads with the board.
@@ -144,12 +144,12 @@ watch(taskUuid, load, { immediate: true })
 
 // The page stays on its task after any action, including a verdict that hands the task on.
 const {
-    humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-    completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, setBudget, setLevel,
-    setGroup, setTags, delivered, releaseAssignment, supersedePr, commission,
+    humanReview, humanSignOff, liftHold, answerQuestions, authorizeTask, orderTask,
+    completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, setBudget, setWorkLevel,
+    setGroup, setTags, declareDelivery, unassign, supersedePr, commission,
 } = useAgentTaskActions(async () => { await load() })
 
-// A finding's element chip opens the element under its document (elements.md §8).
+// A review item's element chip opens the element under its document (elements.md §8).
 const elementFocus = ref<{ id: string, n: number } | null>(null)
 function openElement (id: string) {
     if (id) elementFocus.value = { id, n: (elementFocus.value?.n ?? 0) + 1 }

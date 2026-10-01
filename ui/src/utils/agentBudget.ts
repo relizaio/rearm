@@ -36,7 +36,7 @@ export function budgetChip (spentMicros: number | null | undefined, budgetMicros
 
 /** The board settings the form edits, in the order it shows them. */
 export const BOARD_SETTING_KEYS = ['budgetMicros', 'softAlertPercent', 'cycleCap', 'noProgressRepeatsToStop',
-    'blockingPriority', 'completionPriority', 'humanQueueAgeMinutes', 'eventRetentionDays', 'coordinatorStopRelease'] as const
+    'blockingPriority', 'completionPriority', 'humanQueueAgeMinutes', 'eventRetentionDays', 'coordinatorStopLift'] as const
 export type BoardSettingKey = typeof BOARD_SETTING_KEYS[number]
 
 /**
@@ -54,7 +54,7 @@ export function settingsDraftOf (form: any): Record<BoardSettingKey, number | bo
         completionPriority: form?.completionPriority ?? null,
         humanQueueAgeMinutes: form?.humanQueueAgeMinutes ?? null,
         eventRetentionDays: form?.eventRetentionDays ?? null,
-        coordinatorStopRelease: form?.coordinatorStopRelease ?? null,
+        coordinatorStopLift: form?.coordinatorStopLift ?? null,
     }
 }
 

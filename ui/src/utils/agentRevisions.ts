@@ -89,7 +89,7 @@ function summarise (key: string | undefined, v: any): string | null {
         const what = [v.level, v.kind].filter(Boolean).map((x: string) => x.toLowerCase().replace(/_/g, ' ')).join(' ')
         return v.reason ? `${what}: ${v.reason}` : what
     }
-    if (key === 'lock' && v.level) {
+    if (key === 'pause' && v.level) {
         return v.reason ? `${String(v.level).toLowerCase()}: ${v.reason}` : String(v.level).toLowerCase()
     }
     if (key === 'coordinatorSeat' && v.session) return `session ${short(v.session)}`
@@ -167,7 +167,7 @@ export function revisionSummary (kind: RevisionKind, s: any): string[] {
         if (s.requiredStrength != null) out.push(`strength ${s.requiredStrength}`)
     } else if (kind === 'board') {
         if (s.status) out.push(statusWord(s.status))
-        if (s.lock?.level) out.push(`lock ${levelWord(s.lock.level)}`)
+        if (s.pause?.level) out.push(`pause ${levelWord(s.pause.level)}`)
         if (s.cycleCap != null) out.push(`cycle cap ${s.cycleCap}`)
         if (s.budgetMicros != null) out.push(`budget $${(s.budgetMicros / 1_000_000).toFixed(2)}`)
     } else {

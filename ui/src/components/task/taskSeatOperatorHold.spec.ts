@@ -1,8 +1,8 @@
 // @vitest-environment happy-dom
 //
 // A task the coordinator seat parked for an operator decision (task RD4-17): the banner titles it Awaiting the
-// operator, says the coordinator asks and where the answer returns the task, and releases only with the answer,
-// to no role; the action sections say that acting answers it, and a parked delivery keeps its attest controls.
+// operator, says the coordinator asks and where the answer returns the task, and lifts only with the answer,
+// to no role; the action sections say that acting answers it, and a parked delivery keeps its declare controls.
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
 import TaskHeader from './TaskHeader.vue'
@@ -29,7 +29,7 @@ function parked () {
 }
 
 describe('a task the seat parked on the task page', () => {
-    it('titles the banner, shows the question and who asked, and names no role on release', () => {
+    it('titles the banner, shows the question and who asked, and names no role on lift', () => {
         const w = mount(TaskHeader, { props: { task: parked(), roles: fixtureRoles, canOperate: true } })
         expect(w.text()).toContain('Awaiting the operator')
         expect(w.text()).toContain(`awaiting the operator: ${QUESTION}`)
@@ -37,21 +37,21 @@ describe('a task the seat parked on the task page', () => {
         const note = w.find('[data-testid="seat-parked"]').text()
         expect(note).toContain('The coordinator asks the operator')
         expect(note).toContain('the task returns to delivering')
-        expect(note).toContain('Anything else you do on it (answering its questions, attesting, superseding, completing,'
+        expect(note).toContain('Anything else you do on it (answering its questions, declaring, superseding, completing,'
             + ' reopening, cancelling, a new order or level) answers it too')
         expect(w.find('[data-testid="parked-hop"]').exists(), 'not a hop\'s question').toBe(false)
         expect(w.find('.relrole').exists(), 'the answer returns the task; nothing routes').toBe(false)
-        expect(w.find('.relbtn').text()).toBe('Answer and release')
+        expect(w.find('.relbtn').text()).toBe('Answer and lift')
     })
 
-    it('releases only with the answer, and sends it as the note', async () => {
+    it('lifts only with the answer, and sends it as the note', async () => {
         const w = mount(TaskHeader, { props: { task: parked(), roles: fixtureRoles, canOperate: true } })
         expect(w.find('.relbtn').attributes('disabled')).toBeDefined()
-        ;(w.vm as any).releaseNote = 're-run it once'
+        ;(w.vm as any).liftNote = 're-run it once'
         await w.vm.$nextTick()
         expect(w.find('.relbtn').attributes('disabled')).toBeUndefined()
         await w.find('.relbtn').trigger('click')
-        const sent = w.emitted('operator-release')?.[0]?.[0] as any
+        const sent = w.emitted('lift-hold')?.[0]?.[0] as any
         expect(sent).toMatchObject({ note: 're-run it once' })
         expect(sent).not.toHaveProperty('role')
     })
@@ -63,9 +63,9 @@ describe('a task the seat parked on the task page', () => {
         expect(w.find('.oq__meta').text()).toContain('asked by the coordinator')
     })
 
-    it('keeps the attest controls of the delivery it parked, and says acting answers it', () => {
+    it('keeps the declare controls of the delivery it parked, and says acting answers it', () => {
         const w = mount(TaskPullRequests, { props: { task: parked(), canOperate: true } })
-        expect(w.find('[data-testid="attest-merge"]').exists(), 'a person may answer by attesting').toBe(true)
+        expect(w.find('[data-testid="declare-merge"]').exists(), 'a person may answer by declaring').toBe(true)
         expect(w.find('[data-testid="acting-answers"]').text()).toContain(`Awaiting the operator: ${QUESTION}`)
         const a = mount(TaskActions, { props: { task: parked(), roles: fixtureRoles, board: {}, canReopen: true, admin: true } })
         expect(a.find('[data-testid="acting-answers"]').text()).toContain('Acting here answers it')
@@ -82,7 +82,7 @@ describe('a task the seat parked on the task page', () => {
         const w = mount(TaskQuestions, { props: { task: t, roles: fixtureRoles } })
         expect(w.find('[data-testid="acting-answers"]').text()).toContain('Acting here answers it')
         expect(w.find('[data-testid="acting-answers"]').text()).toContain('returns to awaiting coordinator')
-        expect(w.find('.qans').text()).toContain('Answer and release')
+        expect(w.find('.qans').text()).toContain('Answer and lift')
         const plain = richTask({ status: 'AWAITING_COORDINATOR', hold: null, questionStack: [frame],
             openQuestions: [{ id: 'q1', title: 'Who writes the test plan?', status: 'OPEN', priority: 1 }] })
         const p = mount(TaskQuestions, { props: { task: plain, roles: fixtureRoles } })

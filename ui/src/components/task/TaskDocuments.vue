@@ -12,9 +12,9 @@
                    title="Published by a role that did not hold the task; assembled at publish">{{ advisoryLabel(d) }}</n-tag>
             <n-tag v-if="documentLifecycleLabel(d)" size="tiny" :bordered="false"
                    :type="documentLifecycleLabel(d)?.type" :title="d.lifecycle ?? undefined">{{ documentLifecycleLabel(d)?.label }}</n-tag>
-            <!-- A QUESTIONS round's verdict is the asking hop's REJECTED; it reads as if the
+            <!-- A BOARD_QUESTIONS round's verdict is the asking hop's REJECTED; it reads as if the
                  questions were rejected, so the round says whether it is open or answered. -->
-            <n-tag v-if="documentVerdict(d) && d.document?.specification !== 'QUESTIONS'" size="tiny" :bordered="false"
+            <n-tag v-if="documentVerdict(d) && d.document?.specification !== 'BOARD_QUESTIONS'" size="tiny" :bordered="false"
                    :type="verdictType(documentVerdict(d))">{{ outcomeWord(documentVerdict(d)) }}</n-tag>
             <template v-if="questionRoundFor(d)">
                 <n-tag size="tiny" :bordered="false" :type="questionStateType(questionRoundFor(d)!)"
@@ -37,7 +37,7 @@
                 {{ elementsOf(d).length }} element{{ elementsOf(d).length === 1 ? '' : 's' }}
             </n-button>
         </div>
-        <AiAgentCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments" :can-rerun="canRerun"/>
+        <AiAgentElementCheckReport v-if="d.document?.elements" :release="d" :documents="taskDocuments" :can-rerun="canRerun"/>
         <AiAgentDocumentElements v-if="expandedDoc === d.uuid" :release="d" :documents="taskDocuments"
                                  :board-uuid="task?.board" :task-uuid="task?.uuid"
                                  :task-status="task?.status" :focus="focusedElement"/>
@@ -49,7 +49,7 @@
 // Documents this task has produced, newest first as the server returns them.
 import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
-import AiAgentCheckReport from '../AiAgentCheckReport.vue'
+import AiAgentElementCheckReport from '../AiAgentElementCheckReport.vue'
 import AiAgentDocumentElements from '../AiAgentDocumentElements.vue'
 import { DocumentRelease, advisoryLabel, documentFileUrl, documentLabel, documentLifecycleLabel, documentVerdict, replacedByLabel, testCounts, verdictType } from '@/utils/agentDocuments'
 import { outcomeWord } from '@/utils/agentWords'
@@ -58,16 +58,16 @@ import { answeredByLabel, questionRounds, questionStateLabel, questionStateType 
 
 const props = defineProps<{
     task: any
-    /** An element to open under its document, e.g. from a finding's element chip; n re-triggers the same id. */
+    /** An element to open under its document, e.g. from a review item's element chip; n re-triggers the same id. */
     focus?: { id: string, n: number } | null
     /** BOARD_WRITE on the board: a check report's Re-run shows (RD2-6). */
     canRerun?: boolean
 }>()
 
 const taskDocuments = computed<DocumentRelease[]>(() => props.task?.documents ?? [])
-// The rows of the Documents list: a CHECK_REPORT round is read under the document it is about.
-const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'CHECK_REPORT'))
-// Each QUESTIONS round's state and what answered it (gaps §1.27), by release.
+// The rows of the Documents list: a BOARD_ELEMENT_CHECK_REPORT round is read under the document it is about.
+const listedDocuments = computed(() => taskDocuments.value.filter(d => d?.document?.specification !== 'BOARD_ELEMENT_CHECK_REPORT'))
+// Each BOARD_QUESTIONS round's state and what answered it (gaps §1.27), by release.
 const roundsByRelease = computed(() => new Map(questionRounds(props.task).map(r => [r.release, r])))
 function questionRoundFor (d: DocumentRelease) {
     return d?.uuid ? roundsByRelease.value.get(d.uuid) ?? null : null

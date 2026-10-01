@@ -720,11 +720,11 @@
                                 <router-link v-if="documentRound.boardPath" :to="documentRound.boardPath" class="round-gap"
                                              data-testid="round-board">Open board</router-link>
                             </n-descriptions-item>
-                            <n-descriptions-item v-if="documentRound.findings" label="Findings">{{ documentRound.findings }}</n-descriptions-item>
-                            <n-descriptions-item v-if="documentRound.checks" label="Checks">
-                                <span data-testid="round-checks">{{ documentRound.checks.line }}</span>
-                                <n-tag v-if="documentRound.checks.verdict" size="small" class="round-gap"
-                                       :type="verdictType(documentRound.checks.verdict)">{{ documentRound.checks.verdict }}</n-tag>
+                            <n-descriptions-item v-if="documentRound.reviewItems" label="Review items">{{ documentRound.reviewItems }}</n-descriptions-item>
+                            <n-descriptions-item v-if="documentRound.elementChecks" label="Element checks">
+                                <span data-testid="round-element-checks">{{ documentRound.elementChecks.line }}</span>
+                                <n-tag v-if="documentRound.elementChecks.verdict" size="small" class="round-gap"
+                                       :type="verdictType(documentRound.elementChecks.verdict)">{{ documentRound.elementChecks.verdict }}</n-tag>
                             </n-descriptions-item>
                             <n-descriptions-item v-if="documentRound.elementsCount != null" label="Elements">
                                 {{ documentRound.elementsCount }}
@@ -1098,7 +1098,7 @@
                                  the commit and repository are not repeated here. -->
                             <n-descriptions :column="1" bordered size="small" label-placement="left">
                                 <n-descriptions-item label="Type">
-                                    {{ (release.document.specification ?? '').toLowerCase().replace(/_/g, ' ') || '—' }}
+                                    {{ specWord(release.document.specification) || '—' }}
                                 </n-descriptions-item>
                                 <n-descriptions-item label="Round" v-if="release.document.round">
                                     {{ release.document.round }}
@@ -1118,9 +1118,9 @@
                                 </n-descriptions-item>
                             </n-descriptions>
 
-                            <template v-if="documentFindings.length">
-                                <h4 class="mt-3">Findings</h4>
-                                <n-data-table size="small" :columns="findingColumns" :data="documentFindings"
+                            <template v-if="documentReviewItems.length">
+                                <h4 class="mt-3">Review items</h4>
+                                <n-data-table size="small" :columns="reviewItemColumns" :data="documentReviewItems"
                                               :pagination="false" :bordered="false"/>
                             </template>
                         </div>
@@ -1398,13 +1398,13 @@ export default {
 import {
     documentFileUrl,
     documentVerdict,
-    findingLocation,
-    findingsOf,
-    sortFindings,
+    reviewItemLocation,
+    reviewItemsOf,
+    sortReviewItems,
     statusType,
     verdictType,
 } from '@/utils/agentDocuments'
-import { outcomeWord } from '@/utils/agentWords'
+import { outcomeWord, specWord } from '@/utils/agentWords'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -1432,7 +1432,7 @@ import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
 import { documentRoundView } from '@/utils/agentDocumentsView'
-import { summarise } from '@/utils/agentChecks'
+import { summarise } from '@/utils/agentElementChecks'
 import constants from '@/utils/constants'
 import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -1718,24 +1718,24 @@ const release: Ref<any> = ref({})
 /** A document round's release (RD2-24): shown as the round, without the software panels. */
 const isDocumentRound = computed(() => !!release.value?.document)
 const roundTask = ref<any>(null)
-const roundChecks = computed(() => {
-    const report = (roundTask.value?.checks ?? []).find((c: any) => c?.scope?.checked === release.value?.uuid)
+const roundElementChecks = computed(() => {
+    const report = (roundTask.value?.elementChecks ?? []).find((c: any) => c?.scope?.checked === release.value?.uuid)
     if (!report) return null
     const s = summarise(report)
     return { pass: s.pass, fail: s.fail, skip: s.skip, blockingFailed: s.blockingFailed.length }
 })
 const documentRound = computed(() => documentRoundView(release.value, roundTask.value,
-    release.value?.orgDetails?.uuid ?? release.value?.org ?? null, roundChecks.value))
+    release.value?.orgDetails?.uuid ?? release.value?.org ?? null, roundElementChecks.value))
 watch(() => release.value?.document?.task, async (task) => {
     roundTask.value = null
     if (!task) return
     roundTask.value = await store.dispatch('fetchDocumentRoundTask', task).catch(() => null)
 })
 
-// Document releases: the findings index rendered as a table when this release carries one.
-const documentFindings = computed(() => sortFindings(findingsOf(release.value)))
+// Document releases: the review item index rendered as a table when this release carries one.
+const documentReviewItems = computed(() => sortReviewItems(reviewItemsOf(release.value)))
 
-const findingColumns = computed<DataTableColumns<any>>(() => [
+const reviewItemColumns = computed<DataTableColumns<any>>(() => [
     { title: 'ID', key: 'id', render: (f: any) => h('code', { style: 'font-size: 11px;' }, f.id ?? '') },
     { title: 'P', key: 'priority', width: 50 },
     {
@@ -1748,7 +1748,7 @@ const findingColumns = computed<DataTableColumns<any>>(() => [
     {
         title: 'Where',
         key: 'location',
-        render: (f: any) => h('code', { style: 'font-size: 11px;' }, findingLocation(f)),
+        render: (f: any) => h('code', { style: 'font-size: 11px;' }, reviewItemLocation(f)),
     },
 ])
 const updatedRelease: Ref<any> = ref({})

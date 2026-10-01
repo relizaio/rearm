@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
-    SOFTWARE_KINDS, recentReleasesKinds, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, checkVerdictOf, documentRoundView, latestLabel,
+    SOFTWARE_KINDS, recentReleasesKinds, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, elementCheckVerdictOf, documentRoundView, latestLabel,
 } from './agentDocumentsView'
 import { lifecycleWord } from './agentWords'
 import { cardRef } from './agentTaskFormat'
@@ -9,8 +9,8 @@ import { cardRef } from './agentTaskFormat'
 describe('documents view', () => {
     it('the lists ask for the software kinds only', () => {
         expect(SOFTWARE_KINDS).toEqual(['GENERIC', 'HELM'])
-        expect(SOFTWARE_KINDS).not.toContain('DOCUMENT')
-        expect(isDocumentComponent({ kind: 'DOCUMENT' })).toBe(true)
+        expect(SOFTWARE_KINDS).not.toContain('BOARD_DOCUMENT')
+        expect(isDocumentComponent({ kind: 'BOARD_DOCUMENT' })).toBe(true)
         expect(isDocumentComponent({ kind: 'GENERIC' })).toBe(false)
         expect(isDocumentComponent(null)).toBe(false)
     })
@@ -18,7 +18,7 @@ describe('documents view', () => {
     it('a branch groups its document dependencies apart', () => {
         const deps = [
             { component: { uuid: 'a', kind: 'GENERIC' } },
-            { component: { uuid: 'd', kind: 'DOCUMENT' } },
+            { component: { uuid: 'd', kind: 'BOARD_DOCUMENT' } },
             { component: { uuid: 'h', kind: 'HELM' } },
             { component: null },
         ]
@@ -51,13 +51,13 @@ describe('documents view', () => {
     it('the Documents section has a row per series, and none for an empty board', () => {
         const rows = documentSeriesRows([
             { specification: 'ARCHITECTURE', component: { uuid: 'c1', name: 'rd-architecture' },
-                latestRound: { round: 2, version: '5', lifecycle: 'ASSEMBLED' }, roundsCount: 5, openFindings: null, checkVerdict: 'PASS' },
-            { specification: 'REVIEW_FINDINGS', component: { uuid: 'c2', name: 'rd-review_findings' },
-                latestRound: null, roundsCount: 0, openFindings: 3, checkVerdict: null },
+                latestRound: { round: 2, version: '5', lifecycle: 'ASSEMBLED' }, roundsCount: 5, openReviewItems: null, elementCheckVerdict: 'PASS' },
+            { specification: 'BOARD_REVIEW_ITEMS', component: { uuid: 'c2', name: 'rd-board-review-items' },
+                latestRound: null, roundsCount: 0, openReviewItems: 3, elementCheckVerdict: null },
         ])
-        expect(rows.map(r => r.label)).toEqual(['architecture', 'review findings'])
-        expect(rows[0]).toMatchObject({ componentName: 'rd-architecture', latest: 'round 2 · v5', roundsCount: 5, checkVerdict: 'PASS' })  // the version labelled (RD2-24)
-        expect(rows[1]).toMatchObject({ latest: '—', openFindings: 3 })
+        expect(rows.map(r => r.label)).toEqual(['architecture', 'review items'])
+        expect(rows[0]).toMatchObject({ componentName: 'rd-architecture', latest: 'round 2 · v5', roundsCount: 5, elementCheckVerdict: 'PASS' })  // the version labelled (RD2-24)
+        expect(rows[1]).toMatchObject({ latest: '—', openReviewItems: 3 })
         expect(documentSeriesRows([])).toEqual([])
         expect(documentSeriesRows(null)).toEqual([])
     })
@@ -89,21 +89,21 @@ describe('document surfaces', () => {
     })
 
     it('reads the verdict by one rule: FAIL on a blocking fail, WARN on any other fail, PASS otherwise', () => {
-        expect(checkVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 1 })).toBe('FAIL')
-        expect(checkVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 0 })).toBe('WARN')
-        expect(checkVerdictOf({ pass: 7, fail: 0, skip: 2, blockingFailed: 0 })).toBe('PASS')
+        expect(elementCheckVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 1 })).toBe('FAIL')
+        expect(elementCheckVerdictOf({ pass: 7, fail: 1, skip: 2, blockingFailed: 0 })).toBe('WARN')
+        expect(elementCheckVerdictOf({ pass: 7, fail: 0, skip: 2, blockingFailed: 0 })).toBe('PASS')
     })
 
     it('shows the task page\'s summary on the Documents tab, the verdict from the counts', () => {
         const [row] = documentSeriesRows([{ specification: 'ARCHITECTURE', component: { uuid: 'c1' }, roundsCount: 1,
-            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, checkVerdict: 'WARN',
-            checkCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }])
-        expect(row.checks).toBe('7 pass · 1 fail · 2 skip')
-        expect(row.checkVerdict).toBe('FAIL', 'the rule over the counts, never a WARN beside a blocking fail')
+            latestRound: { round: 1, version: '0', lifecycle: 'ASSEMBLED' }, elementCheckVerdict: 'WARN',
+            elementCheckCounts: { pass: 7, fail: 1, skip: 2, blockingFailed: 1 } }])
+        expect(row.elementChecks).toBe('7 pass · 1 fail · 2 skip')
+        expect(row.elementCheckVerdict).toBe('FAIL', 'the rule over the counts, never a WARN beside a blocking fail')
         expect(row.lifecycle).toBe('assembled')
         const [old] = documentSeriesRows([{ specification: 'ARCHITECTURE', component: { uuid: 'c1' }, roundsCount: 1,
-            latestRound: null, checkVerdict: 'PASS' }])
-        expect(old.checks).toBe('PASS', 'a server without counts: the verdict alone')
+            latestRound: null, elementCheckVerdict: 'PASS' }])
+        expect(old.elementChecks).toBe('PASS', 'a server without counts: the verdict alone')
     })
 
     it('words a lifecycle, from the one table in agentWords (RD2-23)', () => {
@@ -112,16 +112,16 @@ describe('document surfaces', () => {
     })
 
     it('describes a round for its release page', () => {
-        const release = { uuid: 'r1', document: { specification: 'REVIEW_FINDINGS', round: 2, path: 'review/RD-1/r2.md', task: 't1',
-            findings: { findings: [{ id: 'F-1', status: 'OPEN' }, { id: 'F-2', status: 'RESOLVED' }] },
+        const release = { uuid: 'r1', document: { specification: 'BOARD_REVIEW_ITEMS', round: 2, path: 'review/RD-1/r2.md', task: 't1',
+            reviewItems: { reviewItems: [{ id: 'F-1', status: 'OPEN' }, { id: 'F-2', status: 'RESOLVED' }] },
             elements: { elements: [{ id: 'E1' }, { id: 'E2' }, { id: 'E3' }] } } }
         expect(documentRoundView(release, { key: 'RD-1', board: 'b1' }, 'o1', { pass: 2, fail: 0, skip: 1, blockingFailed: 0 }))
-            .toEqual({ specification: 'review findings', round: 2, path: 'review/RD-1/r2.md', taskLabel: 'RD-1',
+            .toEqual({ specification: 'review items', round: 2, path: 'review/RD-1/r2.md', taskLabel: 'RD-1',
                 taskPath: '/aiAgentTask/t1', boardPath: '/aiAgentsOfOrg/o1?tab=boards&board=b1',
-                findings: '1 open · 2 items', checks: { line: '2 pass · 0 fail · 1 skip', verdict: 'PASS' }, elementsCount: 3 })
+                reviewItems: '1 open · 2 items', elementChecks: { line: '2 pass · 0 fail · 1 skip', verdict: 'PASS' }, elementsCount: 3 })
         const bare = documentRoundView({ document: { specification: 'ARCHITECTURE', round: 1, path: 'a.md', task: 't1234567890' } },
             null, 'o1', null)
-        expect(bare).toMatchObject({ taskLabel: 't1234567', boardPath: null, findings: null, checks: null, elementsCount: null })
+        expect(bare).toMatchObject({ taskLabel: 't1234567', boardPath: null, reviewItems: null, elementChecks: null, elementsCount: null })
         expect(documentRoundView({ uuid: 'r' }, null, 'o1', null)).toBeNull()
     })
 })
@@ -129,10 +129,10 @@ describe('document surfaces', () => {
 
 // RD4-10: the home page's most-recent-releases widget lists software only.
 describe('the most-recent-releases kinds', () => {
-    it('are the software kinds, every kind but DOCUMENT, unless the caller wants the rounds', () => {
+    it('are the software kinds, every kind but BOARD_DOCUMENT, unless the caller wants the rounds', () => {
         expect(recentReleasesKinds(false)).toBe(SOFTWARE_KINDS)
         expect(recentReleasesKinds(false)).toEqual(['GENERIC', 'HELM'])
-        expect(recentReleasesKinds(false)).not.toContain('DOCUMENT')
+        expect(recentReleasesKinds(false)).not.toContain('BOARD_DOCUMENT')
         expect(recentReleasesKinds(true)).toBeNull()
     })
 })

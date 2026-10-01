@@ -1,8 +1,8 @@
 // A task the coordinator seat parked for an operator decision (task RD4-17): the hold records where the answer
-// returns the task, the card reads "awaiting the operator" with the question on hover, a release needs the
+// returns the task, the card reads "awaiting the operator" with the question on hover, a lift needs the
 // answer, and acting on the task as the status it was parked from answers it.
 import { describe, expect, it } from 'vitest'
-import { actingAnswers, awaitingOperator, effectiveStatus, holdChip, operatorQuestions, parkedHop, releaseNeedsAnswer,
+import { actingAnswers, awaitingOperator, effectiveStatus, holdChip, operatorQuestions, parkedHop, liftNeedsAnswer,
     returnsTo, seatParked } from './agentOperatorQuestion'
 import { reopenRoleOptions } from './agentReopen'
 
@@ -33,13 +33,13 @@ describe('a task the seat parked for the operator', () => {
         expect(seatParked(held({ hold: { ...seatHold, returnTo: null } })), 'no returnTo').toBe(false)
         expect(seatParked(held({ hold: { ...seatHold, level: 'COORDINATOR' } })), 'the seat\'s own hold').toBe(false)
         expect(seatParked(held({ hold: { ...seatHold, heldBy: pat } })), 'a person\'s hold').toBe(false)
-        expect(seatParked(held({ status: 'DELIVERING', hold: null })), 'released').toBe(false)
+        expect(seatParked(held({ status: 'DELIVERING', hold: null })), 'lifted').toBe(false)
         expect(seatParked(null)).toBe(false)
     })
 
-    it('needs the answer on release', () => {
-        expect(releaseNeedsAnswer(held(), ' ')).toBe(true)
-        expect(releaseNeedsAnswer(held(), 're-run it')).toBe(false)
+    it('needs the answer on lift', () => {
+        expect(liftNeedsAnswer(held(), ' ')).toBe(true)
+        expect(liftNeedsAnswer(held(), 're-run it')).toBe(false)
     })
 
     it('reads as the status it was parked from for what may be done with it', () => {
@@ -55,14 +55,14 @@ describe('a task the seat parked for the operator', () => {
     })
 
     it('lists the question as the coordinator\'s, and the answer a person\'s action gave', () => {
-        const acted = { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-09-30T11:00:00Z', trigger: 'RELEASE_HOLD', actor: pat,
-            note: 'attested by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456' }
+        const acted = { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-09-30T11:00:00Z', trigger: 'LIFT_HOLD', actor: pat,
+            note: 'declared by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456' }
         const qs = operatorQuestions(held({ status: 'COMPLETED', hold: null,
             statusHistory: [...held().statusHistory, acted] }))
         expect(qs).toHaveLength(1)
         expect(qs[0].question).toBe(QUESTION)
         expect(qs[0].askedByCoordinator).toBe(true)
-        expect(qs[0].answer).toBe('attested by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456')
+        expect(qs[0].answer).toBe('declared by Pat Operator: https://github.com/acme/app/pull/401 delivered at 0123456')
         expect(qs[0].answeredBy).toEqual(pat)
         // any other action of a person (architecture round 2): its row is the answer, then the action's own row
         const cancelled = operatorQuestions(held({ status: 'CANCELLED', hold: null, statusHistory: [...held().statusHistory,

@@ -21,62 +21,62 @@ function button (w: any, text: string) {
 
 describe('the level chip', () => {
     it('sits after the key, named; the board default for a task without its own, 0 when unset', () => {
-        const set = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', level: 2 }), board: laddered() } })
+        const set = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', workLevel: 2 }), board: laddered() } })
         const chip = set.find('[data-testid="level-chip"]')
         expect(chip.text()).toBe('2 · objects')
         const title = set.find('.dhead__title').html()
         expect(title.indexOf('RD2-1')).toBeLessThan(title.indexOf('2 · objects'))
-        expect(mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', level: null }), board: laddered({ defaultTaskLevel: 1 }) } })
+        expect(mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', workLevel: null }), board: laddered({ defaultWorkLevel: 1 }) } })
             .find('[data-testid="level-chip"]').text()).toBe('1 · solution')
-        expect(mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', level: null }), board: laddered() } })
+        expect(mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', workLevel: null }), board: laddered() } })
             .find('[data-testid="level-chip"]').text()).toBe('0 · requirements')
     })
 
     it('is hidden on a board without a ladder, whatever level the task kept', () => {
-        for (const board of [{}, { defaultTaskLevel: 1 }, { ladder: null }, { ladder: { levels: [] } }]) {
-            const w = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', level: 2, effectiveLevel: 2 }), board } })
+        for (const board of [{}, { defaultWorkLevel: 1 }, { ladder: null }, { ladder: { levels: [] } }]) {
+            const w = mount(TaskTitle, { props: { task: richTask({ key: 'RD2-1', workLevel: 2, effectiveWorkLevel: 2 }), board } })
             expect(w.find('[data-testid="level-chip"]').exists(), JSON.stringify(board)).toBe(false)
         }
     })
 })
 
 describe('the level editor', () => {
-    const actions = (task: any, board: any = laddered({ defaultTaskLevel: 1 })) =>
+    const actions = (task: any, board: any = laddered({ defaultWorkLevel: 1 })) =>
         mount(TaskActions, { props: { task, roles: fixtureRoles, board, canReopen: true, admin: true } })
 
     it('offers the ladder\'s rungs by name, reads the board default as its placeholder and sends only a change', async () => {
-        const w = actions(richTask({ status: 'QUEUED', hold: null, level: null }))
+        const w = actions(richTask({ status: 'QUEUED', hold: null, workLevel: null }))
         expect(w.find('[data-testid="level-row"]').text()).toContain('board default 1 · solution')
         const select = w.findAllComponents({ name: 'Select' }).find((c: any) => c.attributes('data-testid') === 'level-select')!
         expect(select.props('options')).toEqual([{ label: '0 · requirements', value: 0 }, { label: '1 · solution', value: 1 },
             { label: '2 · objects', value: 2 }, { label: '3 · components', value: 3 }])
-        expect(button(w, 'Set level')!.attributes('disabled')).toBeDefined()
+        expect(button(w, 'Set work level')!.attributes('disabled')).toBeDefined()
         expect(w.find('[data-testid="level-clear"]').exists()).toBe(false)
         ;(w.vm as any).levelDraft = 3
         await nextTick()
-        await button(w, 'Set level')!.trigger('click')
-        expect(w.emitted('set-level')?.[0]?.[0]).toMatchObject({ level: 3 })
+        await button(w, 'Set work level')!.trigger('click')
+        expect(w.emitted('set-work-level')?.[0]?.[0]).toMatchObject({ workLevel: 3 })
     })
 
     it('refuses a level off the ladder', async () => {
-        const w = actions(richTask({ status: 'QUEUED', hold: null, level: null }))
+        const w = actions(richTask({ status: 'QUEUED', hold: null, workLevel: null }))
         ;(w.vm as any).levelDraft = 4
         await nextTick()
-        expect(button(w, 'Set level')!.attributes('disabled')).toBeDefined()
+        expect(button(w, 'Set work level')!.attributes('disabled')).toBeDefined()
     })
 
     it('clears a level and says who set it', async () => {
-        const w = actions(richTask({ status: 'QUEUED', hold: null, level: 2,
-            levelSetBy: { kind: 'USER', uuid: 'u1', name: 'pavel' }, levelSetAt: '2026-09-27T09:00:00Z' }))
+        const w = actions(richTask({ status: 'QUEUED', hold: null, workLevel: 2,
+            workLevelSetBy: { kind: 'USER', uuid: 'u1', name: 'pavel' }, workLevelSetAt: '2026-09-27T09:00:00Z' }))
         expect(w.find('.lvlrow').text()).toContain('set by pavel')
-        expect(button(w, 'Set level')!.attributes('disabled')).toBeDefined()
+        expect(button(w, 'Set work level')!.attributes('disabled')).toBeDefined()
         await w.find('[data-testid="level-clear"]').trigger('click')
-        expect(w.emitted('set-level')?.[0]?.[0]).toMatchObject({ level: null })
+        expect(w.emitted('set-work-level')?.[0]?.[0]).toMatchObject({ workLevel: null })
     })
 
     it('is hidden on a board without a ladder', () => {
-        const w = actions(richTask({ status: 'QUEUED', hold: null, level: 2 }), { defaultTaskLevel: 1 })
+        const w = actions(richTask({ status: 'QUEUED', hold: null, workLevel: 2 }), { defaultWorkLevel: 1 })
         expect(w.find('[data-testid="level-row"]').exists()).toBe(false)
-        expect(button(w, 'Set level')).toBeUndefined()
+        expect(button(w, 'Set work level')).toBeUndefined()
     })
 })

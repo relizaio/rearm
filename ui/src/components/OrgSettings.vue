@@ -988,11 +988,11 @@
                     </n-form>
                 </div>
                 <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
-                    <h5>Agent Findings</h5>
-                    <p class="text-muted">How many priority levels a review or test findings index may use.</p>
+                    <h5>Agent Review Items</h5>
+                    <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
                     <n-form>
                         <n-form-item label="Priority levels">
-                            <n-input-number v-model:value="orgSettings.findingPriorityLevels"
+                            <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
                                             :min="1" :max="10" style="width: 120px;"/>
                             <span class="ml-2 text-muted">
                                 1 is highest. Validated when a document is published, so lowering
@@ -1473,7 +1473,7 @@ type SidPurlMode = 'DISABLED' | 'ENABLED_STRICT' | 'ENABLED_FLEXIBLE'
 
 const orgSettings = reactive({
     justificationMandatory: false,
-    findingPriorityLevels: 3,
+    reviewItemPriorityLevels: 3,
     agentSessionIdleCloseHours: IDLE_CLOSE_HOURS_DEFAULT,
     branchSuffixMode: 'APPEND' as 'APPEND' | 'NO_APPEND' | 'APPEND_EXCEPT_FOLLOW_VERSION',
     vexComplianceFramework: 'NONE' as 'NONE' | 'CISA',
@@ -3678,7 +3678,7 @@ async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
     orgSettings.justificationMandatory = s?.justificationMandatory || false
-    orgSettings.findingPriorityLevels = s?.findingPriorityLevels ?? 3
+    orgSettings.reviewItemPriorityLevels = s?.reviewItemPriorityLevels ?? 3
     orgSettings.agentSessionIdleCloseHours = idleCloseHoursOf(s)
     orgSettings.branchSuffixMode = (s?.branchSuffixMode && s.branchSuffixMode !== 'INHERIT') ? s.branchSuffixMode : 'APPEND'
     orgSettings.vexComplianceFramework = s?.vexComplianceFramework || 'NONE'
@@ -3720,7 +3720,7 @@ async function saveOrgSettings() {
                         }
                         settings {
                             justificationMandatory
-                            findingPriorityLevels
+                            reviewItemPriorityLevels
                             agentSessionIdleCloseHours
                             branchSuffixMode
                             vexComplianceFramework
@@ -3733,7 +3733,7 @@ async function saveOrgSettings() {
                 orgUuid: orgResolved.value,
                 settings: {
                     justificationMandatory: orgSettings.justificationMandatory,
-                    findingPriorityLevels: orgSettings.findingPriorityLevels,
+                    reviewItemPriorityLevels: orgSettings.reviewItemPriorityLevels,
                     agentSessionIdleCloseHours: orgSettings.agentSessionIdleCloseHours,
                     branchSuffixMode: orgSettings.branchSuffixMode,
                     vexComplianceFramework: orgSettings.vexComplianceFramework,

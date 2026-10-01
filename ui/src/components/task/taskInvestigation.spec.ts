@@ -13,7 +13,7 @@ vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) })
 
 const roles = [...fixtureRoles,
     { uuid: 'rc-test', name: 'tester', active: true, kind: 'AGENTIC',
-        producesOutputs: [{ specification: 'INVESTIGATION_REPORT', scope: 'TASK', required: true }] }]
+        producesOutputs: [{ specification: 'BOARD_INVESTIGATION_REPORT', scope: 'TASK', required: true }] }]
 
 function investigationTask (over: Record<string, any> = {}) {
     return richTask({ uuid: 'i1', key: 'RD-7', kind: 'INVESTIGATION', status: 'COMPLETED', role: 'tester', hold: null,
@@ -21,8 +21,8 @@ function investigationTask (over: Record<string, any> = {}) {
         investigation: { role: 'tester', review: null, deadline: null, returnTo: 'TASK', report: 'rep2',
             commissionedBy: { role: 'architect', session: 's1', task: 't1', by: { kind: 'SESSION', uuid: 's1', name: null } } },
         documents: [{ uuid: 'rep2', version: '2', lifecycle: 'ASSEMBLED', component: 'c', createdDate: '2026-09-29T10:00:00Z',
-            document: { specification: 'INVESTIGATION_REPORT', path: 'investigations/RD-7/report-2.md', round: 2, task: 'i1',
-                findings: null } }],
+            document: { specification: 'BOARD_INVESTIGATION_REPORT', path: 'investigations/RD-7/report-2.md', round: 2, task: 'i1',
+                reviewItems: null } }],
         ...over })
 }
 

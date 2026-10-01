@@ -25,11 +25,11 @@ describe('base moved since your round (task RD4-2)', () => {
         expect(chips[0].state).toBe('open')
     })
 
-    it('keeps the line on an attested chip', () => {
+    it('keeps the line on a declared chip', () => {
         const [chip] = prChips({
             prUrls: ['https://github.com/acme/app/pull/1'],
             pullRequests: [{ url: 'https://github.com/acme/app/pull/1', state: 'OPEN', registered: true, baseMovedBy: 4,
-                attestation: { outcome: 'DELIVERED', commit: 'abcdef1234', by: { name: 'ops' } } }]
+                declaration: { outcome: 'DELIVERED', commit: 'abcdef1234', by: { name: 'ops' } } }]
         })
         expect(chip.state).toBe('merged')
         expect(chip.baseMoved).toBe('base moved: 4 commits since your round')

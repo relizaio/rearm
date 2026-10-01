@@ -8,14 +8,14 @@
 
             <!-- A preview (gaps §1.26): what a person needs to decide whether to open the task,
                  and the verbs that must stay one click away -- a gate verdict, a release, the
-                 task actions. Findings rounds, questions, documents and history are on the page. -->
+                 task actions. Review item rounds, questions, documents and history are on the page. -->
             <div class="tsecs">
                 <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
                 <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
                              :can-operate="canOperate(board)" :board="board"
                              @human-review="p => emit('human-review', p)"
                              @human-signoff="p => emit('human-signoff', p)"
-                             @operator-release="p => emit('operator-release', p)"
+                             @lift-hold="p => emit('lift-hold', p)"
                              @require-review="p => emit('require-review', p)"/>
                 <!-- What the task waits on, for every reader (RD2-7). -->
                 <task-open-questions :task="task" :roles="roles"/>
@@ -24,10 +24,10 @@
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
                               @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
-                              @release-assignment="p => emit('release-assignment', p)"
-                              @set-level="p => emit('set-level', p)"
+                              @unassign="p => emit('unassign', p)"
+                              @set-work-level="p => emit('set-work-level', p)"
                               @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
-                              @delivered="p => emit('delivered', p)"
+                              @declare-delivery="p => emit('declare-delivery', p)"
                               @set-budget="p => emit('set-budget', p)"/>
                 <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
                               @open="t => emit('open', t)"/>
@@ -60,10 +60,10 @@ defineProps<{
 const emit = defineEmits<{
     (e: 'close'): void
     (e: 'open', task: any): void
-    (e: 'human-review', p: { task: any, approve: boolean, note: string, findings?: any[],
+    (e: 'human-review', p: { task: any, accept: boolean, note: string, reviewItems?: any[],
         about?: { specification: string } | null }): void
     (e: 'human-signoff', p: { task: any, outcome: string, note: string }): void
-    (e: 'operator-release', p: { task: any, note: string, role?: string }): void
+    (e: 'lift-hold', p: { task: any, note: string, role?: string }): void
     (e: 'require-review', p: { task: any, value: boolean }): void
     (e: 'authorize', p: { task: any, role: string, orderIndex?: number | null }): void
     (e: 'order', p: { task: any, orderIndex: number }): void
@@ -74,12 +74,12 @@ const emit = defineEmits<{
     (e: 'decide', p: { task: any, specification: string, decisions: any[],
         about?: { specification: string } | null }): void
     (e: 'set-strength', p: { task: any, requiredStrength: number | null }): void
-    (e: 'set-level', p: { task: any, level: number | null }): void
+    (e: 'set-work-level', p: { task: any, workLevel: number | null }): void
     (e: 'set-group', p: { task: any, group: string | null }): void
     (e: 'set-tags', p: { task: any, tags: { key: string, value?: string | null }[] }): void
-    (e: 'delivered', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
+    (e: 'declare-delivery', p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }): void
     (e: 'operator-hold', p: { task: any, reason: string }): void
-    (e: 'release-assignment', p: { task: any, reason: string }): void
+    (e: 'unassign', p: { task: any, reason: string }): void
 }>()
 </script>
 

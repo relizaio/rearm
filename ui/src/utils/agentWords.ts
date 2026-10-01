@@ -1,14 +1,18 @@
 // Board enums as words (task RD2-23, sweep UI-31): one table, so a specification, a lifecycle, a hold, a
 // level, an outcome or a status reads the same on every board surface instead of as its raw identifier.
 
-/** The rule every family starts from: "REVIEW_FINDINGS" reads "review findings". Empty for nothing. */
+/** The rule every family starts from: "DETAILED_DESIGN" reads "detailed design". Empty for nothing. */
 export function enumWord (value: string | null | undefined): string {
     return String(value ?? '').toLowerCase().replace(/_/g, ' ')
 }
 
-/** A document specification: "REVIEW_FINDINGS" → "review findings", "DETAILED_DESIGN" → "detailed design". */
+/**
+ * A document specification: "DETAILED_DESIGN" → "detailed design". The board's own types carry a BOARD_ prefix in
+ * the shared enum, so the product's vocabulary stays clean; on a board surface it says nothing, and is dropped:
+ * "BOARD_REVIEW_ITEMS" → "review items", "BOARD_TEST_REPORT" → "test report".
+ */
 export function specWord (specification: string | null | undefined): string {
-    return enumWord(specification)
+    return enumWord(String(specification ?? '').replace(/^BOARD_/, ''))
 }
 
 /** A release lifecycle: "READY_TO_SHIP" → "ready to ship", "ASSEMBLED" → "assembled" (RD2-24 first named it). */
@@ -26,7 +30,7 @@ export function statusWord (status: string | null | undefined): string {
     return enumWord(status)
 }
 
-/** A hold's or a lock's level: "OPERATOR" → "operator", "COORDINATOR" → "coordinator". */
+/** A hold's or a pause's level: "OPERATOR" → "operator", "COORDINATOR" → "coordinator". */
 export function levelWord (level: string | null | undefined): string {
     return enumWord(level)
 }

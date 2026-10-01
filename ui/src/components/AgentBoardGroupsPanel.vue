@@ -4,7 +4,7 @@
     <div class="boardGroups">
         <div v-if="!groups.length" class="boardGroups__empty">
             No groups yet. A group batches tasks, can wait on another group<template v-if="ladder">, and gives its tasks a
-            default level</template>.
+            default work level</template>.
         </div>
         <table v-else class="boardGroups__table">
             <thead>
@@ -24,8 +24,8 @@
                                data-testid="group-waiting">waiting on {{ groupWaitingOn(g, board).join(', ') }}</n-tag>
                         <n-tag v-if="g.status === 'CLOSED'" size="tiny" :bordered="false" data-testid="group-closed">closed</n-tag>
                         <!-- Only on a board with a ladder (task RD3-6); a level kept from before is ignored. -->
-                        <span v-if="ladder && g.defaultLevel != null" class="boardGroups__meta" data-testid="group-default-level">
-                            {{ levelLabel(g.defaultLevel, board) }} default
+                        <span v-if="ladder && g.defaultWorkLevel != null" class="boardGroups__meta" data-testid="group-default-level">
+                            {{ levelLabel(g.defaultWorkLevel, board) }} default
                         </span>
                     </td>
                     <td class="boardGroups__actions">
@@ -59,11 +59,11 @@
                           placeholder="Waits on groups (optional)" data-testid="group-depends"
                           :status="fieldError('dependsOn') ? 'error' : undefined"/>
                 <n-text v-if="fieldError('dependsOn')" type="error" class="boardGroups__err" data-testid="group-depends-error">{{ fieldError('dependsOn') }}</n-text>
-                <!-- A default level only on a board with a ladder, one of its rungs (task RD3-6). -->
-                <n-select v-if="ladder" v-model:value="draft.defaultLevel" :options="levelOptions(board)" clearable
-                          placeholder="Default level for its tasks (optional)" data-testid="group-level"
-                          :status="fieldError('defaultLevel') ? 'error' : undefined"/>
-                <n-text v-if="fieldError('defaultLevel')" type="error" class="boardGroups__err">{{ fieldError('defaultLevel') }}</n-text>
+                <!-- A default work level only on a board with a ladder, one of its rungs (task RD3-6). -->
+                <n-select v-if="ladder" v-model:value="draft.defaultWorkLevel" :options="levelOptions(board)" clearable
+                          placeholder="Default work level for its tasks (optional)" data-testid="group-level"
+                          :status="fieldError('defaultWorkLevel') ? 'error' : undefined"/>
+                <n-text v-if="fieldError('defaultWorkLevel')" type="error" class="boardGroups__err">{{ fieldError('defaultWorkLevel') }}</n-text>
                 <n-radio-group v-model:value="draft.status" size="small">
                     <n-radio-button value="OPEN" label="open"/>
                     <n-radio-button value="CLOSED" label="closed"/>

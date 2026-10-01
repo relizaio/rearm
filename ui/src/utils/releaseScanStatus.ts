@@ -102,7 +102,7 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
 
 /**
  * Whether a release is outside vulnerability scanning (task RD4-11): its component
- * is a board's DOCUMENT component, or the backend says so on the metrics it serves
+ * is a board's BOARD_DOCUMENT component, or the backend says so on the metrics it serves
  * (NOT_APPLICABLE, which also covers a legacy board's GENERIC document component).
  */
 export function isScanNotApplicable (release: any): boolean {
