@@ -33,7 +33,13 @@ public enum AdvisoryLockKey {
 	 * scheduler lock.
 	 */
 	VULNERABILITY_RECORD_WRITE(37),
-	LATEST_VERSION_REFRESH(38);
+	LATEST_VERSION_REFRESH(38),
+	/**
+	 * Namespace of the per-component transaction lock that serializes version assignment on one
+	 * component (VersionAssignmentRepository.lockVersionAssignmentOfComponent), two-key form like
+	 * VULNERABILITY_RECORD_WRITE; not a scheduler lock.
+	 */
+	VERSION_ASSIGNMENT(44);
 	
 	private int queryVal;
 	

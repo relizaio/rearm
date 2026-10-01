@@ -1469,10 +1469,10 @@ type ReleaseApprovalEvent {
 	date: DateTime
 	wu: WhoUpdated
 	"""
-	Optional free-form approver comment, sanitised server-side via
-	jsoup's Safelist.basic() (allows simple inline tags, strips
-	scripts/styles/event handlers). Capped at 4000 chars at the input
-	boundary; empty-after-clean is normalised to null.
+	Optional free-form approver comment, plain text: sanitised server-side
+	via jsoup's Safelist.none(), which removes all markup including links.
+	Capped at 4000 chars at the input boundary; empty-after-clean is
+	normalised to null.
 	"""
 	comment: String
 }
@@ -2078,11 +2078,12 @@ input ReleaseApprovalInput {
 	approvalRoleId: String!
 	state: ApprovalState!
 	"""
-	Optional free-form approver comment. Server sanitises via jsoup
-	Safelist.basic() and caps at 4000 chars; empty-after-clean is treated
-	as null. Reused for both the manual mutation and the programmatic
-	one -- for the latter, approvalEntry may be either a UUID or an
-	approval-entry name (per existing semantics).
+	Optional free-form approver comment, plain text. Server sanitises via
+	jsoup Safelist.none() (no markup, no links) and caps at 4000 chars;
+	empty-after-clean is treated as null. Reused for both the manual
+	mutation and the programmatic one -- for the latter, approvalEntry
+	may be either a UUID or an approval-entry name (per existing
+	semantics).
 	"""
 	comment: String
 }

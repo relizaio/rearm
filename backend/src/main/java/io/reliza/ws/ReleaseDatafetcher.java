@@ -795,7 +795,11 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ord.get();
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.LIFECYCLE_UPDATE, PermissionScope.RELEASE, releaseId, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
+		// Cancelling or rejecting a reservation ends it unbuilt, so no rule may fire for it: an
+		// action held back while it was PENDING would otherwise fire now, on the cancelled release.
+		boolean endsReservation = ord.get().getLifecycle() == ReleaseLifecycle.PENDING
+				&& (newLifecycle == ReleaseLifecycle.CANCELLED || newLifecycle == ReleaseLifecycle.REJECTED);
+		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu, !endsReservation);
 		return ReleaseData.dataFromRecord(r);
 	}
 

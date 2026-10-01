@@ -115,7 +115,37 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	
 	public record ReleaseLifecycleEvent (ReleaseLifecycle oldLifecycle, ReleaseLifecycle newLifecycle, ZonedDateTime date, WhoUpdated wu) {}
 	
-	public record ReleaseApprovalEvent (UUID approvalEntry, String approvalRoleId, ApprovalState state, ZonedDateTime date, WhoUpdated wu, String comment) {}
+	/** What kind of vote an approval event records. */
+	public enum ApprovalVoteKind {
+		/** A person's vote. */
+		VOTE,
+		/**
+		 * An org admin re-voting on a DRAFT release: replaces their own earlier vote on the
+		 * requirements of the event's role.
+		 */
+		OVERRIDE
+	}
+
+	/**
+	 * One vote on an approval entry, appended in order and never rewritten.
+	 *
+	 * @param kind null on events stored before the kind was recorded; see {@code ApprovalEntryData}
+	 *        for how each kind counts. Nullable on purpose: a primitive would fail to read every
+	 *        event stored without it.
+	 */
+	public record ReleaseApprovalEvent (UUID approvalEntry, String approvalRoleId, ApprovalState state,
+			ZonedDateTime date, WhoUpdated wu, String comment, ApprovalVoteKind kind) {
+		// 6-arg ctor for the existing callsites: an event without a recorded kind, as stored before.
+		public ReleaseApprovalEvent (UUID approvalEntry, String approvalRoleId, ApprovalState state,
+				ZonedDateTime date, WhoUpdated wu, String comment) {
+			this(approvalEntry, approvalRoleId, state, date, wu, comment, null);
+		}
+
+		/** Whether this vote replaces the voter's own earlier vote. */
+		public boolean overrides () {
+			return kind == ApprovalVoteKind.OVERRIDE;
+		}
+	}
 
 	public record ReleaseApprovalInput (UUID approvalEntry, String approvalRoleId, ApprovalState state, String comment) {}
 
@@ -125,7 +155,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			UUID release, UUID component, String version) {}
 
 	public static ReleaseApprovalEvent approvalEventFromInput (ReleaseApprovalInput rai, WhoUpdated wu) {
-		return new ReleaseApprovalEvent(rai.approvalEntry(), rai.approvalRoleId(), rai.state(), ZonedDateTime.now(), wu, rai.comment());
+		return approvalEventFromInput(rai, wu, ApprovalVoteKind.VOTE);
+	}
+
+	public static ReleaseApprovalEvent approvalEventFromInput (ReleaseApprovalInput rai, WhoUpdated wu,
+			ApprovalVoteKind kind) {
+		return new ReleaseApprovalEvent(rai.approvalEntry(), rai.approvalRoleId(), rai.state(), ZonedDateTime.now(), wu,
+				rai.comment(), kind);
 	}
 	
 	public enum ReleaseStatus {

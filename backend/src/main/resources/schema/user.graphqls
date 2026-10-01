@@ -924,6 +924,11 @@ type Mutation {
 	any key type (FREEFORM is the primary consumer today).
 	"""
 	setNotesOnApiKey(apiKeyUuid: ID!, notes: String): ApiKey
+	"""
+	Revoke an API key. apiKeyUuid is the key's uuid (apiKeys { uuid }) or the key id it was
+	issued with (TYPE__objectUuid or TYPE__objectUuid__ord__keyOrder); anything else is refused
+	with a message.
+	"""
 	deleteApiKey(apiKeyUuid: ID!): Boolean
 	"""Add the second secret of a key id (rotation). Org admin. Returns the new secret once."""
 	addApiKeySecret(apiKeyUuid: ID!, expiresDate: DateTime): ApiKeyForUser
