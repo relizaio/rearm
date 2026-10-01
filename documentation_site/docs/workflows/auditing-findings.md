@@ -23,6 +23,10 @@ Findings are displayed in multiple places throughout the ReARM interface to prov
 
 Click any circle to open the **Findings Modal** for that release or artifact, pre-filtered to the selected severity or violation type.
 
+On the release page, the circles are followed by:
+- a **KEV** circle that counts known exploited vulnerabilities;
+- **CVSS** and **EPSS** pills with the release's highest score and highest exploit probability. Click a pill to open the Findings Modal sorted by that column.
+
 ### How a Vulnerability's Severity Is Chosen
 
 Several sources can rate one vulnerability, and they can disagree. ReARM takes the severity from the first of these that gives one:
@@ -34,11 +38,7 @@ Several sources can rate one vulnerability, and they can disagree. ReARM takes t
 5. VulnDB
 6. Any other source
 
-The release counts, filters and approval conditions use this order, and vulnerability notifications use the same order of sources. A source that gives no severity, or Unassigned, gets one from its own CVSS score first (CVSS v4, else v3, else v2): 9.0-10.0 is Critical, 7.0-8.9 High, 4.0-6.9 Medium, 0.1-3.9 Low; CVSS v2 has no Critical, so 7.0-10.0 is High there. When one source has several advisories for the vulnerability, the most severe one counts. Hover a finding's severity to see each source's rating, in this order.
-
-On the release page, the circles are followed by:
-- a **KEV** circle that counts known exploited vulnerabilities;
-- **CVSS** and **EPSS** pills with the release's highest score and highest exploit probability. Click a pill to open the Findings Modal sorted by that column.
+The release counts, filters and approval conditions use this order. Vulnerability notifications use the same order of sources (2 to 6), without the triage analysis. A source that gives no severity, or Unassigned, gets one from its own CVSS score (or from its vector when no score is given) before the next source is asked, from CVSS v4, else v3, else v2: 9.0-10.0 is Critical, 7.0-8.9 High, 4.0-6.9 Medium, 0.1-3.9 Low; CVSS v2 has no Critical, so 7.0-10.0 is High there. When one source has several advisories for the vulnerability, the most severe one counts. In the Findings Modal, hover the info icon next to a vulnerability's severity to see each source's rating in this order (GitHub shows as GHSA).
 
 ### Dashboard (Home)
 
