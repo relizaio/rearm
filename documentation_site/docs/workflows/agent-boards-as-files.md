@@ -23,8 +23,8 @@ settings:
   budgetMicros: 50000000        # USD micros
   cycleCap: 6
   noProgressRepeatsToStop: 2
-  blockingPriority: 2           # findings at P1-P2 send work back
-  completionPriority: 1         # findings at P1 stop completion
+  blockingPriority: 2           # review items at P1-P2 send work back
+  completionPriority: 1         # review items at P1 stop completion
 roles:
   - name: designer
     promptFile: prompts/designer.md
@@ -82,7 +82,7 @@ Presets are copied onto new boards; applying a presets file does not change exis
 - **Dry run first.** A dry run returns exactly the change set the apply would, and writes nothing.
 - **Provenance.** The board records the file it was last applied from (spec hash, repository, path,
   commit) and posts an event naming it. Applying the same file twice changes nothing.
-- A file can be applied to a locked board. A file that names an archived board is refused.
+- A file can be applied to a paused board. A file that names an archived board is refused.
 
 ## Applying a file
 
