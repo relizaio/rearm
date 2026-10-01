@@ -485,7 +485,7 @@ Every event carries these:
 | `TimeGenerated` | `datetime` | Required on every Log Analytics table. ISO 8601 UTC. |
 | `EventType` | `string` | `NEW_VULN_AFFECTS_RELEASES`, `VULNERABILITY_RECORD_UPDATED`, `VEX_STATE_CHANGED`, `RELEASE_CREATED`, `RELEASE_LIFECYCLE_CHANGED`, `RELEASE_BOM_DIFF`, `APPROVAL_REQUESTED`, `APPROVAL_RESOLVED`. |
 | `Severity` | `string` | `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`/`INFO`/`NONE`, or `UNKNOWN` where the event has no severity (VEX, release, approval events). For a vulnerability event, the severity it is routed on: your organization's analyses can set it (see [Notifications](/configure/notifications#filters-severity-and-routes)). |
-| `UpstreamSeverity` | `string` | Vulnerability events only: the upstream severity (for `VULNERABILITY_RECORD_UPDATED`, the new one), whatever your analyses say. Equal to `Severity` unless an organization-scoped analysis changed it. |
+| `UpstreamSeverity` | `string` | Vulnerability events only: the upstream severity (for `VULNERABILITY_RECORD_UPDATED`, the new one), whatever your analyses say. Equal to `Severity` unless your analyses changed it. |
 | `Origin` | `string` | `REAL` or `SYNTHETIC` -- filter out test notifications with `where Origin == "REAL"`. |
 | `DedupKey` | `string` | Stable across notifications about the same finding; join on it to collapse repeats. |
 | `EventUuid` | `string` | Unique per event. |

@@ -71,20 +71,27 @@ A subscription's `eventTypes` list controls what it can match:
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
-- For a vulnerability event, that severity is your organization's: where an
-  organization-scoped analysis of the vulnerability at an affected component
-  sets a severity, that component counts with it, every other affected
-  component counts with the upstream severity, and the highest counts. A
+- For a vulnerability event, that severity is your organization's. In each
+  affected release, at each package the vulnerability is found in, the
+  narrowest analysis applies, as in the findings view: release, then branch,
+  then component, then organization. Where that analysis sets a severity, the
+  finding counts with it. Where it sets none, the organization's analysis
+  still applies; where it is `Unassigned`, or no analysis rates the finding,
+  the finding counts with the upstream severity. The highest counts. A
   vulnerability you triaged down to `LOW` everywhere it occurs is no longer
-  routed as `CRITICAL`; one component nobody triaged keeps the upstream
-  severity in play. Filters see the same value as `event.severity`, and the
-  upstream one as `event.upstreamSeverity`. Messages lead with your severity
-  and show both when they differ ("Org analysis: LOW (upstream CRITICAL)").
-  A webhook receives the payload as it is: `severity` (`newSeverity` for an
-  updated vulnerability) stays upstream's, and `effectiveSeverity`, when
-  present, is the one the event was routed on. Release-, branch- and
-  component-scoped analyses do not change it: the event is the
-  organization's.
+  routed as `CRITICAL`; one finding nobody triaged keeps the upstream severity
+  in play; an analysis can also raise it. When your analyses lower the
+  severity, the notification also counts packages Dependency-Track has
+  reported but ReARM has not yet written to their releases, and it waits:
+  at least 10 minutes after the event, and while Dependency-Track is still
+  scanning packages sent to it before the event. After 2 hours it goes out on
+  what has been scanned by then. A raised severity does not wait. Filters see
+  the same value as `event.severity`, and the upstream one as
+  `event.upstreamSeverity`. Messages lead with your severity and show both
+  when they differ ("Org analysis: LOW (upstream CRITICAL)"). A webhook
+  receives the payload as it is: `severity` (`newSeverity` for an updated
+  vulnerability) stays upstream's, and `effectiveSeverity`, when present, is
+  the one the event was routed on.
 - A route can also carry a **perspectives** list. Left empty it means "any
   perspective". Set, it gates delivery: the event only goes out on that route
   when an affected release's component belongs to one of the named
