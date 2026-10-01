@@ -195,8 +195,6 @@ jobs:
     # built from a commit whose lint or specs fail.
     needs: [detect, test-ui]
     if: needs.detect.outputs.ui == 'true' || github.ref == 'refs/heads/main'
-    needs: detect
-    if: needs.detect.outputs.ui == 'true' || github.ref == 'refs/heads/main'
     permissions:
       id-token: write
     name: Build And Push ReARM UI
