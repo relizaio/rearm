@@ -80,8 +80,11 @@ A subscription's `eventTypes` list controls what it can match:
   severity in play. Filters see the same value as `event.severity`, and the
   upstream one as `event.upstreamSeverity`. Messages lead with your severity
   and show both when they differ ("Org analysis: LOW (upstream CRITICAL)").
-  Release-, branch- and component-scoped analyses do not change it: the event
-  is the organization's.
+  A webhook receives the payload as it is: `severity` (`newSeverity` for an
+  updated vulnerability) stays upstream's, and `effectiveSeverity`, when
+  present, is the one the event was routed on. Release-, branch- and
+  component-scoped analyses do not change it: the event is the
+  organization's.
 - A route can also carry a **perspectives** list. Left empty it means "any
   perspective". Set, it gates delivery: the event only goes out on that route
   when an affected release's component belongs to one of the named
