@@ -23,6 +23,19 @@ Findings are displayed in multiple places throughout the ReARM interface to prov
 
 Click any circle to open the **Findings Modal** for that release or artifact, pre-filtered to the selected severity or violation type.
 
+### How a Vulnerability's Severity Is Chosen
+
+Several sources can rate one vulnerability, and they can disagree. ReARM takes the severity from the first of these that gives one:
+
+1. A triage analysis that sets a severity (the narrowest scope wins: release, branch, component, organization)
+2. NVD
+3. GitHub Advisories
+4. OSV
+5. VulnDB
+6. Any other source
+
+The release counts, filters and approval conditions use this order, and vulnerability notifications use the same order of sources. A source that gives no severity, or Unassigned, gets one from its own CVSS score first (CVSS v4, else v3, else v2): 9.0-10.0 is Critical, 7.0-8.9 High, 4.0-6.9 Medium, 0.1-3.9 Low; CVSS v2 has no Critical, so 7.0-10.0 is High there. When one source has several advisories for the vulnerability, the most severe one counts. Hover a finding's severity to see each source's rating, in this order.
+
 On the release page, the circles are followed by:
 - a **KEV** circle that counts known exploited vulnerabilities;
 - **CVSS** and **EPSS** pills with the release's highest score and highest exploit probability. Click a pill to open the Findings Modal sorted by that column.
