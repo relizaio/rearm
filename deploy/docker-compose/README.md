@@ -98,6 +98,34 @@ U=$(/opt/keycloak/bin/kcadm.sh get users -r Reliza -q email=you@example.com --fi
 /opt/keycloak/bin/kcadm.sh set-password -r Reliza --userid "$U" --new-password "ChangeMe12345!"'
 ```
 
+### Blank page after login
+
+Symptom: the Keycloak login succeeds and redirects back, then ReARM
+renders a blank page. The browser console shows the token request
+(`/kauth/realms/Reliza/protocol/openid-connect/token`) answered with
+403.
+
+Cause: the realm shipped in `rearm-keycloak` images built before this
+fix gives the `login-app` client path patterns as web origins
+(`http://localhost:8092/*`). Keycloak compares a web origin literally
+against the browser's `Origin` header, which never carries a path, so
+the token exchange is refused. Later images ship bare origins. The realm
+is imported only on first start, so an install created from an affected
+image keeps the old value until it is corrected -- upgrading the image
+does not fix it.
+
+Fix, keeping all users (replace the origin with yours, e.g.
+`https://rearm.example.com` -- scheme, host and port, no path; the
+client id is the one the shipped realm pins for `login-app`; use your
+Keycloak admin password if you changed it):
+
+```bash
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh config credentials --server http://localhost:9080/kauth --realm master --user admin --password admin
+docker compose exec keycloak /opt/keycloak/bin/kcadm.sh update clients/977414f0-8e18-46c7-956d-f0dd3a30a395 -r Reliza -s 'webOrigins=["http://localhost:8092"]'
+```
+
+Then reload ReARM and log in again.
+
 ## OCI artifact storage
 
 BOMs and artifacts are stored in an OCI registry. By default a bundled
