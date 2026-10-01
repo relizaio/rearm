@@ -250,12 +250,12 @@ const dateBuckets = computed<DateBucket[]>(() => {
             const f = toOverTimeFinding(rec)
             if (!f) continue
             switch (rec.changeKind) {
-                case 'APPEARED': appeared.push(f); break
-                case 'RESOLVED': resolved.push(f); break
-                case 'SEVERITY_INCREASED': severityIncreased.push(f); break
-                case 'SEVERITY_DECREASED': severityDecreased.push(f); break
-                case 'KEV_ADDED': kevAdded.push(f); break
-                case 'KEV_REMOVED': kevRemoved.push(f); break
+            case 'APPEARED': appeared.push(f); break
+            case 'RESOLVED': resolved.push(f); break
+            case 'SEVERITY_INCREASED': severityIncreased.push(f); break
+            case 'SEVERITY_DECREASED': severityDecreased.push(f); break
+            case 'KEV_ADDED': kevAdded.push(f); break
+            case 'KEV_REMOVED': kevRemoved.push(f); break
             }
         }
 

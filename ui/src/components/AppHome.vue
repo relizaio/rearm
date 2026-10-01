@@ -1167,7 +1167,7 @@ const releaseSearchResultRows = [
             const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
             return h(RouterLink, 
                 {to: {name: routeName,
-                params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
+                    params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid}},
                 style: "text-decoration: none;"},
                 () => row.componentDetails.name )
         }
@@ -1185,9 +1185,9 @@ const releaseSearchResultRows = [
             const routeName = row.componentDetails.type === 'COMPONENT' ? 'ComponentsOfOrg' : 'ProductsOfOrg'
             return h(RouterLink, 
                 {to: {name: routeName,
-                params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
-                    branchuuid: row.branchDetails.uuid
-                }},
+                    params: {orguuid: myorg.value.uuid, compuuid: row.componentDetails.uuid,
+                        branchuuid: row.branchDetails.uuid
+                    }},
                 style: "text-decoration: none;"},
                 () => row.branchDetails.name )
         }
@@ -1198,7 +1198,7 @@ const releaseSearchResultRows = [
         render(row: any) {
             return h(RouterLink, 
                 {to: {name: 'ReleaseView', params: {uuid: row.uuid}},
-                style: "text-decoration: none;"},
+                    style: "text-decoration: none;"},
                 () => row.version )
         }
     },
@@ -1308,11 +1308,11 @@ async function fetchMostVulnerableComponents () {
             }
 
             return {
-            id: `${x.componentuuid || x.uuid || idx}`,
-            uuid: x.componentuuid || x.uuid,
-            name: x.componentname || x.name || 'Unknown',
-            routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
-            metrics
+                id: `${x.componentuuid || x.uuid || idx}`,
+                uuid: x.componentuuid || x.uuid,
+                name: x.componentname || x.name || 'Unknown',
+                routeName: vulnerableComponentsInput.value.componentType === 'PRODUCT' ? 'ProductsOfOrg' : 'ComponentsOfOrg',
+                metrics
             }
         })
     } catch (err: any) {
@@ -1445,18 +1445,18 @@ async function openVulnModalForComponent (item: any, severityFilter: string = ''
 function displayActiveComponentType () {
     let displayComp
     switch (activeComponentsInput.value.componentType) {
-        case 'BRANCH':
-            displayComp = 'Branches'
-            break
-        case 'FEATURE_SET':
-            displayComp = featureSetLabelPlural.value
-            break
-        case 'PRODUCT':
-            displayComp = 'Products'
-            break
-        default:
-            displayComp = 'Components'
-            break
+    case 'BRANCH':
+        displayComp = 'Branches'
+        break
+    case 'FEATURE_SET':
+        displayComp = featureSetLabelPlural.value
+        break
+    case 'PRODUCT':
+        displayComp = 'Products'
+        break
+    default:
+        displayComp = 'Components'
+        break
     }
     return displayComp
 }

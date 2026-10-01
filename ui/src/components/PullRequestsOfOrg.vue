@@ -61,13 +61,13 @@ const stateTagType = (s: string) => s === 'OPEN' ? 'success' : (s === 'MERGED' ?
 type ValidationDisplay = { label: string, type: 'success' | 'error' | 'warning' | 'info' | 'default' }
 const validationDisplay = (v: string | null | undefined): ValidationDisplay => {
     switch (v) {
-        case 'SUCCESS': return { label: 'Success', type: 'success' }
-        case 'FAILURE': return { label: 'Failure', type: 'error' }
-        case 'PENDING': return { label: 'Pending', type: 'warning' }
-        case 'NEUTRAL': return { label: 'Neutral', type: 'default' }
-        case 'SKIPPED': return { label: 'Skipped', type: 'default' }
-        case 'CANCELLED': return { label: 'Cancelled', type: 'default' }
-        default: return { label: 'Pending', type: 'warning' }
+    case 'SUCCESS': return { label: 'Success', type: 'success' }
+    case 'FAILURE': return { label: 'Failure', type: 'error' }
+    case 'PENDING': return { label: 'Pending', type: 'warning' }
+    case 'NEUTRAL': return { label: 'Neutral', type: 'default' }
+    case 'SKIPPED': return { label: 'Skipped', type: 'default' }
+    case 'CANCELLED': return { label: 'Cancelled', type: 'default' }
+    default: return { label: 'Pending', type: 'warning' }
     }
 }
 

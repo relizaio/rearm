@@ -2664,8 +2664,8 @@ const releaseVexColumns = [
         render: (r: any) => {
             const type = r.status === 'ACCEPTED' ? 'success'
                 : r.status === 'PENDING' ? 'warning'
-                : r.status === 'REJECTED' ? 'error'
-                : 'default'
+                    : r.status === 'REJECTED' ? 'error'
+                        : 'default'
             return h(NTag, { type, size: 'small', round: true }, () => r.status)
         },
     },
@@ -6492,7 +6492,7 @@ const artifactTagsFields: any[] = [
         title: 'Key',
         render(row: any) {
             const label = row.key === LIFECYCLE_DECLARED_KEY ? 'Lifecycle (from document)' :
-                          row.key === LIFECYCLE_KEY ? 'Lifecycle (user)' : row.key
+                row.key === LIFECYCLE_KEY ? 'Lifecycle (user)' : row.key
             return label
         }
     },
@@ -7302,10 +7302,10 @@ function renderEnrichmentPill (row: any): any {
     let label = 'Enrichment'
     let title = 'BOM enrichment status'
     switch (status) {
-        case 'COMPLETED': type = 'success'; label = 'Enriched'; title = 'BOM enrichment completed'; break
-        case 'PENDING': type = 'warning'; label = 'Enriching…'; title = 'BOM enrichment in progress'; break
-        case 'FAILED': type = 'error'; label = 'Enrichment failed'; title = 'BOM enrichment failed; check rebom logs'; break
-        case 'SKIPPED': type = 'default'; label = 'Enrichment skipped'; title = 'BOM enrichment skipped (excluded by config)'; break
+    case 'COMPLETED': type = 'success'; label = 'Enriched'; title = 'BOM enrichment completed'; break
+    case 'PENDING': type = 'warning'; label = 'Enriching…'; title = 'BOM enrichment in progress'; break
+    case 'FAILED': type = 'error'; label = 'Enrichment failed'; title = 'BOM enrichment failed; check rebom logs'; break
+    case 'SKIPPED': type = 'default'; label = 'Enrichment skipped'; title = 'BOM enrichment skipped (excluded by config)'; break
     }
     return h(NTag, { type, size: 'small', round: true, title }, () => label)
 }
@@ -7824,9 +7824,9 @@ function renderSignatureBadge (sig: any) {
     const state = sig.state as string
     const tone: 'success' | 'warning' | 'error' | 'default' =
         state === 'VERIFIED' ? 'success'
-        : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
-        : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
-        : 'default'
+            : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
+                : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
+                    : 'default'
     const tip = [
         sig.format ? `format: ${sig.format}` : '',
         sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',

@@ -143,7 +143,7 @@ async function fetchLifecycles() {
 }
 
 async function loadMarketingReleases() {
-    const componentUuid = component ? component.value : ''
+    const componentUuid = component.value || ''
     const mrktReleaseResponse = await graphqlClient.query({
         query: gql`
             query marketingReleases($componentUuid: ID!) {

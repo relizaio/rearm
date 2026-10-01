@@ -2343,7 +2343,7 @@ function resetInputTrigger () {
 const outputTriggersForInputForm = computed((): any => {
     let outputTriggers: any[] = []
     // Add local output triggers
-    if (updatedComponent && updatedComponent.value && updatedComponent.value.outputTriggers) {
+    if (updatedComponent.value && updatedComponent.value.outputTriggers) {
         outputTriggers = updatedComponent.value.outputTriggers.map((ot: any) => {
             return {label: ot.name + ' (Local)', value: ot.uuid}
         })
@@ -3022,7 +3022,7 @@ const componentAuthTypes = [
 const secrets = ref([])
 
 const fetchSecretsIfAllowed = async function() {
-    if (isWritable && supportsComponentKind) {
+    if (isWritable.value && supportsComponentKind) {
         secrets.value = await loadSecrets(componentData.value.org)
     }
 }

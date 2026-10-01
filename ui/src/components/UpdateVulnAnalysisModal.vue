@@ -16,7 +16,7 @@
                     placeholder="Add alias"
                     :on-create="() => ''"
                 >
-                    <template #default="{ value, index }">
+                    <template #default="{ index }">
                         <n-input
                             v-model:value="formData.findingAliases[index]"
                             placeholder="Enter alias"
