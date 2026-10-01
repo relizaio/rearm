@@ -53,6 +53,7 @@ the full column set and their types.
     "TimeGenerated": "2026-08-19T12:04:56.853Z",
     "EventType": "NEW_VULN_AFFECTS_RELEASES",
     "Severity": "CRITICAL",
+    "UpstreamSeverity": "CRITICAL",
     "Origin": "REAL",
     "DedupKey": "vuln:CVE-2021-44228:8f14e45f",
     "EventUuid": "38f01f22-ae36-4d72-b5b4-b982ecdf25be",
@@ -167,7 +168,7 @@ az monitor log-analytics workspace table create \
     DedupKey=string EventUuid=string OrgUuid=string ReARMUrl=string \
     PayloadJson=string PayloadJsonTruncated=boolean \
     VulnPrimaryId=string CvssScore=real EpssScore=real OldEpssScore=real \
-    OldSeverity=string ChangeType=string KevListed=boolean FixVersion=string \
+    OldSeverity=string UpstreamSeverity=string ChangeType=string KevListed=boolean FixVersion=string \
     Component=string ComponentPurl=string \
     AffectedReleases=dynamic AffectedReleaseDetails=dynamic \
     AffectedComponentNames=dynamic AffectedComponentUuids=dynamic \
@@ -302,7 +303,7 @@ az monitor log-analytics workspace table update -g "$RG" --workspace-name "$WS" 
     DedupKey=string EventUuid=string OrgUuid=string ReARMUrl=string \
     PayloadJson=string PayloadJsonTruncated=boolean \
     VulnPrimaryId=string CvssScore=real EpssScore=real OldEpssScore=real \
-    OldSeverity=string ChangeType=string KevListed=boolean FixVersion=string \
+    OldSeverity=string UpstreamSeverity=string ChangeType=string KevListed=boolean FixVersion=string \
     Component=string ComponentPurl=string AffectedReleases=dynamic \
     AffectedReleaseDetails=dynamic AffectedReleaseCount=int Perspectives=dynamic \
     VexOldState=string VexNewState=string ReleaseUuid=string \
@@ -483,7 +484,8 @@ Every event carries these:
 | --- | --- | --- |
 | `TimeGenerated` | `datetime` | Required on every Log Analytics table. ISO 8601 UTC. |
 | `EventType` | `string` | `NEW_VULN_AFFECTS_RELEASES`, `VULNERABILITY_RECORD_UPDATED`, `VEX_STATE_CHANGED`, `RELEASE_CREATED`, `RELEASE_LIFECYCLE_CHANGED`, `RELEASE_BOM_DIFF`, `APPROVAL_REQUESTED`, `APPROVAL_RESOLVED`. |
-| `Severity` | `string` | `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`/`INFO`/`NONE`, or `UNKNOWN` where the event has no severity (VEX, release, approval events). |
+| `Severity` | `string` | `CRITICAL`/`HIGH`/`MEDIUM`/`LOW`/`INFO`/`NONE`, or `UNKNOWN` where the event has no severity (VEX, release, approval events). For a vulnerability event, the severity it is routed on: your organization's analyses can set it (see [Notifications](/configure/notifications#filters-severity-and-routes)). |
+| `UpstreamSeverity` | `string` | Vulnerability events only: the upstream severity (for `VULNERABILITY_RECORD_UPDATED`, the new one), whatever your analyses say. Equal to `Severity` unless an organization-scoped analysis changed it. |
 | `Origin` | `string` | `REAL` or `SYNTHETIC` -- filter out test notifications with `where Origin == "REAL"`. |
 | `DedupKey` | `string` | Stable across notifications about the same finding; join on it to collapse repeats. |
 | `EventUuid` | `string` | Unique per event. |
