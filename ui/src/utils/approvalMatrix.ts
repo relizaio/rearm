@@ -1,9 +1,9 @@
 // Per-person approval state for the release approval matrix.
 //
-// The backend counts each voter once per requirement, by their latest vote on any of its roles,
-// and refuses a second vote by the same person on the same requirement. The matrix used to key a
-// cell by entry and role across everyone, so the first QA vote locked the QA cell for every other
-// QA approver -- a requirement of two could not be met from the UI.
+// The backend counts each voter once per requirement and refuses a second vote by the same person
+// on the same requirement (an org admin may replace their own vote on a DRAFT release). The matrix
+// used to key a cell by entry and role across everyone, so the first QA vote locked the QA cell for
+// every other QA approver -- a requirement of two could not be met from the UI.
 
 export type VoteState = 'APPROVED' | 'DISAPPROVED'
 
@@ -77,3 +77,14 @@ export function isLockedByOwnVote(requirementRoles: string[][], saved: Record<st
     return requirementRoles.some(roles => roles.includes(role)
         && roles.some(r => r !== role && (!!saved?.[r] || (!!pending?.[r] && pending[r] !== 'UNSET'))))
 }
+
+/**
+ * Whether voting on a release is closed, as the backend decides it: once it is ready to ship or
+ * later, or cancelled or rejected. Moving it back to DRAFT re-opens voting.
+ */
+export function isVotingClosed(lifecycle: string | null | undefined): boolean {
+    return !!lifecycle && !['PENDING', 'DRAFT', 'ASSEMBLED'].includes(lifecycle)
+}
+
+export const VOTING_CLOSED_TITLE = 'Voting is closed once the release is ready to ship, cancelled or rejected; '
+    + 'move it back to DRAFT to change approvals'

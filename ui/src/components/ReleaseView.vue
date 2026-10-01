@@ -2087,7 +2087,7 @@ import type { FindingSortKey } from '@/utils/metrics'
 import { cvssBandOf, cvssPillOf, epssPillOf } from '@/utils/vulnScoreDisplay'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
-import { isLockedByOwnVote, myVotes, othersVoteCounts } from '@/utils/approvalMatrix'
+import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
 
@@ -6904,7 +6904,8 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
             title: availableApprovalIds.value[aid],
             render: (row: any) => {
                 if (row[aid]) {
-                    let isDisabled = !canUserApproveForRelease(aid)
+                    const votingClosed = isVotingClosed(updatedRelease.value?.lifecycle || release.value?.lifecycle)
+                    let isDisabled = votingClosed || !canUserApproveForRelease(aid)
                     if (!isDisabled) {
                         isDisabled = isLockedByOwnVote(entryRequirementRoles.value[row.uuid] || [],
                             givenApprovals.value[row.uuid], approvalMatrixCheckboxes.value[row.uuid], aid)
@@ -6943,8 +6944,11 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                             isDisabled && !active ? 'opacity: 0.45' : ''
                         ].filter(Boolean).join('; ')
                         const label = kind === 'approve' ? 'Approve' : 'Disapprove'
+                        const lockedTitle = active
+                            ? `${kind === 'approve' ? 'Approved' : 'Disapproved'}${isSubmitted ? ' (saved)' : ''}`
+                            : (votingClosed ? VOTING_CLOSED_TITLE : `${label} - not available to you`)
                         const title = isDisabled
-                            ? (active ? `${kind === 'approve' ? 'Approved' : 'Disapproved'}${isSubmitted ? ' (saved)' : ''}` : `${label} - not available to you`)
+                            ? lockedTitle
                             : (active ? `Your ${label.toLowerCase()} is pending - click to clear` : label)
                         return h('span', {
                             style: base,

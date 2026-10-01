@@ -53,6 +53,11 @@ describe('ReleaseView approval matrix', () => {
         expect(code).not.toContain('isDisabled = (givenApprovals.value[row.uuid][aid]?.length > 0)')
     })
 
+    it('closes every cell once voting on the release is closed', () => {
+        expect(code).toContain('let isDisabled = votingClosed || !canUserApproveForRelease(aid)')
+        expect(code).toContain('(votingClosed ? VOTING_CLOSED_TITLE')
+    })
+
     it('shows a column for every role of a requirement, not just the first', () => {
         expect(code).not.toContain('resolveApprovalRoles(ar)[0]')
     })

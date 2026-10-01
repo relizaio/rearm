@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { isLockedByOwnVote, myVotes, othersVoteCounts, voterOf, type MatrixApprovalEvent } from './approvalMatrix'
+import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, voterOf, type MatrixApprovalEvent } from './approvalMatrix'
 
 const vote = (voter: string | null, role: string, state: string, entry = 'e1'): MatrixApprovalEvent =>
     ({ approvalEntry: entry, approvalRoleId: role, state, wu: voter ? { lastUpdatedBy: voter } : null })
@@ -64,5 +64,15 @@ describe('isLockedByOwnVote', () => {
     it('my own pending pick does not lock its cell, and other requirements stay open', () => {
         expect(isLockedByOwnVote(reqs, {}, { QA: 'APPROVED' }, 'QA')).toBe(false)
         expect(isLockedByOwnVote(reqs, { QA: 'APPROVED' }, {}, 'OPS')).toBe(false)
+    })
+})
+
+describe('isVotingClosed', () => {
+    it('matches the backend: closed from READY_TO_SHIP, and when cancelled or rejected', () => {
+        for (const open of ['PENDING', 'DRAFT', 'ASSEMBLED']) expect(isVotingClosed(open)).toBe(false)
+        for (const closed of ['READY_TO_SHIP', 'GENERAL_AVAILABILITY', 'END_OF_LIFE', 'CANCELLED', 'REJECTED']) {
+            expect(isVotingClosed(closed)).toBe(true)
+        }
+        expect(isVotingClosed(undefined)).toBe(false)
     })
 })
