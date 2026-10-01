@@ -3027,6 +3027,13 @@ const fetchSecretsIfAllowed = async function() {
     }
 }
 
+// Write access can resolve after the one-off fetches above (a perspective- or
+// component-scoped permission depends on store state that loads later), and the
+// secret selects appear as soon as it does, so fetch then too.
+watch(isWritable, (writable: boolean) => {
+    if (writable && updatedComponent.value?.kind === 'HELM') fetchSecretsIfAllowed()
+})
+
 const environmentTypes = ref<string[]>([])
 
 const loadEnvTypes = async function() {

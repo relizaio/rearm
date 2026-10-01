@@ -1,8 +1,8 @@
 diff --git a/.github/workflows/github_actions.yml b/.github/workflows/github_actions.yml
-index 83d0da78..48621dd3 100644
+index 83d0da78..99462663 100644
 --- a/.github/workflows/github_actions.yml
 +++ b/.github/workflows/github_actions.yml
-@@ -158,8 +158,38 @@ jobs:
+@@ -158,8 +158,42 @@ jobs:
            rearm_mirror_api_key: ${{ secrets.REARM_DTRACK_HELM_API_KEY }}
            rearm_mirror_api_url: https://demo.rearmhq.com
            limit_to_branches: main
@@ -18,6 +18,8 @@ index 83d0da78..48621dd3 100644
 +      contents: read
 +    name: Test ReARM UI
 +    runs-on: ubuntu-latest
++    # build-ui waits on this job, so a hung run must not hold the image for the 6h default.
++    timeout-minutes: 15
 +    steps:
 +      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
 +        with:
@@ -26,6 +28,8 @@ index 83d0da78..48621dd3 100644
 +        with:
 +          # Same major as the ui/Dockerfile build image.
 +          node-version: 26
++          cache: npm
++          cache-dependency-path: ui/package-lock.json
 +      - name: Install UI dependencies
 +        working-directory: ui
 +        run: npm ci --ignore-scripts
