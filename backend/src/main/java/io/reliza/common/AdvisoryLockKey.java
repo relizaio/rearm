@@ -23,7 +23,23 @@ public enum AdvisoryLockKey {
 	SWEEP_INSTANCE_DEPLOYMENT_FAILURES(31),
 	ENRICHMENT_PULL(32),
 	FLUSH_INSTANCE_DEPLOYMENT_COALESCE(33),
-	PURGE_CLI_SESSIONS(34);
+	PURGE_CLI_SESSIONS(34),
+	RECOMPUTE_VULNERABILITY_RECORDS(36),
+	REDETECT_DTRACK_VERSIONS(43),
+	/**
+	 * Namespace of the per-record transaction lock on vulnerability_records
+	 * (VulnerabilityRecordRepository.lockRecord), taken with the two-key form
+	 * whose second key is the record; unlike the others it is not a
+	 * scheduler lock.
+	 */
+	VULNERABILITY_RECORD_WRITE(37),
+	LATEST_VERSION_REFRESH(38),
+	/**
+	 * Namespace of the per-component transaction lock that serializes version assignment on one
+	 * component (VersionAssignmentRepository.lockVersionAssignmentOfComponent), two-key form like
+	 * VULNERABILITY_RECORD_WRITE; not a scheduler lock.
+	 */
+	VERSION_ASSIGNMENT(44);
 	
 	private int queryVal;
 	

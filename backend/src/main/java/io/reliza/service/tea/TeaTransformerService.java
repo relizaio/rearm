@@ -358,14 +358,29 @@ public class TeaTransformerService {
 		return resolvedType;
 	}
 	
+	/**
+	 * The checksums TEA publishes for one artifact format.
+	 *
+	 * <p>AS_UPLOADED when the artifact has one, ORIGINAL_FILE otherwise. AS_UPLOADED is a digest
+	 * we took over the bytes the publisher sent us; ORIGINAL_FILE is a digest someone told us
+	 * about, or -- on a rebom-stored BOM -- one derived from rebom's own copy of the document,
+	 * which is not the uploaded file. Where both exist the second is the weaker claim, and a TEA
+	 * format entry carries no way to say which is which: emitting both would hand a verifier two
+	 * sha256 values for one file and no way to choose. So the stronger claim wins outright.
+	 *
+	 * <p>Artifacts uploaded before retention, externally-stored artifacts and deliverables have
+	 * no AS_UPLOADED record and are published exactly as they were.
+	 */
 	private List<TeaChecksum> transformDigestRecordToTeaChecksum (Collection<DigestRecord> digestRecords) {
 		List<TeaChecksum> tcList = new LinkedList<>();
 		if (null != digestRecords && !digestRecords.isEmpty()) {
-			digestRecords.stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
+			boolean hasAsUploaded = digestRecords.stream().anyMatch(d -> d.scope() == DigestScope.AS_UPLOADED);
+			DigestScope publishScope = hasAsUploaded ? DigestScope.AS_UPLOADED : DigestScope.ORIGINAL_FILE;
+			digestRecords.stream().filter(d -> d.scope() == publishScope).forEach(d -> {
 				TeaChecksum tc = new TeaChecksum();
 				tc.setAlgType(d.algo());
 				tc.setAlgValue(d.digest());
-				tcList.add(tc);	
+				tcList.add(tc);
 			});
 		}
 		return tcList;

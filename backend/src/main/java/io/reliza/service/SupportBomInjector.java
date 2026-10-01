@@ -17,6 +17,7 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Stream;
 
 import tools.jackson.databind.JsonNode;
@@ -60,7 +61,13 @@ import io.reliza.model.SupportStatus;
  * own, so on any egress that routes through it, such a property was provably written here.
  * That is every document this server PRODUCES: the CycloneDX artifact download, the
  * SPDX-augmented download (the converted CycloneDX form) and the JSON merged release SBOM
- * export -- each swept and marked always, and injected when the org enables it.
+ * export -- each swept ALWAYS, injected when the org enables it, and marked unless the caller
+ * explicitly declined the disclosure.
+ *
+ * <p>An explicit {@code includeSupportMetadata=false} is the second document that carries no
+ * marker, alongside the raw download below. It is still SWEPT: the sweep is the anti-spoofing
+ * control and the marker is a statement about it, so declining the statement never waives the
+ * control. (Operator decision 2026-09-22.)
  *
  * <p>The raw download is outside it, deliberately. Raw means AS UPLOADED: it serves the
  * uploader's own document and makes no claim about its contents, so nothing is stripped from
@@ -122,6 +129,30 @@ public final class SupportBomInjector {
 	 * need an explicit strip. */
 	static final String RELIZA_SUPPORT_PREFIX = "reliza:support:";
 	static final String RELIZA_DEVICE_PREFIX = "reliza:device:";
+	/**
+	 * Everything ReARM namespaces, disclosure and internal alike.
+	 *
+	 * <p>The "include internal metadata" flag is defined by SUBTRACTION from this: an internal
+	 * marker is a reliza-namespaced property that is not part of the support disclosure. Writing
+	 * the rule that way round is deliberate -- a future {@code reliza:foo:} property added
+	 * anywhere in the codebase is internal by default and gets stripped, which is the safe
+	 * direction for a flag whose promise is "only the manufacturer's own content". An
+	 * allow-list of known-internal prefixes would leak every marker nobody remembered to add.
+	 */
+	static final String RELIZA_NAMESPACE_PREFIX = "reliza:";
+	/**
+	 * The reliza namespaces that ARE the support disclosure, and therefore survive an internal
+	 * strip.
+	 *
+	 * <p>{@code reliza:device:*} belongs here and not on the internal side, though it is not
+	 * spelled {@code reliza:support:}. Those two properties carry the DEVICE's own support
+	 * window -- the section 524B commitment -- stamped by {@link #inject} as part of the same
+	 * disclosure and read by the same auditor. Classing them as ReARM-internal would let an
+	 * export ask for the support disclosure and silently receive it with the device window
+	 * removed, which is the one combination an FDA premarket submission cannot use.
+	 */
+	private static final Set<String> DISCLOSURE_PREFIXES =
+			Set.of(RELIZA_SUPPORT_PREFIX, RELIZA_DEVICE_PREFIX);
 	/**
 	 * The document-level attestation block (CycloneDX 1.6+), server-owned exactly like the
 	 * reliza namespaces above -- and NOT reachable by the property sweep, which walks property
@@ -432,18 +463,56 @@ public final class SupportBomInjector {
 	 * that constant for why the distinction is load-bearing rather than cosmetic.
 	 */
 	public static JsonNode stripOnly(JsonNode bom) {
-		if (bom == null || !bom.isObject()) {
+		if (!sweepServerOwnedNamespaces(bom)) {
 			return bom;
 		}
-		stripReservedEverywhere(bom);
-		stripInboundDeclarations((ObjectNode) bom);
-		stripAssignedBomRefs(bom);
 		JsonNode metadata = bom.get("metadata");
 		ObjectNode metaObj = (metadata != null && metadata.isObject())
 				? (ObjectNode) metadata
 				: ((ObjectNode) bom).putObject("metadata");
 		addProperty(properties(metaObj), PROP_DISCLOSURE, DISCLOSURE_STRIPPED_ONLY);
 		return bom;
+	}
+
+	/**
+	 * Strip the server-owned namespaces and say NOTHING -- no disclosure marker.
+	 *
+	 * <p>For the one case where silence is the honest answer: a caller that explicitly sent
+	 * {@code includeSupportMetadata=false}. The marker exists to disambiguate an ABSENT support
+	 * property -- "we hold no attestation for this component" versus "this document asserts
+	 * nothing about support" -- and that ambiguity is real only in a document that is making a
+	 * support statement at all. A caller who has declined the disclosure outright is not making
+	 * one, so the marker has nothing to qualify and is simply our name on their file.
+	 *
+	 * <p>NOT the org-DISABLED path, which keeps its marker. That document is the product of an
+	 * organization-wide policy the reader had no part in, and it is exactly where "why is there
+	 * no support data here?" needs an answer. The distinction is deliberate: silence is only
+	 * correct when the person holding the file is the one who asked for it.
+	 *
+	 * <p>The STRIP itself is unchanged and unconditional -- an uploader's forged
+	 * {@code reliza:support:*} is removed here as everywhere else. Only the marker is withheld.
+	 */
+	public static JsonNode stripSilently(JsonNode bom) {
+		sweepServerOwnedNamespaces(bom);
+		return bom;
+	}
+
+	/**
+	 * The three sweeps both strip paths share.
+	 *
+	 * @return false when there was nothing to sweep because the input is not a JSON object --
+	 *         the same guard every public entry point in this class writes for itself. A
+	 *         document that IS an object but happens to carry none of our namespaces returns
+	 *         true: it was swept, and the caller may mark it.
+	 */
+	private static boolean sweepServerOwnedNamespaces(JsonNode bom) {
+		if (bom == null || !bom.isObject()) {
+			return false;
+		}
+		stripReservedEverywhere(bom);
+		stripInboundDeclarations((ObjectNode) bom);
+		stripAssignedBomRefs(bom);
+		return true;
 	}
 
 	/**
@@ -822,17 +891,184 @@ public final class SupportBomInjector {
 	 * hold document wide, not just on the primary component surface.
 	 */
 	private static void stripReservedEverywhere(JsonNode node) {
+		stripPropertiesEverywhere(node, SupportBomInjector::isReservedNamespace);
+	}
+
+	/** The server-owned namespaces, as one predicate rather than two passes over every node. */
+	private static boolean isReservedNamespace(String propertyName) {
+		return propertyName.startsWith(RELIZA_SUPPORT_PREFIX)
+				|| propertyName.startsWith(RELIZA_DEVICE_PREFIX);
+	}
+
+	/**
+	 * Remove every {@code properties[]} entry matching {@code doomed}, from every node in the
+	 * tree.
+	 *
+	 * <p>ONE walker for both sweeps. The internal-marker sweep arrived as a near-verbatim copy
+	 * of this method and of its node-level half, differing only in the predicate -- two copies
+	 * of a recursion is how one of them stops covering a node shape the other covers, and the
+	 * guarantee both are protecting is "document wide, not just the component surface".
+	 *
+	 * @param doomed given a property NAME, whether it should go
+	 */
+	private static void stripPropertiesEverywhere(JsonNode node, Predicate<String> doomed) {
 		if (node == null) {
 			return;
 		}
 		if (node.isObject()) {
-			stripByPrefix((ObjectNode) node, RELIZA_SUPPORT_PREFIX);
-			stripByPrefix((ObjectNode) node, RELIZA_DEVICE_PREFIX);
+			stripMatchingProperties((ObjectNode) node, doomed);
 		}
 		// Iterating a value node yields nothing, so this safely recurses only containers.
 		for (JsonNode child : node) {
-			stripReservedEverywhere(child);
+			stripPropertiesEverywhere(child, doomed);
 		}
+	}
+
+	/** The node-level half of {@link #stripPropertiesEverywhere}. */
+	private static void stripMatchingProperties(ObjectNode node, Predicate<String> doomed) {
+		JsonNode props = node.get("properties");
+		if (props == null || !props.isArray()) {
+			return;
+		}
+		ArrayNode arr = (ArrayNode) props;
+		boolean removedAny = false;
+		for (int i = arr.size() - 1; i >= 0; i--) {
+			JsonNode name = arr.get(i).get("name");
+			if (name != null && name.isTextual() && doomed.test(name.asText())) {
+				arr.remove(i);
+				removedAny = true;
+			}
+		}
+		dropEmptiedProperties(node, arr, removedAny);
+	}
+
+	/**
+	 * Remove ReARM's OWN markers from a served document, leaving the support disclosure and the
+	 * uploader's content untouched.
+	 *
+	 * <p>This is the {@code includeInternalMetadata=false} step, and it runs LAST on the egress
+	 * seam -- after inject-or-strip -- precisely so the support properties it must not touch are
+	 * already in their final state. Running it first would strip an inbound forged
+	 * {@code reliza:containerSafeVersion} and then have the injector write the disclosure on top,
+	 * which is the same outcome by luck rather than by construction.
+	 *
+	 * <p>WHAT GOES:
+	 * <ul>
+	 *   <li>every {@code properties[]} entry, anywhere in the tree, whose name starts with
+	 *       {@code reliza:} and is not in {@link #DISCLOSURE_PREFIXES} -- today that is
+	 *       {@code reliza:containerSafeVersion}, {@code reliza:devops:integrationType} and
+	 *       {@code reliza:rearmImport:*}, and by construction anything added later;</li>
+	 *   <li>the {@code io.reliza}/{@code ReARM} entry under {@code metadata.tools}, in both the
+	 *       1.5+ {@code tools.components} shape this server writes and the legacy 1.4 array
+	 *       shape an older producer may have uploaded.</li>
+	 * </ul>
+	 *
+	 * <p>WHAT STAYS, and why each one is not an oversight:
+	 * <ul>
+	 *   <li><b>{@code reliza:support:*} and {@code reliza:device:*}</b> -- the disclosure. Governed
+	 *       by the other flag, which is the whole point of having two.</li>
+	 *   <li><b>{@code reliza:bomref:*} bom-refs and the {@code reliza:claim:} /
+	 *       {@code reliza:evidence:} / {@code reliza:assessor:} refs inside
+	 *       {@code declarations}</b> -- these are reference IDENTIFIERS, not properties, and they
+	 *       are load-bearing for the disclosure that the other flag decided to keep: removing
+	 *       them leaves every claim targeting nothing, which is a worse document than either
+	 *       flag setting asks for. When support metadata is EXCLUDED they are already gone --
+	 *       {@link #stripOnly} drops the declarations block and the assigned refs -- so there is
+	 *       no combination in which they outlive their purpose.</li>
+	 *   <li><b>Other tools under {@code metadata.tools}</b> -- a scanner, a build system,
+	 *       rearm-cli. Those are the manufacturer's own toolchain and are exactly what a reader
+	 *       of a tools-only document wants.</li>
+	 * </ul>
+	 *
+	 * <p>CSV and EXCEL exports do not reach this method and do not need to: rebom renders them
+	 * from a fixed column list (name, version, purl, license, author) that carries no properties
+	 * and no metadata, so there is nothing of ours in them to remove. See
+	 * {@code ReleaseService.exportReleaseSbom} for the same boundary stated from the other side.
+	 */
+	public static JsonNode stripInternalMarkers(JsonNode bom) {
+		if (bom == null || !bom.isObject()) {
+			return bom;
+		}
+		stripPropertiesEverywhere(bom, SupportBomInjector::isInternalMarker);
+		removeRearmToolEntry((ObjectNode) bom);
+		return bom;
+	}
+
+	/** Ours, and not part of the support disclosure. */
+	private static boolean isInternalMarker(String propertyName) {
+		if (!propertyName.startsWith(RELIZA_NAMESPACE_PREFIX)) {
+			return false;
+		}
+		return DISCLOSURE_PREFIXES.stream().noneMatch(propertyName::startsWith);
+	}
+
+	/**
+	 * Drop ReARM's own entry from {@code metadata.tools}, and drop the containers it emptied.
+	 *
+	 * <p>BOTH CYCLONEDX SHAPES, AND BOTH WRITERS' SPELLINGS. 1.5+ carries
+	 * {@code tools: {components: [...]}} and 1.4 carries {@code tools: [ ... ]}; rebom -- which
+	 * wrote every document that reaches this method -- pushes the SAME object into both, so the
+	 * namespace is under {@code group} in each. {@code vendor} is checked as well because the
+	 * CycloneDX 1.4 tool schema defines the field that way and a document from another producer
+	 * may use it; a shape that only looked at {@code vendor} on the legacy branch found nothing
+	 * at all.
+	 *
+	 * <p>The match is on the namespace AND the name together, against
+	 * {@link Utils#REARM_TOOL_NAMES}. The group alone would claim any {@code io.reliza} tool; a
+	 * single name would miss two of the three spellings in circulation. Removing someone else's
+	 * tool entry from their BOM is a strictly worse error than leaving ours in, which is why
+	 * neither half is dropped.
+	 */
+	private static void removeRearmToolEntry(ObjectNode bom) {
+		JsonNode metadata = bom.get("metadata");
+		if (metadata == null || !metadata.isObject()) {
+			return;
+		}
+		ObjectNode metaObj = (ObjectNode) metadata;
+		JsonNode tools = metaObj.get("tools");
+		if (tools == null) {
+			return;
+		}
+		if (tools.isArray()) {
+			removeRearmFrom((ArrayNode) tools);
+			if (tools.isEmpty()) metaObj.remove("tools");
+			return;
+		}
+		if (!tools.isObject()) {
+			return;
+		}
+		ObjectNode toolsObj = (ObjectNode) tools;
+		JsonNode components = toolsObj.get("components");
+		if (components != null && components.isArray()) {
+			removeRearmFrom((ArrayNode) components);
+			if (components.isEmpty()) toolsObj.remove("components");
+		}
+		if (toolsObj.isEmpty()) metaObj.remove("tools");
+	}
+
+	/** Remove our entries from one tool list, whichever field carries the namespace. */
+	private static void removeRearmFrom(ArrayNode entries) {
+		for (int i = entries.size() - 1; i >= 0; i--) {
+			JsonNode entry = entries.get(i);
+			if (entry.isObject() && isRearmToolEntry((ObjectNode) entry)) {
+				entries.remove(i);
+			}
+		}
+	}
+
+	/** Written by us: the io.reliza namespace, under any name we have shipped. */
+	private static boolean isRearmToolEntry(ObjectNode entry) {
+		JsonNode name = entry.get("name");
+		if (name == null || !name.isTextual() || !Utils.REARM_TOOL_NAMES.contains(name.asText())) {
+			return false;
+		}
+		return Utils.REARM_TOOL_GROUP.equals(textOrNull(entry, "group"))
+				|| Utils.REARM_TOOL_GROUP.equals(textOrNull(entry, "vendor"));
+	}
+
+	private static String textOrNull(ObjectNode node, String field) {
+		JsonNode v = node.get(field);
+		return (v != null && v.isTextual()) ? v.asText() : null;
 	}
 
 	private static void injectInto(JsonNode components, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
@@ -977,24 +1213,6 @@ public final class SupportBomInjector {
 		if (milestone.lastAssessed() != null) {
 			addProperty(props, PROP_LAST_ASSESSED_PREFIX + suffix, milestone.lastAssessed());
 		}
-	}
-
-	/** Remove every property whose name starts with {@code prefix} from a node's array. */
-	private static void stripByPrefix(ObjectNode node, String prefix) {
-		JsonNode props = node.get("properties");
-		if (props == null || !props.isArray()) {
-			return;
-		}
-		ArrayNode arr = (ArrayNode) props;
-		boolean removedAny = false;
-		for (int i = arr.size() - 1; i >= 0; i--) {
-			JsonNode name = arr.get(i).get("name");
-			if (name != null && name.isTextual() && name.asText().startsWith(prefix)) {
-				arr.remove(i);
-				removedAny = true;
-			}
-		}
-		dropEmptiedProperties(node, arr, removedAny);
 	}
 
 	/**

@@ -13,7 +13,6 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.security.access.AccessDeniedException;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.CommonVariables.VersionResponse;
@@ -157,7 +156,8 @@ public class ReleaseVersionService {
 				getNewVersionDto.modifier(), getNewVersionDto.modifier(), getNewVersionDto.versionType(),
 				commitForVersionAssignment, rebuild);
 		if(ova.isEmpty()) {
-			throw new AccessDeniedException("Failed to retrieve next version");
+			throw new RelizaException("Could not assign a version on branch " + getNewVersionDto.branch()
+					+ " of component " + pd.getName());
 		}
 		
 		VersionAssignment va =  ova.get();

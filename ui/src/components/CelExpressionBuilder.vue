@@ -1,7 +1,9 @@
 <template>
     <div style="width: 100%;">
         <!-- Mode toggle -->
-        <n-radio-group v-if="!celOnly" v-model:value="mode" size="small" style="margin-bottom: 10px;" @update:value="switchMode">
+        <!-- Controlled, not v-model: switchMode decides whether the switch happens (an incomplete
+             builder or unparseable CEL stays put), so the mode must not change before it runs. -->
+        <n-radio-group v-if="!celOnly" :value="mode" size="small" style="margin-bottom: 10px;" @update:value="switchMode">
             <n-radio-button value="builder">Visual Builder</n-radio-button>
             <n-radio-button value="cel">CEL Expression</n-radio-button>
         </n-radio-group>
@@ -108,7 +110,11 @@
                                 size="small"
                                 style="min-width: 180px; flex: 1;"
                                 placeholder="Select approval entry"
-                            />
+                            >
+                                <template #empty>
+                                    <span style="font-size: 12px;">No approval entries: this component has no approval policy. Assign one in Core Settings first.</span>
+                                </template>
+                            </n-select>
                             <n-select
                                 v-model:value="(cond as ApprovalEntryCondition).approvalState"
                                 :options="approvalStateOptions"
@@ -168,6 +174,17 @@
                 </div>
 
                 <n-button size="small" dashed @click="addGroup" style="margin-top: 2px;">+ Add Group</n-button>
+
+                <n-alert v-if="issues.length" type="error" style="margin-top: 10px; font-size: 13px;" data-testid="cel-builder-issues">
+                    <div>This condition is incomplete and cannot be saved:</div>
+                    <ul style="margin: 4px 0 0 0; padding-left: 18px;">
+                        <li v-for="(issue, i) in issues" :key="i">{{ issue }}</li>
+                    </ul>
+                </n-alert>
+                <div v-else-if="compiledCel" style="margin-top: 10px;">
+                    <div style="font-size: 12px; color: #888; margin-bottom: 2px;">Saved as CEL:</div>
+                    <code style="display: block; font-size: 12px; white-space: pre-wrap; word-break: break-all; background: #f4f4f6; padding: 4px 6px; border-radius: 4px;" data-testid="cel-builder-compiled">{{ compiledCel }}</code>
+                </div>
             </template>
         </div>
 
@@ -251,24 +268,12 @@ import { computed, ref, reactive, watch, nextTick } from 'vue'
 import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAlert, NInput, NTooltip, NIcon, NPopover } from 'naive-ui'
 import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 import constants from '../utils/constants'
-
-// ─── Types ───────────────────────────────────────────────────────────────────
-
-type ConditionType = 'LIFECYCLE' | 'BRANCH_TYPE' | 'APPROVAL_ENTRY' | 'ANY_APPROVAL' | 'METRICS' | 'FIRST_SCANNED'
-type MetricField = 'criticalVulns' | 'highVulns' | 'mediumVulns' | 'lowVulns' | 'unassignedVulns'
-    | 'securityViolations' | 'operationalViolations' | 'licenseViolations'
-type CompOp = '==' | '!=' | '>' | '>=' | '<' | '<='
-
-interface LifecycleCondition   { type: 'LIFECYCLE';      lifecycles: string[] }
-interface BranchTypeCondition  { type: 'BRANCH_TYPE';    branchTypes: string[] }
-interface ApprovalEntryCondition { type: 'APPROVAL_ENTRY'; approvalEntry: string; approvalState: 'APPROVED' | 'DISAPPROVED' }
-interface AnyApprovalCondition { type: 'ANY_APPROVAL'; approvalState: 'APPROVED' | 'DISAPPROVED' }
-interface MetricsCondition     { type: 'METRICS';        metricField: MetricField; operator: CompOp; value: number }
-interface FirstScannedCondition { type: 'FIRST_SCANNED'; present: boolean }
-type Condition = LifecycleCondition | BranchTypeCondition | ApprovalEntryCondition | AnyApprovalCondition | MetricsCondition | FirstScannedCondition
-
-interface ConditionGroup { operator: 'AND' | 'OR'; conditions: Condition[] }
-interface BuilderState   { topOperator: 'AND' | 'OR'; groups: ConditionGroup[] }
+import {
+    builderIssues, compile, parseCelToBuilder,
+    type ApprovalEntryCondition, type AnyApprovalCondition, type BranchTypeCondition, type BuilderState,
+    type Condition, type ConditionGroup, type ConditionType, type FirstScannedCondition,
+    type LifecycleCondition, type MetricsCondition
+} from '../utils/celConditionBuilder'
 
 // ─── Props / Emits ───────────────────────────────────────────────────────────
 
@@ -319,18 +324,26 @@ const emit = defineEmits<{
     // else-branch rules get the same correct fix (the rule sits out
     // entirely on unscanned releases).
     (e: 'set-precondition', value: string): void
+    // The builder's incomplete clauses, named; empty when it compiles. While non-empty the
+    // builder emits no CEL, so the parent must not save -- it would save the previous value.
+    (e: 'update:issues', value: string[]): void
 }>()
 
 // ─── Static option lists ─────────────────────────────────────────────────────
 
-const conditionTypeOptions = [
+// Approval Entry is offered only when there is an entry to pick: with none -- the component has
+// no approval policy -- the clause could never be completed.
+const hasApprovalEntries = computed(() => props.approvalEntryOptions.length > 0)
+const conditionTypeOptions = computed(() => [
     { label: 'Lifecycle',       value: 'LIFECYCLE' },
     { label: 'Branch Type',     value: 'BRANCH_TYPE' },
-    { label: 'Approval Entry',  value: 'APPROVAL_ENTRY' },
+    hasApprovalEntries.value
+        ? { label: 'Approval Entry', value: 'APPROVAL_ENTRY' }
+        : { label: 'Approval Entry (no approval policy)', value: 'APPROVAL_ENTRY', disabled: true },
     { label: 'Any Approval',    value: 'ANY_APPROVAL' },
     { label: 'Metrics',         value: 'METRICS' },
     { label: 'First Scanned',   value: 'FIRST_SCANNED' }
-]
+])
 
 const lifecycleOptions = constants.LifecycleValueOptions
 
@@ -476,197 +489,10 @@ const celText = ref('')
 const canParseCurrentCel = ref(true)
 const internalChange = ref(false)
 
-// ─── Compile (builder → CEL) ─────────────────────────────────────────────────
-
-function conditionToCel(c: Condition): string {
-    switch (c.type) {
-    case 'LIFECYCLE':
-        if (!c.lifecycles.length) return 'true'
-        return c.lifecycles.length === 1
-            ? `release.lifecycle == "${c.lifecycles[0]}"`
-            : `release.lifecycle in [${c.lifecycles.map(l => `"${l}"`).join(', ')}]`
-    case 'BRANCH_TYPE':
-        if (!c.branchTypes.length) return 'true'
-        return c.branchTypes.length === 1
-            ? `release.branchType == "${c.branchTypes[0]}"`
-            : `release.branchType in [${c.branchTypes.map(b => `"${b}"`).join(', ')}]`
-    case 'APPROVAL_ENTRY':
-        if (!c.approvalEntry) return 'true'
-        return `release.approvals["${c.approvalEntry}"] == "${c.approvalState}"`
-    case 'ANY_APPROVAL':
-        return c.approvalState === 'APPROVED' ? 'release.anyApproved' : 'release.anyDisapproved'
-    case 'METRICS':
-        return `release.${c.metricField} ${c.operator} ${c.value}`
-    case 'FIRST_SCANNED':
-        return `release.firstScanned == ${c.present}`
-    }
-}
-
-function groupToCel(g: ConditionGroup): string {
-    if (!g.conditions.length) return 'true'
-    const parts = g.conditions.map(conditionToCel)
-    if (parts.length === 1) return parts[0]
-    const op = g.operator === 'AND' ? ' && ' : ' || '
-    return `(${parts.join(op)})`
-}
-
-function compile(state: BuilderState): string {
-    if (!state.groups.length) return ''
-    const parts = state.groups.map(groupToCel)
-    const op = state.topOperator === 'AND' ? ' && ' : ' || '
-    return parts.join(op)
-}
-
-// ─── Parse (CEL → builder) ───────────────────────────────────────────────────
-
-/** Split expr at top-level (depth==0) occurrences of && or ||.
- *  Returns { parts, operator } or null if mixed operators or parse error. */
-function splitTopLevel(expr: string): { parts: string[]; operator: 'AND' | 'OR' } | null {
-    const parts: string[] = []
-    let depth = 0
-    let start = 0
-    let foundOp: 'AND' | 'OR' | null = null
-
-    for (let i = 0; i < expr.length; i++) {
-        const ch = expr[i]
-        if (ch === '(') { depth++; continue }
-        if (ch === ')') { depth--; continue }
-        if (depth === 0) {
-            if (expr[i] === '&' && expr[i + 1] === '&') {
-                if (foundOp && foundOp !== 'AND') return null   // mixed operators
-                foundOp = 'AND'
-                parts.push(expr.slice(start, i).trim())
-                start = i + 2
-                i++
-                continue
-            }
-            if (expr[i] === '|' && expr[i + 1] === '|') {
-                if (foundOp && foundOp !== 'OR') return null    // mixed operators
-                foundOp = 'OR'
-                parts.push(expr.slice(start, i).trim())
-                start = i + 2
-                i++
-                continue
-            }
-        }
-    }
-    parts.push(expr.slice(start).trim())
-    return { parts: parts.filter(p => p), operator: foundOp ?? 'AND' }
-}
-
-/** Parse a single condition expression string into a Condition object. */
-function parseCondition(expr: string): Condition | null {
-    const s = expr.trim()
-
-    // LIFECYCLE == "X"
-    let m = s.match(/^release\.lifecycle\s*==\s*"([^"]+)"$/)
-    if (m) return { type: 'LIFECYCLE', lifecycles: [m[1]] }
-
-    // LIFECYCLE in ["X", "Y"]
-    m = s.match(/^release\.lifecycle\s+in\s+\[([^\]]+)\]$/)
-    if (m) {
-        const lifecycles = m[1].match(/"([^"]+)"/g)?.map(v => v.replace(/"/g, '')) ?? []
-        return { type: 'LIFECYCLE', lifecycles }
-    }
-
-    // BRANCH_TYPE == "X"
-    m = s.match(/^release\.branchType\s*==\s*"([^"]+)"$/)
-    if (m) return { type: 'BRANCH_TYPE', branchTypes: [m[1]] }
-
-    // BRANCH_TYPE in ["X", "Y"]
-    m = s.match(/^release\.branchType\s+in\s+\[([^\]]+)\]$/)
-    if (m) {
-        const branchTypes = m[1].match(/"([^"]+)"/g)?.map(v => v.replace(/"/g, '')) ?? []
-        return { type: 'BRANCH_TYPE', branchTypes }
-    }
-
-    // APPROVAL_ENTRY: release.approvals["uuid"] == "APPROVED|DISAPPROVED"
-    m = s.match(/^release\.approvals\["([^"]+)"\]\s*==\s*"(APPROVED|DISAPPROVED)"$/)
-    if (m) return { type: 'APPROVAL_ENTRY', approvalEntry: m[1], approvalState: m[2] as 'APPROVED' | 'DISAPPROVED' }
-
-    // ANY_APPROVAL: release.anyApproved / release.anyDisapproved (optional "== true")
-    m = s.match(/^release\.(anyApproved|anyDisapproved)(?:\s*==\s*true)?$/)
-    if (m) return { type: 'ANY_APPROVAL', approvalState: m[1] === 'anyApproved' ? 'APPROVED' : 'DISAPPROVED' }
-
-    // FIRST_SCANNED
-    m = s.match(/^release\.firstScanned\s*==\s*(true|false)$/)
-    if (m) return { type: 'FIRST_SCANNED', present: m[1] === 'true' }
-
-    // METRICS: release.FIELD OP NUMBER
-    const metricFields = 'criticalVulns|highVulns|mediumVulns|lowVulns|unassignedVulns|securityViolations|operationalViolations|licenseViolations'
-    m = s.match(new RegExp(`^release\\.(${metricFields})\\s*(==|!=|>=|<=|>|<)\\s*(\\d+)$`))
-    if (m) return { type: 'METRICS', metricField: m[1] as MetricField, operator: m[2] as CompOp, value: parseInt(m[3], 10) }
-
-    return null
-}
-
-/** Parse a group expression (may be wrapped in parens or a bare condition). */
-function parseGroup(expr: string): ConditionGroup | null {
-    let s = expr.trim()
-    // Unwrap outer parens if present
-    if (s.startsWith('(') && s.endsWith(')')) {
-        s = s.slice(1, -1).trim()
-    }
-
-    const split = splitTopLevel(s)
-    if (!split) return null
-
-    const conditions: Condition[] = []
-    for (const part of split.parts) {
-        const cond = parseCondition(part.trim())
-        if (!cond) return null
-        conditions.push(cond)
-    }
-    return { operator: split.operator, conditions }
-}
-
-/** Parse a full CEL expression into BuilderState, or return null if unparseable. */
-function parseCelToBuilder(cel: string): BuilderState | null {
-    const s = cel.trim()
-    if (!s) return { topOperator: 'AND', groups: [] }
-
-    const topSplit = splitTopLevel(s)
-    if (!topSplit) return null
-
-    // Each top-level part is either a paren-wrapped group or a bare condition
-    const groups: ConditionGroup[] = []
-    for (const part of topSplit.parts) {
-        const trimmed = part.trim()
-        const isGroup = trimmed.startsWith('(') && trimmed.endsWith(')')
-
-        if (isGroup) {
-            const g = parseGroup(trimmed)
-            if (!g) return null
-            groups.push(g)
-        } else {
-            // Bare condition or bare multi-condition flat expression
-            // Try to parse as a group (splitTopLevel will find inner operator)
-            const g = parseGroup(trimmed)
-            if (!g) return null
-            // Only accept as a single-condition group if the top split already found the top operator
-            // and this is a leaf. If this part itself contains operators, we collapse to one group.
-            // This handles the case of flat expressions like `c1 && c2` becoming 1 group.
-            if (topSplit.parts.length === 1) {
-                // The entire expression is one flat group
-                return { topOperator: 'AND', groups: [g] }
-            }
-            groups.push(g)
-        }
-    }
-
-    // If all top-level parts are bare conditions (no parens), treat them as one group
-    const allBare = topSplit.parts.every(p => !p.trim().startsWith('('))
-    if (allBare && groups.length > 1) {
-        // Merge into a single group using the top-level operator as the group operator
-        const conditions: Condition[] = []
-        for (const g of groups) {
-            conditions.push(...g.conditions)
-        }
-        return { topOperator: 'AND', groups: [{ operator: topSplit.operator, conditions }] }
-    }
-
-    return { topOperator: topSplit.operator, groups }
-}
+const issues = computed((): string[] => mode.value === 'builder' ? builderIssues(builderState) : [])
+// What Save will store, shown under the builder so nobody has to switch modes to find out.
+const compiledCel = computed((): string | null => compile(builderState))
+watch(issues, (val) => emit('update:issues', val), { immediate: true })
 
 // ─── Builder helpers ──────────────────────────────────────────────────────────
 
@@ -756,7 +582,10 @@ function removeGroup(index: number) {
 
 function switchMode(newMode: 'builder' | 'cel') {
     if (newMode === 'cel' && mode.value === 'builder') {
-        celText.value = compile(builderState)
+        const cel = compile(builderState)
+        // Nothing to show for an incomplete clause; the issues alert names it. Stay put.
+        if (cel === null) return
+        celText.value = cel
         mode.value = 'cel'
         return
     }
@@ -768,10 +597,8 @@ function switchMode(newMode: 'builder' | 'cel') {
             canParseCurrentCel.value = true
             mode.value = 'builder'
         } else {
+            // Stay in CEL mode; the note under the textarea says why.
             canParseCurrentCel.value = false
-            // stay in cel mode — n-radio-group already updated to 'builder' visually,
-            // but we force it back to 'cel' on next tick
-            nextTick(() => { mode.value = 'cel' })
         }
         return
     }
@@ -795,6 +622,7 @@ watch(
     () => {
         if (mode.value !== 'builder') return
         const cel = compile(builderState)
+        if (cel === null) return
         celText.value = cel
         internalChange.value = true
         emit('update:modelValue', cel)

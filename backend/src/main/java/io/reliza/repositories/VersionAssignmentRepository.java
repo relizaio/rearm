@@ -10,6 +10,7 @@ import java.util.UUID;
 import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.query.Param;
 
 import io.reliza.model.VersionAssignment;
 import jakarta.persistence.LockModeType;
@@ -64,4 +65,23 @@ public interface VersionAssignmentRepository extends CrudRepository<VersionAssig
 		nativeQuery = true)
 	List<VersionAssignment> findByOrg(UUID orgUuid);
 
+	/**
+	 * Take the transaction lock that serializes version assignment on one component; released when
+	 * the transaction ends. Per component because versions are unique per component: branches that
+	 * share one version sequence race each other too. A row lock cannot do this -- the assignment
+	 * being raced for does not exist yet, and SELECT FOR UPDATE on an empty result locks nothing.
+	 * Two-key form, {@code lockNamespace} = {@code AdvisoryLockKey.VERSION_ASSIGNMENT}.
+	 */
+	@Query(
+		value = """
+			SELECT 1 FROM (
+			  SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:componentUuidAsString))
+			) AS locked
+			""",
+		nativeQuery = true)
+	Integer lockVersionAssignmentOfComponent(@Param("lockNamespace") int lockNamespace, @Param("componentUuidAsString") String componentUuidAsString);
+
+	/** Bound how long this transaction waits for any lock, including the one above. */
+	@Query(value = "SELECT set_config('lock_timeout', :timeout, true)", nativeQuery = true)
+	String setLocalLockTimeout(@Param("timeout") String timeout);
 }

@@ -127,6 +127,37 @@ public class ApiKeyService {
 		invalidateVerificationCacheForKey(uuid);
 	}
 
+	/**
+	 * The key a caller names: its uuid ({@code apiKeys { uuid }}), or the key id it was issued with
+	 * ({@code TYPE__objectUuid} or {@code TYPE__objectUuid__ord__keyOrder}). Someone scripting a
+	 * cleanup only has the key id -- its trailing uuid is the key order, not the key's uuid -- so
+	 * both have to name the key. Empty when nothing matches or the reference is malformed.
+	 */
+	public Optional<ApiKey> resolveApiKeyReference (String ref) {
+		if (StringUtils.isBlank(ref)) return Optional.empty();
+		String trimmed = ref.trim();
+		try {
+			return getApiKey(UUID.fromString(trimmed));
+		} catch (IllegalArgumentException notAUuid) {
+			// fall through to the key id form
+		}
+		// Split off the key order first, as auth header parsing does: an order may itself contain
+		// "__" (a federated key's order is provider:owner/repo).
+		String[] orderSplit = trimmed.split("__ord__", 2);
+		String[] head = orderSplit[0].split("__");
+		if (head.length != 2 || (orderSplit.length == 2 && StringUtils.isEmpty(orderSplit[1]))) return Optional.empty();
+		try {
+			ApiTypeEnum type = ApiTypeEnum.valueOf(head[0]);
+			UUID objectUuid = UUID.fromString(head[1]);
+			return orderSplit.length == 2
+					? repository.findApiKeyByUuidAndTypeOnly(objectUuid, type.toString(), orderSplit[1])
+					// No order in the id: it names the object's key that has none, not any of its keys.
+					: repository.findApiKeyByUuidAndTypeWithoutOrder(objectUuid, type.toString());
+		} catch (IllegalArgumentException malformed) {
+			return Optional.empty();
+		}
+	}
+
 	public Optional<ApiKey> getApiKey (UUID uuid) {
 		return repository.findByUUID(uuid);
 	}

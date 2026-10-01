@@ -504,6 +504,11 @@ async function viewArtifact (a: any) {
     showReportModal.value = true
     try {
         const resp = await fetchWithAuth(`/api/manual/v1/artifact/${a.uuid}/rawdownload`)
+        // A refused or failed fetch has a body too (the edge's HTML error page); show the error
+        // through the catch below instead of rendering that page as the report.
+        if (!resp.ok) {
+            throw new Error(`HTTP ${resp.status}: ${resp.statusText}`)
+        }
         const text = await resp.text()
         try {
             reportContent.value = JSON.stringify(JSON.parse(text), null, 2)
@@ -563,9 +568,9 @@ function renderSignatureBadge (sig: any) {
     const state = sig.state as string
     const tone: 'success' | 'warning' | 'error' | 'default' =
         state === 'VERIFIED' ? 'success'
-        : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
-        : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
-        : 'default'
+            : state === 'INVALID_SIGNATURE' || state === 'WRONG_SIGNER' || state === 'ERRORED' ? 'error'
+                : state === 'UNKNOWN_KEY' || state === 'KEY_REVOKED' ? 'warning'
+                    : 'default'
     const tip = [
         sig.format ? `format: ${sig.format}` : '',
         sig.signedByOwnerType ? `owner: ${sig.signedByOwnerType}` : '',
@@ -760,7 +765,7 @@ const policyColumns: DataTableColumns<any> = [
         render: (row: any) => {
             const tone = row.state === 'PASSED' ? 'success'
                 : row.state === 'WARNING' ? 'warning'
-                : row.state === 'FAILED' ? 'error' : 'default'
+                    : row.state === 'FAILED' ? 'error' : 'default'
             return h(NTag, { size: 'small', type: tone }, { default: () => row.state })
         },
     },

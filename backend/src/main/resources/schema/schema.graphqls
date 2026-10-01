@@ -1280,6 +1280,76 @@ type DependencyTrackMetrics {
 	vulnerabilityDetails: [Vulnerability]
 	violationDetails: [Violation]
 	weaknessDetails: [Weakness]
+	"Open findings in the CISA KEV catalog (FALSE_POSITIVE / NOT_AFFECTED / RESOLVED excluded). On Release metrics as stamped at metrics compute; on Artifact metrics counted at read time, which makes selecting it load the artifact's finding rows and probe the KEV catalog once per artifact; on other metrics the stored count, 0 where none was recorded"
+	kevCount: Int
+	"Read-time summary over the OPEN vulnerability findings (FALSE_POSITIVE / NOT_AFFECTED / RESOLVED excluded), scored from the org's vulnerability records; never stored. Null when these metrics were not reached through a Release or an Artifact"
+	riskSummary: RiskSummary
+	"Read-time, per component of vulnerabilityDetails: the fix versions its findings' advisories name, and which findings each one fixes; never stored. Components with none are left out. Null when these metrics were not reached through a Release or an Artifact, or a vulnerability record read failed"
+	fixTargets: [ComponentFixTargets!]
+}
+
+# The versions a component could move to, among those the advisories of its
+# findings name as fixes. A version fixes a finding when it is out of the
+# finding's affected ranges, compared as FixedIn compares the component's own
+# version (per distribution release included). Only findings those ranges
+# say the component's version is affected by count.
+# - purl: the component's package URL with its version, as its findings carry it.
+# - major: the component's major version, its first number; null when it has none.
+# - targets: lowest first; each fixes at least one finding.
+type ComponentFixTargets {
+	purl: String!
+	major: String
+	targets: [FixTarget!]!
+}
+
+# One version a component could move to, and which of its findings it fixes.
+# - version: a fix version the advisory of one of the component's findings names.
+# - sameMajor: whether the version is on the component's major version.
+# - fixes: the vulnerability ids of the component's findings it fixes.
+type FixTarget {
+	version: String!
+	sameMajor: Boolean!
+	fixes: [String!]!
+}
+
+# Read-time risk summary of one metrics object. The population is the open
+# vulnerability finding rows; the same vulnerability under two purls is two
+# rows. Weaknesses carry no CVSS and are not counted, while the stored
+# severity counts also count open weaknesses, so bands and severity counts
+# agree when a release has none. Headline CVSS = CVSS_V4, else CVSS_V3, else
+# CVSS_V2. Null when a vulnerability record read failed, rather than an
+# all-unscored summary.
+type RiskSummary {
+	"Highest headline CVSS score; null when no open finding is scored"
+	maxCvss: Float
+	maxCvssType: VulnScoreType
+	maxCvssVulnId: String
+	"Highest EPSS probability (0..1); null when no open finding has one"
+	maxEpss: Float
+	maxEpssVulnId: String
+	"Open finding rows per headline-CVSS band; a row counts once"
+	cvssBands: CvssBands
+	"Open finding rows with an EPSS probability of at least 0.1"
+	epssAtLeastTenPercent: Int
+	"Open finding rows in the CISA KEV catalog, over the same rows as the rest of the summary"
+	kevCount: Int
+	"Dependency-Track's inherited-risk weighting of the stored severity counts: critical*10 + high*5 + medium*3 + low*1 + unassigned*5 (inheritedRiskScore itself is Dependency-Track's own, stored value)"
+	severityWeightedScore: Int
+	"Open finding rows with a headline CVSS score"
+	scoredFindings: Int
+	"Open finding rows"
+	totalFindings: Int
+}
+
+# Headline-CVSS bands: critical 9.0-10.0, high 7.0-8.9, medium 4.0-6.9,
+# low 0.1-3.9, none 0.0; unscored = no CVSS score in the record, or no record.
+type CvssBands {
+	critical: Int
+	high: Int
+	medium: Int
+	low: Int
+	none: Int
+	unscored: Int
 }
 
 type InternalBom {
@@ -1399,10 +1469,10 @@ type ReleaseApprovalEvent {
 	date: DateTime
 	wu: WhoUpdated
 	"""
-	Optional free-form approver comment, sanitised server-side via
-	jsoup's Safelist.basic() (allows simple inline tags, strips
-	scripts/styles/event handlers). Capped at 4000 chars at the input
-	boundary; empty-after-clean is normalised to null.
+	Optional free-form approver comment, plain text: sanitised server-side
+	via jsoup's Safelist.none(), which removes all markup including links.
+	Capped at 4000 chars at the input boundary; empty-after-clean is
+	normalised to null.
 	"""
 	comment: String
 }
@@ -1621,6 +1691,179 @@ type Vulnerability {
 	attributedAt: DateTime
 	"True when this vulnerability (by CVE id or alias) is in the CISA KEV catalog"
 	knownExploited: Boolean
+	"All merged scores from the org's vulnerability record (looked up by vulnId, primary or alias); empty when there is no record, or when these metrics were not reached through a Release or an Artifact"
+	scores: [VulnScore!]!
+	"The headline CVSS entry: CVSS_V4, else CVSS_V3, else CVSS_V2; null when none has a score"
+	topScore: VulnScore
+	"The EPSS entry (score = probability 0..1, sub-score PERCENTILE); null when none"
+	epss: VulnScore
+	"Which version fixes this finding, from the affected ranges the org's vulnerability record holds for the finding's package; null when these metrics were not reached through a Release or an Artifact, or when the record could not be read"
+	fixedIn: FixedIn
+	"The component of the release's SBOM this finding's package URL names, or why none does; null when these metrics were not reached through a Release (an artifact's findings belong to no one release), or when the release's SBOM could not be read. Costs one read of the release's SBOM per release in the response: select it on one release's findings, not across a list of releases"
+	sbomMatch: FindingSbomMatch
+	"Whether moving the finding's SBOM component to its latest version (FindingSbomMatch.latestVersion) takes it out of the finding's affected ranges, compared as fixedIn compares; the advisory's claim, like fixedIn. Null when the finding matched no component, the component has no latest version, or a read failed. Same cost as sbomMatch"
+	latestFix: LatestFixVerdict
+}
+
+enum LatestFixVerdict {
+	# The latest version is out of the finding's ranges.
+	FIXES
+	# The latest version is still inside the finding's ranges.
+	DOES_NOT_FIX
+	# The latest version is not above the component's own: a registry can
+	# report one below a private or pre-release build, and a downgrade is no fix.
+	NOT_ABOVE_CURRENT
+	# The advisory has ranges for the package, but none contains the
+	# component's version.
+	NOT_IN_ADVISORY_RANGE
+	# No ranges for the finding's package.
+	NO_RANGE_DATA
+	# The component's version, the latest version or a range cannot be placed
+	# under the package ecosystem's rules.
+	UNCOMPARABLE
+}
+
+# The component of a release's SBOM that a finding's package URL names: the
+# same package at the same version with the same identity qualifiers (for
+# instance a Debian package's distro), whatever the percent-encoding; a
+# component recorded without any qualifiers also matches the qualified
+# finding of the same package and version. Matched at read time, never
+# stored. A PRODUCT release's SBOM includes its dependency releases'.
+# - sbomComponentUuid / canonicalPurl: the matched component; null when none.
+# - missReason: why no component matched; null when one did.
+# - latestVersion: the latest version of the matched component's package that
+#   Dependency-Track's repository metadata reports: a freshness signal only,
+#   not end of support or end of life, and possibly a pre-release on
+#   Dependency-Track 4. Null when none is known (no repository for the purl
+#   type, package unknown, or not looked up yet).
+# - latestVersionChecked: when ReARM last asked, a UTC RFC-3339 instant.
+type FindingSbomMatch {
+	sbomComponentUuid: ID
+	canonicalPurl: String
+	missReason: FindingSbomMissReason
+	latestVersion: String
+	latestVersionChecked: String
+}
+
+enum FindingSbomMissReason {
+	# The finding carries no package URL (none at all, or a CPE).
+	NO_PURL
+	# The finding's package URL does not parse.
+	UNPARSEABLE_PURL
+	# The release resolves to no SBOM components: no BOM artifact, a BOM
+	# stored elsewhere, or one not indexed yet.
+	NO_INVENTORY
+	# No component matched while an SBOM reconcile of the release (or of a
+	# product's dependency) is still queued, so its components may be stale.
+	INVENTORY_PENDING
+	# The release's components do not include the finding's package at its
+	# version, for instance a finding carried forward from a BOM the release
+	# no longer has.
+	NOT_IN_INVENTORY
+}
+
+# Which version fixes a finding, according to the affected ranges its
+# advisory publishes for the finding's package (the advisory's claim; whether
+# a release ships the fix is not checked). Versions are compared with the
+# package ecosystem's rules, as Dependency-Track compares them. Where the
+# ranges are given per distribution release, only the finding's own
+# release's ranges count.
+# - version: the version the finding's range ends before; set only for
+#   FIXED_IN, and always above the finding's version.
+# - versionEndIncluding: the last affected version; set only for FIXED_AFTER.
+# - sources: the sources whose ranges contain the finding's version.
+# - identities: the identities of the ranges the verdict was taken from, as
+#   AffectedRange.identity has them (for a Debian finding, its own release's);
+#   empty when there was no verdict to take (NO_RANGE_DATA, UNCOMPARABLE).
+type FixedIn {
+	version: String
+	verdict: FixedInVerdict!
+	versionEndIncluding: String
+	sources: [UpstreamSource!]!
+	identities: [String!]!
+}
+
+enum FixedInVerdict {
+	# The finding's range ends before version, the first version outside it.
+	FIXED_IN
+	# The finding's range ends at versionEndIncluding; a later version fixes
+	# it, but the advisory names none.
+	FIXED_AFTER
+	# The finding's range has no end: every later version is affected too.
+	NO_FIX_AVAILABLE
+	# The advisory has ranges for the package, but none contains the finding's
+	# version: the finding was matched by some other rule.
+	NOT_IN_ADVISORY_RANGE
+	# No ranges for the finding's package: none fetched yet, none published,
+	# or the finding has no package URL.
+	NO_RANGE_DATA
+	# The finding's version cannot be placed in its package's ranges: it, or
+	# every bound, is not a version under the package ecosystem's rules, or the
+	# ranges differ per distribution release (Debian's per-release rows) and
+	# the finding's release is not named or not listed.
+	UNCOMPARABLE
+}
+
+# One score of one type (CVSS v2 / v3 / v4, EPSS, OWASP Risk Rating).
+# - score: the primary number (CVSS base score, EPSS probability 0..1); null
+#   for OWASP_RR, which has only sub-scores. A CVSS v4 score computed from a
+#   vector (scoreSource COMPUTED_FROM_VECTOR) scores the whole vector as given,
+#   so any threat / environmental metrics in it count.
+# - subScores: CVSS v2 / v3 IMPACT and EXPLOITABILITY, EPSS PERCENTILE, OWASP_RR
+#   LIKELIHOOD / TECHNICAL_IMPACT / BUSINESS_IMPACT. On Dependency-Track 5 the
+#   CVSS entries carry no IMPACT / EXPLOITABILITY sub-scores.
+# - upstreamSource and scoreSource describe merged entries only and are always
+#   null on per-source entries. On a merged entry they can also be null when
+#   the record was stored before scores were tracked per source.
+type VulnScore {
+	type: VulnScoreType!
+	score: Float
+	vector: String
+	subScores: [VulnSubScore!]!
+	upstreamSource: UpstreamSource
+	scoreSource: ScoreSource
+}
+
+# One named secondary number of a VulnScore.
+type VulnSubScore {
+	type: VulnSubScoreType!
+	value: Float!
+}
+
+# Kind of score. Lists are returned in this declaration order.
+enum VulnScoreType {
+	CVSS_V2
+	CVSS_V3
+	CVSS_V4
+	EPSS
+	OWASP_RR
+}
+
+# Name of a VulnSubScore; which score types carry which is listed on VulnScore.
+enum VulnSubScoreType {
+	IMPACT
+	EXPLOITABILITY
+	PERCENTILE
+	LIKELIHOOD
+	TECHNICAL_IMPACT
+	BUSINESS_IMPACT
+}
+
+# Whether a merged score was published by the upstream feed or computed by
+# ReARM from the vector the feed published without a score.
+enum ScoreSource {
+	UPSTREAM
+	COMPUTED_FROM_VECTOR
+}
+
+# Advisory feed a vulnerability snapshot came from. OTHER is any feed without
+# its own value here.
+enum UpstreamSource {
+	GITHUB
+	OSV
+	NVD
+	VULNDB
+	OTHER
 }
 
 type Violation {
@@ -1835,11 +2078,12 @@ input ReleaseApprovalInput {
 	approvalRoleId: String!
 	state: ApprovalState!
 	"""
-	Optional free-form approver comment. Server sanitises via jsoup
-	Safelist.basic() and caps at 4000 chars; empty-after-clean is treated
-	as null. Reused for both the manual mutation and the programmatic
-	one -- for the latter, approvalEntry may be either a UUID or an
-	approval-entry name (per existing semantics).
+	Optional free-form approver comment, plain text. Server sanitises via
+	jsoup Safelist.none() (no markup, no links) and caps at 4000 chars;
+	empty-after-clean is treated as null. Reused for both the manual
+	mutation and the programmatic one -- for the latter, approvalEntry
+	may be either a UUID or an approval-entry name (per existing
+	semantics).
 	"""
 	comment: String
 }
@@ -2318,6 +2562,8 @@ enum DigestScope {
 	ORIGINAL_FILE
 	OCI_STORAGE
 	REARM
+	AS_UPLOADED
+	RAW_OCI_STORAGE
 }
 
 

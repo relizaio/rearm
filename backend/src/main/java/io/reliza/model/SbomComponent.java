@@ -86,6 +86,15 @@ public class SbomComponent implements Serializable, RelizaEntity {
 	@Column
 	private Integer syntheticBucketIndex;
 
+	// Latest version of the package from Dependency-Track's repository metadata (V92), and
+	// when it was last asked. Read-only here: the latest-version refresh writes both with
+	// one targeted UPDATE, so no save of a row loaded earlier can put an old value back.
+	@Column(insertable = false, updatable = false)
+	private String latestVersion;
+
+	@Column(insertable = false, updatable = false)
+	private ZonedDateTime latestVersionChecked;
+
 	// NOTE: this row carries NO support-disclosure fields. The whole per-component
 	// attestation, supportParty included, lives in SbomComponentSupport (V83) keyed by
 	// this row's uuid. Keeping it physically separate is what makes a BOM reconcile
@@ -213,4 +222,11 @@ public class SbomComponent implements Serializable, RelizaEntity {
 		this.syntheticBucketIndex = syntheticBucketIndex;
 	}
 
+	public String getLatestVersion() {
+		return latestVersion;
+	}
+
+	public ZonedDateTime getLatestVersionChecked() {
+		return latestVersionChecked;
+	}
 }

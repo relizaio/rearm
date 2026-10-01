@@ -477,8 +477,13 @@ public class OrganizationDataFetcher {
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "deleteApiKey")
-	public Boolean setOrgApiKey(@InputArgument("apiKeyUuid") String apiKeyUuidStr) throws RelizaException {
-		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+	public Boolean deleteApiKey(@InputArgument("apiKeyUuid") String apiKeyRef) throws RelizaException {
+		// The key's uuid or the key id it was issued with; anything else is the caller's mistake,
+		// not a server error.
+		UUID apiKeyUuid = apiKeyService.resolveApiKeyReference(apiKeyRef)
+				.map(ApiKey::getUuid)
+				.orElseThrow(() -> new RelizaException("No API key found for '" + apiKeyRef
+						+ "'. Pass the key's uuid (apiKeys { uuid }) or the full key id it was issued with."));
 		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
 		apiKeyService.deleteApiKey(apiKeyUuid, wu);
 		return true;

@@ -5,6 +5,50 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit, Eye } from '@vicons/tabler'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 import { resolveKevCveId } from '@/utils/kevService'
+import { ROW_SEVERITIES, emptySeverityCounts, findingTypeOf, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
+import { FindingType } from '@/constants/findingType'
+import type { FindingSbomMissReason } from '@/constants/findingSbomMissReason'
+import type { LatestFixVerdict } from '@/constants/latestFixVerdict'
+import constants from '@/utils/constants'
+import type { FindingComponentGroup } from '@/utils/findingGroups'
+import type { ComponentFixTargets, FixedIn, VulnScore } from '@/utils/vulnerabilityRecordService'
+import {
+  bumpTargetsOf,
+  bumpToText,
+  bumpToTitle,
+  fixedByBump,
+  fixedInText,
+  fixedInTitle,
+  groupBumpOf,
+  groupBumpText,
+  groupBumpTitle,
+  groupBumpWithinMajorText,
+  isNoFix
+} from '@/utils/fixedInDisplay'
+import type { GroupBump } from '@/utils/fixedInDisplay'
+import { groupLatestOf, groupLatestText, groupLatestTitle } from '@/utils/latestVersionDisplay'
+import {
+  COMPUTED_FROM_VECTOR_TITLE,
+  formatPrimaryScore,
+  formatSubScores,
+  isComputedFromVector,
+  rowEpss,
+  rowTopScore,
+  scoreSortValue,
+  summarizeScores
+} from '@/utils/vulnScoreDisplay'
+
+/** GraphQL FindingSbomMatch: the release SBOM component a finding's purl names, or why none does. */
+export interface FindingSbomMatch {
+  sbomComponentUuid: string | null
+  canonicalPurl: string | null
+  missReason: FindingSbomMissReason | null
+  // When the query selected them: the latest version of the component's package
+  // that Dependency-Track's repository metadata reports, and when it was asked
+  // (UTC RFC-3339). A freshness signal, not end of support.
+  latestVersion?: string | null
+  latestVersionChecked?: string | null
+}
 
 export type DetailedMetric = {
   type: 'Vulnerability' | 'Violation' | 'Weakness'
@@ -23,74 +67,57 @@ export type DetailedMetric = {
   // CISA KEV flag: stamped post-fetch by kevService.annotateKnownExploited,
   // or carried straight from the main query via the inline knownExploited field.
   knownExploited?: boolean
+  // Vulnerability rows only, and only when the query selected them (see
+  // findingsQuery.ts): the org's record scores, the headline CVSS and EPSS.
+  scores?: VulnScore[]
+  topScore?: VulnScore | null
+  epss?: VulnScore | null
+  // Vulnerability rows only, when the query selected it: the advisory's fix
+  // version for the row's package.
+  fixedIn?: FixedIn | null
+  // Vulnerability rows only, when the query selected them: the fix versions of
+  // the row's component and the findings each fixes (the group's Bump to).
+  fixTargets?: ComponentFixTargets | null
+  // A release's vulnerability rows only, when the query selected it: the
+  // component of the release's SBOM the server matched the row to (the
+  // grouped view's key), or why none matched.
+  sbomMatch?: FindingSbomMatch | null
+  // A release's vulnerability rows only, when the query selected it: whether the
+  // component's latest version is out of the row's affected ranges; null when
+  // the row matched no component or the component has no latest version.
+  latestFix?: LatestFixVerdict | null
 }
 
-// Helper function to create vulnerability links with confirmation dialog
-function createVulnerabilityLink(h: any, id: string) {
-  const confirmAndOpen = async (e: Event, href: string) => {
-    e.preventDefault()
-    try {
-      const LS_KEY = 'rearm_external_link_consent_until'
-      const now = Date.now()
-      const stored = localStorage.getItem(LS_KEY)
-      if (stored && Number(stored) > now) {
-        window.open(href, '_blank')
-        return
-      }
+// Column a findings table opens sorted by: severity ascending (worst first),
+// or a score column descending (highest first).
+export type FindingSortKey = 'severity' | 'score' | 'epss'
 
-      const result = await Swal.fire({
-        icon: 'info',
-        title: 'Open external link?\n',
-        text: 'This will open a vulnerability database resource external to ReARM. Please confirm that you want to proceed.',
-        showCancelButton: true,
-        confirmButtonText: 'Open',
-        cancelButtonText: 'Cancel',
-        input: 'checkbox',
-        inputValue: 0,
-        inputPlaceholder: "Don't ask me again for 15 days"
-      })
-      if (result.isConfirmed) {
-        if (result.value === 1) {
-          const fifteenDaysMs = 15 * 24 * 60 * 60 * 1000
-          localStorage.setItem(LS_KEY, String(now + fifteenDaysMs))
-        }
-        window.open(href, '_blank')
-      }
-    } catch (err) {
-      // Fail open on errors to avoid blocking navigation unexpectedly
-      window.open(href, '_blank')
-    }
-  }
-  
-  if (id.startsWith('ALPINE-CVE-') || id.startsWith('CVE-') || id.startsWith('GHSA-')) {
-    const href = `https://osv.dev/vulnerability/${id}`
-    return h('a', {
-      href,
-      target: '_blank',
-      rel: 'noopener noreferrer',
-      onClick: (e: Event) => confirmAndOpen(e, href)
-    }, id)
-  }
-  if (id.startsWith('CWE-')) {
-    const raw = id.slice(4)
-    const num = String(parseInt(raw, 10))
-    if (num && num !== 'NaN') {
-      const href = `https://cwe.mitre.org/data/definitions/${num}.html`
-      return h('a', {
-        href,
-        target: '_blank',
-        rel: 'noopener noreferrer',
-        onClick: (e: Event) => confirmAndOpen(e, href)
-      }, id)
-    }
-  }
-  return id
+// A findings table's sort: the column key and its order; order false = unsorted.
+export interface FindingSortState {
+  columnKey: string
+  order: 'ascend' | 'descend' | false
+}
+
+/** The sort a findings table opens with for a FindingSortKey. */
+export function openingFindingSort(key: FindingSortKey): FindingSortState {
+  return key === 'severity' ? { columnKey: 'severity', order: 'ascend' } : { columnKey: key, order: 'descend' }
+}
+
+/**
+ * The sort a naive-ui DataTable reports in update:sorter (single-column:
+ * { columnKey, sorter, order }, order false once cleared; null from
+ * clearSorter) as a FindingSortState.
+ */
+export function findingSortStateOf(sorter: { columnKey: string | number, order: 'ascend' | 'descend' | false } | null | undefined): FindingSortState {
+  return sorter && sorter.order ? { columnKey: String(sorter.columnKey), order: sorter.order } : { columnKey: '', order: false }
 }
 
 export function processMetricsData(metrics: any): DetailedMetric[] {
   const combinedData: DetailedMetric[] = []
   if (!metrics) return combinedData
 
+  const fixTargetsByPurl = new Map<string, ComponentFixTargets>(
+    (metrics.fixTargets || []).map((t: ComponentFixTargets) => [t.purl, t]))
   if (metrics.vulnerabilityDetails) {
     metrics.vulnerabilityDetails.forEach((vuln: any) => {
       combinedData.push({
@@ -107,7 +134,14 @@ export function processMetricsData(metrics: any): DetailedMetric[] {
         analysisState: vuln.analysisState,
         analysisDate: vuln.analysisDate,
         attributedAt: vuln.attributedAt,
-        knownExploited: !!vuln.knownExploited
+        knownExploited: !!vuln.knownExploited,
+        scores: vuln.scores,
+        topScore: vuln.topScore,
+        epss: vuln.epss,
+        fixedIn: vuln.fixedIn,
+        fixTargets: fixTargetsByPurl.get(vuln.purl) ?? null,
+        sbomMatch: vuln.sbomMatch,
+        latestFix: vuln.latestFix
       })
     })
   }
@@ -164,19 +198,48 @@ export function buildVulnerabilityColumns(
     getOrgUuid?: () => string
     getDtrackProjectUuids?: () => string[]
     // Preferred deep-link: caller opens our native ReleaseSbomComponentGraph
-    // modal for the clicked purl. When provided, this overrides the
-    // Dependency-Track deep-link flow.
-    onPurlClick?: (purl: string) => void
+    // modal for the clicked purl, with the row's SBOM component when the server
+    // matched it to one. When provided, this overrides the Dependency-Track
+    // deep-link flow.
+    onPurlClick?: (purl: string, sbomComponentUuid?: string) => void
     onEditFinding?: (row: any) => void
     onViewAnalysis?: (row: any) => void
     // Opens the CISA KEV details modal for a KEV-flagged CVE (Pro only —
     // rows only carry knownExploited when the caller annotated them)
     onKevClick?: (cveId: string) => void
+    // Opens the in-app details panel for a vulnerability id of the row (its own
+    // id or an alias); without it vulnerability ids link to osv.dev.
+    onVulnClick?: (vulnId: string, row: any) => void
     initialSeverityFilter?: string
     initialTypeFilter?: string | string[]
+    // Controlled Type / Severity filters: when given, the columns show these
+    // values (the caller keeps them from the table's update:filters) instead of
+    // seeding their own from the initial* options.
+    typeFilter?: () => string[]
+    severityFilter?: () => string[]
     data?: any[]
+    // Adds the Score and EPSS columns; set when the rows carry scores.
+    showScores?: boolean
+    // Adds the Fixed in column; set when the rows carry fix versions.
+    showFixedIn?: boolean
+    // Controlled sort, kept by the caller from the table's update:sorter;
+    // without it the table sorts by severity on its own.
+    sortState?: () => FindingSortState
   }
 ): DataTableColumns<any> {
+  // Controlled, every sortable column carries its order (naive-ui ignores a
+  // sortable column without one once any column is controlled). A sort on a
+  // score column that is not shown falls back to the severity order.
+  const sortOrderOf = (key: string): { sortOrder?: FindingSortState['order'], defaultSortOrder?: FindingSortState['order'] } => {
+    if (!options?.sortState) return key === 'severity' ? { defaultSortOrder: 'ascend' } : {}
+    let state = options.sortState()
+    if (!options.showScores && (state.columnKey === 'score' || state.columnKey === 'epss')) state = openingFindingSort('severity')
+    return { sortOrder: state.columnKey === key ? state.order : false }
+  }
+  const vulnClickFor = (row: any) => options?.onVulnClick
+    ? (vulnId: string) => options.onVulnClick!(vulnId, row)
+    : undefined
+
   function makePurlRenderer() {
     return (row: any) => {
       const purlText = row.purl || ''
@@ -191,7 +254,7 @@ export function buildVulnerabilityColumns(
           title: 'Open dependency graph for this purl',
           onClick: (e: Event) => {
             e.preventDefault()
-            onPurlClick(purlText)
+            onPurlClick(purlText, row.sbomMatch?.sbomComponentUuid || undefined)
           }
         }, purlText)
       }
@@ -244,13 +307,8 @@ export function buildVulnerabilityColumns(
     'Violation': data.filter(r => r.type === 'Violation').length,
     'Weakness': data.filter(r => r.type === 'Weakness').length
   }
-  const severityCounts: Record<string, number> = {
-    'CRITICAL': data.filter(r => r.severity === 'CRITICAL').length,
-    'HIGH': data.filter(r => r.severity === 'HIGH').length,
-    'MEDIUM': data.filter(r => r.severity === 'MEDIUM').length,
-    'LOW': data.filter(r => r.severity === 'LOW').length,
-    'UNASSIGNED': data.filter(r => r.severity === 'UNASSIGNED' || r.severity === '-' || !r.severity).length
-  }
+  const severityCounts = emptySeverityCounts()
+  data.forEach(r => { severityCounts[severityBucketOf(r)]++ })
 
   return [
     {
@@ -258,12 +316,15 @@ export function buildVulnerabilityColumns(
       key: 'type',
       width: 124,
       sorter: 'default',
+      ...sortOrderOf('type'),
       filterOptions: [
         { label: `Vulnerability (${typeCounts['Vulnerability']})`, value: 'Vulnerability' },
         { label: `Violation (${typeCounts['Violation']})`, value: 'Violation' },
         { label: `Weakness (${typeCounts['Weakness']})`, value: 'Weakness' }
       ],
-      defaultFilterOptionValues: options?.initialTypeFilter ? (Array.isArray(options.initialTypeFilter) ? options.initialTypeFilter : [options.initialTypeFilter]) : [],
+      ...(options?.typeFilter
+        ? { filterOptionValues: options.typeFilter() }
+        : { defaultFilterOptionValues: options?.initialTypeFilter ? (Array.isArray(options.initialTypeFilter) ? options.initialTypeFilter : [options.initialTypeFilter]) : [] }),
       filter: (value: any, row: any) => row.type === value,
       render: (row: any) => {
         const typeColors: any = {
@@ -312,7 +373,7 @@ export function buildVulnerabilityColumns(
       render: (row: any) => {
         const id = String(row.id || '')
         if (!id) return ''
-        const idLink = createVulnerabilityLink(h, id)
+        const idLink = renderFindingId(h, id, findingTypeOf(row.type), vulnClickFor(row))
         if (!row.knownExploited) return idLink
         const kevTag = h(NTag, {
           type: 'error',
@@ -330,7 +391,7 @@ export function buildVulnerabilityColumns(
       title: 'Severity',
       key: 'severity',
       width: 140,
-      defaultSortOrder: 'ascend',
+      ...sortOrderOf('severity'),
       filterOptions: [
         { label: `CRITICAL (${severityCounts['CRITICAL']})`, value: 'CRITICAL' },
         { label: `HIGH (${severityCounts['HIGH']})`, value: 'HIGH' },
@@ -338,11 +399,10 @@ export function buildVulnerabilityColumns(
         { label: `LOW (${severityCounts['LOW']})`, value: 'LOW' },
         { label: `UNASSIGNED (${severityCounts['UNASSIGNED']})`, value: 'UNASSIGNED' }
       ],
-      defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [],
-      filter: (value: any, row: any) => {
-        const severity = (!row.severity || row.severity === '-') ? 'UNASSIGNED' : row.severity
-        return severity === value
-      },
+      ...(options?.severityFilter
+        ? { filterOptionValues: options.severityFilter() }
+        : { defaultFilterOptionValues: options?.initialSeverityFilter ? [options.initialSeverityFilter] : [] }),
+      filter: (value: any, row: any) => severityBucketOf(row) === value,
       sorter: (rowA: any, rowB: any) => {
         const order = ['CRITICAL', 'HIGH', 'MEDIUM', 'LOW', 'UNASSIGNED', '-']
         const idx = (v: string) => {
@@ -401,6 +461,8 @@ export function buildVulnerabilityColumns(
         return severityTag
       }
     },
+    ...(options?.showScores ? scoreColumns(h, NTag, sortOrderOf) : []),
+    ...(options?.showFixedIn ? [fixedInColumn(h, NTag)] : []),
     { 
       title: 'Details', 
       key: 'details', 
@@ -412,7 +474,8 @@ export function buildVulnerabilityColumns(
         
         // Add aliases if present for vulnerabilities
         if (row.type === 'Vulnerability' && row.aliases && row.aliases.length > 0) {
-          const aliasLinks = row.aliases.map((alias: any) => createVulnerabilityLink(h, alias.aliasId))
+          const aliasLinks = row.aliases.map((alias: any) =>
+            renderFindingId(h, alias.aliasId, FindingType.VULNERABILITY, vulnClickFor(row)))
           elements.push(h('span', {}, ['Aliases: ', ...aliasLinks.reduce((acc: any[], link: any, index: number) => {
             if (index > 0) acc.push(', ')
             acc.push(link)
@@ -508,3 +571,254 @@ export function buildVulnerabilityColumns(
     }
   ]
 }
+
+// Score / EPSS cell: the formatted number with a native tooltip, '-' when
+// the finding has none (violations, weaknesses, vulnerabilities without a
+// record).
+function scoreCell(h: any, sc: VulnScore | null, title: string, extra: any[] = []) {
+  if (!sc) return '-'
+  // The number never breaks; a tag after it wraps below when the column is narrow.
+  return h('span', { title, style: 'display: inline-flex; flex-wrap: wrap; align-items: center; gap: 4px;' },
+    [h('span', { style: 'white-space: nowrap;' }, formatPrimaryScore(sc)), ...extra])
+}
+
+// "Exploit probability 42.00%; Percentile 97.00%"
+function epssTitle(epss: VulnScore): string {
+  return [`Exploit probability ${formatPrimaryScore(epss)}`, formatSubScores(epss)].filter(Boolean).join('; ')
+}
+
+// The per-finding score columns, after Severity. Sorting puts rows without a
+// score last when descending, the order the release header's pills open with.
+function scoreColumns(h: any, NTag: any, sortOrderOf: (key: string) => object): DataTableColumns<any> {
+  return [
+    {
+      title: 'Score',
+      key: 'score',
+      width: 140,
+      ...sortOrderOf('score'),
+      sorter: (rowA: any, rowB: any) => scoreSortValue(rowTopScore(rowA)) - scoreSortValue(rowTopScore(rowB)),
+      render: (row: any) => {
+        const top = rowTopScore(row)
+        const computedTag = top && isComputedFromVector(top)
+          ? [h(NTag, { size: 'tiny', bordered: false, title: COMPUTED_FROM_VECTOR_TITLE }, { default: () => 'computed' })]
+          : []
+        return scoreCell(h, top, summarizeScores(row.scores), computedTag)
+      }
+    },
+    {
+      title: 'EPSS',
+      key: 'epss',
+      width: 90,
+      ...sortOrderOf('epss'),
+      sorter: (rowA: any, rowB: any) => scoreSortValue(rowEpss(rowA)) - scoreSortValue(rowEpss(rowB)),
+      render: (row: any) => {
+        const epss = rowEpss(row)
+        return scoreCell(h, epss, epss ? epssTitle(epss) : '')
+      }
+    }
+  ]
+}
+
+// Key of the findings table's Fixed in column, which the group view's nested
+// tables mark.
+const FIXED_IN_COLUMN_KEY = 'fixedIn'
+
+// The advisory's fix version for the row's package; the hover text says why
+// when there is none. No sorter: the UI has no version ordering.
+function fixedInColumn(h: any, NTag: any) {
+  return {
+    title: 'Fixed in',
+    key: FIXED_IN_COLUMN_KEY,
+    // wide enough for a Debian security update (1:9.2p1-2+deb12u10) on one line
+    width: 150,
+    render: (row: any) => {
+      const fixedIn: FixedIn | null | undefined = row.fixedIn
+      if (!fixedIn) return '-'
+      const title = fixedInTitle(fixedIn)
+      if (isNoFix(fixedIn)) {
+        return h(NTag, { size: 'small', type: 'warning', bordered: false, title }, { default: () => fixedInText(fixedIn) })
+      }
+      return h('span', { title, style: 'overflow-wrap: anywhere;' }, fixedInText(fixedIn))
+    }
+  }
+}
+
+// The group view's fix column: the one fix version that fixes the most of the
+// group's findings, and the best on the component's major version when that
+// one leaves it. Without fix targets from the backend, the distinct fix
+// versions of the group's findings.
+function bumpToColumn(h: any) {
+  return {
+    title: 'Bump to',
+    key: 'bumpTo',
+    width: 200,
+    render: (group: FindingComponentGroup) => {
+      const bump = groupBumpOf(group.rows)
+      if (!bump) {
+        const targets = bumpTargetsOf(group.rows)
+        return h('span', { title: bumpToTitle(targets), style: 'overflow-wrap: anywhere;' }, bumpToText(targets))
+      }
+      const within = groupBumpWithinMajorText(bump)
+      return h('div', { title: groupBumpTitle(bump, group.rows), style: 'overflow-wrap: anywhere;' }, [
+        h('div', {}, groupBumpText(bump)),
+        within ? h('div', { style: 'font-size: 12px; opacity: 0.7;' }, within) : null
+      ])
+    }
+  }
+}
+
+// The nested findings table's Fixed in cell, with a check on the rows the
+// group's bump fixes.
+function withBumpMarks(h: any, columns: DataTableColumns<any>, bump: GroupBump | null): DataTableColumns<any> {
+  if (!bump) return columns
+  return columns.map((column: any) => column.key !== FIXED_IN_COLUMN_KEY ? column : {
+    ...column,
+    render: (row: any, index: number) => {
+      const cell = column.render(row, index)
+      return fixedByBump(row, bump)
+        ? h('span', {}, [cell, h('span', { title: `Fixed by the bump to ${bump.version}`, style: 'color: #18a058; margin-left: 6px;' }, '\u2713')])
+        : cell
+    }
+  })
+}
+
+// The group view's score columns: the highest headline CVSS and EPSS among
+// the group's findings. Groups already sort worst first, so no sorter.
+function groupScoreColumns(h: any): DataTableColumns<FindingComponentGroup> {
+  return [
+    {
+      title: 'Worst score',
+      key: 'worstScore',
+      width: 110,
+      render: (group: FindingComponentGroup) => scoreCell(h, group.worstScore, group.worstScore ? summarizeScores([group.worstScore]) : '')
+    },
+    {
+      title: 'EPSS',
+      key: 'maxEpss',
+      width: 90,
+      render: (group: FindingComponentGroup) => scoreCell(h, group.maxEpss, group.maxEpss ? epssTitle(group.maxEpss) : '')
+    }
+  ]
+}
+
+// Columns of the group-by-component view: one row per affected component, its
+// findings table (the flat columns) nested in the expanded row.
+// The group's latest version and what it fixes (see latestVersionDisplay.ts).
+function latestColumn(h: any) {
+  return {
+    title: 'Latest',
+    key: 'latest',
+    width: 170,
+    render: (group: FindingComponentGroup) => {
+      const latest = groupLatestOf(group.rows)
+      return latest ? h('span', { title: groupLatestTitle(latest) }, groupLatestText(latest)) : ''
+    }
+  }
+}
+
+export function buildComponentGroupColumns(
+  h: any,
+  NTag: any,
+  NDataTable: any,
+  options: {
+    // Columns of the nested findings table; a getter so filter changes re-render it.
+    findingColumns: () => DataTableColumns<any>
+    rowKey: (row: any) => string
+    // Forwarded from the nested tables so their filters and sort stay the view's.
+    onUpdateFilters: (filters: Record<string, any>) => void
+    onUpdateSorter?: (sorter: any) => void
+    // Opens the dependency graph; with the SBOM component when the server matched the group to one.
+    onPurlClick?: (purl: string, sbomComponentUuid?: string) => void
+    // Adds the Worst score and EPSS columns; set when the rows carry scores.
+    showScores?: boolean
+    // Adds the Bump to column; set when the rows carry fix versions.
+    showFixedIn?: boolean
+    // Adds the Latest column; set when the rows carry the latest versions.
+    showLatest?: boolean
+  }
+): DataTableColumns<FindingComponentGroup> {
+  const severityCircle = (severity: string, count: number) => h('span', {
+    class: 'circle',
+    style: { background: (constants.VulnerabilityColors as Record<string, string>)[severity] },
+    title: `${count} ${severity.toLowerCase()}`
+  }, String(count))
+
+  return [
+    {
+      type: 'expand',
+      renderExpand: (group: FindingComponentGroup) => h(NDataTable, {
+        data: group.rows,
+        columns: options.showFixedIn ? withBumpMarks(h, options.findingColumns(), groupBumpOf(group.rows)) : options.findingColumns(),
+        rowKey: options.rowKey,
+        pagination: group.rows.length > 10 ? { pageSize: 10 } : false,
+        scrollX: 1400,
+        size: 'small',
+        'onUpdate:filters': options.onUpdateFilters,
+        'onUpdate:sorter': options.onUpdateSorter
+      })
+    },
+    {
+      title: 'Component',
+      key: 'label',
+      minWidth: 320,
+      render: (group: FindingComponentGroup) => {
+        const parts: any[] = []
+        if (group.ecosystem) {
+          parts.push(h(NTag, { size: 'small', bordered: false, style: 'margin-right: 6px;' }, () => group.ecosystem))
+        }
+        const onPurlClick = options.onPurlClick
+        parts.push(group.purl && onPurlClick
+          ? h('a', {
+            href: '#',
+            title: `Open dependency graph for ${group.purl}`,
+            onClick: (e: Event) => {
+              e.preventDefault()
+              onPurlClick(group.purl!, group.sbomComponentUuid)
+            }
+          }, group.label)
+          : h('span', { title: group.purl || group.label }, group.label))
+        if (group.notInSbom) {
+          parts.push(h(NTag, {
+            type: 'warning', size: 'small', bordered: false, style: 'margin-left: 6px;',
+            title: 'The release\'s SBOM does not list this package at this version: the findings may be carried over from an SBOM the release no longer has'
+          }, () => 'not in SBOM'))
+        }
+        return h('span', {}, parts)
+      }
+    },
+    {
+      title: 'Findings',
+      key: 'findings',
+      width: 280,
+      render: (group: FindingComponentGroup) => {
+        const circles = ROW_SEVERITIES
+          .filter(s => group.severityCounts[s] > 0)
+          .map(s => severityCircle(s, group.severityCounts[s]))
+        if (group.violationCount > 0) {
+          circles.push(h(NTag, { type: 'warning', size: 'small', bordered: false },
+            () => `${group.violationCount} violation${group.violationCount === 1 ? '' : 's'}`))
+        }
+        return h('div', { style: 'display: flex; align-items: center; gap: 4px;' }, circles)
+      }
+    },
+    ...(options.showScores ? groupScoreColumns(h) : []),
+    ...(options.showFixedIn ? [bumpToColumn(h)] : []),
+    ...(options.showLatest ? [latestColumn(h)] : []),
+    {
+      title: 'KEV',
+      key: 'kevCount',
+      width: 90,
+      render: (group: FindingComponentGroup) => group.kevCount > 0
+        ? h(NTag, { type: 'error', size: 'small', bordered: false, title: 'CISA Known Exploited Vulnerabilities' },
+          () => `KEV ${group.kevCount}`)
+        : ''
+    },
+    {
+      title: 'Total',
+      key: 'total',
+      width: 80,
+      render: (group: FindingComponentGroup) => String(group.rows.length)
+    }
+  ]
+}
+

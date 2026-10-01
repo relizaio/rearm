@@ -25,6 +25,7 @@ import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
 
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.SupportExportState;
 import io.reliza.model.SupportInjectionSetting;
@@ -34,6 +35,7 @@ import io.reliza.model.SupportMilestoneFact;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.repositories.SbomComponentSupportRepository.SupportPayloadRow;
@@ -89,17 +91,69 @@ public class SupportInjectionService {
 	 *
 	 * <p>The disclosure marker follows automatically and says which happened -- the
 	 * current-state value when facts were injected, {@code provenance-stripped-no-disclosure}
-	 * when they were not. A reader can therefore tell "we asserted nothing" from "we checked
-	 * and there is nothing to report", which an absent property alone cannot express.
+	 * when they were not, and NO MARKER AT ALL when the caller themselves declined the
+	 * disclosure. A reader of a marked document can therefore tell "we asserted nothing" from
+	 * "we checked and there is nothing to report", which an absent property alone cannot
+	 * express; a reader of an unmarked one is holding a document whose requester asked for
+	 * none of our content, and there is nothing for a marker to qualify.
 	 *
 	 * <p>UNREADABLE ORG SETTINGS FALL BACK TO STRIP-ONLY. That is the safe direction: the
 	 * document then says we asserted nothing, which is true, rather than carrying facts we
 	 * could not confirm the org wanted published.
 	 *
+	 * <p>PER-EXPORT FLAGS LAND HERE TOO, rather than at their own strip sites, because this is
+	 * already the one place that decides what a served BOM carries and a second such place is
+	 * how the three egresses drifted apart the first time.
+	 *
+	 * <p>{@code supportMetadata = EXCLUDE} strips exactly as the org-DISABLED case does but is
+	 * NOT MARKED. The rule is about WHO DECIDED, not about what the document contains. The
+	 * marker exists to disambiguate an absent support property in a document making a support
+	 * statement; a caller who declined the disclosure is not making one, so stamping a marker
+	 * would only put our name on a file they asked to be free of it. The org-DISABLED case IS
+	 * marked, because that document is the product of an organization-wide policy its reader had
+	 * no part in choosing and is exactly where "why is there no support data here?" deserves an
+	 * answer. (Operator decision 2026-09-22; the STRIP is unconditional in both.)
+	 *
+	 * <p>{@code supportMetadata = INCLUDE} on an org with injection off is NOT resolved here.
+	 * It is a caller-input error and is refused at the boundary by
+	 * {@link #assertExportMetadataRequestable} before the export runs -- see that method for why
+	 * the refusal cannot live inside this seam.
+	 *
+	 * <p>{@code internalMetadata = EXCLUDE} runs LAST, after the support decision, so the
+	 * disclosure it must leave alone is already in its final state. See
+	 * {@link SupportBomInjector#stripInternalMarkers} for exactly what it takes and leaves.
+	 *
 	 * @param device the enclosing device's support window for a PRODUCT download, else null
+	 * @param options what the caller asked for; {@link ExportMetadataOptions#callerSilent()} for
+	 *                every egress with no caller input to forward, and the value under which
+	 *                behaviour is unchanged
 	 */
-	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device) {
-		if (!isInjectionEnabled(orgUuid)) return stripForgedProvenanceAndMark(bom);
+	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+			ExportMetadataOptions options) {
+		final ExportMetadataOptions opts = (null == options) ? ExportMetadataOptions.callerSilent() : options;
+		JsonNode served = supportDecision(bom, orgUuid, device, opts);
+		if (opts.internalMetadataDeclined()) {
+			served = SupportBomInjector.stripInternalMarkers(served);
+		}
+		return served;
+	}
+
+	/** The support half of the decision above, split out so the internal strip reads as a step. */
+	private JsonNode supportDecision(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+			ExportMetadataOptions opts) {
+		// DECLINED and DISABLED strip identically but say different things, and the difference
+		// is who decided. A caller that sent includeSupportMetadata=false is not making a
+		// support statement, so there is nothing for the marker to qualify and stamping one
+		// would just be our name on a file they asked to be free of it. An org-wide DISABLED,
+		// by contrast, produced a document its reader had no part in choosing -- that is
+		// exactly where "why is there no support data here?" deserves an answer, so the marker
+		// stays. Nothing about the STRIP changes either way.
+		if (opts.supportMetadataDeclined()) {
+			return stripForgedProvenanceSilently(bom);
+		}
+		if (!isInjectionEnabled(orgUuid)) {
+			return stripForgedProvenanceAndMark(bom);
+		}
 		try {
 			return injectCurrentSupport(bom, orgUuid, device);
 		} catch (RuntimeException e) {
@@ -124,8 +178,82 @@ public class SupportInjectionService {
 	}
 
 	/** As above, for an egress with no device context. */
-	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid) {
-		return injectIfEnabledElseStrip(bom, orgUuid, null);
+	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, ExportMetadataOptions options) {
+		return injectIfEnabledElseStrip(bom, orgUuid, null, options);
+	}
+
+	/**
+	 * The FALLBACK document, for an egress whose injection attempt failed outright: forged
+	 * provenance removed and marked, and the caller's internal-metadata choice still honoured.
+	 *
+	 * <p>HERE rather than at the call site. The fallback still serves a document, so it still
+	 * makes the same two decisions the main seam makes, and an egress that made the second one
+	 * itself would be the second decision point this class exists to prevent -- the state where
+	 * one egress strips and another injects and nothing names the difference. A caller who
+	 * asked for a document without our markers must not get one WITH them merely because
+	 * support resolution failed.
+	 */
+	public JsonNode stripForgedProvenanceAndMark(JsonNode bom, ExportMetadataOptions options) {
+		final ExportMetadataOptions opts = (null == options) ? ExportMetadataOptions.callerSilent() : options;
+		// Routed through the same rule the main seam uses, so a fallback cannot stamp a marker
+		// onto a document whose caller declined the disclosure.
+		JsonNode served = opts.supportMetadataDeclined()
+				? stripForgedProvenanceSilently(bom)
+				: stripForgedProvenanceAndMark(bom);
+		return stripInternalIfDeclined(served, opts);
+	}
+
+	/**
+	 * The internal-metadata choice ALONE, for a failure path that deliberately serves the
+	 * document unmarked.
+	 *
+	 * <p>Two egresses -- the SPDX-augmented download and the merged release export -- answer a
+	 * failure of the seam by serving what they have WITHOUT the disclosure marker, which is the
+	 * honest signal that we did not vouch for it. Re-marking them would state a claim we did
+	 * not check. But the caller's internal-metadata choice is a different promise from the
+	 * disclosure, and losing it because something unrelated failed hands them a document with
+	 * our markers in it after they asked for one without.
+	 *
+	 * <p>HERE rather than at those two call sites, for the same reason everything else about
+	 * what a served BOM carries is decided in this class: three call sites each making the
+	 * judgement is how one of them ends up on the wrong side of it.
+	 */
+	public JsonNode stripInternalIfDeclined(JsonNode bom, ExportMetadataOptions options) {
+		final ExportMetadataOptions opts = (null == options) ? ExportMetadataOptions.callerSilent() : options;
+		return opts.internalMetadataDeclined() ? SupportBomInjector.stripInternalMarkers(bom) : bom;
+	}
+
+	/**
+	 * Refuse an export that asks for support metadata the organization has not enabled, BEFORE
+	 * any work is done.
+	 *
+	 * <p>Silently stripping would be the worse answer by a distance: the caller asked for the
+	 * support disclosure by name, and a document that quietly came back without it is
+	 * indistinguishable from one where every component happened to be unattested. On an FDA
+	 * premarket submission that difference is the submission.
+	 *
+	 * <p>AT THE BOUNDARY, NOT INSIDE {@link #injectIfEnabledElseStrip}. Every egress wraps that
+	 * seam in a catch that logs and serves the document anyway -- deliberately, because a
+	 * support-resolution outage must not fail a BOM download -- so an exception thrown from
+	 * inside it would be swallowed and the export would be served stripped, which is the exact
+	 * behaviour this refusal exists to prevent. A caller-input error is also not the same kind
+	 * of event as a resolution outage: it is knowable before the export starts, it is the
+	 * caller's to fix, and it belongs in the same place as the rest of the argument validation.
+	 *
+	 * <p>Only INCLUDE can fail. DEFAULT means the org setting decides, which it always may, and
+	 * EXCLUDE asks for less than the setting allows.
+	 *
+	 * @throws RelizaException naming the setting and where to change it
+	 */
+	public void assertExportMetadataRequestable(UUID orgUuid, ExportMetadataOptions options)
+			throws RelizaException {
+		if (null == options || !options.supportMetadataRequested()) return;
+		SupportExportState state = supportExportState(orgUuid);
+		if (SupportExportState.ENABLED == state) return;
+		throw new RelizaException("This export asked to include support metadata, but this"
+				+ " organization's support metadata export setting is " + state.name()
+				+ ". Enable support metadata in Organization Settings, or omit the"
+				+ " includeSupportMetadata argument to export without it.");
 	}
 
 	/**
@@ -293,6 +421,17 @@ public class SupportInjectionService {
 	 */
 	public JsonNode stripForgedProvenanceAndMark(JsonNode bom) {
 		return SupportBomInjector.stripOnly(bom);
+	}
+
+	/**
+	 * As above, but WITHOUT the disclosure marker.
+	 *
+	 * <p>Only for a caller that explicitly declined the support disclosure. See
+	 * {@link SupportBomInjector#stripSilently} for why silence is the honest answer there and
+	 * not on the org-DISABLED path.
+	 */
+	public JsonNode stripForgedProvenanceSilently(JsonNode bom) {
+		return SupportBomInjector.stripSilently(bom);
 	}
 
 	/**

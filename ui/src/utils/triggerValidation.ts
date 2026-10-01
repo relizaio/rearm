@@ -1,6 +1,10 @@
+import { isTriviallyTrueCel } from './celConditionBuilder'
+
 export interface TriggerValidationResult {
     valid: boolean
     error?: string
+    // Set when the error belongs under the Condition builder rather than in a toast.
+    field?: 'celExpression'
 }
 
 export function validateOutputTrigger(trigger: any): TriggerValidationResult {
@@ -26,7 +30,15 @@ export function validateInputTrigger(trigger: any): TriggerValidationResult {
     }
 
     if (!trigger.celExpression || trigger.celExpression.trim() === '') {
-        return { valid: false, error: 'Condition is required.' }
+        return { valid: false, error: 'Condition is required.', field: 'celExpression' }
+    }
+
+    if (isTriviallyTrueCel(trigger.celExpression)) {
+        return {
+            valid: false,
+            error: 'Condition contains a clause that is always true, so the rule would match every release. Complete or remove that clause.',
+            field: 'celExpression'
+        }
     }
 
     if (!trigger.outputEvents || trigger.outputEvents.length === 0) {

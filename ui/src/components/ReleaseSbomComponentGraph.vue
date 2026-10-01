@@ -27,7 +27,38 @@
                 <p style="margin: 4px 0;" v-if="selected.component?.isRoot">
                     <n-tag type="info" size="small" round>Root component</n-tag>
                 </p>
+                <div v-if="componentFindings" class="findings-badge">
+                    <strong>Findings in this release:</strong>
+                    <template v-if="componentFindings.length">
+                        <span
+                            v-for="severity in openSeverities"
+                            :key="severity"
+                            class="circle"
+                            :style="{ background: severityColor(severity) }"
+                            :title="`${openCounts[severity]} open ${severity.toLowerCase()}`">{{ openCounts[severity] }}</span>
+                        <n-tag v-if="openKevCount" type="error" size="small" :bordered="false"
+                            title="CISA Known Exploited Vulnerability">KEV {{ openKevCount }}</n-tag>
+                        <span v-if="suppressedCount" class="findings-muted">{{ suppressedCount }} suppressed</span>
+                    </template>
+                    <span v-else class="findings-muted">none</span>
+                </div>
+                <p v-if="componentLatest" style="margin: 4px 0;" :title="groupLatestTitle(componentLatest)">
+                    <strong>Latest version:</strong> {{ componentLatest.version }}
+                    <span class="findings-muted">{{ latestFixesText(componentLatest) }}</span>
+                    <span v-if="componentLatest.checked" class="findings-muted" style="margin-left: 6px;">checked {{ checkedDay(componentLatest.checked) }}</span>
+                </p>
             </div>
+
+            <template v-if="componentFindings && componentFindings.length">
+                <h4 style="margin-top: 16px; margin-bottom: 4px;">Findings ({{ componentFindings.length }})</h4>
+                <n-data-table
+                    :data="componentFindings"
+                    :columns="findingColumns"
+                    :row-key="(row: any) => row.rowIndex"
+                    :pagination="componentFindings.length > 10 ? { pageSize: 10 } : false"
+                    size="small"
+                />
+            </template>
 
             <h4 style="margin-bottom: 4px;">
                 Upstream paths to root ({{ upstreamPaths.length }}{{ upstreamTruncated ? '+' : '' }})
@@ -80,6 +111,16 @@
                 :pagination="{ pageSize: 10 }"
             />
         </div>
+
+        <vulnerability-details-modal
+            v-model:show="vulnDetail.show"
+            :org-uuid="findingsOrgUuid"
+            :vuln-id="vulnDetail.vulnId"
+            :severity="vulnDetail.severity"
+            :known-exploited="vulnDetail.knownExploited"
+            :finding-purl="vulnDetail.purl"
+            :fixed-in="vulnDetail.fixedIn"
+        />
     </div>
 </template>
 
@@ -94,6 +135,18 @@ import { searchSbomComponentByPurl } from '@/utils/dtrack'
 import { computed, h, ref, watch, type Ref, type ComputedRef } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { NButton, NDataTable, NSpin, NTag, NTooltip, type DataTableColumns } from 'naive-ui'
+import constants from '@/utils/constants'
+import { ANALYSIS_STATE_OPTIONS, isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
+import { ROW_SEVERITIES, emptySeverityCounts, getSeverityTagType, renderFindingId, severityBucketOf } from '@/utils/findingUtils'
+import { FindingType } from '@/constants/findingType'
+import { formatPrimaryScore } from '@/utils/vulnScoreDisplay'
+import { fixedInText, fixedInTitle } from '@/utils/fixedInDisplay'
+import { loadRichestServed } from '@/utils/graphqlDriftFallback'
+import { SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE, SBOM_COMPONENT_FINDINGS_QUERY_LATEST } from '@/utils/sbomComponentFindingsQuery'
+import { checkedDay, groupLatestTitle, latestFixCell, latestFixesText, latestOf } from '@/utils/latestVersionDisplay'
+import type { GroupLatest } from '@/utils/latestVersionDisplay'
+import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 
 interface Props {
     releaseUuid: string
@@ -161,6 +214,101 @@ const GRAPH_QUERY = gql`
 
 const MAX_PATHS = 50
 
+// The component's findings in this release, loaded after the graph and on
+// their own: null when the backend does not serve them (a CE build without
+// ReleaseSbomComponent.findings) or the load failed, and the badge is hidden.
+// Uncached (loadRichestServed): the documents share the graph query's root
+// field and arguments, and a cached write would replace the graph's entry.
+const componentFindings: Ref<any[] | null> = ref(null)
+// The component's latest version (Dependency-Track's repository metadata) and when it
+// was checked; null when unknown or not served.
+const latestFound: Ref<Pick<GroupLatest, 'version' | 'checked'> | null> = ref(null)
+let findingsRequest = 0
+
+// The org whose vulnerability records the details panel reads: the route's
+// when the page was opened by purl, else the release's, which comes with the
+// findings (the page is opened by component id without one).
+const releaseOrgUuid: Ref<string> = ref('')
+const findingsOrgUuid = computed(() => props.orgUuid || releaseOrgUuid.value)
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => findingsOrgUuid.value)
+
+async function fetchComponentFindings (releaseUuid: string, sbomComponentUuid: string) {
+    const request = ++findingsRequest
+    componentFindings.value = null
+    latestFound.value = null
+    try {
+        const result = await loadRichestServed(graphqlClient, {
+            documents: [SBOM_COMPONENT_FINDINGS_QUERY_LATEST, SBOM_COMPONENT_FINDINGS_QUERY, SBOM_COMPONENT_FINDINGS_QUERY_CORE],
+            variables: { releaseUuid, sbomComponentUuid },
+            extractPath: data => data
+        })
+        // a later navigation owns the badge now
+        if (request !== findingsRequest || selected.value?.sbomComponentUuid !== sbomComponentUuid) return
+        releaseOrgUuid.value = result.data?.release?.org || ''
+        const graphRow = result.data?.getReleaseSbomComponentGraph
+        // which tier was served, by the fields it carries: findings, then the latest version
+        if (Array.isArray(graphRow?.findings)) {
+            componentFindings.value = graphRow.findings.map((f: any, i: number) => ({ ...f, rowIndex: i }))
+        }
+        const latest = graphRow?.component?.latestVersion
+        latestFound.value = latest ? { version: latest, checked: graphRow.component.latestVersionChecked ?? null } : null
+    } catch {
+        // decorative: the graph above is what the page is for
+    }
+}
+
+const openFindings = computed(() => (componentFindings.value || []).filter(f => !isSuppressedAnalysisState(f.analysisState)))
+const openCounts = computed(() => {
+    const counts = emptySeverityCounts()
+    openFindings.value.forEach(f => counts[severityBucketOf(f)]++)
+    return counts
+})
+const openSeverities = computed(() => ROW_SEVERITIES.filter(s => openCounts.value[s] > 0))
+const openKevCount = computed(() => openFindings.value.filter(f => f.knownExploited).length)
+const suppressedCount = computed(() => (componentFindings.value || []).length - openFindings.value.length)
+const severityColor = (severity: string) => (constants.VulnerabilityColors as Record<string, string>)[severity]
+const analysisStateLabel = (state: string) => ANALYSIS_STATE_OPTIONS.find(o => o.value === state)?.label ?? state
+// counted over the rows, as the per-row column and the findings modal count
+const componentLatest = computed(() => latestFound.value
+    ? latestOf(latestFound.value.version, latestFound.value.checked, (componentFindings.value || []).map(f => f.latestFix))
+    : null)
+
+const latestFixColumn = {
+    title: 'Latest fixes',
+    key: 'latestFix',
+    width: 130,
+    render: (row: any) => {
+        const cell = latestFixCell(row.latestFix)
+        return h('span', { title: cell.title }, cell.text)
+    }
+}
+
+// The Latest fixes column only when the component has a latest version: the
+// backend may not serve it, and without one every cell would be blank.
+const findingColumns: ComputedRef<DataTableColumns<any>> = computed(() => [
+    { title: 'Vulnerability', key: 'vulnId', minWidth: 180, render: (row: any) => renderFindingId(h, row.vulnId, FindingType.VULNERABILITY, (vulnId: string) => openVulnDetail(vulnId, row)) },
+    {
+        title: 'Severity',
+        key: 'severity',
+        width: 120,
+        render: (row: any) => h(NTag, { type: getSeverityTagType(severityBucketOf(row)), size: 'small' }, () => severityBucketOf(row))
+    },
+    { title: 'Score', key: 'topScore', width: 90, render: (row: any) => row.topScore ? formatPrimaryScore(row.topScore) : '' },
+    { title: 'Fixed in', key: 'fixedIn', width: 160, render: (row: any) => h('span', { title: fixedInTitle(row.fixedIn) }, fixedInText(row.fixedIn)) },
+    ...(componentLatest.value ? [latestFixColumn] : []),
+    {
+        title: 'Status',
+        key: 'analysisState',
+        width: 140,
+        render: (row: any) => [
+            row.knownExploited
+                ? h(NTag, { type: 'error', size: 'small', bordered: false, style: 'margin-right: 4px;', title: 'CISA Known Exploited Vulnerability' }, () => 'KEV')
+                : null,
+            row.analysisState ? h('span', analysisStateLabel(row.analysisState)) : null
+        ]
+    }
+])
+
 async function fetchGraph (releaseUuid: string, sbomComponentUuid: string, useNetworkOnly = false) {
     loading.value = true
     loadingMessage.value = 'Loading dependency graph...'
@@ -181,6 +329,7 @@ async function fetchGraph (releaseUuid: string, sbomComponentUuid: string, useNe
             return
         }
         selected.value = row
+        fetchComponentFindings(releaseUuid, sbomComponentUuid)
     } catch (err: any) {
         errorMessage.value = err?.message || 'Failed to load release SBOM graph.'
         selected.value = null
@@ -250,14 +399,15 @@ watch(() => [props.releaseUuid, props.sbomComponentUuid, props.purl, props.orgUu
 // each distinct path that terminates at a root or a parent outside the
 // ancestor set. Cycles are broken at the first repeated hop. Capped at
 // MAX_PATHS so high-fanout DAGs don't explode the render.
-const upstreamTruncated: Ref<boolean> = ref(false)
-const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
-    upstreamTruncated.value = false
+// One computed returns both the paths and the truncation flag: a computed must
+// not write other state, and the flag only exists as a by-product of the walk.
+const upstreamWalk: ComputedRef<{ paths: any[][]; truncated: boolean }> = computed((): { paths: any[][]; truncated: boolean } => {
+    const none = { paths: [], truncated: false }
     const root = selected.value
-    if (!root) return []
-    if (root.component?.isRoot) return []
+    if (!root) return none
+    if (root.component?.isRoot) return none
     const ancestors: any[] = root.ancestors || []
-    if (!ancestors.length) return []
+    if (!ancestors.length) return none
 
     const byUuid = new Map<string, any>()
     ancestors.forEach((a: any) => { if (a.sbomComponentUuid) byUuid.set(a.sbomComponentUuid, a) })
@@ -309,9 +459,10 @@ const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
         }
     }
 
-    upstreamTruncated.value = truncated
-    return paths
+    return { paths, truncated }
 })
+const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => upstreamWalk.value.paths)
+const upstreamTruncated: ComputedRef<boolean> = computed((): boolean => upstreamWalk.value.truncated)
 
 function pathNodeLabel (node: any): string {
     const c = node?.component
@@ -396,6 +547,16 @@ const dependedOnByColumns: DataTableColumns<any> = [
 </script>
 
 <style scoped>
+.findings-badge {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    margin: 6px 0 4px;
+}
+.findings-muted {
+    color: #999;
+    font-size: 12px;
+}
 .sbom-graph-page {
     padding: 16px 24px;
     max-width: 100%;

@@ -95,27 +95,27 @@ const pagination = {
 
 function formatDownloadType(type: string): string {
     switch (type) {
-        case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
-        case 'RAW_ARTIFACT_DOWNLOAD': return 'Raw Artifact Download'
-        case 'VDR_EXPORT': return 'VDR Export'
-        case 'SBOM_EXPORT': return 'SBOM Export'
-        default: return type
+    case 'ARTIFACT_DOWNLOAD': return 'Artifact Download'
+    case 'RAW_ARTIFACT_DOWNLOAD': return 'Raw Artifact Download'
+    case 'VDR_EXPORT': return 'VDR Export'
+    case 'SBOM_EXPORT': return 'SBOM Export'
+    default: return type
     }
 }
 
 function formatSubjectType(type: string): string {
     switch (type) {
-        case 'ARTIFACT': return 'Artifact'
-        case 'RELEASE': return 'Release'
-        default: return type
+    case 'ARTIFACT': return 'Artifact'
+    case 'RELEASE': return 'Release'
+    default: return type
     }
 }
 
 function formatCreatedType(type: string): string {
     switch (type) {
-        case 'PROGRAMMATIC': return 'API Key'
-        case 'MANUAL': return 'User'
-        default: return type ?? '—'
+    case 'PROGRAMMATIC': return 'API Key'
+    case 'MANUAL': return 'User'
+    default: return type ?? '—'
     }
 }
 
@@ -176,24 +176,24 @@ function buildConfigSummary(row: any): string {
     if (!cfg) return '—'
     const parts: string[] = []
     switch (row.downloadType) {
-        case 'SBOM_EXPORT':
-            if (cfg.structure) parts.push(cfg.structure)
-            if (cfg.mediaType) parts.push(cfg.mediaType.replace(/_/g, '/'))
-            if (cfg.belongsTo) parts.push(cfg.belongsTo)
-            if (cfg.tldOnly) parts.push('top-level only')
-            if (cfg.ignoreDev) parts.push('no-dev')
-            if (cfg.excludeCoverageTypes?.length) parts.push(`excl: ${cfg.excludeCoverageTypes.join(',')}`)
-            break
-        case 'VDR_EXPORT':
-            parts.push(cfg.includeSuppressed ? 'incl. suppressed' : 'excl. suppressed')
-            if (cfg.targetLifecycle) parts.push(`lifecycle: ${cfg.targetLifecycle}`)
-            if (cfg.targetApproval) parts.push(`approval: ${cfg.targetApproval}`)
-            if (cfg.upToDate) parts.push(`until: ${new Date(cfg.upToDate).toLocaleDateString('en-CA')}`)
-            break
-        case 'ARTIFACT_DOWNLOAD':
-        case 'RAW_ARTIFACT_DOWNLOAD':
-            if (cfg.artifactVersion != null) parts.push(`v${cfg.artifactVersion}`)
-            break
+    case 'SBOM_EXPORT':
+        if (cfg.structure) parts.push(cfg.structure)
+        if (cfg.mediaType) parts.push(cfg.mediaType.replace(/_/g, '/'))
+        if (cfg.belongsTo) parts.push(cfg.belongsTo)
+        if (cfg.tldOnly) parts.push('top-level only')
+        if (cfg.ignoreDev) parts.push('no-dev')
+        if (cfg.excludeCoverageTypes?.length) parts.push(`excl: ${cfg.excludeCoverageTypes.join(',')}`)
+        break
+    case 'VDR_EXPORT':
+        parts.push(cfg.includeSuppressed ? 'incl. suppressed' : 'excl. suppressed')
+        if (cfg.targetLifecycle) parts.push(`lifecycle: ${cfg.targetLifecycle}`)
+        if (cfg.targetApproval) parts.push(`approval: ${cfg.targetApproval}`)
+        if (cfg.upToDate) parts.push(`until: ${new Date(cfg.upToDate).toLocaleDateString('en-CA')}`)
+        break
+    case 'ARTIFACT_DOWNLOAD':
+    case 'RAW_ARTIFACT_DOWNLOAD':
+        if (cfg.artifactVersion != null) parts.push(`v${cfg.artifactVersion}`)
+        break
     }
     return parts.length > 0 ? parts.join(' · ') : '—'
 }

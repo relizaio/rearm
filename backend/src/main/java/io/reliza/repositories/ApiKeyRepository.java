@@ -47,6 +47,12 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 			nativeQuery = true)
 	Optional<ApiKey> findApiKeyByUuidAndTypeOnly(UUID uuid, String type, String keyOrder);
 
+	/** The object's active key that has no key order -- the one a {@code TYPE__objectUuid} key id names. */
+	@Query(
+			value = VariableQueries.FIND_API_KEY_BY_ID_AND_TYPE_WITHOUT_ORDER,
+			nativeQuery = true)
+	Optional<ApiKey> findApiKeyByUuidAndTypeWithoutOrder(UUID uuid, String type);
+
 	@Query(
 			value = VariableQueries.FIND_USER_API_KEY_BY_USER_ID_AND_ORG,
 			nativeQuery = true)

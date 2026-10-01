@@ -341,6 +341,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<UUID> findReleasesWithVulnerabilityAnyLocation(String orgUuidAsString, String findingId);
 
 	@Query(
+			value = VariableQueries.EXISTS_RELEASE_WITH_VULNERABILITY_ANY_LOCATION,
+			nativeQuery = true)
+	boolean existsReleaseWithVulnerabilityAnyLocation(String orgUuidAsString, String findingId);
+
+	@Query(
 			value = VariableQueries.FIND_RELEASES_WITH_VIOLATION,
 			nativeQuery = true)
 	List<UUID> findReleasesWithViolation(String orgUuidAsString, String location, String findingId);

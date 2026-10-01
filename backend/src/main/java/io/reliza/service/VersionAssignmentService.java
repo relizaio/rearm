@@ -8,6 +8,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
 import org.slf4j.Logger;
@@ -15,13 +16,16 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.dao.DataIntegrityViolationException;
+import org.springframework.dao.PessimisticLockingFailureException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.VersionAssignmentContendedException;
 import io.reliza.service.ComponentLockService.LockedOperation;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
@@ -37,6 +41,7 @@ import io.reliza.model.dto.SceDto;
 import io.reliza.repositories.VersionAssignmentRepository;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.Version.ModifierPolicy;
+import io.reliza.versioning.Version.VersionStringComparator;
 import io.reliza.versioning.VersionApi.ActionEnum;
 import io.reliza.versioning.VersionUtils;
 
@@ -69,6 +74,20 @@ public class VersionAssignmentService {
 	private VersionAssignmentService self;
 
 	private static final Logger log = LoggerFactory.getLogger(VersionAssignmentService.class);
+
+	/**
+	 * Attempts per version assignment. Mints on one component are serialized, so only a collision
+	 * with a version created outside a mint (an explicitly set one) can use them; each attempt
+	 * re-reads and moves past it.
+	 */
+	private static final int MINT_ATTEMPTS = 10;
+
+	/**
+	 * How long a mint waits for the component's version-assignment lock (and any other lock in its
+	 * transaction). A holder only reads and inserts, so a wait this long means something else is
+	 * stuck; the caller is told to retry rather than every waiter holding a connection open.
+	 */
+	private static final String MINT_LOCK_TIMEOUT = "30s";
 			
 	private final VersionAssignmentRepository repository;
 	
@@ -185,13 +204,13 @@ public class VersionAssignmentService {
 	}
 
 	public Optional<VersionAssignment> getSetNewVersionWrapper (UUID branchUuid, ActionEnum bumpAction, String modifier, String metadata, VersionTypeEnum versionType) {
-		// Existing commit-less callers never trigger the dedup path and so
-		// can't see a RelizaException — wrap as unchecked to keep the
-		// historic signature (no `throws`) for them.
+		// Commit-less callers keep the historic contract: no `throws`, and an empty result when no
+		// version could be assigned (contention, or a version refused as below one already issued),
+		// which each of them reports in its own terms. The reason is logged where it is decided.
 		try {
 			return getSetNewVersionWrapper(branchUuid, bumpAction, modifier, metadata, versionType, null, false);
 		} catch (RelizaException re) {
-			throw new IllegalStateException("Unexpected RelizaException from commit-less getSetNewVersionWrapper", re);
+			return Optional.empty();
 		}
 	}
 
@@ -218,19 +237,38 @@ public class VersionAssignmentService {
 		// which the programmatic path's own check does not cover. Fast fail is the whole point of
 		// gating version assignment, so the gate belongs at the point they share.
 		componentLockService.assertUnlocked(null, branchUuid, LockedOperation.VERSION_ASSIGNMENT);
-		Optional<VersionAssignment> va = Optional.empty();
-		int triesLeft = 3;
-		while (triesLeft > 0) {
+		// Each attempt is its own transaction (REQUIRES_NEW) and takes the component's lock, so
+		// mints never collide with each other; see MINT_ATTEMPTS for what still can.
+		for (int attempt = 1; attempt <= MINT_ATTEMPTS; attempt++) {
 			try {
-				va = self.getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType, commit, rebuild);
-				return va;
+				return self.getSetNewVersion(branchUuid, bumpAction, modifier, metadata, versionType, commit, rebuild);
 			} catch (DataIntegrityViolationException dae) {
-				--triesLeft;
-				log.warn("Collision when trying to obtain next version for branch = {}, triesLeft = {}", branchUuid, triesLeft);
+				log.warn("Collision when trying to obtain next version for branch = {}, attempt {} of {}",
+						branchUuid, attempt, MINT_ATTEMPTS);
+			} catch (PessimisticLockingFailureException plfe) {
+				log.warn("Timed out waiting for the version-assignment lock for branch = {}", branchUuid);
+				throw contended();
 			}
 		}
-		log.error("Could not resolve version due to repeated collisions for branch = {}", branchUuid);
-		return va;
+		log.warn("Could not assign a version on branch = {} after {} collisions", branchUuid, MINT_ATTEMPTS);
+		throw contended();
+	}
+
+	private static VersionAssignmentContendedException contended () {
+		return new VersionAssignmentContendedException("Version assignment on this branch is contended by concurrent"
+				+ " requests; retry");
+	}
+
+	/**
+	 * Serialize version assignment on a component until the current transaction ends: every
+	 * mint reads all versions issued before it. Lock order: callers may hold row locks (a branch
+	 * row in auto-integrate) when the REQUIRES_NEW mint takes this lock; nothing inside the locked
+	 * section takes a row lock, and no caller may mint while already holding this lock in an
+	 * outer transaction.
+	 */
+	private void lockComponentForVersionAssignment (UUID component) {
+		repository.setLocalLockTimeout(MINT_LOCK_TIMEOUT);
+		repository.lockVersionAssignmentOfComponent(AdvisoryLockKey.VERSION_ASSIGNMENT.getQueryVal(), component.toString());
 	}
 
 	// TODO: add support for who updated
@@ -249,6 +287,9 @@ public class VersionAssignmentService {
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		if(obd.isEmpty())
 			return retVersion;
+		// One mint at a time per component: concurrent mints read the same latest version and
+		// collided, and the collision fell through to the "-N" suffix fallback.
+		lockComponentForVersionAssignment(obd.get().getComponent());
 
 		BranchData bd = obd.get();
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
@@ -303,6 +344,7 @@ public class VersionAssignmentService {
 				}
 			}
 			String versionString = getVersionBumpOnLatestForBranch(obd.get(), pd, bumpAction, modifier, metadata, followedVersion, versionType);
+			assertNotBelowBranchLatest(bd, pd, versionString, versionType, followedVersion);
 			va.setVersion(versionString);
 		}
 
@@ -320,6 +362,56 @@ public class VersionAssignmentService {
 		retVersion = Optional.of(repository.save(va));
 
 		return retVersion;
+	}
+
+	/**
+	 * An issued version is never below one already issued on the same branch (operator rule).
+	 * Checked against the branch's latest assignment with the schema comparator before a mint is
+	 * saved; a version strictly below it is a bug in the derivation (or a pin moved back), so the
+	 * mint fails rather than issue it.
+	 *
+	 * <p>Not refused: a version the comparator ranks equal, which is what the "-N" counter gives
+	 * where the schema cannot move -- a date-only calendar schema re-minted the same day
+	 * (2026.10.01, then 2026.10.01-0), a fully pinned schema, a follow-version branch against an
+	 * unchanged followed version. Those are designed outcomes, not collisions; mints no longer
+	 * race each other into the counter. Skipped where the comparison cannot be judged: no earlier
+	 * assignment, a latest assignment carrying another branch's name (the derivation ignores it
+	 * too), versions no schema of the branch parses, and follow-version branches, whose version
+	 * is the followed one.
+	 */
+	private void assertNotBelowBranchLatest(BranchData bd, ComponentData pd, String version,
+			VersionTypeEnum versionType, String followedVersion) throws RelizaException {
+		if (StringUtils.isNotEmpty(followedVersion) || StringUtils.isEmpty(version)) return;
+		String projectSchema = pd.getVersionSchema();
+		String branchSchema = bd.getVersionSchema();
+		if (versionType.equals(VersionTypeEnum.MARKETING)) {
+			projectSchema = StringUtils.isEmpty(pd.getMarketingVersionSchema()) ? projectSchema : pd.getMarketingVersionSchema();
+			branchSchema = StringUtils.isEmpty(bd.getMarketingVersionSchema()) ? pd.getMarketingVersionSchema() : bd.getMarketingVersionSchema();
+		}
+		Optional<VersionAssignment> latest = getLatestVersionAssignmentOfBranch(bd.getUuid(), 10, projectSchema, branchSchema, versionType);
+		if (latest.isEmpty()) return;
+		String issued = latest.get().getVersion();
+		if (isForeignBranchVersion(issued, branchSchema, bd, computeNamespaceForBranch(branchSchema, bd))) return;
+		Optional<String> schema = Stream.of(projectSchema, branchSchema)
+				.filter(sc -> matchesSchema(sc, version) && matchesSchema(sc, issued))
+				.findFirst();
+		// Newer sorts first: a positive result means version is below issued.
+		if (schema.isPresent() && new VersionStringComparator(schema.get()).compare(version, issued) > 0) {
+			log.error("Refusing to issue version {} on branch {}: below {}, already issued there", version,
+					bd.getUuid(), issued);
+			throw new RelizaException("Version assignment computed " + version + ", which is below " + issued
+					+ " already issued on this branch; refusing to issue it");
+		}
+	}
+
+	/** Whether {@code version} parses with {@code schema}; a branch's schema field may hold a pin that is no schema. */
+	private static boolean matchesSchema(String schema, String version) {
+		if (StringUtils.isEmpty(schema)) return false;
+		try {
+			return VersionUtils.isVersionMatchingSchema(schema, version);
+		} catch (RuntimeException e) {
+			return false;
+		}
 	}
 
 	private String getVersionBumpOnLatestForBranch(BranchData bd, ComponentData pd, ActionEnum bumpAction, String modifier, String metadata, String followedVersion, VersionTypeEnum versionType){
@@ -613,10 +705,15 @@ public class VersionAssignmentService {
 	public boolean setNextVesion(UUID branchUuid, String versionString) throws RelizaException {
 		return setNextVesion(branchUuid, versionString, VersionTypeEnum.DEV);
 	}
+	/**
+	 * Under the same lock as a mint: checking for an OPEN assignment and inserting one is
+	 * check-then-act, and two concurrent calls both found none and both inserted, after which
+	 * every mint on the branch failed on the two OPEN rows.
+	 */
 	@Transactional
 	public boolean setNextVesion(UUID branchUuid, String versionString, VersionTypeEnum versionType) throws RelizaException {
-		
 		BranchData bd = branchService.getBranchData(branchUuid).get();
+		lockComponentForVersionAssignment(bd.getComponent());
 		ComponentData pd = getComponentService.getComponentData(bd.getComponent()).get();
 
 		Version nextVersion;

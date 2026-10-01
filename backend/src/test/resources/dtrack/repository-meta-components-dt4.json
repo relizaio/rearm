@@ -1,0 +1,8 @@
+[
+ {"name": "commons-text", "version": "1.9", "group": "org.apache.commons", "purl": "pkg:maven/org.apache.commons/commons-text@1.9",
+  "repositoryMeta": {"repositoryType": "MAVEN", "namespace": "org.apache.commons", "name": "commons-text",
+   "latestVersion": "1.15.0", "published": 1765145748000, "lastCheck": 1790587282836}},
+ {"name": "acl", "version": "2.3.2-1build1.1", "group": "ubuntu", "purl": "pkg:deb/ubuntu/acl@2.3.2-1build1.1?distro=ubuntu-24.04"},
+ {"name": "acl", "version": "2.3.1-3.el9", "group": "alpine", "purl": "pkg:apk/alpine/acl@2.3.1-3.el9?distro=alpine-3.24.1"},
+ {"name": "acl", "version": "2.3.1-3.el9", "group": "rocky", "purl": "pkg:rpm/rocky/acl@2.3.1-3.el9?distro=rocky-9.3"}
+]

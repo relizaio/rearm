@@ -174,7 +174,31 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	public enum DigestScope {
 		ORIGINAL_FILE, //user provided
 		OCI_STORAGE,
-		REARM // custom digest calculated only on components and dependencies
+		REARM, // custom digest calculated only on components and dependencies
+		// sha256 of the bytes exactly as uploaded, hashed by us rather than declared or derived.
+		// Present only on artifacts whose upload was retained, so its presence is the signal
+		// that the checksum can be verified against the file the publisher built and signed.
+		AS_UPLOADED,
+		RAW_OCI_STORAGE; // OCI manifest digest of the retained upload, addresses the blob itself
+
+		/**
+		 * Scopes this server derives itself, which a client may therefore never declare.
+		 *
+		 * <p>This enum is shared by the GraphQL output type {@code DigestRecord} and the INPUT
+		 * type {@code DigestRecordInput}, so every value added here becomes settable by a
+		 * caller. For ORIGINAL_FILE that is the intent -- it means "someone told us this
+		 * digest". For these two it would be a forgery: AS_UPLOADED's whole meaning is that WE
+		 * hashed the bytes, and RAW_OCI_STORAGE selects which blob the raw download fetches out
+		 * of a repository shared across organizations. Accepting either from input would let a
+		 * caller choose the checksum ReARM publishes as its own, or aim the download at bytes
+		 * that are not theirs.
+		 */
+		private static final Set<DigestScope> SERVER_DERIVED = Set.of(AS_UPLOADED, RAW_OCI_STORAGE);
+
+		/** True when a client is allowed to declare this scope on an input digest record. */
+		public boolean isClientDeclarable() {
+			return !SERVER_DERIVED.contains(this);
+		}
 	}
 	
 	/**
@@ -197,7 +221,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		StatusEnum status,
 		List<UUID> artifacts,
 		UUID org,  // Organization UUID for rebom lookups
-		String ociRepositoryName  // OCI repository name for downloadable artifacts (e.g., "downloadable-artifacts-2026-03")
+		String ociRepositoryName,  // OCI repository name for downloadable artifacts (e.g., "downloadable-artifacts-2026-03")
+		String rawOciRepositoryName  // OCI repository holding this version's RAW uploaded bytes; null for versions written before raw retention
 	) {
 		/**
 		 * Creates a version snapshot from current ArtifactData state
@@ -219,7 +244,8 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 				ad.getStatus(),
 				ad.getArtifacts() != null ? new ArrayList<>(ad.getArtifacts()) : new ArrayList<>(),
 				ad.getOrg(),
-				ad.getOciRepositoryName()
+				ad.getOciRepositoryName(),
+				ad.getRawOciRepositoryName()
 			);
 		}
 		
@@ -245,6 +271,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 			ad.setArtifacts(snapshot.artifacts());
 			ad.setOrg(snapshot.org());
 			ad.setOciRepositoryName(snapshot.ociRepositoryName());
+			ad.setRawOciRepositoryName(snapshot.rawOciRepositoryName());
 			// Note: previousVersions is intentionally not set to avoid infinite nesting
 			return ad;
 		}
@@ -384,7 +411,21 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * Note: This is ONLY for downloadable artifacts. BOM storage is managed by rebom-backend.
 	 */
 	private String ociRepositoryName;
-	
+
+	/**
+	 * OCI repository name holding the RAW uploaded bytes of a BOM artifact, in the same
+	 * "downloadable-artifacts-YYYY-MM" form as {@link #ociRepositoryName}.
+	 *
+	 * A BOM artifact needs its own pointer because {@link #ociRepositoryName} already means
+	 * rebom's PROCESSED copy (a rebom-artifacts-YYYY-MM repository). The raw copy is pushed
+	 * by rearm-core into its own repository, so the two can sit in different months.
+	 *
+	 * Null means the artifact predates raw-byte retention: its uploaded bytes were never
+	 * stored, and the raw download falls back to the rebom path. Paired with a
+	 * {@link DigestScope#RAW_OCI_STORAGE} digest record, which addresses the blob itself.
+	 */
+	private String rawOciRepositoryName;
+
 	@Getter(AccessLevel.PUBLIC)
 	@Setter(AccessLevel.PRIVATE)
 	private List<ArtifactVersionSnapshot> previousVersions = new ArrayList<>();
@@ -461,6 +502,7 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		ad.setVersion(artifactDto.getVersion());
 		ad.setOrg(artifactDto.getOrg());
 		ad.setOciRepositoryName(artifactDto.getOciRepositoryName());
+		ad.setRawOciRepositoryName(artifactDto.getRawOciRepositoryName());
 		if (null != artifactDto.getDtur()) {
 			ad.metrics.dependencyTrackProject = artifactDto.getDtur().projectId();
 			ad.metrics.uploadToken = artifactDto.getDtur().token();

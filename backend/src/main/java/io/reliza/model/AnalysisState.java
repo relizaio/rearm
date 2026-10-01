@@ -9,5 +9,13 @@ public enum AnalysisState {
 	IN_TRIAGE,
 	FALSE_POSITIVE,
 	NOT_AFFECTED,
-	RESOLVED
+	RESOLVED;
+
+	/**
+	 * Whether a finding in this state no longer affects the release: it is
+	 * left out of the severity counts and the risk summary.
+	 */
+	public boolean isSuppressing() {
+		return this == FALSE_POSITIVE || this == NOT_AFFECTED || this == RESOLVED;
+	}
 }

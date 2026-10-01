@@ -1646,61 +1646,61 @@ const matchedProductFields: any[] = [
 ]
 matchedProductFields.push({
     key: 'target',
-        title: 'Target',
-        render: (row: any) => {
-            let els = []
-            if(row.type !== 'INTEGRATE'){
-                if(row.targetRelease && row.targetReleaseDetails.version){
-                    els.push(
-                        h('span', [
-                            h('a', {
-                                onClick: (e: Event) => { 
-                                    e.preventDefault() 
-                                    selectedReleaseIdForModal.value = row.targetRelease
-                                    showReleaseViewModal.value = true
-                                },
-                                href: '#'
-                            },
-                            [h('span', row.targetReleaseDetails.version)]
-                            )
-                            
-                        ]) 
-                    )
-                }else{
-                    els.push(h('span', 'Not Set'))
-                }
-            }else{
-                els.push(h('span', 'Not Applicable'))
-            }
-            if(row.type==='TARGET' && isWritable){
-                els.push(h(NIcon, {
-                    title: 'Set Target Release',
-                    class: 'icons clickable',
-                    size: 16,
-                    onClick: () => {
-                        focusedProduct.value = row
-                        isSelectingTargetFeatureSet.value = false
-                        showSelectTargetReleaseModal.value = true
-                    }
-                }, { default: () => h(Edit24Regular) 
-                }))
-            }
+    title: 'Target',
+    render: (row: any) => {
+        let els = []
+        if(row.type !== 'INTEGRATE'){
             if(row.targetRelease && row.targetReleaseDetails.version){
-                els.push(h(NIcon, {
-                    title: 'Diff Target Release',
-                    class: 'icons clickable',
-                    size: 16,
-                    onClick: () => {
-                        releaseForComparison.value = row.targetRelease
-                        namespaceForComparison.value = row.namespace
-                        showRevisionComparisonModal.value = true
-                    }
-                }, { default: () => h(LayoutColumns) 
-                }))
-            } 
-            return els
+                els.push(
+                    h('span', [
+                        h('a', {
+                            onClick: (e: Event) => { 
+                                e.preventDefault() 
+                                selectedReleaseIdForModal.value = row.targetRelease
+                                showReleaseViewModal.value = true
+                            },
+                            href: '#'
+                        },
+                        [h('span', row.targetReleaseDetails.version)]
+                        )
+                            
+                    ]) 
+                )
+            }else{
+                els.push(h('span', 'Not Set'))
+            }
+        }else{
+            els.push(h('span', 'Not Applicable'))
         }
-    })
+        if(row.type==='TARGET' && isWritable){
+            els.push(h(NIcon, {
+                title: 'Set Target Release',
+                class: 'icons clickable',
+                size: 16,
+                onClick: () => {
+                    focusedProduct.value = row
+                    isSelectingTargetFeatureSet.value = false
+                    showSelectTargetReleaseModal.value = true
+                }
+            }, { default: () => h(Edit24Regular) 
+            }))
+        }
+        if(row.targetRelease && row.targetReleaseDetails.version){
+            els.push(h(NIcon, {
+                title: 'Diff Target Release',
+                class: 'icons clickable',
+                size: 16,
+                onClick: () => {
+                    releaseForComparison.value = row.targetRelease
+                    namespaceForComparison.value = row.namespace
+                    showRevisionComparisonModal.value = true
+                }
+            }, { default: () => h(LayoutColumns) 
+            }))
+        } 
+        return els
+    }
+})
 matchedProductFields.push({
     key: 'config',
     title: 'Config',

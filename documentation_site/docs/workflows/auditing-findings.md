@@ -23,6 +23,10 @@ Findings are displayed in multiple places throughout the ReARM interface to prov
 
 Click any circle to open the **Findings Modal** for that release or artifact, pre-filtered to the selected severity or violation type.
 
+On the release page, the circles are followed by:
+- a **KEV** circle that counts known exploited vulnerabilities;
+- **CVSS** and **EPSS** pills with the release's highest score and highest exploit probability. Click a pill to open the Findings Modal sorted by that column.
+
 ### Dashboard (Home)
 
 The Home dashboard shows findings in several locations:
@@ -44,17 +48,78 @@ The Home dashboard shows findings in several locations:
 The Findings Modal is accessible from release views, component views, and the dashboard. It shows a combined table of all findings for a given scope. Each row includes:
 
 - **Type** tag - Vulnerability, Violation, or Weakness
-- **Issue ID** - CVE ID, CWE ID, or violation type (i.e. "LICENSE") - linked to the upstream advisory where applicable
+- **Issue ID** - CVE ID, CWE ID, or violation type (i.e. "LICENSE").
+  - Clicking a vulnerability ID opens its [details](#vulnerability-details); other IDs link to the upstream advisory where applicable.
+  - A **KEV** tag marks a CISA Known Exploited Vulnerability.
 - **PURL or Location** - [PURL](https://github.com/package-url/purl-spec) of the dependency or code location
 - **Severity** tag (for vulnerabilities and weaknesses)
+- **Score** - the finding's headline CVSS score: CVSS v4, else v3, else v2.
+  - Hover to see all of the finding's scores.
+  - A **computed** tag means the source published only a vector, and ReARM calculated the score from it.
+- **EPSS** - the probability that the vulnerability is exploited in the next 30 days, from FIRST's Exploit Prediction Scoring System. Hover for its percentile.
+- **Fixed in** - the version that fixes the finding; see [Fix Versions](#fix-versions)
 - **Details** - additional details about the finding, including aliases alternative IDs (e.g., GHSA aliases for CVEs), reported License for License violations
 - **Sources** - list of sources that reported the finding (specific Releases and Artifacts where finding was discoverd)
 
-Suppressed findings (state `FALSE_POSITIVE` or `NOT_AFFECTED`) are shown as strikethrough and may be hidden via filters
+The switches above the table filter it:
+- **Show Suppressed** and **Show Unsuppressed** - suppressed findings (state `FALSE_POSITIVE` or `NOT_AFFECTED`) are shown as strikethrough.
+- **KEV Only** - only known exploited vulnerabilities.
+- **Has Fix** - only findings whose advisory names a version that fixes them.
+- **Group by Component** - one row per component; see [Grouping by Component](#grouping-by-component). ReARM remembers the choice.
 
-Use **Export PDF** to generate a downloadable report.
+Use **Export** to download the findings as a PDF report or as a CycloneDX 1.6 BOV (JSON) document.
 
 ![Findings Modal](./images/findings_modal.png)
+
+#### Fix Versions
+
+The **Fixed in** column comes from the affected version ranges in the vulnerability's advisories. ReARM fetches them from Dependency-Track when it first stores the vulnerability, and refreshes them nightly.
+- For each finding, ReARM places the package's version within the ranges for that package, using the package ecosystem's version ordering. This is the same library Dependency-Track uses.
+- For a Debian package, only the ranges for the finding's own Debian release count.
+
+A cell shows:
+
+| Cell | Meaning |
+|---|---|
+| a version, e.g. `2.17.1` | The advisory says this version fixes the finding. |
+| `> 2.4.1` | The advisory says versions up to 2.4.1 are affected, and names no fixed version. |
+| `no fix yet` | The advisory names no fixed version yet for this package. |
+| `-` | No fix version could be read. Hover for the reason: the advisory has no ranges for this package yet, the version is outside the advisory's affected ranges (the finding matched by name only), or the version cannot be placed in the ranges. |
+
+Hover over a cell to see the sources (for example, GitHub or OSV) whose ranges gave the answer.
+
+#### Grouping by Component
+
+With **Group by Component** on, the table shows one row per affected component, with:
+- its findings by severity;
+- the worst score and the highest EPSS among them;
+- the **Bump to** version;
+- its KEV count and total.
+
+Expand a row to see its findings. Column filters still apply to the findings inside each group, and the line above the table says which filters are active.
+
+**Bump to** is the one version of the component that fixes the most of the group's findings, for example `5.2.17 fixes 32 of 32`.
+- **How the count works:**
+  - ReARM checks each candidate version against every advisory for the component. A version fixes a finding only when it is outside all of that finding's affected ranges, not merely past the fix the finding lists.
+  - The count covers the findings the filters leave visible.
+- **Leaving the current major version:** when the bump does, a second line shows the best version that stays on it, for example `within 2.x: 2.2.24 fixes 18`. When no version on the current major fixes any of them, it shows `no fix on 19.x`.
+- **What stays affected:** hover over the cell to see the findings the bump leaves affected, grouped by reason, such as no fix yet or no range data.
+- **Which findings it fixes:** in the expanded findings, a check mark next to the **Fixed in** version marks each finding the bump fixes.
+
+#### Vulnerability Details
+
+Click a vulnerability's Issue ID, or an alias in **Details**, to open its details panel. It shows:
+- the title and description;
+- every score (CVSS, EPSS, OWASP Risk Rating) with its vector, sub-scores and source;
+- the CWEs;
+- the publication dates, aliases and references.
+
+The panel also covers the affected versions and the finding's fix:
+- **Affected versions** lists, for each package, the affected versions as a [vers](https://github.com/package-url/vers-spec) range, with a copy button and the sources that publish it. **Show source bounds** shows the ranges as each source wrote them.
+- When the panel is opened from a finding's Issue ID, **This finding** shows the finding's package and its fix version.
+  - The package ranges that fix came from are tagged **this finding**.
+  - Opened from an alias, the panel leaves this line out, because the finding's fix comes from its own record.
+- Users with write access to the organization can click **Refresh from Dependency-Track** to fetch the record again, affected versions included.
 
 ### Changelogs
 

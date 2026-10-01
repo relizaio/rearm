@@ -102,7 +102,7 @@ import commonFunctions from '@/utils/commonFunctions'
 
 async function getGeneratedVersion (branchUuid: string): Promise<string> {
     const response = await graphqlClient.query({
-            query: gql`
+        query: gql`
                 query getNextVersion($branchUuid: ID!) {
                     getNextVersion(branchUuid: $branchUuid)
                 }

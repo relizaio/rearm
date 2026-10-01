@@ -1,13 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, afterEach } from 'vitest'
 import gql from 'graphql-tag'
 import {
+    SCHEMA_DRIFT_RETRY_MS,
     classifyGraphqlError,
     httpStatusOf,
     isSchemaDriftError,
+    loadRichestServed,
     loadWithSchemaDriftFallback,
     type DriftFallbackClient,
 } from './graphqlDriftFallback'
-import type { DocumentNode } from 'graphql'
+import { parse, type DocumentNode } from 'graphql'
 
 const FULL = gql`query q { thing { a b enrichment } }`
 const CORE = gql`query q { thing { a b } }`
@@ -136,5 +138,95 @@ describe('loadWithSchemaDriftFallback', () => {
         const r = await loadWithSchemaDriftFallback(client, opts({ skipFull: true }))
         expect(r.degraded).toBe(true)
         expect(calls).toBe(1)
+    })
+})
+
+describe('loadRichestServed', () => {
+    afterEach(() => vi.useRealTimers())
+
+    // Fresh documents per test: the drift marks are keyed by document, and gql
+    // caches documents by their source text, so parse instead.
+    const tiers = () => [parse('query q { thing { a b c } }'), parse('query q { thing { a b } }'), parse('query q { thing { a } }')]
+    // A client answering each document in turn from `answers` (a value or an error to throw).
+    function clientFor (docs: DocumentNode[], answers: any[]): DriftFallbackClient & { asked: number[] } {
+        const asked: number[] = []
+        return {
+            asked,
+            async query ({ query, fetchPolicy }: { query: DocumentNode, fetchPolicy?: string }) {
+                expect(fetchPolicy).toBe('no-cache')
+                const i = docs.indexOf(query)
+                asked.push(i)
+                if (answers[i] instanceof Error) throw answers[i]
+                return { data: { thing: answers[i] } }
+            },
+        }
+    }
+    const load = (client: DriftFallbackClient, documents: DocumentNode[]) =>
+        loadRichestServed(client, { documents, variables: {}, extractPath: (d: any) => d?.thing })
+
+    it('serves the richest document the backend accepts', async () => {
+        const docs = tiers()
+        const client = clientFor(docs, [validationError(), { a: 1, b: 2 }, { a: 1 }])
+        expect(await load(client, docs)).toEqual({ data: { a: 1, b: 2 }, served: 1 })
+        expect(client.asked).toEqual([0, 1])
+    })
+
+    it('skips a rejected document for a while once a narrower one was served', async () => {
+        vi.useFakeTimers()
+        const docs = tiers()
+        const client = clientFor(docs, [validationError(), { a: 1, b: 2 }, { a: 1 }])
+        await load(client, docs)
+        await load(client, docs)
+        vi.advanceTimersByTime(SCHEMA_DRIFT_RETRY_MS + 1)
+        await load(client, docs)
+        expect(client.asked).toEqual([0, 1, 1, 0, 1])
+    })
+
+    it('surfaces the last document\'s own error when only drift came before it', async () => {
+        // A CE backend without the optional fields, briefly down: a Retry, not "not available"
+        const docs = tiers().slice(1)
+        const down = serverError()
+        await expect(load(clientFor(docs, [validationError(), down]), docs)).rejects.toBe(down)
+    })
+
+    it('surfaces the first error that was not drift, and skips the tiers in between', async () => {
+        const docs = tiers()
+        const first = serverError()
+        const client = clientFor(docs, [first, { a: 1, b: 2 }, transportError()])
+        await expect(load(client, docs)).rejects.toBe(first)
+        expect(client.asked).toEqual([0, 2])
+    })
+
+    it('steps down one document when a field failed to resolve, without remembering it', async () => {
+        // 200 with errors, no HTTP error status: only the richest document's own fields may be at fault
+        const docs = tiers()
+        const fieldFailed = Object.assign(new Error('Exception while fetching data (/thing/c)'),
+            { errors: [{ message: 'Exception while fetching data (/thing/c)', extensions: { classification: 'DataFetchingException' } }] })
+        const client = clientFor(docs, [fieldFailed, { a: 1, b: 2 }, { a: 1 }])
+        expect((await load(client, docs)).served).toBe(1)
+        await load(client, docs)
+        expect(client.asked).toEqual([0, 1, 0, 1])
+    })
+
+    it('marks the drift-rejected document even when a later one failed otherwise before the last was served', async () => {
+        const docs = tiers()
+        const client = clientFor(docs, [validationError(), serverError(), { a: 1 }])
+        expect((await load(client, docs)).served).toBe(2)
+        await load(client, docs)
+        // the drift-rejected FULL is skipped; SCORED, which failed otherwise, is asked again
+        expect(client.asked).toEqual([0, 1, 2, 1, 2])
+    })
+
+    it('surfaces the last document\'s drift error when every document is rejected', async () => {
+        const docs = tiers().slice(1)
+        const last = validationError('thing')
+        await expect(load(clientFor(docs, [validationError(), last]), docs)).rejects.toBe(last)
+    })
+
+    it('remembers no rejection when nothing is served', async () => {
+        const docs = tiers()
+        await expect(load(clientFor(docs, [wafStripped400(), wafStripped400(), serverError()]), docs)).rejects.toBeTruthy()
+        const client = clientFor(docs, [{ a: 1, b: 2, c: 3 }, { a: 1, b: 2 }, { a: 1 }])
+        expect((await load(client, docs)).served).toBe(0)
     })
 })

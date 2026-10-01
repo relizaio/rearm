@@ -29,7 +29,7 @@
                     </n-tooltip>
                 </n-radio-group>
             </n-form-item>
-            <n-form-item label="Select Artifact: " v-if="artifact.storedIn==='REARM'">
+            <n-form-item label="Select Artifact: " v-if="artifact.storedIn==='REARM'" required>
                 <n-upload v-model:value="fileList" :max="1" @change="onFileChange">
                     <n-button>
                     Upload File
@@ -201,6 +201,7 @@ import { useStore } from 'vuex'
 import { Tag, DownloadLink } from '@/utils/commonTypes'
 import Swal from 'sweetalert2'
 import commonFunctions from '../utils/commonFunctions'
+import { chosenUploadFile } from '@/utils/artifactNewVersion'
 import constants from '@/utils/constants'
 
 const isUploading = ref(false)
@@ -336,6 +337,16 @@ const onSubmit = async () => {
         return
     }
 
+    // An artifact stored in ReARM is its file, and a new version is a new file. Without one a
+    // new version used to wipe the stored artifact; the Pro backend refuses both since
+    // rearm-saas#608 (CE with its next backend sync). Say so here before sending anything.
+    if (artifact.value.storedIn === constants.ArtifactStoredIn.REARM && !chosenUploadFile(fileList.value)) {
+        Swal.fire('Error!', props.isUpdateExistingBom
+            ? 'Choose a file to upload as the new version of this artifact.'
+            : 'Choose a file to upload, or use External storage with a download link.', 'error')
+        return
+    }
+
     if (!bomRequiredTypes.includes(artifact.value.type)) {
         artifact.value.bomFormat = null
     }
@@ -353,7 +364,7 @@ const onSubmit = async () => {
     const otherTags = artifactTags.value.filter((t: Tag) => t.key !== 'COVERAGE_TYPE' && t.key !== 'LIFECYCLE')
     artifact.value.tags = [...coverageTypeTags, ...lifecycleTags, ...otherTags]
     artifact.value.downloadLinks = downloadLinks.value
-    artifact.value.file = fileList.value?.file?.file
+    artifact.value.file = chosenUploadFile(fileList.value)
     const createArtifactInput: any = {
         release: props.inputRelease,
         artifact: artifact.value,
@@ -584,7 +595,9 @@ const onReset = function () {
         downloadLinks: [],
         inventoryTypes: [],
         bomFormat: null,
-        storedIn: null,
+        // Update mode hides the storage choice and always uploads to ReARM; clearing it would
+        // hide the file field too and leave nothing the user could submit.
+        storedIn: props.isUpdateExistingBom ? constants.ArtifactStoredIn.REARM : null,
         status: null,
         version: null,
         type:null,

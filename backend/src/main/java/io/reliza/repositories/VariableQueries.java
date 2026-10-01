@@ -53,6 +53,9 @@ class VariableQueries {
 	protected static final String FIND_API_KEY_ORG_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and (:keyOrder IS NULL OR ak.key_order = :keyOrder)";
 	
+	protected static final String FIND_API_KEY_BY_ID_AND_TYPE_WITHOUT_ORDER = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
+			+ "ak.object_uuid = :uuid and ak.object_type = :type and (ak.key_order IS NULL OR ak.key_order = '')";
+
 	protected static final String FIND_REGISTRY_API_KEY = "SELECT * from rearm.api_keys ak WHERE "
 			+ "ak.object_uuid = :objUuid and ak.object_type = :type and ak.org = :orgUuid";
 
@@ -1001,6 +1004,10 @@ class VariableQueries {
 				)
 			""";
 
+	/** Yes/no form of {@link #FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION}: stops at the first match. */
+	protected static final String EXISTS_RELEASE_WITH_VULNERABILITY_ANY_LOCATION =
+			"SELECT EXISTS (" + FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION + ")";
+
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
@@ -1229,6 +1236,13 @@ class VariableQueries {
 	protected static final String LIST_ORGS_WITH_DTRACK_INTEGRATION = """
 			select distinct a.record_data->>'org' as org_uuid from rearm.integrations a
 			where a.record_data->>'type' = 'DEPENDENCYTRACK'
+			and a.record_data->>'identifier' = 'base'
+		""";
+
+	/** Every org's base integration of one type, enabled or not. */
+	protected static final String LIST_BASE_INTEGRATIONS_BY_TYPE = """
+			select * from rearm.integrations a
+			where a.record_data->>'type' = :typeAsString
 			and a.record_data->>'identifier' = 'base'
 		""";
 

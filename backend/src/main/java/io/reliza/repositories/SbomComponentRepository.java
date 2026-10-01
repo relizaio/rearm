@@ -3,6 +3,7 @@
 */
 package io.reliza.repositories;
 
+import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
@@ -548,5 +549,127 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			""", nativeQuery = true)
 	List<SbomComponent> findByOrgAndUuidIn(@Param("orgUuidAsString") String orgUuidAsString,
 			@Param("componentUuids") String componentUuids);
+
+	/**
+	 * A component's id, canonical purl and latest version, without its JSONB columns. Every
+	 * query into it selects all four aliases ({@link #CANONICAL_PURL_ROW_COLUMNS});
+	 * {@code latestVersionChecked} comes formatted in SQL as a UTC RFC-3339 instant.
+	 */
+	interface CanonicalPurlRow {
+		UUID getUuid();
+		String getCanonicalPurl();
+		String getLatestVersion();
+		String getLatestVersionChecked();
+	}
+
+	/**
+	 * The select list of a {@link CanonicalPurlRow}, over alias {@code sc}. The check time is
+	 * formatted exactly as SbomComponentDataFetcher.utcInstantOf formats the entity's, since
+	 * both reach the same GraphQL fields: keep the two in step.
+	 */
+	String CANONICAL_PURL_ROW_COLUMNS = "sc.uuid AS uuid, sc.canonical_purl AS canonicalPurl, "
+			+ "sc.latest_version AS latestVersion, to_char(sc.latest_version_checked AT TIME ZONE 'UTC', "
+			+ "'YYYY-MM-DD\"T\"HH24:MI:SS\"Z\"') AS latestVersionChecked ";
+
+	/**
+	 * The distinct components the given canonical artifacts' BOMs hold, with only their
+	 * canonical purls: matching a release's findings to its components needs nothing else.
+	 * One join instead of loading every {@code artifact_sbom_components} row (and its
+	 * {@code parents} JSONB) and then every {@code sbom_components} row (and its
+	 * record_data, identities and licenses) of a PRODUCT inventory that can run to
+	 * thousands of components. The artifact ids arrive as ONE comma-joined string cast to a
+	 * {@code uuid[]}, like {@link #findByOrgAndUuidIn}.
+	 */
+	@Query(value = "SELECT DISTINCT " + CANONICAL_PURL_ROW_COLUMNS + """
+			FROM rearm.artifact_sbom_components a
+			JOIN rearm.sbom_components sc ON sc.uuid = a.sbom_component_uuid AND sc.org = a.org
+			WHERE a.org = CAST(:orgUuidAsString AS uuid)
+			AND a.canonical_artifact_uuid = ANY(CAST(string_to_array(:canonicalArtifactUuids, ',') AS uuid[]))
+			""", nativeQuery = true)
+	List<CanonicalPurlRow> findCanonicalPurlsByOrgAndCanonicalArtifactUuidIn(
+			@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("canonicalArtifactUuids") String canonicalArtifactUuids);
+
+	/** A synthetic bucket due for a latest-version refresh, and its Dependency-Track project. */
+	interface DueBucketRow {
+		Integer getBucketIndex();
+		UUID getDtrackProjectUuid();
+	}
+
+	/**
+	 * The org's INGESTED synthetic buckets that hold a component whose latest version is due
+	 * (never checked, or checked before {@code cutoff}), ingested before {@code settledBefore}
+	 * so Dependency-Track's repository analyzer has had time to look the new packages up.
+	 * A bucket still submitting, failed, or gone is not returned, so it cannot hold a slot.
+	 * The component side is one lookup per bucket in V92's bucketed due index: the pkg: and
+	 * root conditions and the coalesce are spelled here identically, and the plain = on the
+	 * bucket implies the index's IS NOT NULL (so it must stay a plain =), or the planner
+	 * loses the match.
+	 */
+	@Query(value = """
+			SELECT b.bucket_index AS bucketIndex, b.dtrack_project_uuid AS dtrackProjectUuid
+			FROM rearm.synthetic_dtrack_bucket b
+			WHERE b.org = CAST(:orgUuidAsString AS uuid)
+			AND b.ingest_state = 'INGESTED'
+			AND b.dtrack_project_uuid IS NOT NULL
+			AND b.last_ingested < :settledBefore
+			AND EXISTS (SELECT 1 FROM rearm.sbom_components sc
+			            WHERE sc.org = b.org
+			            AND sc.canonical_purl LIKE 'pkg:%'
+			            AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
+			            AND coalesce(sc.latest_version_checked, '-infinity'::timestamptz) < :cutoff
+			            AND sc.synthetic_bucket_index = b.bucket_index)
+			ORDER BY b.bucket_index
+			LIMIT :lim
+			""", nativeQuery = true)
+	List<DueBucketRow> findLatestVersionDueBuckets(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("cutoff") ZonedDateTime cutoff, @Param("settledBefore") ZonedDateTime settledBefore,
+			@Param("lim") int limit);
+
+	/** The components of one synthetic bucket, for matching Dependency-Track's listing of its project. */
+	@Query(value = "SELECT " + CANONICAL_PURL_ROW_COLUMNS + """
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND sc.synthetic_bucket_index = :bucketIndex
+			""", nativeQuery = true)
+	List<CanonicalPurlRow> findCanonicalPurlsByOrgAndBucket(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("bucketIndex") int bucketIndex);
+
+	/**
+	 * Purl components in no synthetic bucket whose latest version is due, oldest check
+	 * first; root components (the release's own identity) are left out. One range, in
+	 * check order, of V92's unbucketed due index, whose predicate is spelled here
+	 * identically, or the planner loses the match.
+	 */
+	@Query(value = "SELECT " + CANONICAL_PURL_ROW_COLUMNS + """
+			FROM rearm.sbom_components sc
+			WHERE sc.org = CAST(:orgUuidAsString AS uuid)
+			AND sc.canonical_purl LIKE 'pkg:%'
+			AND coalesce(sc.latest_version_checked, '-infinity'::timestamptz) < :cutoff
+			AND sc.synthetic_bucket_index IS NULL
+			AND (sc.record_data->>'isRoot') IS DISTINCT FROM 'true'
+			ORDER BY coalesce(sc.latest_version_checked, '-infinity'::timestamptz)
+			LIMIT :lim
+			""", nativeQuery = true)
+	List<CanonicalPurlRow> findLatestVersionDueUnbucketed(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("cutoff") ZonedDateTime cutoff, @Param("lim") int limit);
+
+	/**
+	 * Stamp the latest version of the given components, and when it was checked: the only
+	 * writer of both columns (the entity maps them read-only). {@code rows} is a JSON array of
+	 * {@code {"uuid": ..., "latest": ...}}; a null latest keeps the version already known, so
+	 * a gap in Dependency-Track's metadata does not erase it. Revision and last_updated_date
+	 * are left alone: this is a cache of Dependency-Track's answer, not an edit of the
+	 * component, and a revision bump would fail concurrent entity saves.
+	 */
+	@Modifying
+	@Transactional
+	@Query(value = """
+			UPDATE rearm.sbom_components sc
+			SET latest_version = coalesce(v.latest, sc.latest_version), latest_version_checked = now()
+			FROM jsonb_to_recordset(CAST(:rows AS jsonb)) AS v(uuid uuid, latest text)
+			WHERE sc.uuid = v.uuid AND sc.org = CAST(:orgUuidAsString AS uuid)
+			""", nativeQuery = true)
+	int stampLatestVersions(@Param("orgUuidAsString") String orgUuidAsString, @Param("rows") String rows);
 
 }

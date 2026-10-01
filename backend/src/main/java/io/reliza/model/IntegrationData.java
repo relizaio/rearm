@@ -73,7 +73,8 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	 * {@code /api/v1/vulnerability/project} (aliases inline), V5 reads
 	 * {@code /api/v1/finding/project} (V5 dropped aliases from the vuln
 	 * endpoint and left it unpaginated; the finding endpoint carries aliases
-	 * and paginates). Absent on a stored record means V4 -- see
+	 * and paginates). Version 5 is the current generation, version 4 the
+	 * legacy one. Absent on a stored record means not detected yet -- see
 	 * {@link IntegrationData#getEffectiveDtrackVersion()}.
 	 */
 	public enum DependencyTrackVersion {
@@ -138,17 +139,26 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private String disabledReason; // operator-facing reason set when a channel is auto-disabled (e.g. bad webhook URL); null when enabled or manually disabled
 	@JsonProperty
-	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK integrations only; null == V4 (see getEffectiveDtrackVersion)
+	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK integrations only; null == not detected yet (see getEffectiveDtrackVersion)
+
+	/** What an undetected Dependency-Track is taken to be: the current generation. */
+	public static final DependencyTrackVersion DEFAULT_DTRACK_VERSION = DependencyTrackVersion.V5;
 
 	/**
 	 * Version of the linked Dependency-Track for a DEPENDENCYTRACK
-	 * integration, defaulting to V4 when unset so records predating the
-	 * field (and every non-DTrack integration) resolve to the historical
-	 * behaviour.
+	 * integration, {@link #DEFAULT_DTRACK_VERSION} while it is not detected:
+	 * a record created before detection existed, or whose instance could not
+	 * be probed. {@code IntegrationService.redetectDtrackVersions} probes those
+	 * until it can tell, so a legacy version 4 instance is recognised as one.
 	 */
 	@JsonIgnore
 	public DependencyTrackVersion getEffectiveDtrackVersion() {
-		return dtrackVersion == null ? DependencyTrackVersion.V4 : dtrackVersion;
+		return effectiveDtrackVersion(dtrackVersion);
+	}
+
+	/** {@code detected}, or {@link #DEFAULT_DTRACK_VERSION} when null (not detected yet). */
+	public static DependencyTrackVersion effectiveDtrackVersion(DependencyTrackVersion detected) {
+		return detected == null ? DEFAULT_DTRACK_VERSION : detected;
 	}
 
 	@JsonIgnore

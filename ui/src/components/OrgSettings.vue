@@ -282,6 +282,7 @@
                                         </template>
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.preconditionCelExpression"
+                                            @update:issues="(v: string[]) => { globalRulePreconditionIssues = v }"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :suppress-first-scanned-warning="true"
                                             placeholder="When set, this CEL gates the whole rule. If it returns false (e.g. release hasn't been scanned yet), the rule is skipped entirely — neither matched nor else-branch actions fire."
@@ -299,6 +300,7 @@
                                         </template>
                                         <CelExpressionBuilder
                                             v-model="globalInputEvent.celExpression"
+                                            @update:issues="(v: string[]) => { globalRuleConditionIssues = v }"
                                             :approval-entry-options="globalApprovalEntryOptionsForTriggers"
                                             :error="globalCelExpressionError"
                                             :precondition-cel-expression="globalInputEvent.preconditionCelExpression"
@@ -329,7 +331,14 @@
                                             </n-button>
                                         </n-space>
                                     </n-form-item>
-                                    <n-button @click="addGlobalInputEvent" type="success">Save</n-button>
+                                    <n-space align="center" size="small">
+                                        <n-button @click="addGlobalInputEvent" type="success"
+                                            :disabled="globalRuleConditionIssues.length > 0 || globalRulePreconditionIssues.length > 0"
+                                            data-testid="global-rule-save">Save</n-button>
+                                        <span v-if="globalRuleConditionIssues.length > 0 || globalRulePreconditionIssues.length > 0" style="font-size: 12px; color: #d03050;">
+                                            Complete the condition before saving.
+                                        </span>
+                                    </n-space>
                                 </n-space>
                             </n-form>
                         </n-modal>
@@ -530,6 +539,8 @@
                                 :instances="orgInstances"
                                 :clusters="orgClusters"
                                 :boards="orgBoards"
+                                :lock-org-type="selectedUser.uuid === myUser.uuid"
+                                :show-admin-approvals="true"
                             />
                             <n-space style="margin-top: 20px;" v-if="userPermissionsDirty">
                                 <n-button type="success" @click="updateUserPermissions">Save Permissions</n-button>
@@ -1027,6 +1038,121 @@
                             <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
                         </n-form-item>
 
+                        <!-- FDA-Readiness-1 7f. These four are rendered into the generated
+                             submission and labeling documents. No default text ships: they
+                             are the manufacturer's own commitments, and words nobody here
+                             wrote going out over their name is the failure the whole
+                             feature exists to avoid. -->
+                        <n-divider />
+                        <h6 style="display: inline-flex; align-items: center;">
+                            Submission and labeling text
+                            <!-- The heading no longer says FDA; the tooltip does. "FDA" on
+                                 the heading made a general-purpose settings section look
+                                 like a regulator-specific one to every operator who is not
+                                 preparing a submission, while the text itself -- support
+                                 commitments and risk statements -- is ordinary product
+                                 labeling. What it is FOR still has to be discoverable, so it
+                                 moved one hover away rather than disappearing. -->
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
+                                        <QuestionMark />
+                                    </n-icon>
+                                </template>
+                                Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
+                            </n-tooltip>
+                        </h6>
+                        <p class="text-muted" style="max-width: 760px;">
+                            Written once here, rendered into every generated document. A
+                            document whose required text is missing is <strong>not
+                            generated</strong> rather than generated with the section
+                            blank &mdash; on a submission a reviewer expects gaps, but on a
+                            patient-facing statement a silent gap is itself misleading.
+                            To remove text, clear the box and save &mdash; an emptied field
+                            is recorded as deliberately blank, and a field you do not touch
+                            is left exactly as it was.
+                        </p>
+
+                        <n-form-item label="Assessment justification (submission)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                    type="textarea" :rows="5" style="max-width: 760px;"
+                                    placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    What the guidance asks for literally: the justification
+                                    for why per-component support information cannot be
+                                    included. Most components in a real SBOM have no
+                                    published upstream date, so this is the centre of the
+                                    submission, not a footnote.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Patches may cease at end of support (labeling)">
+                            <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="After end of support, security patches and software updates may no longer be provided." />
+                        </n-form-item>
+
+                        <n-form-item label="Risk-transfer process reference (labeling)">
+                            <div style="display: flex; flex-direction: column; width: 100%;">
+                                <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                    style="max-width: 760px;"
+                                    placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
+                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                    A <strong>reference</strong>, not the process itself.
+                                    Pasting the process here creates a second, unversioned
+                                    copy that will drift from the controlled original.
+                                </span>
+                            </div>
+                        </n-form-item>
+
+                        <n-form-item label="Risk increases over time (labeling)">
+                            <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
+                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                type="textarea" :rows="3" style="max-width: 760px;"
+                                placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
+                        </n-form-item>
+
+                        <!-- ITS OWN SECTION, AFTER all three labeling slots.
+                             It previously sat between slot 2 and slot 3, which read as a
+                             fourth piece of labeling text and broke the three apart -- an
+                             operator working down the FDA labeling statements met a switch
+                             about export behaviour in the middle of them. The three slots are
+                             prose that ships INSIDE documents; this decides whether a
+                             document carries attestations at all. Related, not the same kind
+                             of thing, and the ordering now says so. Reported by an operator
+                             running the walkthrough, board t20260909-061338-23148. -->
+                        <!-- Hidden entirely on a backend that does not declare the field --
+                             a CE mirror before the deferred sync. Offering a switch whose
+                             write the server would reject is worse than not offering it. -->
+                        <div v-if="supportInjectionSupported" style="margin-top: 18px;">
+                            <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
+                            <!-- The switch is ADJACENT to the words it controls, not in a
+                                 form-item label column that pushed it to the far right with
+                                 760px of whitespace between the two. A control that far from
+                                 its label is one an operator has to aim at. -->
+                            <n-space align="center" :size="10" style="margin: 8px 0 4px;">
+                                <n-switch v-model:value="supportInjectionEnabled"
+                                    :disabled="savingOrgSettings" />
+                                <span>Carry support attestations in BOM exports</span>
+                            </n-space>
+                            <span class="text-muted" style="display: block; max-width: 760px;">
+                                Off by default. When on, BOM exports carry this
+                                organization's support attestations &mdash; the artifact
+                                download, the SPDX-augmented download and the release SBOM
+                                export. The raw artifact download never carries them.
+                                <strong>Forged support properties are always removed,
+                                whatever this is set to</strong>; this controls only
+                                whether our own attestations are added.
+                            </span>
+                        </div>
+
+                        <n-divider style="margin: 22px 0 10px;" />
+
                         <n-form-item>
                             <template #label>
                                 <span style="display: inline-flex; align-items: center; gap: 6px;">
@@ -1244,6 +1370,8 @@ import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderP
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
+import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -1480,7 +1608,14 @@ const orgSettings = reactive({
     sidPurlMode: 'DISABLED' as SidPurlMode,
     // Authority segments are stored as a list of decoded strings ("Acme Robotics",
     // not "Acme%20Robotics"). The backend percent-encodes when emitting sid PURLs.
-    sidAuthoritySegments: [] as string[]
+    sidAuthoritySegments: [] as string[],
+    // FDA-Readiness-1 7f. Manufacturer-authored prose rendered into the generated
+    // submission and labeling documents. Empty string here means "not authored yet";
+    // it is never SENT as an empty string -- see the save handler.
+    fdaAssessmentNarrative: '',
+    fdaPatchesMayCeaseStatement: '',
+    fdaRiskTransferProcessRef: '',
+    fdaRiskIncreasesNotice: ''
 })
 
 const vexComplianceFrameworkOptions = [
@@ -1637,7 +1772,7 @@ const approvalRoleFields: any[] = [
         minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalRole(row.id)
                 }, {
@@ -2355,7 +2490,7 @@ const perspectiveFields = [
             ])
         },
         render(row: any) {
-             return h('div', row.type === 'PERSPECTIVE' ? 'Manual' : 'Auto')
+            return h('div', row.type === 'PERSPECTIVE' ? 'Manual' : 'Auto')
         }
     },
     {
@@ -2899,17 +3034,22 @@ const userFields = [
             let el = h('div')
             let els: any[] = []
             if (isOrgAdmin.value) {
-                if (row.uuid !== myUser.value.uuid) {
+                // Your own row: editable -- a sole admin otherwise has no way to take an approval role
+                // -- but not removable, and the dialog keeps your organization-wide level fixed.
+                const editIcon = h(
+                    NIcon,
+                    {
+                        title: row.uuid === myUser.value.uuid ? 'Modify my approval roles' : 'Modify user permissions',
+                        class: 'icons clickable',
+                        size: 25,
+                        onClick: () => editUser(row.email)
+                    }, { default: () => h(EditIcon) }
+                )
+                if (row.uuid === myUser.value.uuid) {
+                    els = [editIcon]
+                } else {
                     els = [
-                        h(
-                            NIcon,
-                            {
-                                title: 'Modify user permissions',
-                                class: 'icons clickable',
-                                size: 25,
-                                onClick: () => editUser(row.email)
-                            }, { default: () => h(EditIcon) }
-                        ),
+                        editIcon,
                         h(
                             NIcon,
                             {
@@ -3674,6 +3814,36 @@ async function saveOrgDefaultView() {
     }
 }
 
+/**
+ * What the four prose fields held when this form last agreed with the server.
+ *
+ * proseDiff reads it to tell an untouched field (omit) from an emptied one (send '', a
+ * deliberate clear), so it must be refreshed from every write that COMMITS -- see
+ * saveOrgSettings, which takes it from the mutation response rather than a follow-up read.
+ */
+const proseBaseline: Record<string, string> = {}
+
+/**
+ * The export toggle as a Boolean for n-switch, mapped to the two-member enum on save.
+ *
+ * A Boolean in the FORM and an enum on the WIRE: the schema deliberately uses an enum so the
+ * field can grow a third state without breaking published clients, but there are two states
+ * to choose between today and a switch is what an operator expects for that. The mapping
+ * lives in one place, here, so the form cannot invent a value the schema does not declare.
+ */
+/**
+ * Whether this backend declares the field at all.
+ *
+ * The store sets it false when the organizations query had to fall back to its core document,
+ * which is how a CE mirror predating the deferred sync behaves. The toggle is hidden then,
+ * and the field is never sent -- so the shared settings mutation stays valid.
+ */
+const supportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.supportInjectionSupported !== false)
+
+const supportInjectionEnabled: Ref<boolean> = ref(false)
+const supportInjectionBaseline: Ref<boolean> = ref(false)
+
 async function loadOrgSettings() {
     await loadOrgDefaultView()
     const s = myorg.value?.settings
@@ -3687,6 +3857,15 @@ async function loadOrgSettings() {
     orgSettings.sidAuthoritySegments = Array.isArray(s?.sidAuthoritySegments)
         ? [...s.sidAuthoritySegments]
         : []
+    // ENABLED is the only truthy value; anything else -- DISABLED, null, unset, or a state
+    // this build does not know -- reads as off, which matches the server's own default rule.
+    supportInjectionEnabled.value = supportInjectionFromSettings(s)
+    supportInjectionBaseline.value = supportInjectionEnabled.value
+    const seeded = proseBaselineFrom(s)
+    for (const f of FDA_PROSE_FIELDS) {
+        orgSettings[f] = seeded[f]
+        proseBaseline[f] = seeded[f]
+    }
 }
 
 async function saveOrgSettings() {
@@ -3726,6 +3905,10 @@ async function saveOrgSettings() {
                             vexComplianceFramework
                             sidPurlMode
                             sidAuthoritySegments
+                            fdaAssessmentNarrative
+                            fdaPatchesMayCeaseStatement
+                            fdaRiskTransferProcessRef
+                            fdaRiskIncreasesNotice
                         }
                     }
                 }`,
@@ -3740,7 +3923,17 @@ async function saveOrgSettings() {
                     sidPurlMode: orgSettings.sidPurlMode,
                     // DISABLED implies "no segments"; sending an empty list lets the server
                     // null them out cleanly per applySidPurlPatch.
-                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments
+                    sidAuthoritySegments: orgSettings.sidPurlMode === 'DISABLED' ? [] : trimmedSegments,
+                    // Diffed, not dumped: untouched fields are omitted so an unrelated
+                    // toggle cannot disturb prose, and a field the user emptied goes as ''
+                    // which the server reads as a deliberate clear.
+                    ...proseDiff(orgSettings, proseBaseline),
+                    // Sent only when actually changed, for the same reason: the mutation is a
+                    // PATCH, and an unchanged field has no business in it.
+                    ...(supportInjectionSupported.value
+                        && supportInjectionEnabled.value !== supportInjectionBaseline.value
+                        ? { supportInjection: supportInjectionEnabled.value ? 'ENABLED' : 'DISABLED' }
+                        : {})
                 }
             },
             fetchPolicy: 'no-cache'
@@ -3748,9 +3941,52 @@ async function saveOrgSettings() {
 
         const result = (resp.data as any)?.updateOrganizationSettings
         if (result) {
-            store.commit('UPDATE_ORGANIZATION', result)
-            // Sync local form with server-canonicalized values.
-            await loadOrgSettings()
+            // GRAFT THE ACCEPTED supportInjection BACK ON before committing.
+            //
+            // The mutation deliberately does not select this field (see the comment below:
+            // selecting it makes the whole document invalid on a CE backend that lacks it).
+            // But UPDATE_ORGANIZATION REPLACES the stored organization, so committing the
+            // raw response dropped supportInjection out of the store entirely. Re-entering
+            // this page then hydrated the toggle from the store, read undefined, and rendered
+            // OFF while the backend held ENABLED -- and because the mutation only sends the
+            // field when it differs from that (now wrong) baseline, DISABLED could not be
+            // sent at all without a hard reload. An operator could turn the disclosure on and
+            // be told by this screen that it was off.
+            //
+            // Grafting rather than re-fetching: this is the same claim the baseline
+            // assignment below already makes, that a mutation which did not throw accepted
+            // what it was sent. A fetchMyOrganizations round trip would assert no more than
+            // that and could fail on its own, leaving the store stale after a committed save.
+            // Only when the field is supported -- on a CE mirror it must stay absent.
+            // The stored organization is passed in so the commit MERGES rather than replaces:
+            // the mutation returns a partial org, and UPDATE_ORGANIZATION overwrites whatever
+            // it is given. Without this, every field the mutation does not select -- type,
+            // approvalRoles -- was wiped from the store on every settings save.
+            store.commit('UPDATE_ORGANIZATION', organizationToCommit(
+                result, supportInjectionSupported.value, supportInjectionEnabled.value,
+                myorg.value))
+            // BEFORE anything that can throw. The mutation has COMMITTED by this point, so
+            // the baseline it implies is now the truth, and it is already in hand -- the
+            // mutation selects all four fields. Refreshing it via the re-read below instead
+            // meant a failed re-read left the baseline stale AND reported the committed
+            // save as a failure; the operator's next clear then compared '' against a stale
+            // '', omitted the field, and said "Settings Saved" while the server still held
+            // the text. That is fabricated prose reaching a patient-facing document, which
+            // is the exact failure this feature exists to prevent.
+            const savedSettings = (result as any)?.settings
+            // NOT selected back from the mutation. Adding supportInjection to the response
+            // selection makes the WHOLE updateOrganizationSettings document invalid on a
+            // backend without the field -- so every save, including the four prose slots and
+            // sid PURL, would fail on a CE mirror. The baseline advances to what the server
+            // just ACCEPTED instead, which it did accept: the field is only ever sent when
+            // the toggle is supported, and a rejected mutation lands in the catch below with
+            // the baseline untouched.
+            supportInjectionBaseline.value = supportInjectionEnabled.value
+            const refreshed = proseBaselineFrom(savedSettings)
+            for (const f of FDA_PROSE_FIELDS) {
+                orgSettings[f] = refreshed[f]
+                proseBaseline[f] = refreshed[f]
+            }
             notify('success', 'Settings Saved', 'Organization settings updated successfully.')
         } else {
             notify('warning', 'Save Warning', 'Save completed but no response received.')
@@ -3759,6 +3995,17 @@ async function saveOrgSettings() {
         notify('error', 'Save Failed', commonFunctions.extractGraphQLErrorMessage(err))
     } finally {
         savingOrgSettings.value = false
+    }
+
+    // Deliberately AFTER the try and outside it: this is a convenience re-read that syncs
+    // the non-prose fields with whatever the server canonicalised. It does a network round
+    // trip and can fail on its own; when it does, the save above still happened and has
+    // already been reported honestly, so a failure here must not be dressed up as one.
+    try {
+        await loadOrgSettings()
+    } catch (err: any) {
+        notify('warning', 'Refresh Failed',
+            'Settings were saved, but reloading them failed. Reload the page to see the stored values.')
     }
 }
 
@@ -3945,11 +4192,11 @@ function extractOrgWidePermission(user: any) {
 
 function translatePermissionScopeName(scope: string) {
     switch (scope) {
-        case 'ORGANIZATION': return 'Organization'
-        case 'PERSPECTIVE': return 'Perspective'
-        case 'COMPONENT': return 'Component'
-        case 'INSTANCE': return 'Instance'
-        default: return scope
+    case 'ORGANIZATION': return 'Organization'
+    case 'PERSPECTIVE': return 'Perspective'
+    case 'COMPONENT': return 'Component'
+    case 'INSTANCE': return 'Instance'
+    default: return scope
     }
 }
 
@@ -4059,16 +4306,16 @@ async function inviteUser() {
     let isError = false
     try {
         const resp = await graphqlClient.mutate({
-                mutation: gql`
+            mutation: gql`
                             mutation inviteUser($invitationProperties: InviteUserInput!) {
                                 inviteUser(invitationProperties: $invitationProperties) {
                                     uuid
                                 }
                             }`,
-                variables: {
-                    invitationProperties: invitee.value
-                }
-            })
+            variables: {
+                invitationProperties: invitee.value
+            }
+        })
         if (resp.data.inviteUser && resp.data.inviteUser.uuid) {
             notify('success', 'Invited', 'Successfully invited ' + invitee.value.email)
             resetInvitee()
@@ -4401,10 +4648,10 @@ async function loadCiIntegrations(useCache: boolean) {
                                     capabilities
                               }
                           }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
+                variables: {
+                    org: orgResolved.value
+                },
+                fetchPolicy: cachePolicy
             })
             if (resp.data && resp.data.ciIntegrations) {
                 ciIntegrations.value = resp.data.ciIntegrations
@@ -4419,7 +4666,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
     const resp = await graphqlClient.query({
-            query: gql`
+        query: gql`
                           query apiKeys($orgUuid: ID!) {
                                  apiKeys(orgUuid: $orgUuid) {
                                     uuid
@@ -4457,11 +4704,11 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     }
                                 }
                             }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
-        })
+        variables: {
+            orgUuid: orgResolved.value
+        },
+        fetchPolicy: cachePolicy
+    })
     // Always run the formatter — formatValuesForApiKeys handles an
     // empty users.value gracefully (updatedByName falls back to '').
     // The previous skip-when-empty branch left raw rows in
@@ -4503,7 +4750,7 @@ async function loadInvitedUsers(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
     const resp = await graphqlClient.query({
-            query: gql`
+        query: gql`
                           query adminOrganization($org: ID!) {
                                  adminOrganization(org: $org) {
                                     uuid
@@ -4514,11 +4761,11 @@ async function loadInvitedUsers(useCache: boolean) {
                                     }
                                 }
                             }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
-        })
+        variables: {
+            org: orgResolved.value
+        },
+        fetchPolicy: cachePolicy
+    })
     invitees.value = resp.data.adminOrganization.invitees
 }
 
@@ -4645,17 +4892,17 @@ async function cancelInvite(email: string) {
     let isSuccess = false
     try {
         const resp = await graphqlClient.mutate({
-                mutation: gql`
+            mutation: gql`
                             mutation cancelInvite($org: ID!, $userEmail: String!) {
                                     cancelInvite(org: $org, userEmail: $userEmail) {
                                         uuid
                                     }
                                 }`,
-                variables: {
-                    userEmail: email,
-                    org: orgResolved.value
-                }
-            })
+            variables: {
+                userEmail: email,
+                org: orgResolved.value
+            }
+        })
         if (resp.data.cancelInvite && resp.data.cancelInvite.uuid) isSuccess = true
         invitees.value = resp.data.cancelInvite.invitees
     } catch (e: any) {
@@ -5142,7 +5389,7 @@ const approvalEntryFields: DataTableColumns<any> = [
         minWidth: 50,    
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalEntry(row.uuid, row.approvalName)
                 }, {
@@ -5225,7 +5472,7 @@ const approvalPolicyFields: DataTableColumns<any> = [
         minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalPolicy(row.uuid, row.policyName)
                 }, {
@@ -5350,6 +5597,9 @@ const globalInputEvent: Ref<InputTriggerEvent> = ref({
 })
 
 const globalCelExpressionError = ref('')
+// Incomplete clauses reported by the two builders; either blocks the rule's Save.
+const globalRuleConditionIssues = ref<string[]>([])
+const globalRulePreconditionIssues = ref<string[]>([])
 
 function resetGlobalInputEvent () {
     globalInputEvent.value = {
@@ -5814,7 +6064,7 @@ function addGlobalInputEvent () {
     const eventToPush = commonFunctions.deepCopy(globalInputEvent.value)
     const validation = validateInputTrigger(eventToPush)
     if (!validation.valid) {
-        if (validation.error === 'Condition is required.') {
+        if (validation.field === 'celExpression') {
             globalCelExpressionError.value = validation.error
         } else {
             notify('error', 'Validation Error', validation.error!)

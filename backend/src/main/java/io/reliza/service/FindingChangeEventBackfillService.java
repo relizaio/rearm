@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -159,6 +160,15 @@ public class FindingChangeEventBackfillService {
 	 * @param batchPerTick max branches to process this tick across all orgs (the per-tick CPU bound)
 	 */
 	public V3BackfillResult drainV3Backfill(int batchPerTick) {
+		return drainV3Backfill(batchPerTick, org -> true);
+	}
+
+	/**
+	 * {@link #drainV3Backfill(int)} over the orgs {@code orgFilter} accepts. The scheduled drain takes every
+	 * org; a test takes its own, so its per-tick budget is not spent on orgs other threads leave
+	 * uncertified in a shared database.
+	 */
+	V3BackfillResult drainV3Backfill(int batchPerTick, Predicate<UUID> orgFilter) {
 		log.info("finding_change_events v3 drain: starting (batchPerTick={})", batchPerTick);
 		V3BackfillResult total = V3_EMPTY;
 		int budget = batchPerTick;
@@ -177,6 +187,9 @@ public class FindingChangeEventBackfillService {
 			}
 			if (org == null) {
 				continue; // legacy NULL-org audit rows have no org settings to certify
+			}
+			if (!orgFilter.test(org)) {
+				continue;
 			}
 			if (!findingDimBackfillService.needsV3Backfill(org)) {
 				continue; // already v3-certified at the current key version

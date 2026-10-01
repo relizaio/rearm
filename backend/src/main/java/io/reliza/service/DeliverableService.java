@@ -106,6 +106,13 @@ public class DeliverableService {
 		Deliverable d = null;
 		if(null == deliverableDto.getType())
 			throw new RelizaException("Deliverable must have type!");
+		// SoftwareMetadataInput.digestRecords shares DigestRecordInput with artifacts, and TEA
+		// publishes a deliverable's checksums through the same scope preference, so the
+		// server-derived scopes have to be refused on this path too. A deliverable never gets a
+		// genuine AS_UPLOADED -- nothing retains bytes here -- so any such record is spurious.
+		if (null != deliverableDto.getSoftwareMetadata()) {
+			Utils.rejectServerDerivedDigestScopes(deliverableDto.getSoftwareMetadata().getDigestRecords());
+		}
 		// resolve organization via branch
 		Optional<BranchData> bdOpt = branchService.getBranchData(deliverableDto.getBranch());
 		if (bdOpt.isPresent()) {

@@ -1,32 +1,18 @@
 import { describe, it, expect } from 'vitest'
 import { validate, type GraphQLSchema } from 'graphql'
-import { CE_SCHEMA_DIR, PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
-import { INBOX_QUERY_FULL, INBOX_QUERY_CORE, INBOX_ENRICHMENT_ITEM_FIELDS } from './notificationInboxQuery'
+import { INBOX_QUERY_FULL, INBOX_QUERY_CORE } from './notificationInboxQuery'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // The CE mirror schema ships IN this repo -- always present, so its checks are
 // unconditional. The Pro schema lives in the sibling rearm-core checkout,
 // which is NOT present in this repo's own CI; those checks are skipped (not
 // failed) when it's absent, so the suite is green in a CE-only checkout and
 // still meaningful on a dev box that has both.
-const CE_SCHEMA_PATH = CE_SCHEMA_DIR
-const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
-
-function loadSchema (path: string): GraphQLSchema | null {
-    return loadSchemaDir(path)
-}
-
-const ceSchema = loadSchema(CE_SCHEMA_PATH)
-const proSchema = loadSchema(PRO_SCHEMA_PATH)
 
 describe('inbox core selection vs the CE mirror schema (in-repo, always runs)', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_PATH}`).not.toBeNull()
-    })
-
     // The load-bearing invariant: every field the inbox HARD-REQUIRES exists on
     // the CE mirror, so a CE install never blanks.
     it('the CORE inbox selection is valid against the CE mirror', () => {
-        if (!ceSchema) return
         expect(validate(ceSchema, INBOX_QUERY_CORE).map(e => e.message)).toEqual([])
     })
 

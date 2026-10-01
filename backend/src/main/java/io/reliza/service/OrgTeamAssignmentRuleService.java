@@ -7,10 +7,8 @@ package io.reliza.service;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
-import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.concurrent.ConcurrentHashMap;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
@@ -19,6 +17,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.SafeRegex;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
@@ -51,30 +50,8 @@ import lombok.extern.slf4j.Slf4j;
 @Service
 public class OrgTeamAssignmentRuleService {
 
-	/**
-	 * Longest pattern we will accept. A cap alone does not stop catastrophic
-	 * backtracking, but it bounds how much rope an operator gets and keeps the
-	 * cache keys small.
-	 */
-	public static final int MAX_PATTERN_LENGTH = 512;
-
-	/**
-	 * Match-step budget. Guards against catastrophic backtracking: a pattern like
-	 * {@code (.*a){20}} is perfectly valid and compiles fine, but can run for
-	 * minutes on a short input. Since rules are evaluated on EVERY ownership read
-	 * of EVERY component in the org, an unbounded match would let one saved rule
-	 * burn request threads indefinitely -- a denial of service that an org admin
-	 * could trigger for the whole instance. The budget makes a pathological
-	 * pattern fail fast (and loudly) instead.
-	 */
-	private static final int MATCH_STEP_BUDGET = 200_000;
-
-	/**
-	 * Compiled-pattern cache. Without it every rule is recompiled for every
-	 * component on the report path. Bounded by (orgs x rules) and keyed by the
-	 * pattern text, so identical patterns across orgs share one entry.
-	 */
-	private final Map<String, Pattern> patternCache = new ConcurrentHashMap<>();
+	/** Longest pattern we will accept; shared with approval-policy rules, see {@link SafeRegex}. */
+	public static final int MAX_PATTERN_LENGTH = SafeRegex.MAX_PATTERN_LENGTH;
 
 	@Autowired
 	private TeamService teamService;
@@ -85,53 +62,26 @@ public class OrgTeamAssignmentRuleService {
 	/** A rule that matched, together with the team it resolves to. */
 	public record TeamAssignmentMatch (GlobalTeamAssignmentRule rule, TeamData team) {}
 
-	/** Raised when a pattern exceeds {@link #MATCH_STEP_BUDGET} steps. */
-	private static final class MatchBudgetExceededException extends RuntimeException {
-		private static final long serialVersionUID = 1L;
-	}
-
-	/**
-	 * A CharSequence that counts reads and aborts once the budget is spent.
-	 * java.util.regex has no timeout, but it interrogates the input through
-	 * charAt() -- so counting those reads is the standard way to bound a match
-	 * without spawning a watchdog thread per evaluation.
-	 */
-	private static final class BudgetedCharSequence implements CharSequence {
-		private final CharSequence delegate;
-		private int budget;
-		BudgetedCharSequence (CharSequence delegate, int budget) {
-			this.delegate = delegate;
-			this.budget = budget;
-		}
-		@Override public int length () { return delegate.length(); }
-		@Override public char charAt (int index) {
-			if (--budget < 0) throw new MatchBudgetExceededException();
-			return delegate.charAt(index);
-		}
-		@Override public CharSequence subSequence (int start, int end) {
-			return new BudgetedCharSequence(delegate.subSequence(start, end), budget);
-		}
-		@Override public String toString () { return delegate.toString(); }
-	}
-
-	/** Compile once (cached) and match under a step budget. */
+	/** Match under a step budget (see {@link SafeRegex}); a bad or runaway pattern is no match. */
 	private boolean matchesSafely (String pattern, String name, String ruleName, UUID orgUuid) {
-		Pattern p;
-		try {
-			p = patternCache.computeIfAbsent(pattern, Pattern::compile);
-		} catch (PatternSyntaxException e) {
-			// Defensive -- writes validate the regex, but bad data on read must
-			// not kill the whole ownership resolver.
-			log.warn("Bad regex in org team-assignment rule '{}' (org {}): {}", ruleName, orgUuid, e.getMessage());
-			return false;
-		}
-		try {
-			return p.matcher(new BudgetedCharSequence(name, MATCH_STEP_BUDGET)).matches();
-		} catch (MatchBudgetExceededException e) {
-			log.warn("Team-assignment rule '{}' (org {}) exceeded the match budget on name '{}'"
-					+ " -- treating as no match; simplify the pattern", ruleName, orgUuid, name);
-			return false;
-		}
+		return switch (SafeRegex.matches(pattern, name)) {
+			case MATCH -> true;
+			case NO_MATCH -> false;
+			case INVALID_PATTERN -> {
+				// Defensive -- writes validate the regex, but bad data on read must
+				// not kill the whole ownership resolver.
+				log.warn("Bad regex in org team-assignment rule '{}' (org {})", ruleName, orgUuid);
+				yield false;
+			}
+			case BUDGET_EXCEEDED -> {
+				if (SafeRegex.shouldReport(OrgTeamAssignmentRuleService.class, orgUuid, ruleName, pattern)) {
+					log.warn("Team-assignment rule '{}' (org {}) exceeded the match budget on name of {}"
+							+ " -- treating as no match; simplify the pattern (logged once an hour per rule)",
+							ruleName, orgUuid, SafeRegex.describeInput(name));
+				}
+				yield false;
+			}
+		};
 	}
 
 	/**
