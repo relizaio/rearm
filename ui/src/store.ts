@@ -82,7 +82,7 @@ const AGENT_TASK_SELECTION = `
     role
     orderIndex
     dependsOn
-    hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo }
+    hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo linked { prUrl by at } }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
@@ -166,7 +166,7 @@ const AGENT_TASK_SELECTION = `
     childTasks
     sessions
     registeredBySession
-    statusHistory { from to at trigger actor { kind uuid name } note }
+    statusHistory { from to at trigger actor { kind uuid name } note linked { prUrl by at } }
     orderSetBy { kind uuid name }
     orderSetAt
     requiredRolesSkipped

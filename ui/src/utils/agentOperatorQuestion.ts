@@ -9,6 +9,10 @@
 // and anything else a person does on the task (answering its questions, an attestation, a cancel, a new order ...)
 // answers it too (architecture round 2): the release row then reads "<action> by <person>: <note>", for example
 // "cancelled by Pat: a duplicate", and the page shows that row's note whole as the answer.
+//
+// A PR linked while the seat has the task parked (task RD4-19) is preparation for the decision, never its answer: the
+// server records it on the hold ({prUrl, by, at}, by the linking key's agent), and the row that leaves the hold keeps
+// the links, so the page lists them under the question while it waits and beside the answer once given.
 
 export const AWAITING_THE_OPERATOR = 'awaiting the operator: '
 
@@ -103,6 +107,23 @@ export function answerOf (row: any): string {
     return m ? note.slice(m[0].length) : note
 }
 
+/** A PR linked while the seat had the task parked (task RD4-19), as the hold and the release row record it. */
+export interface LinkedSinceParked {
+    prUrl: string
+    by: string | null
+    at: string | null
+}
+
+/** The PRs linked since the seat parked the task, oldest first; none on any other task (task RD4-19). */
+export function linkedSinceParked (task: any): LinkedSinceParked[] {
+    return seatParked(task) ? (task.hold.linked ?? []) : []
+}
+
+/** The words before a linked PR's time, the time itself rendered by the page: "since parked: PR <url> linked by <agent> at". */
+export function linkedLine (l: LinkedSinceParked): string {
+    return `since parked: PR ${l.prUrl} linked by ${l.by || 'an API key'} at`
+}
+
 export interface OperatorQuestion {
     question: string
     /** Who asked: the hop working the task, or the coordinator seat (RD4-17). */
@@ -113,6 +134,8 @@ export interface OperatorQuestion {
     answer: string | null
     answeredAt: string | null
     answeredBy: any
+    /** PRs linked while the seat had it parked (task RD4-19): from the hold while it waits, the release row after. */
+    linked: LinkedSinceParked[]
 }
 
 /**
@@ -127,6 +150,8 @@ export function operatorQuestions (task: any): OperatorQuestion[] {
         if (!rowAsksTheOperator(row)) return
         const next = rows.slice(i + 1).find((r: any) => r?.from === 'ON_HOLD')
         const answered = next?.trigger === 'RELEASE_HOLD'
+        // The hold standing now is this question's when no row has left it yet.
+        const linked: LinkedSinceParked[] = next ? (next.linked ?? []) : linkedSinceParked(task)
         out.push({
             question: questionOf(row.note),
             askedByCoordinator: row.from !== 'ASSIGNED',
@@ -135,6 +160,7 @@ export function operatorQuestions (task: any): OperatorQuestion[] {
             answer: answered ? answerOf(next) : null,
             answeredAt: answered ? (next.at ?? null) : null,
             answeredBy: answered ? (next.actor ?? null) : null,
+            linked,
         })
     })
     return out
