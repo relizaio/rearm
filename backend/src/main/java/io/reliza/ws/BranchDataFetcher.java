@@ -281,11 +281,13 @@ public class BranchDataFetcher {
 				pd.getName(), pd.getUuid()
 			));
 		}		
-		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction, null, null, VersionTypeEnum.DEV);
+		// The throwing variant, so a contention or refusal reaches the caller with its reason.
+		Optional<VersionAssignment> ova = versionAssignmentService.getSetNewVersionWrapper(branchUuid, bumpAction, null, null,
+				VersionTypeEnum.DEV, null, false);
 		if (ova.isPresent()) {
 			return new VersionResponse(ova.get().getVersion(), Utils.dockerTagSafeVersion(ova.get().getVersion()), "");
 		} else {
-			throw new RuntimeException("Failed to retrieve next version");
+			throw new RelizaException("Could not assign a version on this branch");
 		}
 	}
 	

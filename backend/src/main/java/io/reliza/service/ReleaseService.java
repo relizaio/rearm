@@ -1335,7 +1335,9 @@ public class ReleaseService {
 		getPendingReleases(limit).stream().forEach(rd -> {
 			log.debug("cancelling pending release : uuid {}",rd.getUuid());
 			try {
-				ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated());
+				// No rules: an abandoned reservation never became a release, so nothing may fire for
+				// it -- a rule held back while it was PENDING would otherwise fire on the cancel.
+				ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated(), false);
 			} catch (Exception e) {
 				// Per-release isolation (same contract as computeMetricsForReleaseList):
 				// without it one failure aborts every release left in the batch, which
