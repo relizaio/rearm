@@ -2087,6 +2087,7 @@ import type { FindingSortKey } from '@/utils/metrics'
 import { cvssBandOf, cvssPillOf, epssPillOf } from '@/utils/vulnScoreDisplay'
 import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus } from '@/utils/releaseScanStatus'
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
+import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
 import { PackageURL } from 'packageurl-js'
 
@@ -3050,15 +3051,17 @@ async function fetchRelease () {
         approvalEntries.value.forEach(ae => {
             approvalMatrixCheckboxes.value[ae.uuid] = {}
             ae.approvalRequirements.forEach((ar: any) => {
-                const role = resolveApprovalRoles(ar)[0]
-                if (!role) return
-                availableApprovalIds.value[role.id] = role.displayView
-                let checkBoxValue = 'UNSET'
-                if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][role.id] === 'APPROVED' ||
-                    givenApprovals.value[ae.uuid][role.id] === 'DISAPPROVED')) {
-                    checkBoxValue = givenApprovals.value[ae.uuid][role.id]
-                }
-                approvalMatrixCheckboxes.value[ae.uuid][role.id] = checkBoxValue
+                // Every role a requirement allows gets a column: a requirement of "any of QA, SEC"
+                // must be votable by a SEC holder too.
+                resolveApprovalRoles(ar).forEach(role => {
+                    availableApprovalIds.value[role.id] = role.displayView
+                    let checkBoxValue = 'UNSET'
+                    if (givenApprovals.value[ae.uuid] && (givenApprovals.value[ae.uuid][role.id] === 'APPROVED' ||
+                        givenApprovals.value[ae.uuid][role.id] === 'DISAPPROVED')) {
+                        checkBoxValue = givenApprovals.value[ae.uuid][role.id]
+                    }
+                    approvalMatrixCheckboxes.value[ae.uuid][role.id] = checkBoxValue
+                })
             })
         })
     }
@@ -3616,17 +3619,23 @@ type ApprovalEvent = {
     wu: WhoUpdated;
 }
 
+// This user's own saved votes. Other people's votes do not fill or lock a cell: a requirement of two
+// approvals needs a second person to vote on the same role -- they are shown as a count instead.
 function computeGivenApprovalsFromRelease () {
-    const givenApprovals: any = {}
-    if (updatedRelease.value && updatedRelease.value.approvalEvents && updatedRelease.value.approvalEvents.length) {
-        const approvalEvents: ApprovalEvent[] = updatedRelease.value.approvalEvents
-        approvalEvents.forEach(ae => {
-            if (!givenApprovals[ae.approvalEntry]) givenApprovals[ae.approvalEntry] = {}
-            givenApprovals[ae.approvalEntry][ae.approvalRoleId] = ae.state
-        })
-    }
-    return givenApprovals
+    const approvalEvents: ApprovalEvent[] = updatedRelease.value?.approvalEvents || []
+    return myVotes(approvalEvents, myUser?.uuid)
 }
+
+const othersApprovalVotes = computed(() => othersVoteCounts(updatedRelease.value?.approvalEvents || [], myUser?.uuid))
+
+// The role ids of each requirement, per entry: one vote per person per requirement.
+const entryRequirementRoles = computed((): Record<string, string[][]> => {
+    const out: Record<string, string[][]> = {}
+    for (const ae of approvalEntries.value || []) {
+        out[ae.uuid] = (ae.approvalRequirements || []).map((ar: any) => resolveApprovalRoles(ar).map(r => r.id))
+    }
+    return out
+})
 
 const hasApprovalChanges: ComputedRef<boolean> = computed((): boolean => {
     let hasChanges = false
@@ -6895,8 +6904,12 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
             title: availableApprovalIds.value[aid],
             render: (row: any) => {
                 if (row[aid]) {
-                    let isDisabled = !canUserApproveForRelease(aid)
-                    if (!isDisabled && givenApprovals.value[row.uuid]) isDisabled = (givenApprovals.value[row.uuid][aid]?.length > 0)
+                    const votingClosed = isVotingClosed(updatedRelease.value?.lifecycle || release.value?.lifecycle)
+                    let isDisabled = votingClosed || !canUserApproveForRelease(aid)
+                    if (!isDisabled) {
+                        isDisabled = isLockedByOwnVote(entryRequirementRoles.value[row.uuid] || [],
+                            givenApprovals.value[row.uuid], approvalMatrixCheckboxes.value[row.uuid], aid)
+                    }
                     const isDisapproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'DISAPPROVED' : false
                     const isApproved = approvalMatrixCheckboxes.value[row.uuid] ? approvalMatrixCheckboxes.value[row.uuid][aid] === 'APPROVED' : false
                     // Machine-readable cell state for the test harness.
@@ -6931,8 +6944,11 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                             isDisabled && !active ? 'opacity: 0.45' : ''
                         ].filter(Boolean).join('; ')
                         const label = kind === 'approve' ? 'Approve' : 'Disapprove'
+                        const lockedTitle = active
+                            ? `${kind === 'approve' ? 'Approved' : 'Disapproved'}${isSubmitted ? ' (saved)' : ''}`
+                            : (votingClosed ? VOTING_CLOSED_TITLE : `${label} - not available to you`)
                         const title = isDisabled
-                            ? (active ? `${kind === 'approve' ? 'Approved' : 'Disapproved'}${isSubmitted ? ' (saved)' : ''}` : `${label} - not available to you`)
+                            ? lockedTitle
                             : (active ? `Your ${label.toLowerCase()} is pending - click to clear` : label)
                         return h('span', {
                             style: base,
@@ -6968,6 +6984,16 @@ const releaseApprovalTableFields: ComputedRef<DataTableColumns<any>> = computed(
                     const showOverrideIcon = isOrgAdmin.value && isDraft && isDisabled && isSubmitted
                     
                     const elements = [checkBoxEl]
+                    const others = othersApprovalVotes.value[row.uuid]?.[aid]
+                    if (others && (others.APPROVED || others.DISAPPROVED)) {
+                        const parts = []
+                        if (others.APPROVED) parts.push(`${others.APPROVED} approved`)
+                        if (others.DISAPPROVED) parts.push(`${others.DISAPPROVED} disapproved`)
+                        elements.push(h('span', {
+                            style: 'font-size: 11px; color: #888; margin-left: 6px;',
+                            'data-testid': `approval-others-${row.uuid}-${aid}`
+                        }, `others: ${parts.join(', ')}`))
+                    }
                     if (showOverrideIcon) {
                         const overrideIcon = h(NIcon, {
                             class: 'clickable',
@@ -7042,8 +7068,7 @@ const releaseApprovalTableData: ComputedRef<any[]> = computed((): any[] => {
 
             }
             ae.approvalRequirements.forEach((ar: any) => {
-                const role = resolveApprovalRoles(ar)[0]
-                if (role) aeObj[role.id] = true
+                resolveApprovalRoles(ar).forEach(role => { aeObj[role.id] = true })
             })
             return aeObj
         })
