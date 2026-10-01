@@ -30,7 +30,7 @@
 </template>
 
 <script lang="ts" setup>
-// A DOCUMENT component's page (board-documents.md §5, task 36d0549e): the board it belongs to, and its
+// A BOARD_DOCUMENT component's page (board-documents.md §5, task 36d0549e): the board it belongs to, and its
 // releases as the rounds they are. The software panels are not shown for it; ComponentView decides.
 import AgentTime from './AgentTime.vue'
 import { computed, ref, watch } from 'vue'

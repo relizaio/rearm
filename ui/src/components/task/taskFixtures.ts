@@ -1,19 +1,19 @@
 // Fixture tasks for the task page, the drawer and their section components' specs. Shaped as the
 // agentTask / agentTasksOfBoard selection returns them.
 
-function finding (id: string, priority: number, status: string, title: string, extra: Record<string, any> = {}) {
+function reviewItem (id: string, priority: number, status: string, title: string, extra: Record<string, any> = {}) {
     return { id, priority, status, title, location: null, resolvedBy: null, resolution: null,
         decidedBy: null, decidedIn: null, decidedAt: null, ...extra }
 }
 
-function round (uuid: string, spec: string, n: number, verdict: string, findings: any[], extra: Record<string, any> = {}) {
+function round (uuid: string, spec: string, n: number, verdict: string, reviewItems: any[], extra: Record<string, any> = {}) {
     return {
         uuid, version: String(n), lifecycle: 'DRAFT', component: 'c1', createdDate: `2026-09-2${n}T10:00:00Z`,
         sourceCodeEntryDetails: { commit: 'abcdef0123456789', commitMessage: 'm', vcsRepository: { uri: 'github.com/relizaio/docs', name: 'docs' } },
         document: {
             specification: spec, path: `reviews/t1/${spec.toLowerCase()}-${n}.md`, digest: null, mediaType: 'text/markdown',
             indexPath: null, task: 't1', session: 's1', round: n,
-            findings: { kind: spec, round: n, verdict, counts: null, findings, about: null },
+            reviewItems: { kind: spec, round: n, verdict, counts: null, reviewItems, about: null },
             ...extra,
         },
     }
@@ -24,15 +24,15 @@ const longLocation = { path: 'backend/src/main/java/io/reliza/service/AgentRouti
 /** Three review rounds, a test report, a design; the newest review round is what the page shows. */
 export function richDocuments () {
     return [
-        round('r3', 'REVIEW_FINDINGS', 3, 'REJECTED', [
-            finding('F-4', 2, 'OPEN', 'The served prompt block repeats the heading when a role prompt already ends with a blank line',
+        round('r3', 'BOARD_REVIEW_ITEMS', 3, 'REJECTED', [
+            reviewItem('F-4', 2, 'OPEN', 'The served prompt block repeats the heading when a role prompt already ends with a blank line',
                 { location: longLocation }),
-            finding('F-1', 1, 'RESOLVED', 'Hold reason omits the rule'),
+            reviewItem('F-1', 1, 'RESOLVED', 'Hold reason omits the rule'),
         ]),
-        round('r2', 'REVIEW_FINDINGS', 2, 'REJECTED', [finding('F-1', 1, 'OPEN', 'Hold reason omits the rule')]),
-        round('r1', 'REVIEW_FINDINGS', 1, 'REJECTED', [finding('F-1', 1, 'OPEN', 'Hold reason omits the rule')]),
-        round('tr1', 'TEST_REPORT', 1, 'PASSED', [finding('T-1', 3, 'OPEN', 'Screenshot missing')]),
-        { ...round('a1', 'ARCHITECTURE', 1, 'PASSED', []), document: { ...round('a1', 'ARCHITECTURE', 1, 'PASSED', []).document, findings: null, path: 'design/t1/architecture-1.md' } },
+        round('r2', 'BOARD_REVIEW_ITEMS', 2, 'REJECTED', [reviewItem('F-1', 1, 'OPEN', 'Hold reason omits the rule')]),
+        round('r1', 'BOARD_REVIEW_ITEMS', 1, 'REJECTED', [reviewItem('F-1', 1, 'OPEN', 'Hold reason omits the rule')]),
+        round('tr1', 'BOARD_TEST_REPORT', 1, 'PASSED', [reviewItem('T-1', 3, 'OPEN', 'Screenshot missing')]),
+        { ...round('a1', 'ARCHITECTURE', 1, 'PASSED', []), document: { ...round('a1', 'ARCHITECTURE', 1, 'PASSED', []).document, reviewItems: null, path: 'design/t1/architecture-1.md' } },
     ]
 }
 
@@ -40,21 +40,21 @@ const usage = { inputTokens: 1200, outputTokens: 300, cacheReadTokens: 0, cacheW
     reports: 1, derivedCostMicros: 420000, costComplete: true }
 
 /**
- * A QUESTIONS round (gaps §1.27): the coder's questions about ARCHITECTURE round 1, the release
+ * A BOARD_QUESTIONS round (gaps §1.27): the coder's questions about ARCHITECTURE round 1, the release
  * richTask's question frame points at. The asking hop's verdict is REJECTED, as the server writes it.
  */
-export function questionsRound (uuid = 'q-rel', n = 1, items: any[] = [finding('q1', 1, 'OPEN', 'Which branch does the page link to?')]) {
-    const r = round(uuid, 'QUESTIONS', n, 'REJECTED', items)
-    r.document.findings.about = { specification: 'ARCHITECTURE', release: 'a1' } as any
+export function questionsRound (uuid = 'q-rel', n = 1, items: any[] = [reviewItem('q1', 1, 'OPEN', 'Which branch does the page link to?')]) {
+    const r = round(uuid, 'BOARD_QUESTIONS', n, 'REJECTED', items)
+    r.document.reviewItems.about = { specification: 'ARCHITECTURE', release: 'a1' } as any
     return r
 }
 
-/** richTask with its question frame's QUESTIONS round among the documents. */
+/** richTask with its question frame's BOARD_QUESTIONS round among the documents. */
 export function questionsTask (over: Record<string, any> = {}) {
     return richTask({ documents: [questionsRound(), ...richDocuments()], ...over })
 }
 
-export { finding as fixtureFinding }
+export { reviewItem as fixtureReviewItem }
 
 export function richTask (over: Record<string, any> = {}) {
     return {
@@ -70,8 +70,8 @@ export function richTask (over: Record<string, any> = {}) {
         returns: [{ role: 'coder', agent: 'a3', session: 's3', reason: 'BLOCKED', description: 'needs a decision', returnedAt: '2026-09-22T10:00:00Z', outputs: [], usage: null }],
         usage,
         documents: richDocuments(),
-        openFindings: [],
-        openQuestions: [finding('q1', 1, 'OPEN', 'Which branch does the page link to?')],
+        openReviewItems: [],
+        openQuestions: [reviewItem('q1', 1, 'OPEN', 'Which branch does the page link to?')],
         parentTask: 'tp', childTasks: ['tc1'], sessions: ['s1', 's2', 's3'], registeredBySession: 's0',
         statusHistory: [
             { from: null, to: 'PENDING_INTAKE', at: '2026-09-20T10:00:00Z', trigger: 'REGISTER', actor: null, note: null },
@@ -91,7 +91,7 @@ export function richTask (over: Record<string, any> = {}) {
 export const fixtureRoles = [
     { uuid: 'rc-arch', name: 'architect', active: true, necessity: 'REQUIRED', kind: 'AGENT', producesOutputs: [{ specification: 'ARCHITECTURE' }] },
     { uuid: 'rc-coder', name: 'coder', active: true, necessity: 'REQUIRED', kind: 'AGENT', producesOutputs: [] },
-    { uuid: 'rc-rev', name: 'reviewer', active: true, necessity: 'REQUIRED', kind: 'AGENT', producesOutputs: [{ specification: 'REVIEW_FINDINGS' }] },
+    { uuid: 'rc-rev', name: 'reviewer', active: true, necessity: 'REQUIRED', kind: 'AGENT', producesOutputs: [{ specification: 'BOARD_REVIEW_ITEMS' }] },
     { uuid: 'rc-human', name: 'signoff', active: true, necessity: 'OPTIONAL', kind: 'HUMAN', prompt: 'look it over', producesOutputs: [] },
 ]
 

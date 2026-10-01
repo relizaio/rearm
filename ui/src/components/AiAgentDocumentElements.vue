@@ -1,6 +1,6 @@
 <template>
     <!-- The element list under one document (elements.md §8): what the document names, how it is
-         linked, and -- opened -- the findings about an element, what depends on it and which rounds
+         linked, and -- opened -- the review items about an element, what depends on it and which rounds
          changed it. -->
     <div class="els">
         <template v-for="e in elements" :key="e.id ?? ''">
@@ -13,8 +13,8 @@
                 <n-tag v-if="warningsOf(release, e.id ?? '').length" size="tiny" :bordered="false" type="warning">
                     {{ warningsOf(release, e.id ?? '').length }} warning(s)
                 </n-tag>
-                <n-tag v-if="findings.get(e.id ?? '')?.length" size="tiny" :bordered="false" type="error">
-                    {{ findings.get(e.id ?? '')?.length }} open
+                <n-tag v-if="reviewItems.get(e.id ?? '')?.length" size="tiny" :bordered="false" type="error">
+                    {{ reviewItems.get(e.id ?? '')?.length }} open
                 </n-tag>
             </div>
             <div v-if="open === e.id" class="epanel">
@@ -36,9 +36,9 @@
                     <code>{{ l.from }}</code> <span class="epanel__kind">{{ l.kind }}</span>
                 </div>
 
-                <template v-if="findings.get(e.id ?? '')?.length">
-                    <div class="epanel__h">Open findings</div>
-                    <div v-for="f in findings.get(e.id ?? '')" :key="f.id ?? ''" class="epanel__line">
+                <template v-if="reviewItems.get(e.id ?? '')?.length">
+                    <div class="epanel__h">Open review items</div>
+                    <div v-for="f in reviewItems.get(e.id ?? '')" :key="f.id ?? ''" class="epanel__line">
                         <code>{{ f.id }}</code> <n-tag size="tiny" :bordered="false"
                             :type="f.priority === 1 ? 'error' : 'warning'">P{{ f.priority ?? '?' }}</n-tag> {{ f.title }}
                     </div>
@@ -80,17 +80,17 @@ import { computed, ref, watch } from 'vue'
 import { NButton, NTag } from 'naive-ui'
 import { useStore } from 'vuex'
 import type { DocumentRelease } from '@/utils/agentDocuments'
-import { elementsOf, findingsByElement, historyRows, linkCounts, linksIn, linksOut, taskElementsOf, warningsOf } from '@/utils/agentElements'
+import { elementsOf, reviewItemsByElement, historyRows, linkCounts, linksIn, linksOut, taskElementsOf, warningsOf } from '@/utils/agentElements'
 
 const props = defineProps<{
     /** The document whose elements are listed. */
     release: DocumentRelease
-    /** The task's documents, newest first: links in, findings and history resolve against them. */
+    /** The task's documents, newest first: links in, review items and history resolve against them. */
     documents: DocumentRelease[]
     boardUuid?: string | null
     taskUuid?: string | null
     taskStatus?: string | null
-    /** An element to open, e.g. from a finding's element chip. */
+    /** An element to open, e.g. from a review item's element chip. */
     focus?: string | null
 }>()
 
@@ -98,7 +98,7 @@ const store = useStore()
 const elements = computed(() => elementsOf(props.release))
 const taskElements = computed(() => taskElementsOf(props.documents))
 const counts = computed(() => linkCounts(taskElements.value))
-const findings = computed(() => findingsByElement(props.documents))
+const reviewItems = computed(() => reviewItemsByElement(props.documents))
 
 const open = ref<string | null>(null)
 const view = ref<any>(null)

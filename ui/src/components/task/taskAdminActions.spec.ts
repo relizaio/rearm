@@ -59,26 +59,26 @@ describe('admin task actions', () => {
     })
 })
 
-// RD2-16: a locked board shows on the task page, and a disabled action says why -- as the server would.
+// RD2-16: a paused board shows on the task page, and a disabled action says why -- as the server would.
 describe('task page hints', () => {
-    const locked = { lock: { level: 'OPERATOR', reason: 'release freeze', lockedBy: { kind: 'USER', name: 'pm@example.com' } } }
+    const paused = { pause: { level: 'OPERATOR', reason: 'release freeze', pausedBy: { kind: 'USER', name: 'pm@example.com' } } }
     const hintOf = (w: any, testid: string) => w.find(`[data-testid="${testid}"]`).element.closest('.dhint')?.getAttribute('data-hint') ?? null
 
-    it('shows the board\'s lock above the actions, with its level, reason and holder', () => {
+    it('shows the board\'s pause above the actions, with its level, reason and holder', () => {
         const w = mount(TaskHeader, { props: { task: richTask({ status: 'QUEUED', hold: null }), tasks: [], roles: fixtureRoles,
-            priorityLevels: [], board: locked } })
-        const banner = w.find('[data-testid="task-board-lock"]')
-        expect(banner.text()).toBe('Board locked (OPERATOR) — no new assignments and no reopening. Reason: release freeze. Held by pm@example.com.')
+            priorityLevels: [], board: paused } })
+        const banner = w.find('[data-testid="task-board-pause"]')
+        expect(banner.text()).toBe('Board paused (OPERATOR) — no new assignments and no reopening. Reason: release freeze. Paused by pm@example.com.')
         const free = mount(TaskHeader, { props: { task: richTask({ status: 'QUEUED', hold: null }), tasks: [], roles: fixtureRoles,
-            priorityLevels: [], board: { lock: { level: 'NONE' } } } })
-        expect(free.find('[data-testid="task-board-lock"]').exists()).toBe(false)
+            priorityLevels: [], board: { pause: { level: 'NONE' } } } })
+        expect(free.find('[data-testid="task-board-pause"]').exists()).toBe(false)
     })
 
     it('says why Complete, Authorize, Order and Hold are disabled, and nothing once they are not', async () => {
         const assigned = mount(TaskActions, { props: { task: richTask({ status: 'ASSIGNED', hold: null }), roles: fixtureRoles,
             board: {}, canReopen: true, admin: true } })
         expect(assigned.find('[data-testid="complete-open"]').attributes('disabled')).toBeDefined()
-        expect(hintOf(assigned, 'complete-open')).toBe('assigned to a session; release or force-close it first')
+        expect(hintOf(assigned, 'complete-open')).toBe('assigned to a session; unassign or force-close it first')
 
         const w = mount(TaskActions, { props: { task: richTask({ status: 'AWAITING_COORDINATOR', hold: null, orderIndex: 3 }),
             roles: fixtureRoles, board: {}, canReopen: true, admin: true } })
@@ -96,14 +96,14 @@ describe('task page hints', () => {
         for (const id of ['authorize', 'order-set', 'hold-place']) expect(hintOf(w, id), id).toBeNull()
     })
 
-    it('refuses Reopen on a locked board, saying so, as the server does', async () => {
+    it('refuses Reopen on a paused board, saying so, as the server does', async () => {
         const done = richTask({ status: 'COMPLETED', hold: null })
-        const w = mount(TaskActions, { props: { task: done, roles: fixtureRoles, board: locked, canReopen: true, admin: true } })
+        const w = mount(TaskActions, { props: { task: done, roles: fixtureRoles, board: paused, canReopen: true, admin: true } })
         ;(w.vm as any).reopenRole = 'coder'
         ;(w.vm as any).reopenReason = 'PR conflicts'
         await w.vm.$nextTick()
         expect(w.find('[data-testid="reopen"]').attributes('disabled')).toBeDefined()
-        expect(hintOf(w, 'reopen')).toBe('board locked by the operator: release freeze; unlock it before reopening')
+        expect(hintOf(w, 'reopen')).toBe('board paused by the operator: release freeze; resume it before reopening')
         const open = mount(TaskActions, { props: { task: done, roles: fixtureRoles, board: {}, canReopen: true, admin: true } })
         expect(hintOf(open, 'reopen')).toBe('pick the role to reopen it to')
         ;(open.vm as any).reopenRole = 'coder'

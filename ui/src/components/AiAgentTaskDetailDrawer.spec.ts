@@ -22,7 +22,7 @@ function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD
 
 // The open questions are in the preview too, read-only (RD2-7): what the task waits on is what a
 // reader opens the drawer for. Every other round table stays on the page.
-const PAGE_ONLY = ['Review findings', 'Test findings', 'File a finding', 'Documents', 'History',
+const PAGE_ONLY = ['Review items', 'Test report items', 'File a review item', 'Documents', 'History',
     'Pull requests', 'Waiting on', 'Answer', 'Status history', 'Provenance', 'Dependencies', 'Lineage', 'Usage',
     'Current assignment']
 
@@ -40,14 +40,14 @@ describe('AiAgentTaskDetailDrawer', () => {
 
     it('keeps the controls a person acts from', () => {
         const held = mountDrawer(richTask())
-        // the fixture's hold is routing's no-progress stop, released past the stop (4c566d0d)
-        expect(held.text()).toContain('Release past the stop')
+        // the fixture's hold is routing's no-progress stop, lifted past the stop (4c566d0d)
+        expect(held.text()).toContain('Lift past the stop')
         expect(held.findAll('.dsec__h').map(h => h.text())).toEqual(['Human review', 'Open questions', 'Task actions', 'Summary'])
         const gate = mountDrawer(fixtureVariants().humanGate)
-        // The fixture's reviewer rejected over F-4: sending it back leads, and approving past F-4
+        // The fixture's reviewer rejected over F-4: sending it back leads, and accepting past F-4
         // needs a decision on it -- never "pass" on a rejection (task RD2-25).
         expect(gate.text()).toContain('Reject (send back)')
-        expect(gate.text()).toContain('Approve past the findings')
+        expect(gate.text()).toContain('Accept past the review items')
         expect(gate.text()).not.toContain('reviewer pass')
         const done = mountDrawer(fixtureVariants().completed)
         // The fixture still carries its open questions; a completed task shows them as they are.

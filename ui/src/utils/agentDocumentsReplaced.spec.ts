@@ -4,9 +4,9 @@ import { latestRound, replacedByLabel } from './agentDocuments'
 // Task RD4-7: a hop that publishes the same path twice makes a new version of the round; the earlier
 // version names its replacement in supersededBy and stays listed.
 const v7 = { uuid: 'r7', version: '7', lifecycle: 'DRAFT',
-    document: { specification: 'TEST_REPORT', round: 2, findings: { verdict: 'REJECTED', findings: [] } } }
+    document: { specification: 'BOARD_TEST_REPORT', round: 2, reviewItems: { verdict: 'REJECTED', reviewItems: [] } } }
 const v6 = { uuid: 'r6', version: '6', lifecycle: 'DRAFT',
-    document: { specification: 'TEST_REPORT', round: 2, supersededBy: 'r7', findings: { verdict: 'PASSED', findings: [] } } }
+    document: { specification: 'BOARD_TEST_REPORT', round: 2, supersededBy: 'r7', reviewItems: { verdict: 'PASSED', reviewItems: [] } } }
 
 describe('replacedByLabel', () => {
     it('names the replacing version as the list shows it', () => {
@@ -23,7 +23,7 @@ describe('replacedByLabel', () => {
 
 describe('latestRound with a replaced version', () => {
     it('never reads a replaced version, wherever the list puts it', () => {
-        expect(latestRound([v7, v6], 'TEST_REPORT')?.uuid).toBe('r7')
-        expect(latestRound([v6, v7], 'TEST_REPORT')?.uuid).toBe('r7')
+        expect(latestRound([v7, v6], 'BOARD_TEST_REPORT')?.uuid).toBe('r7')
+        expect(latestRound([v6, v7], 'BOARD_TEST_REPORT')?.uuid).toBe('r7')
     })
 })

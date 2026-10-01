@@ -39,7 +39,7 @@
 
 <script lang="ts" setup>
 // A person commissions an investigation from the task page (task RD4-12): any active role that produces
-// INVESTIGATION_REPORT, with a brief, a budget, a deadline and a review, its report brought back to this task.
+// BOARD_INVESTIGATION_REPORT, with a brief, a budget, a deadline and a review, its report brought back to this task.
 import { computed, ref, watch } from 'vue'
 import { NButton, NCheckbox, NDatePicker, NInput, NInputNumber, NModal, NSelect, NSpace } from 'naive-ui'
 import { CommissionDraft, commissionDraftOf, commissionInput, commissionProblem, investigatingRoleOptions,

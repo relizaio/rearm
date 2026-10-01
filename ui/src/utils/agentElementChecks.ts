@@ -1,26 +1,26 @@
 // Presentation helpers for the element checks (elements.md §7): the report the board cut for a
 // document, read under the document it is about.
 //
-// Pure and dependency-free like agentDocuments.ts. A CHECK_REPORT round is one of the task's
+// Pure like agentDocuments.ts. A BOARD_ELEMENT_CHECK_REPORT round is one of the task's
 // documents; everything here works over the documents the task query already carries.
 
 import type { DocumentRelease } from '@/utils/agentDocuments'
 
-export interface CheckOffence {
+export interface ElementCheckOffence {
     elementId?: string | null
     release?: string | null
     message?: string | null
 }
 
-export interface CheckResult {
+export interface ElementCheckResult {
     check?: string | null
     result?: string | null
     blocking?: boolean | null
     reason?: string | null
-    offences?: CheckOffence[] | null
+    offences?: ElementCheckOffence[] | null
 }
 
-export interface CheckReport {
+export interface ElementCheckReport {
     catalogueVersion?: string | null
     grammarVersion?: string | null
     digest?: string | null
@@ -29,7 +29,7 @@ export interface CheckReport {
         checked?: string | null
         releases?: { release?: string | null, specification?: string | null, elementsDigest?: string | null, lifecycle?: string | null }[] | null
     } | null
-    results?: CheckResult[] | null
+    results?: ElementCheckResult[] | null
 }
 
 export interface CatalogueEntry {
@@ -38,20 +38,20 @@ export interface CatalogueEntry {
     skipsWhen?: string | null
 }
 
-/** The report a CHECK_REPORT release carries, or null. */
-export function reportOf (release?: DocumentRelease | null): CheckReport | null {
-    const c = (release?.document as any)?.checks
-    return c && typeof c === 'object' ? c as CheckReport : null
+/** The report a BOARD_ELEMENT_CHECK_REPORT release carries, or null. */
+export function reportOf (release?: DocumentRelease | null): ElementCheckReport | null {
+    const c = (release?.document as any)?.elementChecks
+    return c && typeof c === 'object' ? c as ElementCheckReport : null
 }
 
 /**
  * The newest report about one document among a task's documents (newest first, as the server
- * returns them): the first CHECK_REPORT round whose scope names it as the checked release.
+ * returns them): the first BOARD_ELEMENT_CHECK_REPORT round whose scope names it as the checked release.
  */
 export function latestReportFor (documents: DocumentRelease[] | null | undefined,
     checked?: string | null): DocumentRelease | null {
     if (!checked) return null
-    return (documents ?? []).find(d => d?.document?.specification === 'CHECK_REPORT'
+    return (documents ?? []).find(d => d?.document?.specification === 'BOARD_ELEMENT_CHECK_REPORT'
         && reportOf(d)?.scope?.checked === checked
         && !['PENDING', 'CANCELLED', 'REJECTED'].includes(d?.lifecycle ?? '')) ?? null
 }
@@ -64,7 +64,7 @@ export interface Summary {
     blockingFailed: string[]
 }
 
-export function summarise (report?: CheckReport | null): Summary {
+export function summarise (report?: ElementCheckReport | null): Summary {
     const out: Summary = { pass: 0, fail: 0, skip: 0, blockingFailed: [] }
     for (const r of report?.results ?? []) {
         if (r?.result === 'PASS') out.pass++
@@ -88,7 +88,7 @@ export function summaryLine (s: Summary): string {
  * element index. Inputs the task does not carry (bound from elsewhere) cannot be judged here and
  * do not count.
  */
-export function isStale (report: CheckReport | null | undefined, documents: DocumentRelease[] | null | undefined): boolean {
+export function isStale (report: ElementCheckReport | null | undefined, documents: DocumentRelease[] | null | undefined): boolean {
     const checked = report?.scope?.checked
     for (const s of report?.scope?.releases ?? []) {
         if (!s?.specification || s.release === checked) continue
@@ -109,7 +109,7 @@ export function resultType (result?: string | null): 'success' | 'error' | 'defa
 }
 
 /** What a check means, from the catalogue; a coverage gate by its pattern. */
-export function describeCheck (catalogue: CatalogueEntry[] | null | undefined, check?: string | null): string {
+export function describeElementCheck (catalogue: CatalogueEntry[] | null | undefined, check?: string | null): string {
     if (!check) return ''
     const exact = (catalogue ?? []).find(c => c?.name === check)
     if (exact?.description) return exact.description
@@ -120,7 +120,7 @@ export function describeCheck (catalogue: CatalogueEntry[] | null | undefined, c
 }
 
 /** Offences grouped by element, in the order they were reported. */
-export function offencesByElement (result?: CheckResult | null): { elementId: string, messages: string[] }[] {
+export function offencesByElement (result?: ElementCheckResult | null): { elementId: string, messages: string[] }[] {
     const groups = new Map<string, string[]>()
     for (const o of result?.offences ?? []) {
         const id = o?.elementId ?? '—'

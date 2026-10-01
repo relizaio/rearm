@@ -33,7 +33,7 @@ function parked (linked: any[] | null) {
 function answered () {
     return richTask({ status: 'DELIVERING', role: 'coder', assignment: null, questionStack: [], prUrls: [old, replacement],
         hold: null,
-        statusHistory: [asked, { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'RELEASE_HOLD',
+        statusHistory: [asked, { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'LIFT_HOLD',
             actor: person, note: `declared superseded by Pat: ${old}, replaced by ${replacement}: replaced`, linked: [link] }] })
 }
 
@@ -45,7 +45,7 @@ describe('a PR linked to a task the seat parked', () => {
         expect(lines[0].text()).toContain(LINE)
         expect(w.text()).toContain(`awaiting the operator: ${QUESTION}`)
         expect(w.find('.holdmeta').text(), 'held by stays the first line under the question').toContain('held by')
-        expect(w.find('.relbtn').text(), 'still a decision for a person').toBe('Answer and release')
+        expect(w.find('.relbtn').text(), 'still a decision for a person').toBe('Answer and lift')
     })
 
     it('shows nothing in the banner when nothing was linked since parking', () => {
@@ -63,7 +63,7 @@ describe('a PR linked to a task the seat parked', () => {
         expect(none.find('[data-testid="operator-question-link"]').exists()).toBe(false)
     })
 
-    it('stays beside the answer once given, read from the row that released the hold', () => {
+    it('stays beside the answer once given, read from the row that lifted the hold', () => {
         const w = mount(TaskOperatorQuestions, { props: { task: answered() } })
         expect(w.find('[data-testid="operator-answer"]').text())
             .toBe(`declared superseded by Pat: ${old}, replaced by ${replacement}: replaced`)

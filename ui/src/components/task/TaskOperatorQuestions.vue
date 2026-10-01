@@ -1,6 +1,6 @@
 <template>
     <!-- The questions a hop of this task (task RD4-5), or the coordinator seat (RD4-17), parked it on for the
-         operator, each with the answer a person's release or action gave: the record of a decision reached on the
+         operator, each with the answer a person's lift or action gave: the record of a decision reached on the
          board rather than in a chat. -->
     <div v-if="questions.length" class="dsec" data-testid="operator-questions">
         <div class="dsec__h">Asked of the operator ({{ questions.length }})</div>

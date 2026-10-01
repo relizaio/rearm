@@ -31,9 +31,9 @@ describe('roleStrength', () => {
 
     it('keeps an existing output as it was and defaults only the new ones', () => {
         const existing = [{ specification: 'DESIGN', scope: 'COMPONENT', required: false }]
-        expect(mergeOutputs(existing, ['DESIGN', 'TEST_REPORT'])).toEqual([
+        expect(mergeOutputs(existing, ['DESIGN', 'BOARD_TEST_REPORT'])).toEqual([
             { specification: 'DESIGN', scope: 'COMPONENT', required: false },
-            { specification: 'TEST_REPORT', scope: 'TASK', required: true },
+            { specification: 'BOARD_TEST_REPORT', scope: 'TASK', required: true },
         ])
         expect(mergeOutputs(existing, [])).toEqual([])
         expect(mergeOutputs(undefined, ['DESIGN'])).toEqual([{ specification: 'DESIGN', scope: 'TASK', required: true }])

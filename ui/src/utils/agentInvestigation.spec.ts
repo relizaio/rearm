@@ -7,10 +7,10 @@ import { missingRequiredRoles } from './agentTaskFormat'
 
 // Investigation tasks in the UI (task RD4-12): the option lists, the commission form's input, the task's block, and a
 // role's commissions as the role form edits them.
-const report = [{ specification: 'INVESTIGATION_REPORT', scope: 'TASK', required: true }]
+const report = [{ specification: 'BOARD_INVESTIGATION_REPORT', scope: 'TASK', required: true }]
 const roles = [
     { name: 'architect', active: true, kind: 'AGENTIC', producesOutputs: [{ specification: 'ARCHITECTURE', scope: 'TASK' }] },
-    { name: 'tester', active: true, kind: 'AGENTIC', producesOutputs: [{ specification: 'TEST_REPORT', scope: 'TASK' }, ...report] },
+    { name: 'tester', active: true, kind: 'AGENTIC', producesOutputs: [{ specification: 'BOARD_TEST_REPORT', scope: 'TASK' }, ...report] },
     { name: 'researcher', active: true, kind: 'AGENTIC', producesOutputs: report },
     { name: 'retired', active: false, kind: 'AGENTIC', producesOutputs: report },
     { name: 'signoff', active: true, kind: 'HUMAN', producesOutputs: report },
@@ -38,7 +38,7 @@ describe('option lists', () => {
             expect(typeof o.label).toBe('string')
             expect(typeof o.value).toBe('string')
         }
-        expect(OUTPUT_TYPE_OPTIONS.map(o => o.value)).toEqual(['REVIEW_FINDINGS', 'TEST_REPORT', 'INVESTIGATION_REPORT'])
+        expect(OUTPUT_TYPE_OPTIONS.map(o => o.value)).toEqual(['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT', 'BOARD_INVESTIGATION_REPORT'])
         expect(INTAKE_OPTIONS.map(o => o.value)).toEqual(['AUTO', 'COORDINATOR'])
     })
 
@@ -95,7 +95,7 @@ describe('an investigation on the task page', () => {
 
     it('shows the delivered report, else the newest round', () => {
         const doc = (uuid: string, round: number) => ({ uuid, lifecycle: 'ASSEMBLED',
-            document: { specification: 'INVESTIGATION_REPORT', round, path: `investigations/RD-7/report-${round}.md` } })
+            document: { specification: 'BOARD_INVESTIGATION_REPORT', round, path: `investigations/RD-7/report-${round}.md` } })
         const t = { ...investigation, documents: [doc('r1', 1), doc('r2', 2)] }
         expect(reportOf(t)?.uuid).toBe('r2')
         expect(reportOf({ ...t, investigation: { ...t.investigation, report: 'r1' } })?.uuid).toBe('r1')

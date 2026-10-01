@@ -7,7 +7,7 @@ import { mount } from '@vue/test-utils'
 import RoleCommissionsEditor from './RoleCommissionsEditor.vue'
 import { commissionsDraftOf } from '@/utils/agentInvestigation'
 
-const report = [{ specification: 'INVESTIGATION_REPORT', scope: 'TASK' }]
+const report = [{ specification: 'BOARD_INVESTIGATION_REPORT', scope: 'TASK' }]
 const roles = [
     { name: 'architect', active: true, producesOutputs: [] },
     { name: 'tester', active: true, producesOutputs: report },

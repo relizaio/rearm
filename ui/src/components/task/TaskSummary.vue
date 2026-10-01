@@ -5,9 +5,9 @@
             <span class="deplab">key</span><code>{{ task.key }}</code>
         </div>
         <div class="deprow">
-            <span class="deplab">findings</span>
-            <template v-if="summary.openFindings.length">
-                <n-tag v-for="g in summary.openFindings" :key="String(g.priority)" size="small" :bordered="false"
+            <span class="deplab">review items</span>
+            <template v-if="summary.openReviewItems.length">
+                <n-tag v-for="g in summary.openReviewItems" :key="String(g.priority)" size="small" :bordered="false"
                        :type="g.priority === 1 ? 'error' : 'warning'">
                     {{ g.count }} open P{{ g.priority ?? '?' }}
                 </n-tag>

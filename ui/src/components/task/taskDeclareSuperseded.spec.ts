@@ -41,16 +41,16 @@ describe('the helpers', () => {
         expect(prRepository(' ')).toBeNull()
     })
 
-    it('offer the declaration on a closed row not settled, a PR attested abandoned included', () => {
+    it('offer the declaration on a closed row not settled, a PR declared abandoned included', () => {
         const t = replaced()
         expect(offersSupersede(t, old)).toBe(true)
         for (const u of [replacement, merged]) expect(offersSupersede(t, u)).toBe(false)
         const abandoned = replaced({}, [])
-        abandoned.pullRequests[0] = { ...abandoned.pullRequests[0], attestation: { outcome: 'ABANDONED' } }
+        abandoned.pullRequests[0] = { ...abandoned.pullRequests[0], declaration: { outcome: 'ABANDONED' } }
         expect(offersSupersede(abandoned, old)).toBe(true)
         for (const outcome of ['SUPERSEDED', 'DELIVERED']) {
             const settled = replaced()
-            settled.pullRequests[0] = { ...settled.pullRequests[0], attestation: { outcome } }
+            settled.pullRequests[0] = { ...settled.pullRequests[0], declaration: { outcome } }
             expect(offersSupersede(settled, old), outcome).toBe(false)
         }
     })
@@ -93,7 +93,7 @@ describe('the task page row', () => {
 
     it('is absent on a superseded row and on a completed task', () => {
         const done = replaced()
-        done.pullRequests[0] = { ...done.pullRequests[0], attestation: { outcome: 'SUPERSEDED', supersededBy: replacement } }
+        done.pullRequests[0] = { ...done.pullRequests[0], declaration: { outcome: 'SUPERSEDED', supersededBy: replacement } }
         expect(mount(TaskPullRequests, { props: { task: done, canOperate: true } }).find('[data-testid="declare-superseded"]').exists())
             .toBe(false)
         expect(mount(TaskPullRequests, { props: { task: replaced({ status: 'COMPLETED' }), canOperate: true } })

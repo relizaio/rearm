@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// Questions say who asked, in which round and about what, and a QUESTIONS round says open or
+// Questions say who asked, in which round and about what, and a BOARD_QUESTIONS round says open or
 // answered rather than the asking hop's REJECTED (gaps §1.27).
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
@@ -8,7 +8,7 @@ import TaskDocuments from './TaskDocuments.vue'
 import TaskOpenQuestions from './TaskOpenQuestions.vue'
 import TaskQuestions from './TaskQuestions.vue'
 import TaskSummary from './TaskSummary.vue'
-import { fixtureFinding, fixtureRoles, questionsRound, questionsTask, richDocuments } from './taskFixtures'
+import { fixtureReviewItem, fixtureRoles, questionsRound, questionsTask, richDocuments } from './taskFixtures'
 
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) }))
 
@@ -18,10 +18,10 @@ const stubs = { RouterLink: { props: ['to'], template: '<a :href="to"><slot/></a
 function answeredTask () {
     const a2 = { ...richDocuments().find(d => d.uuid === 'a1')!, uuid: 'a2' } as any
     a2.document = { ...a2.document, round: 2, path: 'design/t1/architecture-2.md' }
-    const asked = questionsRound('q-rel', 1, [fixtureFinding('Q-1', 2, 'OPEN', 'which branch?'),
-        fixtureFinding('Q-2', 2, 'OPEN', 'which port?')])
-    const unwound = questionsRound('q-2', 2, [fixtureFinding('Q-1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'a2' }),
-        fixtureFinding('Q-2', 2, 'RESOLVED', 'which port?', { resolvedBy: 'a2' })])
+    const asked = questionsRound('q-rel', 1, [fixtureReviewItem('Q-1', 2, 'OPEN', 'which branch?'),
+        fixtureReviewItem('Q-2', 2, 'OPEN', 'which port?')])
+    const unwound = questionsRound('q-2', 2, [fixtureReviewItem('Q-1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'a2' }),
+        fixtureReviewItem('Q-2', 2, 'RESOLVED', 'which port?', { resolvedBy: 'a2' })])
     return questionsTask({ status: 'ASSIGNED', questionStack: [], openQuestions: [],
         signOffs: [{ role: 'coder', roleUuid: 'rc-coder', outputs: ['q-rel'], outcome: 'REJECTED' }],
         documents: [unwound, a2, asked, ...richDocuments()] })
@@ -40,7 +40,7 @@ describe('question rounds on the task page', () => {
         expect(nobody.find('.oq__sub').text()).toBe('with the coordinator to name a role')
     })
 
-    it('shows a QUESTIONS round as open or answered, never REJECTED, with what answered it', () => {
+    it('shows a BOARD_QUESTIONS round as open or answered, never REJECTED, with what answered it', () => {
         const open = mount(TaskDocuments, { props: { task: questionsTask() }, global: { stubs } })
         const openRow = open.findAll('.drow').find(r => r.text().includes('questions-1.md'))!
         expect(openRow.find('.drow__qstate').text()).toBe('open (1)')
@@ -61,12 +61,12 @@ describe('question rounds on the task page', () => {
     })
 
     it('says a person answered, and a withdrawn round names nothing', () => {
-        const asked = questionsRound('q-rel', 1, [fixtureFinding('Q-1', 2, 'OPEN', 'which branch?'),
-            fixtureFinding('Q-2', 2, 'OPEN', 'which port?')])
+        const asked = questionsRound('q-rel', 1, [fixtureReviewItem('Q-1', 2, 'OPEN', 'which branch?'),
+            fixtureReviewItem('Q-2', 2, 'OPEN', 'which port?')])
         // The person's answer round, as the server writes it: its items point at the round itself.
         const answer = questionsRound('q-2', 2, [
-            fixtureFinding('Q-1', 2, 'RESOLVED', 'which branch?', { resolution: 'main', resolvedBy: 'q-2' }),
-            fixtureFinding('Q-2', 2, 'WITHDRAWN', 'which port?', { resolution: 'not needed', resolvedBy: 'q-2' })])
+            fixtureReviewItem('Q-1', 2, 'RESOLVED', 'which branch?', { resolution: 'main', resolvedBy: 'q-2' }),
+            fixtureReviewItem('Q-2', 2, 'WITHDRAWN', 'which port?', { resolution: 'not needed', resolvedBy: 'q-2' })])
         const task = questionsTask({ questionStack: [], openQuestions: [], documents: [answer, asked, ...richDocuments()] })
         const w = mount(TaskDocuments, { props: { task }, global: { stubs } })
         const rows = w.findAll('.drow').filter(r => r.text().includes('questions-'))
@@ -76,7 +76,7 @@ describe('question rounds on the task page', () => {
             expect(r.text()).not.toContain('answered by questions')
         }
 
-        const allWithdrawn = questionsRound('q-3', 3, [fixtureFinding('Q-9', 2, 'WITHDRAWN', 'moot', { resolution: 'moot', resolvedBy: 'q-3' })])
+        const allWithdrawn = questionsRound('q-3', 3, [fixtureReviewItem('Q-9', 2, 'WITHDRAWN', 'moot', { resolution: 'moot', resolvedBy: 'q-3' })])
         const w2 = mount(TaskDocuments, { props: { task: questionsTask({ documents: [allWithdrawn, ...richDocuments()] }) },
             global: { stubs } })
         const row = w2.findAll('.drow').find(r => r.text().includes('questions-3.md'))!
@@ -89,21 +89,21 @@ describe('question rounds on the task page', () => {
         expect(w.find('.qstack__row').text()).toContain('coder asked nobody yet · questions round 1 · about architecture round 1')
     })
 
-    it('words a findings frame as the reviewer waiting on the maker, not as a question (bc7fc25a)', () => {
-        const run = questionsRound('tr-1', 1, [fixtureFinding('T-1', 2, 'OPEN', 'red'), fixtureFinding('T-2', 2, 'OPEN', 'red too')])
-        run.document.specification = 'TEST_REPORT'
-        ;(run.document.findings as any).kind = 'TEST_REPORT'
+    it('words a review item frame as the reviewer waiting on the maker, not as a question (bc7fc25a)', () => {
+        const run = questionsRound('tr-1', 1, [fixtureReviewItem('T-1', 2, 'OPEN', 'red'), fixtureReviewItem('T-2', 2, 'OPEN', 'red too')])
+        run.document.specification = 'BOARD_TEST_REPORT'
+        ;(run.document.reviewItems as any).kind = 'BOARD_TEST_REPORT'
         const task = questionsTask({ questionStack: [{ askingRole: 'rc-rev', answeringRole: 'rc-coder', questionsRelease: 'tr-1',
             askedAt: null }], documents: [run, ...richDocuments()] })
         const w = mount(TaskQuestions, { props: { task, roles: fixtureRoles }, global: { stubs } })
-        expect(w.find('.qstack__findings').text()).toBe('reviewer waits on coder to resolve 2 findings')
-        expect(w.find('.qstack__link').text()).toBe('findings')
+        expect(w.find('.qstack__items').text()).toBe('reviewer waits on coder to resolve 2 review items')
+        expect(w.find('.qstack__link').text()).toBe('review items')
         expect(w.find('.qstack__row').text()).not.toContain(' asked ')
     })
 
-    it('lists a legacy findings round in Documents as what it holds, with no question state (bc7fc25a T-1)', () => {
-        const legacy = questionsRound('u-1', 1, [fixtureFinding('T-1', 2, 'RESOLVED', 'red', { resolvedBy: 'n-1' })])
-        ;(legacy.document.findings as any).kind = 'TEST_REPORT'
+    it('lists a legacy review item round in Documents as what it holds, with no question state (bc7fc25a T-1)', () => {
+        const legacy = questionsRound('u-1', 1, [fixtureReviewItem('T-1', 2, 'RESOLVED', 'red', { resolvedBy: 'n-1' })])
+        ;(legacy.document.reviewItems as any).kind = 'BOARD_TEST_REPORT'
         const w = mount(TaskDocuments, { props: { task: questionsTask({ documents: [legacy, ...richDocuments()] }) },
             global: { stubs } })
         const row = w.findAll('.drow').find(r => r.text().includes('board round'))!

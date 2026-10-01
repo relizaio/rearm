@@ -766,12 +766,12 @@ const singleReleaseDataNoParent = `
         session
         round
         elements { elements { id } }
-        findings {
+        reviewItems {
             kind
             round
             verdict
             counts { passed failed skipped }
-            findings {
+            reviewItems {
                 id
                 priority
                 status

@@ -2,7 +2,7 @@
     <div class="ttable">
         <n-space :size="8" class="ttable__filters">
             <n-input v-model:value="textFilter" size="small" clearable
-                     :placeholder="hasLadder(board) ? 'Filter by key, title, ref, level (L2), group or tag' : 'Filter by key, title, ref, group or tag'"
+                     :placeholder="hasLadder(board) ? 'Filter by key, title, ref, work level (L2), group or tag' : 'Filter by key, title, ref, group or tag'"
                      style="width: 300px"/>
             <n-select v-model:value="statusFilter" size="small" clearable multiple
                       :options="statusOptions" placeholder="Status" style="min-width: 220px"/>
@@ -132,7 +132,7 @@ const allColumns: DataTableColumns<any> = [
     },
     {
         // The level the board reads (RD2-1), "1 · solution" (task RD3-6): sorted numerically, a task with none last.
-        title: 'Level', key: 'level', width: 120,
+        title: 'Work level', key: 'level', width: 120,
         sorter: (a, b) => (levelOf(a, props.board) ?? 99) - (levelOf(b, props.board) ?? 99),
         render: (t: any) => {
             const l = taskLevelLabel(t, props.board)

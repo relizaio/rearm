@@ -1,4 +1,4 @@
-// The findings row layout (gaps §1.26): a long location used to squeeze the title to one word per
+// The review items row layout (gaps §1.26): a long location used to squeeze the title to one word per
 // line. A DOM without layout cannot measure that, so this pins the styles that prevent it.
 import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
@@ -18,7 +18,7 @@ function declarations (selector: string): Record<string, string> {
 }
 
 describe('taskSections.scss', () => {
-    it('lets the finding title shrink below its longest word and take the room', () => {
+    it('lets the review item title shrink below its longest word and take the room', () => {
         const d = declarations('.frow__title')
         expect(d['min-width']).toBe('0')
         expect(d.flex).toBe('1 1 auto')
@@ -34,8 +34,8 @@ describe('taskSections.scss', () => {
         expect(d['max-width']).toBe('38%')
     })
 
-    it('every component that renders finding rows uses the shared styles', () => {
-        for (const f of ['TaskFindings.vue', 'TaskOpenQuestions.vue', 'TaskActions.vue']) {
+    it('every component that renders review item rows uses the shared styles', () => {
+        for (const f of ['TaskReviewItems.vue', 'TaskOpenQuestions.vue', 'TaskActions.vue']) {
             const src = readFileSync(here('./' + f), 'utf8')
             expect(src, f).toContain('class="frow"')
             expect(src, f).toMatch(/<style scoped lang="scss">\s*@use '\.\/taskSections';/)
@@ -43,7 +43,7 @@ describe('taskSections.scss', () => {
     })
 
     it('the location tooltip is the whole location, path and ref (9a118a2a T-2)', () => {
-        const src = readFileSync(here('./TaskFindings.vue'), 'utf8')
-        expect(src).toContain('class="frow__loc" :title="findingLocationFull(f)"')
+        const src = readFileSync(here('./TaskReviewItems.vue'), 'utf8')
+        expect(src).toContain('class="frow__loc" :title="reviewItemLocationFull(f)"')
     })
 })

@@ -72,8 +72,8 @@ describe('getReleaseScanStatus with shared-SCE artifacts', () => {
 describe('a board document is never scanned (RD4-11)', () => {
     const unscanned = { lifecycle: 'DRAFT', metrics: null, artifactDetails: [pendingBom()] }
 
-    it('reports not-applicable for a DOCUMENT component, whatever its metrics say', () => {
-        const release = { ...unscanned, componentDetails: { uuid: OWN_COMPONENT, kind: 'DOCUMENT' } }
+    it('reports not-applicable for a BOARD_DOCUMENT component, whatever its metrics say', () => {
+        const release = { ...unscanned, componentDetails: { uuid: OWN_COMPONENT, kind: 'BOARD_DOCUMENT' } }
         expect(isScanNotApplicable(release)).toBe(true)
         expect(getReleaseScanStatus(release, true).kind).toBe('not-applicable')
         expect(getReleaseScanStatus(release, false).kind).toBe('not-applicable')

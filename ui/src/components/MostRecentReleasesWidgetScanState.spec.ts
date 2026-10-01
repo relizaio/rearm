@@ -8,7 +8,7 @@ import { flushPromises, mount } from '@vue/test-utils'
 // By kind, with the metrics a round stored before RD4-11 (the no-BOM anchor), as a server without the
 // NOT_APPLICABLE answer serves them: the kind alone must hide them.
 const DOC = { uuid: 'r-doc', version: '3', lifecycle: 'ASSEMBLED', createdDate: '2026-09-29T10:00:00Z',
-    componentDetails: { uuid: 'c-doc', name: 'RD4 architecture', type: 'COMPONENT', kind: 'DOCUMENT' },
+    componentDetails: { uuid: 'c-doc', name: 'RD4 architecture', type: 'COMPONENT', kind: 'BOARD_DOCUMENT' },
     branchDetails: { uuid: 'b-doc', name: 'main' }, artifactDetails: [],
     metrics: { firstScanned: '2026-09-29T10:00:00Z', lastScanned: '2026-09-29T10:01:00Z', critical: 0 } }
 // By the served answer: a legacy board's GENERIC document component, still a DRAFT round.

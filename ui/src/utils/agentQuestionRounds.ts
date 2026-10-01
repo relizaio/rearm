@@ -1,8 +1,8 @@
 // Who asked a task's questions, in which round, about what, and whether a round is still open
 // (gaps §1.27, task 6d748622). Everything is on the task read already: the question frames,
-// the QUESTIONS rounds with their items and `about`, and the sign-offs' outputs. Pure, like
+// the BOARD_QUESTIONS rounds with their items and `about`, and the sign-offs' outputs. Pure, like
 // agentDocuments.ts, so the specs need no store.
-import type { DocumentRelease, Finding } from './agentDocuments'
+import type { DocumentRelease, ReviewItem } from './agentDocuments'
 import { specWord } from './agentWords'
 
 export type RoleRef = { roleUuid: string | null, roleName: string | null }
@@ -27,7 +27,7 @@ export interface QuestionRound {
     /** When the round was published: since when the task has waited on it. */
     askedAt: string | null
     /** The round's items as the newest round that has each says (RD2-7). */
-    items: Finding[]
+    items: ReviewItem[]
 }
 
 function roleRef (roles: any[] | null | undefined, task: any, uuid: string | null | undefined,
@@ -40,8 +40,8 @@ function roleRef (roles: any[] | null | undefined, task: any, uuid: string | nul
     return { roleUuid: uuid ?? null, roleName: name }
 }
 
-function itemsOf (d: DocumentRelease): Finding[] {
-    return (d?.document?.findings?.findings ?? []) as Finding[]
+function itemsOf (d: DocumentRelease): ReviewItem[] {
+    return (d?.document?.reviewItems?.reviewItems ?? []) as ReviewItem[]
 }
 
 /**
@@ -49,7 +49,7 @@ function itemsOf (d: DocumentRelease): Finding[] {
  * rounds carry it with a new status (a person's answer, the board's unwind); an id open again after it
  * was closed is the question asked again, a new story, so the walk stops there (RD2-7 tester run 1 T-2).
  */
-function itemStory (oldestFirst: DocumentRelease[], i: number, f: Finding): Finding {
+function itemStory (oldestFirst: DocumentRelease[], i: number, f: ReviewItem): ReviewItem {
     let current = f
     for (let k = i + 1; k < oldestFirst.length; k++) {
         const x = itemsOf(oldestFirst[k]).find(y => y.id === f.id)
@@ -61,7 +61,7 @@ function itemStory (oldestFirst: DocumentRelease[], i: number, f: Finding): Find
 }
 
 /** Whether round i's item starts a question: the id's first asking, or its asking again after it closed. */
-function startsAQuestion (oldestFirst: DocumentRelease[], i: number, f: Finding): boolean {
+function startsAQuestion (oldestFirst: DocumentRelease[], i: number, f: ReviewItem): boolean {
     for (let k = i - 1; k >= 0; k--) {
         const x = itemsOf(oldestFirst[k]).find(y => y.id === f.id)
         if (x) return x.status !== 'OPEN' && f.status === 'OPEN'
@@ -69,12 +69,12 @@ function startsAQuestion (oldestFirst: DocumentRelease[], i: number, f: Finding)
     return true
 }
 
-/** Every QUESTIONS round of the task, newest first, as the task's documents come. */
+/** Every BOARD_QUESTIONS round of the task, newest first, as the task's documents come. */
 export function questionRounds (task: any, roles?: any[] | null): QuestionRound[] {
     const documents: DocumentRelease[] = task?.documents ?? []
     const byUuid = new Map<string, DocumentRelease>()
     for (const d of documents) if (d?.uuid) byUuid.set(d.uuid, d)
-    const rounds = documents.filter(d => d?.document?.specification === 'QUESTIONS' && !!d?.document?.findings && !!d?.uuid
+    const rounds = documents.filter(d => d?.document?.specification === 'BOARD_QUESTIONS' && !!d?.document?.reviewItems && !!d?.uuid
         && isOfItsKind(d))
     const frames: any[] = task?.questionStack ?? []
     const signOffs: any[] = task?.signOffs ?? []
@@ -95,7 +95,7 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
                 // A board-cut answer or unwind round carries the same items and no session.
                 : previousAsker
 
-        const about = d.document?.findings?.about
+        const about = d.document?.reviewItems?.about
         const aboutDoc = about?.release ? byUuid.get(about.release) : undefined
         // A later round carries the same items with their new status (a person's answer round,
         // the board's unwind round), so an item reads as the newest round of its story says.
@@ -115,8 +115,8 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
         for (const f of items) {
             if (f.status === 'OPEN' || f.status === 'WITHDRAWN') continue
             const by = f.resolvedBy ? byUuid.get(f.resolvedBy) : undefined
-            if (by?.document?.specification === 'QUESTIONS' || (!f.resolvedBy && f.resolution)) {
-                // A person's answer is a QUESTIONS round the server points the items it closed at
+            if (by?.document?.specification === 'BOARD_QUESTIONS' || (!f.resolvedBy && f.resolution)) {
+                // A person's answer is a BOARD_QUESTIONS round the server points the items it closed at
                 // (stampSelfPointer). Older rows left resolvedBy empty: then the answer round is the
                 // first round, from this one on, where the item is no longer open.
                 const closing = by ?? newer.find(r => itemsOf(r).some(x => x.id === f.id && x.status !== 'OPEN'))
@@ -151,33 +151,33 @@ export function questionRounds (task: any, roles?: any[] | null): QuestionRound[
 }
 
 /**
- * Whether a QUESTIONS-filed round really is one. Before task bc7fc25a the board filed its unwind of a
- * tester's or reviewer's findings frame under QUESTIONS with the findings index inside; those
+ * Whether a BOARD_QUESTIONS-filed round really is one. Before task bc7fc25a the board filed its unwind of a
+ * tester's or reviewer's review item frame under BOARD_QUESTIONS with the review item index inside; those
  * rounds are the record, not questions. A round without a kind counts as what it is filed under.
  */
 function isOfItsKind (d: DocumentRelease): boolean {
-    const kind = (d?.document?.findings as any)?.kind
+    const kind = (d?.document?.reviewItems as any)?.kind
     return !kind || kind === d?.document?.specification
 }
 
 /**
- * What a frame waits on: a questions round, or a findings round -- a tester's or reviewer's round
+ * What a frame waits on: a questions round, or a review item round -- a tester's or reviewer's round
  * routed back to the maker, which pops when the maker passes and the reviewer's next round closes
  * or re-raises its ids (task bc7fc25a). Null when the frame's round is not on the task's read.
  */
-export function frameKind (task: any, frame: any): 'questions' | 'findings' | null {
+export function frameKind (task: any, frame: any): 'questions' | 'reviewItems' | null {
     const d = (task?.documents ?? []).find((x: any) => x?.uuid && x.uuid === frame?.questionsRelease)
     const spec = d?.document?.specification
     if (!spec) return null
-    return spec === 'QUESTIONS' ? 'questions' : 'findings'
+    return spec === 'BOARD_QUESTIONS' ? 'questions' : 'reviewItems'
 }
 
-/** "tester waits on coder to resolve 2 finding(s)": a findings frame's row. */
-export function findingsFrameLabel (task: any, frame: any, name: (uuid: string | null | undefined) => string): string {
+/** "tester waits on coder to resolve 2 review item(s)": a review item frame's row. */
+export function reviewItemsFrameLabel (task: any, frame: any, name: (uuid: string | null | undefined) => string): string {
     const d = (task?.documents ?? []).find((x: any) => x?.uuid && x.uuid === frame?.questionsRelease)
-    const open = ((d?.document?.findings?.findings ?? []) as Finding[]).filter(f => f.status === 'OPEN').length
+    const open = ((d?.document?.reviewItems?.reviewItems ?? []) as ReviewItem[]).filter(f => f.status === 'OPEN').length
     return `${name(frame?.askingRole) || 'a role'} waits on ${name(frame?.answeringRole) || 'nobody yet'} to resolve `
-        + `${open} finding${open === 1 ? '' : 's'}`
+        + `${open} review item${open === 1 ? '' : 's'}`
 }
 
 export function latestQuestionRound (task: any, roles?: any[] | null): QuestionRound | null {
@@ -243,7 +243,7 @@ export interface AnsweredQuestion {
 
 /**
  * Every question the task was asked that is no longer open, newest asking round first. A person's
- * answer, or the board's unwind, is itself a QUESTIONS round carrying the same items, so an item is
+ * answer, or the board's unwind, is itself a BOARD_QUESTIONS round carrying the same items, so an item is
  * listed once, under the round that first asked it.
  */
 export function answeredQuestions (task: any, roles?: any[] | null): AnsweredQuestion[] {
@@ -270,7 +270,7 @@ export function answeredQuestions (task: any, roles?: any[] | null): AnsweredQue
             const closing: any = by ?? (closingRound ? byUuid.get(closingRound.release) : undefined)
             let answeredBy: AnsweredBy | null = null
             if (!withdrawn) {
-                answeredBy = by && by.document?.specification !== 'QUESTIONS'
+                answeredBy = by && by.document?.specification !== 'BOARD_QUESTIONS'
                     ? { specification: by.document?.specification ?? null, round: by.document?.round ?? null, release: f.resolvedBy as string }
                     : { person: true, round: closing?.document?.round ?? null }
             }

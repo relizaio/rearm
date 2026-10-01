@@ -36,7 +36,7 @@ describe('MostRecentReleasesWidget', () => {
         expect(call.query.definitions[0].name.value).toBe('releasesByDateRange')
         expect(call.variables.org).toBe('o1')
         expect(call.variables.componentKinds).toBe(SOFTWARE_KINDS)
-        expect(call.variables.componentKinds).not.toContain('DOCUMENT')
+        expect(call.variables.componentKinds).not.toContain('BOARD_DOCUMENT')
     })
 
     it('asks a perspective read for the software kinds too', async () => {

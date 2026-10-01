@@ -834,7 +834,7 @@ export const agentBoardPresets: Array<{
     {
         key: 'BOARD_ALERTS',
         label: 'Board alerts',
-        description: 'Every ALERT a board posts, and a board being locked.',
+        description: 'Every ALERT a board posts, and a board being paused.',
         prefill: { eventTypes: ['AGENT_BOARD_ALERT'], filterMode: 'PRESET', celExpression: '' },
     },
     {

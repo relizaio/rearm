@@ -19,24 +19,24 @@ describe('the review banner (RD2-22)', () => {
 
 describe('the board picker (RD2-22)', () => {
     const boards = [
-        { uuid: 'b1', name: 'ReARM Dogfood 2', taskPrefix: 'RD2', lock: null },
-        { uuid: 'b2', name: 'gate2', taskPrefix: 'G2', lock: { level: 'OPERATOR' } },
+        { uuid: 'b1', name: 'ReARM Dogfood 2', taskPrefix: 'RD2', pause: null },
+        { uuid: 'b2', name: 'gate2', taskPrefix: 'G2', pause: { level: 'OPERATOR' } },
         { uuid: 'b3', name: 'no prefix yet' },
     ]
 
-    it('reads prefix · name, and flags a locked board', () => {
+    it('reads prefix · name, and flags a paused board', () => {
         expect(boardPickerOptions(boards)).toEqual([
-            { label: 'RD2 · ReARM Dogfood 2', value: 'b1', locked: false },
-            { label: 'G2 · gate2', value: 'b2', locked: true },
-            { label: 'no prefix yet', value: 'b3', locked: false },
+            { label: 'RD2 · ReARM Dogfood 2', value: 'b1', paused: false },
+            { label: 'G2 · gate2', value: 'b2', paused: true },
+            { label: 'no prefix yet', value: 'b3', paused: false },
         ])
     })
 
-    it('draws the lock as a tag after the name, and nothing on an unlocked board', () => {
+    it('draws the pause as a tag after the name, and nothing on a board that is not paused', () => {
         const draw = (i: number) => mount(defineComponent({ render: () => renderBoardOption(boardPickerOptions(boards)[i]) }))
-        const locked = draw(1)
-        expect(locked.text()).toBe('G2 · gate2locked')
-        expect(locked.find('[data-testid="board-option-locked"]').text()).toBe('locked')
-        expect(draw(0).find('[data-testid="board-option-locked"]').exists()).toBe(false)
+        const paused = draw(1)
+        expect(paused.text()).toBe('G2 · gate2paused')
+        expect(paused.find('[data-testid="board-option-paused"]').text()).toBe('paused')
+        expect(draw(0).find('[data-testid="board-option-paused"]').exists()).toBe(false)
     })
 })

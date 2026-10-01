@@ -1,11 +1,11 @@
 import { describe, expect, it } from 'vitest'
-import { approveConfirm, approveLabel, gateBlockingFindings, gateDecisions, gatedSignOff, gateRejected, rejectLabel,
+import { acceptConfirm, acceptLabel, gateBlockingReviewItems, gateDecisions, gatedSignOff, gateRejected, rejectLabel,
     undecided } from './agentGateReview'
 
 // A rejected gate (task RD2-25): what blocks, what the person must decide, and the labels.
-const finding = (id: string, priority: number | null, extra: any = {}) => ({ id, priority, status: 'OPEN', title: `about ${id}`, ...extra })
+const reviewItem = (id: string, priority: number | null, extra: any = {}) => ({ id, priority, status: 'OPEN', title: `about ${id}`, ...extra })
 const hold = { kind: 'HUMAN_GATE', gateRole: 'reviewer' }
-function gated (outcome: string, findings: any[], other: any[] = []) {
+function gated (outcome: string, reviewItems: any[], other: any[] = []) {
     return {
         hold,
         signOffs: [
@@ -14,8 +14,8 @@ function gated (outcome: string, findings: any[], other: any[] = []) {
             { role: 'reviewer', outcome, outputs: ['r2'] },
         ],
         documents: [
-            { uuid: 'r2', document: { findings: { findings } } },
-            { uuid: 'old', document: { findings: { findings: other } } },
+            { uuid: 'r2', document: { reviewItems: { reviewItems } } },
+            { uuid: 'old', document: { reviewItems: { reviewItems: other } } },
         ],
     }
 }
@@ -30,38 +30,38 @@ describe('the gate review rule', () => {
     })
 
     it('finds what blocks in the gated hop\'s own index, as the server does', () => {
-        const t = gated('REJECTED', [finding('F-1', 1), finding('F-2', 3), finding('F-3', 1, { status: 'RESOLVED' }),
-            finding('F-4', 1, { correction: true }), finding('F-5', null)], [finding('X-1', 1)])
-        const strict = gateBlockingFindings(t, { blockingPriority: null })
+        const t = gated('REJECTED', [reviewItem('F-1', 1), reviewItem('F-2', 3), reviewItem('F-3', 1, { status: 'RESOLVED' }),
+            reviewItem('F-4', 1, { correction: true }), reviewItem('F-5', null)], [reviewItem('X-1', 1)])
+        const strict = gateBlockingReviewItems(t, { blockingPriority: null })
         expect(strict.map(f => f.id)).toEqual(['F-1', 'F-2', 'F-5'])
-        const lax = gateBlockingFindings(t, { blockingPriority: 1 })
+        const lax = gateBlockingReviewItems(t, { blockingPriority: 1 })
         expect(lax.map(f => f.id), 'P3 is below the line; unprioritised blocks').toEqual(['F-1', 'F-5'])
-        expect(gateBlockingFindings(t, undefined).map(f => f.id)).toEqual(['F-1', 'F-2', 'F-5'])
+        expect(gateBlockingReviewItems(t, undefined).map(f => f.id)).toEqual(['F-1', 'F-2', 'F-5'])
     })
 
     it('needs an action and words on every blocking item, and sends one decision each', () => {
-        const blocking = [finding('F-1', 1), finding('F-2', 1)]
+        const blocking = [reviewItem('F-1', 1), reviewItem('F-2', 1)]
         expect(undecided(blocking, {}).map(f => f.id)).toEqual(['F-1', 'F-2'])
         const partly = { 'F-1': { action: 'ACCEPT' as const, reason: 'ship it' }, 'F-2': { action: 'DISMISS' as const, reason: '  ' } }
         expect(undecided(blocking, partly).map(f => f.id), 'blank words are no decision').toEqual(['F-2'])
         const all = { ...partly, 'F-2': { action: 'DISMISS' as const, reason: ' not a bug ' } }
         expect(undecided(blocking, all)).toEqual([])
         expect(gateDecisions(blocking, all)).toEqual([
-            { action: 'ACCEPT', findingId: 'F-1', resolution: 'ship it' },
-            { action: 'DISMISS', findingId: 'F-2', resolution: 'not a bug' },
+            { action: 'ACCEPT', reviewItemId: 'F-1', resolution: 'ship it' },
+            { action: 'DISMISS', reviewItemId: 'F-2', resolution: 'not a bug' },
         ])
-        expect(approveConfirm(blocking, all)).toBe('Approving past F-1 (P1): accepted · F-2 (P1): dismissed')
+        expect(acceptConfirm(blocking, all)).toBe('Accepting past F-1 (P1): accepted · F-2 (P1): dismissed')
     })
 
     it('never says pass on a rejection, and leads with sending it back', () => {
         const t = gated('REJECTED', [])
-        expect(approveLabel(t, true, [finding('F-1', 1)], false)).toBe('Approve past the findings')
-        expect(approveLabel(t, true, [], false)).toBe('Approve anyway')
-        expect(approveLabel(t, false, [], false)).toBe('Approve reviewer pass')
-        expect(approveLabel(t, false, [], true)).toBe('Approve with correction')
-        for (const l of [approveLabel(t, true, [], true), approveLabel(t, true, [finding('F-1', 1)], true)]) expect(l).not.toMatch(/pass/)
+        expect(acceptLabel(t, true, [reviewItem('F-1', 1)], false)).toBe('Accept past the review items')
+        expect(acceptLabel(t, true, [], false)).toBe('Accept anyway')
+        expect(acceptLabel(t, false, [], false)).toBe('Accept reviewer pass')
+        expect(acceptLabel(t, false, [], true)).toBe('Accept with correction')
+        for (const l of [acceptLabel(t, true, [], true), acceptLabel(t, true, [reviewItem('F-1', 1)], true)]) expect(l).not.toMatch(/pass/)
         expect(rejectLabel(true, false)).toBe('Reject (send back)')
-        expect(rejectLabel(true, true)).toBe('Reject (send back) with finding')
+        expect(rejectLabel(true, true)).toBe('Reject (send back) with review item')
         expect(rejectLabel(false, false)).toBe('Reject')
     })
 })

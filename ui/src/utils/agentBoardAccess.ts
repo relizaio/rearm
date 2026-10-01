@@ -1,8 +1,8 @@
 // What the person may do on a board (board-permissions.md §4.6): the board's myPermissions, served
 // per caller. The UI hides a control the server would refuse -- hidden, not disabled.
 //
-// BOARD_WRITE: register, authorize, order, hold, release, escalate, decide, answer, reopen, human
-// sign-off, strength and budget, lock. CONFIGURATION_WRITE: board edit, roles, reseed, apply.
+// BOARD_WRITE: register, authorize, order, hold, lift, unassign, escalate, decide, answer, reopen, human
+// sign-off, strength and budget, pause. CONFIGURATION_WRITE: board edit, roles, reseed, apply.
 
 export type BoardFunction = 'BOARD_READ' | 'BOARD_AGENT' | 'BOARD_WRITE' | 'CONFIGURATION_READ' | 'CONFIGURATION_WRITE'
 

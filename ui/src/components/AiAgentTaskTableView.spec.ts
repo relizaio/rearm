@@ -23,13 +23,13 @@ describe('AiAgentTaskTableView', () => {
 // board with a ladder, each level named (task RD3-6).
 describe('AiAgentTaskTableView: level', () => {
     const tasks = [
-        { uuid: 'a', key: 'RD2-1', title: 'deep', status: 'QUEUED', level: 3 },
-        { uuid: 'b', key: 'RD2-2', title: 'none of its own', status: 'QUEUED', level: null },
-        { uuid: 'c', key: 'RD2-3', title: 'shallow', status: 'QUEUED', level: 0 },
+        { uuid: 'a', key: 'RD2-1', title: 'deep', status: 'QUEUED', workLevel: 3 },
+        { uuid: 'b', key: 'RD2-2', title: 'none of its own', status: 'QUEUED', workLevel: null },
+        { uuid: 'c', key: 'RD2-3', title: 'shallow', status: 'QUEUED', workLevel: 0 },
     ]
     const LADDER = { levels: [{ number: 0, name: 'requirements' }, { number: 1, name: 'solution' },
         { number: 2, name: 'objects' }, { number: 3, name: 'components' }] }
-    const board = { ladder: LADDER, defaultTaskLevel: 1 }
+    const board = { ladder: LADDER, defaultWorkLevel: 1 }
 
     it('shows each task\'s level by name, the board default for one without', () => {
         const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
@@ -37,9 +37,9 @@ describe('AiAgentTaskTableView: level', () => {
     })
 
     it('has no Level column on a board without a ladder, whatever level a task kept', () => {
-        for (const b of [{}, { defaultTaskLevel: 1 }, { ladder: null }]) {
+        for (const b of [{}, { defaultWorkLevel: 1 }, { ladder: null }]) {
             const w = mount(TableView, { props: { tasks, agentNames: {}, board: b }, global: { stubs } })
-            expect(w.findAll('th').some(th => th.text().includes('Level')), JSON.stringify(b)).toBe(false)
+            expect(w.findAll('th').some(th => th.text().includes('Work level')), JSON.stringify(b)).toBe(false)
             expect(w.findAll('[data-level]')).toHaveLength(0)
             expect(w.find('input').attributes('placeholder')).not.toContain('level')
         }
@@ -48,7 +48,7 @@ describe('AiAgentTaskTableView: level', () => {
     it('sorts by level, the default for a task without its own', async () => {
         const w = mount(TableView, { props: { tasks, agentNames: {}, board }, global: { stubs } })
         const order = () => w.findAll('tbody tr').map(r => r.text().includes('shallow') ? 'c' : r.text().includes('deep') ? 'a' : 'b')
-        const header = () => w.findAll('th').find(th => th.text().includes('Level'))!
+        const header = () => w.findAll('th').find(th => th.text().includes('Work level'))!
         await header().trigger('click')
         const first = order()
         await header().trigger('click')

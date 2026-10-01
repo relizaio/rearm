@@ -1,4 +1,4 @@
-// The PRs linked while the seat had a task parked (task RD4-19): from the hold while it waits, from the release row
+// The PRs linked while the seat had a task parked (task RD4-19): from the hold while it waits, from the lift row
 // after; a hop's own hold (RD4-5) and an unparked task list none.
 import { describe, expect, it } from 'vitest'
 import { linkedLine, linkedSinceParked, operatorQuestions } from './agentOperatorQuestion'
@@ -25,18 +25,18 @@ describe('linked since parked', () => {
         expect(linkedLine({ ...link, by: null })).toContain('linked by an API key at')
     })
 
-    it('gives a question its links from the hold while it waits and from the release row after', () => {
+    it('gives a question its links from the hold while it waits and from the lift row after', () => {
         const waiting = operatorQuestions({ status: 'ON_HOLD', hold: hold('DELIVERING', [link]), statusHistory: [asked('DELIVERING')] })
         expect(waiting[0].answer).toBeNull()
         expect(waiting[0].linked).toEqual([link])
-        const released = operatorQuestions({ status: 'DELIVERING', hold: null, statusHistory: [asked('DELIVERING'),
-            { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'RELEASE_HOLD', actor: { kind: 'USER', name: 'Pat' },
-                note: 'released by Pat: supersede it', linked: [link] }] })
-        expect(released[0].answer).toBe('supersede it')
-        expect(released[0].linked).toEqual([link])
+        const lifted = operatorQuestions({ status: 'DELIVERING', hold: null, statusHistory: [asked('DELIVERING'),
+            { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'LIFT_HOLD', actor: { kind: 'USER', name: 'Pat' },
+                note: 'lifted by Pat: supersede it', linked: [link] }] })
+        expect(lifted[0].answer).toBe('supersede it')
+        expect(lifted[0].linked).toEqual([link])
         const older = operatorQuestions({ status: 'DELIVERING', hold: null, statusHistory: [asked('DELIVERING'),
-            { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'RELEASE_HOLD', actor: { kind: 'USER', name: 'Pat' },
-                note: 'released by Pat: go on' }] })
+            { from: 'ON_HOLD', to: 'DELIVERING', at: '2026-10-01T10:10:00Z', trigger: 'LIFT_HOLD', actor: { kind: 'USER', name: 'Pat' },
+                note: 'lifted by Pat: go on' }] })
         expect(older[0].linked, 'a row written before links were kept').toEqual([])
     })
 })

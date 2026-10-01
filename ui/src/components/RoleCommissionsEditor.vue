@@ -16,7 +16,7 @@
         <n-text depth="3" style="font-size: 11.5px; display: block; margin-top: 4px;">
             An agent in this role, holding a task, may ask these roles for an investigation report with
             <code>rearm agent task commission</code>; the report comes back pinned on its task. Only roles that
-            produce INVESTIGATION_REPORT can be named. The budget is capped by the board's.
+            produce BOARD_INVESTIGATION_REPORT can be named. The budget is capped by the board's.
         </n-text>
     </div>
 </template>

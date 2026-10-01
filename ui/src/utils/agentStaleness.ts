@@ -1,5 +1,5 @@
 // A board's staleness block (task RD3-4): minutes each, a blank threshold off, and the block replaced
-// whole when it is saved. The sweep only ALERTs; a person releases a stalled assignment by hand.
+// whole when it is saved. The sweep only ALERTs; a person unassigns a stalled task by hand.
 
 export const STALENESS_KEYS = ['roleUnstaffedMinutes', 'hopNoProgressMinutes', 'deliveryStuckMinutes',
     'seatSilentMinutes', 'repeatMinutes', 'investigationOverdueMinutes'] as const

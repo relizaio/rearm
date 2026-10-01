@@ -7,17 +7,17 @@ import { useNotification } from 'naive-ui'
 export type AfterAction = (task: any, keepOpen: boolean) => Promise<void>
 
 /**
- * The failure toast's lead for a findings decision (task RD2-23, sweep UI-49): a refused File names filing,
+ * The failure toast's lead for a review item decision (task RD2-23, sweep UI-49): a refused File names filing,
  * not a decision the person did not make; any other decision keeps "Decision failed".
  */
 export function decisionFailedText (decisions: { action?: string | null }[] | null | undefined): string {
     const all = decisions ?? []
-    return all.length > 0 && all.every(d => d?.action === 'FILE') ? 'Could not file the finding' : 'Decision failed'
+    return all.length > 0 && all.every(d => d?.action === 'FILE') ? 'Could not file the review item' : 'Decision failed'
 }
 
 /**
  * @param after reloads once an action succeeded. keepOpen is false after a verdict that hands the
- * task on (a gate review, a human sign-off, a release, an answer), where the board panel closes its
+ * task on (a gate review, a human sign-off, a lift, an answer), where the board panel closes its
  * drawer; the task page stays on the task either way.
  */
 export function useAgentTaskActions (after: AfterAction) {
@@ -45,14 +45,14 @@ export function useAgentTaskActions (after: AfterAction) {
         }
     }
 
-    function humanReview (p: { task: any, approve: boolean, note: string, findings?: any[],
+    function humanReview (p: { task: any, accept: boolean, note: string, reviewItems?: any[],
             about?: { specification: string } | null }) {
         return handedOn(p.task,
-            () => store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, approve: p.approve,
-                note: p.note || undefined, findings: p.findings, about: p.about }),
-            (res: any) => `${p.approve ? 'Approved' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
-                + (p.findings?.length && p.approve ? ' with a correction' : '')
-                + (res?.status === 'QUEUED' && res?.role ? ` — ${p.approve ? 'on' : 'back'} to ${res.role}` : ''),
+            () => store.dispatch('agentTaskHumanReview', { taskUuid: p.task.uuid, accept: p.accept,
+                note: p.note || undefined, reviewItems: p.reviewItems, about: p.about }),
+            (res: any) => `${p.accept ? 'Accepted' : 'Rejected'} ${p.task.hold?.gateRole ?? ''} pass`
+                + (p.reviewItems?.length && p.accept ? ' with a correction' : '')
+                + (res?.status === 'QUEUED' && res?.role ? ` — ${p.accept ? 'on' : 'back'} to ${res.role}` : ''),
             'Review failed')
     }
 
@@ -63,7 +63,7 @@ export function useAgentTaskActions (after: AfterAction) {
             () => `Signed off ${p.outcome} — returned to the coordinator`, 'Sign-off failed')
     }
 
-    function operatorRelease (p: { task: any, note?: string, role?: string } | any) {
+    function liftHold (p: { task: any, note?: string, role?: string } | any) {
         // Tolerates the bare task the drawer used to emit, so a stale caller does not lose the release.
         const t = p?.task ?? p
         // A role only from a release payload: a bare task carries its own role field, which is not
@@ -72,14 +72,14 @@ export function useAgentTaskActions (after: AfterAction) {
         return handedOn(t,
             () => store.dispatch('agentTaskOperatorHold', { taskUuid: t.uuid, hold: false, reason: p?.note || undefined,
                 ...(role ? { role } : {}) }),
-            () => role ? `Hold released to ${role}` : 'Hold released', 'Release failed')
+            () => role ? `Hold lifted, routed to ${role}` : 'Hold lifted', 'Lift failed')
     }
 
     function answerQuestions (p: { task: any,
             answers: { id: string, status: string, resolution: string }[], answerAll?: string }) {
         return handedOn(p.task,
             () => store.dispatch('agentTaskAnswer', {
-                taskUuid: p.task.uuid, answers: p.answers, answerAll: p.answerAll, releaseHold: true }),
+                taskUuid: p.task.uuid, answers: p.answers, answerAll: p.answerAll, liftHold: true }),
             (res: any) => res?.role ? `Answered — back to ${res.role}` : 'Answered', 'Answer failed')
     }
 
@@ -90,14 +90,14 @@ export function useAgentTaskActions (after: AfterAction) {
     }
 
     /**
-     * A task's budget; null clears it (task 6f1b348d). A raise does not release a budget hold, so a
-     * held task's confirmation says to release it.
+     * A task's budget; null clears it (task 6f1b348d). A raise does not lift a budget hold, so a
+     * held task's confirmation says to lift it.
      */
     function setBudget (p: { task: any, budgetMicros: number | null }) {
         return kept(p.task,
             () => store.dispatch('agentTaskSetBudget', { taskUuid: p.task.uuid, budgetMicros: p.budgetMicros }),
             (res: any) => (p.budgetMicros === null ? 'Task budget cleared' : 'Task budget set')
-                + (res?.status === 'ON_HOLD' ? '; release the hold to resume' : ''), 'Setting the budget failed')
+                + (res?.status === 'ON_HOLD' ? '; lift the hold to resume' : ''), 'Setting the budget failed')
     }
 
     function orderTask (p: { task: any, orderIndex: number }) {
@@ -127,10 +127,10 @@ export function useAgentTaskActions (after: AfterAction) {
                 : `Reopened to ${p.role}`, 'Reopen failed')
     }
 
-    function decideFindings (p: { task: any, specification: string, decisions: any[],
+    function decideReviewItems (p: { task: any, specification: string, decisions: any[],
             about?: { specification: string } | null }) {
         return kept(p.task,
-            () => store.dispatch('agentTaskDecideFindings', { taskUuid: p.task.uuid, specification: p.specification,
+            () => store.dispatch('agentTaskDecideReviewItems', { taskUuid: p.task.uuid, specification: p.specification,
                 decisions: p.decisions, about: p.about }),
             (res: any) => res?.status === 'QUEUED' && res?.role !== p.task.role
                 ? `Decided — back to ${res.role}` : 'Decided', decisionFailedText(p.decisions))
@@ -144,12 +144,12 @@ export function useAgentTaskActions (after: AfterAction) {
             'Setting strength failed')
     }
 
-    /** A task's level, 0 to 9; null clears it to the board default (RD2-1). */
-    function setLevel (p: { task: any, level: number | null }) {
+    /** A task's work level, 0 to 9; null clears it to the board default (RD2-1). */
+    function setWorkLevel (p: { task: any, workLevel: number | null }) {
         return kept(p.task,
-            () => store.dispatch('agentTaskSetLevel', { taskUuid: p.task.uuid, level: p.level }),
-            () => p.level == null ? 'Level cleared' : `Level set to ${p.level}`,
-            'Could not set the level')
+            () => store.dispatch('agentTaskSetWorkLevel', { taskUuid: p.task.uuid, workLevel: p.workLevel }),
+            () => p.workLevel == null ? 'Work level cleared' : `Work level set to ${p.workLevel}`,
+            'Could not set the work level')
     }
 
     /** Move a task into a group by key, or out of every group with null (RD2-31). */
@@ -168,14 +168,14 @@ export function useAgentTaskActions (after: AfterAction) {
             'Could not set the tags')
     }
 
-    /** A person's attestation of a delivery unit, or of its abandonment (RD2-10). */
-    function delivered (p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }) {
+    /** A person's declaration of a delivery unit, or of its abandonment (RD2-10). */
+    function declareDelivery (p: { task: any, unit: string, commit: string | null, outcome: string, note: string | null }) {
         return kept(p.task,
-            () => store.dispatch('agentTaskDelivered', { taskUuid: p.task.uuid, unit: p.unit, commit: p.commit,
+            () => store.dispatch('agentTaskDeclareDelivery', { taskUuid: p.task.uuid, unit: p.unit, commit: p.commit,
                 outcome: p.outcome, note: p.note }),
             (res: any) => p.outcome === 'ABANDONED' ? `${p.unit} marked abandoned`
-                : res?.status === 'COMPLETED' ? 'Delivery attested: task completed' : 'Delivery attested',
-            'Could not attest')
+                : res?.status === 'COMPLETED' ? 'Delivery declared: task completed' : 'Delivery declared',
+            'Could not declare')
     }
 
     /** A person declares a linked PR superseded by its replacement (task RD3-18). */
@@ -195,10 +195,10 @@ export function useAgentTaskActions (after: AfterAction) {
     }
 
     /** A person takes a stalled assignment back to the queue for the same role (task RD3-4). */
-    function releaseAssignment (p: { task: any, reason: string }) {
+    function unassign (p: { task: any, reason: string }) {
         return kept(p.task,
-            () => store.dispatch('agentTaskReleaseAssignment', { taskUuid: p.task.uuid, reason: p.reason }),
-            () => 'Assignment released: the task is queued again', 'Release failed')
+            () => store.dispatch('agentTaskUnassign', { taskUuid: p.task.uuid, reason: p.reason }),
+            () => 'Unassigned: the task is queued again', 'Unassign failed')
     }
 
     /**
@@ -220,8 +220,8 @@ export function useAgentTaskActions (after: AfterAction) {
     }
 
     return {
-        humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
-        completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, releaseAssignment, setBudget,
-        setLevel, setGroup, setTags, delivered, supersedePr, commission,
+        humanReview, humanSignOff, liftHold, answerQuestions, authorizeTask, orderTask,
+        completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, unassign, setBudget,
+        setWorkLevel, setGroup, setTags, declareDelivery, supersedePr, commission,
     }
 }

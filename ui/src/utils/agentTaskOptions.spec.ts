@@ -23,19 +23,19 @@ describe('agentTaskOptions', () => {
 
     it('lists what active roles produce, sorted and readable', () => {
         const opts = aboutOptionsOf([
-            { active: true, producesOutputs: [{ specification: 'REVIEW_FINDINGS' }, { specification: 'ARCHITECTURE' }] },
+            { active: true, producesOutputs: [{ specification: 'BOARD_REVIEW_ITEMS' }, { specification: 'ARCHITECTURE' }] },
             { active: true, producesOutputs: [{ specification: 'ARCHITECTURE' }, null] },
             { active: false, producesOutputs: [{ specification: 'TEST_PLAN' }] },
         ])
         expect(opts).toEqual([
             { label: 'architecture', value: 'ARCHITECTURE' },
-            { label: 'review findings', value: 'REVIEW_FINDINGS' },
+            { label: 'review items', value: 'BOARD_REVIEW_ITEMS' },
         ])
     })
 
-    it('files findings in the indexed types', () => {
-        expect(fileSpecOptions.map(o => o.value)).toContain('REVIEW_FINDINGS')
-        expect(fileSpecOptions.find(o => o.value === 'TEST_REPORT')?.label).toBe('test report')
+    it('files review items in the indexed types', () => {
+        expect(fileSpecOptions.map(o => o.value)).toContain('BOARD_REVIEW_ITEMS')
+        expect(fileSpecOptions.find(o => o.value === 'BOARD_TEST_REPORT')?.label).toBe('test report')
     })
 
     it('every list is {label, value}', () => {

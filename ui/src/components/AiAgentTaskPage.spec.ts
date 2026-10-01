@@ -6,7 +6,7 @@ import { fixtureRoles, fixtureTasks, richTask } from './task/taskFixtures'
 const dispatch = vi.fn()
 const push = vi.fn()
 const params = { uuid: 't1' }
-vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters: { orgById: () => ({ settings: { findingPriorityLevels: 3 } }), myuser: null } }) }))
+vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters: { orgById: () => ({ settings: { reviewItemPriorityLevels: 3 } }), myuser: null } }) }))
 vi.mock('vue-router', () => ({ useRoute: () => ({ params }), useRouter: () => ({ push, back: vi.fn() }) }))
 vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ success: vi.fn(), error: vi.fn() }) }))
 
@@ -45,14 +45,14 @@ describe('AiAgentTaskPage', () => {
         const w = mount(Page)
         await flushPromises()
         const headings = w.findAll('.dsec__h').map(h => h.text())
-        for (const h of ['Human review', 'Task actions', 'Dependencies', 'Lineage', 'Usage', 'File a finding',
+        for (const h of ['Human review', 'Task actions', 'Dependencies', 'Lineage', 'Usage', 'File a review item',
             'Documents', 'Hops', 'Pull requests', 'Waiting on', 'Answer', 'Status history', 'Provenance']) {
             expect(headings, h).toContain(h)
         }
         // One word, one list (RD2-23, sweep UI-15): the hops are "Hops", the revisions "Revisions".
         expect(headings).not.toContain('History')
-        expect(headings.some(h => h.startsWith('Review findings') && h.includes('round 3'))).toBe(true)
-        expect(headings.some(h => h.startsWith('Test findings'))).toBe(true)
+        expect(headings.some(h => h.startsWith('Review items') && h.includes('round 3'))).toBe(true)
+        expect(headings.some(h => h.startsWith('Test report items'))).toBe(true)
         // the newest review round only: F-4 is new in round 3, F-1 is shown closed
         expect(w.text()).toContain('F-4')
         expect(w.findAll('.drow')).toHaveLength(5)

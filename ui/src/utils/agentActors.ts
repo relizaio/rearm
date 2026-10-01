@@ -1,7 +1,7 @@
 /**
  * Rendering a board actor.
  *
- * These four fields -- a lock's lockedBy, a board event's actor, a hold's heldBy and a
+ * These four fields -- a pause's pausedBy, a board event's actor, a hold's heldBy and a
  * sign-off's reviewedBy -- used to be strings the UI printed verbatim, which meant it
  * displayed "coordinator-session:2f9c…" and the literal "operator" to human readers. They
  * are objects now, so this decides what a person should see: the name when the writer

@@ -144,7 +144,7 @@ export function taskPagePath (uuid: string): string {
 
 /**
  * A status-history row's words (task RD2-23, sweep UI-50): the transition in words, and, when routing wrote
- * why, "routing: findings decided; back to designer" in place of the bare trigger. Rows without a note -- a
+ * why, "routing: review items decided; back to designer" in place of the bare trigger. Rows without a note -- a
  * person's action, or routing before notes were kept -- read as before.
  */
 export function statusRowWords (c: { from?: string | null, to?: string | null, trigger?: string | null,

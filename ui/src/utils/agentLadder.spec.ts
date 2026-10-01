@@ -82,6 +82,6 @@ describe('the ladder patch', () => {
         expect(boardFieldOfError('settings.ladder level 1 needs a name')).toBe('ladder')
         expect(boardFieldOfError('settings.ladder cannot be removed while 2 task(s) or group(s) carry a level it does not have: RD-1 (level 1); clear the levels first'))
             .toBe('ladder')
-        expect(boardFieldOfError("defaultTaskLevel 4 is not on the board's ladder: 0 requirements, 1 solution")).toBe('defaultTaskLevel')
+        expect(boardFieldOfError("defaultWorkLevel 4 is not on the board's ladder: 0 requirements, 1 solution")).toBe('defaultWorkLevel')
     })
 })

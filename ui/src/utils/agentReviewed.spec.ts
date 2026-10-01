@@ -7,7 +7,7 @@ describe('reviewedChips', () => {
             reviewedInputs: [
                 { release: 'a1', specification: 'DETAILED_DESIGN', round: 2, promotedTo: 'READY_TO_SHIP' },
                 { release: 'b2', specification: 'ARCHITECTURE', round: null, promotedTo: null },
-                { release: 'c3', specification: 'TEST_REPORT', round: 1, promotedTo: null },
+                { release: 'c3', specification: 'BOARD_TEST_REPORT', round: 1, promotedTo: null },
             ],
             refusedPromotions: [{ release: 'b2', specification: 'ARCHITECTURE', reason: 'ships only by a person' }],
         })).toEqual([

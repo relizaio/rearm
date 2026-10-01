@@ -39,11 +39,11 @@ describe('the board settings form: notify a person after', () => {
     it('reads every setting key off the form, the budget in dollars', () => {
         const draft = settingsDraftOf({ budgetDollars: 1.5, softAlertPercent: 70, cycleCap: 4, noProgressRepeatsToStop: 2,
             blockingPriority: 1, completionPriority: 2, humanQueueAgeMinutes: 45, eventRetentionDays: 0,
-            coordinatorStopRelease: false })
+            coordinatorStopLift: false })
         expect(Object.keys(draft).sort()).toEqual([...BOARD_SETTING_KEYS].sort())
         expect(draft).toEqual({ budgetMicros: 1_500_000, softAlertPercent: 70, cycleCap: 4, noProgressRepeatsToStop: 2,
             blockingPriority: 1, completionPriority: 2, humanQueueAgeMinutes: 45, eventRetentionDays: 0,
-            coordinatorStopRelease: false })
+            coordinatorStopLift: false })
         expect(Object.values(settingsDraftOf({})).every(v => v === null)).toBe(true)
     })
 })
@@ -91,7 +91,7 @@ describe('the board page: New task', () => {
         expect(form).toContain('data-testid="new-task-title-error"')
         expect(source).toContain('input: { ...taskRegisterInput(registering.value), ...registerGroupFields(registering.value) },')
         // The draft now comes from newTask, which the header and the empty board's hint share (RD2-13).
-        expect(source).toContain("registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', level: null }")
+        expect(source).toContain("registering.value = { title: '', description: '', externalRef: '', sourceUrl: '', group: NO_GROUP, tagsText: '', workLevel: null }")
         expect(template).toContain('@click="newTask"')
     })
 
@@ -122,16 +122,16 @@ describe('the board warning: capabilities and coverage', () => {
 // Task level on the board (RD2-1): the form's default level, the header chip, lanes and the URL.
 describe('the board: task level', () => {
     it('the form has the default level beside the other settings, sent when changed, with its refusal beside it', () => {
-        expect(template).toContain('<n-select v-model:value="editingBoard.defaultTaskLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"')
+        expect(template).toContain('<n-select v-model:value="editingBoard.defaultWorkLevel" :options="draftLevelOptions(editingBoard.ladderDraft)"')
         expect(template).toContain('data-testid="board-default-level-error"')
-        expect(source).toContain('const defaultLevel = defaultLevelPatch(original, editingBoard.value.defaultTaskLevel)')
-        expect(source).toContain('if (defaultLevel.changed) input.defaultTaskLevel = defaultLevel.value')
+        expect(source).toContain('const defaultWorkLevel = defaultWorkLevelPatch(original, editingBoard.value.defaultWorkLevel)')
+        expect(source).toContain('if (defaultWorkLevel.changed) input.defaultWorkLevel = defaultWorkLevel.value')
         const save = source.slice(source.indexOf('async function saveBoard'))
-        expect(save.indexOf('input.defaultTaskLevel = defaultLevel.value')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
+        expect(save.indexOf('input.defaultWorkLevel = defaultWorkLevel.value')).toBeLessThan(save.indexOf("store.dispatch('createAgentBoard'"))
     })
 
     it('the header names the default level, 0 unless set', () => {
-        expect(template).toContain('data-testid="default-level-chip">default level {{ levelLabel(currentBoard.defaultTaskLevel ?? 0, currentBoard) }}')
+        expect(template).toContain('data-testid="default-level-chip">default work level {{ levelLabel(currentBoard.defaultWorkLevel ?? 0, currentBoard) }}')
     })
 
     it('the kanban groups by lane and filters by level, both kept in the URL', () => {
@@ -315,11 +315,11 @@ describe('the boards tab for a person who cannot read a board', () => {
     })
 })
 
-// Controls shown to people who cannot act (RD2-6): the review banner asks only who can approve and
+// Controls shown to people who cannot act (RD2-6): the review banner asks only who can accept and
 // informs a reader; View as spec needs configuration read; a refused spec read is said in the modal.
 describe('the board page for a reader', () => {
-    it('asks a person who can approve, and tells a reader the board waits on a person', () => {
-        expect(template).toContain('<n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="lockbanner"')
+    it('asks a person who can accept, and tells a reader the board waits on a person', () => {
+        expect(template).toContain('<n-alert v-if="awaitingHumanReview.length && canOperate(currentBoard)" type="error" class="boardbanner"')
         const asked = template.slice(template.indexOf('data-testid="review-banner"'))
         expect(asked.slice(0, asked.indexOf('</n-alert>'))).toContain('awaiting your review:')
         const told = template.slice(template.indexOf('data-testid="review-banner-info"'))
@@ -375,7 +375,7 @@ describe('the board page: task keys', () => {
         expect(template).not.toContain("t.externalRef ? '#' + t.externalRef.split('#').pop() : t.title")
     })
 
-    it('offers each board as prefix · name with a locked tag', () => {
+    it('offers each board as prefix · name with a paused tag', () => {
         expect(template).toMatch(/:options="boardOptions"\s+:render-label="renderBoardOption"/)
         expect(source).toContain('const boardOptions = computed(() => boardPickerOptions(boards.value))')
     })
@@ -413,7 +413,7 @@ describe('board pages at 1280', () => {
     })
 
     it('gives the task page\'s selects and budget short placeholders', () => {
-        expect(read('./task/TaskFindings.vue')).toContain('placeholder="severity"')
+        expect(read('./task/TaskReviewItems.vue')).toContain('placeholder="severity"')
         expect(read('./task/TaskHeader.vue')).toContain('placeholder="severity"')
         // 170 px: the "budget $" prefix and the steppers leave the input 52 px; "none" needs 35 (tester run 1 T-3).
         expect(read('./task/TaskActions.vue')).toContain('placeholder="none" style="width: 170px" data-testid="task-budget"')

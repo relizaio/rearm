@@ -1,14 +1,14 @@
 // A hop parked for the operator (task RD4-5): the page reads the question and the answer from the status
-// history, and a release of such a hold needs the answer.
+// history, and a lift of such a hold needs the answer.
 import { describe, expect, it } from 'vitest'
-import { answerOf, operatorQuestions, parkedHop, questionOf, releaseNeedsAnswer } from './agentOperatorQuestion'
+import { answerOf, operatorQuestions, parkedHop, questionOf, liftNeedsAnswer } from './agentOperatorQuestion'
 
 const holder = { kind: 'SESSION', uuid: 's-arch', name: null }
 const pat = { kind: 'USER', uuid: 'u1', name: 'Pat Operator' }
 const asked = { from: 'ASSIGNED', to: 'ON_HOLD', at: '2026-09-29T10:00:00Z', trigger: 'HOLD', actor: holder,
     note: 'awaiting the operator: per-org or per-board?' }
-const answered = { from: 'ON_HOLD', to: 'ASSIGNED', at: '2026-09-29T11:00:00Z', trigger: 'RELEASE_HOLD', actor: pat,
-    note: 'released by Pat Operator: per-org, rotated yearly' }
+const answered = { from: 'ON_HOLD', to: 'ASSIGNED', at: '2026-09-29T11:00:00Z', trigger: 'LIFT_HOLD', actor: pat,
+    note: 'lifted by Pat Operator: per-org, rotated yearly' }
 const parkedHold = { level: 'OPERATOR', kind: 'MANUAL', reason: 'awaiting the operator: per-org or per-board?', heldBy: holder }
 
 function task (over: Record<string, any>) {
@@ -31,10 +31,10 @@ describe('parked hop', () => {
         expect(parkedHop(null)).toBe(false)
     })
 
-    it('needs the answer on release, where another hold does not', () => {
-        expect(releaseNeedsAnswer(task({}), '  ')).toBe(true)
-        expect(releaseNeedsAnswer(task({}), 'per-org')).toBe(false)
-        expect(releaseNeedsAnswer(task({ hold: { ...parkedHold, heldBy: pat } }), '')).toBe(false)
+    it('needs the answer on lift, where another hold does not', () => {
+        expect(liftNeedsAnswer(task({}), '  ')).toBe(true)
+        expect(liftNeedsAnswer(task({}), 'per-org')).toBe(false)
+        expect(liftNeedsAnswer(task({ hold: { ...parkedHold, heldBy: pat } }), '')).toBe(false)
     })
 })
 
@@ -45,7 +45,7 @@ describe('operator questions', () => {
         expect(qs[0]).toMatchObject({ question: 'per-org or per-board?', askedBy: holder, answer: null, answeredBy: null })
     })
 
-    it('pairs the question with the answer the release gave', () => {
+    it('pairs the question with the answer the lift gave', () => {
         const qs = operatorQuestions(task({ status: 'ASSIGNED', hold: null,
             statusHistory: [asked, answered, { ...asked, at: '2026-09-29T12:00:00Z', note: 'awaiting the operator: which region?' }] }))
         expect(qs.map(q => [q.question, q.answer])).toEqual([
@@ -70,6 +70,6 @@ describe('operator questions', () => {
         expect(questionOf('awaiting the operator: q?')).toBe('q?')
         expect(questionOf('q?')).toBe('q?')
         expect(answerOf(answered)).toBe('per-org, rotated yearly')
-        expect(answerOf({ note: 'released by USER u1: yes: both', actor: { kind: 'USER', uuid: 'u1', name: null } })).toBe('yes: both')
+        expect(answerOf({ note: 'lifted by USER u1: yes: both', actor: { kind: 'USER', uuid: 'u1', name: null } })).toBe('yes: both')
     })
 })

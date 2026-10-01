@@ -5,7 +5,7 @@
             <div v-for="(c, i) in task.statusHistory" :key="i" class="shist__row">
                 <span class="shist__time"><agent-time :at="c.at"/></span>
                 <span class="shist__arrow">{{ statusRowWords(c).arrow }}</span>
-                <!-- Routing says why and where to (RD2-23): "routing: findings decided; back to designer". -->
+                <!-- Routing says why and where to (RD2-23): "routing: review items decided; back to designer". -->
                 <span v-if="statusRowWords(c).routing" class="shist__note" data-testid="routing-note">{{ statusRowWords(c).routing }}</span>
                 <template v-else>
                     <code class="shist__trig">{{ statusRowWords(c).trigger }}</code>

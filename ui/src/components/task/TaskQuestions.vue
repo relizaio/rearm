@@ -4,12 +4,12 @@
         <div class="qstack">
             <div v-for="(f, i) in task.questionStack" :key="i" class="qstack__row">
                 <span class="qstack__depth">{{ i + 1 }}</span>
-                <span v-if="frameKind(task, f) === 'findings'" class="qstack__findings">{{ findingsFrameLabel(task, f, u => roleName(roles, u)) }}</span>
+                <span v-if="frameKind(task, f) === 'reviewItems'" class="qstack__items">{{ reviewItemsFrameLabel(task, f, u => roleName(roles, u)) }}</span>
                 <span v-else>{{ roleName(roles, f.askingRole) }} asked {{ roleName(roles, f.answeringRole) || 'nobody yet' }}<template
                     v-if="frameRound(f)"> · questions round {{ frameRound(f)?.round ?? '?' }}<template
                     v-if="aboutLabel(frameRound(f))"> · {{ aboutLabel(frameRound(f)) }}</template></template></span>
                 <router-link v-if="f.questionsRelease" :to="`/release/show/${f.questionsRelease}`" class="qstack__link">{{
-                    frameKind(task, f) === 'findings' ? 'findings' : 'questions' }}</router-link>
+                    frameKind(task, f) === 'reviewItems' ? 'review items' : 'questions' }}</router-link>
                 <span class="qstack__time"><agent-time :at="f.askedAt"/></span>
             </div>
         </div>
@@ -20,7 +20,7 @@
         </div>
 
         <!--
-            Answering is a round of the QUESTIONS index, not a note: that is what the
+            Answering is a round of the BOARD_QUESTIONS index, not a note: that is what the
             asking agent reads as a pinned input when the task comes back to it. A
             note would be prose it cannot pin, and the loop would ask again.
         -->
@@ -49,7 +49,7 @@
             <n-space style="margin-top: 8px">
                 <n-button size="small" type="primary" :disabled="!canAnswer"
                           @click="emit('answer', answerPayload)">
-                    {{ task.hold ? 'Answer and release' : 'Answer' }}
+                    {{ task.hold ? 'Answer and lift' : 'Answer' }}
                 </n-button>
             </n-space>
         </div>
@@ -64,7 +64,7 @@ import { NButton, NCheckbox, NInput, NSpace } from 'naive-ui'
 import { roleName } from '@/utils/agentTaskFormat'
 import { actingAnswers } from '@/utils/agentOperatorQuestion'
 import { AnswerPayload, answerPayloadOf, answerableQuestions } from '@/utils/agentTaskQuestions'
-import { aboutLabel, findingsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
+import { aboutLabel, reviewItemsFrameLabel, frameKind, questionRounds } from '@/utils/agentQuestionRounds'
 
 const props = defineProps<{ task: any, roles?: any[] }>()
 const emit = defineEmits<{ (e: 'answer', p: AnswerPayload): void }>()

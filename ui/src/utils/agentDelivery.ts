@@ -70,8 +70,8 @@ export function prChips (task: any): PrChip[] {
     const resolved: any[] = task?.pullRequests ?? []
     const tested = new Map<string, string>((task?.testedHeads ?? []).map((t: any) => [prKey(t.pr), t.head]))
     if (resolved.length) {
-        // An attestation settles the chip (task 18c5c293); the heads line stays on it (task 3b97ccfd).
-        return resolved.map((pr: any) => ({ ...(attestationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head),
+        // A declaration settles the chip (task 18c5c293); the heads line stays on it (task 3b97ccfd).
+        return resolved.map((pr: any) => ({ ...(declarationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head),
             ...baseMovedLine(pr.baseMovedBy) }))
     }
     return (task?.prUrls ?? []).map((url: string) => ({ url, label: shortPr(url), state: 'linked', type: 'default',
@@ -90,11 +90,11 @@ export function prNumber (url: string | null | undefined): string {
 }
 
 /**
- * A PR whose delivery was attested (task 18c5c293): merged where this ReARM cannot see it, or
- * abandoned. The newest attestation settles it, whatever the row says.
+ * A PR whose delivery was declared (task 18c5c293): merged where this ReARM cannot see it, or
+ * abandoned. The newest declaration settles it, whatever the row says.
  */
-export function attestationChip (pr: any): PrChip | null {
-    const a = pr?.attestation
+export function declarationChip (pr: any): PrChip | null {
+    const a = pr?.declaration
     if (!a) return null
     const note = a.note ? `: ${a.note}` : ''
     if (a.outcome === 'SUPERSEDED') {
@@ -103,20 +103,20 @@ export function attestationChip (pr: any): PrChip | null {
     }
     if (a.outcome === 'ABANDONED') {
         return { url: pr.url, label: shortPr(pr.url), state: 'abandoned', type: 'error',
-            title: `attested abandoned by ${actorName(a.by)}${note}` }
+            title: `declared abandoned by ${actorName(a.by)}${note}` }
     }
     return { url: pr.url, label: shortPr(pr.url), state: 'merged', type: 'success',
-        title: `attested by ${actorName(a.by)} at ${String(a.commit ?? '').slice(0, 7)}${note}` }
+        title: `declared by ${actorName(a.by)} at ${String(a.commit ?? '').slice(0, 7)}${note}` }
 }
 
 /** How a board proves delivery (task 18c5c293): the form's options, one line of help each. */
 export const DELIVERY_MODE_OPTIONS: { value: string, label: string, help: string }[] = [
     { value: 'PR_ROWS', label: 'PRs registered here (default)',
-        help: 'A linked PR delivers when its row on this ReARM merges, or when it is attested.' },
-    { value: 'ATTESTED', label: 'PRs registered elsewhere',
-        help: 'Each linked PR is attested as merged (task delivered); a merged row here counts too.' },
+        help: 'A linked PR delivers when its row on this ReARM merges, or when it is declared.' },
+    { value: 'DECLARED', label: 'PRs registered elsewhere',
+        help: 'Each linked PR is declared as merged (task declare-delivery); a merged row here counts too.' },
     { value: 'NONE', label: 'No PRs',
-        help: 'The task completes at its last pass; with attest, once a push or release is attested.' }
+        help: 'The task completes at its last pass; awaiting a declaration, once a push or release is declared.' }
 ]
 
 /** Who merges a board's PRs (task 71a3dd22): the form's options, one line of help each. */
@@ -147,7 +147,7 @@ export interface MergeDraft {
     byRole: string
     method: string | null
     atTestedHead: boolean
-    requireAttestation: boolean
+    requireDeclaration: boolean
     order: string | null
 }
 
@@ -161,14 +161,14 @@ export function mergeDraftOf (policy: any): MergeDraft {
         byRole: isRole ? by!.trim().slice(5).trim() : '',
         method: m?.method ?? null,
         atTestedHead: m?.atTestedHead !== false,
-        requireAttestation: !!m?.requireAttestation,
+        requireDeclaration: !!m?.requireDeclaration,
         order: m?.order ?? null
     }
 }
 
 /**
  * The merge procedure the form sends: only what differs from the defaults, null when nothing does.
- * A role without a name is not sent; attestation is not sent on an ATTESTED board, which attests
+ * A role without a name is not sent; requireDeclaration is not sent on a DECLARED board, which declares
  * every merge and refuses false.
  */
 export function mergeOf (draft: MergeDraft, mode: string | null | undefined): Record<string, any> | null {
@@ -177,7 +177,7 @@ export function mergeOf (draft: MergeDraft, mode: string | null | undefined): Re
         by,
         method: draft.method,
         atTestedHead: draft.atTestedHead ? null : false,
-        requireAttestation: mode === 'ATTESTED' || !draft.requireAttestation ? null : true,
+        requireDeclaration: mode === 'DECLARED' || !draft.requireDeclaration ? null : true,
         order: draft.order
     }
     return Object.values(merge).every(v => v === null) ? null : merge
@@ -185,20 +185,20 @@ export function mergeOf (draft: MergeDraft, mode: string | null | undefined): Re
 
 /**
  * What the form sends as deliveryPolicy: nothing when the draft matches the board, null to restore
- * the default, else the policy. Attest only means something on NONE, so it is sent only there. The
+ * the default, else the policy. Declare only means something on NONE, so it is sent only there. The
  * merge procedure (task 71a3dd22) travels with it; without a draft the board's own is kept.
  */
-export function deliveryPolicyPatch (original: any, mode: string | null | undefined, attest: boolean, draft?: MergeDraft):
-    { changed: boolean, value: { mode: string | null, attest: boolean, merge?: Record<string, any> } | null } {
+export function deliveryPolicyPatch (original: any, mode: string | null | undefined, awaitDeclaration: boolean, draft?: MergeDraft):
+    { changed: boolean, value: { mode: string | null, awaitDeclaration: boolean, merge?: Record<string, any> } | null } {
     const before = original?.deliveryPolicy ?? null
     const m = mode || null
     const merge = draft ? mergeOf(draft, m) : (before?.merge ? mergeOf(mergeDraftOf(before), m) : null)
     const value = m || merge
-        ? { mode: m, attest: m === 'NONE' && !!attest, ...(merge ? { merge } : {}) }
+        ? { mode: m, awaitDeclaration: m === 'NONE' && !!awaitDeclaration, ...(merge ? { merge } : {}) }
         : null
     const beforeMerge = before?.merge ? mergeOf(mergeDraftOf(before), before.mode ?? null) : null
     const same = (before === null && value === null) ||
-        (before !== null && value !== null && (before.mode ?? null) === value.mode && !!before.attest === value.attest &&
+        (before !== null && value !== null && (before.mode ?? null) === value.mode && !!before.awaitDeclaration === value.awaitDeclaration &&
             JSON.stringify(beforeMerge) === JSON.stringify(merge))
     return { changed: !same, value }
 }
@@ -222,7 +222,7 @@ function chipOf (pr: any): PrChip {
         title: `open${pr.targetBranch ? ' against ' + pr.targetBranch : ''}` }
 }
 
-// ---------- attesting a delivery from the page (task RD2-10) ----------
+// ---------- declaring a delivery from the page (task RD2-10) ----------
 
 /** A commit as the server takes one: 7 to 40 hex characters. */
 export const COMMIT_SHA = /^[0-9a-fA-F]{7,40}$/
@@ -234,12 +234,12 @@ export function commitProblem (commit: string | null | undefined): string | null
     return COMMIT_SHA.test(c) ? null : 'A commit is 7 to 40 hex characters'
 }
 
-/** A PR a person can still attest: linked, not yet merged or abandoned. */
-export function attestable (chip: PrChip): boolean {
+/** A PR a person can still awaitDeclaration: linked, not yet merged or abandoned. */
+export function declarable (chip: PrChip): boolean {
     return chip.state !== 'merged' && chip.state !== 'abandoned' && chip.state !== 'superseded'
 }
 
-export interface AttestDraft {
+export interface DeclarationDraft {
     unit: string
     commit: string
     note: string
@@ -247,15 +247,15 @@ export interface AttestDraft {
 }
 
 /** A draft for a PR (unit pre-filled with its URL), or for a board with no PRs (unit free text). */
-export function attestDraftOf (unit: string | null, outcome: 'DELIVERED' | 'ABANDONED' = 'DELIVERED'): AttestDraft {
+export function declarationDraftOf (unit: string | null, outcome: 'DELIVERED' | 'ABANDONED' = 'DELIVERED'): DeclarationDraft {
     return { unit: unit ?? '', commit: '', note: '', outcome }
 }
 
 /**
- * The agentTaskDelivered variables for a draft, or null while it cannot be sent: a unit always; a
+ * The agentTaskDeclareDelivery variables for a draft, or null while it cannot be sent: a unit always; a
  * DELIVERED one also a commit of 7 to 40 hex; an ABANDONED one a note saying why.
  */
-export function attestPayload (task: any, d: AttestDraft):
+export function declarationPayload (task: any, d: DeclarationDraft):
     { task: any, unit: string, commit: string | null, outcome: string, note: string | null } | null {
     const unit = d.unit.trim()
     if (!unit) return null

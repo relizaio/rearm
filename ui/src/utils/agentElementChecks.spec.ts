@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
 import type { DocumentRelease } from '@/utils/agentDocuments'
 import {
-    describeCheck, isStale, latestReportFor, offencesByElement, reportOf, resultType, summarise, summaryLine,
-} from '@/utils/agentChecks'
+    describeElementCheck, isStale, latestReportFor, offencesByElement, reportOf, resultType, summarise, summaryLine,
+} from '@/utils/agentElementChecks'
 
 function report (uuid: string, checked: string, round: number, results: any[], scope: any[] = [], lifecycle = 'ASSEMBLED'): DocumentRelease {
     return {
         uuid,
         lifecycle,
         document: {
-            specification: 'CHECK_REPORT', round,
-            checks: { catalogueVersion: '2026-09.2', scope: { checked, releases: scope }, results },
+            specification: 'BOARD_ELEMENT_CHECK_REPORT', round,
+            elementChecks: { catalogueVersion: '2026-09.2', scope: { checked, releases: scope }, results },
         } as any,
     }
 }
@@ -38,7 +38,7 @@ describe('the report of a document', () => {
     const cancelled = report('c4', 'a1', 3, [], [], 'CANCELLED')
     const documents = [cancelled, r2, other, r1]
 
-    it('is the newest settled CHECK_REPORT round naming it', () => {
+    it('is the newest settled BOARD_ELEMENT_CHECK_REPORT round naming it', () => {
         expect(latestReportFor(documents, 'a1')?.uuid).toBe('c2')
         expect(latestReportFor(documents, 'b1')?.uuid).toBe('c3')
         expect(latestReportFor(documents, 'zz')).toBeNull()
@@ -68,9 +68,9 @@ describe('the report of a document', () => {
         expect(resultType('SKIP')).toBe('default')
         const catalogue = [{ name: 'ids.family', description: 'prefixes are families' },
             { name: 'coverage.<gate>', description: 'the board gate' }]
-        expect(describeCheck(catalogue, 'ids.family')).toBe('prefixes are families')
-        expect(describeCheck(catalogue, 'coverage.l2-verified')).toBe('the board gate')
-        expect(describeCheck(catalogue, 'unknown')).toBe('')
+        expect(describeElementCheck(catalogue, 'ids.family')).toBe('prefixes are families')
+        expect(describeElementCheck(catalogue, 'coverage.l2-verified')).toBe('the board gate')
+        expect(describeElementCheck(catalogue, 'unknown')).toBe('')
     })
 })
 

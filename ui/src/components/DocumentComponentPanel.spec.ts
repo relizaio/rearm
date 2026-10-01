@@ -1,6 +1,6 @@
 // @vitest-environment happy-dom
 //
-// A DOCUMENT component's page (task 36d0549e): the board it belongs to, and its rounds.
+// A BOARD_DOCUMENT component's page (task 36d0549e): the board it belongs to, and its rounds.
 import { describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import Panel from './DocumentComponentPanel.vue'
@@ -21,7 +21,7 @@ vi.mock('vue-router', () => ({ useRouter: () => ({ push }), RouterLink: { props:
 describe('DocumentComponentPanel', () => {
     it('names the board with its prefix and lists the rounds newest first', async () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
-            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
+            component: { uuid: 'c1', kind: 'BOARD_DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
         await flushPromises()
         expect(dispatch).toHaveBeenCalledWith('fetchDocumentRounds', 'b1')
         expect(w.find('a.rl.documentComponent__board').exists()).toBe(true)
@@ -36,7 +36,7 @@ describe('DocumentComponentPanel', () => {
     })
 
     it('says a document nobody owns has no board', async () => {
-        const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: null, component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: null } } })
+        const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: null, component: { uuid: 'c1', kind: 'BOARD_DOCUMENT', agentBoard: null } } })
         await flushPromises()
         expect(w.find('.documentComponent__board').text()).toBe('Document component, no board')
         expect(w.find('a.rl.documentComponent__board').exists()).toBe(false)
@@ -45,7 +45,7 @@ describe('DocumentComponentPanel', () => {
     // RD2-9: the component reads under its own permission (D18); its board only under the board's.
     it('names a board the person cannot open without linking to it', async () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
-            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: false } } } })
+            component: { uuid: 'c1', kind: 'BOARD_DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: false } } } })
         await flushPromises()
         expect(w.find('a.rl.documentComponent__board').exists()).toBe(false)
         expect(w.find('.documentComponent__board').text()).toBe('Belongs to board RD · ReARM Dogfood (board not visible to you)')
@@ -53,10 +53,10 @@ describe('DocumentComponentPanel', () => {
 })
 
 // RD2-24: a normal Rounds heading, the state as a word, the task a link to its page, the date through ts().
-describe('the DOCUMENT page\'s rounds', () => {
+describe('the BOARD_DOCUMENT page\'s rounds', () => {
     it('reads as the page speaks, and links each round to its task', async () => {
         const w = mount(Panel, { props: { orgUuid: 'o1', baseBranchUuid: 'b1',
-            component: { uuid: 'c1', kind: 'DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
+            component: { uuid: 'c1', kind: 'BOARD_DOCUMENT', agentBoard: { uuid: 'bd1', name: 'ReARM Dogfood', taskPrefix: 'RD', readable: true } } } })
         await flushPromises()
         const heading = w.find('[data-testid="rounds-heading"]')
         expect(heading.element.tagName).toBe('DIV', 'a section heading, not the 9 px h6')

@@ -9,7 +9,7 @@ import { mount } from '@vue/test-utils'
 import TaskOpenQuestions from './TaskOpenQuestions.vue'
 import TaskQuestions from './TaskQuestions.vue'
 import TaskAnsweredQuestions from './TaskAnsweredQuestions.vue'
-import { fixtureFinding, fixtureRoles, questionsRound, questionsTask, richDocuments } from './taskFixtures'
+import { fixtureReviewItem, fixtureRoles, questionsRound, questionsTask, richDocuments } from './taskFixtures'
 import { answeredQuestions, questionRounds } from '@/utils/agentQuestionRounds'
 
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) }))
@@ -44,12 +44,12 @@ describe('an open question, for a reader and for who answers it', () => {
 function answeredTask () {
     const a2 = { ...richDocuments().find(d => d.uuid === 'a1')!, uuid: 'a2', createdDate: '2026-09-25T10:00:00Z' } as any
     a2.document = { ...a2.document, round: 2, path: 'design/t1/architecture-2.md' }
-    const asked = questionsRound('q-rel', 1, [fixtureFinding('Q-1', 2, 'OPEN', 'which branch?'),
-        fixtureFinding('Q-2', 2, 'OPEN', 'which port?'), fixtureFinding('Q-3', 2, 'OPEN', 'which schema?')])
+    const asked = questionsRound('q-rel', 1, [fixtureReviewItem('Q-1', 2, 'OPEN', 'which branch?'),
+        fixtureReviewItem('Q-2', 2, 'OPEN', 'which port?'), fixtureReviewItem('Q-3', 2, 'OPEN', 'which schema?')])
     const answered = questionsRound('q-2', 2, [
-        fixtureFinding('Q-1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'q-2', resolution: 'main' }),
-        fixtureFinding('Q-2', 2, 'WITHDRAWN', 'which port?', { resolution: 'no port: it is a CLI' }),
-        fixtureFinding('Q-3', 2, 'RESOLVED', 'which schema?', { resolvedBy: 'a2', resolution: 'the v2 one, see §3' })])
+        fixtureReviewItem('Q-1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'q-2', resolution: 'main' }),
+        fixtureReviewItem('Q-2', 2, 'WITHDRAWN', 'which port?', { resolution: 'no port: it is a CLI' }),
+        fixtureReviewItem('Q-3', 2, 'RESOLVED', 'which schema?', { resolvedBy: 'a2', resolution: 'the v2 one, see §3' })])
     return questionsTask({ status: 'ASSIGNED', questionStack: [], openQuestions: [],
         signOffs: [{ role: 'coder', roleUuid: 'rc-coder', outputs: ['q-rel'], outcome: 'REJECTED' }],
         documents: [answered, a2, asked, ...richDocuments()] })
@@ -84,7 +84,7 @@ describe('answered questions', () => {
     })
 
     it('shows five and folds the rest behind show all', async () => {
-        const items = Array.from({ length: 7 }, (_, i) => fixtureFinding(`Q-${i + 1}`, 2, 'OPEN', `question ${i + 1}`))
+        const items = Array.from({ length: 7 }, (_, i) => fixtureReviewItem(`Q-${i + 1}`, 2, 'OPEN', `question ${i + 1}`))
         const asked = questionsRound('q-rel', 1, items)
         const closed = questionsRound('q-2', 2, items.map((f: any) => ({ ...f, status: 'RESOLVED', resolvedBy: 'q-2', resolution: 'yes' })))
         const task = questionsTask({ status: 'ASSIGNED', questionStack: [], openQuestions: [], documents: [closed, asked, ...richDocuments()] })
@@ -100,12 +100,12 @@ describe('answered questions', () => {
 // task, so round 1 read as the re-ask (open) and the answer round was skipped as seen: the list was empty.
 describe('a question asked again after its answer', () => {
     function reasked () {
-        const asked = questionsRound('q-rel', 1, [fixtureFinding('q1', 2, 'OPEN', 'which branch?')])
+        const asked = questionsRound('q-rel', 1, [fixtureReviewItem('q1', 2, 'OPEN', 'which branch?')])
         const answered = questionsRound('q-2', 2, [
-            fixtureFinding('q1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'q-2', resolution: 'main' })])
-        const again = questionsRound('q-3', 3, [fixtureFinding('q1', 2, 'OPEN', 'which branch, for the docs?')])
+            fixtureReviewItem('q1', 2, 'RESOLVED', 'which branch?', { resolvedBy: 'q-2', resolution: 'main' })])
+        const again = questionsRound('q-3', 3, [fixtureReviewItem('q1', 2, 'OPEN', 'which branch, for the docs?')])
         ;(answered as any).createdDate = '2026-09-26T10:00:00Z'
-        return questionsTask({ status: 'ON_HOLD', openQuestions: [fixtureFinding('q1', 2, 'OPEN', 'which branch, for the docs?')],
+        return questionsTask({ status: 'ON_HOLD', openQuestions: [fixtureReviewItem('q1', 2, 'OPEN', 'which branch, for the docs?')],
             questionStack: [{ askingRole: 'rc-coder', questionsRelease: 'q-3', answeringRole: null, askedAt: '2026-09-27T10:00:00Z' }],
             signOffs: [{ role: 'coder', roleUuid: 'rc-coder', outputs: ['q-rel'], outcome: 'REJECTED' },
                 { role: 'coder', roleUuid: 'rc-coder', outputs: ['q-3'], outcome: 'REJECTED' }],
@@ -124,7 +124,7 @@ describe('a question asked again after its answer', () => {
 
     it('lists the question twice once the re-ask is answered too, each under the round that asked it', () => {
         const task = reasked()
-        const fourth = questionsRound('q-4', 4, [fixtureFinding('q1', 2, 'RESOLVED', 'which branch, for the docs?',
+        const fourth = questionsRound('q-4', 4, [fixtureReviewItem('q1', 2, 'RESOLVED', 'which branch, for the docs?',
             { resolvedBy: 'q-4', resolution: 'docs-main' })])
         task.documents = [fourth, ...task.documents]
         const qs = answeredQuestions(task, fixtureRoles)

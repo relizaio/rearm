@@ -9,7 +9,7 @@ import TaskTitle from './TaskTitle.vue'
 import TaskHeader from './TaskHeader.vue'
 import TaskHistory from './TaskHistory.vue'
 import TaskHops from './TaskHops.vue'
-import TaskFindings from './TaskFindings.vue'
+import TaskReviewItems from './TaskReviewItems.vue'
 import TaskDocuments from './TaskDocuments.vue'
 import { readFileSync } from 'node:fs'
 import { join } from 'node:path'
@@ -62,13 +62,13 @@ describe('task page wording', () => {
         const task = richTask({ statusHistory: [
             { from: 'PENDING_INTAKE', to: 'QUEUED', at: '2026-09-27T15:00:00Z', trigger: 'AUTHORIZE', actor: { kind: 'USER', uuid: 'u1', name: 'pavel' }, note: 'go' },
             { from: 'QUEUED', to: 'QUEUED', at: '2026-09-27T15:37:00Z', trigger: 'AUTHORIZE', actor: { kind: 'SYSTEM', uuid: null, name: 'routing' },
-                note: 'findings decided; back to designer' },
+                note: 'review items decided; back to designer' },
             { from: 'QUEUED', to: 'QUEUED', at: '2026-09-27T15:40:00Z', trigger: 'AUTHORIZE', actor: { kind: 'SYSTEM', uuid: null, name: 'routing' }, note: null },
         ] })
         const w = mount(TaskHistory, { props: { task } })
         const rows = w.findAll('.shist__row')
         expect(rows[1].find('.shist__arrow').text()).toBe('queued → queued')
-        expect(rows[1].find('[data-testid="routing-note"]').text()).toBe('routing: findings decided; back to designer')
+        expect(rows[1].find('[data-testid="routing-note"]').text()).toBe('routing: review items decided; back to designer')
         expect(rows[1].find('.shist__trig').exists()).toBe(false)
         expect(rows[0].find('.shist__trig').text()).toBe('authorize')
         expect(rows[0].text()).toContain('“go”')
@@ -99,8 +99,8 @@ describe('task page wording', () => {
         expect(at.attributes('title')).toBe(tsFull('2026-09-25T09:00:00Z'))
     })
 
-    it('says a refused File could not file the finding; a decision keeps "Decision failed"', () => {
-        expect(decisionFailedText([{ action: 'FILE' }])).toBe('Could not file the finding')
+    it('says a refused File could not file the review item; a decision keeps "Decision failed"', () => {
+        expect(decisionFailedText([{ action: 'FILE' }])).toBe('Could not file the review item')
         expect(decisionFailedText([{ action: 'ACCEPT' }])).toBe('Decision failed')
         expect(decisionFailedText([{ action: 'FILE' }, { action: 'DISMISS' }])).toBe('Decision failed')
         expect(decisionFailedText([])).toBe('Decision failed')
@@ -109,8 +109,8 @@ describe('task page wording', () => {
     // Tester run 1 T-1: a round's verdict tag printed "PASSED"/"REJECTED" where the hop tags beside it read words.
     it('names a round\'s verdict in words in its heading, in the Documents list and on its release page', () => {
         const task = richTask()
-        const findings = mount(TaskFindings, { props: { task, roles: fixtureRoles, board: {}, priorityLevels: 3 } as any })
-        expect(findings.findAll('.dsec__h .n-tag').map(t => t.text())).toEqual(['rejected', 'passed'])
+        const reviewItems = mount(TaskReviewItems, { props: { task, roles: fixtureRoles, board: {}, priorityLevels: 3 } as any })
+        expect(reviewItems.findAll('.dsec__h .n-tag').map(t => t.text())).toEqual(['rejected', 'passed'])
         const documents = mount(TaskDocuments, { props: { task } })
         const tags = documents.findAll('.drow .n-tag').map(t => t.text())
         expect(tags.filter(t => t === 'rejected' || t === 'passed')).toEqual(['rejected', 'rejected', 'rejected', 'passed'])

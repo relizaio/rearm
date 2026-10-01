@@ -35,12 +35,12 @@ describe('agentBudget', () => {
         )
     })
 
-    it('sends the coordinator stop release only when the person changed it (task c0a2134c)', () => {
-        const unset = { cycleCap: 3, coordinatorStopRelease: null }
+    it('sends the coordinator stop lift only when the person changed it (task c0a2134c)', () => {
+        const unset = { cycleCap: 3, coordinatorStopLift: null }
         expect(settingsPatch(unset, { ...unset })).toBeNull()
-        expect(settingsPatch(unset, { ...unset, coordinatorStopRelease: false })).toEqual({ coordinatorStopRelease: false })
-        const off = { cycleCap: 3, coordinatorStopRelease: false }
-        expect(settingsPatch(off, { ...off, coordinatorStopRelease: true })).toEqual({ coordinatorStopRelease: true })
+        expect(settingsPatch(unset, { ...unset, coordinatorStopLift: false })).toEqual({ coordinatorStopLift: false })
+        const off = { cycleCap: 3, coordinatorStopLift: false }
+        expect(settingsPatch(off, { ...off, coordinatorStopLift: true })).toEqual({ coordinatorStopLift: true })
     })
 
     it('sends the event retention as set, 0 included, and an emptied one as null (task 04dedcc5)', () => {

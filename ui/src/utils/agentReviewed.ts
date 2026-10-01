@@ -32,7 +32,7 @@ function documentName (i: { specification?: string | null, round?: number | null
 /**
  * One chip per reviewed document, in words (RD2-23): "reviewed: detailed design · round 2 → ready to ship" when the
  * review promoted it, "… — not promoted" with the guard's reason when a guard refused, and the
- * bare "reviewed: …" when the review moved nothing (a rejection, a gate not yet approved).
+ * bare "reviewed: …" when the review moved nothing (a rejection, a gate not yet accepted).
  */
 export function reviewedChips (signOff: { reviewedInputs?: ReviewedInput[] | null,
     refusedPromotions?: RefusedPromotion[] | null } | null | undefined): ReviewedChip[] {

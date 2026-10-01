@@ -1,13 +1,13 @@
 // A hop parked for the operator (task RD4-5): the session working a task holds it at OPERATOR level with a
-// question, and a person's release carries the answer. The server records both on the task's status
-// history -- the HOLD row's note is "awaiting the operator: <question>", the release row's "released by
+// question, and a person's lift carries the answer. The server records both on the task's status
+// history -- the HOLD row's note is "awaiting the operator: <question>", the lift row's "lifted by
 // <person>: <answer>" -- so the page reads the question and the answer from there, after the hold is gone
 // as well as while it stands. Pure, so the specs need no store.
 //
 // The coordinator seat parks a task nobody is working the same way (task RD4-17), from PENDING_INTAKE, QUEUED,
 // AWAITING_COORDINATOR or DELIVERING. Its hold records returnTo, the status a person's answer returns the task to,
-// and anything else a person does on the task (answering its questions, an attestation, a cancel, a new order ...)
-// answers it too (architecture round 2): the release row then reads "<action> by <person>: <note>", for example
+// and anything else a person does on the task (answering its questions, a declaration, a cancel, a new order ...)
+// answers it too (architecture round 2): the lift row then reads "<action> by <person>: <note>", for example
 // "cancelled by Pat: a duplicate", and the page shows that row's note whole as the answer.
 //
 // A PR linked while the seat has the task parked (task RD4-19) is preparation for the decision, never its answer: the
@@ -97,17 +97,17 @@ export function questionOf (reason: string | null | undefined): string {
     return r.startsWith(AWAITING_THE_OPERATOR) ? r.slice(AWAITING_THE_OPERATOR.length) : r
 }
 
-/** The answer in a release row's note, without "released by <person>: " before it. */
+/** The answer in a lift row's note, without "lifted by <person>: " before it. */
 export function answerOf (row: any): string {
     const note: string = row?.note ?? ''
     const name: string | undefined = row?.actor?.name
-    const prefix = name ? `released by ${name}: ` : null
+    const prefix = name ? `lifted by ${name}: ` : null
     if (prefix && note.startsWith(prefix)) return note.slice(prefix.length)
-    const m = /^released by [^:]*: /.exec(note)
+    const m = /^lifted by [^:]*: /.exec(note)
     return m ? note.slice(m[0].length) : note
 }
 
-/** A PR linked while the seat had the task parked (task RD4-19), as the hold and the release row record it. */
+/** A PR linked while the seat had the task parked (task RD4-19), as the hold and the lift row record it. */
 export interface LinkedSinceParked {
     prUrl: string
     by: string | null
@@ -134,13 +134,13 @@ export interface OperatorQuestion {
     answer: string | null
     answeredAt: string | null
     answeredBy: any
-    /** PRs linked while the seat had it parked (task RD4-19): from the hold while it waits, the release row after. */
+    /** PRs linked while the seat had it parked (task RD4-19): from the hold while it waits, the lift row after. */
     linked: LinkedSinceParked[]
 }
 
 /**
  * Every question a hop of this task, or the coordinator seat, parked it on for the operator, oldest first, each
- * with the answer the person's release gave, or none yet. A release that answered nothing -- the task was
+ * with the answer the person's lift gave, or none yet. A lift that answered nothing -- the task was
  * cancelled while it waited -- leaves the question unanswered.
  */
 export function operatorQuestions (task: any): OperatorQuestion[] {
@@ -149,7 +149,7 @@ export function operatorQuestions (task: any): OperatorQuestion[] {
     rows.forEach((row, i) => {
         if (!rowAsksTheOperator(row)) return
         const next = rows.slice(i + 1).find((r: any) => r?.from === 'ON_HOLD')
-        const answered = next?.trigger === 'RELEASE_HOLD'
+        const answered = next?.trigger === 'LIFT_HOLD'
         // The hold standing now is this question's when no row has left it yet.
         const linked: LinkedSinceParked[] = next ? (next.linked ?? []) : linkedSinceParked(task)
         out.push({
@@ -166,7 +166,7 @@ export function operatorQuestions (task: any): OperatorQuestion[] {
     return out
 }
 
-/** A question for the operator is released with the answer, which the server requires; any other release may be bare. */
-export function releaseNeedsAnswer (task: any, note: string | null | undefined): boolean {
+/** A question for the operator is lifted with the answer, which the server requires; any other lift may be bare. */
+export function liftNeedsAnswer (task: any, note: string | null | undefined): boolean {
     return awaitingOperator(task) && !(note ?? '').trim()
 }

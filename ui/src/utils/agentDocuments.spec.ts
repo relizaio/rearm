@@ -7,15 +7,15 @@ import {
     templateRows,
     documentsRootNote,
     PATH_PLACEHOLDERS,
-    findingLocation,
-    findingLocationFull,
-    findingsOf,
+    reviewItemLocation,
+    reviewItemLocationFull,
+    reviewItemsOf,
     completionBlockers,
     groupByPriority,
     latestRound,
-    openFindingsOf,
+    openReviewItemsOf,
     outputsOfHop,
-    sortFindings,
+    sortReviewItems,
     statusType,
     testCounts,
     verdictType,
@@ -30,13 +30,13 @@ const release = (over: any = {}) => {
         uuid: 'r-1',
         ...rest,
         document: {
-            specification: 'REVIEW_FINDINGS',
-            path: 'findings/1a2b3c4d/round-2.md',
+            specification: 'BOARD_REVIEW_ITEMS',
+            path: 'review-items/1a2b3c4d/round-2.md',
             round: 2,
-            findings: {
-                kind: 'REVIEW_FINDINGS',
+            reviewItems: {
+                kind: 'BOARD_REVIEW_ITEMS',
                 verdict: 'REJECTED',
-                findings: [
+                reviewItems: [
                     { id: 'F-3', priority: 1, status: 'OPEN', title: 'null deref', location: { path: 'a/B.java', line: 412 } },
                     { id: 'F-1', priority: 2, status: 'RESOLVED', title: 'missing index' },
                 ],
@@ -54,7 +54,7 @@ const release = (over: any = {}) => {
 describe('documentFileUrl', () => {
     it('builds a blob url for hosts whose shape we know', () => {
         expect(documentFileUrl(release()))
-            .toBe('https://github.com/acme/docs/blob/abc1234/findings/1a2b3c4d/round-2.md')
+            .toBe('https://github.com/acme/docs/blob/abc1234/review-items/1a2b3c4d/round-2.md')
     })
 
     it('uses each host its own way', () => {
@@ -80,19 +80,19 @@ describe('documentFileUrl', () => {
     })
 })
 
-describe('findings', () => {
+describe('review items', () => {
     it('reads the index and separates open from closed', () => {
-        expect(findingsOf(release()).map(f => f.id)).toEqual(['F-3', 'F-1'])
-        expect(openFindingsOf(release()).map(f => f.id)).toEqual(['F-3'])
+        expect(reviewItemsOf(release()).map(f => f.id)).toEqual(['F-3', 'F-1'])
+        expect(openReviewItemsOf(release()).map(f => f.id)).toEqual(['F-3'])
     })
 
     it('is empty rather than null for an unindexed document', () => {
-        expect(findingsOf(release({ document: { findings: null } }))).toEqual([])
-        expect(openFindingsOf(null)).toEqual([])
+        expect(reviewItemsOf(release({ document: { reviewItems: null } }))).toEqual([])
+        expect(openReviewItemsOf(null)).toEqual([])
     })
 
     it('sorts by priority then id, highest priority first', () => {
-        const sorted = sortFindings([
+        const sorted = sortReviewItems([
             { id: 'F-9', priority: 2 }, { id: 'F-2', priority: 1 }, { id: 'F-1', priority: 2 },
         ])
         expect(sorted.map(f => f.id)).toEqual(['F-2', 'F-1', 'F-9'])
@@ -100,8 +100,8 @@ describe('findings', () => {
 
     it('keeps a priority outside the org scale rather than hiding it', () => {
         // Lowering the level count is validated at publish only, so history legitimately carries
-        // higher numbers. A reader that dropped them would hide real findings.
-        const sorted = sortFindings([{ id: 'F-1', priority: 7 }, { id: 'F-2', priority: 1 }])
+        // higher numbers. A reader that dropped them would hide real review items.
+        const sorted = sortReviewItems([{ id: 'F-1', priority: 7 }, { id: 'F-2', priority: 1 }])
         expect(sorted.map(f => f.id)).toEqual(['F-2', 'F-1'])
     })
 
@@ -110,54 +110,54 @@ describe('findings', () => {
             { id: 'F-1', priority: 2 }, { id: 'F-2', priority: 1 }, { id: 'F-3', priority: 1 },
         ])
         expect(groups.map(g => g.priority)).toEqual([1, 2])
-        expect(groups[0].findings.map(f => f.id)).toEqual(['F-2', 'F-3'])
+        expect(groups[0].reviewItems.map(f => f.id)).toEqual(['F-2', 'F-3'])
     })
 
     it('does not mutate the array it was given', () => {
         const input = [{ id: 'F-9', priority: 2 }, { id: 'F-1', priority: 1 }]
-        sortFindings(input)
+        sortReviewItems(input)
         expect(input.map(f => f.id)).toEqual(['F-9', 'F-1'])
     })
 })
 
 describe('display helpers', () => {
     it('labels a document by type and round', () => {
-        expect(documentLabel(release())).toBe('review findings · round 2')
-        expect(documentLabel(release({ document: { round: null } }))).toBe('review findings')
+        expect(documentLabel(release())).toBe('review items · round 2')
+        expect(documentLabel(release({ document: { round: null } }))).toBe('review items')
         expect(documentLabel(null)).toBe('—')
     })
 
-    it('names a round filed as questions with a findings index inside by what it holds (bc7fc25a)', () => {
-        const legacy = { uuid: 'u1', document: { specification: 'QUESTIONS', round: 1,
-            findings: { kind: 'TEST_REPORT', verdict: 'REJECTED', findings: [] } } } as any
+    it('names a round filed as questions with a review item index inside by what it holds (bc7fc25a)', () => {
+        const legacy = { uuid: 'u1', document: { specification: 'BOARD_QUESTIONS', round: 1,
+            reviewItems: { kind: 'BOARD_TEST_REPORT', verdict: 'REJECTED', reviewItems: [] } } } as any
         expect(documentLabel(legacy)).toBe('test report · board round (filed as questions)')
-        const real = { uuid: 'q1', document: { specification: 'QUESTIONS', round: 1,
-            findings: { kind: 'QUESTIONS', verdict: 'REJECTED', findings: [] } } } as any
+        const real = { uuid: 'q1', document: { specification: 'BOARD_QUESTIONS', round: 1,
+            reviewItems: { kind: 'BOARD_QUESTIONS', verdict: 'REJECTED', reviewItems: [] } } } as any
         expect(documentLabel(real)).toBe('questions · round 1')
-        const kindless = { uuid: 'q0', document: { specification: 'QUESTIONS', round: 2, findings: { findings: [] } } } as any
+        const kindless = { uuid: 'q0', document: { specification: 'BOARD_QUESTIONS', round: 2, reviewItems: { reviewItems: [] } } } as any
         expect(documentLabel(kindless)).toBe('questions · round 2')
     })
 
     it('reads the verdict and test counts', () => {
         expect(documentVerdict(release())).toBe('REJECTED')
         expect(testCounts(release())).toBeNull()
-        const report = release({ document: { findings: { counts: { passed: 412, failed: 2, skipped: 8 } } } })
+        const report = release({ document: { reviewItems: { counts: { passed: 412, failed: 2, skipped: 8 } } } })
         expect(testCounts(report)).toEqual({ passed: 412, failed: 2, skipped: 8 })
     })
 
     it('renders a location for code and for a document reference', () => {
-        expect(findingLocation({ location: { path: 'a/B.java', line: 412 } })).toBe('a/B.java:412')
-        expect(findingLocation({ location: { path: 'a/B.java' } })).toBe('a/B.java')
+        expect(reviewItemLocation({ location: { path: 'a/B.java', line: 412 } })).toBe('a/B.java:412')
+        expect(reviewItemLocation({ location: { path: 'a/B.java' } })).toBe('a/B.java')
     })
 
     it('the tooltip has the whole location: the path is not lost behind a ref (9a118a2a T-2)', () => {
-        expect(findingLocationFull({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('a/B.java:412 — REQ-F-012 §2')
-        expect(findingLocation({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('REQ-F-012 §2')
-        expect(findingLocationFull({ location: { ref: 'only a ref' } })).toBe('only a ref')
-        expect(findingLocationFull({ location: { path: 'a/B.java' } })).toBe('a/B.java')
-        expect(findingLocationFull({ location: null })).toBe('')
-        expect(findingLocation({ location: { ref: 'REQ-14' } })).toBe('REQ-14')
-        expect(findingLocation({})).toBe('')
+        expect(reviewItemLocationFull({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('a/B.java:412 — REQ-F-012 §2')
+        expect(reviewItemLocation({ location: { path: 'a/B.java', line: 412, ref: 'REQ-F-012 §2' } })).toBe('REQ-F-012 §2')
+        expect(reviewItemLocationFull({ location: { ref: 'only a ref' } })).toBe('only a ref')
+        expect(reviewItemLocationFull({ location: { path: 'a/B.java' } })).toBe('a/B.java')
+        expect(reviewItemLocationFull({ location: null })).toBe('')
+        expect(reviewItemLocation({ location: { ref: 'REQ-14' } })).toBe('REQ-14')
+        expect(reviewItemLocation({})).toBe('')
     })
 
     it('colours status and verdict so open and rejected read as problems', () => {
@@ -173,7 +173,7 @@ describe('display helpers', () => {
 
 describe('outputsOfHop', () => {
     it('resolves a hop\'s uuids against the task\'s documents', () => {
-        const docs = [release(), { uuid: 'r-2', document: { specification: 'TEST_REPORT' } }]
+        const docs = [release(), { uuid: 'r-2', document: { specification: 'BOARD_TEST_REPORT' } }]
         expect(outputsOfHop(['r-2'], docs).map(d => d.uuid)).toEqual(['r-2'])
     })
 
@@ -189,9 +189,9 @@ describe('outputsOfHop', () => {
 
 describe('templateRows', () => {
     const effective = {
-        REVIEW_FINDINGS: 'findings/{task}/round-{round}.md',
-        TEST_REPORT: 'tests/{task}/run-{round}.md',
-        QUESTIONS: 'questions/{task}/round-{round}.md',
+        BOARD_REVIEW_ITEMS: 'review-items/{task}/round-{round}.md',
+        BOARD_TEST_REPORT: 'tests/{task}/run-{round}.md',
+        BOARD_QUESTIONS: 'questions/{task}/round-{round}.md',
         DETAILED_DESIGN: 'docs/{type}/{task}/round-{round}.md',
         GLOSSARY: 'docs/{type}/{component}.md',
     }
@@ -199,73 +199,73 @@ describe('templateRows', () => {
         const rows = templateRows([
             { name: 'coder', active: true, producesOutputs: [{ specification: 'DETAILED_DESIGN', scope: 'TASK' }] },
             { name: 'old', active: false, producesOutputs: [{ specification: 'GLOSSARY', scope: 'COMPONENT' }] },
-            { name: 'tester', producesOutputs: [{ specification: 'TEST_REPORT', scope: 'TASK' }] },
+            { name: 'tester', producesOutputs: [{ specification: 'BOARD_TEST_REPORT', scope: 'TASK' }] },
         ], effective)
-        expect(rows.map(r => r.spec)).toEqual(['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS', 'DETAILED_DESIGN'])
+        expect(rows.map(r => r.spec)).toEqual(['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT', 'BOARD_QUESTIONS', 'DETAILED_DESIGN'])
         expect(rows.find(r => r.spec === 'DETAILED_DESIGN')?.placeholder).toBe('docs/{type}/{task}/round-{round}.md')
     })
     it('lists only the index types for a board with no roles yet, and says the default when none is known', () => {
         const rows = templateRows(null, null)
-        expect(rows.map(r => r.spec)).toEqual(['REVIEW_FINDINGS', 'TEST_REPORT', 'QUESTIONS'])
+        expect(rows.map(r => r.spec)).toEqual(['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT', 'BOARD_QUESTIONS'])
         expect(rows[0].placeholder).toBe('the default for its scope')
     })
 })
 
 describe('latestRound', () => {
-    const doc = (uuid: string, spec: string, lifecycle: string, findings: any[] = []) => ({
-        uuid, lifecycle, document: { specification: spec, findings: { kind: spec, findings } },
+    const doc = (uuid: string, spec: string, lifecycle: string, reviewItems: any[] = []) => ({
+        uuid, lifecycle, document: { specification: spec, reviewItems: { kind: spec, reviewItems } },
     })
 
     it('takes the newest settled round of the type, the list being newest first', () => {
         const docs = [
-            doc('pending', 'REVIEW_FINDINGS', 'PENDING'),
-            doc('tr', 'TEST_REPORT', 'ASSEMBLED'),
-            doc('new', 'REVIEW_FINDINGS', 'ASSEMBLED'),
-            doc('old', 'REVIEW_FINDINGS', 'ASSEMBLED'),
+            doc('pending', 'BOARD_REVIEW_ITEMS', 'PENDING'),
+            doc('tr', 'BOARD_TEST_REPORT', 'ASSEMBLED'),
+            doc('new', 'BOARD_REVIEW_ITEMS', 'ASSEMBLED'),
+            doc('old', 'BOARD_REVIEW_ITEMS', 'ASSEMBLED'),
         ]
-        expect(latestRound(docs, 'REVIEW_FINDINGS')?.uuid).toBe('new')
-        expect(latestRound(docs, 'TEST_REPORT')?.uuid).toBe('tr')
-        expect(latestRound(docs, 'QUESTIONS')).toBeNull()
+        expect(latestRound(docs, 'BOARD_REVIEW_ITEMS')?.uuid).toBe('new')
+        expect(latestRound(docs, 'BOARD_TEST_REPORT')?.uuid).toBe('tr')
+        expect(latestRound(docs, 'BOARD_QUESTIONS')).toBeNull()
     })
 
     it('counts a draft as a round: an agent round is a draft until its hop signs off', () => {
-        expect(latestRound([doc('d', 'REVIEW_FINDINGS', 'DRAFT')], 'REVIEW_FINDINGS')?.uuid).toBe('d')
+        expect(latestRound([doc('d', 'BOARD_REVIEW_ITEMS', 'DRAFT')], 'BOARD_REVIEW_ITEMS')?.uuid).toBe('d')
     })
 })
 
 describe('completionBlockers', () => {
     const docs = [
-        { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'REVIEW_FINDINGS', findings: { findings: [
+        { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'BOARD_REVIEW_ITEMS', reviewItems: { reviewItems: [
             { id: 'F-2', priority: 2, status: 'OPEN' },
             { id: 'F-1', priority: 1, status: 'OPEN' },
             { id: 'F-3', priority: 1, status: 'ACCEPTED' },
         ] } } },
-        { uuid: 't', lifecycle: 'ASSEMBLED', document: { specification: 'TEST_REPORT', findings: { findings: [
+        { uuid: 't', lifecycle: 'ASSEMBLED', document: { specification: 'BOARD_TEST_REPORT', reviewItems: { reviewItems: [
             { id: 'T-1', priority: 3, status: 'OPEN' },
         ] } } },
     ]
 
     it('lists open items at or above the completion priority, highest first', () => {
-        expect(completionBlockers(docs, 1).map(b => b.finding.id)).toEqual(['F-1'])
-        expect(completionBlockers(docs, 2).map(b => b.finding.id)).toEqual(['F-1', 'F-2'])
+        expect(completionBlockers(docs, 1).map(b => b.reviewItem.id)).toEqual(['F-1'])
+        expect(completionBlockers(docs, 2).map(b => b.reviewItem.id)).toEqual(['F-1', 'F-2'])
     })
 
     it('counts every open item when the board sets no threshold, and names the index', () => {
         const all = completionBlockers(docs, null)
-        expect(all.map(b => b.finding.id)).toEqual(['F-1', 'F-2', 'T-1'])
-        expect(all[2].specification).toBe('TEST_REPORT')
+        expect(all.map(b => b.reviewItem.id)).toEqual(['F-1', 'F-2', 'T-1'])
+        expect(all[2].specification).toBe('BOARD_TEST_REPORT')
     })
 
     it('never counts a correction, at any threshold (task cac71351)', () => {
         const withCorrections = [
-            { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'REVIEW_FINDINGS', findings: { findings: [
+            { uuid: 'r', lifecycle: 'ASSEMBLED', document: { specification: 'BOARD_REVIEW_ITEMS', reviewItems: { reviewItems: [
                 { id: 'P-1', priority: 1, status: 'OPEN', correction: true },
                 { id: 'F-1', priority: 2, status: 'OPEN' },
                 { id: 'P-2', priority: 3, status: 'OPEN', correction: null },
             ] } } },
         ]
-        expect(completionBlockers(withCorrections, null).map(b => b.finding.id)).toEqual(['F-1', 'P-2'])
-        expect(completionBlockers(withCorrections, 1).map(b => b.finding.id)).toEqual([])
+        expect(completionBlockers(withCorrections, null).map(b => b.reviewItem.id)).toEqual(['F-1', 'P-2'])
+        expect(completionBlockers(withCorrections, 1).map(b => b.reviewItem.id)).toEqual([])
     })
 })
 

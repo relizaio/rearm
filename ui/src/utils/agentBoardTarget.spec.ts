@@ -7,11 +7,11 @@ describe('the board target picker', () => {
     const comps = [
         { uuid: 'c2', name: 'web', type: 'COMPONENT' },
         { uuid: 'c1', name: 'api', type: 'COMPONENT' },
-        { uuid: 'd1', name: 'Payments documents', type: 'COMPONENT', kind: 'DOCUMENT' },
+        { uuid: 'd1', name: 'Payments documents', type: 'COMPONENT', kind: 'BOARD_DOCUMENT' },
         { uuid: 'c3', name: 'old', type: 'COMPONENT', status: 'ARCHIVED' },
     ]
 
-    it('offers the software components by name; no DOCUMENT component, nothing archived', () => {
+    it('offers the software components by name; no BOARD_DOCUMENT component, nothing archived', () => {
         const opts = boardTargetOptions(comps)
         expect(opts).toEqual([{ label: 'api', value: 'c1', type: 'COMPONENT' }, { label: 'web', value: 'c2', type: 'COMPONENT' }])
         expect(opts.map(o => o.value)).not.toContain('d1')
