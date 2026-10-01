@@ -14,6 +14,10 @@
             <n-tag v-if="holdWho" size="small" :bordered="false" class="holdwho"
                    :type="task.hold.level === 'OPERATOR' ? 'error' : 'info'">{{ holdWho }}</n-tag>
         </div>
+        <!-- PRs linked since the seat parked it (task RD4-19): preparation for the decision, never its answer. -->
+        <div v-for="(l, i) in linkedSinceParked(task)" :key="i" class="holdmeta parkedlink" data-testid="parked-link">
+            {{ linkedLine(l) }} <agent-time :at="l.at"/>
+        </div>
         <template v-if="task.hold.kind === 'HUMAN_GATE' && canOperate">
             <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
                      style="margin-top: 8px"/>
@@ -180,7 +184,7 @@ import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
 import { subtaskProgress } from '@/utils/agentTaskLabels'
 import { holdReleaseNote, isLoopStopHold, personMayRelease, releaseLabel, releasePayload, releaseRoleOptions } from '@/utils/agentHoldRelease'
 import { lockBannerText } from '@/utils/agentTaskHints'
-import { awaitingOperator, parkedHop, releaseNeedsAnswer, returnsTo, seatParked } from '@/utils/agentOperatorQuestion'
+import { awaitingOperator, linkedLine, linkedSinceParked, parkedHop, releaseNeedsAnswer, returnsTo, seatParked } from '@/utils/agentOperatorQuestion'
 
 const props = defineProps<{
     task: any
