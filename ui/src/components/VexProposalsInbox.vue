@@ -120,8 +120,8 @@ const columns = computed(() => {
             render: (r: any) => {
                 const type = r.status === 'ACCEPTED' ? 'success'
                     : r.status === 'PENDING' ? 'warning'
-                    : r.status === 'REJECTED' ? 'error'
-                    : 'default'
+                        : r.status === 'REJECTED' ? 'error'
+                            : 'default'
                 return h(NTag, { type, size: 'small', round: true }, () => r.status)
             },
         },

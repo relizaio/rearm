@@ -32,8 +32,8 @@ async function getArtifact () {
                     
                 }
             }`,
-            variables: {artifactUuid: route.params.artuuid.toString()}
-        })
+        variables: {artifactUuid: route.params.artuuid.toString()}
+    })
     return resp.data.artifact
 }
 
@@ -74,8 +74,8 @@ async function postDownloadNotification () {
 
     if (swalResult.value) {
         router.push({
-        name: 'home'
-    })
+            name: 'home'
+        })
     }
 }
 

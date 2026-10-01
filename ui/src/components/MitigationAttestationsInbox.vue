@@ -67,9 +67,9 @@ const columns = computed(() => {
             render: (r: any) => {
                 const type = r.status === 'ATTESTED' ? 'success'
                     : r.status === 'PENDING' ? 'warning'
-                    : r.status === 'WAIVED' ? 'info'
-                    : r.status === 'EXPIRED' ? 'error'
-                    : 'default'
+                        : r.status === 'WAIVED' ? 'info'
+                            : r.status === 'EXPIRED' ? 'error'
+                                : 'default'
                 return h(NTag, { type, size: 'small', round: true }, () => r.status)
             },
         },

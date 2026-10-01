@@ -148,11 +148,11 @@ const toggleSuppressed = () => {
 const getAnalysisStateLabel = (state: string | null | undefined): string => {
     if (!state) return 'SUPPRESSED'
     switch (state) {
-        case 'FALSE_POSITIVE': return 'FALSE POSITIVE'
-        case 'NOT_AFFECTED': return 'NOT AFFECTED'
-        case 'RESOLVED': return 'RESOLVED'
-        case 'IN_TRIAGE': return 'IN TRIAGE'
-        default: return state
+    case 'FALSE_POSITIVE': return 'FALSE POSITIVE'
+    case 'NOT_AFFECTED': return 'NOT AFFECTED'
+    case 'RESOLVED': return 'RESOLVED'
+    case 'IN_TRIAGE': return 'IN TRIAGE'
+    default: return state
     }
 }
 </script>

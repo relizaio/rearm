@@ -387,9 +387,9 @@ const BUCKET_LABELS: Record<AttributionBucket, string> = {
 // Maps to the ChangelogFindingKind query variable, a schema enum separate from FindingType.
 function changelogFindingKindOf(finding: NormalizedFinding): 'VULNERABILITY' | 'VIOLATION' | 'WEAKNESS' {
     switch (finding.type) {
-        case 'VULN': return 'VULNERABILITY'
-        case 'VIOLATION': return 'VIOLATION'
-        default: return 'WEAKNESS'
+    case 'VULN': return 'VULNERABILITY'
+    case 'VIOLATION': return 'VIOLATION'
+    default: return 'WEAKNESS'
     }
 }
 

@@ -1618,18 +1618,18 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             let label = row.status || 'UNKNOWN'
             
             switch(row.status) {
-                case 'REQUIRED':
-                    color = 'error'
-                    break
-                case 'OPTIONAL':
-                    color = 'warning'
-                    break
-                case 'TRANSIENT':
-                    color = 'info'
-                    break
-                case 'IGNORED':
-                    color = 'default'
-                    break
+            case 'REQUIRED':
+                color = 'error'
+                break
+            case 'OPTIONAL':
+                color = 'warning'
+                break
+            case 'TRANSIENT':
+                color = 'info'
+                break
+            case 'IGNORED':
+                color = 'default'
+                break
             }
             
             return h(NTag, { 
@@ -2065,21 +2065,21 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                     )
                 }
                 const lifecycleEl = h('div', [
-                                'Lifecycle:',
-                                h(NSelect, {
-                                    options: [{value: '', label: ''}].concat(constants.LifecycleOptions.map((x: any) => ({ value: x.key, label: x.label }))),
-                                    defaultValue: releaseFilter.value.lifecycle,
-                                    'on-update:value': (value: string) => releaseFilter.value.lifecycle = value
-                                })
-                            ])
+                    'Lifecycle:',
+                    h(NSelect, {
+                        options: [{value: '', label: ''}].concat(constants.LifecycleOptions.map((x: any) => ({ value: x.key, label: x.label }))),
+                        defaultValue: releaseFilter.value.lifecycle,
+                        'on-update:value': (value: string) => releaseFilter.value.lifecycle = value
+                    })
+                ])
                 const tagEl = h('div', [
-                                'Tag key:',
-                                h(NSelect, {
-                                    options: [{value: '', label: ''}].concat(releaseTagKeys.value),
-                                    defaultValue: releaseFilter.value.tagKey,
-                                    'on-update:value': (value: string) => releaseFilter.value.tagKey = value
-                                })
-                            ])
+                    'Tag key:',
+                    h(NSelect, {
+                        options: [{value: '', label: ''}].concat(releaseTagKeys.value),
+                        defaultValue: releaseFilter.value.tagKey,
+                        'on-update:value': (value: string) => releaseFilter.value.tagKey = value
+                    })
+                ])
                 els.push(h(
                     NPopover, {
                         trigger: 'hover',
@@ -2121,7 +2121,7 @@ const releaseFields: ComputedRef<any[]>  = computed((): any[] => {
                     }, [h('span', row.version)]
                     )
                 )
-                if(isWritable && branchData.value.componentDetails.type === 'PRODUCT'){
+                if(isWritable.value && branchData.value.componentDetails.type === 'PRODUCT'){
                     els.push(
                         h(
                             NIcon,

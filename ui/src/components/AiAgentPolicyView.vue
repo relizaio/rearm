@@ -261,19 +261,19 @@ const variableDocs: VariableDoc[] = [
 interface SnippetDoc { label: string; cel: string }
 const snippetDocs: SnippetDoc[] = [
     { label: 'Block when no AGENTIC_REPORT artifact attached',
-      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")' },
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT")' },
     { label: 'Block when no orientation report (tag agenticPhase=ORIENTATION)',
-      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))' },
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "ORIENTATION"))' },
     { label: 'Block when no final report (tag agenticPhase=FINAL)',
-      cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))' },
+        cel: '!session.artifacts.exists(a, a.type == "AGENTIC_REPORT" && a.tags.exists(t, t.key == "agenticPhase" && t.value == "FINAL"))' },
     { label: 'Block when model is not on the allowlist (INPUT)',
-      cel: 'model.name != "claude-opus-4-7" && model.name != "claude-sonnet-4-6"' },
+        cel: 'model.name != "claude-opus-4-7" && model.name != "claude-sonnet-4-6"' },
     { label: 'Warn when session has more than 20 commits',
-      cel: 'size(session.commits) > 20' },
+        cel: 'size(session.commits) > 20' },
     { label: 'Block when any commit is not verified-signed',
-      cel: 'session.commits.exists(c, c.signature.state != "VERIFIED")' },
+        cel: 'session.commits.exists(c, c.signature.state != "VERIFIED")' },
     { label: 'Block when any commit is not signed by the session agent',
-      cel: 'session.commits.exists(c, c.signature.state != "VERIFIED" || c.signature.signedByOwnerType != "AGENT" || c.signature.signedByOwnerUuid != agent.uuid)' },
+        cel: 'session.commits.exists(c, c.signature.state != "VERIFIED" || c.signature.signedByOwnerType != "AGENT" || c.signature.signedByOwnerUuid != agent.uuid)' },
 ]
 
 // Full-form scaffolds. Each one overwrites every field.

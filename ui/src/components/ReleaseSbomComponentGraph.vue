@@ -399,14 +399,15 @@ watch(() => [props.releaseUuid, props.sbomComponentUuid, props.purl, props.orgUu
 // each distinct path that terminates at a root or a parent outside the
 // ancestor set. Cycles are broken at the first repeated hop. Capped at
 // MAX_PATHS so high-fanout DAGs don't explode the render.
-const upstreamTruncated: Ref<boolean> = ref(false)
-const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
-    upstreamTruncated.value = false
+// One computed returns both the paths and the truncation flag: a computed must
+// not write other state, and the flag only exists as a by-product of the walk.
+const upstreamWalk: ComputedRef<{ paths: any[][]; truncated: boolean }> = computed((): { paths: any[][]; truncated: boolean } => {
+    const none = { paths: [], truncated: false }
     const root = selected.value
-    if (!root) return []
-    if (root.component?.isRoot) return []
+    if (!root) return none
+    if (root.component?.isRoot) return none
     const ancestors: any[] = root.ancestors || []
-    if (!ancestors.length) return []
+    if (!ancestors.length) return none
 
     const byUuid = new Map<string, any>()
     ancestors.forEach((a: any) => { if (a.sbomComponentUuid) byUuid.set(a.sbomComponentUuid, a) })
@@ -458,9 +459,10 @@ const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => {
         }
     }
 
-    upstreamTruncated.value = truncated
-    return paths
+    return { paths, truncated }
 })
+const upstreamPaths: ComputedRef<any[][]> = computed((): any[][] => upstreamWalk.value.paths)
+const upstreamTruncated: ComputedRef<boolean> = computed((): boolean => upstreamWalk.value.truncated)
 
 function pathNodeLabel (node: any): string {
     const c = node?.component

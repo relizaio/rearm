@@ -1723,7 +1723,7 @@ const approvalRoleFields: any[] = [
         minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalRole(row.id)
                 }, {
@@ -2389,7 +2389,7 @@ const perspectiveFields = [
             ])
         },
         render(row: any) {
-             return h('div', row.type === 'PERSPECTIVE' ? 'Manual' : 'Auto')
+            return h('div', row.type === 'PERSPECTIVE' ? 'Manual' : 'Auto')
         }
     },
     {
@@ -4076,11 +4076,11 @@ function extractOrgWidePermission(user: any) {
 
 function translatePermissionScopeName(scope: string) {
     switch (scope) {
-        case 'ORGANIZATION': return 'Organization'
-        case 'PERSPECTIVE': return 'Perspective'
-        case 'COMPONENT': return 'Component'
-        case 'INSTANCE': return 'Instance'
-        default: return scope
+    case 'ORGANIZATION': return 'Organization'
+    case 'PERSPECTIVE': return 'Perspective'
+    case 'COMPONENT': return 'Component'
+    case 'INSTANCE': return 'Instance'
+    default: return scope
     }
 }
 
@@ -4190,16 +4190,16 @@ async function inviteUser() {
     let isError = false
     try {
         const resp = await graphqlClient.mutate({
-                mutation: gql`
+            mutation: gql`
                             mutation inviteUser($invitationProperties: InviteUserInput!) {
                                 inviteUser(invitationProperties: $invitationProperties) {
                                     uuid
                                 }
                             }`,
-                variables: {
-                    invitationProperties: invitee.value
-                }
-            })
+            variables: {
+                invitationProperties: invitee.value
+            }
+        })
         if (resp.data.inviteUser && resp.data.inviteUser.uuid) {
             notify('success', 'Invited', 'Successfully invited ' + invitee.value.email)
             resetInvitee()
@@ -4531,10 +4531,10 @@ async function loadCiIntegrations(useCache: boolean) {
                                     capabilities
                               }
                           }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
+                variables: {
+                    org: orgResolved.value
+                },
+                fetchPolicy: cachePolicy
             })
             if (resp.data && resp.data.ciIntegrations) {
                 ciIntegrations.value = resp.data.ciIntegrations
@@ -4549,7 +4549,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
     const resp = await graphqlClient.query({
-            query: gql`
+        query: gql`
                           query apiKeys($orgUuid: ID!) {
                                  apiKeys(orgUuid: $orgUuid) {
                                     uuid
@@ -4583,11 +4583,11 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     }
                                 }
                             }`,
-            variables: {
-                orgUuid: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
-        })
+        variables: {
+            orgUuid: orgResolved.value
+        },
+        fetchPolicy: cachePolicy
+    })
     // Always run the formatter — formatValuesForApiKeys handles an
     // empty users.value gracefully (updatedByName falls back to '').
     // The previous skip-when-empty branch left raw rows in
@@ -4629,7 +4629,7 @@ async function loadInvitedUsers(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
     const resp = await graphqlClient.query({
-            query: gql`
+        query: gql`
                           query adminOrganization($org: ID!) {
                                  adminOrganization(org: $org) {
                                     uuid
@@ -4640,11 +4640,11 @@ async function loadInvitedUsers(useCache: boolean) {
                                     }
                                 }
                             }`,
-            variables: {
-                org: orgResolved.value
-            },
-            fetchPolicy: cachePolicy
-        })
+        variables: {
+            org: orgResolved.value
+        },
+        fetchPolicy: cachePolicy
+    })
     invitees.value = resp.data.adminOrganization.invitees
 }
 
@@ -4771,17 +4771,17 @@ async function cancelInvite(email: string) {
     let isSuccess = false
     try {
         const resp = await graphqlClient.mutate({
-                mutation: gql`
+            mutation: gql`
                             mutation cancelInvite($org: ID!, $userEmail: String!) {
                                     cancelInvite(org: $org, userEmail: $userEmail) {
                                         uuid
                                     }
                                 }`,
-                variables: {
-                    userEmail: email,
-                    org: orgResolved.value
-                }
-            })
+            variables: {
+                userEmail: email,
+                org: orgResolved.value
+            }
+        })
         if (resp.data.cancelInvite && resp.data.cancelInvite.uuid) isSuccess = true
         invitees.value = resp.data.cancelInvite.invitees
     } catch (e: any) {
@@ -5268,7 +5268,7 @@ const approvalEntryFields: DataTableColumns<any> = [
         minWidth: 50,    
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalEntry(row.uuid, row.approvalName)
                 }, {
@@ -5351,7 +5351,7 @@ const approvalPolicyFields: DataTableColumns<any> = [
         minWidth: 50,
         render: (row: any) => {
             let els: any[] = []
-            if (isWritable) {
+            if (isWritable.value) {
                 const deleteEl = h(NPopconfirm, {
                     onPositiveClick: () => deleteApprovalPolicy(row.uuid, row.policyName)
                 }, {

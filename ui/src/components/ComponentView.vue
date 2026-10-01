@@ -2343,7 +2343,7 @@ function resetInputTrigger () {
 const outputTriggersForInputForm = computed((): any => {
     let outputTriggers: any[] = []
     // Add local output triggers
-    if (updatedComponent && updatedComponent.value && updatedComponent.value.outputTriggers) {
+    if (updatedComponent.value && updatedComponent.value.outputTriggers) {
         outputTriggers = updatedComponent.value.outputTriggers.map((ot: any) => {
             return {label: ot.name + ' (Local)', value: ot.uuid}
         })
@@ -3022,10 +3022,17 @@ const componentAuthTypes = [
 const secrets = ref([])
 
 const fetchSecretsIfAllowed = async function() {
-    if (isWritable && supportsComponentKind) {
+    if (isWritable.value && supportsComponentKind) {
         secrets.value = await loadSecrets(componentData.value.org)
     }
 }
+
+// Write access can resolve after the one-off fetches above (a perspective- or
+// component-scoped permission depends on store state that loads later), and the
+// secret selects appear as soon as it does, so fetch then too.
+watch(isWritable, (writable: boolean) => {
+    if (writable && updatedComponent.value?.kind === 'HELM') fetchSecretsIfAllowed()
+})
 
 const environmentTypes = ref<string[]>([])
 

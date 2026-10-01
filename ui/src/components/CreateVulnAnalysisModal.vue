@@ -22,7 +22,7 @@
                     placeholder="Add alias"
                     :on-create="() => ''"
                 >
-                    <template #default="{ value, index }">
+                    <template #default="{ index }">
                         <n-input
                             v-model:value="formData.findingAliases[index]"
                             placeholder="Enter alias"
@@ -410,19 +410,19 @@ const setDefaultScope = () => {
         
         // Set the appropriate scopeUuid based on the selected scope
         switch (firstAvailableScope) {
-            case 'RELEASE':
-                formData.value.scopeUuid = props.releaseUuid
-                break
-            case 'BRANCH':
-                formData.value.scopeUuid = props.branchUuid
-                break
-            case 'COMPONENT':
-                formData.value.scopeUuid = props.componentUuid
-                break
-            case 'ORG':
-            default:
-                formData.value.scopeUuid = props.orgUuid
-                break
+        case 'RELEASE':
+            formData.value.scopeUuid = props.releaseUuid
+            break
+        case 'BRANCH':
+            formData.value.scopeUuid = props.branchUuid
+            break
+        case 'COMPONENT':
+            formData.value.scopeUuid = props.componentUuid
+            break
+        case 'ORG':
+        default:
+            formData.value.scopeUuid = props.orgUuid
+            break
         }
     } else {
         // Default to Organization scope
@@ -472,19 +472,19 @@ watch(() => props.availableScopesOnly, () => {
 const onScopeChange = (value: string) => {
     // Update scopeUuid based on selected scope
     switch (value) {
-        case 'RELEASE':
-            formData.value.scopeUuid = props.releaseUuid
-            break
-        case 'BRANCH':
-            formData.value.scopeUuid = props.branchUuid
-            break
-        case 'COMPONENT':
-            formData.value.scopeUuid = props.componentUuid
-            break
-        case 'ORG':
-        default:
-            formData.value.scopeUuid = props.orgUuid
-            break
+    case 'RELEASE':
+        formData.value.scopeUuid = props.releaseUuid
+        break
+    case 'BRANCH':
+        formData.value.scopeUuid = props.branchUuid
+        break
+    case 'COMPONENT':
+        formData.value.scopeUuid = props.componentUuid
+        break
+    case 'ORG':
+    default:
+        formData.value.scopeUuid = props.orgUuid
+        break
     }
 }
 

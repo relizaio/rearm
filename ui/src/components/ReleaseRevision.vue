@@ -19,7 +19,7 @@
                 <div v-if="release.componentDetails.type !== 'PRODUCT'">Not a product release.</div>
                 <div v-for="prl in diffedProducts"
                     class="productList"
-                    :key="releaseUuid + prl.uuid">
+                    :key="loadedReleaseUuid + prl.uuid">
                     <div>
                         <router-link :to="{ name: 'ProductsOfOrg',
                             params: {orguuid: release.org, compuuid: prl.componentDetails.uuid }}">
@@ -179,7 +179,8 @@ const parentReleasesMap: Ref<Map<string, any>> = ref(new Map())
 
 const showReleaseViewModal = ref(false)
 
-const releaseUuid = ref('')
+// The uuid of the release actually loaded; distinct from the releaseUuid prop.
+const loadedReleaseUuid = ref('')
 const selectedReleaseUuid = ref('')
 
 const parentRlzLoaded = ref(false)
@@ -281,10 +282,10 @@ const exportReleaseObom = async function () {
                     exportAsObomManual(releaseUuid: $releaseUuid)
                 }
             `,
-            variables: { releaseUuid: releaseUuid.value },
+            variables: { releaseUuid: loadedReleaseUuid.value },
             fetchPolicy: 'no-cache'
         })
-        const fileName = releaseUuid.value + '-obom.json'
+        const fileName = loadedReleaseUuid.value + '-obom.json'
         const blob = new Blob([gqlResp.data.exportAsObomManual], { type: 'application/json' })
         const link = document.createElement('a')
         link.href = window.URL.createObjectURL(blob)
@@ -327,7 +328,7 @@ const onCreate = async function () {
         fetchPolicy: 'no-cache'
     })
     release.value = (resp.data as any)?.release || {}
-    if (release.value && release.value.uuid) releaseUuid.value = release.value.uuid
+    if (release.value && release.value.uuid) loadedReleaseUuid.value = release.value.uuid
     if (!release.value.type) release.value.type = 'REGULAR'
 
     if (release.value.parentReleases && release.value.parentReleases.length) {
