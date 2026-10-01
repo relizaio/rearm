@@ -158,8 +158,42 @@ jobs:
           rearm_mirror_api_key: ${{ secrets.REARM_DTRACK_HELM_API_KEY }}
           rearm_mirror_api_url: https://demo.rearmhq.com
           limit_to_branches: main
-  build-ui:
+  test-ui:
     needs: detect
+    # The UI specs also read backend/: the schema drift specs validate the UI's GraphQL
+    # documents against the CE schema, and a few pin values against the Java sources, so a
+    # backend change runs them too. The Pro half needs the sibling rearm-core checkout and is
+    # skipped here.
+    if: needs.detect.outputs.ui == 'true' || needs.detect.outputs.backend == 'true' || github.ref == 'refs/heads/main'
+    permissions:
+      contents: read
+    name: Test ReARM UI
+    runs-on: ubuntu-latest
+    # build-ui waits on this job, so a hung run must not hold the image for the 6h default.
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6.0.2
+        with:
+          persist-credentials: false
+      - uses: actions/setup-node@820762786026740c76f36085b0efc47a31fe5020 # v7.0.0
+        with:
+          # Same major as the ui/Dockerfile build image.
+          node-version: 26
+          cache: npm
+          cache-dependency-path: ui/package-lock.json
+      - name: Install UI dependencies
+        working-directory: ui
+        run: npm ci --ignore-scripts
+      - name: Lint UI
+        working-directory: ui
+        run: npm run lint
+      - name: Run UI unit tests
+        working-directory: ui
+        run: npm test
+  build-ui:
+    # test-ui runs whenever this job would (its condition is a superset), so no UI image is
+    # built from a commit whose lint or specs fail.
+    needs: [detect, test-ui]
     if: needs.detect.outputs.ui == 'true' || github.ref == 'refs/heads/main'
     permissions:
       id-token: write
