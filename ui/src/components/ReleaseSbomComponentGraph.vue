@@ -401,7 +401,7 @@ watch(() => [props.releaseUuid, props.sbomComponentUuid, props.purl, props.orgUu
 // MAX_PATHS so high-fanout DAGs don't explode the render.
 // One computed returns both the paths and the truncation flag: a computed must
 // not write other state, and the flag only exists as a by-product of the walk.
-const upstreamWalk: ComputedRef<{ paths: any[][]; truncated: boolean }> = computed(() => {
+const upstreamWalk: ComputedRef<{ paths: any[][]; truncated: boolean }> = computed((): { paths: any[][]; truncated: boolean } => {
     const none = { paths: [], truncated: false }
     const root = selected.value
     if (!root) return none
