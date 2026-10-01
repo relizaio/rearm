@@ -33,5 +33,5 @@ public class IntegrationWebDto {
 	@JsonProperty
 	private List<IntegrationCapability> capabilities;
 	@JsonProperty
-	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK only; null == V4
+	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK only; null == not detected yet
 }

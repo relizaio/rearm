@@ -6,6 +6,9 @@ COPY ./internal/imports ./internal/imports
 RUN go build ./internal/imports
 COPY . .
 RUN go version
+# Run the package tests in the build. Nothing else does: the workflow only
+# invokes the image build, so a test not run here is a test that never runs.
+RUN go test ./...
 RUN go build -o ./ ./...
 
 # Skeleton for the scratch release image: the service only ever needs a

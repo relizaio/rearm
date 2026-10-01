@@ -1,6 +1,10 @@
 package io.reliza.service;
 
 import java.net.URI;
+import java.net.URLEncoder;
+import java.nio.charset.StandardCharsets;
+import java.time.Duration;
+import java.util.ArrayList;
 import java.util.Base64;
 import java.util.HashMap;
 import java.util.List;
@@ -16,14 +20,19 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.HttpStatusCode;
+import org.springframework.http.ResponseEntity;
 import org.springframework.lang.NonNull;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.reactive.function.client.WebClient;
 import org.springframework.web.reactive.function.client.WebClientResponseException;
 
+import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+
 import tools.jackson.core.JacksonException;
+import tools.jackson.core.type.TypeReference;
 import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.CommonVariables;
@@ -531,6 +540,177 @@ public class DTrackService {
     /** Vulnerabilities + violations fetched for one synthetic project, each paired with its CPE. */
     public record SyntheticFindings(List<IntegrationService.VulnWithCpe> vulns,
             List<IntegrationService.ViolationWithCpe> violations) {}
+
+    // ========================================
+    // LATEST VERSION (repository metadata)
+    // ========================================
+
+    /** Page size for the component listing: DT 5 pages lists, and 100 is served on both versions. */
+    static final int REPOSITORY_META_PAGE_SIZE = 100;
+
+    /** How long one repository-metadata request may take before it counts as unanswered. */
+    static final Duration REPOSITORY_META_TIMEOUT = Duration.ofSeconds(30);
+
+    /**
+     * The most pages one project listing reads: a synthetic bucket holds 500 components (5
+     * pages), so this only stops a server that ignores paging from looping forever.
+     */
+    static final int REPOSITORY_META_MAX_PAGES = 50;
+
+    /**
+     * Dependency-Track answered a repository-metadata request with a 4xx other than a
+     * package it does not know: the request itself is refused (a project that no longer
+     * exists, a purl its parser rejects). Retrying later gets the same answer, so a caller
+     * moves on to the next project or component rather than backing off the whole org.
+     */
+    public static class RepositoryMetaRejectedException extends RelizaException {
+        private static final long serialVersionUID = 1L;
+
+        public RepositoryMetaRejectedException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * Subset of Dependency-Track's {@code RepositoryMetaComponent}: the latest version its
+     * repository analyzer found for a package (keyed by type, namespace and name, not by
+     * version). Verified live on DT 5.1.0 and DT 4.14.2, which differ only in the date of the
+     * latest release ({@code latestVersionPublishedAt} on 5, {@code published} on 4), not bound.
+     */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DtrackRepositoryMetaRaw(String latestVersion) {}
+
+    /** A component of a project listing, as far as its latest version goes. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
+    private record DtrackComponentMetaRaw(String purl, DtrackRepositoryMetaRaw repositoryMeta) {}
+
+    /** A component of a Dependency-Track project and the latest version of its package; null when none is known. */
+    public record ComponentLatestVersion(String purl, String latestVersion) {}
+
+    /**
+     * The latest version of every component of a synthetic bucket project, from the
+     * {@code repositoryMeta} that {@code GET /api/v1/component/project/{uuid}} carries per
+     * component on DT 5 and DT 4 alike: one paged listing instead of one request per
+     * component. A component whose purl type has no repository (deb, apk, rpm, generic) or
+     * whose package the analyzer has not resolved comes back without a version.
+     *
+     * @return the components, and how many requests the listing took
+     */
+    public RepositoryMetaListing syntheticFetchRepositoryMeta(UUID orgUuid, UUID projectId) throws RelizaException {
+        Optional<DTrackIntegration> integration = getDTrackIntegration(orgUuid);
+        if (integration.isEmpty()) throw new RelizaException("DependencyTrack integration not configured");
+        List<ComponentLatestVersion> out = new ArrayList<>();
+        int requests = 0;
+        int total = -1;
+        int read = 0;
+        for (int page = 1; page <= REPOSITORY_META_MAX_PAGES; page++) {
+            URI uri = buildDTrackUri(integration.get(), "/api/v1/component/project/" + projectId
+                    + "?pageSize=" + REPOSITORY_META_PAGE_SIZE + "&pageNumber=" + page);
+            requests++;
+            ResponseEntity<String> resp;
+            try {
+                resp = getRepositoryMeta(uri, integration.get().apiToken(),
+                        "the components of Dependency-Track project " + projectId + " (page " + page + ")");
+            } catch (WebClientResponseException notFound) {
+                throw new RepositoryMetaRejectedException("Dependency-Track has no project " + projectId);
+            }
+            List<DtrackComponentMetaRaw> rows;
+            try {
+                rows = resp == null || resp.getBody() == null ? List.of()
+                        : Utils.OM.readValue(resp.getBody(), new TypeReference<List<DtrackComponentMetaRaw>>() {});
+            } catch (JacksonException e) {
+                throw new RelizaException("Unreadable component listing of Dependency-Track project " + projectId
+                        + " (page " + page + "): " + e.getMessage());
+            }
+            for (DtrackComponentMetaRaw row : rows) {
+                if (row == null || row.purl() == null) continue;
+                out.add(new ComponentLatestVersion(row.purl(),
+                        row.repositoryMeta() == null ? null : StringUtils.trimToNull(row.repositoryMeta().latestVersion())));
+            }
+            read += rows.size();
+            if (total < 0 && resp != null) total = IntegrationService.parseDtrackTotalCountHeader(resp);
+            // the total decides where one is sent (a server may serve fewer rows per page
+            // than asked); without it, a short page is the last
+            boolean done = rows.isEmpty() || (total >= 0 ? read >= total : rows.size() < REPOSITORY_META_PAGE_SIZE);
+            if (done) break;
+        }
+        return new RepositoryMetaListing(List.copyOf(out), requests);
+    }
+
+    /**
+     * One repository-metadata GET: a 4xx is {@link RepositoryMetaRejectedException}, except a
+     * 404, which is returned as a WebClientResponseException for the caller to read; a 5xx, a
+     * 429, a timeout or no connection is a plain RelizaException, the instance unavailable.
+     */
+    private ResponseEntity<String> getRepositoryMeta(URI uri, String apiToken, String what) throws RelizaException {
+        try {
+            return dtrackWebClient.get().uri(uri).header("X-API-Key", apiToken)
+                    .retrieve().toEntity(String.class).timeout(REPOSITORY_META_TIMEOUT).block();
+        } catch (WebClientResponseException wcre) {
+            HttpStatusCode status = wcre.getStatusCode();
+            if (status.is4xxClientError() && !status.isSameCodeAs(HttpStatus.TOO_MANY_REQUESTS)) {
+                if (status.isSameCodeAs(HttpStatus.NOT_FOUND)) throw wcre;
+                throw new RepositoryMetaRejectedException("Dependency-Track refused (" + status.value() + ") reading " + what);
+            }
+            throw new RelizaException("Dependency-Track returned " + status.value() + " reading " + what);
+        } catch (Exception e) {
+            throw new RelizaException("Error reading " + what + ": " + e.getMessage());
+        }
+    }
+
+    /** The components of a project listing and the number of requests it cost. */
+    public record RepositoryMetaListing(List<ComponentLatestVersion> components, int requests) {}
+
+    /** What {@code GET /api/v1/repository/latest} answered for a purl. */
+    public enum LatestVersionAnswer {
+        /** 200: the package's latest version. */
+        FOUND,
+        /** 204: Dependency-Track has no repository for the purl's type (deb, apk, rpm, generic). */
+        NO_REPOSITORY_FOR_TYPE,
+        /**
+         * 404: a type it has repositories for, but no metadata for the package. It never
+         * fetches on demand, so a package outside its portfolio stays unknown.
+         */
+        UNKNOWN_PACKAGE
+    }
+
+    /** One {@code repository/latest} answer; {@code latestVersion} is set for FOUND only. */
+    public record LatestVersionLookup(LatestVersionAnswer answer, String latestVersion) {}
+
+    /**
+     * The latest version of one purl's package: {@code GET /api/v1/repository/latest?purl=},
+     * the same on DT 5 and DT 4 (verified live on 5.1.0 and 4.14.2; the version in the purl
+     * is ignored). For components that are in no synthetic bucket; bucketed ones are read in
+     * bulk by {@link #syntheticFetchRepositoryMeta}. The purl travels as an encoded query
+     * parameter inside a {@link URI}, so WebClient does not re-encode it.
+     */
+    public LatestVersionLookup fetchLatestVersion(UUID orgUuid, String purl) throws RelizaException {
+        Optional<DTrackIntegration> integration = getDTrackIntegration(orgUuid);
+        if (integration.isEmpty()) throw new RelizaException("DependencyTrack integration not configured");
+        URI uri = buildDTrackUri(integration.get(),
+                "/api/v1/repository/latest?purl=" + URLEncoder.encode(purl, StandardCharsets.UTF_8));
+        ResponseEntity<String> resp;
+        try {
+            resp = getRepositoryMeta(uri, integration.get().apiToken(), "the latest version of " + purl);
+        } catch (WebClientResponseException notFound) {
+            return new LatestVersionLookup(LatestVersionAnswer.UNKNOWN_PACKAGE, null);
+        }
+        // only a 204 means no repository for the type: an empty 200 is not one
+        if (resp != null && resp.getStatusCode().isSameCodeAs(HttpStatus.NO_CONTENT)) {
+            return new LatestVersionLookup(LatestVersionAnswer.NO_REPOSITORY_FOR_TYPE, null);
+        }
+        String latest = null;
+        if (resp != null && StringUtils.isNotBlank(resp.getBody())) {
+            try {
+                latest = StringUtils.trimToNull(Utils.OM.readValue(resp.getBody(), DtrackRepositoryMetaRaw.class).latestVersion());
+            } catch (JacksonException e) {
+                throw new RelizaException("Unreadable latest version of " + purl + ": " + e.getMessage());
+            }
+        }
+        return latest == null ? new LatestVersionLookup(LatestVersionAnswer.UNKNOWN_PACKAGE, null)
+                : new LatestVersionLookup(LatestVersionAnswer.FOUND, latest);
+    }
+
 
     // ========================================
     // HELPER RECORDS & CLASSES

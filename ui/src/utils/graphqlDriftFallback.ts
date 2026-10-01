@@ -13,7 +13,9 @@
 // still renders (flagged `degraded`). Transport / auth / server errors are
 // NOT swallowed -- they surface unchanged. Any query can adopt this by
 // passing its two documents and a data selector; see notificationInboxQuery.ts
-// for the inbox's use.
+// for the inbox's use. A surface with more than two documents, or that should
+// stop asking for a rejected one for a while, uses `loadRichestServed`
+// instead (the findings modal, the vulnerability details panel).
 
 import type { DocumentNode } from 'graphql'
 
@@ -154,4 +156,78 @@ export async function loadWithSchemaDriftFallback (
         // (it reflects the real first failure); otherwise surface this one.
         throw fullError ?? err
     }
+}
+
+// How long a document the backend rejected as schema drift is skipped before it is tried again.
+export const SCHEMA_DRIFT_RETRY_MS = 10 * 60 * 1000
+
+// When each document was last rejected as schema drift while a narrower one
+// was served. Module-level: every surface on the page talks to one backend.
+const driftRejectedAt = new WeakMap<DocumentNode, number>()
+
+// Whether the backend rejected `doc` as schema drift within the last SCHEMA_DRIFT_RETRY_MS.
+export function isDriftRejected (doc: DocumentNode): boolean {
+    return Date.now() - (driftRejectedAt.get(doc) ?? 0) < SCHEMA_DRIFT_RETRY_MS
+}
+
+// Remember that the backend rejected `doc` as schema drift (and served a narrower one).
+export function markDriftRejected (doc: DocumentNode): void {
+    driftRejectedAt.set(doc, Date.now())
+}
+
+export interface RichestServedOptions {
+    // Richest first; the last selects only fields every backend serves.
+    documents: DocumentNode[]
+    variables: Record<string, any>
+    extractPath: (data: any) => any
+}
+
+export interface RichestServedResult {
+    data: any
+    // Index into documents of the one served; 0 is the richest.
+    served: number
+}
+
+// The richest of several documents the backend serves, for a surface whose
+// optional fields a CE backend may lag. Unlike loadWithSchemaDriftFallback,
+// which retries its CORE document on drift only and surfaces the FULL error,
+// any failure of a richer document here falls back, and the rejections are
+// remembered. Queries go out uncached, as one-off payloads.
+//  - A schema-drift rejection steps down one document. Once a narrower one
+//    is served, the rejected ones are skipped for SCHEMA_DRIFT_RETRY_MS; if
+//    nothing is served, nothing is remembered (a blanket 400 from an edge
+//    proxy reads as drift and must not hide the fields after it clears).
+//  - An error the server answered without an HTTP error status (a field that
+//    failed to resolve) also steps down one document, unremembered: only the
+//    fields that document adds may be at fault.
+//  - A transport failure or an HTTP error status goes straight to the last
+//    document: a struggling backend should not pay for the ones in between.
+//  - When the last document fails too, the first error that was not drift
+//    surfaces, else the last document's own.
+export async function loadRichestServed (client: DriftFallbackClient, opts: RichestServedOptions): Promise<RichestServedResult> {
+    const { documents, variables, extractPath } = opts
+    const last = documents.length - 1
+    const rejected: DocumentNode[] = []
+    let firstOtherError: unknown
+    let skipToLast = false
+    for (let i = 0; i <= last; i++) {
+        const query = documents[i]
+        if (i < last && (skipToLast || isDriftRejected(query))) continue
+        try {
+            const res = await client.query({ query, variables, fetchPolicy: 'no-cache' })
+            const data = extractPath(res.data)
+            rejected.forEach(markDriftRejected)
+            return { data, served: i }
+        } catch (err) {
+            if (i === last) throw firstOtherError ?? err
+            if (isSchemaDriftError(err)) {
+                rejected.push(query)
+            } else {
+                firstOtherError ??= err
+                const unanswered = httpStatusOf(err) !== undefined || classifyGraphqlError(err) === 'network'
+                if (unanswered) skipToLast = true
+            }
+        }
+    }
+    throw new Error('loadRichestServed needs at least one document')
 }

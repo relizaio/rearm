@@ -18,6 +18,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.TreeSet;
@@ -87,6 +88,7 @@ import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SbomComponentRepository;
+import io.reliza.repositories.SbomComponentRepository.CanonicalPurlRow;
 import io.reliza.repositories.SbomComponentSupportAuditRepository;
 import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.repositories.SbomComponentSupportRepository.SupportPayloadRow;
@@ -1763,19 +1765,75 @@ private static int currentReconcileFailureCount(Release r) {
 	public List<ArtifactSbomComponent> resolveReleaseArtifactComponents(UUID releaseUuid) {
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
 		if (ord.isEmpty()) return List.of();
-		ReleaseData rd = ord.get();
+		ReleaseArtifacts artifacts = resolveReleaseArtifacts(ord.get());
+		if (artifacts.canonicalArtifacts().isEmpty()) return List.of();
+		return artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuidIn(
+				artifacts.org(), artifacts.canonicalArtifacts());
+	}
+
+	/**
+	 * The components of a release's inventory, over the same path as its component list,
+	 * reduced to their canonical purls, and whether the release, or for a PRODUCT any
+	 * release in its dependency unwind, still has an SBOM reconcile queued.
+	 *
+	 * @param reconcilePending while true the components may be stale or partial: a queued
+	 *        reconcile has not indexed a new BOM yet, or the last pass skipped a BOM after
+	 *        {@code release_artifact_index} already pointed at its unparsed canonical
+	 */
+	public record ReleaseComponentPurls(UUID org, Map<UUID, String> canonicalByComponent,
+			Map<UUID, LatestVersion> latestByComponent, boolean reconcilePending) {
+		static final ReleaseComponentPurls NONE = new ReleaseComponentPurls(null, Map.of(), Map.of(), false);
+	}
+
+	/**
+	 * A component's latest version from Dependency-Track's repository metadata (V92), and when
+	 * it was last asked (UTC RFC-3339); either can be null.
+	 */
+	public record LatestVersion(String version, String checked) {}
+
+	/**
+	 * {@link ReleaseComponentPurls} of a release: its canonical artifacts, then one join for
+	 * their components' canonical purls. Reads the release through the light loader: only
+	 * its org, component and dependency references are used.
+	 */
+	public ReleaseComponentPurls resolveReleaseComponentPurls(UUID releaseUuid) {
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseDataLight(releaseUuid);
+		if (ord.isEmpty()) return ReleaseComponentPurls.NONE;
+		ReleaseArtifacts artifacts = resolveReleaseArtifacts(ord.get());
+		if (artifacts.org() == null) return ReleaseComponentPurls.NONE;
+		Map<UUID, String> canonicalByComponent = new LinkedHashMap<>();
+		Map<UUID, LatestVersion> latestByComponent = new HashMap<>();
+		if (!artifacts.canonicalArtifacts().isEmpty()) {
+			for (CanonicalPurlRow row : sbomComponentRepository.findCanonicalPurlsByOrgAndCanonicalArtifactUuidIn(
+					artifacts.org().toString(), joinUuids(artifacts.canonicalArtifacts()))) {
+				canonicalByComponent.put(row.getUuid(), row.getCanonicalPurl());
+				if (row.getLatestVersion() != null || row.getLatestVersionChecked() != null) {
+					latestByComponent.put(row.getUuid(), new LatestVersion(row.getLatestVersion(), row.getLatestVersionChecked()));
+				}
+			}
+		}
+		return new ReleaseComponentPurls(artifacts.org(), canonicalByComponent, latestByComponent,
+				artifacts.reconcilePending());
+	}
+
+	/** The canonical artifacts a release resolves to, and whether any release on the path has a reconcile queued. */
+	private record ReleaseArtifacts(UUID org, Set<UUID> canonicalArtifacts, boolean reconcilePending) {}
+
+	private ReleaseArtifacts resolveReleaseArtifacts(ReleaseData rd) {
 		UUID orgUuid = rd.getOrg();
-		if (orgUuid == null) return List.of();
+		if (orgUuid == null) return new ReleaseArtifacts(null, Set.of(), false);
 
 		boolean isProduct = getComponentService.getComponentData(rd.getComponent())
 				.map(cd -> cd.getType() == ComponentType.PRODUCT)
 				.orElse(false);
 
 		Set<UUID> sourceReleaseUuids = new LinkedHashSet<>();
-		sourceReleaseUuids.add(releaseUuid);
+		sourceReleaseUuids.add(rd.getUuid());
+		boolean reconcilePending = Boolean.TRUE.equals(rd.getSbomReconcilePending());
 		if (isProduct) {
 			for (ReleaseData dep : sharedReleaseService.unwindReleaseDependencies(rd)) {
 				sourceReleaseUuids.add(dep.getUuid());
+				reconcilePending |= Boolean.TRUE.equals(dep.getSbomReconcilePending());
 			}
 		}
 
@@ -1786,9 +1844,7 @@ private static int currentReconcileFailureCount(Release r) {
 				releaseArtifactIndexRepository.findByOrgAndReleaseUuidIn(orgUuid, sourceReleaseUuids)) {
 			canonicalSet.add(idx.getCanonicalArtifactUuid());
 		}
-		if (canonicalSet.isEmpty()) return List.of();
-
-		return artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuidIn(orgUuid, canonicalSet);
+		return new ReleaseArtifacts(orgUuid, canonicalSet, reconcilePending);
 	}
 
 	/** The distinct canonical component uuids a release resolves to. */
@@ -2153,12 +2209,32 @@ private static int currentReconcileFailureCount(Release r) {
 				orgUuidStr, base, Utils.escapeSqlLikeLiteral(base));
 	}
 
+	/**
+	 * Resolves a purl to the org's sbom_components row, in one indexed query over
+	 * every spelling the stored canonical can have ({@link Utils#canonicalPurlSpellings}).
+	 * An exact lookup of {@link Utils#canonicalizePurl} alone misses rebom's rows:
+	 * its PackageURL round-trip writes a Debian {@code 5.36.0-7+deb12u3} or
+	 * {@code 1:1.2.13} as {@code %2B} / {@code %3A}, where rebom keeps them raw.
+	 * The caller's own bytes go first when they parse to the same identity, which
+	 * covers a purl copied from a stored row whatever else it encodes.
+	 */
 	public UUID searchSbomComponentByPurl(String purl, UUID orgUuid) {
 		if (orgUuid == null) return null;
 		String canonical = Utils.canonicalizePurl(purl);
 		if (canonical == null) return null;
-		return sbomComponentRepository.findByOrgAndCanonicalPurl(orgUuid, canonical)
-				.map(SbomComponent::getUuid)
+		Set<String> spellings = new LinkedHashSet<>();
+		String asGiven = Utils.canonicalizePurlPreservingEncoding(purl);
+		if (asGiven != null && Utils.purlsSemanticallyEqual(asGiven, canonical)) spellings.add(asGiven);
+		spellings.addAll(Utils.canonicalPurlSpellings(purl));
+		Map<String, UUID> byCanonical = new HashMap<>();
+		for (SbomComponent sc : sbomComponentRepository
+				.findByOrgAndCanonicalPurlIn(orgUuid.toString(), spellings)) {
+			byCanonical.put(sc.getCanonicalPurl(), sc.getUuid());
+		}
+		return spellings.stream()
+				.map(byCanonical::get)
+				.filter(Objects::nonNull)
+				.findFirst()
 				.orElse(null);
 	}
 

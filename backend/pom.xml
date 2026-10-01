@@ -276,6 +276,43 @@
         <artifactId>packageurl-java</artifactId>
         <version>1.5.0</version>
     </dependency>
+    <!-- CVSS 2 / 3.x / 4.0 base-score calculator (same library Dependency-Track uses);
+         computes scores for vectors DT stores without a score (OSV sources) -->
+    <dependency>
+        <groupId>us.springett</groupId>
+        <artifactId>cvss-calculator</artifactId>
+        <version>1.5.1</version>
+    </dependency>
+    <!-- vers (package-url vers-spec) ranges and per-ecosystem version ordering: the
+         library Dependency-Track 4 and 5 use to decide which versions an advisory
+         affects, so ReARM orders versions as they did. io.reliza:versioning bumps
+         ReARM's own version schemas and cannot order ecosystem versions (npm, pypi,
+         deb, rpm, ...). 0.x with frequent breaking changes, so pinned and imported
+         only by io.reliza.common.VersRanges. Brings jspecify, maven-artifact (Maven
+         ordering) and semver4j 3.1.0 (npm ordering; no longer maintained upstream,
+         and reachable only through versatile). maven-artifact declares plexus-utils
+         for DefaultArtifact alone; versatile uses only DefaultArtifactVersion and
+         ComparableVersion, which do not touch it, so it is excluded. -->
+    <dependency>
+        <groupId>io.github.nscuro</groupId>
+        <artifactId>versatile-core</artifactId>
+        <version>0.25.0</version>
+        <exclusions>
+            <exclusion>
+                <groupId>org.codehaus.plexus</groupId>
+                <artifactId>plexus-utils</artifactId>
+            </exclusion>
+        </exclusions>
+    </dependency>
+    <!-- Java time types for the Jackson 2 mapper Hibernate's JsonBinaryType uses
+         (Utils.JSONB_OM registers every module on the classpath). Declared rather
+         than inherited: otherwise it arrives only transitively, through the Azure
+         SDK, which the CE edition does not ship. Version managed by the Spring
+         Boot BOM. -->
+    <dependency>
+        <groupId>com.fasterxml.jackson.datatype</groupId>
+        <artifactId>jackson-datatype-jsr310</artifactId>
+    </dependency>
     <!-- Bucket4j for token-bucket rate limiting -->
     <dependency>
         <groupId>com.bucket4j</groupId>
@@ -320,6 +357,13 @@
                          releases and clears their markers, which races @SpringBootTest classes
                          that assert on claim/marker state. Direct calls unaffected. -->
                     <relizaprops.autoIntegrateDrainEnabled>false</relizaprops.autoIntegrateDrainEnabled>
+                    <!-- Same reason once more: the PT1M orphaned-component GC deletes any sbom
+                         component that is unbucketed, mapped to no artifact and has no support
+                         row. Fixtures that save a component and attest it in a later transaction
+                         lose it to a tick in between, and the support assertions then read
+                         nothing (SbomComponentSupportServiceIntegrationTest failed on main this
+                         way). Direct calls to gcOrphanedComponents unaffected. -->
+                    <relizaprops.orphanedComponentGcEnabled>false</relizaprops.orphanedComponentGcEnabled>
                     <!-- Every test class that mints an org (TestInitializer.obtainOrganization)
                          would otherwise fetch the public CISA KEV feed and write ~1,700
                          kev_assertions rows for it, because a new org seeds its own KEV mirror

@@ -99,7 +99,9 @@ public class IntegrationDataFetcher {
 
 		Optional<IntegrationData> oid = integrationService.getIntegrationDataByOrgTypeIdentifier(
 				orgUuid, IntegrationType.DEPENDENCYTRACK, CommonVariables.BASE_INTEGRATION_IDENTIFIER);
-		return oid.map(id -> id.getEffectiveDtrackVersion().name()).orElse(null);
+		// The detected version only: null while not detected, so the UI shows no
+		// version rather than the default the drain falls back to.
+		return oid.map(IntegrationData::getDtrackVersion).map(Enum::name).orElse(null);
 	}
 	
 	@JsonIgnoreProperties(ignoreUnknown = true)

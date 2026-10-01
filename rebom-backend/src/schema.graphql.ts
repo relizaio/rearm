@@ -116,6 +116,14 @@ const typeDefs = gql`
     notes: String
     stripBom: String
     serialNumber: ID
+    """
+    The identity of the processed document the row currently serves, which is a
+    different document from the one the producer uploaded and so carries a
+    different serialNumber. The serialNumber above stays the producer's: it is the
+    row's identity and what every lookup keys on. Null on rows written before
+    processed documents carried their own.
+    """
+    processedSerialNumber: ID
     createdDate: DateTime
     lastUpdatedDate: DateTime
     ignoreDev: Boolean
@@ -139,6 +147,8 @@ const typeDefs = gql`
     repository: String
     digest: String
     size: Int
+    """The identity of the document this run pushed. Null when it pushed nothing."""
+    serialNumber: ID
     startedAt: String
     completedAt: String
     """RUNNING, COMPLETED, FAILED, or ABANDONED when a run never reported back."""
@@ -296,7 +306,12 @@ input RebomOptions {
     stripBom: String
     serialNumber: ID
     bomDigest: String
-    originalFileDigest: String  # SHA256 of original file (for SPDX)
+    # MISNAMED. Not the digest of the uploaded file -- ReARM parses the upload before
+    # calling rebom, so rebom never sees those bytes. This is the digest of the document
+    # rebom STORED (JSON.stringify of the parsed object). The uploaded file's own digest
+    # lives on the ReARM artifact under the AS_UPLOADED scope. Kept under this name
+    # because it is persisted on every existing row and sent by ReARM.
+    originalFileDigest: String
     originalFileSize: Int       # Size of original file in bytes (for SPDX)
     originalMediaType: String   # Media type of original file (for SPDX)
     purl: String

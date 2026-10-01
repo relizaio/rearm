@@ -17,14 +17,14 @@
                             {{ finding.severity || 'UNASSIGNED' }}
                         </n-tag>
                         <n-tag :type="getFindingTypeTagType(finding.type)" size="small">{{ finding.typeLabel }}</n-tag>
-                        <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
+                        <strong><a v-if="idLink(finding).action !== 'none'" :href="hrefOf(idLink(finding))" target="_blank" rel="noopener noreferrer" class="finding-link" @click="followId($event, finding.findingId, idLink(finding), finding)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
                         <n-tag v-if="finding.knownExploited" type="error" size="small" :bordered="false" class="kev-tag" title="CISA Known Exploited Vulnerability — click for details" @click="emit('kev-click', finding)">KEV</n-tag>
                         <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
                             <template #trigger>
                                 <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
                             </template>
                             <template v-if="richAliases">
-                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId || alias"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId || alias)" :href="getFindingUrl(alias.aliasId || alias)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId || alias)!)">{{ alias.aliasId || alias }}</a><span v-else>{{ alias.aliasId || alias }}</span></template>
+                                Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId || alias"><span v-if="idx > 0">, </span><a v-if="aliasLink(alias).action !== 'none'" :href="hrefOf(aliasLink(alias))" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click="followId($event, aliasIdOf(alias), aliasLink(alias), finding)">{{ aliasIdOf(alias) }}</a><span v-else>{{ aliasIdOf(alias) }}</span></template>
                             </template>
                             <template v-else>
                                 Aliases: {{ finding.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId).join(', ') }}
@@ -60,14 +60,14 @@
                                 {{ finding.severity || 'UNASSIGNED' }}
                             </n-tag>
                             <n-tag :type="getFindingTypeTagType(finding.type)" size="small">{{ finding.typeLabel }}</n-tag>
-                            <strong><a v-if="getFindingUrl(finding.findingId)" :href="getFindingUrl(finding.findingId)!" target="_blank" rel="noopener noreferrer" class="finding-link" @click.prevent="openExternalLink(getFindingUrl(finding.findingId)!)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
+                            <strong><a v-if="idLink(finding).action !== 'none'" :href="hrefOf(idLink(finding))" target="_blank" rel="noopener noreferrer" class="finding-link" @click="followId($event, finding.findingId, idLink(finding), finding)">{{ finding.findingId }}</a><span v-else>{{ finding.findingId }}</span></strong>
                             <n-tag v-if="finding.knownExploited" type="error" size="small" :bordered="false" class="kev-tag" title="CISA Known Exploited Vulnerability — click for details" @click="emit('kev-click', finding)">KEV</n-tag>
                             <n-tooltip v-if="finding.aliases && finding.aliases.length > 0" trigger="hover">
                                 <template #trigger>
                                     <n-icon class="alias-icon" :size="16"><Info20Regular /></n-icon>
                                 </template>
                                 <template v-if="richAliases">
-                                    Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId || alias"><span v-if="idx > 0">, </span><a v-if="getFindingUrl(alias.aliasId || alias)" :href="getFindingUrl(alias.aliasId || alias)!" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click.prevent="openExternalLink(getFindingUrl(alias.aliasId || alias)!)">{{ alias.aliasId || alias }}</a><span v-else>{{ alias.aliasId || alias }}</span></template>
+                                    Aliases: <template v-for="(alias, idx) in finding.aliases" :key="alias.aliasId || alias"><span v-if="idx > 0">, </span><a v-if="aliasLink(alias).action !== 'none'" :href="hrefOf(aliasLink(alias))" target="_blank" rel="noopener noreferrer" class="alias-tooltip-link" @click="followId($event, aliasIdOf(alias), aliasLink(alias), finding)">{{ aliasIdOf(alias) }}</a><span v-else>{{ aliasIdOf(alias) }}</span></template>
                                 </template>
                                 <template v-else>
                                     Aliases: {{ finding.aliases.map((a: any) => typeof a === 'string' ? a : a.aliasId).join(', ') }}
@@ -93,7 +93,9 @@
 import { computed, ref } from 'vue'
 import { NTag, NTooltip, NIcon, NCollapseTransition } from 'naive-ui'
 import { Info20Regular, ChevronRight20Regular, ChevronDown20Regular } from '@vicons/fluent'
-import { getSeverityTagType, getFindingTypeTagType, getFindingUrl, openExternalLink } from '../../utils/findingUtils'
+import { getSeverityTagType, getFindingTypeTagType, findingIdLink, findingTypeOf, followFindingIdLink } from '../../utils/findingUtils'
+import { FindingType } from '../../constants/findingType'
+import type { FindingIdLink } from '../../utils/findingUtils'
 import { isSuppressedAnalysisState } from '@/constants/vulnAnalysis'
 
 interface Props {
@@ -112,7 +114,18 @@ const props = withDefaults(defineProps<Props>(), {
 
 const emit = defineEmits<{
     (e: 'kev-click', finding: any): void
+    // A vulnerability id of the finding (its own or an alias) was clicked.
+    (e: 'vuln-click', vulnId: string, finding: any): void
 }>()
+
+const idLink = (finding: any): FindingIdLink => findingIdLink(finding.findingId, findingTypeOf(finding.type))
+const aliasIdOf = (alias: any): string => typeof alias === 'string' ? alias : (alias?.aliasId || '')
+const aliasLink = (alias: any): FindingIdLink => findingIdLink(aliasIdOf(alias), FindingType.VULNERABILITY)
+const hrefOf = (link: FindingIdLink): string | undefined => link.action === 'none' ? undefined : link.href
+
+const followId = (e: Event, id: string, link: FindingIdLink, finding: any) => {
+    followFindingIdLink(e, id, link, (vulnId: string) => emit('vuln-click', vulnId, finding))
+}
 
 const showSuppressed = ref(false)
 

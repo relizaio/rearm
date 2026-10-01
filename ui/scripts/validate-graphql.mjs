@@ -41,14 +41,16 @@ const HERE = dirname(fileURLToPath(import.meta.url))
 const UI_ROOT = join(HERE, '..')
 const SRC = join(UI_ROOT, 'src')
 // Since the schema split, the shared types live in schema.graphqls and the root fields in
-// user.graphqls (browser) and programmatic.graphqls (API keys); a schema is the three together.
-const SCHEMA_FILES = ['schema.graphqls', 'user.graphqls', 'programmatic.graphqls']
+// user.graphqls (browser) and programmatic.graphqls (API keys). A schema is every .graphql /
+// .graphqls file under the directory -- the set the backend loads and serves on /graphql --
+// so a further split needs no change here. src/utils/schemaDriftSupport.ts reads the same set.
+const SCHEMA_FILE = /\.graphqls?$/
 // The Pro schema comes from a checkout NEXT DOOR, which is on whatever branch its owner
 // last left it on. That is a trap: a UI change written against an unmerged backend branch
 // validates against a DIFFERENT schema than the one it targets, and passes. `facts` went
 // from Object to ModelFacts on one branch while the co-located checkout sat on another,
 // so a bare `facts` selection -- invalid against the schema it would actually meet --
-// validated clean. REARM_PRO_SCHEMA points this at a directory holding the three files
+// validated clean. REARM_PRO_SCHEMA points this at a directory holding the schema files
 // for the branch (or the merge of branches) the UI is really targeting; whichever is used,
 // the run PRINTS what it read, so a green result can be checked rather than trusted.
 const PRO_SCHEMA = process.env.REARM_PRO_SCHEMA
@@ -70,8 +72,11 @@ function schemaProvenance (dir) {
 }
 
 function loadSchema (dir, label) {
-    const present = SCHEMA_FILES.map(f => join(dir, f)).filter(existsSync)
-    if (!present.length || !existsSync(join(dir, 'schema.graphqls'))) {
+    const present = existsSync(dir)
+        ? readdirSync(dir, { recursive: true, encoding: 'utf8' })
+            .filter(f => SCHEMA_FILE.test(f)).sort().map(f => join(dir, f))
+        : []
+    if (!present.length) {
         console.warn(`[validate-graphql] ${label} schema not found at ${dir} -- skipping ${label} checks`)
         return null
     }

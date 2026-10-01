@@ -200,7 +200,9 @@ To set them by hand:
 1. Navigate to the Keycloak login path at your ReARM URI with the `/kauth/` suffix - for example `https://rearm.example.com/kauth`.
 2. Log in with your [Keycloak admin credentials](/installation/#keycloak-admin-credentials). This section applies to deployments that are not on localhost, so if they are still `admin / admin`, change them.
 3. In the upper left of the screen, switch realm from Keycloak to Reliza.
-4. Go to the `Clients` menu and click the `login-app` client. Add your user-facing URI to `Valid redirect URIs`, `Valid post logout redirect URIs` and `Web origins` - for example `https://rearm.example.com/*` in each. You may remove the existing preset defaults.
+4. Go to the `Clients` menu and click the `login-app` client. Add your user-facing URI to `Valid redirect URIs` and `Valid post logout redirect URIs` as a pattern - for example `https://rearm.example.com/*` - and to `Web origins` as a bare origin with no path - for example `https://rearm.example.com`. You may remove the existing preset defaults.
+
+A web origin is compared literally against the browser's `Origin` header, which never carries a path, so an entry such as `https://rearm.example.com/*` matches nothing. The symptom is a blank page right after a successful Keycloak login, with the token request answered 403 in the browser console. On Helm, fix it by setting `Web origins` as described in step 4. Docker Compose installs whose realm was imported from a `rearm-keycloak` image built before the fix have this problem out of the box; the fix is in the [Docker Compose README](https://github.com/relizaio/rearm/tree/main/deploy/docker-compose#blank-page-after-login).
 
 ## Create Your Administrative User and Log In
 Time it takes: 5 minutes.

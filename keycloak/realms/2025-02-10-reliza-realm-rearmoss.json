@@ -656,9 +656,9 @@
         "http://localhost:3000/*"
       ],
       "webOrigins": [
-        "http://localhost:8092/*",
-        "http://localhost:8086/*",
-        "http://localhost:3000/*"
+        "http://localhost:8092",
+        "http://localhost:8086",
+        "http://localhost:3000"
       ],
       "notBefore": 0,
       "bearerOnly": false,

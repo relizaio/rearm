@@ -92,7 +92,16 @@ public class SchedulingService {
     SyntheticSbomService syntheticSbomService;
 
     @Autowired
+    ComponentLatestVersionService componentLatestVersionService;
+
+    @Autowired
     KevCatalogSyncService kevCatalogSyncService;
+
+    @Autowired
+    VulnerabilityRecordService vulnerabilityRecordService;
+
+    @Autowired
+    AffectedRangesService affectedRangesService;
 
 
     // Gates the every-3h legacy per-artifact DTrack project phase-out
@@ -275,11 +284,13 @@ public class SchedulingService {
 					// post-sweep stripped-era leftovers that otherwise occupy the
 					// enrichment window and stall counts forever with no pull path
 					// able to reach them. Bounded; steady state deletes nothing.
-					try {
-						int gcd = sbomComponentService.gcOrphanedComponents(500);
-						if (gcd > 0) log.info("Orphaned-component GC removed {} unreferenced unbucketed canonical component(s)", gcd);
-					} catch (Exception e) {
-						log.error("gcOrphanedComponents failed", e);
+					if (orphanedComponentGcEnabled) {
+						try {
+							int gcd = sbomComponentService.gcOrphanedComponents(500);
+							if (gcd > 0) log.info("Orphaned-component GC removed {} unreferenced unbucketed canonical component(s)", gcd);
+						} catch (Exception e) {
+							log.error("gcOrphanedComponents failed", e);
+						}
 					}
 
 					// Repoint component mappings written under the old
@@ -315,6 +326,35 @@ public class SchedulingService {
 		}
     }
     
+    /**
+     * Latest versions of the org's components from Dependency-Track's repository metadata
+     * (ComponentLatestVersionService): due after 24 h, capped per org per run, nothing to do
+     * in steady state. On its own tick and lock, not the shared synthetic one: during the
+     * first backfill each org spends up to relizaprops.latestVersionFetchLimit DT requests,
+     * which must not stretch submit / ingest / fan-out.
+     */
+    @Scheduled(fixedDelayString = "${relizaprops.latestVersionRefreshDelay:PT5M}")
+    public void scheduleLatestVersionRefresh () {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.LATEST_VERSION_REFRESH);
+            if (lock) {
+                try {
+                    for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
+                        try {
+                            componentLatestVersionService.refreshOrg(orgUuid);
+                        } catch (Exception e) {
+                            log.error("latest-version refresh failed for org {}", orgUuid, e);
+                        }
+                    }
+                } finally {
+                    releaseLock(AdvisoryLockKey.LATEST_VERSION_REFRESH);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Latest-version refresh run failed with an error", e);
+        }
+    }
+
     /**
      * Dedicated enrichment-pull tick, split from the shared synthetic tick after
      * [ENRICH-TICK] telemetry measured the pass at ~25s/org mid-drain -- on the
@@ -616,6 +656,73 @@ public class SchedulingService {
         }
     }
 
+    /**
+     * Detect the version of Dependency-Track integrations that have none, and
+     * once a day check the ones detected as version 4 for an in-place upgrade
+     * ({@link IntegrationService#redetectDtrackVersions}). Undetected ones are
+     * taken as Dependency-Track 5 meanwhile. The short initial delay settles
+     * them soon after startup, ahead of most drains; later runs cover an
+     * instance that was unreachable. Each probe is one {@code /api/version}
+     * call of at most 10 seconds. Shared, not {@code saas/}: CE has the
+     * integration too.
+     */
+    @Scheduled(
+            fixedDelayString = "${relizaprops.dtrackVersionRedetectInterval:PT1H}",
+            initialDelayString = "${relizaprops.dtrackVersionRedetectInitialDelay:PT30S}")
+    public void redetectDtrackVersions() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.REDETECT_DTRACK_VERSIONS);
+            if (Boolean.TRUE.equals(lock)) {
+                try {
+                    integrationService.redetectDtrackVersions();
+                } catch (Exception e) {
+                    log.error("Exception during Dependency-Track version re-detection", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.REDETECT_DTRACK_VERSIONS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Dependency-Track version re-detection run failed with an error", e);
+        }
+    }
+
+    /** Default recompute sweep schedule -- 04:55 daily. */
+    private static final String DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON = "0 55 4 * * *";
+
+    /**
+     * Daily recompute sweep for {@code vulnerability_records}, in two phases,
+     * each failing on its own. First, rows still in the shape written before
+     * the merged scores list existed: converts them, and in the same
+     * recompute fills a CVSS score from a vector where no source published
+     * one. Second, affected ranges that are due for a fetch
+     * ({@link AffectedRangesService#refreshDueAffectedRanges}). Shared, not
+     * {@code saas/}: records are shared code, so CE runs both.
+     *
+     * <p>Daily at 04:55 by default ({@code relizaprops.recomputeVulnerabilityRecordsCron}),
+     * in the quiet-hour band with the other daily housekeeping, not hourly:
+     * both finders read every row's JSONB (no index covers their
+     * predicates), about 1 GB of detoast at 100k rows. The conversion is
+     * one-shot -- every write since stores the new shape, so later runs
+     * select zero rows and it suspends its scan. The ranges phase reads the
+     * table every night, resuming where the previous run stopped.
+     */
+    @Scheduled(cron = "${relizaprops.recomputeVulnerabilityRecordsCron:" + DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON + "}")
+    public void recomputeVulnerabilityRecords() {
+        SchedulerGuard.runIsolated("recomputeVulnerabilityRecords", () -> {
+            Boolean lock = getLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
+            if (lock) {
+                try {
+                    SchedulerGuard.runIsolated("vulnerability record score conversion",
+                            vulnerabilityRecordService::convertLegacyScoreRecords);
+                    SchedulerGuard.runIsolated("vulnerability record affected ranges",
+                            affectedRangesService::refreshDueAffectedRanges);
+                } finally {
+                    releaseLock(AdvisoryLockKey.RECOMPUTE_VULNERABILITY_RECORDS);
+                }
+            }
+        });
+    }
+
     // =====================================================================
     // Notification pipeline + finding-change v3 drains. These drive shared
     // services (NotificationFanOutService, NotificationDeliveryWorker,
@@ -780,6 +887,16 @@ public class SchedulingService {
      */
     @Value("${relizaprops.autoIntegrateDrainEnabled:true}")
     private boolean autoIntegrateDrainEnabled;
+
+    /**
+     * Kill switch for the orphaned-component GC on the same tick. Disabled in the surefire run
+     * ({@code relizaprops.orphanedComponentGcEnabled=false}): a test that saves an sbom component
+     * and attests it in a later transaction leaves a window in which the component is unbucketed,
+     * unmapped and unsupported -- exactly what the GC deletes -- and the assertions then read a
+     * component that is gone. Direct calls to gcOrphanedComponents are unaffected.
+     */
+    @Value("${relizaprops.orphanedComponentGcEnabled:true}")
+    private boolean orphanedComponentGcEnabled;
 
     @Value("${relizaprops.findingChangeV3BackfillDrainEnabled:true}")
     private boolean findingChangeV3BackfillDrainEnabled;

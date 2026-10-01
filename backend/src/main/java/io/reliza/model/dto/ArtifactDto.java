@@ -118,4 +118,7 @@ public class ArtifactDto {
 	
 	@JsonProperty
 	private String ociRepositoryName;  // For downloadable artifacts monthly rotation
+
+	@JsonProperty
+	private String rawOciRepositoryName;  // Repository holding a BOM artifact's raw uploaded bytes
 }

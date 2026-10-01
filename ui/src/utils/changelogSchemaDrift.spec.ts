@@ -1,12 +1,12 @@
 import { describe, it, expect } from 'vitest'
 import { parse, validate, type GraphQLSchema } from 'graphql'
-import { CE_SCHEMA_DIR, PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
 import {
     stripAdditiveFields,
     COMPONENT_CHANGELOG_QUERY,
     COMPONENT_CHANGELOG_BY_DATE_QUERY,
     ORGANIZATION_CHANGELOG_BY_DATE_QUERY
 } from './changelogQueryTexts'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // The changelog queries carry #additive-field-tagged selections (re-scan
 // arrival attribution + baseline flag) that exist on Pro before the CE mirror
@@ -16,16 +16,6 @@ import {
 // inbox split: the STRIPPED text must always validate against the CE mirror
 // (in-repo, unconditional), the FULL text against Pro (skipped when the
 // sibling rearm-core checkout is absent, e.g. in this repo's own CI).
-const CE_SCHEMA_PATH = CE_SCHEMA_DIR
-const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
-
-function loadSchema (path: string): GraphQLSchema | null {
-    return loadSchemaDir(path)
-}
-
-const ceSchema = loadSchema(CE_SCHEMA_PATH)
-const proSchema = loadSchema(PRO_SCHEMA_PATH)
-
 const queryEntries: [string, string][] = [
     ['COMPONENT_CHANGELOG_QUERY', COMPONENT_CHANGELOG_QUERY],
     ['COMPONENT_CHANGELOG_BY_DATE_QUERY', COMPONENT_CHANGELOG_BY_DATE_QUERY],
@@ -33,15 +23,10 @@ const queryEntries: [string, string][] = [
 ]
 
 describe('changelog stripped selections vs the CE mirror schema (in-repo, always runs)', () => {
-    it('has the CE mirror schema available', () => {
-        expect(ceSchema, `CE mirror schema not found at ${CE_SCHEMA_PATH}`).not.toBeNull()
-    })
-
     // The load-bearing invariant: the fallback document every CE install
     // degrades to must validate there, or the changelog blanks for CE users.
     for (const [name, text] of queryEntries) {
         it(`${name} stripped of additive fields is valid against the CE mirror`, () => {
-            if (!ceSchema) return
             expect(validate(ceSchema, parse(stripAdditiveFields(text))).map(e => e.message)).toEqual([])
         })
     }

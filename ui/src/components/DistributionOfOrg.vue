@@ -8,6 +8,30 @@
             </n-space>
             <n-data-table :columns="fleetDriftColumns" :data="fleetDrift" size="small" :row-props="driftRowProps" :pagination="fleetDrift.length > 5 ? { pageSize: 5 } : false" />
         </div>
+        <!-- D7 fleet question, read-only: which in-field units outlive their software.
+             Hidden entirely on a backend whose schema lacks the query (CE before the sync),
+             and not shown at all until the first answer is in, so an empty frame never reads
+             as "no risk"; follows the client / site selected below. -->
+        <div v-if="fleetRiskLoaded && fleetRisk.supported" class="fleetRiskPanel" data-testid="fleet-risk-panel">
+            <n-space align="center" size="small" style="margin-bottom: 6px;">
+                <n-tag :type="fleetRiskAnyAtRisk ? 'error' : 'default'" size="small">SUPPORT RISK</n-tag>
+                <strong data-testid="fleet-risk-headline">{{ fleetRiskHeadlineText }}</strong>
+                <span class="subtle">{{ fleetRiskScopeLabel }}</span>
+            </n-space>
+            <n-alert v-if="fleetRiskError" type="error" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-error-alert">
+                <n-space align="center" size="small">
+                    <span>Could not load the fleet support risk view: {{ fleetRiskError }}. The rows below are the last answer, not the current one.</span>
+                    <n-button size="tiny" @click="loadFleetRisk(fleetRiskPage)">Retry</n-button>
+                </n-space>
+            </n-alert>
+            <n-alert v-if="fleetRisk.degraded" type="warning" :show-icon="false" size="small" style="margin-bottom: 6px;" data-testid="fleet-risk-degraded-alert">
+                This backend serves the verdict per unit but not the evidence behind it (release judged, window in force, component end-of-support) nor the unit labels (identifiers, site and client names) or the fleet-wide at-risk count. Those columns are blank, not empty; units are named by id, and the headline counts the rows in hand rather than the fleet.
+            </n-alert>
+            <!-- Served at-risk-first across the whole fleet; rendered in that order, never re-sorted. -->
+            <n-data-table remote :columns="fleetRiskColumns" :data="fleetRisk.rows" :loading="fleetRiskLoading" size="small"
+                :row-props="fleetRiskRowProps" :row-key="(r: any) => r.device"
+                :pagination="fleetRiskPagination" @update:page="loadFleetRisk" />
+        </div>
     <div class="distWrapper">
         <!-- Clients column -->
         <div class="distColumn">
@@ -140,6 +164,42 @@
                         :placeholder="siteDeviceOptions.length ? 'Pick devices from hardware or SaMD shipments at this site, or leave empty' : 'No devices at this site yet — leave empty'" />
                 </n-form-item>
                 <n-form-item v-if="!isSoftwareShipment" label="Quantity *"><n-input-number v-model:value="shipForm.quantity" :min="1" /></n-form-item>
+
+                <!-- THE BATCH'S DEVICE SUPPORT WINDOW OVERRIDE (D7).
+                     Hardware and SaMD only: plain software is not a device and has no section
+                     524B commitment to override, so the block never renders there.
+                     Support commonly runs from SALE OR SHIPMENT ("seven years from date of
+                     sale"), which is a fact about a batch -- and the ship date it anchors to is
+                     the field directly above. -->
+                <template v-if="!isSoftwareShipment">
+                    <n-divider style="margin: 14px 0 8px;" />
+                    <div style="font-size: 13px; margin-bottom: 4px;"><strong>Device support window</strong></div>
+                    <div class="subtle" style="font-size: 12px; margin-bottom: 8px;">
+                        <template v-if="effectiveWindowLabel">
+                            In force: {{ effectiveWindowLabel }}.
+                        </template>
+                        <!-- Only claimed when we have actually READ a shipment. On create
+                             there is no shipment to resolve through yet, and the old markup
+                             fell through to "No window is declared for this device model" --
+                             a false statement about the product, made at exactly the moment
+                             it would talk someone into a batch override they do not need. -->
+                        <template v-else-if="editingShipment">
+                            No window is declared for this device model.
+                        </template>
+                        Leave both blank to inherit from the product component; fill them to
+                        override for this batch only.
+                    </div>
+                    <n-form-item label="Batch end of support">
+                        <n-date-picker style="width: 100%;" type="date" clearable
+                            v-model:formatted-value="shipForm.deviceWindowEos" value-format="yyyy-MM-dd"
+                            placeholder="inherit from the product component" />
+                    </n-form-item>
+                    <n-form-item label="Batch end of life / end of sale">
+                        <n-date-picker style="width: 100%;" type="date" clearable
+                            v-model:formatted-value="shipForm.deviceWindowEol" value-format="yyyy-MM-dd"
+                            placeholder="inherit from the product component" />
+                    </n-form-item>
+                </template>
                 <n-form-item v-if="!isSoftwareShipment" label="Batch identifiers">
                     <n-dynamic-input v-model:value="shipForm.identifiers" :on-create="onCreateBatchId">
                         <template #create-button-default>Add identifier</template>
@@ -187,12 +247,21 @@ export default { name: 'DistributionOfOrg' }
 import { ref, Ref, computed, ComputedRef, reactive, h, onMounted, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType, NCheckbox } from 'naive-ui'
-import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon } from '@vicons/tabler'
+import { NTabPane, NTabs, NDataTable, NModal, NForm, NFormItem, NInput, NInputNumber, NSelect, NButton, NIcon, NTag, NSpace, NDivider, NDynamicInput, NTooltip, NPopconfirm, NDatePicker, useNotification, NotificationType, NCheckbox, NAlert } from 'naive-ui'
+import { CirclePlus, InfoCircle, Edit as EditIcon, Archive as ArchiveIcon,
+    FileCertificate as StatementIcon, Loader as PendingIcon } from '@vicons/tabler'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { termsFor, DISTRIBUTION_DOMAIN_OPTIONS } from '@/utils/distributionTerms'
+import { applyShipmentWindowToInput,
+    effectiveWindowLabel as buildEffectiveWindowLabel } from '@/utils/componentDeviceWindow'
+import { loadDevicesAtSupportRisk, fleetRiskTag, fleetRiskHeadline, summarizeFleetRiskPage,
+    releaseSourceTag, fleetWindowLabel, FLEET_RISK_DETAIL, FLEET_RISK_DEFAULT_PAGE_SIZE,
+    type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
+import { isDeviceRiskFlagged } from '@/utils/supportStatusTag'
+import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
+import { NO_WINDOW_IN_FORCE } from '@/utils/addendumData'
 
 const route = useRoute()
 const router = useRouter()
@@ -307,7 +376,18 @@ const clientForm = reactive<any>({ uuid: '', name: '', domain: 'GENERIC', contac
 // New clients get a "Default" site out of the box (address / phone / email copied from the client) unless unticked.
 const createDefaultSite = ref(true)
 const siteForm = reactive<any>({ uuid: '', name: '', contact: emptyContact(), notes: '' })
-const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [] })
+const shipForm = reactive<any>({ featureSet: '', release: '', deliverable: null, shipDate: null, quantity: 1, identifiers: [], manufactureDate: null, expiryDate: null, devices: [],
+    // D7 batch override. Baselines so an unchanged window sends nothing -- the server stamps
+    // provenance on every write, and a no-op resend would re-attribute a claim nobody touched.
+    deviceWindowEos: null, deviceWindowEol: null,
+    deviceWindowBaselineEos: null, deviceWindowBaselineEol: null })
+
+/** The shipment row currently open in the modal, for the in-force line. */
+const editingShipment: Ref<any> = ref(null)
+
+/** The window in force for the shipment being edited, named with where it was declared. */
+const effectiveWindowLabel: ComputedRef<string> = computed((): string =>
+    buildEffectiveWindowLabel((editingShipment.value as any)?.effectiveDeviceSupportWindow))
 // Shipments carry the same two-axis classification as components: nature (HARDWARE /
 // SOFTWARE, hardware if any constituent component is hardware) and deviceClass. HARDWARE =
 // physical batch; SOFTWARE + MEDICAL_* = SaMD, shipped and tracked per unit like hardware;
@@ -390,7 +470,11 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 // ---- GraphQL ----
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
+// D7: the batch's own override plus the window that actually applies, with the level it was
+// declared at. No CORE/FULL split -- the Distribution module is SaaS-only, so this document is
+// never issued by a CE build at all, which is a stronger guarantee than a fallback.
 const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes nature deviceClass devices identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
+    + ' deviceSupportWindow { eos eol } effectiveDeviceSupportWindow { eos eol source }'
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -464,26 +548,80 @@ const siteColumns = [
     { key: 'name', title: 'Name' },
     ...(isWritable ? [{ key: 'actions', title: '', width: 70, render: (r: any) => rowActions(r, openSiteModal, deleteSite, `Archive site ${r.name} with its shipments and devices?`) }] : [])
 ]
+/**
+ * The Device Support Statement for one delivery (plan 7h).
+ *
+ * GATED ON THE WINDOW IN FORCE, not on the shipment's classification. Every delivery of a
+ * device model -- hardware batch, SaMD, or plain software applied to units at a site -- has
+ * dates in force for the units it reached, which is what the statement states. What it must
+ * NOT be offered for is a delivery with no window at all: the collector refuses that, and a
+ * control that is clickable only to answer with a dialog is the pattern the release view
+ * already had to walk back (board t20260909-061338-23148 step 6d).
+ */
+const statementColumn = {
+    key: 'statement', title: '',
+    render: (r: any) => {
+        const w = r.effectiveDeviceSupportWindow
+        const has = !!(w && (w.eos || w.eol))
+        const pending = statementExportPending.value === r.uuid
+        const icon = h(NIcon, {
+            size: 16,
+            'data-testid': 'shipment-statement-action',
+            'data-window-in-force': String(has),
+            'data-pending': String(pending),
+            style: `vertical-align: middle; ${pending ? 'cursor: progress; color: #909399;'
+                : (has ? 'cursor: pointer;' : 'color: #c8ccd0;')}`,
+            onClick: (e: Event) => { e.stopPropagation(); if (has) exportShipmentStatement(r) }
+        }, { default: () => h(pending ? PendingIcon : StatementIcon) })
+        return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+            trigger: () => icon,
+            default: () => pending
+                ? 'Assembling the statement. It walks the whole component list, so it can take'
+                    + ' a moment on a large release.'
+                : has
+                    ? 'Device support statement for this delivery. States the dates in force for'
+                        + ' these units, and names the delivery they apply to.'
+                    // The refusal the generator would give, said before the click instead of
+                    // after it. One sentence, one constant: two that must agree, in two
+                    // files, is how they stop agreeing.
+                    : NO_WINDOW_IN_FORCE
+        })
+    }
+}
+// Offered only where SOME delivery in the table has a window in force. An organization that
+// declares none would otherwise carry a permanently inert icon whose tooltip gives device-
+// model instructions it has no use for; once one delivery has a window, the inert icon on
+// its neighbours is the useful signal it was written to be.
+const anyWindowInForce = (rows: any[]) => rows.some((r: any) =>
+    r.effectiveDeviceSupportWindow?.eos || r.effectiveDeviceSupportWindow?.eol)
+const editShipmentColumn = {
+    key: 'edit', title: '',
+    render: (r: any) => h(NIcon, {
+        size: 16, style: 'cursor: pointer; vertical-align: middle;', title: 'Edit shipment',
+        onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
+    }, { default: () => h(EditIcon) })
+}
+const releaseShipmentColumn = {
+    key: 'release', title: 'Release',
+    render: (r: any) => {
+        const i = releaseInfoMap.value[r.release]
+        if (!i) return shortUuid(r.release)
+        const link = (text: string, to: any) => h('a', {
+            class: 'shipLink',
+            onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
+        }, text)
+        return h('span', [
+            link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
+            ' — ',
+            link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
+            ' — ',
+            link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
+        ])
+    }
+}
 const shipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    {
-        key: 'release', title: 'Release',
-        render: (r: any) => {
-            const i = releaseInfoMap.value[r.release]
-            if (!i) return shortUuid(r.release)
-            const link = (text: string, to: any) => h('a', {
-                class: 'shipLink',
-                onClick: (e: Event) => { e.stopPropagation(); router.push(to) }
-            }, text)
-            return h('span', [
-                link(i.productName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid } }),
-                ' — ',
-                link(i.fsName, { name: 'ProductsOfOrg', params: { orguuid: orguuid.value, compuuid: i.productUuid, branchuuid: i.fsUuid } }),
-                ' — ',
-                link(i.version, { name: 'ReleaseView', params: { uuid: r.release } })
-            ])
-        }
-    },
+    releaseShipmentColumn,
     { key: 'quantity', title: 'Qty' },
     {
         key: 'info', title: '',
@@ -503,17 +641,62 @@ const shipmentColumns = computed(() => [
             })
         }
     },
-    ...(isWritable ? [{
-        key: 'edit', title: '',
-        render: (r: any) => h(NIcon, {
-            size: 16, style: 'cursor: pointer; vertical-align: middle;', title: 'Edit shipment',
-            onClick: (e: Event) => { e.stopPropagation(); openShipModal(r) }
-        }, { default: () => h(EditIcon) })
-    }] : [])
+    ...(anyWindowInForce([...hardwareShipments.value, ...samdShipments.value]) ? [statementColumn] : []),
+    ...(isWritable ? [editShipmentColumn] : [])
 ])
+
+/**
+ * The Device Support Statement for ONE DELIVERY (plan 7h).
+ *
+ * Same document and the same refusals as the release view's Export modal -- one helper
+ * serves both -- but the dates and the provenance line come from this shipment: the units in
+ * a delivery that overrode the model window do not run under the model's dates, and a
+ * statement that named the batch while printing the model's dates would contradict itself
+ * about which units it describes. ShipmentStatementContext carries the two together so a
+ * caller cannot supply one without the other.
+ */
+// The shipment whose statement is being assembled, so the row that was clicked is the row
+// that shows it. A bare boolean would spin every row at once.
+const statementExportPending: Ref<string> = ref('')
+async function exportShipmentStatement (r: any) {
+    if (statementExportPending.value) return
+    statementExportPending.value = r.uuid
+    try {
+        const w = r.effectiveDeviceSupportWindow
+        const outcome = await generateDeviceSupportStatement(graphqlClient as any, {
+            releaseUuid: r.release,
+            orgUuid: orguuid.value,
+            shipment: {
+                // From the ROW, not the page selection: the context exists so one delivery's
+                // provenance cannot be paired with another's window, and reading the site off
+                // a page-level computed leaves that true only by accident of scope.
+                siteName: sites.value.find((x: any) => x.uuid === r.site)?.name
+                    || selectedSite.value?.name || null,
+                shipDate: r.shipDate || null,
+                // The batch as a reader can match it against a delivery note: the identifiers
+                // recorded on the shipment, joined the same way this page shows them.
+                batchIdentifier: summarizeIds(r.identifiers) || null,
+                eos: w?.eos || null,
+                eol: w?.eol || null,
+                // The provenance line follows the DATES: an inherited window is the model's
+                // statement about every unit, not this delivery's about its own.
+                windowSource: w?.source || null
+            }
+        })
+        if (!outcome.ok) {
+            notify(outcome.kind === 'BLOCKED' ? 'warning' : 'error', 'Statement not generated', outcome.message)
+            return
+        }
+        notify('success', 'Statement exported', `Device support statement downloaded (${outcome.fileName}).`)
+    } catch (e: any) {
+        notify('error', 'Statement not generated', e?.message || 'unknown error')
+    } finally {
+        statementExportPending.value = ''
+    }
+}
 const softwareShipmentColumns = computed(() => [
     { key: 'shipDate', title: 'Date' },
-    (shipmentColumns.value as any[])[1],
+    releaseShipmentColumn,
     { key: 'expiryDate', title: 'Expires', render: (r: any) => r.expiryDate || h('span', { class: 'subtle' }, '—') },
     {
         key: 'devices', title: 'Devices',
@@ -536,7 +719,8 @@ const softwareShipmentColumns = computed(() => [
             }) : ''
         }
     },
-    ...(isWritable ? [(shipmentColumns.value as any[])[(shipmentColumns.value as any[]).length - 1]] : [])
+    ...(anyWindowInForce(softwareShipments.value) ? [statementColumn] : []),
+    ...(isWritable ? [editShipmentColumn] : [])
 ])
 const deviceColumns = computed(() => [
     { key: 'ids', title: 'Unit ids', render: (r: any) => summarizeIds(r.identifiers) || h('span', { class: 'subtle' }, '—') },
@@ -635,6 +819,11 @@ async function openShipModal (existing?: any) {
     shipChoices.value = []; Object.keys(shipChoiceSelections).forEach(k => delete shipChoiceSelections[k])
     resolvedIdentity.value = null
     editingShipmentUuid.value = existing?.uuid || ''
+    editingShipment.value = existing || null
+    shipForm.deviceWindowEos = null
+    shipForm.deviceWindowEol = null
+    shipForm.deviceWindowBaselineEos = null
+    shipForm.deviceWindowBaselineEol = null
     if (existing) {
         shipForm.featureSet = existing.featureSet
         shipForm.release = existing.release
@@ -645,6 +834,12 @@ async function openShipModal (existing?: any) {
         shipForm.manufactureDate = existing.manufactureDate || null
         shipForm.expiryDate = existing.expiryDate || null
         shipForm.devices = [...(existing.devices || [])]
+        // The batch's OWN override, not the effective window: seeding from the effective one
+        // would turn an inherited value into an override the moment anything else was saved.
+        shipForm.deviceWindowEos = existing.deviceSupportWindow?.eos || null
+        shipForm.deviceWindowEol = existing.deviceSupportWindow?.eol || null
+        shipForm.deviceWindowBaselineEos = shipForm.deviceWindowEos
+        shipForm.deviceWindowBaselineEol = shipForm.deviceWindowEol
         shipReleases.value = await loadReleasesForBranch(existing.featureSet)
         await Promise.all([loadShipChoices(existing.release), resolveIdentity()])
         for (const cr of (existing.choiceResolutions || [])) {
@@ -679,6 +874,15 @@ async function shipProduct () {
     if (shipForm.shipDate) input.shipDate = shipForm.shipDate
     if (shipForm.manufactureDate && !isSoftwareShipment.value) input.manufactureDate = shipForm.manufactureDate
     if (shipForm.expiryDate) input.expiryDate = shipForm.expiryDate
+    // D7, same three rules as the component panel: unchanged sends nothing, blank-both after
+    // something was declared sends the CLEAR FLAG, and an empty window object is never sent --
+    // the server does not read it as a retraction, so it would leave the old override silently
+    // in force while the form showed it gone.
+    if (!isSoftwareShipment.value) {
+        applyShipmentWindowToInput(input,
+            { eos: shipForm.deviceWindowEos, eol: shipForm.deviceWindowEol },
+            { eos: shipForm.deviceWindowBaselineEos, eol: shipForm.deviceWindowBaselineEol })
+    }
     try {
         if (editingShipmentUuid.value) {
             await graphqlClient.mutate({
@@ -743,10 +947,122 @@ const fleetDriftColumns = [
 ]
 const driftRowProps = (r: any) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device.uuid } }) })
 
+// ---- fleet support risk (D7, read-only, paged, follows the client / site selection) ----
+// Three facts the template needs kept apart: has ANY answer arrived (`fleetRiskLoaded`, gates
+// the whole panel so an empty frame never reads as "no risk"), does the backend have the
+// query at all (`fleetRisk.supported`, hides it for good on CE), and did the LAST request
+// fail for some other reason (`fleetRiskError`, shown over the previous rows with a retry --
+// a 403 or a timeout is not a reason to make the panel disappear).
+const fleetRisk: Ref<FleetRiskResult> = ref({ supported: true, degraded: false, rows: [], total: 0, atRiskTotal: null })
+const fleetRiskLoaded = ref(false)
+const fleetRiskLoading = ref(false)
+const fleetRiskError: Ref<string> = ref('')
+const fleetRiskPage = ref(1)  // one-based for n-data-table; the server is zero-based
+const fleetRiskPageSummary = computed(() => summarizeFleetRiskPage(fleetRisk.value.rows))
+const fleetRiskHeadlineText = computed(() => fleetRiskHeadline(fleetRisk.value.total, fleetRisk.value.rows, fleetRisk.value.atRiskTotal))
+// The fleet-wide count when the server gave one; the page's when it did not (CORE).
+const fleetRiskAnyAtRisk = computed(() => fleetRisk.value.atRiskTotal !== null
+    ? fleetRisk.value.atRiskTotal > 0
+    : fleetRiskPageSummary.value.atRisk > 0)
+const fleetRiskScopeLabel = computed(() => selectedSite.value
+    ? `at site ${selectedSite.value.name}`
+    : (selectedClient.value ? `for client ${selectedClient.value.name}` : 'org-wide'))
+const fleetRiskPagination = computed(() => ({
+    page: fleetRiskPage.value,
+    pageSize: FLEET_RISK_DEFAULT_PAGE_SIZE,
+    itemCount: fleetRisk.value.total
+}))
+// Unit identifiers and the site / client names ride on the row (FULL). Behind a presence
+// guard like the evidence fields: a CORE-served page names the unit by its short id, and a
+// FULL page with a null name is a unit at an archived site, shown by id so it is not lost.
+const fleetRiskUnitLabel = (r: FleetRiskRow) => summarizeIds('identifiers' in r ? (r.identifiers || []) : []) || shortUuid(r.device)
+const fleetRiskSiteName = (r: FleetRiskRow) => ('siteName' in r && r.siteName) || (r.site ? shortUuid(r.site) : '')
+// No id fallback, unlike the site: the row carries no client uuid, so a unit whose CLIENT was
+// archived reads the same as a site with no client at all. The panel will not invent a
+// distinction it was not given; closing it needs `client: ID` on the row, backend-side.
+const fleetRiskClientName = (r: FleetRiskRow) => ('clientName' in r && r.clientName) || ''
+// Every load takes a ticket; only the newest ticket may write. A client switch while a
+// slow org-wide page is in flight would otherwise land the org-wide rows under the client's
+// scope label -- a wrong roster with a confident heading.
+let fleetRiskTicket = 0
+// `page` is one-based (from n-data-table); the server counts from zero.
+async function loadFleetRisk (page: number = 1) {
+    const ticket = ++fleetRiskTicket
+    fleetRiskLoading.value = true
+    try {
+        const result = await loadDevicesAtSupportRisk(graphqlClient, {
+            orgUuid: orguuid.value,
+            clientUuid: selectedClientUuid.value || null,
+            siteUuid: selectedSiteUuid.value || null,
+            page: Math.max(0, page - 1),
+            size: FLEET_RISK_DEFAULT_PAGE_SIZE
+        }, { skipFull: fleetRisk.value.degraded })  // once FULL is rejected, stop asking
+        if (ticket !== fleetRiskTicket) return
+        fleetRisk.value = result
+        fleetRiskPage.value = page
+        fleetRiskError.value = ''
+        if (result.supported && result.rows.length) {
+            await resolveReleaseInfos(result.rows.map(r => r.release || ''))
+        }
+    } catch (e: any) {
+        if (ticket !== fleetRiskTicket) return
+        // Not schema drift (that is `supported: false`): a real failure the operator must
+        // see, over the rows that were there, with a way to ask again.
+        fleetRiskError.value = e?.message || 'unknown error'
+        notify('error', 'Failed', `Could not load the fleet support risk view: ${fleetRiskError.value}`)
+    } finally {
+        if (ticket === fleetRiskTicket) {
+            fleetRiskLoading.value = false
+            fleetRiskLoaded.value = true
+        }
+    }
+}
+const blankCell = () => h('span', { class: 'subtle' }, '\u2014')
+const fleetRiskColumns = [
+    { key: 'unit', title: 'Unit', minWidth: 220, render: (r: FleetRiskRow) => fleetRiskUnitLabel(r) },
+    { key: 'client', title: 'Client', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskClientName(r) || blankCell() },
+    { key: 'site', title: 'Site', minWidth: 110, render: (r: FleetRiskRow) => fleetRiskSiteName(r) || blankCell() },
+    {
+        key: 'release', title: 'Release judged',
+        render: (r: FleetRiskRow) => {
+            if (!r.release) return h('span', { class: 'subtle' }, 'none')
+            const label = releaseLabel(r.release) || shortUuid(r.release)
+            // Presence-guarded: absent on a CORE-served page, and a plan is not ground truth.
+            const st = 'releaseSource' in r ? releaseSourceTag(r.releaseSource) : null
+            const source = st
+                ? h(NTag, { size: 'tiny', type: st.type, style: 'margin-left: 6px;' }, { default: () => st.label })
+                : null
+            return h('span', [label, source])
+        }
+    },
+    {
+        key: 'window', title: 'Device window',
+        render: (r: FleetRiskRow) => ('window' in r ? fleetWindowLabel(r.window) : '') || blankCell()
+    },
+    {
+        key: 'risk', title: 'Risk',
+        render: (r: FleetRiskRow) => {
+            const t = fleetRiskTag(r.risk)
+            const tag = h(NTag, { size: 'small', type: t.type }, { default: () => t.label })
+            if (!isDeviceRiskFlagged(r.risk)) return tag
+            return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 420px;' }, {
+                trigger: () => tag, default: () => FLEET_RISK_DETAIL[r.risk]
+            })
+        }
+    },
+    { key: 'eos', title: 'Earliest component EOS', render: (r: FleetRiskRow) => ('earliestComponentEos' in r && r.earliestComponentEos) || blankCell() },
+    { key: 'driving', title: 'Components driving risk', render: (r: FleetRiskRow) => ('componentsDrivingRisk' in r && typeof r.componentsDrivingRisk === 'number') ? String(r.componentsDrivingRisk) : blankCell() }
+]
+const fleetRiskRowProps = (r: FleetRiskRow) => ({ style: 'cursor: pointer;', onClick: () => router.push({ name: 'DeviceView', params: { deviceuuid: r.device } }) })
+// The selection is the filter: a client or site change re-asks from page 1. Only a backend
+// without the query stops the asking; a failed load is retried on the next selection.
+watch([selectedClientUuid, selectedSiteUuid], () => { if (fleetRisk.value.supported) loadFleetRisk(1) })
+
 onMounted(async () => {
     loadOrgClassification()
     store.dispatch('fetchProducts', orguuid.value)
     loadFleetDrift()
+    loadFleetRisk(1)
     await loadClients()
     if (selectedClientUuid.value) await loadSites(selectedClientUuid.value)
     if (selectedSiteUuid.value) await loadShipments(selectedSiteUuid.value)
@@ -760,6 +1076,7 @@ onMounted(async () => {
 .placeholder { color: #999; padding-top: 24px; font-style: italic; }
 .subtle { color: #999; font-size: 12px; }
 .fleetDriftPanel { margin: 8px 1% 4px 1%; padding: 8px 10px; border: 1px solid #f0a020; border-radius: 6px; background: #fffaf0; }
+.fleetRiskPanel { margin: 8px 1% 4px 1%; padding: 8px 10px; border: 1px solid #d9dde1; border-radius: 6px; background: #fafbfc; }
 .identityBox { background: #f4f8fb; border-radius: 6px; padding: 6px 8px; margin-bottom: 8px; font-size: 13px; }
 .icons { margin: 4px; vertical-align: middle; }
 .clickable { cursor: pointer; }

@@ -328,6 +328,11 @@ public class CommonVariables {
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/
 	 * ***/
 	public static final String HELM_NAME_LABEL = "app.kubernetes.io/instance";
+	// set on every pod of a Deployment (resp. Argo Rollout) ReplicaSet; Job pods never carry either
+	public static final String K8S_POD_TEMPLATE_HASH_LABEL = "pod-template-hash";
+	public static final String ARGO_ROLLOUTS_POD_TEMPLATE_HASH_LABEL = "rollouts-pod-template-hash";
+	// key of containerStatuses[].state once the container has exited
+	public static final String K8S_CONTAINER_STATE_TERMINATED = "terminated";
 	
 	public enum ArtifactCoverageType {
 		DEV,

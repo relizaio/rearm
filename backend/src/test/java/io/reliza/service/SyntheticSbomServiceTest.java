@@ -18,11 +18,14 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -84,6 +87,15 @@ class SyntheticSbomServiceTest {
 
 	private final UUID ORG = UUID.randomUUID();
 	private final UUID PROJ = UUID.randomUUID();
+
+	// Canonicals as rebom persists them vs the purl DTrack reports back for the
+	// same submitted component (observed live on the sandbox, 2026-09-25).
+	private static final String ZLIB = "pkg:deb/debian/zlib@1:1.2.13.dfsg-1?distro=debian-12";
+	private static final String ZLIB_DT = "pkg:deb/debian/zlib@1%3A1.2.13.dfsg-1?distro=debian-12";
+	private static final String GLIBC = "pkg:deb/debian/glibc@2.36-9+deb12u14?distro=debian-12";
+	private static final String GLIBC_DT = "pkg:deb/debian/glibc@2.36-9%2Bdeb12u14?distro=debian-12";
+	private static final String BABEL = "pkg:npm/%40babel/traverse@7.22.0";
+	private static final String BABEL_DT = "pkg:npm/@babel/traverse@7.22.0";
 
 	private SbomComponent comp(String canonicalPurl) {
 		SbomComponent sc = new SbomComponent();
@@ -560,6 +572,186 @@ class SyntheticSbomServiceTest {
 
 		// root excluded from coverage -> the single real dep is covered -> marked scanned
 		verify(sharedArtifactService).updateArtifactDti(any(), any(), any());
+	}
+
+	@Test
+	void ingestFilesDtrackReEncodedPurlsUnderTheSubmittedCanonical() throws Exception {
+		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+		b.setOrg(ORG);
+		b.setBucketIndex(0);
+		b.setDtrackProjectUuid(PROJ);
+		b.setIngestState(IngestState.SUBMITTED);
+		for (String c : List.of(ZLIB, GLIBC, BABEL)) b.getRefMap().put(c, c);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		when(dTrackService.syntheticFetchFindings(ORG, PROJ)).thenReturn(new SyntheticFindings(
+				List.of(new VulnWithCpe(vuln(ZLIB_DT, "CVE-2023-45853"), null),
+						new VulnWithCpe(vuln(GLIBC_DT, "CVE-2025-4802"), null),
+						new VulnWithCpe(vuln(BABEL_DT, "CVE-2023-45133"), null),
+						// A real identity difference (other version) must not be
+						// pulled onto the canonical by the encoding fallback.
+						new VulnWithCpe(vuln("pkg:deb/debian/zlib@1%3A1.2.13.dfsg-2?distro=debian-12",
+								"CVE-2026-0001"), null)),
+				List.of(new ViolationWithCpe(
+						new ViolationDto(GLIBC_DT, null, null, null, null, null, null, null), null))));
+
+		service.ingestOrgBuckets(ORG);
+
+		ArgumentCaptor<SyntheticDtrackBucket> cap = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
+		verify(bucketRepository).save(cap.capture());
+		Map<String, Object> findings = cap.getValue().getFindings();
+		assertEquals(Set.of(ZLIB, GLIBC, BABEL, "pkg:deb/debian/zlib@1%3A1.2.13.dfsg-2?distro=debian-12"),
+				findings.keySet());
+		@SuppressWarnings("unchecked")
+		Map<String, Object> glibc = (Map<String, Object>) findings.get(GLIBC);
+		assertEquals(1, ((List<?>) glibc.get("violations")).size());
+	}
+
+	@Test
+	void ingestPrefersPurlIdentityOverACpeSharedWithAnotherComponent() throws Exception {
+		// Two components share a cpe; the identity map keeps the last writer.
+		String other = "pkg:deb/debian/zlib-other@1.0?distro=debian-12";
+		String sharedCpe = "cpe:2.3:a:zlib:zlib:1.2.13:*:*:*:*:*:*:*";
+		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+		b.setOrg(ORG);
+		b.setBucketIndex(0);
+		b.setDtrackProjectUuid(PROJ);
+		b.setIngestState(IngestState.SUBMITTED);
+		b.getRefMap().put(ZLIB, ZLIB);
+		b.getRefMap().put(other, other);
+		b.getRefMap().put(sharedCpe, other);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		when(dTrackService.syntheticFetchFindings(ORG, PROJ)).thenReturn(new SyntheticFindings(
+				List.of(new VulnWithCpe(vuln(ZLIB_DT, "CVE-2023-45853"), sharedCpe)), List.of()));
+
+		service.ingestOrgBuckets(ORG);
+
+		ArgumentCaptor<SyntheticDtrackBucket> cap = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
+		verify(bucketRepository).save(cap.capture());
+		assertEquals(Set.of(ZLIB), cap.getValue().getFindings().keySet());
+	}
+
+	@Test
+	void fanOutReKeysStoredEncodingVariantFindingsSoTheyReachTheArtifact() throws Exception {
+		// As stored by an ingest before the encoding fallback: keyed by DTrack's form.
+		Map<String, Object> v = new HashMap<>();
+		v.put("vulnId", "CVE-2023-45853");
+		v.put("purl", ZLIB_DT);
+		Map<String, Object> entry = new HashMap<>();
+		entry.put("vulns", new ArrayList<>(List.of(v)));
+		Map<String, Object> findings = new HashMap<>();
+		findings.put(ZLIB_DT, entry);
+		SyntheticDtrackBucket b = ingestedBucket(findings, ZLIB);
+		ZonedDateTime storedAt = ZonedDateTime.now().minusDays(3);
+		b.setLastUpdatedDate(storedAt);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
+		wireSingleArtifactPool(ZLIB, cutoff);
+
+		service.fanOutOrg(ORG);
+
+		ArgumentCaptor<DependencyTrackIntegration> dti = ArgumentCaptor.forClass(DependencyTrackIntegration.class);
+		verify(sharedArtifactService).updateArtifactDti(any(), dti.capture(), any());
+		assertEquals(1, dti.getValue().getVulnerabilityDetails().size(),
+				"the stored finding must reach the artifact once re-keyed");
+		assertEquals(ZLIB, dti.getValue().getVulnerabilityDetails().get(0).purl());
+		// The repaired map is persisted and the bucket's update time moves, so the
+		// cutoff lets already-scanned artifacts back into the fan-out pool.
+		ArgumentCaptor<SyntheticDtrackBucket> saved = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
+		verify(bucketRepository).save(saved.capture());
+		assertEquals(Set.of(ZLIB), saved.getValue().getFindings().keySet());
+		assertTrue(cutoff.getValue() > storedAt.toInstant().getEpochSecond());
+	}
+
+	@Test
+	void fanOutStillAppliesReKeyedFindingsWhenTheBucketSaveFails() throws Exception {
+		Map<String, Object> findings = new HashMap<>();
+		findings.put(ZLIB_DT, new HashMap<>(Map.of("vulns",
+				new ArrayList<>(List.of(new HashMap<>(Map.of("vulnId", "CVE-2023-45853")))))));
+		SyntheticDtrackBucket b = ingestedBucket(findings, ZLIB);
+		ZonedDateTime storedAt = ZonedDateTime.now().minusDays(3);
+		b.setLastUpdatedDate(storedAt);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		when(bucketRepository.save(any())).thenThrow(new RuntimeException("stale revision"));
+		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
+		wireSingleArtifactPool(ZLIB, cutoff);
+
+		service.fanOutOrg(ORG);
+
+		ArgumentCaptor<DependencyTrackIntegration> dti = ArgumentCaptor.forClass(DependencyTrackIntegration.class);
+		verify(sharedArtifactService).updateArtifactDti(any(), dti.capture(), any());
+		assertEquals(1, dti.getValue().getVulnerabilityDetails().size());
+		// Not persisted, so the cutoff must not move on the strength of it.
+		assertEquals((double) storedAt.toInstant().getEpochSecond(), cutoff.getValue());
+	}
+
+	@Test
+	void fanOutLeavesAnUnresolvableKeyAloneWithoutSavingOrBumpingTheCutoff() {
+		String otherVersion = "pkg:deb/debian/zlib@1%3A1.2.13.dfsg-2?distro=debian-12";
+		Map<String, Object> findings = new HashMap<>();
+		findings.put(otherVersion, new HashMap<>(Map.of("vulns", new ArrayList<>())));
+		SyntheticDtrackBucket b = ingestedBucket(findings, ZLIB);
+		ZonedDateTime storedAt = ZonedDateTime.now().minusDays(3);
+		b.setLastUpdatedDate(storedAt);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt())).thenReturn(List.of());
+
+		service.fanOutOrg(ORG);
+
+		verify(bucketRepository, never()).save(any());
+		assertEquals(Set.of(otherVersion), b.getFindings().keySet());
+		assertEquals((double) storedAt.toInstant().getEpochSecond(), cutoff.getValue());
+	}
+
+	@Test
+	void reKeyLeavesACleanBucketUntouched() {
+		Map<String, Object> findings = new HashMap<>();
+		findings.put(ZLIB, new HashMap<>(Map.of("vulns", new ArrayList<>())));
+		SyntheticDtrackBucket b = ingestedBucket(findings, ZLIB);
+		assertFalse(service.rekeyEncodingVariantFindings(b));
+		assertEquals(Set.of(ZLIB), b.getFindings().keySet());
+	}
+
+	@Test
+	void reKeyMergesBothSpellingsUnderTheCanonical() {
+		Map<String, Object> findings = new LinkedHashMap<>();
+		findings.put(ZLIB, new HashMap<>(Map.of("vulns", new ArrayList<>(List.of(Map.of("vulnId", "CVE-A"))))));
+		findings.put(ZLIB_DT, new HashMap<>(Map.of("vulns", new ArrayList<>(List.of(Map.of("vulnId", "CVE-B"))))));
+		SyntheticDtrackBucket b = ingestedBucket(findings, ZLIB);
+		assertTrue(service.rekeyEncodingVariantFindings(b));
+		assertEquals(Set.of(ZLIB), b.getFindings().keySet());
+		@SuppressWarnings("unchecked")
+		Map<String, Object> entry = (Map<String, Object>) b.getFindings().get(ZLIB);
+		assertEquals(2, ((List<?>) entry.get("vulns")).size());
+	}
+
+	/**
+	 * Wire one canonical artifact whose single component has the given canonical,
+	 * reachable through the fan-out pool.
+	 */
+	private void wireSingleArtifactPool(String canonical, ArgumentCaptor<Double> cutoff) {
+		UUID sc = UUID.randomUUID(), canonicalArtifact = UUID.randomUUID(), artifact = UUID.randomUUID();
+		SbomComponent scomp = new SbomComponent();
+		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
+		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
+		UUID poolArtifact = UUID.randomUUID();
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt()))
+				.thenReturn(List.of(poolArtifact));
+		ArtifactCanonicalMap poolMap = new ArtifactCanonicalMap();
+		poolMap.setOrg(ORG);
+		poolMap.setArtifactUuid(poolArtifact);
+		poolMap.setCanonicalArtifactUuid(canonicalArtifact);
+		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
+				.thenReturn(List.of(poolMap));
+		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
+		when(asc.getSbomComponentUuid()).thenReturn(sc);
+		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
+				.thenReturn(List.of(asc));
+		ArtifactCanonicalMap acm = mock(ArtifactCanonicalMap.class);
+		when(acm.getArtifactUuid()).thenReturn(artifact);
+		when(artifactCanonicalMapRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
+				.thenReturn(List.of(acm));
+		when(sharedArtifactService.getArtifact(artifact)).thenReturn(Optional.of(mock(Artifact.class)));
 	}
 
 	/** A bucket in INGESTED state whose ref_map covers the given canonical purls. */

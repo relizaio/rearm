@@ -150,13 +150,26 @@ public class AcollectionService {
 			}
 			Long version = Long.valueOf(0);
 			if (ad.getStoredIn() == StoredIn.REARM && artifactService.isRebomStoreable(ad)) {
-				var bomMetas = rebomService.resolveBomMetas(ad.getInternalBom().id(), rd.getOrg());
-				var verOpt = bomMetas.stream().map(x -> Long.valueOf(x.bomVersion())).max(Long::compareTo);
-				if (verOpt.isPresent()) {
-					version = verOpt.get();
+				if (null == ad.getInternalBom()) {
+					// A ReARM-stored BOM whose record lost its internalBom, which a no-file "new version"
+					// used to do (ArtifactService.rejectReArmStorageWithoutFile now refuses that). There
+					// is no rebom version to read, and throwing here made every save of every release
+					// holding the artifact fail. Version 0 is below any real rebom version, so the
+					// file re-upload that repairs the row always registers as a change.
+					// ERROR, like [ARTIFACT-REF-MISSING]: this is standing damage someone has to repair,
+					// and the instances it matters on retain ERROR only.
+					log.error("[BOM-POINTER-MISSING] artifact {} on release {} is stored in ReARM as a BOM "
+							+ "but has no internalBom; it needs a re-upload", aid, releaseUuid);
+					version = Long.valueOf(0);
 				} else {
-					log.warn("Missing bom version on rebom for artid = " + ad.getInternalBom().id());
-					version = Long.valueOf(1);
+					var bomMetas = rebomService.resolveBomMetas(ad.getInternalBom().id(), rd.getOrg());
+					var verOpt = bomMetas.stream().map(x -> Long.valueOf(x.bomVersion())).max(Long::compareTo);
+					if (verOpt.isPresent()) {
+						version = verOpt.get();
+					} else {
+						log.warn("Missing bom version on rebom for artid = " + ad.getInternalBom().id());
+						version = Long.valueOf(1);
+					}
 				}
 			} else {
 				// TODO

@@ -43,6 +43,8 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
+import graphql.execution.DataFetcherResult;
+import graphql.schema.DataFetchingFieldSelectionSet;
 import org.dataloader.BatchLoader;
 import org.dataloader.DataLoader;
 import java.util.concurrent.CompletableFuture;
@@ -90,8 +92,10 @@ import io.reliza.model.changelog.entry.FindingChangeScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.AuthorizationResponse;
 import io.reliza.model.dto.CveSearchResultDto;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.ReleaseDto;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
@@ -124,6 +128,7 @@ import io.reliza.service.OpenVexService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SourceCodeEntryService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
@@ -179,6 +184,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private SharedArtifactService sharedArtifactService;
+
+	@Autowired
+	private SupportInjectionService supportInjectionService;
 	
 	@Autowired
 	private GetComponentService getComponentService;
@@ -323,7 +331,9 @@ public class ReleaseDatafetcher {
 			@InputArgument("structure") BomStructureType structure,
 			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
 			@InputArgument("mediaType") BomMediaType mediaType,
-			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata
 			) throws RelizaException, JacksonException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -343,6 +353,15 @@ public class ReleaseDatafetcher {
 			mediaType = BomMediaType.JSON;
 		}
 		log.debug("mediaType: {}", mediaType);
+		// Parsed ONCE, here at the boundary; nothing below this line sees a nullable Boolean.
+		// Both arguments absent is the pre-existing contract and must stay byte-identical --
+		// the CLI and every API consumer written before these arguments existed land here.
+		ExportMetadataOptions exportMetadata = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		// Refused BEFORE the merge runs, and never silently downgraded to a stripped document:
+		// a caller who named the support disclosure and received an export without it cannot
+		// tell that from an export where nothing was attested.
+		supportInjectionService.assertExportMetadataRequestable(rd.getOrg(), exportMetadata);
 		DownloadConfig sbomConfig = DownloadConfig.builder()
 				.releaseUuid(releaseUuid)
 				.tldOnly(tldOnly)
@@ -352,10 +371,16 @@ public class ReleaseDatafetcher {
 				.mediaType(mediaType.name())
 				.excludeCoverageTypes(excludeCoverageTypes != null
 						? excludeCoverageTypes.stream().map(Enum::name).toList() : null)
+				// Through the enum's own wire form, not the raw arguments beside it: the
+				// three-state choice is the parsed value this export actually ran under, and
+				// two independent renderings of one fact is how a log stops matching the
+				// document it describes.
+				.includeSupportMetadata(exportMetadata.supportMetadata().toCallerInput())
+				.includeInternalMetadata(exportMetadata.internalMetadata().toCallerInput())
 				.build();
 		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.SBOM_EXPORT,
 				DownloadSubjectType.RELEASE, releaseUuid, wu, sbomConfig);
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes, exportMetadata);
 	}
 	
 	/**
@@ -556,8 +581,7 @@ public class ReleaseDatafetcher {
 		// selects them; otherwise serve totals from the light view (avoids
 		// reading/deserializing vulnerabilityDetails/violationDetails/weaknessDetails
 		// for every release in the list).
-		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
-				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
+		boolean needsMetricsDetails = selectsAny(dfe.getSelectionSet(), RELEASE_METRICS_ROW_SELECTIONS);
 		List<ReleaseData> retRel = new LinkedList<>();
 		if (null != branchFilter) {
 			log.debug("num of release records in get releases dto = " + numRecords);
@@ -771,7 +795,11 @@ public class ReleaseDatafetcher {
 		RelizaObject ro = ord.get();
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.LIFECYCLE_UPDATE, PermissionScope.RELEASE, releaseId, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu);
+		// Cancelling or rejecting a reservation ends it unbuilt, so no rule may fire for it: an
+		// action held back while it was PENDING would otherwise fire now, on the cancelled release.
+		boolean endsReservation = ord.get().getLifecycle() == ReleaseLifecycle.PENDING
+				&& (newLifecycle == ReleaseLifecycle.CANCELLED || newLifecycle == ReleaseLifecycle.REJECTED);
+		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu, !endsReservation);
 		return ReleaseData.dataFromRecord(r);
 	}
 
@@ -2159,6 +2187,45 @@ public class ReleaseDatafetcher {
 		return pullRequestService.findByOrgAndAnyCommit(rd.getOrg(), sceUuids);
 	}
 
+	/**
+	 * Selections of a release's metrics that need its finding rows, not just
+	 * the totals-only view: the detail lists, and riskSummary, which is
+	 * computed from the rows.
+	 */
+	static final List<String> RELEASE_METRICS_ROW_SELECTIONS = List.of(
+		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary",
+		"metrics/fixTargets");
+
+	/**
+	 * The same for an artifact, plus kevCount: an artifact's stored rows are
+	 * never KEV-stamped, so its count is taken from the rows at read time
+	 * (see ArtifactDataFetcher.metricsOfArtifact).
+	 */
+	static final List<String> ARTIFACT_METRICS_ROW_SELECTIONS = List.of(
+		"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails", "metrics/riskSummary",
+		"metrics/fixTargets", "metrics/kevCount");
+
+	static boolean selectsAny(DataFetchingFieldSelectionSet selection, List<String> globs) {
+		return globs.stream().anyMatch(selection::contains);
+	}
+
+	/**
+	 * The stored metrics as they are, with the release's org and uuid attached
+	 * as local context: {@code ReleaseMetricsDto} carries neither, the score
+	 * fields below it read the org's vulnerability records (see
+	 * {@link VulnerabilityScoreDataFetcher}), and {@code Vulnerability.sbomMatch}
+	 * reads the release's SBOM components. Loads nothing itself.
+	 */
+	@DgsData(parentType = "Release", field = "metrics")
+	public DataFetcherResult<ReleaseMetricsDto> metricsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (rd == null) return DataFetcherResult.<ReleaseMetricsDto>newResult().build();
+		return DataFetcherResult.<ReleaseMetricsDto>newResult()
+				.data(rd.getMetrics())
+				.localContext(MetricsContext.ofRelease(rd.getOrg(), rd.getUuid()))
+				.build();
+	}
+
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
@@ -2169,9 +2236,8 @@ public class ReleaseDatafetcher {
 		// Load the heavy metrics detail arrays only when the query selects them;
 		// otherwise serve totals from the light view. Batched (was an N+1 per
 		// artifact), then re-ordered to the release's artifact order with missing
-		// ids skipped — preserving prior behavior.
-		boolean needsMetricsDetails = dfe.getSelectionSet().containsAnyOf(
-				"metrics/vulnerabilityDetails", "metrics/violationDetails", "metrics/weaknessDetails");
+		// ids skipped -- preserving prior behavior.
+		boolean needsMetricsDetails = selectsAny(dfe.getSelectionSet(), ARTIFACT_METRICS_ROW_SELECTIONS);
 		List<ArtifactData> loaded = needsMetricsDetails
 				? artifactService.getArtifactDataList(artUuids)
 				: artifactService.getArtifactDataListLight(artUuids);

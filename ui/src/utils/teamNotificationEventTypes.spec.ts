@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 
 import { coerceInputValue, type GraphQLSchema, type GraphQLInputType } from 'graphql'
-import { PRO_SCHEMA_DIR, loadSchemaDir } from './schemaSet.testing'
+import { ceSchema, proSchema } from './schemaDriftSupport'
 
 import {
     ownedComponentEventTypes,
@@ -102,14 +102,10 @@ describe('what gets stored', () => {
 // mutation, and validate-graphql.mjs checks documents, never variables -- so
 // this is the only thing standing between a renamed input field and a team
 // editor that cannot save. Same convention as routeInputSchemaDrift.spec.ts:
-// Teams are Pro-only, the schema lives in the sibling rearm-core checkout, and
-// its absence SKIPS rather than fails.
-const PRO_SCHEMA_PATH = PRO_SCHEMA_DIR
-
-function loadSchema (path: string): GraphQLSchema | null {
-    return loadSchemaDir(path)
-}
-const proSchema = loadSchema(PRO_SCHEMA_PATH)
+// both schemas declare the team inputs, so CE is checked unconditionally and Pro
+// when the sibling rearm-core checkout is present -- its absence SKIPS rather
+// than fails.
+const SCHEMAS: Array<[string, GraphQLSchema | null]> = [['CE', ceSchema], ['Pro', proSchema]]
 
 function coerceErrors (schema: GraphQLSchema, typeName: string, value: unknown): string[] {
     const type = schema.getType(typeName) as GraphQLInputType
@@ -118,44 +114,46 @@ function coerceErrors (schema: GraphQLSchema, typeName: string, value: unknown):
     return errors
 }
 
-describe('buildOwnedComponentNotificationsInput vs the Pro schema', () => {
-    const cases: Array<[string, ReturnType<typeof buildOwnedComponentNotificationsInput>]> = [
-        ['enabled with everything selected',
-            buildOwnedComponentNotificationsInput(true, VALUES, VALUES)],
-        ['enabled with two deselected',
-            buildOwnedComponentNotificationsInput(true, VALUES, ['RELEASE_CREATED'])],
-        ['switched off',
-            buildOwnedComponentNotificationsInput(false, VALUES, VALUES)],
-    ]
+for (const [edition, schema] of SCHEMAS) {
+    describe(`buildOwnedComponentNotificationsInput vs the ${edition} schema`, () => {
+        const cases: Array<[string, ReturnType<typeof buildOwnedComponentNotificationsInput>]> = [
+            ['enabled with everything selected',
+                buildOwnedComponentNotificationsInput(true, VALUES, VALUES)],
+            ['enabled with two deselected',
+                buildOwnedComponentNotificationsInput(true, VALUES, ['RELEASE_CREATED'])],
+            ['switched off',
+                buildOwnedComponentNotificationsInput(false, VALUES, VALUES)],
+        ]
 
-    it.skipIf(!proSchema)('coerces cleanly as OwnedComponentNotificationsInput', () => {
-        for (const [label, payload] of cases) {
-            expect(coerceErrors(proSchema!, 'OwnedComponentNotificationsInput', payload), label)
-                .toEqual([])
-        }
-    })
+        it.skipIf(!schema)('coerces cleanly as OwnedComponentNotificationsInput', () => {
+            for (const [label, payload] of cases) {
+                expect(coerceErrors(schema!, 'OwnedComponentNotificationsInput', payload), label)
+                    .toEqual([])
+            }
+        })
 
-    it.skipIf(!proSchema)('coerces cleanly nested inside UpdateTeamInput', () => {
-        // The shape the mutation actually sends. A field renamed on the input
-        // type shows up here rather than as a failed save on the sandbox.
-        const payload = {
-            teamId: '00000000-0000-0000-0000-000000000001',
-            name: 'Payments',
-            ownedComponentNotifications: buildOwnedComponentNotificationsInput(
-                true, VALUES, ['APPROVAL_REQUESTED']),
-        }
-        expect(coerceErrors(proSchema!, 'UpdateTeamInput', payload)).toEqual([])
-    })
+        it.skipIf(!schema)('coerces cleanly nested inside UpdateTeamInput', () => {
+            // The shape the mutation actually sends. A field renamed on the input
+            // type shows up here rather than as a failed save on the sandbox.
+            const payload = {
+                teamId: '00000000-0000-0000-0000-000000000001',
+                name: 'Payments',
+                ownedComponentNotifications: buildOwnedComponentNotificationsInput(
+                    true, VALUES, ['APPROVAL_REQUESTED']),
+            }
+            expect(coerceErrors(schema!, 'UpdateTeamInput', payload)).toEqual([])
+        })
 
-    it.skipIf(!proSchema)('rejects an unknown key, proving the check has teeth', () => {
-        const payload = {
-            ...buildOwnedComponentNotificationsInput(true, VALUES, VALUES),
-            notAField: true,
-        }
-        expect(coerceErrors(proSchema!, 'OwnedComponentNotificationsInput', payload).length)
-            .toBeGreaterThan(0)
+        it.skipIf(!schema)('rejects an unknown key, proving the check has teeth', () => {
+            const payload = {
+                ...buildOwnedComponentNotificationsInput(true, VALUES, VALUES),
+                notAField: true,
+            }
+            expect(coerceErrors(schema!, 'OwnedComponentNotificationsInput', payload).length)
+                .toBeGreaterThan(0)
+        })
     })
-})
+}
 
 describe('board events are not team events (82880ea6)', () => {
     it('never offers a board event type to an ownership-scoped subscription', async () => {

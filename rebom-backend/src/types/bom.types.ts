@@ -40,6 +40,7 @@ export type BomMetaDto = {
     notes: string,
     stripBom: string,
     serialNumber: string,
+    processedSerialNumber?: string,
     createdDate: Date,
     lastUpdatedDate: Date,
     ignoreDev?: boolean,
@@ -79,6 +80,7 @@ export type EnrichmentRun = {
     repository?: string,
     digest?: string,
     size?: number,
+    serialNumber?: string,       // identity of the document this run pushed
     startedAt?: string,
     completedAt?: string,
     // ABANDONED: started and never reported back; aged out by a later run.
@@ -102,11 +104,23 @@ export type RebomOptions = {
     mod: string,
     storage: string,
     bomDigest?: string,
+    // MISNAMED: the digest of the document rebom stored, not of the uploaded file. ReARM
+    // parses the upload before calling rebom, so the publisher's bytes never arrive here;
+    // their digest is on the ReARM artifact under the AS_UPLOADED scope. Name retained
+    // because it is persisted and part of the input contract.
     originalFileDigest?: string,
     originalFileSize?: number,
     originalMediaType?: string,
     processedFileDigest?: string,  // SHA256 of augmented/processed BOM file
     processedFileSize?: number,
+    // serialNumber INSIDE the processed document the row currently points at.
+    // Not the row's identity -- that is `serialNumber` above and it stays the
+    // producer's. The processed copy is a different document (augmented at
+    // ingest, rewritten by every enrichment run) and carries its own, so a
+    // BOM-Link to the producer's identity still means one thing. Absent on
+    // rows written before that was true, and on uploads stored without
+    // augmentation; readers must not assume the two differ.
+    processedSerialNumber?: string,
     // Repository holding the '-raw' copy. The processed BOM's repository
     // (bom.ociRepositoryName) moves to the CURRENT month on enrichment
     // re-push, but the raw copy stays where it was uploaded -- one pointer

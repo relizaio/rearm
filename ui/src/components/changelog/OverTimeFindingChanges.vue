@@ -17,6 +17,7 @@
                     :findings="bucket.appeared"
                     description="Findings that first appeared in a release on this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">{{ releaseLabel(finding) }}</div>
@@ -29,6 +30,7 @@
                     :findings="bucket.resolved"
                     description="Findings that were no longer detected in a release as of this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">{{ releaseLabel(finding) }}</div>
@@ -41,6 +43,7 @@
                     :findings="bucket.severityIncreased"
                     description="Findings whose severity was raised on this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">
@@ -61,6 +64,7 @@
                     :findings="bucket.severityDecreased"
                     description="Findings whose severity was lowered on this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">
@@ -81,6 +85,7 @@
                     :findings="bucket.kevAdded"
                     description="Findings newly flagged as a CISA Known Exploited Vulnerability on this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">{{ releaseLabel(finding) }}</div>
@@ -93,6 +98,7 @@
                     :findings="bucket.kevRemoved"
                     description="Findings no longer flagged as a CISA Known Exploited Vulnerability on this date."
                     @kev-click="openKevModal"
+                    @vuln-click="openVulnDetail"
                 >
                     <template #attribution="{ finding }">
                         <div class="release-attribution">{{ releaseLabel(finding) }}</div>
@@ -100,6 +106,7 @@
                 </FindingListSection>
             </div>
             <kev-details-modal v-model:show="showKevModal" :cve-id="kevModalCveId" :org-uuid="orgUuid || ''" />
+            <vulnerability-details-modal v-model:show="vulnDetail.show" :org-uuid="orgUuid || ''" :vuln-id="vulnDetail.vulnId" :severity="vulnDetail.severity" :known-exploited="vulnDetail.knownExploited" />
         </div>
         <div v-else class="empty-state">
             <p class="no-data-hint">No re-scan-driven finding changes were detected in the selected period.</p>
@@ -111,6 +118,8 @@
 import { computed, ref } from 'vue'
 import FindingListSection from './FindingListSection.vue'
 import KevDetailsModal from '../KevDetailsModal.vue'
+import VulnerabilityDetailsModal from '../VulnerabilityDetailsModal.vue'
+import { useVulnerabilityDetail } from '../../utils/useVulnerabilityDetail'
 import {
     normalizeFindingChangeRecord,
     sortBySeverityThenId,
@@ -155,6 +164,8 @@ function releaseLabel(finding: { componentName?: string, version?: string, branc
 
 const showKevModal = ref(false)
 const kevModalCveId = ref('')
+
+const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => props.orgUuid)
 
 function openKevModal(finding: any) {
     kevModalCveId.value = resolveKevCveId({ id: finding.findingId, aliases: finding.aliases })

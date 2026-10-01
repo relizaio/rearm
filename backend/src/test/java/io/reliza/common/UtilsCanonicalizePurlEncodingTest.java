@@ -6,8 +6,11 @@ package io.reliza.common;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+
+import java.util.List;
 
 import org.junit.jupiter.api.Test;
 
@@ -112,5 +115,60 @@ public class UtilsCanonicalizePurlEncodingTest {
 				"pkg:apk/alpine/musl@1.2.4?distro=alpine-3.19"));
 		assertFalse(Utils.purlsSemanticallyEqual("pkg:npm/lodash@4.17.21", "not-parseable"),
 				"unparseable input must never compare equal to anything but itself");
+	}
+
+	@Test
+	public void semanticKeyMatchesAcrossEncodingVariants() {
+		// Pairs observed live on the synthetic DTrack ingest: rebom's canonical vs
+		// what DTrack hands back (epoch %3A, plus %2B) and the IntegrationService
+		// %40 -> @ decode of a scoped npm namespace.
+		String[][] pairs = {
+				{DEB_REBOM_CANONICAL, DEB_JAVA_DRIFTED},
+				{"pkg:deb/debian/glibc@2.36-9+deb12u14?distro=debian-12",
+						"pkg:deb/debian/glibc@2.36-9%2Bdeb12u14?distro=debian-12"},
+				{"pkg:deb/debian/shadow@1:4.13+dfsg1-1+deb12u2?distro=debian-12",
+						"pkg:deb/debian/shadow@1%3A4.13%2Bdfsg1-1%2Bdeb12u2?distro=debian-12"},
+				{"pkg:npm/%40babel/traverse@7.22.0", "pkg:npm/@babel/traverse@7.22.0"},
+		};
+		for (String[] pair : pairs) {
+			assertTrue(Utils.purlsSemanticallyEqual(pair[0], pair[1]), pair[0]);
+			assertEquals(Utils.purlSemanticKey(pair[0]), Utils.purlSemanticKey(pair[1]),
+					"semantic key must agree with purlsSemanticallyEqual for " + pair[0]);
+		}
+	}
+
+	@Test
+	public void semanticKeyKeepsRealIdentityDifferencesApart() {
+		String base = Utils.purlSemanticKey("pkg:deb/debian/zlib@1:1.2.13.dfsg-1?distro=debian-12");
+		assertNotEquals(base, Utils.purlSemanticKey("pkg:deb/debian/zlib@1%3A1.2.13.dfsg-2?distro=debian-12"),
+				"different version must not share a key");
+		assertNotEquals(base, Utils.purlSemanticKey("pkg:deb/debian/zlib@1%3A1.2.13.dfsg-1?distro=debian-11"),
+				"different distro qualifier must not share a key");
+		assertNotEquals(base, Utils.purlSemanticKey("pkg:deb/debian/zlib@1.2.13.dfsg-1?distro=debian-12"),
+				"a dropped epoch is a different version");
+		assertNull(Utils.purlSemanticKey("cpe:2.3:a:zlib:zlib:1.2.13:*:*:*:*:*:*:*"));
+		assertNull(Utils.purlSemanticKey("__token"));
+		assertNull(Utils.purlSemanticKey(null));
+	}
+
+	@Test
+	public void canonicalSpellingsCoverEveryWriterEncodingOfTheVersion() {
+		assertEquals(List.of(
+				"pkg:deb/debian/shadow@1:4.13+dfsg1-1+deb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1%3A4.13+dfsg1-1+deb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1:4.13%2Bdfsg1-1%2Bdeb12u2?distro=debian-12",
+				"pkg:deb/debian/shadow@1%3A4.13%2Bdfsg1-1%2Bdeb12u2?distro=debian-12"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/shadow@1:4.13+dfsg1-1+deb12u2?arch=amd64&distro=debian-12"),
+				"rebom's raw form first, then every mix of the two encodings");
+		assertEquals(List.of("pkg:deb/debian/pcre2@10.42-1?distro=debian-12"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/pcre2@10.42-1?distro=debian-12"));
+		// '@' in a scoped npm namespace is not the version separator.
+		assertEquals(List.of("pkg:npm/%40babel/traverse@7.22.0"),
+				Utils.canonicalPurlSpellings("pkg:npm/@babel/traverse@7.22.0"));
+		assertEquals(List.of("pkg:npm/lodash"), Utils.canonicalPurlSpellings("pkg:npm/lodash"));
+		// Only the version varies: an encoded '+' in a qualifier value stays as written.
+		assertEquals(List.of("pkg:deb/debian/foo@1.0?distro=a%2Bb"),
+				Utils.canonicalPurlSpellings("pkg:deb/debian/foo@1.0?distro=a+b"));
+		assertEquals(List.of(), Utils.canonicalPurlSpellings("not a purl"));
 	}
 }

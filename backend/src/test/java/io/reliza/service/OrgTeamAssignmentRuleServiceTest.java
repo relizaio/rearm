@@ -18,6 +18,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.Timeout;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.exceptions.RelizaException;
@@ -201,6 +202,7 @@ class OrgTeamAssignmentRuleServiceTest {
 	// ---------- ReDoS / cost guards ----------
 
 	@Test
+	@Timeout(10)
 	void catastrophicBacktrackingIsBudgetedNotHung() {
 		// (.*a){20} against a non-matching string does not terminate in any
 		// practical time under a plain matcher. Rules run on EVERY ownership read

@@ -12,8 +12,9 @@ import (
 
 	v1 "github.com/opencontainers/image-spec/specs-go/v1"
 	"oras.land/oras-go/v2"
-	"oras.land/oras-go/v2/errdef"
+	"oras.land/oras-go/v2/content"
 	"oras.land/oras-go/v2/content/file"
+	"oras.land/oras-go/v2/errdef"
 	"oras.land/oras-go/v2/registry/remote"
 	"oras.land/oras-go/v2/registry/remote/auth"
 	"oras.land/oras-go/v2/registry/remote/retry"
@@ -92,6 +93,38 @@ func NewOrasClient(repoName string) (*OrasClient, error) {
 	return &OrasClient{repo}, nil
 }
 
+// manifestCreatedAnnotationValue is the value we pin org.opencontainers.image.created
+// to, so that a manifest digest is a pure function of what the manifest describes.
+//
+// Left unset, oras-go stamps time.Now() here (ensureAnnotationCreated in
+// pack.go), so two pushes of byte-identical content produce two DIFFERENT
+// manifest digests -- at RFC 3339 second granularity, which makes it
+// intermittent rather than reliable and is why it went unnoticed.
+//
+// It matters because callers store the MANIFEST digest and resolve it later
+// rather than re-deriving it: ReARM records it against an artifact and serves
+// that artifact's raw download from it. Our tags are stable per artifact --
+// a content hash for retained raw uploads, the artifact UUID for downloadable
+// ones -- so a second push under an existing tag re-points it at a new
+// manifest and leaves the first untagged while a live row still addresses it
+// by digest. That survives today only because the registry runs with garbage
+// collection off.
+//
+// The epoch is the reproducible-builds convention. Nothing is lost by it: the
+// annotation describes the manifest rather than the artifact, and callers
+// record their own creation time alongside the digest they keep.
+const manifestCreatedAnnotationValue = "1970-01-01T00:00:00Z"
+
+// packArtifactManifest packs layers into an OCI 1.1 manifest whose digest
+// depends only on its contents. Split out from PushArtifact so that property
+// is testable without a registry.
+func packArtifactManifest(ctx context.Context, pusher content.Pusher, artifactType string, layers []v1.Descriptor) (v1.Descriptor, error) {
+	return oras.PackManifest(ctx, pusher, oras.PackManifestVersion1_1, artifactType, oras.PackManifestOptions{
+		Layers:              layers,
+		ManifestAnnotations: map[string]string{v1.AnnotationCreated: manifestCreatedAnnotationValue},
+	})
+}
+
 // PushArtifact stores the file under tag. originalMediaType is the media type
 // of the ORIGINAL (pre-compression) content as detected by the caller -- the
 // file handed in here may already be zstd-compressed, so detecting on it would
@@ -153,9 +186,7 @@ func (o *OrasClient) PushArtifact(ctx context.Context, uploadedFile *os.File, ta
 	// artifactType describes the content, not the blob encoding, so it takes
 	// the stripped original type without the compression suffix.
 	artifactType := strippedMediaType
-	manifestDescriptor, err := oras.PackManifest(ctx, fs, oras.PackManifestVersion1_1, artifactType, oras.PackManifestOptions{
-		Layers: fileDescriptors,
-	})
+	manifestDescriptor, err := packArtifactManifest(ctx, fs, artifactType, fileDescriptors)
 	if err != nil {
 		getLogger().Errorw("Error packing manifest", "error", err)
 		return resp, err

@@ -216,6 +216,37 @@ public class ArtifactServiceBomProcessingTest {
         assertEquals(testArtifactUuid, artifactDto.getUuid()); // UUID unchanged
     }
     
+    /**
+     * CycloneDX twin of testPrepareSpdxUpdate_WithExistingArtifactButNoInternalBom_ReturnsNull. A row
+     * wiped by a no-file "new version" has no internalBom; uploading a file onto it is how it is
+     * repaired, so it is treated as the artifact's first BOM on the same uuid instead of throwing.
+     */
+    @Test
+    void testValidateCycloneDxUpdate_ExistingArtifactWithoutInternalBom_TreatedAsFirstBom() throws Exception {
+        // Arrange
+        ArtifactDto artifactDto = ArtifactDto.builder()
+            .uuid(testArtifactUuid)
+            .bomFormat(BomFormat.CYCLONEDX)
+            .build();
+        
+        ArtifactData existingAd = new ArtifactData();
+        existingAd.setOrg(testOrgUuid);
+        existingAd.setInternalBom(null);
+        existingAd.setVersion("");
+        
+        ObjectNode bomJson = objectMapper.createObjectNode();
+        bomJson.put("version", "1");
+        bomJson.put("serialNumber", "urn:uuid:" + testBomUuid.toString());
+        
+        // Act
+        assertDoesNotThrow(() -> ReflectionTestUtils.invokeMethod(artifactService, "validateCycloneDxUpdate", 
+            artifactDto, bomJson, existingAd));
+        
+        // Assert
+        assertEquals(testArtifactUuid, artifactDto.getUuid());
+        assertEquals("1", artifactDto.getVersion());
+    }
+    
     // ==================== prepareSpdxUpdate Tests ====================
     
     @Test

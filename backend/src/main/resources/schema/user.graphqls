@@ -141,7 +141,8 @@ type Query {
 
 	configuredBaseIntegrations(org: ID!): [IntegrationType]
 	# Detected Dependency-Track generation ("V4"/"V5") of the org's base
-	# DEPENDENCYTRACK integration; null when none is configured.
+	# DEPENDENCYTRACK integration; null when none is configured, or while the
+	# version is not detected yet (the drain then takes it as V5).
 	dependencyTrackVersion(org: ID!): String
 	ciIntegrations(org: ID!): [CiIntegration]
 
@@ -477,6 +478,13 @@ type Query {
 	# global (public CISA data, no org rows) -- orgUuid is for
 	# authorization only. Returns null when the CVE is not KEV-listed.
 	kevRecordDetails(orgUuid: ID!, cveId: String!): KevRecordDetails
+
+	# In-app details of one vulnerability from the org's vulnerability
+	# record (description, CVSS, EPSS, CWEs, references, per-source
+	# provenance). vulnId may be the canonical id or any alias (a GHSA id
+	# finds the CVE-keyed record). Null when the org has no record for it;
+	# refreshVulnerabilityRecord can fetch one.
+	vulnerabilityRecordDetails(orgUuid: ID!, vulnId: String!): VulnerabilityRecordDetails
 
 	# Paged, filtered view of the SAME release component set, for the support
 	# attestation table. Separate from the unpaged query above rather than
@@ -845,7 +853,7 @@ type Mutation {
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType]): String
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean, includeInternalMetadata: Boolean): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
 	"""
@@ -916,6 +924,11 @@ type Mutation {
 	any key type (FREEFORM is the primary consumer today).
 	"""
 	setNotesOnApiKey(apiKeyUuid: ID!, notes: String): ApiKey
+	"""
+	Revoke an API key. apiKeyUuid is the key's uuid (apiKeys { uuid }) or the key id it was
+	issued with (TYPE__objectUuid or TYPE__objectUuid__ord__keyOrder); anything else is refused
+	with a message.
+	"""
 	deleteApiKey(apiKeyUuid: ID!): Boolean
 	"""Add the second secret of a key id (rotation). Org admin. Returns the new secret once."""
 	addApiKeySecret(apiKeyUuid: ID!, expiresDate: DateTime): ApiKeyForUser
@@ -985,6 +998,12 @@ type Mutation {
 	# Admin-only force re-upload: re-submit every synthetic bucket to DTrack
 	# (existing project or a new one), triggering full re-analysis + re-ingest.
 	forceReuploadDtrackData(orgUuid: ID!): Boolean
+	# Fetch one vulnerability from the org's Dependency-Track by id and store
+	# it as the org's vulnerability record; returns the merged details.
+	# Requires WRITE on the organization. Fails with a message when the org
+	# has no Dependency-Track integration or Dependency-Track does not know
+	# the id.
+	refreshVulnerabilityRecord(orgUuid: ID!, vulnId: String!): VulnerabilityRecordDetails
 
 	# Instances
 	createInstance(orgUuid: ID!, name: String, instanceType: InstanceType, namespace: String, uri: String!, environment: String, clusterId: ID): Instance
@@ -2649,6 +2668,110 @@ type KevSourceAssertion {
 	cwes: [String!]
 }
 
+# Merged view of one vulnerability across its upstream sources. Descriptive
+# fields come from the highest-priority source that has them (GitHub, then
+# OSV, then NVD); cwes, aliases and references are unions.
+type VulnerabilityRecordDetails {
+	primaryVulnId: String!
+	aliases: [String!]!
+	title: String
+	description: String
+	severity: VulnerabilitySeverity
+	cwes: [String!]!
+	# Merged scores: at most one entry per VulnScoreType, in VulnScoreType
+	# declaration order. Each is taken from the highest-priority source (GitHub,
+	# then OSV, then NVD) that published one; for CVSS a published score from any
+	# source beats one computed from a vector.
+	scores: [VulnScore!]!
+	published: DateTime
+	updated: DateTime
+	references: [VulnerabilityReference!]!
+	sources: [VulnerabilitySourceSnapshot!]!
+	firstSeenDate: DateTime
+	lastUpdatedDate: DateTime
+	# Package versions the advisory says are affected, fetched from
+	# Dependency-Track. Package-URL identities only: NVD's CPE rows are not
+	# kept. Empty until the first fetch (see affectedRangesFetchedAt), and for
+	# vulnerabilities whose sources publish no package ranges.
+	affectedRanges: [AffectedRange!]!
+	# When the affected ranges were last fetched; null if never. The details
+	# refresh fetches them, and a nightly sweep keeps them current.
+	affectedRangesFetchedAt: DateTime
+	# The affected ranges as one vers line per package identity, in the order
+	# of affectedRanges; an identity whose bounds do not parse has none.
+	affectedVers: [AffectedVers!]!
+}
+
+# All affected ranges of one package identity as a single vers range
+# (package-url vers-spec), for example vers:pypi/>=1.8|<1.8.19|>=1.11|<1.11.11
+# or vers:deb/* when every version is affected. Derived on read from the
+# stored bounds, never stored. vers is canonical: show it as is.
+type AffectedVers {
+	identity: String!
+	vers: String!
+}
+
+# VulnScore, VulnSubScore and their enums are declared in schema.graphqls,
+# because the shared Vulnerability type carries them too.
+
+# One advisory link; label is the link text when the source supplied one.
+type VulnerabilityReference {
+	url: String!
+	label: String
+}
+
+# One upstream feed's view of the vulnerability, as last fetched.
+type VulnerabilitySourceSnapshot {
+	upstreamSource: UpstreamSource
+	upstreamVulnId: String
+	severity: VulnerabilitySeverity
+	# What this feed published. Today this also holds at most one entry per
+	# type, but unlike the merged list that is not part of the contract: a feed
+	# may later carry, for example, a primary and a secondary score of the same
+	# type, so clients must not key per-source entries by type alone.
+	scores: [VulnScore!]!
+	lastFetchedDate: DateTime
+	lastModifiedDate: DateTime
+}
+
+# One affected package and version range from an advisory. identity is the
+# package without a version, as the source wrote it (a purl keeps its
+# qualifiers). The bounds are the source's own strings; comparing a version
+# against them needs the package ecosystem's ordering. A RANGE with no bounds
+# covers every version (no fixed version is known); a range without a
+# rangeType came with a version type this server does not know.
+type AffectedRange {
+	identityType: AffectedIdentityType
+	identity: String!
+	rangeType: AffectedRangeType
+	exactVersion: String
+	versionStartIncluding: String
+	versionStartExcluding: String
+	versionEndIncluding: String
+	versionEndExcluding: String
+	# Sources that attribute this range.
+	sources: [UpstreamSource!]!
+	# All ranges of this identity as one vers range, the same line on each of
+	# them (see AffectedVers); null when none of their bounds parses.
+	vers: String
+}
+
+# The kind of package identity an AffectedRange names.
+enum AffectedIdentityType {
+	PURL
+	CPE
+}
+
+# How an AffectedRange bounds the affected versions; null when the server does
+# not know the source's version type.
+enum AffectedRangeType {
+	# Bounded by the version start / end fields, any of which may be absent;
+	# with none, every version.
+	RANGE
+	# Exactly exactVersion.
+	EXACT
+}
+
 # The manufacturer's ATTESTED claim about what a component's upstream maintainer is
 # actually doing -- FDA's "level of support provided through monitoring and maintenance
 # from the software component manufacturer" (V.A.4(b)). Distinct from SupportStatus,
@@ -3679,6 +3802,14 @@ type ReleaseSbomComponent {
 	ancestors: [ReleaseSbomComponent]
 	createdDate: DateTime
 	lastUpdatedDate: DateTime
+	"The release's vulnerability findings on this component, in stored order: the rows of the release's metrics whose package URL names it (see FindingSbomMatch). Their score, fix and sbomMatch fields resolve as under Release.metrics. A finding of a component off the current page of getReleaseSbomComponentsPage lands on no row. Empty when there are none, and outside the release component queries"
+	findings: [Vulnerability!]!
+	"DependencyTrackMetrics.riskSummary over this component's findings; severityWeightedScore weights their own severities. Null outside the release component queries, or when a vulnerability record read failed"
+	riskSummary: RiskSummary
+	"DependencyTrackMetrics.fixTargets over this component's findings, from the same per-request budget. Null outside the release component queries, or when a vulnerability record read failed"
+	fixTargets: [ComponentFixTargets!]
+	"The vulnerability ids of this component's findings that its latest version (component.latestVersion) fixes: those whose Vulnerability.latestFix is FIXES. Null when the component has no latest version, outside the release component queries, or when a vulnerability record read failed; empty when it fixes none"
+	latestFixes: [String!]
 }
 
 type ReleaseSbomComponentsPage {
@@ -3788,6 +3919,13 @@ type SbomComponent {
 	name: String
 	version: String
 	isRoot: Boolean
+	# The latest version of the package that Dependency-Track's repository metadata reports
+	# (refreshed daily): a freshness signal only, never end of support or end of life, and
+	# possibly a pre-release on Dependency-Track 4. Null when none is known: no repository for
+	# the purl type (deb, apk, rpm, generic), the package unknown to Dependency-Track, or not
+	# looked up yet. latestVersionChecked is when ReARM last asked (UTC RFC-3339), null if never.
+	latestVersion: String
+	latestVersionChecked: String
 	# FDA-Readiness-1 per-component support disclosure. Dates + provenance live per-milestone
 	# (see supportMilestones); supportStatus is DERIVED from them and the current date (never
 	# stored). Dates are ISO-8601 (YYYY-MM-DD); supportLastAssessed is a UTC RFC-3339 instant.

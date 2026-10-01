@@ -83,11 +83,11 @@
                         <n-space :size="4">
                             <template v-for="cwe in primary.cwes" :key="cwe">
                                 <a
-                                    v-if="getFindingUrl(cwe)"
-                                    :href="getFindingUrl(cwe)!"
+                                    v-if="cweUrlFor(cwe)"
+                                    :href="cweUrlFor(cwe)!"
                                     target="_blank"
                                     rel="noopener noreferrer"
-                                    @click.prevent="openExternalLink(getFindingUrl(cwe)!)"
+                                    @click.prevent="openExternalLink(cweUrlFor(cwe)!)"
                                 >{{ cwe }}</a>
                                 <span v-else>{{ cwe }}</span>
                             </template>
@@ -144,7 +144,7 @@ export default {
 import { computed, ref, watch } from 'vue'
 import { NModal, NSpin, NSpace, NTag, NDescriptions, NDescriptionsItem, NEmpty } from 'naive-ui'
 import { fetchKevRecordDetails, KevRecordDetails, KevSourceAssertion } from '@/utils/kevService'
-import { getFindingUrl, openExternalLink } from '@/utils/findingUtils'
+import { cweUrlFor, openExternalLink, osvUrlFor } from '@/utils/findingUtils'
 
 interface Props {
     show: boolean
@@ -190,7 +190,7 @@ const hasCisa = computed(() => (record.value?.assertions || []).some(a => a.sour
 const cisaCatalogUrl = computed(() =>
     `https://www.cisa.gov/known-exploited-vulnerabilities-catalog?search_api_fulltext=${encodeURIComponent(props.cveId)}`)
 
-const osvUrl = computed(() => getFindingUrl(props.cveId))
+const osvUrl = computed(() => props.cveId ? osvUrlFor(props.cveId) : null)
 
 function formatDate(iso: string): string {
     return iso.length >= 10 ? iso.slice(0, 10) : iso

@@ -6,6 +6,8 @@ package io.reliza.common;
 
 import java.io.IOException;
 import java.io.InputStream;
+import java.security.MessageDigest;
+import java.security.NoSuchAlgorithmException;
 import java.time.LocalDateTime;
 import java.time.OffsetDateTime;
 import java.time.ZoneId;
@@ -18,11 +20,14 @@ import java.util.Collections;
 import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.HexFormat;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -380,6 +385,7 @@ public class Utils {
 	public static Optional<DigestRecord> convertDigestStringToRecord (String digestString) {
 		return convertDigestStringToRecord(digestString, DigestScope.ORIGINAL_FILE);
 	}
+
 	public static Optional<DigestRecord> convertDigestStringToRecord (String digestString, DigestScope scope) {
 		Optional<DigestRecord> convertedDigest = Optional.empty();
 		String cleanedDigest = cleanString(digestString);
@@ -398,6 +404,51 @@ public class Utils {
 		return convertedDigest;
 	}
 	
+	/**
+	 * Refuses caller input that declares a digest scope only the server may write.
+	 *
+	 * <p>{@code DigestScope} is one enum behind both the GraphQL output type
+	 * {@code DigestRecord} and the input types {@code DigestRecordInput} /
+	 * {@code SoftwareMetadataInput}, so every value added to it becomes settable by a caller.
+	 * For ORIGINAL_FILE that is the intent -- it means "someone told us this digest". For the
+	 * server-derived scopes it would be a forgery: AS_UPLOADED asserts that WE hashed the
+	 * uploaded bytes, and RAW_OCI_STORAGE selects which blob the raw download fetches out of a
+	 * repository shared across organizations. Either accepted from input would let a caller
+	 * choose the checksum published in their name, or aim a download at bytes that are not
+	 * theirs.
+	 *
+	 * <p>Refused rather than silently stripped: a client sending one of these is either
+	 * mistaken about what the field means or probing, and dropping it quietly teaches neither
+	 * of them anything. Shared by the artifact and deliverable write paths, which are the two
+	 * places {@code DigestRecordInput} reaches the server.
+	 */
+	public static void rejectServerDerivedDigestScopes (Collection<DigestRecord> digestRecords) throws RelizaException {
+		if (null == digestRecords || digestRecords.isEmpty()) return;
+		Optional<DigestScope> declared = digestRecords.stream()
+			.map(DigestRecord::scope)
+			.filter(Objects::nonNull)
+			.filter(scope -> !scope.isClientDeclarable())
+			.findFirst();
+		if (declared.isPresent()) {
+			throw new RelizaException("Digest scope " + declared.get()
+				+ " is computed by ReARM and may not be supplied on upload.");
+		}
+	}
+
+	/**
+	 * Lowercase hex sha256 of the supplied bytes, in the form {@link DigestRecord} carries.
+	 * Shared by artifact ingest and download-time verification so the two sides of that
+	 * comparison cannot drift apart in how they render a hash.
+	 */
+	public static String bytesToHexSha256 (byte[] bytes) {
+		try {
+			return HexFormat.of().formatHex(MessageDigest.getInstance("SHA-256").digest(bytes));
+		} catch (NoSuchAlgorithmException e) {
+			// SHA-256 is required of every JRE.
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
+	}
+
 	  /**
 	   * Parses a digest type string (e.g., "SHA256", "sha256") to the corresponding enum value.
 	   * Handles common variations and case-insensitive matching.
@@ -686,13 +737,51 @@ public class Utils {
 		bomComponent.setSupplier(oe);
 	}
 	
+	/**
+	 * The group every ReARM entry under {@code metadata.tools} carries, whichever component
+	 * wrote it.
+	 *
+	 * <p>Public because the WRITER is no longer the only interested party: the per-export
+	 * "include internal metadata" flag has to take these entries back out again
+	 * (SupportBomInjector.stripInternalMarkers), and a remover matching on its own copy of the
+	 * strings is a rename away from silently leaving the entry in a document that promised to
+	 * carry only the manufacturer's own content.
+	 */
+	public static final String REARM_TOOL_GROUP = "io.reliza";
+
+	/** The name {@link #setRearmBomMetadata} writes, on the documents THIS service generates. */
+	public static final String REARM_TOOL_NAME = "ReARM";
+
+	/**
+	 * EVERY name an {@code io.reliza} tool entry has been written under, because a remover that
+	 * knows only this class's spelling removes nothing from the documents that actually matter.
+	 *
+	 * <p>There are two writers and they do not agree. This class writes {@code "ReARM"} onto the
+	 * documents the backend GENERATES -- the OBOM, the VDR, the VEX -- none of which pass
+	 * through the export seam. Every document that does pass through it comes from rebom, which
+	 * stamps {@code {"group":"io.reliza","name":"rearm"}} (lowercase) in
+	 * {@code attachRebomToolToBom}, in {@code metadata.tools.components} on CycloneDX 1.5+ and
+	 * in the {@code metadata.tools} ARRAY on 1.4 -- carrying {@code group} in both shapes, never
+	 * {@code vendor}. So a matcher built from {@link #REARM_TOOL_NAME} alone, against a
+	 * {@code vendor} field on the legacy branch, matched nothing in production while its unit
+	 * fixture -- written from this class rather than from a served document -- passed.
+	 *
+	 * <p>{@code "rebom"} is the name that writer used before commit {@code f03c62eb} renamed it,
+	 * so documents stored before then still carry it and are still served today.
+	 *
+	 * <p>Membership is EXPLICIT rather than case-insensitive: {@code rearm} and {@code rebom}
+	 * are different words, not different casings, and a case fold would also quietly claim a
+	 * third-party {@code io.reliza} tool nobody here wrote.
+	 */
+	public static final Set<String> REARM_TOOL_NAMES = Set.of(REARM_TOOL_NAME, "rearm", "rebom");
+
 	public static void setRearmBomMetadata (Bom bom, org.cyclonedx.model.Component bomComponent) {
 		Metadata bomMeta = new Metadata();
 		ToolInformation rearmTool = new ToolInformation();
 		org.cyclonedx.model.Component rearmComponent = new org.cyclonedx.model.Component();
-		rearmComponent.setName("ReARM");
+		rearmComponent.setName(REARM_TOOL_NAME);
 		rearmComponent.setType(Type.APPLICATION);
-		rearmComponent.setGroup("io.reliza");
+		rearmComponent.setGroup(REARM_TOOL_GROUP);
 		OrganizationalEntity oe = new OrganizationalEntity();
 		oe.setName("Reliza Incorporated");
 		oe.setUrls(List.of("https://reliza.io", "https://rearmhq.com"));
@@ -1171,6 +1260,60 @@ public class Utils {
 		}
 	}
 
+	/**
+	 * Hashable counterpart of {@link #purlsSemanticallyEqual}: purls that compare
+	 * equal there (same type/namespace/name/version and qualifier map, encoding
+	 * variants and subpath ignored) produce the same key, so a lookup can go
+	 * through a map instead of a pairwise scan. The key is an opaque index value,
+	 * not a purl to persist or display.
+	 *
+	 * @return the key, or null when the input is not a parseable pkg: purl.
+	 */
+	public static String purlSemanticKey(String purl) {
+		if (purl == null || !purl.startsWith(PURL_SCHEME_PREFIX)) return null;
+		try {
+			// Same raw '+' pre-normalization as purlsSemanticallyEqual.
+			PackageURL p = new PackageURL(purl.replace("+", "%2B"));
+			PackageURLBuilder builder = PackageURLBuilder.aPackageURL()
+					.withType(p.getType())
+					.withNamespace(p.getNamespace())
+					.withName(p.getName())
+					.withVersion(p.getVersion());
+			if (p.getQualifiers() != null) p.getQualifiers().forEach(builder::withQualifier);
+			return builder.build().canonicalize();
+		} catch (MalformedPackageURLException e) {
+			return null;
+		}
+	}
+
+	/**
+	 * Every spelling a stored {@code sbom_components.canonical_purl} can have for
+	 * the identity of {@code purl}. Writers disagree only on the version: rebom
+	 * (packageurl-js) keeps {@code +} and an epoch {@code :} raw, PackageURL
+	 * writes them {@code %2B} / {@code %3A}, and rebom rows of an older era carry
+	 * {@code %2B} next to a raw {@code :}. Built from {@link #canonicalizePurl},
+	 * rebom's spelling first; empty when the purl does not parse.
+	 */
+	public static List<String> canonicalPurlSpellings(String purl) {
+		String canonical = canonicalizePurl(purl);
+		if (canonical == null) return List.of();
+		// Everything before the first raw '@' is type/namespace/name, where
+		// PackageURL encodes '@' itself; the version runs to '?' or the end.
+		int at = canonical.indexOf('@');
+		if (at < 0) return List.of(canonical);
+		int q = canonical.indexOf('?', at);
+		String head = canonical.substring(0, at + 1);
+		String version = q < 0 ? canonical.substring(at + 1) : canonical.substring(at + 1, q);
+		String tail = q < 0 ? "" : canonical.substring(q);
+		Set<String> spellings = new LinkedHashSet<>();
+		for (String plus : List.of("+", "%2B")) {
+			for (String colon : List.of(":", "%3A")) {
+				spellings.add(head + version.replace("%2B", plus).replace("%3A", colon) + tail);
+			}
+		}
+		return List.copyOf(spellings);
+	}
+
 	public static String canonicalizePurl(String purl) {
 		if (purl == null || purl.isEmpty() || !purl.startsWith("pkg:")) {
 			return null;
@@ -1207,6 +1350,20 @@ public class Utils {
 	 */
 	public static boolean isPurl(String value) {
 		return value != null && value.startsWith(PURL_SCHEME_PREFIX);
+	}
+
+	/**
+	 * {@code purl} as a {@link PackageURL}; null when it is not a pkg: purl or
+	 * does not parse. Parsed as written: a raw {@code +} stays a {@code +}
+	 * (unlike {@link #purlsSemanticallyEqual}, which encodes it first).
+	 */
+	public static PackageURL parsePurlOrNull(String purl) {
+		if (!isPurl(purl)) return null;
+		try {
+			return new PackageURL(purl);
+		} catch (MalformedPackageURLException e) {
+			return null;
+		}
 	}
 
 	/**
