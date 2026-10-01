@@ -42,6 +42,9 @@ const TABLE: [string, any, string, any, boolean][] = [
             byUrl: 'https://github.com/o/r/pull/2', note: null }, true],
     ['delivered', { task, unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null },
         'agentTaskDelivered', { taskUuid: 't1', unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null }, true],
+    // task RD4-12: a person commissions an investigation from the task, which stays shown.
+    ['commission', { task, input: { boardUuid: 'b1', role: 'tester', title: 'measure it', fromTask: 't1', returnTo: 'TASK' } },
+        'agentTaskCommission', { input: { boardUuid: 'b1', role: 'tester', title: 'measure it', fromTask: 't1', returnTo: 'TASK' } }, true],
 ]
 
 describe('useAgentTaskActions', () => {

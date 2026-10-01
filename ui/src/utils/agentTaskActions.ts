@@ -201,6 +201,18 @@ export function useAgentTaskActions (after: AfterAction) {
             () => 'Assignment released: the task is queued again', 'Release failed')
     }
 
+    /**
+     * A person commissions an investigation from this task (task RD4-12). The page stays on this task: the
+     * investigation is a task of its own, and its report comes back here.
+     */
+    function commission (p: { task: any, input: Record<string, any> }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskCommission', { input: p.input }),
+            (res: any) => `Investigation ${res?.key ?? ''} commissioned for ${p.input.role}`
+                + (res?.status === 'PENDING_INTAKE' ? ': waiting for intake' : ''),
+            'Could not commission')
+    }
+
     function requireReview (p: { task: any, value: boolean }) {
         return kept(p.task,
             () => store.dispatch('agentTaskRequireHumanReview', { taskUuid: p.task.uuid, value: p.value }),
@@ -210,6 +222,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, operatorRelease, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideFindings, requireReview, setStrength, operatorHold, releaseAssignment, setBudget,
-        setLevel, setGroup, setTags, delivered, supersedePr,
+        setLevel, setGroup, setTags, delivered, supersedePr, commission,
     }
 }

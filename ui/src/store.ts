@@ -56,7 +56,7 @@ const AGENT_BOARD_SELECTION = `
     effectiveDeliveryPolicy { mode attest }
     effectiveCoordinatorStopRelease
     eventRetentionDays
-    staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes }
+    staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes investigationOverdueMinutes }
     ladder { levels { number name description } prompt }
     createdDate
     declarative { specHash appliedAt source { repo path commit } }
@@ -70,6 +70,10 @@ const AGENT_TASK_SELECTION = `
     number
     board
     org
+    kind
+    investigation { commissionedBy { role roleUuid session task by { kind uuid name } } deliverable role roleUuid
+        review reviewUuid deadline returnTo report completedAt }
+    reportsReturned { investigation investigationKey report session role at reoffered cancelled note }
     externalRef
     title
     description
@@ -2762,6 +2766,7 @@ const storeObject : any = {
                                     scope
                                     required
                                 }
+                                commissions { roles intake defaultBudgetMicros review }
                             }
                         }
                     }`,
@@ -3031,6 +3036,7 @@ const storeObject : any = {
                             necessity
                             humanGate
                             producesOutputs { specification scope required }
+                            commissions { roles intake defaultBudgetMicros review }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
@@ -3164,6 +3170,7 @@ const storeObject : any = {
                             kind
                             necessity
                             humanGate
+                            commissions { roles intake defaultBudgetMicros review }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
@@ -3248,6 +3255,23 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskRegister
+        },
+        /**
+         * A person commissions an investigation (task RD4-12): a new INVESTIGATION task for a role that produces
+         * INVESTIGATION_REPORT, from a task (its report comes back pinned there) or from none.
+         */
+        async agentTaskCommission (context: any, payload: { input: { boardUuid: string, role: string, title: string,
+            brief?: string | null, fromTask?: string | null, budgetMicros?: number | null, deadline?: string | null,
+            review?: string | null, returnTo?: string | null } }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskCommission($input: AgentTaskCommissionInput!) {
+                        agentTaskCommission(input: $input) { uuid key status role }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskCommission
         },
         async agentTaskAuthorize (context: any, payload: { taskUuid: string, role: string, orderIndex?: number | null }) {
             const response = await graphqlClient.mutate({
