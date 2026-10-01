@@ -250,7 +250,7 @@ public class BranchService {
 
 	/**
 	 * Return all feature sets in an org that include the given component as an
-	 * auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, or IGNORED),
+	 * auto-integrate dependency of any requirement type (REQUIRED, TRANSIENT, JOB or IGNORED),
 	 * either via explicit dependencies or via matching dependency patterns.
 	 * De-duplicated by feature-set UUID.
 	 */
@@ -267,7 +267,7 @@ public class BranchService {
 
 	/**
 	 * Return all feature sets in an org that include the given component+branch pair as
-	 * an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, or IGNORED),
+	 * an auto-integrate dependency of any requirement type (REQUIRED, TRANSIENT, JOB or IGNORED),
 	 * either via explicit dependencies or via dependency patterns that resolve to this branch.
 	 * De-duplicated by feature-set UUID.
 	 */

@@ -263,7 +263,7 @@ type Query {
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 
 	# Reverse dependency lookup: which feature sets include this component/branch as a dependency
-	# (any requirement type -- REQUIRED, OPTIONAL, or IGNORED -- via explicit deps or patterns)
+	# (any requirement type -- REQUIRED, TRANSIENT, JOB or IGNORED -- via explicit deps or patterns)
 	featureSetsUsingComponent(componentUuid: ID!): [Branch]
 	featureSetsUsingBranch(branchUuid: ID!): [Branch]
 
@@ -1462,7 +1462,6 @@ type AggregatedOrganizationChangelog {
 enum AggregationType {
 	NONE
 	AGGREGATED
-	AGGREGATED_BY_TICKET
 }
 
 type AnalysisHistoryWebDto {
@@ -3543,6 +3542,12 @@ enum OAuthType {
 	GITHUB
 	GOOGLE
 	MICROSOFT
+	# Users who signed in through ReARM's own Keycloak, directly (OWN) or
+	# through an identity provider brokered by it.
+	RELIZA_KEYCLOAK_OWN
+	RELIZA_KEYCLOAK_GITHUB
+	RELIZA_KEYCLOAK_MICROSOFT
+	RELIZA_KEYCLOAK_GOOGLE
 }
 
 type OrgLevelContext {

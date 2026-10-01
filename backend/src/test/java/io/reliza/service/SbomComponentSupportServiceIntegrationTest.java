@@ -865,8 +865,8 @@ public class SbomComponentSupportServiceIntegrationTest {
 		// deletes an unbucketed, unmapped component that has no support row. Committed apart, a
 		// tick between the two writes -- or one whose DELETE snapshot predates the support
 		// commit -- removes this component, and the injector then matches nothing and emits no
-		// properties. Surefire switches that GC off (relizaprops.orphanedComponentGcEnabled);
-		// this keeps the test sound where it is on, e.g. a run from an IDE. The service write
+		// properties. The test build runs no ticks (relizaprops.schedulingEnabled);
+		// this keeps the test sound where they do run, e.g. a run from an IDE. The service write
 		// joins this transaction, so it is still the production write path under test.
 		new TransactionTemplate(transactionManager).executeWithoutResult(status -> {
 			SbomComponent sc = newComponent(orgUuid, purl);

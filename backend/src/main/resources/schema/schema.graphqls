@@ -2255,7 +2255,6 @@ enum Status {
 	# when both sides have the dep) and IGNORED (which is fully
 	# omitted from the CDX).
 	JOB
-	OPTIONAL
 	PENDING
 	REJECTED
 	REQUIRED

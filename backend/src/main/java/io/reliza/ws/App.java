@@ -28,7 +28,6 @@ import org.springframework.context.annotation.Primary;
 import org.springframework.data.jpa.repository.config.EnableJpaRepositories;
 import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.EnableAsync;
-import org.springframework.scheduling.annotation.EnableScheduling;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
 import org.springframework.core.annotation.Order;
@@ -63,7 +62,6 @@ import jakarta.servlet.http.HttpServletResponse;
 @EnableConfigurationProperties(RelizaConfigProps.class)
 @SpringBootApplication
 @EnableAsync
-@EnableScheduling
 @EnableWebSecurity
 @EnableMethodSecurity
 @ComponentScan({"io.reliza.model", "io.reliza.ws", "io.reliza.repositories", "io.reliza.service", "io.reliza.common", "io.reliza.ws.tea"})

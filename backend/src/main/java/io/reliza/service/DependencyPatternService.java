@@ -150,7 +150,7 @@ public class DependencyPatternService {
 	/**
 	 * Reverse-lookup: find feature sets in an org whose dependency patterns match
 	 * the given component by name. Does not filter by requirement status — includes
-	 * patterns that would produce REQUIRED, OPTIONAL, or IGNORED ChildComponents.
+	 * patterns that would produce REQUIRED, TRANSIENT, JOB or IGNORED ChildComponents.
 	 *
 	 * @param orgUuid organization UUID
 	 * @param componentUuid component whose inclusion we want to check

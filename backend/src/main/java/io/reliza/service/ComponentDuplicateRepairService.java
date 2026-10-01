@@ -91,6 +91,9 @@ public class ComponentDuplicateRepairService {
 	@Value("${relizaprops.enforceUniqueComponents:false}")
 	private boolean enforceUniqueComponents;
 
+	@Value("${relizaprops.schedulingEnabled:true}")
+	private boolean schedulingEnabled;
+
 	public record RepairSummary(
 			int groupsExamined,
 			int releasesFolded,
@@ -121,6 +124,11 @@ public class ComponentDuplicateRepairService {
 	 */
 	@EventListener(ApplicationReadyEvent.class)
 	public void onApplicationReady() {
+		// Background work, so it follows the same switch as @Scheduled (SchedulingConfig). In
+		// the test build every cached context booted its own walk of every org in the shared
+		// database, holding a connection of the capped pool while tests that need all but one
+		// of them ran.
+		if (!schedulingEnabled) return;
 		CompletableFuture.runAsync(() -> {
 			try {
 				int orgsWithDups = 0, totalGroups = 0, totalExcess = 0;
