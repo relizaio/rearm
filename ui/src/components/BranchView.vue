@@ -1621,9 +1621,6 @@ const effectiveDepTableFields: DataTableColumns<any> = [
             case 'REQUIRED':
                 color = 'error'
                 break
-            case 'OPTIONAL':
-                color = 'warning'
-                break
             case 'TRANSIENT':
                 color = 'info'
                 break
