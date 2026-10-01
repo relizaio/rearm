@@ -71,6 +71,17 @@ A subscription's `eventTypes` list controls what it can match:
 - Each route on a subscription sets a minimum severity (`CRITICAL` / `HIGH` /
   `MEDIUM` / ...); only events at or above that threshold on that route are
   sent to its targets.
+- For a vulnerability event, that severity is your organization's: where an
+  organization-scoped analysis of the vulnerability at an affected component
+  sets a severity, that component counts with it, every other affected
+  component counts with the upstream severity, and the highest counts. A
+  vulnerability you triaged down to `LOW` everywhere it occurs is no longer
+  routed as `CRITICAL`; one component nobody triaged keeps the upstream
+  severity in play. Filters see the same value as `event.severity`, and the
+  upstream one as `event.upstreamSeverity`. Messages lead with your severity
+  and show both when they differ ("Org analysis: LOW (upstream CRITICAL)").
+  Release-, branch- and component-scoped analyses do not change it: the event
+  is the organization's.
 - A route can also carry a **perspectives** list. Left empty it means "any
   perspective". Set, it gates delivery: the event only goes out on that route
   when an affected release's component belongs to one of the named
