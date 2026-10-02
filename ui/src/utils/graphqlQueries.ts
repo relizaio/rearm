@@ -544,6 +544,98 @@ query ComponentsOfPerspective($perspectiveUuid: ID!) {
     }
 }`
 
+// TEA profiles (task TEA-2): the profile editor reads one view per scope, the org settings list
+// every row and the discovery block.
+const TEA_PROFILE_FIELDS_GQL = `
+    uuid
+    scope
+    object
+    mode
+    followedPerspective
+    publishing
+    visibility
+    dependencyDepth
+    optionalDependencies
+    structure
+    sources
+    excludedCoverage
+    supportMetadata
+    internalMetadata
+    rawArtifacts
+    productComponents
+    minimumLifecycle
+    tei
+    teiDomain
+    vulnerabilityDocuments
+    revision
+`
+
+const TEA_RESOLVED_PROFILE_GQL = `
+    status
+    source
+    sourceObject
+    profile {
+        ${TEA_PROFILE_FIELDS_GQL}
+    }
+    conflictingPerspectives {
+        uuid
+        name
+        type
+    }
+`
+
+const TEA_PROFILE_EDITOR_VIEW = gql`
+query TeaProfileEditorView($org: ID!, $scope: TeaProfileScope!, $object: ID) {
+    teaProfileEditorView(org: $org, scope: $scope, object: $object) {
+        stored {
+            ${TEA_PROFILE_FIELDS_GQL}
+        }
+        effective {
+            ${TEA_RESOLVED_PROFILE_GQL}
+        }
+        parent {
+            ${TEA_RESOLVED_PROFILE_GQL}
+        }
+        publishedReleases
+        supportInjection
+    }
+}`
+
+const TEA_PROFILES_OF_ORG = gql`
+query TeaProfilesOfOrg($org: ID!) {
+    teaProfilesOfOrg(org: $org) {
+        uuid
+        scope
+        object
+        mode
+        followedPerspective
+        publishing
+        visibility
+    }
+}`
+
+const TEA_ORG_DISCOVERY = gql`
+query TeaOrgDiscovery($org: ID!) {
+    teaOrgDiscovery(org: $org) {
+        org
+        teaUuid
+        apiBase
+        wellKnownDocument
+    }
+}`
+
+const SAVE_TEA_PROFILE = gql`
+mutation SaveTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput!) {
+    saveTeaProfile(org: $org, scope: $scope, object: $object, profile: $profile) {
+        ${TEA_PROFILE_FIELDS_GQL}
+    }
+}`
+
+const DELETE_TEA_PROFILE = gql`
+mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
+    deleteTeaProfile(org: $org, scope: $scope, object: $object)
+}`
+
 // Org default view (Pro org setting). Deliberately its own tiny document:
 // the boot-time organizations query must keep working on a backend that
 // predates the field. Uses the organizations list (the single-organization
@@ -1933,6 +2025,11 @@ export default {
     OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
     DeployedToGql: DEPLOYED_TO_GQL,
     ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
+    TeaProfileEditorViewGql: TEA_PROFILE_EDITOR_VIEW,
+    TeaProfilesOfOrgGql: TEA_PROFILES_OF_ORG,
+    TeaOrgDiscoveryGql: TEA_ORG_DISCOVERY,
+    SaveTeaProfileGql: SAVE_TEA_PROFILE,
+    DeleteTeaProfileGql: DELETE_TEA_PROFILE,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,

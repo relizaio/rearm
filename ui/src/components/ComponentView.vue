@@ -56,6 +56,9 @@
                                 style="margin-left: 8px;"
                             >{{ effectiveLifecycleLabel }}</n-tag>
                         </h5>
+                        <n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false" style="margin: 4px 0;">
+                            {{ teaBanner }}
+                        </n-alert>
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak :size="0">
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable && !isDocument" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
@@ -874,6 +877,22 @@
                                             :is-writable="isAdmin"
                                             :component-word="words.component"/>
                                     </n-tab-pane>
+                                    <n-tab-pane name="tea" tab="TEA">
+                                        <!-- Both editions: the TEA profile backend is shared. Shown to
+                                             everyone, writable by an admin, as the Guards tab. -->
+                                        <TeaProfileEditor
+                                            :org-uuid="orguuid"
+                                            scope="COMPONENT"
+                                            :object-uuid="componentUuid"
+                                            :object-name="componentData?.name"
+                                            :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :is-writable="isAdmin"
+                                            :is-org-admin="isAdmin"
+                                            :perspective-options="teaPerspectiveOptions"
+                                            :installation-type="myUser.installationType"
+                                            @saved="loadTeaBanner"
+                                            @removed="loadTeaBanner"/>
+                                    </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
                                             <h6><strong>What {{ words.branch }} to use for which environment for invidual deployment?</strong></h6>
@@ -1316,6 +1335,8 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
+import TeaProfileEditor from './TeaProfileEditor.vue'
+import { teaPublicBanner } from '@/utils/teaProfile'
 import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
@@ -1331,6 +1352,7 @@ onMounted(async () => {
     deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
     deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
+    await loadTeaBanner()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
         await openComponentSettings()
@@ -1458,6 +1480,31 @@ if (route.params.orguuid) {
 }
 
 const componentUuid: string = route.params.compuuid.toString()
+
+// TEA profile (TEA-2): the red banner when the component's effective profile is PUBLIC, read once
+// on load and again after the TEA tab saves or removes the override.
+const teaBanner: Ref<string | null> = ref(null)
+const teaPerspectiveOptions = computed(() => ((updatedComponent.value?.perspectiveDetails
+    ?? componentData.value?.perspectiveDetails) || [])
+    .filter((p: any) => p.type === 'PERSPECTIVE')
+    .map((p: any) => ({ label: p.name, value: p.uuid })))
+
+async function loadTeaBanner () {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.TeaProfileEditorViewGql,
+            variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
+            fetchPolicy: 'no-cache',
+        })
+        const names: Record<string, string> = {}
+        for (const o of teaPerspectiveOptions.value) names[o.value] = o.label
+        teaBanner.value = teaPublicBanner(resp.data.teaProfileEditorView, names)
+    } catch (err: any) {
+        // The banner is advisory; the TEA tab reports a failed read itself.
+        console.error(err)
+        teaBanner.value = null
+    }
+}
 
 // A board's document series (task 36d0549e): shown as its rounds, without the software panels.
 const isDocument = computed<boolean>(() => isDocumentComponent(componentData.value))

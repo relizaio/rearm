@@ -41,6 +41,45 @@ Call with debug to see all underlying calls as:
 rearm tea full_tea_flow --debug true --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
 ```
 
+## Publication profiles
+
+A TEA profile says whether, and how, releases are published on the Transparency Exchange API. Profiles live at three scopes: the organization, a perspective (ReARM Pro) and a component or product. A profile at a lower scope replaces its parent as a whole, never field by field; the editor pre-fills a new profile from the profile the scope would otherwise resolve to.
+
+A component resolves its profile in this order: its own profile when it carries one (an override, or a choice to follow one of its perspectives), then the profile of its single perspective that has one, then the organization profile, then the built-in defaults. When two or more of the component's perspectives carry a profile and the component has none of its own, the component is in conflict: publishing it is refused, naming the perspectives, until the component overrides or follows one of them. A product's profile is its own component-scope profile, and a product publishes its component releases under that one profile, so a product never conflicts.
+
+Every profile carries these settings (defaults in brackets):
+
+| Setting | Values |
+|---|---|
+| Publishing | ENABLED, DISABLED [DISABLED]: DISABLED conceals everything resolving to the profile and blocks new publishes |
+| Visibility | PRIVATE, PUBLIC [PRIVATE]: resolved at request time; only an organization admin can save a PUBLIC profile |
+| Dependency depth | FULL, TOP_LEVEL_ONLY [FULL] |
+| Optional dependencies | INCLUDE, EXCLUDE [INCLUDE] |
+| SBOM structure | FLAT, HIERARCHICAL [FLAT] |
+| SBOM sources | any of DELIVERABLE, RELEASE, SOURCE_CODE [all three] |
+| Excluded coverage | any of DEV, TEST, BUILD_TIME [DEV and TEST] |
+| Support metadata | INCLUDE, EXCLUDE [EXCLUDE]: INCLUDE needs the organization support injection setting |
+| Internal metadata | INCLUDE, EXCLUDE [EXCLUDE] |
+| Raw artifacts | NONE, NON_BOM, ALL [NONE] |
+| Product components | PUBLISH_WITH_PRODUCT, PRODUCT_ONLY [PUBLISH_WITH_PRODUCT] |
+| Minimum lifecycle | ASSEMBLED, READY_TO_SHIP, GENERAL_AVAILABILITY [ASSEMBLED] |
+| TEI | DISABLED, UUID [DISABLED]: UUID stamps `tei://<TEI domain>/uuid/<TEA release uuid>` onto published releases |
+| Vulnerability documents | NONE (reserved) |
+
+Edit the organization profile under Organization Settings, Transparency Exchange; a component's or product's in its settings, on the TEA tab; a perspective's from the TEA profile action on the Perspectives tab of Organization Settings (ReARM Pro). A PUBLIC profile shows a red banner wherever it applies.
+
+### TEA ids and discovery
+
+Nothing on the Transparency Exchange API carries an internal ReARM uuid. Each organization gets a TEA id the first time it saves a profile with publishing ENABLED, and each component gets one on its first publication; neither ever changes. The organization's TEA API base is `<your ReARM URL>/tea/<organization TEA id>`.
+
+Organization Settings, Transparency Exchange shows the `.well-known/tea` document the organization hosts at `https://<your TEI domain>/.well-known/tea`, for example:
+
+```
+{"schemaVersion":1,"endpoints":[{"url":"https://rearm.example.com/tea/<organization TEA id>","versions":["1.0.0"],"priority":1}]}
+```
+
+The TEA 1.0.0 endpoints that read these profiles and ids land in a later release; until then the profiles are stored and validated, and the `/tea/v0.4.0/` surface above is unchanged.
+
 ## Known issues, limitations and notes
 - The data present via TEA is consistent with what is visible via ReARM UI, ReARM CLI or ReARM's own GraphQL API. For example, on ReARM Demo Instance, you may explore data using UI
 - ReARM supports TEIs of `uuid` and `purl` types where uuid equals uuid of the Product in ReARM and purl must be set explicitly per release (or can be cnfigured in the Component / Product settings to propagate to releases)
