@@ -289,8 +289,8 @@
          ReARM's own version schemas and cannot order ecosystem versions (npm, pypi,
          deb, rpm, ...). 0.x with frequent breaking changes, so pinned and imported
          only by io.reliza.common.VersRanges. Brings jspecify, maven-artifact (Maven
-         ordering) and semver4j 3.1.0 (npm ordering; no longer maintained upstream,
-         and reachable only through versatile). maven-artifact declares plexus-utils
+         ordering) and semver4j 3.1.0 (npm ordering; no longer maintained upstream; also
+         declared below, VersRanges uses it directly). maven-artifact declares plexus-utils
          for DefaultArtifact alone; versatile uses only DefaultArtifactVersion and
          ComparableVersion, which do not touch it, so it is excluded. -->
     <dependency>
@@ -303,6 +303,15 @@
                 <artifactId>plexus-utils</artifactId>
             </exclusion>
         </exclusions>
+    </dependency>
+    <!-- Semantic Versioning order for the vers scheme semver, which versatile lacks:
+         VersRanges.SemverVersionProvider compares with it. The artifact and version
+         versatile already brings, declared because ReARM code now uses it directly;
+         keep it at versatile's version when bumping versatile. -->
+    <dependency>
+        <groupId>com.vdurmont</groupId>
+        <artifactId>semver4j</artifactId>
+        <version>3.1.0</version>
     </dependency>
     <!-- Java time types for the Jackson 2 mapper Hibernate's JsonBinaryType uses
          (Utils.JSONB_OM registers every module on the classpath). Declared rather

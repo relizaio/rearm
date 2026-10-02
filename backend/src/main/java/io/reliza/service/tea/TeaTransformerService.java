@@ -21,13 +21,15 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.VersRanges;
+import io.reliza.common.VersRanges.ReleaseOrder;
+import io.reliza.common.VersRanges.ReleaseScheme;
 import io.reliza.model.AcollectionData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -448,7 +450,10 @@ public class TeaTransformerService {
 	 * building block for the component-level aggregate.
 	 */
 	public TeaCle transformReleaseToCle(ReleaseData rd) {
-		List<TeaCleEvent> events = new LinkedList<>(buildReleaseCleCandidates(rd));
+		String versionSchema = null == rd.getComponent() ? null
+				: getComponentService.getComponentData(rd.getComponent()).map(ComponentData::getVersionSchema).orElse(null);
+		List<TeaCleEvent> events = new LinkedList<>(buildReleaseCleCandidates(rd,
+				ReleaseScheme.ofVersionSchema(versionSchema)));
 		// Single release scope — no minute-merging across releases. Just
 		// renumber + sort newest-first by effective.
 		renumberAndSortNewestFirst(events);
@@ -490,12 +495,15 @@ public class TeaTransformerService {
 		// the quadratic versions[] dedupe in mergeNonReleasedByMinute, which this cap was
 		// previously masking.
 		List<ReleaseData> releases = sharedReleaseService.listReleaseDatasOfComponent(cd.getUuid(), 100000, 0);
+		ReleaseScheme scheme = ReleaseScheme.ofVersionSchema(cd.getVersionSchema());
 		for (ReleaseData rd : releases) {
-			List<TeaCleEvent> candidates = buildReleaseCleCandidates(rd);
+			List<TeaCleEvent> candidates = buildReleaseCleCandidates(rd, scheme);
 			all.addAll(candidates);
 		}
 		all.addAll(buildComponentRenameCandidates(cd));
 		List<TeaCleEvent> merged = mergeNonReleasedByMinute(all);
+		rangeContiguousVersions(merged, VersRanges.releaseOrder(scheme,
+				releases.stream().map(ReleaseData::getVersion).toList()));
 		renumberAndSortNewestFirst(merged);
 		return new TeaCle(merged);
 	}
@@ -519,7 +527,7 @@ public class TeaTransformerService {
 	 * </ul>
 	 * Each candidate is stamped with id=-1; callers renumber after merging.
 	 */
-	private List<TeaCleEvent> buildReleaseCleCandidates(ReleaseData rd) {
+	private List<TeaCleEvent> buildReleaseCleCandidates(ReleaseData rd, ReleaseScheme scheme) {
 		List<TeaCleEvent> out = new LinkedList<>();
 		boolean sawAnyLifecycleEvent = false;
 		boolean sawReleasedEvent = false;
@@ -539,7 +547,7 @@ public class TeaTransformerService {
 				} else {
 					TeaCleEventType cleType = mapLifecycleToCleEventType(newLc);
 					if (cleType == null) continue;
-					out.add(makeVersionEvent(cleType, rd.getVersion(), ts));
+					out.add(makeVersionEvent(cleType, rd.getVersion(), scheme, ts));
 					if (cleType == TeaCleEventType.END_OF_SUPPORT) sawEndOfSupportEvent = true;
 					if (cleType == TeaCleEventType.END_OF_LIFE) sawEndOfLifeEvent = true;
 				}
@@ -574,10 +582,10 @@ public class TeaTransformerService {
 			// list twice for no reason.
 			ZonedDateTime assessedAt = rd.getSupportWindowLastAssessed();
 			if (!sawEndOfSupportEvent && null != rd.getEos()) {
-				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_SUPPORT, rd.getEos(), assessedAt, rd));
+				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_SUPPORT, rd.getEos(), assessedAt, rd, scheme));
 			}
 			if (!sawEndOfLifeEvent && null != rd.getEol()) {
-				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_LIFE, rd.getEol(), assessedAt, rd));
+				out.add(makeDateDerivedSupportEvent(TeaCleEventType.END_OF_LIFE, rd.getEol(), assessedAt, rd, scheme));
 			}
 		}
 		return out;
@@ -596,13 +604,13 @@ public class TeaTransformerService {
 	 * release, or one whose window was set before board #29472 shipped).
 	 */
 	private TeaCleEvent makeDateDerivedSupportEvent(TeaCleEventType type, LocalDate date,
-			ZonedDateTime assessedAt, ReleaseData rd) {
+			ZonedDateTime assessedAt, ReleaseData rd, ReleaseScheme scheme) {
 		OffsetDateTime effective = date.atStartOfDay(ZoneOffset.UTC).toOffsetDateTime();
 		ZonedDateTime publishedSource = null != assessedAt ? assessedAt : rd.getCreatedDate();
 		OffsetDateTime published = null != publishedSource
 				? publishedSource.toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS)
 				: effective;
-		return makeVersionEvent(type, rd.getVersion(), effective, published);
+		return makeVersionEvent(type, rd.getVersion(), scheme, effective, published);
 	}
 
 	private List<TeaCleEvent> buildComponentRenameCandidates(ComponentData cd) {
@@ -651,36 +659,52 @@ public class TeaTransformerService {
 		return odt == null ? null : odt.withOffsetSameInstant(ZoneOffset.UTC);
 	}
 
-	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version, OffsetDateTime ts) {
-		return makeVersionEvent(type, version, ts, ts);
+	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version, ReleaseScheme scheme,
+			OffsetDateTime ts) {
+		return makeVersionEvent(type, version, scheme, ts, ts);
 	}
 
-	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version,
+	private TeaCleEvent makeVersionEvent(TeaCleEventType type, String version, ReleaseScheme scheme,
 			OffsetDateTime effective, OffsetDateTime published) {
 		TeaCleEvent ev = new TeaCleEvent(-1, type, utc(effective), utc(published));
 		// Spec 7.2-7.6 — Version Events use `versions[]` of VERS specifiers.
-		// One specifier per concrete version; merging happens in
-		// mergeNonReleasedByMinute when multiple releases hit the same
-		// (type, minute).
-		ev.setVersions(new ArrayList<>(List.of(versionSpecifierFor(version))));
+		// One specifier per concrete version here; mergeNonReleasedByMinute
+		// unions the versions of releases that hit the same (type, minute), and
+		// rangeContiguousVersions then names a run of them as one range.
+		ev.setVersions(new ArrayList<>(List.of(versionSpecifierFor(version, scheme))));
 		return ev;
 	}
 
-	// vers:semver/<v> when the version parses as semver, else
-	// vers:generic/<v>. We don't implement full VERS ranges in v1 — each
-	// entry is a single concrete version. Range field is used because the
-	// spec expects vers: URIs there; version field stays bare for max
-	// compatibility with consumers that read either.
-	private static final Pattern SEMVER_PATTERN = Pattern.compile("^\\d+\\.\\d+\\.\\d+(?:[-+].*)?$");
-
-	private static TeaCleVersionSpecifier versionSpecifierFor(String version) {
+	/**
+	 * One concrete version: the bare {@code version}, for consumers that read
+	 * only that, and the same version as a vers line in {@code range}, in the
+	 * scheme the product's version schema selects (see
+	 * {@link ReleaseScheme}).
+	 */
+	private static TeaCleVersionSpecifier versionSpecifierFor(String version, ReleaseScheme scheme) {
 		TeaCleVersionSpecifier s = new TeaCleVersionSpecifier();
 		s.setVersion(version);
-		String scheme = (version != null && SEMVER_PATTERN.matcher(version).matches())
-				? "semver"
-				: "generic";
-		s.setRange("vers:" + scheme + "/" + (version == null ? "" : version));
+		s.setRange(VersRanges.releaseVers(scheme, version));
 		return s;
+	}
+
+	/**
+	 * A merged event whose versions are a run of the product's releases (no
+	 * other release falls between the lowest and the highest) names them as
+	 * one vers range, {@code >=lowest|<=highest}, in a single specifier with
+	 * no bare {@code version}. Versions that are not a run, or that the
+	 * scheme cannot order with confidence, keep one specifier each.
+	 */
+	private static void rangeContiguousVersions(List<TeaCleEvent> events, ReleaseOrder order) {
+		for (TeaCleEvent ev : events) {
+			if (ev.getVersions() == null || ev.getVersions().size() < 2) continue;
+			List<String> versions = ev.getVersions().stream().map(TeaCleVersionSpecifier::getVersion).toList();
+			order.rangeOf(versions).ifPresent(range -> {
+				TeaCleVersionSpecifier run = new TeaCleVersionSpecifier();
+				run.setRange(range);
+				ev.setVersions(new ArrayList<>(List.of(run)));
+			});
+		}
 	}
 
 	private static boolean isCrossingIntoGa(ReleaseLifecycle oldLc, ReleaseLifecycle newLc) {

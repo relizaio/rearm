@@ -129,6 +129,22 @@ public class ReleaseServiceCdxVexTransformTest {
 	}
 
 	@Test
+	void transform_keepsTheAffectedVersionRanges() throws Exception {
+		// The VEX is the VDR with the analysis filter applied: the vers ranges on affects[] carry over.
+		Bom vdr = buildVdrLikeFixture();
+		Vulnerability.Version range = new Vulnerability.Version();
+		range.setRange("vers:npm/<1.0.1");
+		range.setStatus(Vulnerability.Version.Status.AFFECTED);
+		vdr.getVulnerabilities().get(0).getAffects().get(0).setVersions(List.of(range));
+
+		Bom bom = invokeTransform(vdr, Boolean.FALSE, Boolean.FALSE);
+
+		Vulnerability exploitable = bom.getVulnerabilities().stream()
+				.filter(v -> "CVE-2024-0001".equals(v.getId())).findFirst().orElseThrow();
+		assertEquals("vers:npm/<1.0.1", exploitable.getAffects().get(0).getVersions().get(0).getRange());
+	}
+
+	@Test
 	void transform_filtersInTriageAndAnalysislessByDefault() throws Exception {
 		Bom bom = invokeTransform(buildVdrLikeFixture(), Boolean.FALSE, Boolean.FALSE);
 		List<String> kept = bom.getVulnerabilities().stream().map(Vulnerability::getId).toList();

@@ -30,6 +30,8 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCleEvent;
 import io.reliza.model.tea.TeaCleEventType;
+import io.reliza.model.tea.TeaCleVersionSpecifier;
+import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
 
 /**
@@ -338,5 +340,111 @@ class TeaTransformerServiceTest {
 		assertTrue(effective.endsWith("Z"),
 				"CLE effective must be normalised to UTC, got: " + effective);
 		assertEquals("2026-03-01T14:00:00Z", effective);
+	}
+
+	// ---- vers ranges in versions[] (board t20260930-174046-1457) ----
+
+	private static final ZonedDateTime GA_AT = ZonedDateTime.parse("2026-01-01T00:00:00Z");
+	private static final ZonedDateTime EOS_AT = ZonedDateTime.parse("2026-09-01T10:00:00Z");
+
+	/** A release made generally available, and, when {@code endsSupport}, ending support at {@link #EOS_AT}. */
+	private static ReleaseData release(UUID org, String version, boolean endsSupport) {
+		ReleaseData rd = new ReleaseData();
+		ReflectionTestUtils.setField(rd, "org", org);
+		ReflectionTestUtils.setField(rd, "version", version);
+		rd.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.LIFECYCLE, ReleaseUpdateAction.CHANGED,
+				ReleaseLifecycle.ASSEMBLED.name(), ReleaseLifecycle.GENERAL_AVAILABILITY.name(),
+				null, GA_AT, mock(WhoUpdated.class)));
+		if (endsSupport) {
+			rd.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.LIFECYCLE, ReleaseUpdateAction.CHANGED,
+					ReleaseLifecycle.GENERAL_AVAILABILITY.name(), ReleaseLifecycle.END_OF_SUPPORT.name(),
+					null, EOS_AT, mock(WhoUpdated.class)));
+		}
+		return rd;
+	}
+
+	private List<String> endOfSupportVersions(String versionSchema, ReleaseData... releases) {
+		ComponentData cd = new ComponentData();
+		ReflectionTestUtils.setField(cd, "uuid", UUID.randomUUID());
+		ReflectionTestUtils.setField(cd, "versionSchema", versionSchema);
+		when(sharedReleaseService.listReleaseDatasOfComponent(any(UUID.class), any(Integer.class), any(Integer.class)))
+				.thenReturn(List.of(releases));
+		TeaCleEvent ev = onlyEndOfSupportEvent(service.transformComponentToCle(cd));
+		return ev.getVersions().stream().map(TeaTransformerServiceTest::spec).toList();
+	}
+
+	/** A specifier as "version range", either part "-" when absent. */
+	private static String spec(TeaCleVersionSpecifier s) {
+		return (null == s.getVersion() ? "-" : s.getVersion()) + " " + (null == s.getRange() ? "-" : s.getRange());
+	}
+
+	@Test
+	void releasesEndingSupportTogetherThatAreARunAreOneRange() {
+		UUID org = UUID.randomUUID();
+		assertEquals(List.of("- vers:semver/>=1.0.0|<=1.0.2"), endOfSupportVersions("semver",
+				release(org, "1.0.0", true), release(org, "1.0.1", true), release(org, "1.0.2", true),
+				release(org, "1.1.0", false)),
+				"one specifier, a range and no bare version: 1.1.0 is outside it");
+	}
+
+	@Test
+	void aRangeSpecifierIsSerialisedWithoutAVersionKey() {
+		UUID org = UUID.randomUUID();
+		ComponentData cd = new ComponentData();
+		ReflectionTestUtils.setField(cd, "uuid", UUID.randomUUID());
+		ReflectionTestUtils.setField(cd, "versionSchema", "semver");
+		when(sharedReleaseService.listReleaseDatasOfComponent(any(UUID.class), any(Integer.class), any(Integer.class)))
+				.thenReturn(List.of(release(org, "1.0.0", true), release(org, "1.0.1", true)));
+
+		String json = service.wrapAsCleDocument(service.transformComponentToCle(cd), null).toString();
+
+		assertTrue(json.contains("{\"range\":\"vers:semver/>=1.0.0|<=1.0.1\"}"), json);
+	}
+
+	@Test
+	void releasesEndingSupportTogetherWithAnotherBetweenKeepOneSpecifierEach() {
+		UUID org = UUID.randomUUID();
+		assertEquals(List.of("1.0.0 vers:semver/1.0.0", "1.0.2 vers:semver/1.0.2"), endOfSupportVersions("semver",
+				release(org, "1.0.0", true), release(org, "1.0.1", false), release(org, "1.0.2", true)),
+				"a range over 1.0.0..1.0.2 would claim 1.0.1 ended support too");
+	}
+
+	@Test
+	void oneReleaseKeepsItsVersionAndItsVersLine() {
+		UUID org = UUID.randomUUID();
+		assertEquals(List.of("1.0.0 vers:semver/1.0.0"), endOfSupportVersions("semver",
+				release(org, "1.0.0", true), release(org, "1.0.1", false)));
+	}
+
+	@Test
+	void aCalendarSchemaIsGeneric() {
+		UUID org = UUID.randomUUID();
+		assertEquals(List.of("- vers:generic/>=2026.01.1|<=2026.01.2"), endOfSupportVersions("YYYY.0M.Micro",
+				release(org, "2026.01.1", true), release(org, "2026.01.2", true), release(org, "2026.02.1", false)));
+	}
+
+	@Test
+	void aSemverLookingVersionUnderAnotherSchemaIsNotGuessedIntoSemver() {
+		UUID org = UUID.randomUUID();
+		assertEquals(List.of("1.2.3 vers:generic/1.2.3"), endOfSupportVersions("Major.Minor.Patch.Nano",
+				release(org, "1.2.3", true)));
+	}
+
+	@Test
+	void theReleaseLevelCleWritesTheVersionInItsComponentsScheme() {
+		UUID org = UUID.randomUUID();
+		UUID component = UUID.randomUUID();
+		ComponentData cd = new ComponentData();
+		ReflectionTestUtils.setField(cd, "uuid", component);
+		ReflectionTestUtils.setField(cd, "versionSchema", "YYYY.0M.Micro");
+		GetComponentService getComponentService = mock(GetComponentService.class);
+		when(getComponentService.getComponentData(component)).thenReturn(Optional.of(cd));
+		ReflectionTestUtils.setField(service, "getComponentService", getComponentService);
+		ReleaseData rd = release(org, "1.2.3", true);
+		ReflectionTestUtils.setField(rd, "component", component);
+
+		TeaCleEvent ev = onlyEndOfSupportEvent(service.transformReleaseToCle(rd));
+
+		assertEquals(List.of("1.2.3 vers:generic/1.2.3"), ev.getVersions().stream().map(TeaTransformerServiceTest::spec).toList());
 	}
 }

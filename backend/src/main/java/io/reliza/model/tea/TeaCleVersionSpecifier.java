@@ -2,6 +2,7 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -22,6 +23,8 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "cle-version-specifier", description = "A version specifier that can be either a single version or a version range")
 @JsonTypeName("cle-version-specifier")
+// a range-only specifier (a run of releases) has no single version: leave the key out, not null
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCleVersionSpecifier {
 
