@@ -313,12 +313,30 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
   return augmentBomWithComponentContext(bom, rebomOverride, lastUpdatedDate);
 }
 
+/**
+ * The rebom release version for the tool entry: REBOM_VERSION when set, else the version the
+ * image was built with (/app/version, written by the Dockerfile), else package.json.
+ * npm_package_version, used before, is only set when the process is started through npm, so a
+ * deployed image named the tool without a version (`rearm null`).
+ */
+export function rebomToolVersion(): string {
+  if (process.env.REBOM_VERSION) return process.env.REBOM_VERSION;
+  try {
+    const line = fs.readFileSync('/app/version', 'utf8').split('\n').find((l) => l.startsWith('version='));
+    const v = line ? line.substring('version='.length).trim() : '';
+    if (v && v !== 'not_versioned') return v;
+  } catch {
+    // no image version file: running outside the image
+  }
+  return require('../../../package.json').version;
+}
+
 export function createRebomToolObject(specVersion: string): any {
   const rebomTool: any = {
     type: "application",
     name: "rearm",
     group: "io.reliza",
-    version: process.env.npm_package_version,
+    version: rebomToolVersion(),
     supplier: { name: "Reliza Incorporated" },
     description: "The evidence store for your entire supply chain",
     licenses: [
