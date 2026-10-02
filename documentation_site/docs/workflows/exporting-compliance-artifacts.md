@@ -113,6 +113,9 @@ What "ReARM's own markers" means, precisely:
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
 | `internal:*` properties written by your SBOM generator | cdxgen's working data: `internal:SrcFile` (the manifest path on the build machine), `internal:ResolvedUrl`, `internal:ImportedModules`, `internal:LocalNodeModulesPath` |
 | The same values repeated elsewhere | cdxgen repeats the manifest path in `evidence.identity` (a method's value, and on Maven components the `concludedValue`), in `cdx:bom:componentSrcFiles`, under the same build directory in `cdx:npm:binPaths`, and in its generated summary annotation. Those properties and evidence entries go, and annotation text reads `[redacted]` where it named the path. Paths that are not under the build directory, such as file paths inside a container image, stay |
+| Component `evidence.occurrences` | Where the generator found each component in your source tree (file and line of each import, from cdxgen's import analysis) |
+| cdxgen's npm registry analysis (`cdx:npm:*`) | Maintainer and publisher sets with their email addresses, publish times, release-gap and cadence statistics and drift flags. The package flags (`cdx:npm:package:*`), hashes, scripts, binaries and provenance stay |
+| The link to ReARM's stored copy of your document | The top-level `bom` external reference "Source document as uploaded by the producer", a `urn:cdx:` link a reader cannot resolve |
 
 **Always kept: `metadata.tools`.** ReARM's own entry (`io.reliza` / `rearm`) names the ReARM
 version that produced the export, and stays with both settings: ReARM generated the merged
