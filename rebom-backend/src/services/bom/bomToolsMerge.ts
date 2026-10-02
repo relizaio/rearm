@@ -1,3 +1,5 @@
+import { isRearmToolEntry as isRearmTool } from './bomProcessingService';
+
 /**
  * Carries the producing tools of the input BOMs into a merged BOM.
  *
@@ -16,9 +18,6 @@
 
 type Tools = { components: any[]; services: any[] };
 
-function isRearmTool(tool: any): boolean {
-  return !!tool && tool.name === 'rearm' && tool.group === 'io.reliza';
-}
 
 function toolKey(tool: any): string {
   const part = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
