@@ -11,9 +11,10 @@ import { isRearmToolEntry as isRearmTool } from './bomProcessingService';
  * (`tools: {components, services}`), or the legacy 1.4 array when the merged BOM is 1.4.
  *
  * ReARM's own entry (io.reliza / rearm) is not copied: `attachRebomToolToBom` adds the current
- * one after the merge, and an input's copy would name an older rebom. A copied tool drops its
- * `bom-ref`: refs are unique per document, and an input's tool ref may collide with a component
- * ref of another input once both share one merged document.
+ * one after the merge, and an input's copy would name an older rebom. A copied tool keeps its
+ * `bom-ref`, because component evidence points at it (`evidence.identity[].tools`), unless that
+ * ref is already taken in the merged document; refs are unique per document, and only then is
+ * it dropped.
  */
 
 type Tools = { components: any[]; services: any[] };
@@ -70,9 +71,31 @@ function isLegacySpec(specVersion: unknown): boolean {
  * Adds to `merged.metadata.tools` every tool the `inputs` name that `merged` does not name yet,
  * in input order, skipping ReARM's own entry. Mutates and returns `merged`.
  */
+/** Every bom-ref already used anywhere in a document. */
+function bomRefsIn(node: any, into: Set<string>): Set<string> {
+  if (Array.isArray(node)) {
+    for (const v of node) bomRefsIn(v, into);
+  } else if (node && typeof node === 'object') {
+    if (typeof node['bom-ref'] === 'string') into.add(node['bom-ref']);
+    for (const v of Object.values(node)) bomRefsIn(v, into);
+  }
+  return into;
+}
+
+/** A copy of a tool entry, keeping its bom-ref only while that ref is still free. */
+function copyTool(tool: any, usedRefs: Set<string>): any {
+  const { 'bom-ref': ref, ...copy } = tool;
+  if (typeof ref === 'string' && !usedRefs.has(ref)) {
+    usedRefs.add(ref);
+    return { ...copy, 'bom-ref': ref };
+  }
+  return copy;
+}
+
 export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
   if (!merged) return merged;
   if (!merged.metadata) merged.metadata = {};
+  const usedRefs = bomRefsIn(merged, new Set<string>());
   const current = toolsOf(merged);
   const seenComponents = new Set(current.components.map(toolKey));
   const seenServices = new Set(current.services.map(toolKey));
@@ -85,7 +108,7 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
       const key = toolKey(c);
       if (seenComponents.has(key)) continue;
       seenComponents.add(key);
-      const { 'bom-ref': _ref, ...copy } = c;
+      const copy = copyTool(c, usedRefs);
       // `type` is required on a 1.5+ component; a producer that left it out still named a tool.
       if (!copy.type) copy.type = 'application';
       components.push(copy);
@@ -95,8 +118,7 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
       const key = toolKey(s);
       if (seenServices.has(key)) continue;
       seenServices.add(key);
-      const { 'bom-ref': _ref, ...copy } = s;
-      services.push(copy);
+      services.push(copyTool(s, usedRefs));
     }
   }
   if (isLegacySpec(merged.specVersion)) {
@@ -105,5 +127,30 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
   } else {
     merged.metadata.tools = services.length ? { components, services } : { components };
   }
+  return merged;
+}
+
+/**
+ * Carries the inputs' `metadata.lifecycles` (CycloneDX 1.5+) into the merged BOM, de-duplicated
+ * by phase or by name. `rearm bomutils merge-boms` writes fresh metadata, so a merge of two
+ * build-time SBOMs said nothing about when its data was produced. Mutates and returns `merged`.
+ */
+export function mergeLifecyclesFromInputs(merged: any, inputs: any[]): any {
+  if (!merged) return merged;
+  if (!merged.metadata) merged.metadata = {};
+  const key = (l: any) => (l && typeof l.phase === 'string' ? `phase:${l.phase}` : (l && typeof l.name === 'string' ? `name:${l.name}` : ''));
+  const lifecycles: any[] = Array.isArray(merged.metadata.lifecycles) ? [...merged.metadata.lifecycles] : [];
+  const seen = new Set(lifecycles.map(key));
+  for (const input of inputs || []) {
+    const ls = input?.metadata?.lifecycles;
+    if (!Array.isArray(ls)) continue;
+    for (const l of ls) {
+      const k = key(l);
+      if (!k || seen.has(k)) continue;
+      seen.add(k);
+      lifecycles.push(l);
+    }
+  }
+  if (lifecycles.length && !isLegacySpec(merged.specVersion)) merged.metadata.lifecycles = lifecycles;
   return merged;
 }

@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest';
-import { mergeToolsFromInputs, toolsOf } from '../../src/services/bom/bomToolsMerge';
+import { mergeToolsFromInputs, mergeLifecyclesFromInputs, toolsOf } from '../../src/services/bom/bomToolsMerge';
 
 const cdxgen = { type: 'application', group: '@cdxgen', name: 'cdxgen', version: '13.2.0', 'bom-ref': 'pkg:npm/@cdxgen/cdxgen@13.2.0' };
 const mavenPlugin = { type: 'library', group: 'org.cyclonedx', name: 'cyclonedx-maven-plugin', version: '2.9.1' };
@@ -36,11 +36,27 @@ describe('mergeToolsFromInputs', () => {
     expect(merged.metadata.tools.components.map((t: any) => t.name)).toEqual(['cdxgen']);
   });
 
-  it('drops a copied tool\'s bom-ref so refs stay unique in the merged document', () => {
+  it('keeps a copied tool\'s bom-ref, which component evidence points at', () => {
     const merged = bom('1.6', { components: [] });
+    mergeToolsFromInputs(merged, [bom('1.6', { components: [cdxgen] })]);
+    expect(merged.metadata.tools.components[0]['bom-ref']).toBe('pkg:npm/@cdxgen/cdxgen@13.2.0');
+  });
+
+  it('drops a copied tool\'s bom-ref only when the merged document already uses it', () => {
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [{ type: 'library', name: 'cdxgen', 'bom-ref': 'pkg:npm/@cdxgen/cdxgen@13.2.0' }];
     mergeToolsFromInputs(merged, [bom('1.6', { components: [cdxgen] })]);
     expect(merged.metadata.tools.components[0]['bom-ref']).toBeUndefined();
     expect(cdxgen['bom-ref']).toBe('pkg:npm/@cdxgen/cdxgen@13.2.0'); // the input is not mutated
+  });
+
+  it('keeps the first of two inputs\' tools that share a bom-ref and drops the ref on the second', () => {
+    const merged = bom('1.6', { components: [] });
+    mergeToolsFromInputs(merged, [
+      bom('1.6', { components: [{ ...cdxgen }] }),
+      bom('1.6', { components: [{ ...cdxgen, version: '12.0.0' }] }),
+    ]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['pkg:npm/@cdxgen/cdxgen@13.2.0', undefined]);
   });
 
   it('gives a tool component without a type the application type', () => {
@@ -78,5 +94,26 @@ describe('mergeToolsFromInputs', () => {
     mergeToolsFromInputs(merged, [bom('1.6', undefined), {}]);
     expect(merged.metadata.tools).toEqual({ components: [] });
     expect(toolsOf(undefined)).toEqual({ components: [], services: [] });
+  });
+});
+
+describe('mergeLifecyclesFromInputs', () => {
+  it('keeps the inputs\' lifecycles, de-duplicated by phase or name', () => {
+    const merged: any = { specVersion: '1.6', metadata: {} };
+    mergeLifecyclesFromInputs(merged, [
+      { metadata: { lifecycles: [{ phase: 'build' }] } },
+      { metadata: { lifecycles: [{ phase: 'build' }, { name: 'nightly', description: 'scheduled scan' }] } },
+      { metadata: {} },
+    ]);
+    expect(merged.metadata.lifecycles).toEqual([{ phase: 'build' }, { name: 'nightly', description: 'scheduled scan' }]);
+  });
+
+  it('adds nothing for inputs without lifecycles, or to a 1.4 BOM', () => {
+    const merged: any = { specVersion: '1.6', metadata: {} };
+    mergeLifecyclesFromInputs(merged, [{ metadata: {} }]);
+    expect(merged.metadata.lifecycles).toBeUndefined();
+    const legacy: any = { specVersion: '1.4', metadata: {} };
+    mergeLifecyclesFromInputs(legacy, [{ metadata: { lifecycles: [{ phase: 'build' }] } }]);
+    expect(legacy.metadata.lifecycles).toBeUndefined();
   });
 });

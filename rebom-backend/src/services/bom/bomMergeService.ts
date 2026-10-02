@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
 import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
-import { mergeToolsFromInputs } from './bomToolsMerge';
+import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 
@@ -121,8 +121,9 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     if (!jsonObj.metadata.tools.components) {
       jsonObj.metadata.tools.components = [];
     }
-    // The merge writes fresh metadata: keep the tools that produced the inputs.
+    // The merge writes fresh metadata: keep the tools that produced the inputs, and when.
     mergeToolsFromInputs(jsonObj, bomObjects)
+    mergeLifecyclesFromInputs(jsonObj, bomObjects)
     
     const processedBom = await processBomObj(jsonObj)
     if (!processedBom) {
