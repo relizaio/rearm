@@ -314,12 +314,15 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
 }
 
 /**
- * The rebom release version for the tool entry: REBOM_VERSION when set, else the version the
- * image was built with (/app/version, written by the Dockerfile), else package.json.
- * npm_package_version, used before, is only set when the process is started through npm, so a
- * deployed image named the tool without a version (`rearm null`).
+ * The version for the rearm tool entry: the ReARM product version when the deployment passes it
+ * (REARM_PRODUCT_VERSION, the chart's appVersion, which is also what the UI shows as the ReARM
+ * version), else rebom's own release: REBOM_VERSION, then the version the image was built with
+ * (/app/version, written by the Dockerfile), then package.json. npm_package_version, used before,
+ * is only set when the process is started through npm, so a deployed image named the tool
+ * without a version (`rearm null`).
  */
 export function rebomToolVersion(): string {
+  if (process.env.REARM_PRODUCT_VERSION) return process.env.REARM_PRODUCT_VERSION;
   if (process.env.REBOM_VERSION) return process.env.REBOM_VERSION;
   try {
     const line = fs.readFileSync('/app/version', 'utf8').split('\n').find((l) => l.startsWith('version='));
