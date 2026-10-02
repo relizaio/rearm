@@ -59,6 +59,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.TxUtils;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
 
@@ -1594,7 +1595,8 @@ public class ReleaseDatafetcher {
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
 			}
 			
-			releaseService.reconcileMergedSbomRoutine(rd, wu);
+			UUID reconcileReleaseUuid = rd.getUuid();
+			TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 
 			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
 				try {
@@ -1702,8 +1704,9 @@ public class ReleaseDatafetcher {
 			releaseService.processSceArtifacts(sceArtsList, ord.get(), cd, od, version, wu);
 		}
 		
-		// Reconcile merged SBOM
-		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);
+		// Reconcile merged SBOM, from the release as stored once the attach is committed
+		UUID reconcileReleaseUuid = ord.get().getUuid();
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 		
 		// Return updated release
 		return sharedReleaseService.getReleaseData(ord.get().getUuid()).get();

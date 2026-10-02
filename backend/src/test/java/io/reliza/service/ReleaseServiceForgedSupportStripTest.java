@@ -124,6 +124,12 @@ class ReleaseServiceForgedSupportStripTest {
 					List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 				return BOM_ID;
 			}
+
+			// The VDR's way in: "no SBOM" is an ordinary answer there, so it reads an Optional.
+			@Override
+			Optional<UUID> findReleaseBomId(UUID releaseUuid, WhoUpdated wu) {
+				return Optional.of(BOM_ID);
+			}
 		};
 		RebomService rebom = new RebomService("http://rebom.invalid") {
 			@Override
@@ -400,11 +406,11 @@ class ReleaseServiceForgedSupportStripTest {
 		String enabled = serviceServingWithInjection(BOM_WITH_SOURCE_MILESTONE,
 				SupportInjectionSetting.ENABLED, purl)
 				.mergedBomForVdr(UUID.randomUUID(), UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated())
-				.toString();
+				.orElseThrow().toString();
 		String disabled = serviceServingWithInjection(BOM_WITH_SOURCE_MILESTONE,
 				SupportInjectionSetting.DISABLED, purl)
 				.mergedBomForVdr(UUID.randomUUID(), UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated())
-				.toString();
+				.orElseThrow().toString();
 		assertEquals(disabled, enabled,
 				"the VDR's merged bom changed with the org's BOM-export injection setting");
 		assertTrue(enabled.contains("2099-01-01"),

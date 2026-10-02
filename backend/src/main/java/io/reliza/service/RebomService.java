@@ -644,7 +644,28 @@ public class RebomService {
 
     // }
 
-    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
+    /**
+     * Merges the given boms in rebom and stores the result; answers the merged bom's id.
+     *
+     * <p>Every failure arrives as a RelizaException, the way uploadRebomRequest's do: a rebom
+     * refusal (BOM not found, BOM merge failed, ...) as itself, anything else (an HTTP status, a
+     * connection failure, a response that does not deserialize) as "rebom merge call failed".
+     * The merged-SBOM path names each failing component release with this message; a raw
+     * RuntimeException would instead escape to DGS as "Internal server error" and lose it.
+     */
+    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) throws RelizaException {
+        try {
+            return mergeAndStoreBomsCall(bomIds, rebomOptions, org);
+        } catch (RuntimeException e) {
+            RelizaException refusal = unwrapRebomRefusal(e);
+            if (null != refusal) throw refusal;
+            // RelizaException carries no cause, so the trace is kept here.
+            log.error("rebom mergeAndStoreBoms call failed for boms {}", bomIds, e);
+            throw new RelizaException("rebom merge call failed: " + e.getMessage());
+        }
+    }
+
+    private UUID mergeAndStoreBomsCall(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
         String query = """
             mutation mergeAndStoreBoms ($ids: [ID]!, $rebomOptions: RebomOptions!, $org: ID!) {
                 mergeAndStoreBoms(ids: $ids, rebomOptions: $rebomOptions, org: $org){
