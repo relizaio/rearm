@@ -646,7 +646,7 @@ public class SharedArtifactService {
 			// saveArtifactMetrics so no release touches fire and no metrics-audit
 			// row is written -- findings did not change, which is exactly the
 			// churn this guard exists to prevent.
-			repository.advanceLastScannedOnly(a.getUuid());
+			repository.advanceLastScannedOnly(a.getUuid(), Utils.toFractionalEpochSecond(ZonedDateTime.now()));
 			return a;
 		}
 

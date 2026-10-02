@@ -310,6 +310,15 @@ public class Utils {
 	}
 
 	/**
+	 * Epoch seconds with the fraction kept, the form the artifact {@code lastScanned}
+	 * stamp and the synthetic fan-out cutoff are compared in. Both sides of that
+	 * comparison must convert the same way.
+	 */
+	public static double toFractionalEpochSecond (ZonedDateTime zdt) {
+		return zdt.toEpochSecond() + (zdt.getNano() / 1_000_000_000.0);
+	}
+
+	/**
 	 * Time from jira comes in the format 2021-08-03T16:10:03.937-04:00
 	 * @param dateTimeStr
 	 * @return ZonedDateTime

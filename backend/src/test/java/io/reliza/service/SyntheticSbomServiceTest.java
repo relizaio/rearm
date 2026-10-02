@@ -10,14 +10,19 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
+import java.math.BigDecimal;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -36,6 +41,8 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.springframework.test.util.ReflectionTestUtils;
 
+import io.reliza.common.CommonVariables;
+import io.reliza.common.Utils;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
@@ -72,6 +79,7 @@ class SyntheticSbomServiceTest {
 	@Mock private IntegrationService integrationService;
 	@Mock private VulnAnalysisService vulnAnalysisService;
 	@Mock private SbomComponentService sbomComponentService;
+	@Mock private SyntheticOrgLock syntheticOrgLock;
 
 	@InjectMocks private SyntheticSbomService service;
 
@@ -413,6 +421,135 @@ class SyntheticSbomServiceTest {
 	}
 
 	@Test
+	void resyncLeavesTheBucketAloneWhenOnlyAttributionTimesAndOrderDiffer() throws Exception {
+		// Every DTrack fetch stamps attributedAt with the fetch time. A re-pull of an
+		// unchanged project must not count as a change: rewriting the bucket bumps
+		// its date and sends every artifact in the org back through fan-out.
+		String canonical = "pkg:npm/foo@1.0";
+		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+		b.setOrg(ORG);
+		b.setBucketIndex(0);
+		b.setDtrackProjectUuid(PROJ);
+		b.setIngestState(IngestState.INGESTED);
+		b.getRefMap().put(canonical, canonical);
+		b.setFindings(new HashMap<>());
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		when(integrationService.retrieveUnsyncedDtrackProjects(eq(ORG), any()))
+				.thenReturn(Set.of(PROJ));
+		ZonedDateTime firstPull = ZonedDateTime.now().minusDays(1);
+		when(dTrackService.syntheticFetchFindings(ORG, PROJ)).thenReturn(new SyntheticFindings(List.of(
+				new VulnWithCpe(vulnAt(canonical, "CVE-1", VulnerabilitySeverity.HIGH, firstPull), null),
+				new VulnWithCpe(vulnAt(canonical, "CVE-2", VulnerabilitySeverity.LOW, firstPull), null)), List.of()));
+		service.resyncFindingsForOrg(ORG, ZonedDateTime.now().minusDays(2));
+		verify(bucketRepository).save(b);
+		// What the next pull compares against went through JSONB.
+		b.setFindings(jsonRoundTrip(b.getFindings()));
+		clearInvocations(bucketRepository);
+
+		ZonedDateTime secondPull = ZonedDateTime.now();
+		when(dTrackService.syntheticFetchFindings(ORG, PROJ)).thenReturn(new SyntheticFindings(List.of(
+				new VulnWithCpe(vulnAt(canonical, "CVE-2", VulnerabilitySeverity.LOW, secondPull), null),
+				new VulnWithCpe(vulnAt(canonical, "CVE-1", VulnerabilitySeverity.HIGH, secondPull), null)), List.of()));
+		service.resyncFindingsForOrg(ORG, ZonedDateTime.now().minusDays(1));
+
+		verify(bucketRepository, never()).save(any());
+	}
+
+	@Test
+	void sameFindingsIgnoresAttributionAndOrderButNotContent() {
+		Map<String, Object> stored = findingsOf("pkg:npm/foo@1.0",
+				finding("CVE-1", "HIGH", 1.0), finding("CVE-2", "LOW", 1.0));
+		Map<String, Object> repulled = findingsOf("pkg:npm/foo@1.0",
+				finding("CVE-2", "LOW", 2.0), finding("CVE-1", "HIGH", 2.0));
+		assertTrue(SyntheticSbomService.sameFindings(stored, repulled));
+
+		Map<String, Object> severityChanged = findingsOf("pkg:npm/foo@1.0",
+				finding("CVE-2", "LOW", 2.0), finding("CVE-1", "CRITICAL", 2.0));
+		assertFalse(SyntheticSbomService.sameFindings(stored, severityChanged));
+		Map<String, Object> oneGone = findingsOf("pkg:npm/foo@1.0", finding("CVE-1", "HIGH", 1.0));
+		assertFalse(SyntheticSbomService.sameFindings(stored, oneGone));
+		Map<String, Object> duplicated = findingsOf("pkg:npm/foo@1.0", finding("CVE-1", "HIGH", 1.0),
+				finding("CVE-1", "HIGH", 1.0), finding("CVE-2", "LOW", 1.0));
+		assertFalse(SyntheticSbomService.sameFindings(stored, duplicated));
+
+		// A canonical left with no findings counts the same as an absent one.
+		Map<String, Object> withEmptyCanonical = new HashMap<>(stored);
+		withEmptyCanonical.put("pkg:npm/bar@2.0", new HashMap<>(Map.of("vulns", new ArrayList<>())));
+		assertTrue(SyntheticSbomService.sameFindings(stored, withEmptyCanonical));
+	}
+
+	@Test
+	void sameFindingsComparesNestedDatesByValueAndNestedListsWithoutOrder() {
+		// A freshly converted finding carries a date as the BigDecimal Jackson wrote;
+		// the same finding read back from JSONB carries it as a Double. The aliases
+		// come from a set, so their order is not significant either.
+		Map<String, Object> fresh = finding("CVE-1", "HIGH", 2.0);
+		fresh.put("analysisDate", new BigDecimal("1790317623.473684930"));
+		fresh.put("aliases", new ArrayList<>(List.of(Map.of("aliasId", "GHSA-a"), Map.of("aliasId", "CVE-1"))));
+		Map<String, Object> stored = finding("CVE-1", "HIGH", 1.0);
+		stored.put("analysisDate", 1790317623.47368493d);
+		stored.put("aliases", new ArrayList<>(List.of(Map.of("aliasId", "CVE-1"), Map.of("aliasId", "GHSA-a"))));
+		assertTrue(SyntheticSbomService.sameFindings(
+				findingsOf("pkg:npm/foo@1.0", fresh), findingsOf("pkg:npm/foo@1.0", stored)));
+
+		Map<String, Object> reanalysed = finding("CVE-1", "HIGH", 1.0);
+		reanalysed.put("analysisDate", 1790400000.0d);
+		reanalysed.put("aliases", stored.get("aliases"));
+		assertFalse(SyntheticSbomService.sameFindings(
+				findingsOf("pkg:npm/foo@1.0", fresh), findingsOf("pkg:npm/foo@1.0", reanalysed)));
+	}
+
+	@Test
+	void resyncOrgDoesNothingWhenTheOrgCycleLockStaysHeld() throws Exception {
+		when(syntheticOrgLock.acquire(eq(ORG), any())).thenReturn(null);
+
+		assertFalse(service.resyncOrg(ORG, ZonedDateTime.now().minusDays(1)),
+				"a skipped cycle must be reported, so the daily run keeps its sync time");
+
+		verifyNoInteractions(rebomService, bucketRepository, integrationService, dTrackService, artifactRepository);
+	}
+
+	@Test
+	void resyncOrgRunsItsCycleUnderTheOrgCycleLock() throws Exception {
+		when(syntheticOrgLock.acquire(eq(ORG), any())).thenReturn(new SyntheticOrgLock.Lease(null, ORG));
+		when(integrationService.retrieveUnsyncedDtrackProjects(eq(ORG), any())).thenReturn(Set.of());
+
+		assertTrue(service.resyncOrg(ORG, ZonedDateTime.now().minusDays(1)));
+
+		verify(integrationService).retrieveUnsyncedDtrackProjects(eq(ORG), any());
+	}
+
+	@Test
+	void aRepeatManualResyncForTheSameOrgIsDroppedWhileTheFirstRuns() throws Exception {
+		// The nested call stands in for a second click that arrives while the first
+		// run still waits for the org's cycle lock.
+		when(syntheticOrgLock.acquire(eq(ORG), any())).thenAnswer(inv -> {
+			service.resyncOrgManualAsync(ORG);
+			return null;
+		});
+		service.resyncOrgManualAsync(ORG);
+		verify(syntheticOrgLock, times(1)).acquire(eq(ORG), any());
+
+		// Once the first run is over, the next click runs. doReturn: when(...) would
+		// call acquire, and with it the re-entering answer above, while stubbing.
+		doReturn(null).when(syntheticOrgLock).acquire(eq(ORG), any());
+		service.resyncOrgManualAsync(ORG);
+		verify(syntheticOrgLock, times(2)).acquire(eq(ORG), any());
+	}
+
+	@Test
+	void aRepeatForceReuploadForTheSameOrgIsDroppedWhileTheFirstRuns() throws Exception {
+		when(syntheticOrgLock.acquire(eq(ORG), any())).thenAnswer(inv -> {
+			service.forceReuploadOrgAsync(ORG);
+			return null;
+		});
+		service.forceReuploadOrgAsync(ORG);
+
+		verify(syntheticOrgLock, times(1)).acquire(eq(ORG), any());
+		verifyNoInteractions(rebomService, bucketRepository);
+	}
+
+	@Test
 	void anUnreachableRebomSkipsTheWholePassAndDeletesNoProject() throws Exception {
 		// A non-BEAR org with a live bucket and its DTrack project. Before, an
 		// unknown BEAR config was taken as "configured"; a non-BEAR org has no
@@ -727,7 +864,7 @@ class SyntheticSbomServiceTest {
 		verify(sharedArtifactService).updateArtifactDti(any(), dti.capture(), any());
 		assertEquals(1, dti.getValue().getVulnerabilityDetails().size());
 		// Not persisted, so the cutoff must not move on the strength of it.
-		assertEquals((double) storedAt.toInstant().getEpochSecond(), cutoff.getValue());
+		assertEquals(Utils.toFractionalEpochSecond(storedAt), cutoff.getValue());
 	}
 
 	@Test
@@ -746,7 +883,24 @@ class SyntheticSbomServiceTest {
 
 		verify(bucketRepository, never()).save(any());
 		assertEquals(Set.of(otherVersion), b.getFindings().keySet());
-		assertEquals((double) storedAt.toInstant().getEpochSecond(), cutoff.getValue());
+		assertEquals(Utils.toFractionalEpochSecond(storedAt), cutoff.getValue());
+	}
+
+	@Test
+	void fanOutCutoffKeepsTheFractionOfTheNewestBucketUpdate() {
+		// lastScanned is stored as fractional epoch seconds. A cutoff truncated to
+		// whole seconds treats an artifact stamped earlier in the same second as
+		// the bucket update as already current, and it keeps its old findings.
+		SyntheticDtrackBucket b = ingestedBucket(new HashMap<>(), ZLIB);
+		ZonedDateTime storedAt = ZonedDateTime.of(2026, 9, 25, 10, 45, 52, 700_000_000, ZoneOffset.UTC);
+		b.setLastUpdatedDate(storedAt);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
+		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt())).thenReturn(List.of());
+
+		service.fanOutOrg(ORG);
+
+		assertEquals(storedAt.toEpochSecond() + 0.7, cutoff.getValue(), 1e-6);
 	}
 
 	@Test
@@ -807,6 +961,34 @@ class SyntheticSbomServiceTest {
 		b.setFindings(findings);
 		for (String p : coveredPurls) b.getRefMap().put(p, p);
 		return b;
+	}
+
+	private static VulnerabilityDto vulnAt(String purl, String vulnId, VulnerabilitySeverity severity,
+			ZonedDateTime attributedAt) {
+		return new VulnerabilityDto(purl, vulnId, severity, null, null, null, null, null, attributedAt,
+				null, null, null, null, null, null);
+	}
+
+	private static Map<String, Object> finding(String vulnId, String severity, double attributedAt) {
+		Map<String, Object> f = new LinkedHashMap<>();
+		f.put("vulnId", vulnId);
+		f.put("severity", severity);
+		f.put(CommonVariables.ATTRIBUTED_AT_FIELD, attributedAt);
+		return f;
+	}
+
+	@SafeVarargs
+	private static Map<String, Object> findingsOf(String canonical, Map<String, Object>... vulns) {
+		Map<String, Object> entry = new HashMap<>();
+		entry.put("vulns", new ArrayList<>(List.of(vulns)));
+		Map<String, Object> byCanonical = new HashMap<>();
+		byCanonical.put(canonical, entry);
+		return byCanonical;
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Object> jsonRoundTrip(Map<String, Object> findings) {
+		return Utils.OM.readValue(Utils.OM.writeValueAsString(findings), Map.class);
 	}
 
 	private static VulnerabilityDto vuln(String purl, String vulnId) {

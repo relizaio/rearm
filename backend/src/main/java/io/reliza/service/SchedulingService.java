@@ -92,6 +92,9 @@ public class SchedulingService {
     SyntheticSbomService syntheticSbomService;
 
     @Autowired
+    SyntheticOrgLock syntheticOrgLock;
+
+    @Autowired
     ComponentLatestVersionService componentLatestVersionService;
 
     @Autowired
@@ -235,18 +238,7 @@ public class SchedulingService {
 					// estate-wide.
 					try {
 						for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
-							try {
-								if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
-									syntheticSbomService.submitOrg(orgUuid);
-								}
-								syntheticSbomService.ingestOrgBuckets(orgUuid);
-								syntheticSbomService.fanOutOrg(orgUuid);
-								// Rate-limited internally; surfaces a stall that would otherwise
-								// be silent (artifacts never reaching "scanned").
-								syntheticSbomService.reportFanOutStallIfAny(orgUuid);
-							} catch (Exception e) {
-								log.error("synthetic DTrack submit/ingest/fan-out failed for org {}", orgUuid, e);
-							}
+							runSyntheticTickForOrg(orgUuid);
 						}
 					} catch (Exception e) {
 						log.error("synthetic DTrack submit/ingest/fan-out failed", e);
@@ -439,6 +431,35 @@ public class SchedulingService {
         });
     }
     
+    /**
+     * One org's share of the per-minute synthetic DTrack tick: submit, ingest,
+     * fan out, stall report. A resync or force re-upload holding the org's cycle
+     * lock runs its own ingest and fan-out, so the tick leaves the org to it
+     * rather than writing the same buckets and artifacts concurrently. Per-org
+     * try/catch: one org with a pathological data shape must not abort the
+     * remaining orgs.
+     */
+    void runSyntheticTickForOrg(UUID orgUuid) {
+        try (SyntheticOrgLock.Lease orgLock = syntheticOrgLock.tryAcquire(orgUuid)) {
+            if (orgLock == null) {
+                log.debug("synthetic DTrack cycle for org {} is held by a resync; skipped this tick", orgUuid);
+            } else {
+                if (syntheticSbomService.hasPendingSyntheticWork(orgUuid)) {
+                    syntheticSbomService.submitOrg(orgUuid);
+                }
+                syntheticSbomService.ingestOrgBuckets(orgUuid);
+                syntheticSbomService.fanOutOrg(orgUuid);
+            }
+        } catch (Exception e) {
+            log.error("synthetic DTrack submit/ingest/fan-out failed for org {}", orgUuid, e);
+        }
+        // Outside the lock, on every tick: a holder that never finishes must not
+        // also silence the report of the stall it causes. Read-only, rate-limited
+        // and guarded internally; surfaces a stall that would otherwise be silent
+        // (artifacts never reaching "scanned").
+        syntheticSbomService.reportFanOutStallIfAny(orgUuid);
+    }
+
     @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM — separated from other daily crons
     public void scheduleSyntheticDtrackDailyResync() {
         try {
@@ -452,14 +473,24 @@ public class SchedulingService {
                     java.time.ZonedDateTime since = systemInfoService.getLastDtrackSync();
                     if (since == null) since = java.time.ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC);
                     java.time.ZonedDateTime runStart = java.time.ZonedDateTime.now();
+                    boolean everyOrgRan = true;
                     for (UUID orgUuid : integrationService.listOrgsWithDtrackIntegration()) {
                         try {
-                            syntheticSbomService.resyncOrg(orgUuid, since);
+                            if (!syntheticSbomService.resyncOrg(orgUuid, since)) everyOrgRan = false;
                         } catch (Exception e) {
                             log.error("Synthetic DTrack resync failed for org {}", orgUuid, e);
                         }
                     }
-                    systemInfoService.setLastDtrackSync(runStart);
+                    // An org skipped on its cycle lock never checked this window;
+                    // advancing past it would lose those re-analyses for good.
+                    // Tomorrow's run re-checks the window instead (unchanged
+                    // buckets are left alone, so the repeat is cheap).
+                    if (everyOrgRan) {
+                        systemInfoService.setLastDtrackSync(runStart);
+                    } else {
+                        log.error("Synthetic DTrack daily resync skipped at least one org on its cycle lock; "
+                                + "keeping the last sync time at {} so the next run re-checks this window", since);
+                    }
                 } catch (Exception e) {
                     log.error("Exception in synthetic DTrack daily resync", e);
                 } finally {

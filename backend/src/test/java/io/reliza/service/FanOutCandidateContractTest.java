@@ -68,11 +68,12 @@ public class FanOutCandidateContractTest {
 		UUID org = testInitializer.obtainOrganization().getUuid();
 		Artifact a = saveArtifactWithLastScanned(org, STALE_EPOCH);
 
-		artifactRepository.advanceLastScannedOnly(a.getUuid());
+		double scannedAt = 1_790_000_000.25;
+		artifactRepository.advanceLastScannedOnly(a.getUuid(), scannedAt);
 
 		Map<String, Object> metrics = artifactRepository.findById(a.getUuid()).orElseThrow().getMetrics();
 		double stamped = ((Number) metrics.get("lastScanned")).doubleValue();
-		assertTrue(stamped > STALE_EPOCH + 1, "lastScanned must advance to ~now");
+		assertEquals(scannedAt, stamped, 1e-6, "lastScanned takes the caller's stamp, fraction included");
 		assertEquals("keep-me", metrics.get("projectName"), "no other metrics field may be altered");
 	}
 
