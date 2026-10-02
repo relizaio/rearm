@@ -2493,9 +2493,24 @@ public class ReleaseService {
 		}
 	}
 	
+	/**
+	 * Regenerate the merged SBOMs an artifact change on a release affects: the release's own cached
+	 * configurations, then those of each product that bundles it.
+	 *
+	 * <p>Takes the release uuid and reads the release as stored: a {@link ReleaseData} the caller read
+	 * before attaching the artifacts still lists the old ones, and regenerating from it re-cached the
+	 * pre-upload document (TEA-1 T-1). Callers dispatch it with {@code TxUtils.afterCommitOrNow}, so
+	 * this read sees the committed attach.
+	 */
 	@Async
-	public void reconcileMergedSbomRoutine(ReleaseData rd, WhoUpdated wu) {
-		log.debug("RGDEBUG: Reconcile Merged Sboms Routine started for release: {}", rd.getUuid());
+	public void reconcileMergedSbomRoutine(UUID releaseUuid, WhoUpdated wu) {
+		log.debug("RGDEBUG: Reconcile Merged Sboms Routine started for release: {}", releaseUuid);
+		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isEmpty()) {
+			log.warn("reconcileMergedSbomRoutine: release {} not found, nothing to reconcile", releaseUuid);
+			return;
+		}
+		ReleaseData rd = ord.get();
 		Set<ReleaseData> rds = sharedReleaseService.greedylocateProductsOfRelease(rd);
 		// The changed release itself first: nothing else refreshes its own cache, so a release no
 		// product bundles (every top-level product) would serve its first merged document forever.

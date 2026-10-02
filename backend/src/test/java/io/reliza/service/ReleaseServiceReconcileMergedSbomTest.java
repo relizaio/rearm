@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -50,6 +51,10 @@ import io.reliza.service.RebomService.BomStructureType;
  * changed release rather than the product's own, and never the changed release itself -- so a
  * release no product bundles (every top-level product, the sandbox's 9000.1.0 among them)
  * served its first merged document forever once one was cached.
+ *
+ * <p>T-1 (test run 1): the routine took the {@link ReleaseData} its caller read before attaching
+ * the artifacts and regenerated the changed release from it, so a second SBOM never reached that
+ * release's cached export. It now takes the uuid and reads the release as stored.
  */
 class ReleaseServiceReconcileMergedSbomTest {
 
@@ -58,6 +63,9 @@ class ReleaseServiceReconcileMergedSbomTest {
 	private static final RebomOptions Y = new RebomOptions(ArtifactBelongsTo.RELEASE, true, false, BomStructureType.HIERARCHICAL);
 
 	private record Call(UUID release, RebomOptions options, Boolean forced, UUID componentFilter) {}
+
+	/** The artifact list of the {@link ReleaseData} each regeneration was handed, in call order. */
+	private final List<List<UUID>> artifactsSeen = new ArrayList<>();
 
 	private final List<Call> calls = new ArrayList<>();
 	private final Map<UUID, List<ReleaseBom>> caches = new HashMap<>();
@@ -84,6 +92,7 @@ class ReleaseServiceReconcileMergedSbomTest {
 					Boolean forced, UUID componentFilter, WhoUpdated wu,
 					List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException {
 				calls.add(new Call(rd.getUuid(), rebomMergeOptions, forced, componentFilter));
+				artifactsSeen.add(List.copyOf(rd.getArtifacts()));
 				if (rebomMergeOptions.equals(failing.get(rd.getUuid()))) {
 					ComponentData cd = new ComponentData();
 					cd.setName("device");
@@ -122,7 +131,24 @@ class ReleaseServiceReconcileMergedSbomTest {
 		return rd;
 	}
 
+	/** {@code rd} is the release as stored: what the routine reads by uuid. */
+	private void stored(ReleaseData rd) {
+		when(shared.getReleaseData(rd.getUuid())).thenReturn(Optional.of(rd));
+	}
+
+	/** A copy of {@code rd} as a caller read it, before {@code rd}'s later artifacts were attached. */
+	private static ReleaseData readBefore(ReleaseData rd, int artifactsThen) {
+		ReleaseData copy = new ReleaseData();
+		ReflectionTestUtils.setField(copy, "uuid", rd.getUuid());
+		ReflectionTestUtils.setField(copy, "org", rd.getOrg());
+		ReflectionTestUtils.setField(copy, "component", rd.getComponent());
+		copy.setVersion(rd.getVersion());
+		copy.setArtifacts(new ArrayList<>(rd.getArtifacts().subList(0, artifactsThen)));
+		return copy;
+	}
+
 	private void bundledBy(ReleaseData rd, ReleaseData... products) {
+		stored(rd);
 		Set<ReleaseData> set = new LinkedHashSet<>(List.of(products));
 		when(shared.greedylocateProductsOfRelease(rd)).thenReturn(set);
 	}
@@ -139,7 +165,7 @@ class ReleaseServiceReconcileMergedSbomTest {
 		cached(product, X);
 		bundledBy(component, product);
 
-		svc.reconcileMergedSbomRoutine(component, WhoUpdated.getAutoWhoUpdated());
+		svc.reconcileMergedSbomRoutine(component.getUuid(), WhoUpdated.getAutoWhoUpdated());
 
 		assertEquals(List.of(
 				new Call(component.getUuid(), Y, true, component.getUuid()),
@@ -153,7 +179,7 @@ class ReleaseServiceReconcileMergedSbomTest {
 		cached(topLevel, X, Y);
 		bundledBy(topLevel);
 
-		svc.reconcileMergedSbomRoutine(topLevel, WhoUpdated.getAutoWhoUpdated());
+		svc.reconcileMergedSbomRoutine(topLevel.getUuid(), WhoUpdated.getAutoWhoUpdated());
 
 		assertEquals(List.of(
 				new Call(topLevel.getUuid(), X, true, topLevel.getUuid()),
@@ -169,7 +195,7 @@ class ReleaseServiceReconcileMergedSbomTest {
 		failing.put(component.getUuid(), X);
 		bundledBy(component, product);
 
-		svc.reconcileMergedSbomRoutine(component, WhoUpdated.getAutoWhoUpdated());
+		svc.reconcileMergedSbomRoutine(component.getUuid(), WhoUpdated.getAutoWhoUpdated());
 
 		assertEquals(List.of(
 				new Call(component.getUuid(), X, true, component.getUuid()),
@@ -182,5 +208,35 @@ class ReleaseServiceReconcileMergedSbomTest {
 				errors.get(0).getMessage().getFormattedMessage());
 		verify(sbomComponentService).requestReconcile(component.getUuid());
 		verify(sbomComponentService).requestReconcile(product.getUuid());
+	}
+
+	@Test
+	void theChangedReleaseIsRegeneratedFromItsArtifactsAsStoredNotAsTheCallerReadThem() {
+		UUID sbomA = UUID.randomUUID();
+		UUID sbomB = UUID.randomUUID();
+		ReleaseData product = release("9000.2.0");
+		product.setArtifacts(new ArrayList<>(List.of(sbomA, sbomB)));
+		ReleaseData callersCopy = readBefore(product, 1);
+		cached(product, X);
+		bundledBy(product);
+
+		svc.reconcileMergedSbomRoutine(callersCopy.getUuid(), WhoUpdated.getAutoWhoUpdated());
+
+		assertEquals(List.of(new Call(product.getUuid(), X, true, product.getUuid())), calls);
+		assertEquals(List.of(List.of(sbomA, sbomB)), artifactsSeen,
+				"the regeneration reads the second SBOM the caller's copy predates");
+		verify(shared).getReleaseData(product.getUuid());
+	}
+
+	@Test
+	void aReleaseGoneBeforeTheReconcileRunsRegeneratesNothing() {
+		UUID gone = UUID.randomUUID();
+		when(shared.getReleaseData(gone)).thenReturn(Optional.empty());
+
+		svc.reconcileMergedSbomRoutine(gone, WhoUpdated.getAutoWhoUpdated());
+
+		assertTrue(calls.isEmpty(), calls.toString());
+		verify(shared, never()).greedylocateProductsOfRelease(any(ReleaseData.class));
+		verify(sbomComponentService, never()).requestReconcile(any(UUID.class));
 	}
 }
