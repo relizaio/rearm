@@ -21,6 +21,11 @@ If you do not have one yet, we publish a [Dependency-Track 5 Helm chart](/integr
 - VIEW_PORTFOLIO
 - VIEW_VULNERABILITY
 6. Note that Dependency-Track would use configured Violation Policies and Vulnerability Scan Settings - refer to [Dependency-Track documentation](https://docs.dependencytrack.org/) to configure those for your needs.
+7. On Dependency-Track 5, turn on alias synchronization (`aliasSyncEnabled`) in the settings of the OSV vulnerability source, and check it is on (the default) for GitHub Advisories if you enable that source. If OSV has already mirrored, run one full re-mirror: turn incremental mirroring off for one run, then back on.
+
+::: tip Why alias synchronization matters
+Without it, Dependency-Track 5 reports GitHub and OSV advisories without their CVE ids. ReARM then knows such a vulnerability by its GHSA or OSV id only, so matching against the CISA Known Exploited Vulnerabilities catalog, which lists CVE ids, misses it. Only a full mirror adds aliases to advisories already stored. On the next Dependency-Track sync after that, ReARM moves each such vulnerability to its CVE id without new-vulnerability notifications. That sync can still send [vulnerability update notifications](/configure/notifications#kev-known-exploited-vulnerabilities-notifications) for what the CVE id brings: a KEV listing ReARM can now match, and an EPSS score of 0.7 or more that ReARM learns for the first time.
+:::
 
 
 ## ReARM Part
