@@ -153,13 +153,20 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	 *
 	 * <p>Epoch-numeric form matches what Jackson writes for the DTI field, so
 	 * both the SQL float casts and DTI deserialization see the same shape.
+	 *
+	 * <p>The stamp comes from the caller, not the database's {@code now()}: the
+	 * fan-out cutoff is taken, to the fraction of a second, from bucket updates
+	 * dated by the application clock, and a database clock a few milliseconds
+	 * behind would leave a just-processed artifact under that cutoff.
+	 *
+	 * @param scannedAtEpoch the scan time as fractional epoch seconds
 	 */
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.artifacts "
-			+ "SET metrics = jsonb_set(metrics, '{lastScanned}', to_jsonb(extract(epoch from now()))) "
+			+ "SET metrics = jsonb_set(metrics, '{lastScanned}', to_jsonb(cast(:scannedAtEpoch as float8))) "
 			+ "WHERE uuid = :uuid AND metrics IS NOT NULL", nativeQuery = true)
-	void advanceLastScannedOnly(@Param("uuid") UUID uuid);
+	void advanceLastScannedOnly(@Param("uuid") UUID uuid, @Param("scannedAtEpoch") double scannedAtEpoch);
 
 	/**
 	 * Fan-out candidate pool slice: artifacts of the org whose scan stamp is

@@ -57,6 +57,8 @@ public class CommonVariables {
 	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 2000;
 	
 	public static final String NAME_FIELD = "name";
+	/** Stored finding field every DTrack fetch stamps with the fetch time. */
+	public static final String ATTRIBUTED_AT_FIELD = "attributedAt";
 	public static final String DESCRIPTION_FIELD = "description";
 	public static final String ORGANIZATION_FIELD = "org";
 	public static final String PARENT_FIELD = "parent";

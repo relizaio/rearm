@@ -39,7 +39,13 @@ public enum AdvisoryLockKey {
 	 * component (VersionAssignmentRepository.lockVersionAssignmentOfComponent), two-key form like
 	 * VULNERABILITY_RECORD_WRITE; not a scheduler lock.
 	 */
-	VERSION_ASSIGNMENT(44);
+	VERSION_ASSIGNMENT(44),
+	/**
+	 * Namespace of the per-org session lock around one org's synthetic
+	 * Dependency-Track cycle (SyntheticOrgLock), taken with the two-key form
+	 * whose second key is the org; not a scheduler lock.
+	 */
+	SYNTHETIC_ORG_CYCLE(46);
 	
 	private int queryVal;
 	

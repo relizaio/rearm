@@ -7,6 +7,7 @@ import java.nio.charset.StandardCharsets;
 import java.security.MessageDigest;
 import java.time.Duration;
 import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -37,6 +38,7 @@ import org.springframework.stereotype.Service;
 import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.CdxLicenseUtil;
+import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
@@ -113,6 +115,21 @@ public class SyntheticSbomService {
 	/** Cap on CPEs emitted per component (cpe[0] on the primary; companions TODO). */
 	static final int MAX_CPES = 3;
 
+	/**
+	 * How long a resync or force re-upload waits for the org's cycle lock. The
+	 * tick holds it for one org's submit, ingest and fan-out, and another resync
+	 * for its DTrack re-pull, so a wait this long means a holder is stuck.
+	 */
+	static final Duration ORG_LOCK_WAIT = Duration.ofMinutes(15);
+
+	/**
+	 * Orgs with a manual resync or force re-upload running on this node. A repeat
+	 * click drops out instead of parking one of the few async threads on the
+	 * org's cycle lock for the length of the first run.
+	 */
+	private final Set<UUID> manualResyncInFlight = ConcurrentHashMap.newKeySet();
+	private final Set<UUID> forceReuploadInFlight = ConcurrentHashMap.newKeySet();
+
 	@Autowired private SbomComponentRepository sbomComponentRepository;
 	@Autowired private SyntheticDtrackBucketRepository bucketRepository;
 	@Autowired private ArtifactSbomComponentRepository artifactSbomComponentRepository;
@@ -124,6 +141,7 @@ public class SyntheticSbomService {
 	@Autowired private RebomService rebomService;
 	@Autowired @Lazy private IntegrationService integrationService;
 	@Autowired @Lazy private VulnAnalysisService vulnAnalysisService;
+	@Autowired private SyntheticOrgLock syntheticOrgLock;
 
 	// ===================================================================
 	// Per-org orchestration
@@ -134,29 +152,35 @@ public class SyntheticSbomService {
 	 * re-pull findings for buckets DTrack has re-analysed since {@code since}, then
 	 * fan out. {@code since} bounds the "what changed on DTrack" probe — pass the
 	 * last successful sync time for the daily run, or an epoch instant to force a
-	 * full re-check (manual trigger).
+	 * full re-check (manual trigger). Runs under the org's cycle lock
+	 * ({@link SyntheticOrgLock}), so it never overlaps the tick for the same org.
+	 *
+	 * @return false when the cycle was skipped because the lock stayed held, so
+	 *   the daily run knows not to advance its sync time past this org's window.
 	 */
-	public void resyncOrg(UUID orgUuid, ZonedDateTime since) {
-		try {
-			submitOrg(orgUuid);
-		} catch (Exception e) {
-			log.error("Synthetic DTrack submit failed for org {}", orgUuid, e);
-		}
-		try {
-			ingestOrgBuckets(orgUuid);
-		} catch (Exception e) {
-			log.error("Synthetic DTrack ingest failed for org {}", orgUuid, e);
-		}
-		try {
-			resyncFindingsForOrg(orgUuid, since);
-		} catch (Exception e) {
-			log.error("Synthetic DTrack findings resync failed for org {}", orgUuid, e);
-		}
-		try {
-			fanOutOrg(orgUuid);
-		} catch (Exception e) {
-			log.error("Synthetic DTrack fan-out failed for org {}", orgUuid, e);
-		}
+	public boolean resyncOrg(UUID orgUuid, ZonedDateTime since) {
+		return withOrgLock(orgUuid, "Synthetic DTrack resync", () -> {
+			try {
+				submitOrg(orgUuid);
+			} catch (Exception e) {
+				log.error("Synthetic DTrack submit failed for org {}", orgUuid, e);
+			}
+			try {
+				ingestOrgBuckets(orgUuid);
+			} catch (Exception e) {
+				log.error("Synthetic DTrack ingest failed for org {}", orgUuid, e);
+			}
+			try {
+				resyncFindingsForOrg(orgUuid, since);
+			} catch (Exception e) {
+				log.error("Synthetic DTrack findings resync failed for org {}", orgUuid, e);
+			}
+			try {
+				fanOutOrg(orgUuid);
+			} catch (Exception e) {
+				log.error("Synthetic DTrack fan-out failed for org {}", orgUuid, e);
+			}
+		});
 	}
 
 	/**
@@ -167,7 +191,8 @@ public class SyntheticSbomService {
 	 */
 	@org.springframework.scheduling.annotation.Async
 	public void resyncOrgManualAsync(UUID orgUuid) {
-		resyncOrg(orgUuid, ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, java.time.ZoneOffset.UTC));
+		runOncePerOrg(manualResyncInFlight, orgUuid, "Manual synthetic DTrack resync",
+				() -> resyncOrg(orgUuid, ZonedDateTime.of(1970, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC)));
 	}
 
 	/**
@@ -181,21 +206,123 @@ public class SyntheticSbomService {
 	 */
 	@org.springframework.scheduling.annotation.Async
 	public void forceReuploadOrgAsync(UUID orgUuid) {
-		try {
-			submitOrg(orgUuid, true);
-		} catch (Exception e) {
-			log.error("Force re-upload (submit) failed for org {}", orgUuid, e);
+		String action = "Force re-upload to DTrack";
+		runOncePerOrg(forceReuploadInFlight, orgUuid, action,
+				() -> withOrgLock(orgUuid, action, () -> {
+					try {
+						submitOrg(orgUuid, true);
+					} catch (Exception e) {
+						log.error("Force re-upload (submit) failed for org {}", orgUuid, e);
+					}
+					try {
+						ingestOrgBuckets(orgUuid);
+					} catch (Exception e) {
+						log.error("Force re-upload (ingest) failed for org {}", orgUuid, e);
+					}
+					try {
+						fanOutOrg(orgUuid);
+					} catch (Exception e) {
+						log.error("Force re-upload (fan-out) failed for org {}", orgUuid, e);
+					}
+				}));
+	}
+
+	/**
+	 * Runs one org's cycle under its lock, waiting up to {@link #ORG_LOCK_WAIT}.
+	 *
+	 * @return whether the cycle ran. A timeout or interrupt skips it with an
+	 *   ERROR: the requested resync or re-upload did not happen.
+	 */
+	private boolean withOrgLock(UUID orgUuid, String action, Runnable cycle) {
+		try (SyntheticOrgLock.Lease lease = syntheticOrgLock.acquire(orgUuid, ORG_LOCK_WAIT)) {
+			if (lease == null) {
+				log.error("{} skipped for org {}: another resync or re-upload of this org held its "
+						+ "synthetic cycle lock for {}", action, orgUuid, ORG_LOCK_WAIT);
+				return false;
+			}
+			cycle.run();
+			return true;
+		} catch (InterruptedException e) {
+			Thread.currentThread().interrupt();
+			log.error("{} skipped for org {}: interrupted while waiting for its synthetic cycle lock",
+					action, orgUuid);
+			return false;
+		}
+	}
+
+	/** Runs {@code action} unless the same action is already running for the org on this node. */
+	private void runOncePerOrg(Set<UUID> inFlight, UUID orgUuid, String action, Runnable run) {
+		if (!inFlight.add(orgUuid)) {
+			log.info("{} for org {} is already running on this node; this request is dropped", action, orgUuid);
+			return;
 		}
 		try {
-			ingestOrgBuckets(orgUuid);
-		} catch (Exception e) {
-			log.error("Force re-upload (ingest) failed for org {}", orgUuid, e);
+			run.run();
+		} finally {
+			inFlight.remove(orgUuid);
 		}
-		try {
-			fanOutOrg(orgUuid);
-		} catch (Exception e) {
-			log.error("Force re-upload (fan-out) failed for org {}", orgUuid, e);
+	}
+
+	/**
+	 * Whether two stored {@code canonical -> {kind: [finding]}} maps hold the
+	 * same findings. Each fetch stamps every finding's {@code attributedAt} with
+	 * the fetch time, so plain equality never holds between two pulls of an
+	 * unchanged project. The resync would then rewrite every re-pulled bucket
+	 * and bump its date, which sends the whole org back through fan-out. This
+	 * comparison ignores {@code attributedAt} and list order, and compares
+	 * numbers by value: a freshly converted map and one read back from JSONB can
+	 * hold the same date as a {@code BigDecimal} and a {@code Double}. A
+	 * canonical with no findings counts the same as an absent one.
+	 */
+	static boolean sameFindings(Map<String, Object> a, Map<String, Object> b) {
+		return findingsFingerprint(a).equals(findingsFingerprint(b));
+	}
+
+	@SuppressWarnings("unchecked")
+	private static Map<String, Map<Object, Integer>> findingsFingerprint(Map<String, Object> byCanonical) {
+		Map<String, Map<Object, Integer>> out = new HashMap<>();
+		if (byCanonical == null) return out;
+		for (Map.Entry<String, Object> e : byCanonical.entrySet()) {
+			if (!(e.getValue() instanceof Map)) continue;
+			Map<Object, Integer> counts = new HashMap<>();
+			for (Map.Entry<String, Object> kind : ((Map<String, Object>) e.getValue()).entrySet()) {
+				if (!(kind.getValue() instanceof List)) continue;
+				for (Object finding : (List<Object>) kind.getValue()) {
+					if (finding == null) continue;
+					Object key = finding;
+					if (finding instanceof Map) {
+						Map<String, Object> copy = new HashMap<>((Map<String, Object>) finding);
+						copy.remove(CommonVariables.ATTRIBUTED_AT_FIELD);
+						key = comparable(copy);
+					}
+					counts.merge(List.of(kind.getKey(), key), 1, Integer::sum);
+				}
+			}
+			if (!counts.isEmpty()) out.put(e.getKey(), counts);
 		}
+		return out;
+	}
+
+	/**
+	 * A stored JSON value in a form whose equality ignores list order (the
+	 * lists come from sets) and number representation.
+	 */
+	@SuppressWarnings("unchecked")
+	private static Object comparable(Object value) {
+		if (value instanceof Map) {
+			Map<Object, Object> out = new HashMap<>();
+			((Map<Object, Object>) value).forEach((k, v) -> out.put(k, comparable(v)));
+			return out;
+		}
+		if (value instanceof List) {
+			Map<Object, Integer> counts = new HashMap<>();
+			for (Object item : (List<Object>) value) {
+				counts.merge(item == null ? "" : comparable(item), 1, Integer::sum);
+			}
+			return counts;
+		}
+		if (value instanceof Number n) return n.doubleValue();
+		return value;
 	}
 
 	/**
@@ -221,7 +348,7 @@ public class SyntheticSbomService {
 				SyntheticFindings findings = dTrackService.syntheticFetchFindings(
 						orgUuid, bucket.getDtrackProjectUuid());
 				Map<String, Object> newByCanonical = toFindingsByCanonical(orgUuid, findings, bucket.getRefMap());
-				if (newByCanonical.equals(bucket.getFindings())) continue; // no change
+				if (sameFindings(newByCanonical, bucket.getFindings())) continue; // no change
 				bucket.setFindings(newByCanonical);
 				bucket.setLastIngested(ZonedDateTime.now());
 				bucket.setLastUpdatedDate(ZonedDateTime.now());
@@ -976,7 +1103,10 @@ public class SyntheticSbomService {
 				}
 			}
 			if (bucket.getLastUpdatedDate() != null) {
-				cutoffEpoch = Math.max(cutoffEpoch, bucket.getLastUpdatedDate().toInstant().getEpochSecond());
+				// Keep the fraction: lastScanned is compared as fractional epoch
+				// seconds, and a whole-second cutoff treats an artifact stamped
+				// earlier in the same second as the bucket update as current.
+				cutoffEpoch = Math.max(cutoffEpoch, Utils.toFractionalEpochSecond(bucket.getLastUpdatedDate()));
 			}
 			if (bucket.getFindings() != null) mergeBucketFindings(global, bucket.getFindings());
 			if (bucket.getRefMap() != null) {
