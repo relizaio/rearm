@@ -298,8 +298,11 @@ public class SupportInjectionService {
 	 * <p>Only ENABLED injects. UNKNOWN falls to strip-only along with DISABLED, which is the
 	 * safe direction: the document then says we asserted nothing, which is true, rather than
 	 * carrying facts we could not confirm the org wanted published.
+	 *
+	 * <p>Public so the TEA profile code (task TEA-2) asks this same predicate whether a profile
+	 * may carry support metadata, rather than reading the org setting a second way.
 	 */
-	private boolean isInjectionEnabled(UUID orgUuid) {
+	public boolean isInjectionEnabled(UUID orgUuid) {
 		return supportExportState(orgUuid) == SupportExportState.ENABLED;
 	}
 

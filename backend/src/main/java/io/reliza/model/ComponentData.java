@@ -619,6 +619,14 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	private BelongsToOrganization isInternal;
 
 	/**
+	 * The component's TEA-facing id (task TEA-2). Minted once by the server on the component's
+	 * first TEA publication ({@code ComponentService.ensureTeaUuid}), never editable, and never on
+	 * an input; nothing on TEA carries the internal uuid.
+	 */
+	@JsonProperty
+	private UUID teaUuid;
+
+	/**
 	 * Cached value of the synthetic {@code effectiveLifecycle} GraphQL field, populated
 	 * up-front by the components-list datafetcher via a single batched SQL query (see
 	 * {@code ComponentService.effectiveLifecyclesForComponents}). Read by the per-Component

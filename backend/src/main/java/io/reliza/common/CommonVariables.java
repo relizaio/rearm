@@ -523,6 +523,7 @@ public class CommonVariables {
 		VULNERABILITY_RECORDS("vulnerability_records"),
 		VULN_ANALYSIS("vuln_analysis"),
 		PERSPECTIVE("perspectives"),
+		TEA_PROFILE("tea_profiles"),
 		WEBHOOKS("webhooks"),
 		WEBHOOK_DELIVERIES("webhook_deliveries")
 		;

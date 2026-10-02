@@ -23,6 +23,8 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
@@ -37,6 +39,7 @@ import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -68,6 +71,9 @@ import io.reliza.ws.RelizaConfigProps;
 
 @Service
 public class OrganizationService {
+
+	@PersistenceContext
+	private EntityManager entityManager;
 
 	@Autowired
     private AuditService auditService;
@@ -124,6 +130,31 @@ public class OrganizationService {
 
 	public void saveOrg(Organization org){
 		repository.save(org);
+	}
+
+	/**
+	 * The organization's TEA-facing id, minted on the first call and returned unchanged after that
+	 * (task TEA-2). Called by {@code TeaProfileService} after the first ENABLED profile save.
+	 *
+	 * <p>Under a transaction lock keyed on the org: two concurrent first saves must not mint two
+	 * ids and hand the loser's to a caller. The unique index on {@code teaUuid} prevents duplicates
+	 * across orgs, not a double mint of one org. The lock comes before the read the decision is
+	 * made from, and the row is refreshed after it, because a caller that read the org earlier in
+	 * the same transaction would otherwise be handed its pre-lock copy.
+	 */
+	@Transactional
+	public UUID ensureTeaUuid(UUID orgUuid, WhoUpdated wu) throws RelizaException {
+		repository.lockTeaIdMint(AdvisoryLockKey.TEA_ID_MINT.getQueryVal(), orgUuid.toString());
+		Organization org = repository.findById(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		if (null != entityManager) entityManager.refresh(org);
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		if (null != od.getTeaUuid()) return od.getTeaUuid();
+		UUID teaUuid = UUID.randomUUID();
+		od.setTeaUuid(teaUuid);
+		saveOrganization(org, Utils.dataToRecord(od), wu);
+		log.info("TEA id minted for organization " + orgUuid + ": " + teaUuid);
+		return teaUuid;
 	}
 
 	/**

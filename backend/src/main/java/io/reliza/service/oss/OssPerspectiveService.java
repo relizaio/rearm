@@ -56,6 +56,32 @@ public class OssPerspectiveService {
 	}
 
 	/**
+	 * A perspective as the TEA profile code sees it (task TEA-2). Same shape as in ReARM Pro, so
+	 * the shared code compiles in both editions.
+	 */
+	public record TeaPerspectiveRef(UUID uuid, String name, PerspectiveType type) {}
+
+	/** CE has no perspectives, so TEA PERSPECTIVE-scope profiles are refused as a ReARM Pro feature. */
+	public boolean teaPerspectivesSupported() {
+		return false;
+	}
+
+	/** Part of ReARM Pro only: CE components have no perspectives to resolve a TEA profile through. */
+	public List<TeaPerspectiveRef> teaPerspectivesOfComponent(ComponentData cd) {
+		return List.of();
+	}
+
+	/** Part of ReARM Pro only. */
+	public Optional<TeaPerspectiveRef> teaPerspectiveRef(UUID uuid) {
+		return Optional.empty();
+	}
+
+	/** Part of ReARM Pro only. */
+	public Optional<RelizaObject> teaPerspectiveObject(UUID uuid) {
+		return Optional.empty();
+	}
+
+	/**
 	 * Part of ReARM Pro only
 	 * @param uuid
 	 * @return

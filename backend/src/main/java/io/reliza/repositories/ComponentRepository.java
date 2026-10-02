@@ -103,4 +103,21 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			value = VariableQueries.FIND_COMPONENTS_BY_PERSPECTIVE,
 			nativeQuery = true)
 	List<Component> findComponentsByPerspective(String perspectiveUuidAsString);
+
+	/** The component with this TEA-facing id (task TEA-2); the TEA request path reads through it. */
+	@Query(value = VariableQueries.FIND_COMPONENT_BY_TEA_UUID, nativeQuery = true)
+	Optional<Component> findByTeaUuid(@Param("teaUuidAsString") String teaUuidAsString);
+
+	/**
+	 * Take the transaction lock that serializes the TEA id mint of one component; released when
+	 * the transaction ends. Two-key form, {@code lockNamespace} = {@code AdvisoryLockKey.TEA_ID_MINT}.
+	 */
+	@Query(
+		value = """
+			SELECT 1 FROM (
+			  SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:componentUuidAsString))
+			) AS locked
+			""",
+		nativeQuery = true)
+	Integer lockTeaIdMint(@Param("lockNamespace") int lockNamespace, @Param("componentUuidAsString") String componentUuidAsString);
 }

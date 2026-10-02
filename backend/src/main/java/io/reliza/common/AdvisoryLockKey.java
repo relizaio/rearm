@@ -45,7 +45,13 @@ public enum AdvisoryLockKey {
 	 * Dependency-Track cycle (SyntheticOrgLock), taken with the two-key form
 	 * whose second key is the org; not a scheduler lock.
 	 */
-	SYNTHETIC_ORG_CYCLE(46);
+	SYNTHETIC_ORG_CYCLE(46),
+	/**
+	 * Namespace of the per-object transaction lock around the one-time mint of a TEA-facing id
+	 * (OrganizationService.ensureTeaUuid, ComponentService.ensureTeaUuid; task TEA-2), taken with
+	 * the two-key form whose second key is the organization or component; not a scheduler lock.
+	 */
+	TEA_ID_MINT(47);
 	
 	private int queryVal;
 	
