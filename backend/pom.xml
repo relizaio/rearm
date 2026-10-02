@@ -339,31 +339,31 @@
     </resources>
     <pluginManagement><!-- lock down plugins versions to avoid using Maven defaults (may be moved to parent pom) -->
       <plugins>
-        <!-- Tests must not run the background @Scheduled v3 backfill drain: it would race the
-             saveReleaseMetrics writes in @SpringBootTest classes and deadlock. Disable the SCHEDULE
-             globally in tests via a JVM system property (higher precedence than application.yaml);
-             direct drainV3Backfill(...) calls (FindingChangeV3DrainTest) are unaffected. -->
+        <!-- Tests run no background @Scheduled work at all: relizaprops.schedulingEnabled=false
+             switches off the @EnableScheduling in io.reliza.ws.SchedulingConfig (system property,
+             so it outranks application.yaml). The TestContext cache keeps every @SpringBootTest
+             context alive for the whole run, and each one used to run its own copy of every tick
+             against the one shared test database. That was one cause behind a family of
+             full-suite-only failures that pass in isolation, which used to be patched one job at
+             a time here (findingChangeV3BackfillDrainEnabled, notificationOutboxDrainEnabled,
+             autoIntegrateDrainEnabled, orphanedComponentGcEnabled, kevSyncInitialDelay):
+             - a tick in another context computed metrics for a test's release between its saves
+               and emitted change events the test had stubbed to fail
+               (FindingChangeEventEmitIntegrationTest);
+             - the PT15M today-analytics tick walks every org in the database and held the
+               advisory lock SchedulerIsolationTest asserts on for longer than its 120s wait;
+             - the per-org perspective-analytics sweep and the metrics batch pinned connections
+               from the capped pool below while AutoIntegrateProductsTest needed 7 of the 8;
+             - drains, the orphaned-component GC and the KEV mirror raced fixtures and, for KEV,
+               wrote ~300k rows per run.
+             Tests that exercise a scheduled job call its method directly; the per-job flags stay
+             as production kill switches. -->
         <plugin>
             <groupId>org.apache.maven.plugins</groupId>
             <artifactId>maven-surefire-plugin</artifactId>
             <configuration>
                 <systemPropertyVariables>
-                    <relizaprops.findingChangeV3BackfillDrainEnabled>false</relizaprops.findingChangeV3BackfillDrainEnabled>
-                    <!-- Same reason: the PT5S notification fan-out tick would otherwise race
-                         @SpringBootTest classes that call drainBatch directly (without the
-                         advisory lock), producing stale-version flakes. Direct calls unaffected. -->
-                    <relizaprops.notificationOutboxDrainEnabled>false</relizaprops.notificationOutboxDrainEnabled>
-                    <!-- Same reason again: the PT1M auto-integrate retry drain claims queued
-                         releases and clears their markers, which races @SpringBootTest classes
-                         that assert on claim/marker state. Direct calls unaffected. -->
-                    <relizaprops.autoIntegrateDrainEnabled>false</relizaprops.autoIntegrateDrainEnabled>
-                    <!-- Same reason once more: the PT1M orphaned-component GC deletes any sbom
-                         component that is unbucketed, mapped to no artifact and has no support
-                         row. Fixtures that save a component and attest it in a later transaction
-                         lose it to a tick in between, and the support assertions then read
-                         nothing (SbomComponentSupportServiceIntegrationTest failed on main this
-                         way). Direct calls to gcOrphanedComponents unaffected. -->
-                    <relizaprops.orphanedComponentGcEnabled>false</relizaprops.orphanedComponentGcEnabled>
+                    <relizaprops.schedulingEnabled>false</relizaprops.schedulingEnabled>
                     <!-- Every test class that mints an org (TestInitializer.obtainOrganization)
                          would otherwise fetch the public CISA KEV feed and write ~1,700
                          kev_assertions rows for it, because a new org seeds its own KEV mirror
@@ -374,15 +374,6 @@
                          skipped. KevCatalogSyncServiceTest drives the sync directly and is
                          unaffected; SaasOrganizationKevSeedTest turns it back on to cover it. -->
                     <relizaprops.kevSeedOnOrgCreateEnabled>false</relizaprops.kevSeedOnOrgCreateEnabled>
-                    <!-- The other half of the same problem. The daily KEV tick starts PT2M after a
-                         context spins and mirrors the catalog into EVERY org holding an enabled KEV
-                         integration, which is every org any test ever created. Two minutes was
-                         chosen to stay out of context startup, but @SpringBootTest contexts are
-                         cached for the whole run, so on any suite longer than that it fires: a full
-                         run added ~300k kev_assertions rows with the seed above already disabled.
-                         Pushed past any plausible run length rather than disabled, so the wiring
-                         still has to be valid. -->
-                    <relizaprops.kevSyncInitialDelay>PT24H</relizaprops.kevSyncInitialDelay>
                     <!-- Connection budget. Every bean-override test class (@MockitoBean /
                          @MockitoSpyBean) forks its OWN Spring context, and the TestContext cache
                          keeps each alive for the whole run, so the cost is multiplicative:
@@ -396,7 +387,14 @@
                          AutoIntegrateProductsTest holds 6 connections (five blocked on the
                          feature-set lock, each pinning its own) plus the winner's nested
                          REQUIRES_NEW version mint, so 7 concurrently. Raising that test's
-                         concurrency means raising this. -->
+                         concurrency means raising this. That leaves one spare connection, which
+                         is only enough because no ticks run (relizaprops.schedulingEnabled
+                         above): with them live, the per-org perspective-analytics sweep and the
+                         metrics batch took the spare and more, the sweep's run time grows with
+                         every org a test run leaves behind, and by 8,681 orgs in the shared
+                         database the test failed on every run ("total=8, active=8, waiting=6",
+                         then the five waiters hit the 30s lock timeout). Raising the pool instead
+                         would only have hidden that. -->
                     <spring.datasource.hikari.maximum-pool-size>8</spring.datasource.hikari.maximum-pool-size>
                     <spring.datasource.hikari.minimum-idle>2</spring.datasource.hikari.minimum-idle>
                 </systemPropertyVariables>

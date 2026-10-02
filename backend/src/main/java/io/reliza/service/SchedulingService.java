@@ -621,8 +621,7 @@ public class SchedulingService {
      * cron so a fleet of replicas restarted together doesn't synchronise their
      * fetches on one wall-clock minute; the advisory lock dedupes whichever
      * replica ticks first. The 2-minute initial delay keeps the fetch and
-     * first reconcile out of pod startup (and out of {@code @SpringBootTest}
-     * context spins, which run these schedulers). Both knobs are properties so
+     * first reconcile out of pod startup. Both knobs are properties so
      * the sandbox can shorten them for verification without a code change.
      *
      * <p>Lives in the shared scheduler (not {@code saas/}) because per the V54
@@ -879,21 +878,20 @@ public class SchedulingService {
      * controlling-instance rollout without stopping the daily repair sweep).
      */
     /**
-     * Kill switch for the auto-integrate retry drain. Disabled in the surefire run
-     * ({@code relizaprops.autoIntegrateDrainEnabled=false}) for the same reason as the two drains
-     * below: @SpringBootTest classes that drive claim/marker state directly would otherwise race
-     * this tick, which claims queued releases and clears their markers out from under the
-     * assertions. Direct calls to processPendingAutoIntegrate are unaffected.
+     * Kill switch for the auto-integrate retry drain ({@code relizaprops.autoIntegrateDrainEnabled}).
+     * The tick claims queued releases and clears their markers. The test build runs no ticks at all
+     * (relizaprops.schedulingEnabled, see SchedulingConfig), so tests drive claim/marker state
+     * through direct processPendingAutoIntegrate calls without a tick racing them.
      */
     @Value("${relizaprops.autoIntegrateDrainEnabled:true}")
     private boolean autoIntegrateDrainEnabled;
 
     /**
-     * Kill switch for the orphaned-component GC on the same tick. Disabled in the surefire run
-     * ({@code relizaprops.orphanedComponentGcEnabled=false}): a test that saves an sbom component
-     * and attests it in a later transaction leaves a window in which the component is unbucketed,
-     * unmapped and unsupported -- exactly what the GC deletes -- and the assertions then read a
-     * component that is gone. Direct calls to gcOrphanedComponents are unaffected.
+     * Kill switch for the orphaned-component GC on the same tick
+     * ({@code relizaprops.orphanedComponentGcEnabled}). A component saved in one transaction and
+     * attested in a later one is unbucketed, unmapped and unsupported in between -- exactly what
+     * the GC deletes. The test build runs no ticks (relizaprops.schedulingEnabled), which is what
+     * keeps such fixtures intact there; direct calls to gcOrphanedComponents are unaffected.
      */
     @Value("${relizaprops.orphanedComponentGcEnabled:true}")
     private boolean orphanedComponentGcEnabled;
@@ -903,11 +901,10 @@ public class SchedulingService {
 
     /**
      * Kill switch for the notification outbox fan-out drain. Defaults on. Mirrors
-     * {@code findingChangeV3BackfillDrainEnabled}: surefire turns it off so the
-     * 5-second schedule does not race @SpringBootTest classes that call
-     * {@code drainBatch} directly (the direct calls are unaffected, and only the
-     * scheduled path takes the advisory lock, so an unlocked test call would
-     * otherwise contend with a live tick over the same rows).
+     * {@code findingChangeV3BackfillDrainEnabled}. Only the scheduled path takes the
+     * advisory lock, so a direct {@code drainBatch} call would contend with a live
+     * tick over the same rows; the test build runs no ticks
+     * (relizaprops.schedulingEnabled), so tests calling it directly are not raced.
      */
     @Value("${relizaprops.notificationOutboxDrainEnabled:true}")
     private boolean notificationOutboxDrainEnabled;

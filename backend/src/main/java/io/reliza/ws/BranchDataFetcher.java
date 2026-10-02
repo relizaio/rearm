@@ -472,7 +472,7 @@ public class BranchDataFetcher {
 
 	/**
 	 * Return all feature sets that include the given component (product or component)
-	 * as an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, IGNORED),
+	 * as an auto-integrate dependency of any requirement type (REQUIRED, TRANSIENT, JOB, IGNORED),
 	 * via explicit dependencies or matching dependency patterns.
 	 */
 	@PreAuthorize("isAuthenticated()")
@@ -491,7 +491,7 @@ public class BranchDataFetcher {
 
 	/**
 	 * Return all feature sets that include the given branch (feature set or base branch)
-	 * as an auto-integrate dependency of any requirement type (REQUIRED, OPTIONAL, IGNORED),
+	 * as an auto-integrate dependency of any requirement type (REQUIRED, TRANSIENT, JOB, IGNORED),
 	 * via explicit dependencies or dependency patterns that resolve to this specific branch.
 	 */
 	@PreAuthorize("isAuthenticated()")

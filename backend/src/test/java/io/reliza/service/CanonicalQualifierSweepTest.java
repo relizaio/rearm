@@ -29,6 +29,7 @@ import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.Organization;
 import io.reliza.model.SbomComponent;
 import io.reliza.repositories.ArtifactCanonicalMapRepository;
+import io.reliza.repositories.ArtifactCanonicalMapRepository.PendingCanonicalForm;
 import io.reliza.repositories.ArtifactSbomComponentRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.ws.App;
@@ -44,8 +45,8 @@ import io.reliza.ws.oss.TestInitializer;
  * rather than through the batch entry point wherever the assertion is about one
  * canonical's outcome: the batch picks up whatever else the shared test database
  * has left below the current form version, so anything phrased as "the sweep
- * returned exactly these" would be coupled to neighbouring suites. The one test
- * that does drive the batch asserts only the flow_control stamp on its own rows.
+ * returned exactly these" would be coupled to neighbouring suites. The stamping
+ * test runs the batch body ({@code verifyCanonicalForms}) on its own canonical only.
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
@@ -175,9 +176,21 @@ public class CanonicalQualifierSweepTest {
 	}
 
 	/**
-	 * The batch entry point stamps flow_control so a verified canonical drops out
+	 * The sweep stamps flow_control so a verified canonical drops out
 	 * of the pickup query permanently - that is what makes the sweep converge
 	 * instead of re-examining the estate every tick.
+	 *
+	 * <p>This failed only in full-suite runs with "sweep must write flow_control".
+	 * Every cached context used to run the per-minute dependency-track tick, which
+	 * sweeps the same pickup query, so a tick could repoint this fixture at the same
+	 * moment as the direct call below. The two then race to mint the same corrected
+	 * canonical, the loser's transaction fails, and the sweep logs the failure and
+	 * leaves that canonical unstamped by design. The test build now runs no ticks
+	 * (relizaprops.schedulingEnabled=false). It also no longer drives the batch through
+	 * a fixed limit: the pickup query is database-wide and unordered, so on the shared
+	 * test database a page could leave this fixture out, and canonicals other runs left
+	 * failing stay pending forever. It asserts the pickup selects this canonical, then
+	 * verifies exactly that one through the sweep's own body.
 	 */
 	@Test
 	public void sweepStampsFlowControlSoCanonicalIsNotRevisited() {
@@ -190,7 +203,12 @@ public class CanonicalQualifierSweepTest {
 				|| map.getFlowControl().canonicalFormVersion() == null,
 				"fixture must start unverified");
 
-		sbomComponentService.sweepStaleCanonicalQualifiers(500);
+		List<PendingCanonicalForm> mine = artifactCanonicalMapRepository
+				.findPendingCanonicalForm(SbomComponentService.CANONICAL_FORM_VERSION, Integer.MAX_VALUE)
+				.stream().filter(p -> canonicalArtifact.equals(p.getCanonicalArtifactUuid())).toList();
+		assertEquals(1, mine.size(), "the pickup query must select an unverified canonical, once");
+
+		sbomComponentService.verifyCanonicalForms(mine);
 
 		ArtifactCanonicalMap after = artifactCanonicalMapRepository.findById(map.getUuid()).orElseThrow();
 		assertNotNull(after.getFlowControl(), "sweep must write flow_control");

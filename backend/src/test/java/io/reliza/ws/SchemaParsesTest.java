@@ -19,12 +19,12 @@ import graphql.parser.ParserOptions;
 /**
  * schema.graphqls is valid GraphQL SYNTAX.
  *
- * <p>Nothing else in the suite checks this, and the gap is not obvious. The enum-sync tests
- * beside this file -- {@code SupportEnumsSchemaEnumSyncTest} and its siblings -- read the
- * schema as TEXT: they match an enum block with a regex, strip docstrings and comments, and
- * split on lines. A file that no longer parses as GraphQL passes every one of them. The Java
- * compiler never reads it either, and {@code validate-graphql} in the UI validates DOCUMENTS
- * against a schema it assumes is well-formed.
+ * <p>The gap is not obvious. The enum-sync tests used to read the schema as TEXT (a regex
+ * per enum block), so a file that no longer parsed passed every one of them.
+ * {@code GraphQlSchemaEnumSyncTest} now parses it with graphql-java, but a syntax error there
+ * is a setup exception about enums, not this named failure. The Java compiler never reads it
+ * either, and {@code validate-graphql} in the UI validates DOCUMENTS against a schema it
+ * assumes is well-formed.
  *
  * <p>So the only thing that noticed a broken schema was starting a Spring context, where the
  * parser failure propagates through {@code executionGraphQlService} into every
@@ -72,8 +72,7 @@ class SchemaParsesTest {
 			fail("schema.graphqls is not valid GraphQL: " + e.getMessage()
 					+ "\n\nThis breaks EVERY @SpringBootTest in the suite via"
 					+ " executionGraphQlService, reported only as 'ApplicationContext failure"
-					+ " threshold exceeded' with no mention of the schema. The enum-sync tests"
-					+ " next to this one read the file as text and cannot see it.");
+					+ " threshold exceeded' with no mention of the schema.");
 		}
 	}
 

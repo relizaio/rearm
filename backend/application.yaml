@@ -129,6 +129,11 @@ logging:
 #              BasicBinder: TRACE
     
 relizaprops:
+  # Background work switch (io.reliza.ws.SchedulingConfig): every @Scheduled job and the startup
+  # duplicate-component census. Leave on. Anything other than true stops ALL of them (metrics,
+  # drains, notification delivery, KEV sync, retention) and logs that at ERROR on boot. The test
+  # build turns it off; per-job *Enabled flags below are the levers for pausing a single job.
+  schedulingEnabled: ${SCHEDULING_ENABLED:true}
   # CSV allowlist of Keycloak client ids (token `azp`) accepted by the resource
   # server. Binds JWTs to known first-party clients; a token minted for any other
   # client in the same realm is rejected. Default: the SPA login client.

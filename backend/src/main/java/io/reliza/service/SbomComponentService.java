@@ -1324,8 +1324,17 @@ private static int currentReconcileFailureCount(Release r) {
 	 * converges and then costs one empty index range scan per tick.
 	 */
 	public void sweepStaleCanonicalQualifiers(int batchLimit) {
-		List<PendingCanonicalForm> pending = artifactCanonicalMapRepository
-				.findPendingCanonicalForm(CANONICAL_FORM_VERSION, batchLimit);
+		verifyCanonicalForms(artifactCanonicalMapRepository
+				.findPendingCanonicalForm(CANONICAL_FORM_VERSION, batchLimit));
+	}
+
+	/**
+	 * The body of {@link #sweepStaleCanonicalQualifiers}: repair and stamp each given
+	 * canonical. Separate from the pickup so a caller can verify a chosen set -- the
+	 * pickup query is database-wide and unordered, which is right for the tick and
+	 * useless for asserting on one canonical.
+	 */
+	public void verifyCanonicalForms(List<PendingCanonicalForm> pending) {
 		for (PendingCanonicalForm p : pending) {
 			if (HeapPressureGuard.checkAndMaybeGc(log, "stale-canonical-qualifier sweep",
 					String.format("before canonical %s; remaining retried next tick.",

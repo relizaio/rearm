@@ -1997,7 +1997,6 @@ public class ReleaseService {
 		
 		// Take every required child project of this branch, and take latest completed release for each of them
 		// including transients, but exclude ignored 
-		// TODO get rid of OPTIONAL in auto-integrate - this one does not make much sense here
 		
 		Set<UUID> releasesToMatch = new LinkedHashSet<>(); // this will be used to match to existing product, in which case nothing would happen
 		List<ParentRelease> parentReleases = new LinkedList<>();

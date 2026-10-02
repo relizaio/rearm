@@ -19,16 +19,6 @@ import java.util.Collections;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.UUID;
-import org.springframework.scheduling.Trigger;
-import org.springframework.scheduling.TaskScheduler;
-import org.springframework.context.annotation.Primary;
-import org.springframework.context.annotation.Bean;
-import org.springframework.boot.test.context.TestConfiguration;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.ScheduledFuture;
-import java.util.concurrent.Delayed;
-import java.time.Instant;
-import java.time.Duration;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -42,8 +32,7 @@ import org.apache.logging.log4j.core.appender.AbstractAppender;
 import org.apache.logging.log4j.core.config.Property;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.context.annotation.Profile;
-import org.springframework.test.context.ActiveProfiles;
+import org.springframework.test.context.TestPropertySource;
 import org.springframework.test.context.bean.override.mockito.MockitoSpyBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
@@ -60,6 +49,7 @@ import io.reliza.model.dto.ReleaseDto;
 import io.reliza.service.oss.OssAnalyticsMetricsService;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.ws.App;
+import io.reliza.ws.SchedulingConfig;
 import io.reliza.ws.oss.TestInitializer;
 
 /**
@@ -70,65 +60,24 @@ import io.reliza.ws.oss.TestInitializer;
  * only, so an {@code Error} left the loop entirely -- every organization after the bad one was
  * skipped on every tick for ten hours, and in the metrics batch the poison release was re-picked at
  * the head of every batch because the backoff was recorded only inside the same catch.
+ *
+ * <p>Nothing here needs a tick to fire on its own: every scheduled method under test is called
+ * directly, and the test build runs no {@code @Scheduled} work in any context
+ * ({@code relizaprops.schedulingEnabled=false}, see SchedulingConfig). History, because both
+ * workarounds this replaced are easy to reintroduce. This class first replaced its own
+ * TaskScheduler with a no-op stub: a tick arriving between {@code doAnswer(...)} and
+ * {@code .when(spy)} on a bean the ticks also call surfaced as UnfinishedStubbing in CI. That only
+ * silenced THIS context. The lock test still failed in full runs with "a background tick held the
+ * lock for the whole wait": the PT15M today-analytics tick of every OTHER cached context takes the
+ * same REFRESH_TODAY_ANALYTICS advisory lock, walks every organization in the shared database on
+ * its first run, and outlasted the 120s the test polled for the lock to come free.
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
-@ActiveProfiles(SchedulerIsolationTest.NO_SCHEDULED_WORK)
+// Also set by surefire for the whole build; pinned here so a run of this class alone (an IDE) is
+// equally free of ticks. This class has its own context anyway (it spies beans).
+@TestPropertySource(properties = SchedulingConfig.SCHEDULING_ENABLED_PROPERTY + "=false")
 public class SchedulerIsolationTest {
-
-	static final String NO_SCHEDULED_WORK = "no-scheduled-work";
-
-	/**
-	 * This context runs no {@code @Scheduled} work at all.
-	 *
-	 * <p>The class spies beans that the background ticks also call, and an invocation arriving
-	 * between {@code doAnswer(...)} and {@code .when(spy)} corrupts Mockito's stubbing state --
-	 * surfacing as UnfinishedStubbing at whichever stubbing site ran next. It is a race, so it
-	 * passed locally and failed in CI, and pinning the individual tick rates only narrowed the
-	 * window: there are twenty-odd scheduled methods and several fire at context refresh.
-	 *
-	 * <p>So the scheduler is replaced rather than the schedules retimed. Nothing in this class
-	 * needs a tick to fire on its own -- every scheduled method it exercises, it calls directly.
-	 */
-	// Profile-gated, and that is not belt-and-braces. App declares an explicit @ComponentScan over
-	// io.reliza.service, which REPLACES Boot's default filters -- including the TypeExcludeFilter
-	// that normally keeps @TestConfiguration out of component scanning. Without the profile this
-	// nested class is scanned into every context that scans that package, and its @Primary bean
-	// then wins by-type injection elsewhere: SchedulerPoolWiringTest asserts the TaskScheduler is
-	// a real ThreadPoolTaskScheduler and got this stub instead, which is how the first version of
-	// this fix turned one red test into a different one.
-	@Profile(NO_SCHEDULED_WORK)
-	@TestConfiguration
-	static class NoScheduledWork {
-		// Deliberately NOT named "taskScheduler": App declares that bean, definition overriding is
-		// off, and a same-name bean fails the context outright. @Primary is what makes @Scheduled
-		// resolve to this one.
-		@Bean
-		@Primary
-		TaskScheduler noScheduledWorkTaskScheduler() {
-			return new TaskScheduler() {
-				@Override public ScheduledFuture<?> schedule(Runnable task, Trigger trigger) { return never(); }
-				@Override public ScheduledFuture<?> schedule(Runnable task, Instant startTime) { return never(); }
-				@Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable task, Instant startTime, Duration period) { return never(); }
-				@Override public ScheduledFuture<?> scheduleAtFixedRate(Runnable task, Duration period) { return never(); }
-				@Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, Instant startTime, Duration delay) { return never(); }
-				@Override public ScheduledFuture<?> scheduleWithFixedDelay(Runnable task, Duration delay) { return never(); }
-			};
-		}
-
-		/** Spring only holds the handle and cancels it at shutdown, so a stub is enough. */
-		private static ScheduledFuture<?> never() {
-			return new ScheduledFuture<Object>() {
-				@Override public long getDelay(TimeUnit unit) { return Long.MAX_VALUE; }
-				@Override public int compareTo(Delayed o) { return 0; }
-				@Override public boolean cancel(boolean mayInterruptIfRunning) { return true; }
-				@Override public boolean isCancelled() { return true; }
-				@Override public boolean isDone() { return true; }
-				@Override public Object get() { return null; }
-				@Override public Object get(long timeout, TimeUnit unit) { return null; }
-			};
-		}
-	}
 
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private ComponentService componentService;
@@ -179,26 +128,22 @@ public class SchedulerIsolationTest {
 	}
 
 	/**
-	 * Polls, because the application context under test runs its own schedulers: a background tick
-	 * that happens to hold this lock while the test starts is not the condition under test.
+	 * Whether any session holds the lock, read from pg_locks rather than probed with
+	 * pg_try_advisory_lock. A probe cannot see a lock held by its own session (advisory locks are
+	 * reentrant), and Hikari tends to hand this thread the very connection the scheduler just
+	 * returned -- so a lock leaked onto a pooled connection would read as free to a probe.
+	 * pg_advisory_lock(bigint) records the key as classid (high 32 bits) and objid (low 32 bits)
+	 * with objsubid 1.
 	 */
-	private boolean awaitAdvisoryLockFree(AdvisoryLockKey alk, int seconds) {
-		long deadline = System.currentTimeMillis() + seconds * 1000L;
-		while (System.currentTimeMillis() < deadline) {
-			if (tryAdvisoryLock(alk)) return true;
-			try {
-				Thread.sleep(250);
-			} catch (InterruptedException ie) {
-				Thread.currentThread().interrupt();
-				return false;
-			}
-		}
-		return tryAdvisoryLock(alk);
-	}
-
-	private boolean tryAdvisoryLock(AdvisoryLockKey alk) {
+	private boolean advisoryLockHeld(AdvisoryLockKey alk) {
+		String sql = """
+				SELECT EXISTS (SELECT 1 FROM pg_locks
+				               WHERE locktype = 'advisory' AND granted AND objsubid = 1
+				                 AND database = (SELECT oid FROM pg_database WHERE datname = current_database())
+				                 AND ((classid::bigint << 32) | objid::bigint) = ?)
+				""";
 		try (Connection conn = dataSource.getConnection();
-				PreparedStatement stmt = conn.prepareStatement("SELECT pg_try_advisory_lock(?)")) {
+				PreparedStatement stmt = conn.prepareStatement(sql)) {
 			stmt.setLong(1, alk.getQueryVal());
 			try (ResultSet rs = stmt.executeQuery()) {
 				rs.next();
@@ -207,7 +152,6 @@ public class SchedulerIsolationTest {
 		} catch (SQLException e) {
 			throw new IllegalStateException(e);
 		}
-		// Connection closed on the way out, which drops the lock with the session.
 	}
 
 	private UUID release(Organization org, String version) throws RelizaException {
@@ -254,10 +198,10 @@ public class SchedulerIsolationTest {
 
 	@Test
 	public void aFailingScheduledAnalyticsRunReturnsAndStillReleasesItsLock() {
-		// A concurrent background tick of this same scheduler would make the assertion below
-		// meaningless, so wait it out first.
-		assertTrue(awaitAdvisoryLockFree(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS, 120),
-				"a background tick held the lock for the whole wait -- test setup, not the fix");
+		// No tick runs in the test build, so the lock starts free; anything holding it here is a
+		// leak from an earlier direct call, which is the bug this test is about.
+		assertFalse(advisoryLockHeld(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS),
+				"the advisory lock was already held before the failing run");
 
 		// Poisoned at the level the wrapper itself calls -- the per-org loop inside has its own
 		// guard, so an Error from one org never reaches this one.
@@ -270,10 +214,9 @@ public class SchedulerIsolationTest {
 		// the guard now writes is asserted on the batch path below, where the logger is capturable.
 		schedulingService.refreshTodayAnalytics();
 
-
-		// From a different connection: the scheduler holds this as a session-level advisory lock on
-		// its own connection, so acquiring it here is only possible once that session let go.
-		assertTrue(awaitAdvisoryLockFree(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS, 10),
+		// The scheduler holds this as a session-level advisory lock on a pooled connection; once the
+		// run returns, no session may still hold it.
+		assertFalse(advisoryLockHeld(AdvisoryLockKey.REFRESH_TODAY_ANALYTICS),
 				"the advisory lock outlived the failing tick, so every later tick would be skipped");
 	}
 
