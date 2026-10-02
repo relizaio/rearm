@@ -77,16 +77,21 @@ A subscription's `eventTypes` list controls what it can match:
   then component, then organization. Where that analysis sets a severity, the
   finding counts with it. Where it sets none, the organization's analysis
   still applies; where it is `Unassigned`, or no analysis rates the finding,
-  the finding counts with the upstream severity. The highest counts. A
+  the finding counts with the upstream severity. The highest counts. A new
   vulnerability you triaged down to `LOW` everywhere it occurs is no longer
   routed as `CRITICAL`; one finding nobody triaged keeps the upstream severity
-  in play; an analysis can also raise it. When your analyses lower the
-  severity, the notification also counts packages Dependency-Track has
-  reported but ReARM has not yet written to their releases, and it waits:
-  at least 10 minutes after the event, and while Dependency-Track is still
-  scanning packages sent to it before the event. After 2 hours it goes out on
-  what has been scanned by then. A raised severity does not wait. Filters see
-  the same value as `event.severity`, and the upstream one as
+  in play; an analysis can also raise it. An update to a vulnerability (a
+  severity bump, a KEV listing, an EPSS spike) is never lowered by your
+  analyses, since it may be a reason to triage again; they can still raise
+  it. When your analyses lower a new vulnerability's severity, the
+  notification also counts packages Dependency-Track has reported but ReARM
+  has not yet written to their releases. If one of them keeps the upstream
+  severity in play, the notification goes out at once. Otherwise it waits: at
+  least 10 minutes after the event, while Dependency-Track is still scanning
+  packages sent to it, and while a Dependency-Track sync of your organization
+  is still re-reading its findings. After 2 hours it goes out on what has
+  been scanned by then. A raised severity does not wait. Filters see the same
+  value as `event.severity`, and the upstream one as
   `event.upstreamSeverity`. Messages lead with your severity and show both
   when they differ ("Org analysis: LOW (upstream CRITICAL)"). A webhook
   receives the payload as it is: `severity` (`newSeverity` for an updated
