@@ -24,6 +24,7 @@ import org.cyclonedx.model.Component.Type;
 import org.cyclonedx.model.Metadata;
 import org.cyclonedx.model.Property;
 import org.cyclonedx.model.vulnerability.Vulnerability;
+import org.cyclonedx.model.vulnerability.Vulnerability.Version.Status;
 import org.cyclonedx.parsers.JsonParser;
 import org.junit.jupiter.api.Test;
 
@@ -183,6 +184,48 @@ public class ReleaseServiceVdrSchemaTest {
 
 		bom.setVulnerabilities(List.of(vuln("CVE-2024-0002", purl, analysis)));
 		assertSchemaValid(bom);
+	}
+
+	@Test
+	void vdrWithAffectedVersionRangesAndFixedVersion_isSchemaValid() throws Exception {
+		// affects[].versions[] as ReleaseService.affectedVersions writes them: vers ranges as
+		// affected, the fixing version as unaffected; a Debian epoch and a bare * included.
+		Bom bom = newBaseBom(null, null, null);
+		String npm = "pkg:npm/handlebars@4.0.5";
+		String deb = "pkg:deb/debian/zlib@1:1.2.13.dfsg-1?arch=amd64&distro=debian-13";
+		bom.setComponents(List.of(libraryComponent(npm), libraryComponent(deb)));
+		Vulnerability v1 = vuln("GHSA-f2jv-r9rf-7988", npm, null);
+		v1.getAffects().get(0).setVersions(List.of(
+				version("vers:npm/<4.7.7", null, Status.AFFECTED),
+				version(null, "4.7.7", Status.UNAFFECTED)));
+		Vulnerability v2 = vuln("DEBIAN-CVE-2023-45853", deb, null);
+		v2.getAffects().get(0).setVersions(List.of(
+				version("vers:deb/<1:1.3.dfsg-2", null, Status.AFFECTED),
+				version(null, "1:1.3.dfsg-2", Status.UNAFFECTED),
+				version("vers:deb/*", null, Status.AFFECTED)));
+		bom.setVulnerabilities(List.of(v1, v2));
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void aRangeOverTheSchemaLimitIsInvalid_whichIsWhyTheExportLeavesItOut() throws Exception {
+		Bom bom = newBaseBom(null, null, null);
+		String npm = "pkg:npm/handlebars@4.0.5";
+		bom.setComponents(List.of(libraryComponent(npm)));
+		Vulnerability v = vuln("GHSA-f2jv-r9rf-7988", npm, null);
+		String tooLong = "vers:npm/<" + "1".repeat(ReleaseService.CDX_VERSION_RANGE_MAX_LENGTH);
+		v.getAffects().get(0).setVersions(List.of(version(tooLong, null, Status.AFFECTED)));
+		bom.setVulnerabilities(List.of(v));
+		String json = BomGeneratorFactory.createJson(Version.VERSION_16, bom).toJsonString();
+		assertFalse(new JsonParser().validate(json.getBytes(StandardCharsets.UTF_8), Version.VERSION_16).isEmpty());
+	}
+
+	private static Vulnerability.Version version(String range, String version, Status status) {
+		Vulnerability.Version v = new Vulnerability.Version();
+		v.setRange(range);
+		v.setVersion(version);
+		v.setStatus(status);
+		return v;
 	}
 
 	@Test

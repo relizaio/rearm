@@ -41,6 +41,7 @@ import org.cyclonedx.model.Property;
 import org.cyclonedx.model.vulnerability.Vulnerability;
 import org.cyclonedx.model.vulnerability.Vulnerability.Rating;
 import org.cyclonedx.model.vulnerability.Vulnerability.Source;
+import org.cyclonedx.model.vulnerability.Vulnerability.Version.Status;
 import org.cyclonedx.parsers.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,6 +76,7 @@ import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityReferenceDto;
 import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.VulnerabilityRecordData.CvssScore;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.model.dto.VexImportResult;
@@ -84,6 +86,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.common.VersRanges;
 import io.reliza.common.VulnerabilityReferenceParser;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.service.ComponentLockService.LockedOperation;
@@ -123,6 +126,8 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
+import io.reliza.dto.FixedIn;
+import io.reliza.dto.FixedIn.FixedInVerdict;
 import io.reliza.dto.HistoricallyResolvedFinding;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.RearmIdentifierType;
@@ -3396,6 +3401,47 @@ public class ReleaseService {
 		return result;
 	}
 	
+	/** CycloneDX 1.6 {@code versionRange} maxLength: a longer range makes the whole document schema-invalid. */
+	static final int CDX_VERSION_RANGE_MAX_LENGTH = 4096;
+
+	/**
+	 * The CycloneDX {@code affects[].versions[]} of a finding's package: one
+	 * {@code affected} vers range per identity of the record that names the
+	 * package (Debian's per-release rows narrowed to the finding's release, as
+	 * for fixed-in), and the version that fixes it as {@code unaffected} when
+	 * the ranges give one. Empty when the record has no range for the package,
+	 * so the entry keeps its bare {@code ref}. A range over the CycloneDX length
+	 * limit is left out.
+	 *
+	 * @param findingPurl the finding's package URL, with its version
+	 * @param ranges      the record's affected ranges; null when there is no record
+	 * @param vulnId      for the log line when a range is left out
+	 */
+	static List<Vulnerability.Version> affectedVersions(String findingPurl, List<AffectedRange> ranges, String vulnId) {
+		List<Vulnerability.Version> out = new ArrayList<>();
+		for (String vers : new LinkedHashSet<>(
+				VersRanges.versByIdentity(FixedInResolver.rangesOf(findingPurl, ranges), vulnId).values())) {
+			if (vers.length() > CDX_VERSION_RANGE_MAX_LENGTH) {
+				log.debug("VDR: vers range of {} for {} is {} characters, over the CycloneDX limit; left out",
+						vulnId, findingPurl, vers.length());
+				continue;
+			}
+			Vulnerability.Version v = new Vulnerability.Version();
+			v.setRange(vers);
+			v.setStatus(Status.AFFECTED);
+			out.add(v);
+		}
+		if (out.isEmpty()) return out;
+		FixedIn fixedIn = FixedInResolver.resolve(findingPurl, ranges, vulnId);
+		if (fixedIn.verdict() == FixedInVerdict.FIXED_IN && null != fixedIn.version()) {
+			Vulnerability.Version v = new Vulnerability.Version();
+			v.setVersion(fixedIn.version());
+			v.setStatus(Status.UNAFFECTED);
+			out.add(v);
+		}
+		return out;
+	}
+
 	/**
 	 * Build a single CycloneDX Vulnerability entry for a specific analysis state
 	 */
@@ -3410,16 +3456,20 @@ public class ReleaseService {
 		setVulnerabilityCommonFields(vuln, vulnDto);
 		// Description / cwes / references / published / updated come from the
 		// canonical vulnerability_records row pre-resolved on vdrContext.
-		applyVulnerabilityEnrichmentFromRecord(vuln,
-				resolveEnrichment(vdrContext.enrichmentByPrimaryId(), vulnDto.vulnId(), vulnDto.aliases()));
+		VulnerabilityRecordData record = resolveEnrichment(vdrContext.enrichmentByPrimaryId(), vulnDto.vulnId(),
+				vulnDto.aliases());
+		applyVulnerabilityEnrichmentFromRecord(vuln, record);
 
 		// Build affects list - include both PURL and release bom-refs
 		List<Vulnerability.Affect> affects = new ArrayList<>();
 		
-		// Always add the PURL as an affect
+		// Always add the PURL as an affect, with the advisory's affected range for its package
 		if (vulnDto.purl() != null) {
 			Vulnerability.Affect purlAffect = new Vulnerability.Affect();
 			purlAffect.setRef(vulnDto.purl());
+			List<Vulnerability.Version> versions = affectedVersions(vulnDto.purl(),
+					null == record ? null : record.getAffectedRanges(), vulnDto.vulnId());
+			if (!versions.isEmpty()) purlAffect.setVersions(versions);
 			affects.add(purlAffect);
 		}
 		

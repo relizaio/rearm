@@ -4,8 +4,10 @@
 package io.reliza.common;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumSet;
 import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -19,16 +21,21 @@ import java.util.stream.Stream;
 import org.apache.commons.lang3.StringUtils;
 
 import com.github.packageurl.PackageURL;
+import com.vdurmont.semver4j.Semver;
+import com.vdurmont.semver4j.Semver.SemverType;
 
 import io.github.nscuro.versatile.Comparator;
 import io.github.nscuro.versatile.Constraint;
 import io.github.nscuro.versatile.Vers;
 import io.github.nscuro.versatile.VersException;
 import io.github.nscuro.versatile.VersionFactory;
+import io.github.nscuro.versatile.spi.InvalidVersionException;
 import io.github.nscuro.versatile.spi.Version;
+import io.github.nscuro.versatile.spi.VersionProvider;
 import io.github.nscuro.versatile.version.KnownVersioningSchemes;
 import io.reliza.model.VulnerabilityRecordData.AffectedRange;
 import io.reliza.model.VulnerabilityRecordData.UpstreamSource;
+import io.reliza.versioning.VersionUtils;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -71,9 +78,12 @@ import lombok.extern.slf4j.Slf4j;
  * overflow the stack on a few thousand characters, and a version comes from
  * a user's SBOM.
  *
- * <p>versatile has no ordering for the vers scheme {@code semver}; it falls
- * back to {@code generic}. Nothing here depends on it (package URL types map
- * to their ecosystems' own schemes); TEA CLE ranges will need a provider.
+ * <p>versatile has no ordering for the vers scheme {@code semver} and would
+ * fall back to {@code generic}, which puts {@code 1.0.0-rc.1} above
+ * {@code 1.0.0}. {@link SemverVersionProvider} gives it the Semantic
+ * Versioning 2.0.0 order; package URL types never select it (they map to their
+ * ecosystems' own schemes), a product's own release versions do (see
+ * {@link ReleaseScheme}).
  *
  * <p>Public methods never throw.
  */
@@ -88,6 +98,18 @@ public final class VersRanges {
 			KnownVersioningSchemes.SCHEME_GOLANG, KnownVersioningSchemes.SCHEME_MAVEN,
 			KnownVersioningSchemes.SCHEME_NPM, KnownVersioningSchemes.SCHEME_NUGET,
 			KnownVersioningSchemes.SCHEME_PYPI, KnownVersioningSchemes.SCHEME_RPM);
+
+	/** The vers scheme of Semantic Versioning; versatile names no constant for it, having no ordering of its own. */
+	static final String SCHEME_SEMVER = "semver";
+
+	/**
+	 * A Semantic Versioning 2.0.0 version, the expression semver.org gives:
+	 * no {@code v}, three numbers without leading zeros, an optional
+	 * pre-release and build.
+	 */
+	private static final Pattern SEMVER_2 = Pattern.compile("^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)"
+			+ "(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?"
+			+ "(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$");
 
 	/** Schemes whose package URLs may carry the epoch in a qualifier rather than in the version. */
 	private static final Set<String> EPOCH_SCHEMES = Set.of(
@@ -131,7 +153,7 @@ public final class VersRanges {
 		ClassLoader previous = thread.getContextClassLoader();
 		thread.setContextClassLoader(VersRanges.class.getClassLoader());
 		try {
-			for (String scheme : BUILT_IN_SCHEMES) {
+			for (String scheme : Stream.concat(BUILT_IN_SCHEMES.stream(), Stream.of(SCHEME_SEMVER)).toList()) {
 				try {
 					VersionFactory.forScheme(scheme, "1.0.0");
 				} catch (IllegalArgumentException e) {
@@ -358,6 +380,221 @@ public final class VersRanges {
 
 	/** What a failure is logged once for. */
 	record FailureKey(String scheme, String vulnId, String pkg) {}
+
+	/**
+	 * The vers scheme a product's own release versions are written in: its
+	 * version schema decides, not the look of a version. Semantic Versioning
+	 * when the schema is {@code semver} or shaped like it
+	 * ({@code Major.Minor.Patch} with optional modifier and metadata, see
+	 * {@link VersionUtils#isSchemaSemver}); {@code generic} for every other
+	 * schema (calendar, four-part, branch-named). With no schema set, Semantic
+	 * Versioning: a version that is not one is still written as
+	 * {@code generic} (see {@link VersRanges#releaseVers}).
+	 */
+	public enum ReleaseScheme {
+		SEMVER(SCHEME_SEMVER), GENERIC(KnownVersioningSchemes.SCHEME_GENERIC);
+
+		private final String scheme;
+
+		ReleaseScheme(String scheme) {
+			this.scheme = scheme;
+		}
+
+		public static ReleaseScheme ofVersionSchema(String versionSchema) {
+			return StringUtils.isBlank(versionSchema) || VersionUtils.isSchemaSemver(versionSchema) ? SEMVER : GENERIC;
+		}
+	}
+
+	/**
+	 * One release version as a vers line, as {@code vers:semver/1.2.3}.
+	 * {@code generic} when the scheme is that, or when the version is not one
+	 * under it (a feature branch's {@code feature-x.0} of a semver product).
+	 * Never null for a non-null version.
+	 */
+	public static String releaseVers(ReleaseScheme scheme, String version) {
+		if (version == null) return null;
+		String s = readable(scheme.scheme, version) ? scheme.scheme : KnownVersioningSchemes.SCHEME_GENERIC;
+		try {
+			return Vers.builder(s).withConstraint(Comparator.EQUAL, version).build().toString();
+		} catch (RuntimeException e) {
+			// generic reads every version; this is the spelling the line had before versatile wrote it
+			return "vers:" + s + "/" + version;
+		}
+	}
+
+	/**
+	 * A product's release versions in the order of its {@link ReleaseScheme},
+	 * read and sorted once, to name runs of them as vers ranges. Versions that
+	 * are not ones under the scheme cannot be inside a range in it; one that
+	 * starts with numbers still keeps a range from forming around them.
+	 *
+	 * @param allVersions every release version of the product
+	 */
+	public static ReleaseOrder releaseOrder(ReleaseScheme scheme, Collection<String> allVersions) {
+		String s = scheme.scheme;
+		List<ReadVersion> sorted = new ArrayList<>();
+		List<Version> numberedOutsiders = new ArrayList<>();
+		boolean numbersOnly = true;
+		if (allVersions != null) {
+			for (String v : allVersions.stream().filter(Objects::nonNull).distinct().toList()) {
+				NumericStart start = NumericStart.of(LEADING_V.matcher(v).replaceFirst(""));
+				try {
+					sorted.add(new ReadVersion(v, read(s, v)));
+				} catch (IllegalArgumentException | VersException e) {
+					Version asNumbers = start == null ? null : leadingNumbers(s, start);
+					if (asNumbers != null) numberedOutsiders.add(asNumbers);
+					continue;
+				}
+				if (NumericStart.of(comparable(s, v)) == null) numbersOnly = false;
+			}
+		}
+		try {
+			sorted.sort((a, b) -> a.version().compareTo(b.version()));
+		} catch (RuntimeException e) {
+			logFailure("Could not order release versions", s, null, null, e);
+			return new ReleaseOrder(scheme, List.of(), List.of(), false);
+		}
+		boolean usable = numbersOnly || scheme != ReleaseScheme.GENERIC;
+		return new ReleaseOrder(scheme, List.copyOf(sorted), List.copyOf(numberedOutsiders), usable);
+	}
+
+	/**
+	 * A version that is not one under the scheme, but starts with numbers
+	 * ({@code v1.2.5}, {@code 1.2.5.1} of a semver product), as the version
+	 * those numbers make ({@code 1.2.5}, three of them, a missing one 0). A
+	 * consumer that reads versions leniently could place it there, so a range
+	 * around it is not written. Null when the numbers are no version either.
+	 */
+	private static Version leadingNumbers(String scheme, NumericStart start) {
+		List<String> numbers = new ArrayList<>(start.numbers().subList(0, Math.min(3, start.numbers().size())));
+		while (numbers.size() < 3) numbers.add("0");
+		try {
+			return read(scheme, numbers.stream().map(n -> String.valueOf(Integer.parseInt(n))).reduce((a, b) -> a + "." + b).orElseThrow());
+		} catch (IllegalArgumentException | VersException e) {
+			return null;
+		}
+	}
+
+	private record ReadVersion(String spelling, Version version) {}
+
+	/** See {@link VersRanges#releaseOrder}. */
+	public static final class ReleaseOrder {
+
+		private final ReleaseScheme scheme;
+		private final List<ReadVersion> sorted;
+		/** Versions that are not ones under the scheme, as their leading numbers: see {@link VersRanges#leadingNumbers}. */
+		private final List<Version> numberedOutsiders;
+		/**
+		 * False when the order cannot be trusted to name a run: it could not be
+		 * sorted, or, under {@code generic}, a version does not start with
+		 * numbers (see the class comment).
+		 */
+		private final boolean usable;
+
+		private ReleaseOrder(ReleaseScheme scheme, List<ReadVersion> sorted, List<Version> numberedOutsiders, boolean usable) {
+			this.scheme = scheme;
+			this.sorted = sorted;
+			this.numberedOutsiders = numberedOutsiders;
+			this.usable = usable;
+		}
+
+		/**
+		 * {@code versions} as one vers range, {@code >=lowest|<=highest}, when
+		 * they are a run of the product's versions: no other falls between the
+		 * lowest and the highest, so the range names these and no other
+		 * release. Empty when there are fewer than two, one is not a version
+		 * under the scheme, another release that is not one under the scheme
+		 * starts with numbers inside the range ({@code v1.2.5} between
+		 * {@code 1.2.3} and {@code 1.2.6}), or, under {@code generic}, two of
+		 * them or a neighbour of the run are not ordered by their leading
+		 * numbers.
+		 */
+		public Optional<String> rangeOf(Collection<String> versions) {
+			if (!usable || versions == null || versions.stream().anyMatch(Objects::isNull)) return Optional.empty();
+			Set<String> named = new LinkedHashSet<>(versions);
+			if (named.size() < 2) return Optional.empty();
+			String s = scheme.scheme;
+			try {
+				Version lowest = null;
+				Version highest = null;
+				String lowestSpelling = null;
+				String highestSpelling = null;
+				for (String v : named) {
+					Version read = read(s, v);
+					if (lowest == null || read.compareTo(lowest) < 0) {
+						lowest = read;
+						lowestSpelling = v;
+					}
+					if (highest == null || read.compareTo(highest) > 0) {
+						highest = read;
+						highestSpelling = v;
+					}
+				}
+				// builds of one version (1.0.0+b1, 1.0.0+b2): a range names a version once
+				if (lowest.compareTo(highest) == 0) return Optional.empty();
+				int lo = firstAtLeast(lowest);
+				int hi = firstAbove(highest) - 1;
+				for (int i = lo; i <= hi; i++) {
+					if (!named.contains(sorted.get(i).spelling())) return Optional.empty();
+				}
+				for (Version outsider : numberedOutsiders) {
+					if (outsider.compareTo(lowest) >= 0 && outsider.compareTo(highest) <= 0) return Optional.empty();
+				}
+				if (ReleaseScheme.GENERIC == scheme) {
+					List<String> compared = new ArrayList<>(named);
+					if (lo > 0) compared.add(sorted.get(lo - 1).spelling());
+					if (hi + 1 < sorted.size()) compared.add(sorted.get(hi + 1).spelling());
+					if (!allOrderedByNumbers(s, compared)) return Optional.empty();
+				}
+				String range = Vers.builder(s)
+						.withConstraint(Comparator.GREATER_THAN_OR_EQUAL, comparable(s, lowestSpelling))
+						.withConstraint(Comparator.LESS_THAN_OR_EQUAL, comparable(s, highestSpelling))
+						.build().toString();
+				// the builder does not validate; only a line that parses back is written
+				Vers.parse(range);
+				return Optional.of(range);
+			} catch (IllegalArgumentException | VersException e) {
+				return Optional.empty();
+			} catch (RuntimeException e) {
+				logFailure("Could not build a release vers range", scheme.scheme, null, null, e);
+				return Optional.empty();
+			}
+		}
+
+		/** The index of the first version not below {@code v}. */
+		private int firstAtLeast(Version v) {
+			int lo = 0;
+			int hi = sorted.size();
+			while (lo < hi) {
+				int mid = (lo + hi) >>> 1;
+				if (sorted.get(mid).version().compareTo(v) < 0) lo = mid + 1;
+				else hi = mid;
+			}
+			return lo;
+		}
+
+		/** The index of the first version above {@code v}. */
+		private int firstAbove(Version v) {
+			int lo = 0;
+			int hi = sorted.size();
+			while (lo < hi) {
+				int mid = (lo + hi) >>> 1;
+				if (sorted.get(mid).version().compareTo(v) <= 0) lo = mid + 1;
+				else hi = mid;
+			}
+			return lo;
+		}
+	}
+
+	/** Whether {@code version} is a version under the scheme. */
+	private static boolean readable(String scheme, String version) {
+		try {
+			read(scheme, version);
+			return true;
+		} catch (IllegalArgumentException | VersException e) {
+			return false;
+		}
+	}
 
 	/**
 	 * Logs a failure to build or place in a package's ranges: at ERROR the
@@ -743,5 +980,64 @@ public final class VersRanges {
 			row.sources().stream().filter(Objects::nonNull).forEach(sources::add);
 		}
 		return List.copyOf(sources);
+	}
+
+	/**
+	 * Semantic Versioning 2.0.0 for the vers scheme {@code semver}, which
+	 * versatile lacks. Registered in {@code META-INF/services} above the
+	 * built-in priority. A version is one only when it matches the
+	 * semver.org expression: {@code v1.2.3}, {@code 1.2} and {@code 01.2.3}
+	 * are not semantic versions and are refused, never normalised. Ordered by
+	 * semver4j (on the classpath through versatile), which ignores build
+	 * metadata as the specification says: {@code 1.0.0+b1} and
+	 * {@code 1.0.0+b2} are the same version in a range.
+	 */
+	public static final class SemverVersionProvider implements VersionProvider {
+
+		@Override
+		public int priority() {
+			return PRIORITY_BUILTIN + 1;
+		}
+
+		@Override
+		public boolean supportsScheme(String scheme) {
+			return SCHEME_SEMVER.equals(scheme);
+		}
+
+		@Override
+		public Version getVersion(String scheme, String version) {
+			return new SemverVersion(scheme, version);
+		}
+	}
+
+	private static final class SemverVersion extends Version {
+
+		private final Semver semver;
+
+		SemverVersion(String scheme, String version) {
+			super(scheme, version);
+			if (version == null || version.length() > MAX_VERSION_LENGTH || !SEMVER_2.matcher(version).matches()) {
+				throw new InvalidVersionException(version, "not a semantic version");
+			}
+			try {
+				this.semver = new Semver(version, SemverType.STRICT);
+			} catch (RuntimeException e) {
+				// a number past 2^31
+				throw new InvalidVersionException(version, "not a semantic version semver4j can read", e);
+			}
+		}
+
+		@Override
+		public boolean isStable() {
+			return semver.getSuffixTokens().length == 0;
+		}
+
+		@Override
+		public int compareTo(Version other) {
+			if (!(other instanceof SemverVersion o)) {
+				throw new IllegalArgumentException("cannot compare a semver version with " + other);
+			}
+			return semver.isLowerThan(o.semver) ? -1 : semver.isGreaterThan(o.semver) ? 1 : 0;
+		}
 	}
 }

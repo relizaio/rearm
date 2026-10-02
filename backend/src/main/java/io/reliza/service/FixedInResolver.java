@@ -67,34 +67,23 @@ public final class FixedInResolver {
 	 * @param vulnId      for the log line when a range is left out
 	 */
 	public static FixedIn resolve(String findingPurl, List<AffectedRange> ranges, String vulnId) {
-		PackageURL finding = Utils.parsePurlOrNull(findingPurl);
-		String coordinate = Utils.purlCoordinateBase(findingPurl);
-		if (finding == null || coordinate == null || ranges == null || ranges.isEmpty()) {
-			return FixedIn.of(FixedInVerdict.NO_RANGE_DATA);
-		}
-		// the package's rows by the release they name; the rows that name none apart
-		Map<String, List<AffectedRange>> byRelease = new LinkedHashMap<>();
-		List<AffectedRange> general = new ArrayList<>();
-		for (AffectedRange r : ranges) {
-			if (r == null || !coordinate.equals(Utils.purlCoordinateBase(r.getIdentity()))) continue;
-			String release = releaseOf(Utils.parsePurlOrNull(r.getIdentity()));
-			if (release == null) general.add(r);
-			else byRelease.computeIfAbsent(release, k -> new ArrayList<>()).add(r);
-		}
+		PackageRows rows = PackageRows.of(findingPurl, ranges);
+		if (rows == null) return FixedIn.of(FixedInVerdict.NO_RANGE_DATA);
+		Map<String, List<AffectedRange>> byRelease = rows.byRelease();
+		List<AffectedRange> general = rows.general();
 		if (byRelease.isEmpty()) {
 			return general.isEmpty() ? FixedIn.of(FixedInVerdict.NO_RANGE_DATA) : fixedIn(findingPurl, general, vulnId);
 		}
-		String release = releaseOf(finding);
-		if (release != null) {
-			List<AffectedRange> own = byRelease.get(release);
+		if (rows.release() != null) {
+			List<AffectedRange> own = byRelease.get(rows.release());
 			return own == null ? FixedIn.of(FixedInVerdict.UNCOMPARABLE) : fixedIn(findingPurl, with(own, general), vulnId);
 		}
 		// no release named: only an answer every release gives
 		FixedIn agreed = null;
 		Set<UpstreamSource> sources = EnumSet.noneOf(UpstreamSource.class);
 		Set<String> identities = new LinkedHashSet<>();
-		for (List<AffectedRange> rows : byRelease.values()) {
-			FixedIn f = fixedIn(findingPurl, with(rows, general), vulnId);
+		for (List<AffectedRange> releaseRows : byRelease.values()) {
+			FixedIn f = fixedIn(findingPurl, with(releaseRows, general), vulnId);
 			if (agreed != null && !sameAnswer(agreed, f)) return FixedIn.of(FixedInVerdict.UNCOMPARABLE);
 			agreed = f;
 			sources.addAll(f.sources());
@@ -102,6 +91,50 @@ public final class FixedInResolver {
 		}
 		return new FixedIn(agreed.version(), agreed.verdict(), agreed.versionEndIncluding(), List.copyOf(sources),
 				List.copyOf(identities));
+	}
+
+	/**
+	 * The ranges that speak about the finding's package, by the same rule
+	 * {@link #resolve} answers from: every identity naming the package, but
+	 * of the rows that name a distribution release only the finding's own
+	 * release's. A finding that names no release gets every release's rows,
+	 * each still under its own identity. Empty when none match.
+	 *
+	 * @param findingPurl the finding's package URL, with its version
+	 * @param ranges      the record's affected ranges; null or empty when never fetched or none published
+	 */
+	public static List<AffectedRange> rangesOf(String findingPurl, List<AffectedRange> ranges) {
+		PackageRows rows = PackageRows.of(findingPurl, ranges);
+		if (rows == null) return List.of();
+		if (rows.release() != null) {
+			return with(rows.byRelease().getOrDefault(rows.release(), List.of()), rows.general());
+		}
+		List<AffectedRange> out = new ArrayList<>(rows.general());
+		rows.byRelease().values().forEach(out::addAll);
+		return out;
+	}
+
+	/**
+	 * The rows of a record that name the finding's package, by the
+	 * distribution release they name, the rows that name none apart; and the
+	 * release the finding itself names. Null when the finding is not a
+	 * package URL or there are no rows at all.
+	 */
+	private record PackageRows(Map<String, List<AffectedRange>> byRelease, List<AffectedRange> general, String release) {
+		static PackageRows of(String findingPurl, List<AffectedRange> ranges) {
+			PackageURL finding = Utils.parsePurlOrNull(findingPurl);
+			String coordinate = Utils.purlCoordinateBase(findingPurl);
+			if (finding == null || coordinate == null || ranges == null || ranges.isEmpty()) return null;
+			Map<String, List<AffectedRange>> byRelease = new LinkedHashMap<>();
+			List<AffectedRange> general = new ArrayList<>();
+			for (AffectedRange r : ranges) {
+				if (r == null || !coordinate.equals(Utils.purlCoordinateBase(r.getIdentity()))) continue;
+				String release = releaseOf(Utils.parsePurlOrNull(r.getIdentity()));
+				if (release == null) general.add(r);
+				else byRelease.computeIfAbsent(release, k -> new ArrayList<>()).add(r);
+			}
+			return new PackageRows(byRelease, general, releaseOf(finding));
+		}
 	}
 
 	private static FixedIn fixedIn(String findingPurl, List<AffectedRange> ranges, String vulnId) {
