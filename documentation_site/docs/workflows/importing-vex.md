@@ -70,7 +70,7 @@ Severity is **required** on every Finding Analysis row, so every accepted VEX pr
 
 2. **Existing Finding Analysis rows** for the same `(org, location, findingId)`. The narrowest-scope match wins (RELEASE → BRANCH → COMPONENT → ORG). If you've already triaged this CVE on a sibling release, that decision's severity carries over.
 
-3. **The canonical vulnerability record** for the CVE in your org's vulnerability table. ReARM merges severity across upstream sources (GitHub > OSV > NVD > VULNDB) into a single per-org row that's available to the lookup.
+3. **The canonical vulnerability record** for the CVE in your org's vulnerability table. ReARM merges severity across upstream sources (NVD > GitHub > OSV > VulnDB, see [How a Vulnerability's Severity Is Chosen](./auditing-findings#how-a-vulnerabilitys-severity-is-chosen)) into a single per-org row that's available to the lookup.
 
 If all three come up empty (a CycloneDX VEX with no ratings, no prior analysis at any scope, and no canonical vuln record for the org) and your import mode is **Auto-accept**, ReARM demotes the statement to **STAGE** with a `SEVERITY_MISSING` demotion banner on the proposal. The reviewer fills in severity via **Modify** before accepting. (STAGE and REJECT import modes are unaffected — they were going to surface to a reviewer anyway.)
 

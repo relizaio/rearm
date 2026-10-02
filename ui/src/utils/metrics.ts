@@ -428,9 +428,9 @@ export function buildVulnerabilityColumns(
         
         // Check if severities array exists and has multiple entries
         if (row.severities && row.severities.length > 0) {
-          // Sort severities: NVD first, then GHSA, then OTHER
+          // The order the backend picks the severity in (SeverityOrder): analysis, then the feeds
           const sortedSeverities = [...row.severities].sort((a: any, b: any) => {
-            const order = ['NVD', 'GHSA', 'OTHER']
+            const order = ['ANALYSIS', 'NVD', 'GHSA', 'OSV', 'VULNDB', 'OTHER']
             const aIndex = order.indexOf(a.source)
             const bIndex = order.indexOf(b.source)
             return (aIndex === -1 ? order.length : aIndex) - (bIndex === -1 ? order.length : bIndex)
