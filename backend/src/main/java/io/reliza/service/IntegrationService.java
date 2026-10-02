@@ -1240,13 +1240,17 @@ public class IntegrationService {
 	 *
 	 * <p>What is fetched:
 	 * <ol>
-	 *   <li>when the org already has a record for the id, each of its snapshots
-	 *       by that snapshot's own (source, upstream id) -- the exact DT keys;</li>
+	 *   <li>when the org already has a record for the id, its first snapshot
+	 *       of each source by that snapshot's own (source, upstream id) -- the
+	 *       exact DT keys;</li>
 	 *   <li>the requested id under the sources its prefix suggests
 	 *       ({@link #dtrackSourcesForVulnId});</li>
 	 *   <li>one more round for GHSA / CVE aliases the fetched rows name, so a
 	 *       CVE refresh also picks up the GitHub advisory the merger ranks
-	 *       first.</li>
+	 *       first;</li>
+	 *   <li>the record's further advisories of a source (the first rounds
+	 *       take one row per source), with the budget the rounds before left,
+	 *       unless Dependency-Track stopped answering.</li>
 	 * </ol>
 	 * Every 200 becomes a snapshot; 404s are skipped; any other failure is logged
 	 * and the next key is tried. The upsert uses
@@ -1273,7 +1277,7 @@ public class IntegrationService {
 		String fetcherEndpoint = dtrackIntegration.getUri().toString();
 
 		Set<String> aliases = new LinkedHashSet<>();
-		Set<DtrackVulnKey> keys = new LinkedHashSet<>();
+		Set<DtrackVulnKey> storedKeys = new LinkedHashSet<>();
 		Optional<VulnerabilityRecordData> existing = vulnerabilityRecordService.getByAlias(orgUuid, id);
 		if (existing.isPresent()) {
 			VulnerabilityRecordData record = existing.get();
@@ -1281,10 +1285,11 @@ public class IntegrationService {
 			if (record.getAliases() != null) aliases.addAll(record.getAliases());
 			if (record.getSources() != null) {
 				for (VulnSourceSnapshot snap : record.getSources()) {
-					if (snap != null) addFetchableKey(keys, snap.getUpstreamSource(), snap.getUpstreamVulnId());
+					if (snap != null) addFetchableKey(storedKeys, snap.getUpstreamSource(), snap.getUpstreamVulnId());
 				}
 			}
 		}
+		Set<DtrackVulnKey> keys = new LinkedHashSet<>(storedKeys);
 		for (UpstreamSource source : dtrackSourcesForVulnId(id)) addFetchableKey(keys, source, id);
 
 		Set<DtrackVulnKey> attempted = new LinkedHashSet<>();
@@ -1305,9 +1310,21 @@ public class IntegrationService {
 				addFetchableKey(aliasKeys, UpstreamSource.NVD, a.cveId());
 			}
 		}
-		DtrackFetchOutcome aliasOutcome = fetchDtrackVulnKeys(aliasKeys, attempted, found, fetcherEndpoint,
-				apiToken, orgUuid, true, MAX_SINGLE_VULN_FETCHES);
-		boolean failed = outcome != DtrackFetchOutcome.CLEAN || aliasOutcome != DtrackFetchOutcome.CLEAN;
+		// No further round once one found Dependency-Track unreachable: every
+		// key would wait out the same timeout. What was found is still stored.
+		DtrackFetchOutcome aliasOutcome = outcome != DtrackFetchOutcome.UNREACHABLE
+				? fetchDtrackVulnKeys(aliasKeys, attempted, found, fetcherEndpoint, apiToken, orgUuid, true,
+						MAX_SINGLE_VULN_FETCHES)
+				: DtrackFetchOutcome.UNREACHABLE;
+		// The record's other advisories of a source it already had a row for
+		// (each has a snapshot of its own) get whatever budget is left: the
+		// requested id and the aliases come first.
+		DtrackFetchOutcome storedOutcome = aliasOutcome != DtrackFetchOutcome.UNREACHABLE
+				? fetchDtrackVulnKeys(storedKeys, attempted, found, fetcherEndpoint, apiToken, orgUuid, false,
+						MAX_SINGLE_VULN_FETCHES)
+				: DtrackFetchOutcome.UNREACHABLE;
+		boolean failed = outcome != DtrackFetchOutcome.CLEAN || aliasOutcome != DtrackFetchOutcome.CLEAN
+				|| storedOutcome != DtrackFetchOutcome.CLEAN;
 
 		List<VulnSourceSnapshot> snapshots = new ArrayList<>();
 		for (DtrackVulnRaw dvr : found) {
@@ -1332,8 +1349,8 @@ public class IntegrationService {
 
 	/**
 	 * The refresh's ranges, fetched the way the sweep fetches them: the
-	 * refresh round keeps one row per source and may not reach every GitHub /
-	 * OSV id the record knows, so its responses alone are not a complete list.
+	 * refresh round is capped and may not reach every GitHub / OSV id the
+	 * record knows, so its responses alone are not a complete list.
 	 * The rows it did fetch are reused rather than requested again. A failure
 	 * here leaves the stored ranges as they were and the refresh still
 	 * succeeds.
@@ -1378,10 +1395,11 @@ public class IntegrationService {
 		DtrackFetchOutcome outcome = DtrackFetchOutcome.CLEAN;
 		for (DtrackVulnKey key : keys) {
 			if (attempted.size() >= maxAttempts) break;
-			// One row per source: the record keeps one snapshot per (source,
-			// fetcher), so a second row for the same source would overwrite the
-			// first. Keys are ordered existing-snapshot first, so the record's
-			// own key wins and the next drain does not flip it back.
+			// One row per source while the budget is shared with guesses: keys
+			// are ordered stored-advisory first, so each source's first stored
+			// advisory is refreshed, and a key guessed from an id's prefix or an
+			// alias is not spent on a source that already answered. The record's
+			// further advisories of a source come in a later round.
 			if (onePerSource && found.stream().anyMatch(f -> mapUpstreamSource(f.source()) == key.source())) continue;
 			if (!attempted.add(key)) continue;
 			URI uri = URI.create(fetcherEndpoint + "/api/v1/vulnerability/source/" + toDtrackSource(key.source())

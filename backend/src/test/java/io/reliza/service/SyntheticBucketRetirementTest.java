@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.when;
 
 import java.net.URI;
 import java.time.ZonedDateTime;
@@ -16,10 +18,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.test.context.bean.override.mockito.MockitoBean;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.common.CommonVariables;
@@ -63,6 +67,18 @@ public class SyntheticBucketRetirementTest {
 	@Autowired private SbomComponentRepository sbomComponentRepository;
 	@Autowired private SyntheticDtrackBucketRepository bucketRepository;
 	@Autowired private TestInitializer testInitializer;
+
+	/**
+	 * rebom reachable and BEAR-configured; the components carry enriched_at,
+	 * so this is the prod path. The rig has no rebom, and an unreachable rebom
+	 * now skips submitOrg (see SyntheticSbomServiceTest).
+	 */
+	@MockitoBean private RebomService rebomService;
+
+	@BeforeEach
+	void rebomAnswers() {
+		when(rebomService.isEnrichmentConfigured(any())).thenReturn(true);
+	}
 
 	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
 

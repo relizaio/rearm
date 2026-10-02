@@ -102,6 +102,14 @@ public class SyntheticSbomService {
 	static final Duration STALL_LOG_INTERVAL = Duration.ofHours(1);
 
 	private final Map<UUID, Instant> lastStallReport = new ConcurrentHashMap<>();
+
+	/**
+	 * Orgs whose BEAR config could not be read on their last submit pass. The
+	 * WARN is logged when an org enters the set, not on every tick of an
+	 * outage; the org leaves it on the next successful read.
+	 */
+	private final Set<UUID> bearConfigUnknown = ConcurrentHashMap.newKeySet();
+
 	/** Cap on CPEs emitted per component (cpe[0] on the primary; companions TODO). */
 	static final int MAX_CPES = 3;
 
@@ -287,11 +295,24 @@ public class SyntheticSbomService {
 		try {
 			bearConfigured = rebomService.isEnrichmentConfigured(orgUuid);
 		} catch (Exception e) {
-			// Conservatively treat an unknown config as BEAR-on: better to hold a
-			// component back one tick than ship it un-enriched.
-			log.warn("submitOrg: unable to determine BEAR config for org {}, assuming configured: {}",
-					orgUuid, e.getMessage());
-			bearConfigured = true;
+			// Unknown config (rebom unreachable): skip the whole pass, submission
+			// and bucket retirement alike, until rebom answers. Either assumption
+			// does damage: "configured" on a non-BEAR org finds no enriched
+			// component, retires every bucket and deletes its Dependency-Track
+			// project; "not configured" on a BEAR org ships un-enriched licenses.
+			// Nothing is lost by waiting for the next tick.
+			// A forced re-upload is someone's explicit request: say so every time.
+			if (bearConfigUnknown.add(orgUuid) || force) {
+				log.warn("submitOrg: unable to determine BEAR config for org {}; skipping submission and "
+						+ "bucket retirement until rebom answers: {}", orgUuid, e.getMessage());
+			} else {
+				log.debug("submitOrg: BEAR config for org {} still unknown, pass skipped: {}",
+						orgUuid, e.getMessage());
+			}
+			return;
+		}
+		if (bearConfigUnknown.remove(orgUuid)) {
+			log.info("submitOrg: BEAR config for org {} readable again; submission resumes", orgUuid);
 		}
 		List<SbomComponent> matchable = bearConfigured
 				? sbomComponentRepository.findEnrichedMatchableByOrgOrdered(orgUuid.toString())

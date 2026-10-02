@@ -567,7 +567,12 @@ public class RebomService {
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         Object val = response != null ? response.get("isEnrichmentConfigured") : null;
-        return Boolean.TRUE.equals(val);
+        // The field is Boolean! in rebom's schema: a missing value is a failed
+        // answer, not "not configured", and callers must not act on a guess.
+        if (!(val instanceof Boolean configured)) {
+            throw new IllegalStateException("rebom gave no answer to isEnrichmentConfigured for org " + org);
+        }
+        return configured;
     }
 
     public List<BomMeta> resolveBomMetas(UUID bomSerialNumber, UUID org) {

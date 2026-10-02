@@ -1026,8 +1026,11 @@ public class ReleaseService {
 		
 		if(null == typeFilter || typeFilter.equals(ArtifactBelongsTo.SCE)){
 			List<UUID> sceRebomIds  = null;
-			if(null != rd.getSourceCodeEntry())
-				sceRebomIds = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry()).get().getArtifacts().stream()
+			// A dangling reference contributes nothing; ArtifactGatherService reports it.
+			var sceData = null == rd.getSourceCodeEntry() ? Optional.<SourceCodeEntryData>empty()
+					: getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+			if (sceData.isPresent())
+				sceRebomIds = sceData.get().getArtifacts().stream()
 				.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
 				.map(scea -> artifactService.getArtifactData(scea.artifactUuid()))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
