@@ -34,6 +34,7 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
@@ -409,6 +410,51 @@ class SyntheticSbomServiceTest {
 		ArgumentCaptor<SyntheticDtrackBucket> cap = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
 		verify(bucketRepository).save(cap.capture());
 		assertTrue(cap.getValue().getFindings().containsKey(canonical));
+	}
+
+	@Test
+	void anUnreachableRebomSkipsTheWholePassAndDeletesNoProject() throws Exception {
+		// A non-BEAR org with a live bucket and its DTrack project. Before, an
+		// unknown BEAR config was taken as "configured"; a non-BEAR org has no
+		// enriched component, so every bucket was retired and its project deleted.
+		SyntheticDtrackBucket b = new SyntheticDtrackBucket();
+		b.setOrg(ORG);
+		b.setBucketIndex(0);
+		b.setDtrackProjectUuid(PROJ);
+		b.setIngestState(IngestState.INGESTED);
+		b.getRefMap().put("pkg:npm/c0@1.0", "pkg:npm/c0@1.0");
+		// Lenient: only the old behaviour reaches these.
+		lenient().when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
+		lenient().when(sbomComponentRepository.findMatchableByOrgOrdered(ORG.toString())).thenReturn(comps(1));
+		when(rebomService.isEnrichmentConfigured(ORG))
+				.thenThrow(new RuntimeException("Rebom error: Database connection failed"));
+
+		service.submitOrg(ORG);
+		service.submitOrg(ORG); // another tick of the same outage
+
+		verify(integrationService, never()).deleteDtrackProjectForOrg(any(), any());
+		verify(bucketRepository, never()).save(any());
+		verify(dTrackService, never()).syntheticUploadBom(any(), any(), any(), any(), any());
+		assertEquals(PROJ, b.getDtrackProjectUuid());
+		assertFalse(b.getRefMap().isEmpty());
+		// The WARN is logged on entering the outage, not on every tick.
+		assertEquals(Set.of(ORG), ReflectionTestUtils.getField(service, "bearConfigUnknown"));
+	}
+
+	@Test
+	void submissionResumesOnceRebomAnswersAgain() throws Exception {
+		wireBucketStore();
+		when(rebomService.isEnrichmentConfigured(ORG)).thenThrow(new RuntimeException("down")).thenReturn(false);
+		when(sbomComponentRepository.findMatchableByOrgOrdered(ORG.toString())).thenReturn(comps(1));
+		when(dTrackService.syntheticGetOrCreateProject(eq(ORG), any(), any())).thenReturn(PROJ);
+		when(dTrackService.syntheticUploadBom(eq(ORG), eq(PROJ), any(), any(), any())).thenReturn("tok");
+
+		service.submitOrg(ORG);
+		verify(dTrackService, never()).syntheticUploadBom(any(), any(), any(), any(), any());
+		service.submitOrg(ORG);
+
+		verify(dTrackService, times(1)).syntheticUploadBom(eq(ORG), eq(PROJ), any(), any(), any());
+		assertEquals(Set.of(), ReflectionTestUtils.getField(service, "bearConfigUnknown"));
 	}
 
 	@Test

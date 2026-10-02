@@ -15,6 +15,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -225,9 +226,10 @@ class IntegrationServiceSingleVulnFetchTest {
 	}
 
 	@Test
-	void onlyOneRowPerSourceIsKept() throws Exception {
-		// The record's OSV snapshot is PYSEC-2018-5; refreshing the CVE must not
-		// also take OSV's CVE-keyed row, which would overwrite that snapshot.
+	void aGuessedKeyIsNotTriedUnderASourceThatAnswered() throws Exception {
+		// The record's OSV snapshot is PYSEC-2018-5; refreshing the CVE does not
+		// also try OSV's CVE-keyed row: a guess by the id's prefix, spent on a
+		// source that already answered for this vulnerability.
 		VulnerabilityRecordData existing = new VulnerabilityRecordData();
 		existing.setPrimaryVulnId("CVE-2018-7536");
 		VulnSourceSnapshot osv = new VulnSourceSnapshot();
@@ -248,6 +250,116 @@ class IntegrationServiceSingleVulnFetchTest {
 				eq(UpsertOrigin.MANUAL_REFRESH));
 		assertEquals(List.of("PYSEC-2018-5"),
 				snapshots.getValue().stream().map(VulnSourceSnapshot::getUpstreamVulnId).toList());
+	}
+
+	@Test
+	void everyStoredAdvisoryOfASourceIsRefreshed() throws Exception {
+		// The record holds two OSV advisories of the CVE (PyPI and Debian); each
+		// has a snapshot of its own, so a refresh fetches both.
+		VulnerabilityRecordData existing = new VulnerabilityRecordData();
+		existing.setPrimaryVulnId("CVE-2018-7536");
+		VulnSourceSnapshot pypi = new VulnSourceSnapshot();
+		pypi.setUpstreamSource(UpstreamSource.OSV);
+		pypi.setUpstreamVulnId("PYSEC-2018-5");
+		VulnSourceSnapshot debian = new VulnSourceSnapshot();
+		debian.setUpstreamSource(UpstreamSource.OSV);
+		debian.setUpstreamVulnId("DSA-4102-1");
+		existing.setSources(new ArrayList<>(List.of(debian, pypi)));
+		when(vulnerabilityRecordService.getByAlias(org, "CVE-2018-7536")).thenReturn(Optional.of(existing));
+		respond("OSV/PYSEC-2018-5", 200, vulnJson("PYSEC-2018-5", "OSV", "CVE-2018-7536", null));
+		respond("OSV/DSA-4102-1", 200, vulnJson("DSA-4102-1", "OSV", "CVE-2018-7536", null));
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
+				.thenReturn(upserted(new VulnerabilityRecordData()));
+
+		service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu);
+
+		assertTrue(requested.containsAll(List.of("OSV/DSA-4102-1", "OSV/PYSEC-2018-5")));
+		ArgumentCaptor<List<VulnSourceSnapshot>> snapshots = snapshotCaptor();
+		verify(vulnerabilityRecordService).upsertFromSnapshots(eq(org), any(), snapshots.capture(), eq(wu),
+				eq(UpsertOrigin.MANUAL_REFRESH));
+		assertEquals(Set.of("DSA-4102-1", "PYSEC-2018-5"),
+				Set.copyOf(snapshots.getValue().stream().map(VulnSourceSnapshot::getUpstreamVulnId).toList()));
+	}
+
+	@Test
+	void furtherStoredAdvisoriesGetOnlyTheBudgetTheRequestedIdLeaves() throws Exception {
+		// Seven OSV advisories of one CVE: the first is refreshed with the
+		// requested id's own keys, the others only up to the cap, after them.
+		VulnerabilityRecordData existing = new VulnerabilityRecordData();
+		existing.setPrimaryVulnId("CVE-2018-7536");
+		List<VulnSourceSnapshot> osv = new ArrayList<>();
+		for (int i = 1; i <= 7; i++) {
+			VulnSourceSnapshot s = new VulnSourceSnapshot();
+			s.setUpstreamSource(UpstreamSource.OSV);
+			s.setUpstreamVulnId("DSA-410" + i + "-1");
+			osv.add(s);
+			respond("OSV/DSA-410" + i + "-1", 200, vulnJson("DSA-410" + i + "-1", "OSV", "CVE-2018-7536", null));
+		}
+		existing.setSources(osv);
+		when(vulnerabilityRecordService.getByAlias(org, "CVE-2018-7536")).thenReturn(Optional.of(existing));
+		respond("NVD/CVE-2018-7536", 200, vulnJson("CVE-2018-7536", "NVD", null, null));
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
+				.thenReturn(upserted(new VulnerabilityRecordData()));
+
+		service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu);
+
+		assertEquals(List.of("OSV/DSA-4101-1", "NVD/CVE-2018-7536", "GITHUB/CVE-2018-7536",
+				"OSV/DSA-4102-1", "OSV/DSA-4103-1", "OSV/DSA-4104-1"), requested);
+	}
+
+	@Test
+	void furtherStoredAdvisoriesAreNotTriedOnceDependencyTrackIsUnreachable() {
+		// A gateway answering 503 stands in for a Dependency-Track that is down:
+		// every further key would wait out the same timeout.
+		VulnerabilityRecordData existing = new VulnerabilityRecordData();
+		existing.setPrimaryVulnId("CVE-2018-7536");
+		VulnSourceSnapshot debian = new VulnSourceSnapshot();
+		debian.setUpstreamSource(UpstreamSource.OSV);
+		debian.setUpstreamVulnId("DSA-4102-1");
+		VulnSourceSnapshot pypi = new VulnSourceSnapshot();
+		pypi.setUpstreamSource(UpstreamSource.OSV);
+		pypi.setUpstreamVulnId("PYSEC-2018-5");
+		existing.setSources(new ArrayList<>(List.of(debian, pypi)));
+		when(vulnerabilityRecordService.getByAlias(org, "CVE-2018-7536")).thenReturn(Optional.of(existing));
+		respond("OSV/DSA-4102-1", 503, "");
+
+		assertThrows(RelizaException.class, () -> service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu));
+
+		assertEquals(List.of("OSV/DSA-4102-1"), requested);
+	}
+
+	@Test
+	void noRoundFollowsTheOneThatFoundDependencyTrackUnreachableAndWhatWasFoundIsStored() throws Exception {
+		VulnerabilityRecordData existing = new VulnerabilityRecordData();
+		existing.setPrimaryVulnId("CVE-2018-7536");
+		VulnSourceSnapshot debian = new VulnSourceSnapshot();
+		debian.setUpstreamSource(UpstreamSource.OSV);
+		debian.setUpstreamVulnId("DSA-4102-1");
+		VulnSourceSnapshot pypi = new VulnSourceSnapshot();
+		pypi.setUpstreamSource(UpstreamSource.OSV);
+		pypi.setUpstreamVulnId("PYSEC-2018-5");
+		existing.setSources(new ArrayList<>(List.of(debian, pypi)));
+		when(vulnerabilityRecordService.getByAlias(org, "CVE-2018-7536")).thenReturn(Optional.of(existing));
+		respond("OSV/DSA-4102-1", 200, vulnJson("DSA-4102-1", "OSV", "CVE-2018-7536", "GHSA-2gwj-7jmv-h26r"));
+		when(vulnerabilityRecordService.upsertFromSnapshots(any(), any(), any(), any(), any()))
+				.thenReturn(upserted(new VulnerabilityRecordData()));
+
+		// The first round goes down at its second key: no alias round, no stored round.
+		respond("NVD/CVE-2018-7536", 503, "");
+		service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu);
+		assertEquals(List.of("OSV/DSA-4102-1", "NVD/CVE-2018-7536"), requested);
+
+		// The alias round goes down: no stored round.
+		requested.clear();
+		respond("NVD/CVE-2018-7536", 404, "");
+		respond("GITHUB/GHSA-2gwj-7jmv-h26r", 503, "");
+		service.fetchSingleVulnerabilityFromDtrack(org, "CVE-2018-7536", wu);
+		assertEquals(List.of("OSV/DSA-4102-1", "NVD/CVE-2018-7536", "GITHUB/CVE-2018-7536",
+				"GITHUB/GHSA-2gwj-7jmv-h26r"), requested);
+
+		// Both times the advisory found before the outage was stored.
+		verify(vulnerabilityRecordService, times(2)).upsertFromSnapshots(eq(org), any(), any(), eq(wu),
+				eq(UpsertOrigin.MANUAL_REFRESH));
 	}
 
 	@Test

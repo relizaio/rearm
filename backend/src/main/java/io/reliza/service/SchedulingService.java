@@ -689,21 +689,26 @@ public class SchedulingService {
     private static final String DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON = "0 55 4 * * *";
 
     /**
-     * Daily recompute sweep for {@code vulnerability_records}, in two phases,
-     * each failing on its own. First, rows still in the shape written before
-     * the merged scores list existed: converts them, and in the same
+     * Daily recompute sweep for {@code vulnerability_records}, in three
+     * phases, each failing on its own. First, rows still in the shape written
+     * before the merged scores list existed: converts them, and in the same
      * recompute fills a CVSS score from a vector where no source published
-     * one. Second, affected ranges that are due for a fetch
+     * one. Second, rows keyed by an id their own aliases outrank (a GHSA-keyed
+     * row whose CVE became known): moves them to the preferred id
+     * ({@link VulnerabilityRecordService#rekeyOutrankedRecords}), before the
+     * third phase, so a merged record's ranges are fetched the same night.
+     * Third, affected ranges that are due for a fetch
      * ({@link AffectedRangesService#refreshDueAffectedRanges}). Shared, not
      * {@code saas/}: records are shared code, so CE runs both.
      *
      * <p>Daily at 04:55 by default ({@code relizaprops.recomputeVulnerabilityRecordsCron}),
      * in the quiet-hour band with the other daily housekeeping, not hourly:
-     * both finders read every row's JSONB (no index covers their
-     * predicates), about 1 GB of detoast at 100k rows. The conversion is
-     * one-shot -- every write since stores the new shape, so later runs
-     * select zero rows and it suspends its scan. The ranges phase reads the
-     * table every night, resuming where the previous run stopped.
+     * the finders read every row's JSONB (no index covers their
+     * predicates), about 1 GB of detoast at 100k rows. The conversion and
+     * the re-key are one-shot -- every write since stores the new shape and
+     * the preferred id, so later runs select zero rows and they suspend their
+     * scans. The ranges phase reads the table every night, resuming where the
+     * previous run stopped.
      */
     @Scheduled(cron = "${relizaprops.recomputeVulnerabilityRecordsCron:" + DEFAULT_RECOMPUTE_VULNERABILITY_RECORDS_CRON + "}")
     public void recomputeVulnerabilityRecords() {
@@ -713,6 +718,8 @@ public class SchedulingService {
                 try {
                     SchedulerGuard.runIsolated("vulnerability record score conversion",
                             vulnerabilityRecordService::convertLegacyScoreRecords);
+                    SchedulerGuard.runIsolated("vulnerability record re-key",
+                            vulnerabilityRecordService::rekeyOutrankedRecords);
                     SchedulerGuard.runIsolated("vulnerability record affected ranges",
                             affectedRangesService::refreshDueAffectedRanges);
                 } finally {

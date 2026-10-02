@@ -20,6 +20,7 @@ import java.util.HashSet;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAlias;
@@ -167,7 +168,14 @@ public class ReleaseMetricsDto implements Cloneable {
 		OTHER
 	}
 
-	public static record SeveritySourceDto (SeveritySource source, VulnerabilitySeverity severity) {}
+	/**
+	 * One source's severity of a finding, stored in release and artifact
+	 * metrics. A source a later release adds reads as null here rather than
+	 * failing the whole metrics read, so a rollback keeps metrics readable.
+	 */
+	public static record SeveritySourceDto (
+			@JsonFormat(with = JsonFormat.Feature.READ_UNKNOWN_ENUM_VALUES_AS_NULL) SeveritySource source,
+			VulnerabilitySeverity severity) {}
 
 	/**
 	 * External reference on a CycloneDX vulnerability (advisory URL, patch link, etc). Mirrors
