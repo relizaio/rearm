@@ -99,6 +99,7 @@ function formatDownloadType(type: string): string {
     case 'RAW_ARTIFACT_DOWNLOAD': return 'Raw Artifact Download'
     case 'VDR_EXPORT': return 'VDR Export'
     case 'SBOM_EXPORT': return 'SBOM Export'
+    case 'TEA_DOWNLOAD': return 'TEA Download'
     default: return type
     }
 }

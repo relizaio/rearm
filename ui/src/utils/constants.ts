@@ -228,6 +228,11 @@ const PERMISSION_FUNCTIONS: string[] = [
     // applied on top of the BASE feature set's dep config. Granted
     // at PermissionScope.COMPONENT on the product.
     'VERSION_FEATURESET',
+    // Publish, re-publish and hide releases on the Transparency Exchange
+    // API (TEA). For users and RBAC keys at the organization, a perspective,
+    // a product or a component. TEA_READ, the function an EXTERNAL key
+    // carries, is deliberately absent: no editor offers it.
+    'PUBLISH_EXTERNALLY',
     // Gates every AI-Agent surface — agents, sessions, model
     // ontologies, the programmatic session lifecycle, and the
     // policy CRUD (saas). Org-wide and unique among functions in

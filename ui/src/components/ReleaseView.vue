@@ -1117,6 +1117,25 @@
                             style="margin-left:10px;"
                         ><Copy /></n-icon>
                         <Icon @click="openExportModal" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
+                        <!-- TEA-5: publish, re-publish and hide on TEA; only where the backend serves TEA. -->
+                        <template v-if="teaView && !isDocumentRound">
+                            <Icon v-if="!teaView.publication && (teaView.canPublish || teaView.refusal)"
+                                data-testid="tea-publish"
+                                :class="teaView.canPublish ? 'clickable' : ''"
+                                :style="{ marginLeft: '10px', opacity: teaView.canPublish ? 1 : 0.4, cursor: teaView.canPublish ? 'pointer' : 'not-allowed' }"
+                                size="16"
+                                :title="teaView.canPublish ? 'Publish on TEA' : (teaView.refusalMessage || 'Publish on TEA')"
+                                @click="teaView.canPublish && publishOnTea()"><WorldUpload/></Icon>
+                            <template v-if="teaView.publication">
+                                <span data-testid="tea-badge"
+                                    class="clickable"
+                                    :title="teaView.publication.state === 'PUBLISHED' ? 'Published on TEA (' + teaView.publication.exposure + ')' : 'Hidden from TEA'"
+                                    :style="{ display: 'inline-block', marginLeft: '10px', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', verticalAlign: 'middle', cursor: 'pointer', background: teaView.publication.state === 'PUBLISHED' && teaView.publication.exposure === 'PUBLIC' ? '#d03050' : teaView.publication.state === 'PUBLISHED' ? '#537985' : '#999' }"
+                                    @click="scrollToTeaSection">{{ teaView.publication.state === 'PUBLISHED' ? 'TEA v' + teaView.publication.latestVersion : 'TEA hidden' }}</span>
+                                <Icon data-testid="tea-republish" class="clickable" style="margin-left:10px;" size="16" title="Re-publish on TEA" @click="republishOnTea"><Refresh/></Icon>
+                                <Icon v-if="teaView.publication.state === 'PUBLISHED'" data-testid="tea-hide" class="clickable" style="margin-left:10px;" size="16" title="Hide from TEA" @click="hideOnTea"><EyeOff/></Icon>
+                            </template>
+                        </template>
                     </n-gi>
                     <n-gi v-if="!isDocumentRound" span="2">
                         <span
@@ -1169,6 +1188,9 @@
                         </span>
                     </n-gi>
                 </n-grid>
+                <n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false" style="margin: 4px 0;">
+                    {{ teaBanner }}
+                </n-alert>
             </div>
         </div>
 
@@ -1260,6 +1282,24 @@
                     <div class="container" v-if="generatedArtifacts.length && !isDocumentRound">
                         <h3>Generated artifacts</h3>
                         <n-data-table :data="generatedArtifacts" :columns="generatedArtifactsTableFields" :row-key="artifactsRowKey" />
+                    </div>
+                    <!-- TEA-5: the release's publication on TEA. Read-only: the actions sit in the header. -->
+                    <div class="container" v-if="teaView?.publication && !isDocumentRound" data-testid="tea-section">
+                        <h3>Transparency Exchange (TEA)</h3>
+                        <div style="margin-bottom: 8px;">
+                            <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})<span v-if="teaView.publication.cascadeOf">, published with its product</span></div>
+                            <div><strong>TEA release id: </strong>{{ teaView.publication.uuid }}
+                                <Icon class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.uuid)"><Copy20Regular/></Icon>
+                            </div>
+                            <div><strong>TEA URL: </strong>{{ teaPublicUrlText(teaView) }}
+                                <Icon v-if="teaView.publication.publicUrl" class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.publicUrl)"><Copy20Regular/></Icon>
+                            </div>
+                            <div><strong>Profile: </strong>{{ teaProfileSourceText }}</div>
+                            <div v-if="teaView.publication.tei"><strong>TEI: </strong>{{ teaView.publication.tei }}</div>
+                            <div v-if="teaView.publication.lastPublishedDate"><strong>Last published: </strong>{{ new Date(teaView.publication.lastPublishedDate).toLocaleString('en-CA') }}<span v-if="teaView.publication.lastPublishedBy"> by {{ resolveUserById(teaView.publication.lastPublishedBy) }}</span></div>
+                            <div v-if="teaView.publication.state === 'HIDDEN' && teaView.publication.lastHiddenDate"><strong>Hidden: </strong>{{ new Date(teaView.publication.lastHiddenDate).toLocaleString('en-CA') }}</div>
+                        </div>
+                        <n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />
                     </div>
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
@@ -2130,6 +2170,9 @@ import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMe
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
+import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
+import { teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
+    teaPublicationBanner, teaPublicationHistoryText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -2146,7 +2189,7 @@ import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
+import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, EyeOff, GitCompare, Link, Tag, Trash, Refresh, WorldUpload, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
@@ -2155,7 +2198,7 @@ import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawn
     WITHDRAWN_TAG } from '@/utils/supportStatusTag'
 import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput, NDescriptions, NDescriptionsItem } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { ComputedRef, Ref, computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -3184,6 +3227,7 @@ async function fetchRelease () {
     }
 
     loadSyntheticArtifacts()
+    loadTeaPublication()
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     // Backend-computed designation (true for hardware components AND product
@@ -3962,6 +4006,148 @@ async function loadSyntheticArtifacts () {
         console.warn('Failed to load generated artifacts for release', e)
     }
 }
+
+// The release's publication on TEA (TEA-5): Pro-only like the generated artifacts above (the CE
+// backend serves no TEA), so it rides its own query, gated on teaProfilesAvailable, fire-and-forget
+// from fetchRelease with a sequence counter, and reloaded after every publish, re-publish and hide.
+// Release.teaPublication is never selected by the shared release fragments.
+const teaView: Ref<any | null> = ref(null)
+const teaViewRelease: Ref<string> = ref('')
+let teaViewLoadSeq = 0
+async function loadTeaPublication () {
+    const seq = ++teaViewLoadSeq
+    const forRelease = releaseUuid.value
+    if (teaViewRelease.value !== forRelease) {
+        teaView.value = null
+        teaViewRelease.value = forRelease
+    }
+    if (!teaProfilesAvailable(myUser?.installationType)) return
+    try {
+        const response = await graphqlClient.query({
+            query: graphqlQueries.ReleaseTeaPublicationViewGql,
+            variables: { release: forRelease },
+            fetchPolicy: 'no-cache'
+        })
+        // Drop out-of-order responses (prev/next navigation mid-flight).
+        if (seq !== teaViewLoadSeq) return
+        teaView.value = response.data?.releaseTeaPublicationView ?? null
+    } catch (e) {
+        console.warn('Failed to load the TEA publication of release', e)
+    }
+}
+
+const teaBanner: ComputedRef<string | null> = computed(() => teaPublicationBanner(teaView.value))
+const teaCollections: ComputedRef<any[]> = computed(() => teaCollectionRows(teaView.value?.collections))
+
+function teaPerspectiveNames (): Record<string, string> {
+    const names: Record<string, string> = {}
+    for (const p of (updatedRelease.value?.componentDetails?.perspectiveDetails || [])) names[p.uuid] = p.name
+    return names
+}
+
+const teaProfileSourceText: ComputedRef<string> = computed(() => {
+    const p = teaView.value?.publication
+    if (!p) return ''
+    const source = !p.profileSource || p.profileSource === 'DEFAULT'
+        ? 'built-in defaults'
+        : teaSourceLabel(p.profileSource, p.profileSourceObject, teaPerspectiveNames())
+    return source + (p.profileRevision != null ? ', revision ' + p.profileRevision : '')
+})
+
+function scrollToTeaSection () {
+    activeTab.value = 'components'
+    nextTick(() => document.querySelector('[data-testid="tea-section"]')?.scrollIntoView({ behavior: 'smooth' }))
+}
+
+async function runTeaPublish (mutation: any, field: string) {
+    const view = teaView.value
+    if (!view) return
+    const confirm = teaPublishConfirm(view, {
+        component: updatedRelease.value?.componentDetails?.name ?? '',
+        version: updatedRelease.value?.version ?? '',
+        perspectives: teaPerspectiveNames()
+    })
+    const answer = await Swal.fire(confirm)
+    if (!answer.isConfirmed) return
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation,
+            variables: { release: view.release },
+            fetchPolicy: 'no-cache'
+        })
+        await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+    }
+    await loadTeaPublication()
+}
+
+const publishOnTea = () => runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql, 'publishReleaseOnTea')
+const republishOnTea = () => runTeaPublish(graphqlQueries.RepublishReleaseOnTeaGql, 'republishReleaseOnTea')
+
+async function hideOnTea () {
+    const view = teaView.value
+    if (!view) return
+    const answer = await Swal.fire(teaHideConfirm(view))
+    if (!answer.isConfirmed) return
+    try {
+        await graphqlClient.mutate({
+            mutation: graphqlQueries.HideReleaseOnTeaGql,
+            variables: { release: view.release },
+            fetchPolicy: 'no-cache'
+        })
+        await Swal.fire({ title: 'TEA', text: 'Hidden from TEA.', icon: 'success' })
+    } catch (err: any) {
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+    }
+    await loadTeaPublication()
+}
+
+const teaRowKey = (row: any) => row.key
+
+const teaEntriesTableFields: DataTableColumns<any> = [
+    { key: 'teaUuid', title: 'TEA id' },
+    { key: 'revision', title: 'Revision' },
+    { key: 'origin', title: 'Origin' },
+    { key: 'type', title: 'Type' },
+    { key: 'name', title: 'Name' },
+    { key: 'mediaType', title: 'Media type' },
+    { key: 'checksum', title: 'Checksum', render: (row: any) => h('span', { style: 'word-break: break-all;' }, row.checksum) },
+    {
+        key: 'teaUrl',
+        title: 'TEA URL',
+        render: (row: any) => h('span', { style: 'word-break: break-all;' },
+            row.externalUrl ? [row.teaUrl, h('br'), 'Stored at: ' + row.externalUrl] : row.teaUrl)
+    },
+]
+
+const teaCollectionsTableFields: DataTableColumns<any> = [
+    {
+        type: 'expand',
+        renderExpand: (row: any) => h(NDataTable, {
+            data: teaEntryRows(row.collection, teaView.value?.apiBase),
+            columns: teaEntriesTableFields,
+            rowKey: teaRowKey,
+            size: 'small'
+        })
+    },
+    { key: 'version', title: 'Version' },
+    {
+        key: 'createdDate',
+        title: 'Date',
+        render: (row: any) => row.createdDate ? (new Date(row.createdDate)).toLocaleString('en-CA') : ''
+    },
+    { key: 'reason', title: 'Reason' },
+    { key: 'comment', title: 'Comment' },
+    {
+        key: 'sha256',
+        title: 'SHA-256',
+        render: (row: any) => h('span', { title: row.sha256 }, [row.sha256Short,
+            h(NIcon, { class: 'icons clickable', size: 14, style: 'margin-left: 5px; vertical-align: middle;', title: 'Copy',
+                onClick: () => copyToClipboard(row.sha256) }, () => h(Copy20Regular))])
+    },
+    { key: 'artifactCount', title: 'Artifacts' },
+]
 
 function approvalEntryNameById (entryUuid: string): string {
     const ae = approvalEntries.value?.find((e: any) => e.uuid === entryUuid)
@@ -6825,6 +7011,10 @@ const releaseHistoryFields = computed(() => [
             // A generated artifact bound or removed (TEA-4): named while bound, its uuid once removed.
             if (row.rus === 'SYNTHETIC_ARTIFACT') {
                 return syntheticHistoryText(row.objectId, syntheticArtifactDetails.value)
+            }
+            // A publish, re-publish or hide on TEA (TEA-5).
+            if (row.rus === 'TEA_PUBLICATION') {
+                return teaPublicationHistoryText(row, teaView.value)
             }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
