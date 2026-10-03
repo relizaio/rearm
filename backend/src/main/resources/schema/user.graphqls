@@ -236,16 +236,6 @@ type Query {
 	perspectives(org: ID!): [Perspective]
 	componentsOfPerspective(perspectiveUuid: ID!): [Component]
 
-	# TEA profiles
-	"The TEA profile stored at a scope; object is empty for ORGANIZATION, else the perspective or component."
-	teaProfile(org: ID!, scope: TeaProfileScope!, object: ID): TeaProfile
-	"The TEA profile editor's view of a scope: the stored row, the effective and parent resolutions."
-	teaProfileEditorView(org: ID!, scope: TeaProfileScope!, object: ID): TeaProfileEditorView
-	"Every TEA profile row of the organization."
-	teaProfilesOfOrg(org: ID!): [TeaProfile!]!
-	"The organization's TEA id, API base and .well-known/tea document."
-	teaOrgDiscovery(org: ID!): TeaOrgDiscovery
-
 	# Download Logs
 	listDownloadLogs(org: ID!, fromDate: DateTime, toDate: DateTime, perspective: ID): [DownloadLog]
 	
@@ -992,13 +982,6 @@ type Mutation {
 	updatePerspectiveSidPurl(uuid: ID!, sidPurlOverride: SidPurlOverride, sidAuthoritySegments: [String!]): Perspective
 	deletePerspective(uuid: ID!): Perspective
 	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
-	"""
-	Save the TEA profile of a scope, wholesale. A PUBLIC profile needs organization admin at every
-	scope; the ORGANIZATION row is reset by saving the defaults, never deleted.
-	"""
-	saveTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID, profile: TeaProfileInput!): TeaProfile
-	"Remove the TEA profile of a PERSPECTIVE or COMPONENT scope; answers whether one existed."
-	deleteTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID): Boolean
 	"""
 	SaaS-only. Creates a component or product and atomically assigns it to the given
 	perspective. Requires WRITE permission on the perspective. Only real perspectives

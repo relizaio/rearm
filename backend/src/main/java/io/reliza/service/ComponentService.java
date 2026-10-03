@@ -26,7 +26,6 @@ import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
-import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.CommonVariables.SidPurlMode;
@@ -854,26 +853,6 @@ public class ComponentService {
 		ComponentData cd = ComponentData.dataFromRecord(c);
 		cd.setLocks(locks == null ? new LinkedList<>() : locks);
 		return ComponentData.dataFromRecord(saveComponent(c, Utils.dataToRecord(cd), wu));
-	}
-
-	/**
-	 * The component's TEA-facing id, minted on the first call and returned unchanged after that
-	 * (task TEA-2). Its production caller is the first TEA publication of the component (task
-	 * TEA-5). Same lock-then-refresh idiom as {@code OrganizationService.ensureTeaUuid}.
-	 */
-	@Transactional
-	public UUID ensureTeaUuid(UUID componentUuid, WhoUpdated wu) throws RelizaException {
-		repository.lockTeaIdMint(AdvisoryLockKey.TEA_ID_MINT.getQueryVal(), componentUuid.toString());
-		Component c = repository.findById(componentUuid)
-				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
-		if (null != entityManager) entityManager.refresh(c);
-		ComponentData cd = ComponentData.dataFromRecord(c);
-		if (null != cd.getTeaUuid()) return cd.getTeaUuid();
-		UUID teaUuid = UUID.randomUUID();
-		cd.setTeaUuid(teaUuid);
-		saveComponent(c, Utils.dataToRecord(cd), wu);
-		log.info("TEA id minted for component " + componentUuid + ": " + teaUuid);
-		return teaUuid;
 	}
 
 	@Transactional

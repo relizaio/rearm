@@ -6,7 +6,6 @@ package io.reliza.repositories;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Modifying;
@@ -74,21 +73,4 @@ public interface OrganizationRepository extends CrudRepository<Organization, UUI
 			@Param("orgUuid") UUID orgUuid,
 			@Param("completedAt") String completedAt,
 			@Param("keyVersion") int keyVersion);
-
-	/** The organization with this TEA-facing id (task TEA-2); the TEA request path reads through it. */
-	@Query(value = VariableQueries.FIND_ORGANIZATION_BY_TEA_UUID, nativeQuery = true)
-	Optional<Organization> findByTeaUuid(@Param("teaUuidAsString") String teaUuidAsString);
-
-	/**
-	 * Take the transaction lock that serializes the TEA id mint of one organization; released when
-	 * the transaction ends. Two-key form, {@code lockNamespace} = {@code AdvisoryLockKey.TEA_ID_MINT}.
-	 */
-	@Query(
-		value = """
-			SELECT 1 FROM (
-			  SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:orgUuidAsString))
-			) AS locked
-			""",
-		nativeQuery = true)
-	Integer lockTeaIdMint(@Param("lockNamespace") int lockNamespace, @Param("orgUuidAsString") String orgUuidAsString);
 }

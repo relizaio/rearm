@@ -545,13 +545,6 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private Settings settings;
 	/**
-	 * The organization's TEA-facing id (task TEA-2): the TEA API base is {@code <host>/tea/<teaUuid>}.
-	 * Minted once by the server on the first ENABLED TEA profile save
-	 * ({@code OrganizationService.ensureTeaUuid}), never editable, and never on an input.
-	 */
-	@JsonProperty
-	private UUID teaUuid;
-	/**
 	 * Org-wide PR-validation trigger rules -- see
 	 * {@link GlobalPrValidationTriggerRule}. Empty/null means "no
 	 * org-wide rules"; per-repo triggers behave exactly as before.

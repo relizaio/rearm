@@ -1748,45 +1748,4 @@ class VariableQueries {
 			ORDER BY r.created_date DESC
 			LIMIT :limit
 			""";
-
-	// TEA profiles (task TEA-2). The key columns are plain columns, so these read no jsonb.
-
-	protected static final String FIND_TEA_PROFILE_OF_ORG = """
-			SELECT * FROM rearm.tea_profiles
-				WHERE org = :org AND scope = 'ORGANIZATION' AND object IS NULL
-			""";
-
-	protected static final String FIND_TEA_PROFILE_BY_SCOPE_OBJECT = """
-			SELECT * FROM rearm.tea_profiles
-				WHERE org = :org AND scope = :scope AND object = :object
-			""";
-
-	protected static final String LIST_TEA_PROFILES_OF_ORG = """
-			SELECT * FROM rearm.tea_profiles
-				WHERE org = :org
-				ORDER BY created_date
-			""";
-
-	protected static final String LIST_TEA_PROFILES_OF_SCOPE_OBJECTS = """
-			SELECT * FROM rearm.tea_profiles
-				WHERE org = :org AND scope = :scope AND CAST(object AS text) = ANY(:objectsAsString)
-				ORDER BY created_date
-			""";
-
-	protected static final String LIST_TEA_PROFILES_OF_OBJECT = """
-			SELECT * FROM rearm.tea_profiles
-				WHERE org = :org AND object = :object
-			""";
-
-	/** The TEA request path (part 5) finds an organization by its TEA-facing id; indexed by V94. */
-	protected static final String FIND_ORGANIZATION_BY_TEA_UUID = """
-			SELECT * FROM rearm.organizations
-				WHERE record_data->>'teaUuid' = :teaUuidAsString
-			""";
-
-	/** The TEA request path (part 5) finds a component by its TEA-facing id; indexed by V94. */
-	protected static final String FIND_COMPONENT_BY_TEA_UUID = """
-			SELECT * FROM rearm.components
-				WHERE record_data->>'teaUuid' = :teaUuidAsString
-			""";
 }
