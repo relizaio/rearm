@@ -138,6 +138,10 @@ Access -> External Keys**:
    grant is stored as read-only with the TEA Read function. A key with no grant reads nothing.
 3. **Add a secret** in the Secrets column. The secret is shown once. Minting a secret of an
    external key takes an organization administrator, since the secret leaves the organization.
+   Any member with write access on the organization can cut an outside party off (deactivate the
+   key, retire or delete a secret, shorten an expiry); only an organization administrator can
+   restore or extend access (re-activate the key, re-enable a secret, clear or extend an expiry,
+   mint a secret).
 4. Hand the **key id** (the API ID in the IDs column) and the secret to the party, together with
    the token URL shown at the top of the tab.
 
