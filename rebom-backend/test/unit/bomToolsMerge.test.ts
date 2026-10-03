@@ -91,6 +91,48 @@ describe('mergeToolsFromInputs', () => {
     expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-b']);
   });
 
+  it('maps each cited ref once, so one input\'s rename is not renamed again by another', () => {
+    const syft = { type: 'application', group: 'anchore', name: 'syft', version: '1.0.0' };
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-2', 'tool-1'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-2' }, { ...syft, 'bom-ref': 'tool-1' }] });
+    b.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.metadata.tools.components.map((t: any) => `${t.name}=${t['bom-ref']}`))
+      .toEqual(['cdxgen=tool-1', 'syft=tool-1-2']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1', 'tool-1-2']);
+  });
+
+  it('repoints a component several inputs cite under the same duplicate ref for the same tool', () => {
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['ref-b'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-a' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-b' }] });
+    b.components = [x()];
+    const c = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-b' }] });
+    c.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b, c]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['ref-a']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['ref-a']);
+  });
+
+  it('lists a ref once when two cited refs map to the same kept tool', () => {
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1', 'tool-2'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-2' }] });
+    b.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1']);
+  });
+
   it('leaves the evidence of a component both inputs cite under the clashing ref as it was', () => {
     const shared = { name: 'shared', 'bom-ref': 'pkg:npm/shared@1',
       evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1'] }] } };

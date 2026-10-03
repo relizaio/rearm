@@ -101,8 +101,10 @@ const isObject = (v: unknown): v is Record<string, any> => !!v && typeof v === '
  *   objects -> the algorithm refs 1.6 lists;
  * - licenses: 1.7 lets one list mix licenses and expressions, and lets an expression carry
  *   `licensing` and `properties`; 1.6 takes a list of licenses or one bare expression, and only
- *   a license carries those two. An expression that is mixed in a list, or carries either field,
- *   becomes a license (its SPDX id when it is one, else its text as the name) that keeps them;
+ *   a license carries those two. An expression mixed into a list becomes a license (its SPDX id
+ *   when it is one, else its text as the name). A lone expression naming one license that
+ *   carries either field becomes such a license and keeps them; a lone COMPOUND expression
+ *   (AND / OR / WITH) stays an expression, keeping its meaning, and loses those two fields;
  * - removed, as 1.6 has no field for them: top-level `citations`, `definitions.patents`,
  *   `metadata.distributionConstraints`; a component's `versionRange`, `isExternal` and
  *   `patentAssertions`; a service's `patentAssertions`; an external reference's `properties`;
@@ -152,6 +154,11 @@ function downgradeExternalReference(ref: Record<string, any>): void {
     if (PATENT_EXTERNAL_REFERENCE_TYPES.has(ref.type)) ref.type = 'other';
 }
 
+/** An SPDX expression combining licenses (AND / OR / WITH, or parenthesised), not one license. */
+function isCompoundExpression(expression: string): boolean {
+    return /[()]|\s(AND|OR|WITH)\s/i.test(expression);
+}
+
 function downgradeLicenses(licenses: any[]): void {
     const isExpression = (e: unknown): e is Record<string, any> => isObject(e) && typeof e.expression === 'string';
     for (const entry of licenses) {
@@ -161,8 +168,17 @@ function downgradeLicenses(licenses: any[]): void {
     for (let i = 0; i < licenses.length; i++) {
         const e = licenses[i];
         if (!isExpression(e)) continue;
-        // A lone bare expression is valid 1.6 and keeps its expression semantics.
-        if (!mixed && e.licensing === undefined && e.properties === undefined) continue;
+        if (!mixed) {
+            // A lone expression is valid 1.6. It becomes a license (to keep its licensing and
+            // properties) only when it names ONE license; a compound expression would lose its
+            // meaning as a license name, so it stays an expression and those two fields go.
+            if (e.licensing === undefined && e.properties === undefined) continue;
+            if (isCompoundExpression(e.expression)) {
+                delete e.licensing;
+                delete e.properties;
+                continue;
+            }
+        }
         const id = CDXSpdx.fixupSpdxId(e.expression);
         const license: any = id ? { id } : { name: e.expression };
         for (const k of ['acknowledgement', 'bom-ref', 'licensing', 'properties']) {

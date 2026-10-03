@@ -145,37 +145,52 @@ function evidenceIdentities(component: any): any[] {
   return identity && typeof identity === 'object' ? [identity] : [];
 }
 
-/** bom-refs of the input's components whose evidence names tool ref `toolRef`. */
-function componentsCiting(input: any, toolRef: string): Set<string> {
-  const refs = new Set<string>();
+/** Per tool ref, the bom-refs of the input's components whose evidence cites it. */
+function citations(input: any): Map<string, Set<string>> {
+  const byTool = new Map<string, Set<string>>();
   forEachComponent(input, (c) => {
     if (typeof c['bom-ref'] !== 'string') return;
-    if (evidenceIdentities(c).some((i) => Array.isArray(i.tools) && i.tools.includes(toolRef))) refs.add(c['bom-ref']);
+    for (const identity of evidenceIdentities(c)) {
+      if (!Array.isArray(identity.tools)) continue;
+      for (const t of identity.tools) {
+        if (typeof t !== 'string') continue;
+        if (!byTool.has(t)) byTool.set(t, new Set());
+        byTool.get(t)!.add(c['bom-ref']);
+      }
+    }
   });
-  return refs;
+  return byTool;
 }
 
 /**
- * Points the evidence of the merged components that came from `inputs[index]` at the tool's new
- * ref. A component is only rewritten when no other input has a component under the same bom-ref
- * citing the old ref: such a component was merged from both, and either attribution would be a
- * guess, so it keeps the original one.
+ * Points merged component evidence at the tool refs the merge kept, in ONE pass over each
+ * evidence identity: every cited ref is mapped once, so a ref one input renamed is never
+ * renamed again by another input's rename that happens to produce it.
+ *
+ * A merged component (by bom-ref) citing ref `t` is rewritten to what `t` became in the inputs
+ * that have that component citing `t`. When they all agree -- one input, or several naming the
+ * same tool under `t` -- it takes that ref; when they disagree (`t` named different tools in
+ * different inputs) the attribution would be a guess, and `t` is left as it is. A ref listed
+ * twice after mapping is listed once.
  */
-function repointEvidence(merged: any, inputs: any[], index: number, renamed: Map<string, string>): void {
-  for (const [oldRef, newRef] of renamed) {
-    const ours = componentsCiting(inputs[index], oldRef);
-    inputs.forEach((other, i) => {
-      if (i === index) return;
-      for (const ref of componentsCiting(other, oldRef)) ours.delete(ref);
+function repointEvidence(merged: any, inputs: any[], renames: Map<string, string>[]): void {
+  if (!renames.some((r) => r.size)) return;
+  const cited = inputs.map(citations);
+  const resolve = (componentRef: string, t: string): string => {
+    const targets = new Set<string>();
+    cited.forEach((byTool, i) => {
+      if (byTool.get(t)?.has(componentRef)) targets.add(renames[i].get(t) ?? t);
     });
-    if (!ours.size) continue;
-    forEachComponent(merged, (c) => {
-      if (!ours.has(c['bom-ref'])) return;
-      for (const identity of evidenceIdentities(c)) {
-        if (Array.isArray(identity.tools)) identity.tools = identity.tools.map((t: unknown) => (t === oldRef ? newRef : t));
-      }
-    });
-  }
+    return targets.size === 1 ? [...targets][0] : t;
+  };
+  forEachComponent(merged, (c) => {
+    const componentRef = c['bom-ref'];
+    if (typeof componentRef !== 'string') return;
+    for (const identity of evidenceIdentities(c)) {
+      if (!Array.isArray(identity.tools)) continue;
+      identity.tools = [...new Set(identity.tools.map((t: unknown) => (typeof t === 'string' ? resolve(componentRef, t) : t)))];
+    }
+  });
 }
 
 export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
@@ -190,8 +205,10 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
   const components = [...current.components];
   const services = [...current.services];
   const inputList = inputs || [];
-  inputList.forEach((input, index) => {
+  const renames: Map<string, string>[] = [];
+  inputList.forEach((input) => {
     const renamed = new Map<string, string>();
+    renames.push(renamed);
     const t = toolsOf(input);
     for (const c of t.components) {
       if (isRearmTool(c)) continue;
@@ -213,8 +230,8 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
       keptServices.set(key, copy);
       services.push(copy);
     }
-    repointEvidence(merged, inputList, index, renamed);
   });
+  repointEvidence(merged, inputList, renames);
   if (isLegacySpec(merged.specVersion)) {
     // 1.4 has no tool services; the legacy array holds tool entries only.
     merged.metadata.tools = components.map(componentAsLegacyTool);

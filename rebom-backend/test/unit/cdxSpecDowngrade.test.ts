@@ -133,6 +133,8 @@ function every17Addition(): any {
             { type: 'library', name: 'expr-licensed', licenses: [{ expression: 'LicenseRef-Acme-EULA',
                 licensing: { licenseTypes: ['perpetual'], licensor: { organization: { name: 'Acme' } } },
                 properties: [{ name: 'acme:seat', value: '42' }] }] },
+            { type: 'library', name: 'compound-licensed', licenses: [{ expression: 'MIT OR Apache-2.0',
+                licensing: { licenseTypes: ['perpetual'] }, properties: [{ name: 'acme:seat', value: '7' }] }] },
         ],
         formulation: [{ 'bom-ref': 'formulation-1', components: [cert, algorithm, key, protocol] }],
     };
@@ -175,6 +177,8 @@ describe('downgrade17To16', () => {
         expect(bom.components[2].licenses).toEqual([{ license: { name: 'LicenseRef-Acme-EULA',
             licensing: { licenseTypes: ['perpetual'], licensor: { organization: { name: 'Acme' } } },
             properties: [{ name: 'acme:seat', value: '42' }] } }]);
+        // a lone compound expression keeps its meaning; the fields 1.6 cannot attach to it go
+        expect(bom.components[3].licenses).toEqual([{ expression: 'MIT OR Apache-2.0' }]);
         const [cert, algorithm, key, protocol] = bom.formulation[0].components;
         expect(cert.properties).toEqual([{ name: 'cdx:crypto:trustDomain', value: 'system' }]);
         // related assets land on 1.6's ref fields; a type 1.6 has no field for goes
