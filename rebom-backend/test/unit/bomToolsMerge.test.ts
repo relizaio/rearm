@@ -42,21 +42,145 @@ describe('mergeToolsFromInputs', () => {
     expect(merged.metadata.tools.components[0]['bom-ref']).toBe('pkg:npm/@cdxgen/cdxgen@13.2.0');
   });
 
-  it('drops a copied tool\'s bom-ref only when the merged document already uses it', () => {
+  it('gives a copied tool a fresh bom-ref when the merged document already uses its ref', () => {
     const merged: any = bom('1.6', { components: [] });
     merged.components = [{ type: 'library', name: 'cdxgen', 'bom-ref': 'pkg:npm/@cdxgen/cdxgen@13.2.0' }];
     mergeToolsFromInputs(merged, [bom('1.6', { components: [cdxgen] })]);
-    expect(merged.metadata.tools.components[0]['bom-ref']).toBeUndefined();
+    expect(merged.metadata.tools.components[0]['bom-ref']).toBe('pkg:npm/@cdxgen/cdxgen@13.2.0-2');
     expect(cdxgen['bom-ref']).toBe('pkg:npm/@cdxgen/cdxgen@13.2.0'); // the input is not mutated
   });
 
-  it('keeps the first of two inputs\' tools that share a bom-ref and drops the ref on the second', () => {
+  it('points the second input\'s evidence at its tool\'s fresh ref when two inputs\' tools share a ref', () => {
+    const cites = (ref: string, tool: string) => ({ name: ref, 'bom-ref': ref,
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: [tool] }] } });
+    const toolRef = 'tool-1';
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': toolRef }] });
+    a.components = [cites('pkg:npm/a@1', toolRef)];
+    const b = bom('1.6', { components: [{ ...mavenPlugin, 'bom-ref': toolRef }] });
+    b.components = [cites('pkg:maven/b@1', toolRef)];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [cites('pkg:npm/a@1', toolRef), cites('pkg:maven/b@1', toolRef)];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.metadata.tools.components.map((t: any) => `${t.name}=${t['bom-ref']}`))
+      .toEqual(['cdxgen=tool-1', 'cyclonedx-maven-plugin=tool-1-2']);
+    expect(merged.components.map((c: any) => c.evidence.identity[0].tools[0])).toEqual(['tool-1', 'tool-1-2']);
+  });
+
+  it('points evidence at the kept entry when two inputs name the same tool under different refs', () => {
+    const cites = (ref: string, tool: string) => ({ name: ref, 'bom-ref': ref,
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: [tool] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-a' }] });
+    a.components = [cites('pkg:npm/a@1', 'tool-a')];
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-b' }] });
+    b.components = [cites('pkg:npm/b@1', 'tool-b')];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [cites('pkg:npm/a@1', 'tool-a'), cites('pkg:npm/b@1', 'tool-b')];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['tool-a']);
+    expect(merged.components.map((c: any) => c.evidence.identity[0].tools[0])).toEqual(['tool-a', 'tool-a']);
+  });
+
+  it('gives the kept entry the duplicate\'s ref when the kept one had none', () => {
+    const { 'bom-ref': _, ...cdxgenNoRef } = cdxgen;
+    const merged: any = bom('1.6', { components: [] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-b' }] });
+    b.components = [{ name: 'x', 'bom-ref': 'pkg:npm/x@1', evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-b'] }] } }];
+    merged.components = structuredClone(b.components);
+    mergeToolsFromInputs(merged, [bom('1.6', { components: [cdxgenNoRef] }), b]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['tool-b']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-b']);
+  });
+
+  it('maps each cited ref once, so one input\'s rename is not renamed again by another', () => {
+    const syft = { type: 'application', group: 'anchore', name: 'syft', version: '1.0.0' };
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-2', 'tool-1'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-2' }, { ...syft, 'bom-ref': 'tool-1' }] });
+    b.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.metadata.tools.components.map((t: any) => `${t.name}=${t['bom-ref']}`))
+      .toEqual(['cdxgen=tool-1', 'syft=tool-1-2']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1', 'tool-1-2']);
+  });
+
+  it('repoints a component several inputs cite under the same duplicate ref for the same tool', () => {
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['ref-b'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-a' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-b' }] });
+    b.components = [x()];
+    const c = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'ref-b' }] });
+    c.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b, c]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['ref-a']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['ref-a']);
+  });
+
+  it('lists a ref once when two cited refs map to the same kept tool', () => {
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1', 'tool-2'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-2' }] });
+    b.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1']);
+  });
+
+  it('never leaves shared evidence citing a ref no kept tool has (three inputs disagreeing)', () => {
+    const syft = { type: 'application', group: 'anchore', name: 'syft', version: '1.0.0' };
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['t'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'a-cdxgen' }, { ...syft, 'bom-ref': 'a-syft' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 't' }] });
+    b.components = [x()];
+    const c = bom('1.6', { components: [{ ...syft, 'bom-ref': 't' }] });
+    c.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b, c]);
+    const kept = merged.metadata.tools.components.map((t: any) => t['bom-ref']);
+    expect(kept).toEqual(['a-cdxgen', 'a-syft']);
+    // B is the first input with x citing t; its t (cdxgen) became a-cdxgen
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['a-cdxgen']);
+  });
+
+  it('gives a component both inputs cite under the clashing ref the first input\'s attribution', () => {
+    const shared = { name: 'shared', 'bom-ref': 'pkg:npm/shared@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1'] }] } };
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });
+    a.components = [structuredClone(shared)];
+    const b = bom('1.6', { components: [{ ...mavenPlugin, 'bom-ref': 'tool-1' }] });
+    b.components = [structuredClone(shared)];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [structuredClone(shared)];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1']);
+  });
+
+  it('recognises rebom\'s own 1.4 entry, which carries group rather than vendor, and does not copy it', () => {
+    const merged = bom('1.6', { components: [] });
+    mergeToolsFromInputs(merged, [bom('1.4', [
+      { type: 'application', group: 'io.reliza', name: 'rearm', version: '26.10.12' },
+      { vendor: 'CycloneDX', name: 'cyclonedx-gomod', version: '1.9.0' },
+    ])]);
+    expect(merged.metadata.tools.components.map((t: any) => t.name)).toEqual(['cyclonedx-gomod']);
+  });
+
+  it('treats one tool named with and without a leading @ on its namespace as the same tool', () => {
     const merged = bom('1.6', { components: [] });
     mergeToolsFromInputs(merged, [
-      bom('1.6', { components: [{ ...cdxgen }] }),
-      bom('1.6', { components: [{ ...cdxgen, version: '12.0.0' }] }),
+      bom('1.6', { components: [{ type: 'application', group: '@cyclonedx', name: 'cdxgen', version: '13.2.0' }] }),
+      bom('1.4', [{ vendor: 'cyclonedx', name: 'cdxgen', version: '13.2.0' }]),
     ]);
-    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['pkg:npm/@cdxgen/cdxgen@13.2.0', undefined]);
+    expect(merged.metadata.tools.components).toHaveLength(1);
+    expect(merged.metadata.tools.components[0].group).toBe('@cyclonedx');
   });
 
   it('gives a tool component without a type the application type', () => {

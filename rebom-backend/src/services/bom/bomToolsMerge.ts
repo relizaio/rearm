@@ -12,23 +12,33 @@ import { isRearmToolEntry as isRearmTool } from './bomProcessingService';
  *
  * ReARM's own entry (io.reliza / rearm) is not copied: `attachRebomToolToBom` adds the current
  * one after the merge, and an input's copy would name an older rebom. A copied tool keeps its
- * `bom-ref`, because component evidence points at it (`evidence.identity[].tools`), unless that
- * ref is already taken in the merged document; refs are unique per document, and only then is
- * it dropped.
+ * `bom-ref`, because component evidence points at it (`evidence.identity[].tools`). Refs are
+ * unique per document, so when the ref is already taken the tool gets a fresh one, and the
+ * evidence of that input's components is pointed at it (for a component several inputs share,
+ * the first input's attribution, as for the component itself).
  */
 
 type Tools = { components: any[]; services: any[] };
 
 
+/**
+ * Identity of a tool across inputs and formats: namespace, name and version, case-insensitive.
+ * A leading `@` on the namespace is ignored, so cdxgen named by one input as group `@cyclonedx`
+ * and by another (a 1.4 vendor) as `cyclonedx` is one tool.
+ */
 function toolKey(tool: any): string {
   const part = (v: unknown) => (typeof v === 'string' ? v.trim().toLowerCase() : '');
-  return [part(tool.group ?? tool.vendor), part(tool.name), part(tool.version)].join('|');
+  const namespace = part(tool.group ?? tool.vendor).replace(/^@/, '');
+  return [namespace, part(tool.name), part(tool.version)].join('|');
 }
 
 /** A legacy (CycloneDX 1.4) tool entry as a 1.5+ tool component. */
 function legacyToolAsComponent(tool: any): any {
   const component: any = { type: 'application', name: tool.name };
-  if (tool.vendor) component.group = tool.vendor;
+  // vendor is the 1.4 field; group as well, because rebom wrote its own 1.4 entry with group,
+  // and dropping it made that entry unrecognisable as ReARM's (a second one was added).
+  const namespace = tool.vendor ?? tool.group;
+  if (namespace) component.group = namespace;
   if (tool.version) component.version = tool.version;
   if (Array.isArray(tool.hashes) && tool.hashes.length) component.hashes = tool.hashes;
   if (Array.isArray(tool.externalReferences) && tool.externalReferences.length) {
@@ -82,14 +92,105 @@ function bomRefsIn(node: any, into: Set<string>): Set<string> {
   return into;
 }
 
-/** A copy of a tool entry, keeping its bom-ref only while that ref is still free. */
-function copyTool(tool: any, usedRefs: Set<string>): any {
+/**
+ * A copy of a tool entry with its bom-ref, or a fresh ref when that one is already taken in the
+ * merged document; a rename is recorded in `renamed` (old ref -> new ref).
+ */
+function copyTool(tool: any, usedRefs: Set<string>, renamed: Map<string, string>): any {
   const { 'bom-ref': ref, ...copy } = tool;
-  if (typeof ref === 'string' && !usedRefs.has(ref)) {
-    usedRefs.add(ref);
-    return { ...copy, 'bom-ref': ref };
+  if (typeof ref !== 'string' || !ref) return copy;
+  let fresh = ref;
+  for (let n = 2; usedRefs.has(fresh); n++) fresh = `${ref}-${n}`;
+  usedRefs.add(fresh);
+  if (fresh !== ref) renamed.set(ref, fresh);
+  return { ...copy, 'bom-ref': fresh };
+}
+
+/**
+ * A tool an earlier input already named, under this input's own ref: the duplicate is not
+ * copied, so this input's evidence must cite the kept entry. The kept entry takes the ref when
+ * it has none and the ref is free; otherwise the ref is recorded as renamed to the kept one.
+ */
+function mapDuplicateRef(duplicate: any, kept: any, usedRefs: Set<string>, renamed: Map<string, string>): void {
+  const ref = duplicate['bom-ref'];
+  if (typeof ref !== 'string' || !ref || ref === kept['bom-ref']) return;
+  if (typeof kept['bom-ref'] !== 'string' || !kept['bom-ref']) {
+    if (!usedRefs.has(ref)) { kept['bom-ref'] = ref; usedRefs.add(ref); return; }
+    let fresh = ref;
+    for (let n = 2; usedRefs.has(fresh); n++) fresh = `${ref}-${n}`;
+    kept['bom-ref'] = fresh;
+    usedRefs.add(fresh);
   }
-  return copy;
+  renamed.set(ref, kept['bom-ref']);
+}
+
+/** Calls `visit` on every component object in a BOM: components, nested and in formulation. */
+function forEachComponent(bom: any, visit: (c: any) => void): void {
+  const walk = (list: unknown) => {
+    if (!Array.isArray(list)) return;
+    for (const c of list) {
+      if (!c || typeof c !== 'object') continue;
+      visit(c);
+      walk(c.components);
+    }
+  };
+  walk(bom?.components);
+  if (bom?.metadata?.component) { visit(bom.metadata.component); walk(bom.metadata.component.components); }
+  if (Array.isArray(bom?.formulation)) for (const f of bom.formulation) walk(f?.components);
+}
+
+/** The tool refs a component's evidence names, whether identity is an array (1.6) or one object (1.5). */
+function evidenceIdentities(component: any): any[] {
+  const identity = component?.evidence?.identity;
+  if (Array.isArray(identity)) return identity.filter((i: any) => i && typeof i === 'object');
+  return identity && typeof identity === 'object' ? [identity] : [];
+}
+
+/** Per tool ref, the bom-refs of the input's components whose evidence cites it. */
+function citations(input: any): Map<string, Set<string>> {
+  const byTool = new Map<string, Set<string>>();
+  forEachComponent(input, (c) => {
+    if (typeof c['bom-ref'] !== 'string') return;
+    for (const identity of evidenceIdentities(c)) {
+      if (!Array.isArray(identity.tools)) continue;
+      for (const t of identity.tools) {
+        if (typeof t !== 'string') continue;
+        if (!byTool.has(t)) byTool.set(t, new Set());
+        byTool.get(t)!.add(c['bom-ref']);
+      }
+    }
+  });
+  return byTool;
+}
+
+/**
+ * Points merged component evidence at the tool refs the merge kept, in ONE pass over each
+ * evidence identity: every cited ref is mapped once, so a ref one input renamed is never
+ * renamed again by another input's rename that happens to produce it.
+ *
+ * A merged component (by bom-ref) citing ref `t` is rewritten to what `t` became in the FIRST
+ * input, in input order, that has that component citing `t` -- the CLI's own rule for a
+ * component several inputs share (the first input's copy wins). When those inputs disagree
+ * (`t` named different tools in different inputs), keeping `t` unchanged could leave a ref no
+ * kept tool has, or name a tool from an input that never contained the component; the first
+ * citing input's target always exists. A component no input cites `t` for keeps `t`. A ref
+ * listed twice after mapping is listed once.
+ */
+function repointEvidence(merged: any, inputs: any[], renames: Map<string, string>[]): void {
+  if (!renames.some((r) => r.size)) return;
+  const cited = inputs.map(citations);
+  const resolve = (componentRef: string, t: string): string => {
+    const first = cited.findIndex((byTool) => byTool.get(t)?.has(componentRef));
+    return first < 0 ? t : (renames[first].get(t) ?? t);
+  };
+  forEachComponent(merged, (c) => {
+    const componentRef = c['bom-ref'];
+    if (typeof componentRef !== 'string') return;
+    for (const identity of evidenceIdentities(c)) {
+      if (!Array.isArray(identity.tools)) continue;
+      identity.tools = [...new Set(identity.tools.map((t: unknown) => (typeof t === 'string' ? resolve(componentRef, t) : t)))];
+    }
+  });
 }
 
 export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
@@ -97,30 +198,40 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
   if (!merged.metadata) merged.metadata = {};
   const usedRefs = bomRefsIn(merged, new Set<string>());
   const current = toolsOf(merged);
-  const seenComponents = new Set(current.components.map(toolKey));
-  const seenServices = new Set(current.services.map(toolKey));
+  // The entry kept for each tool, so a later input naming the same tool under another ref can
+  // be pointed at it.
+  const keptComponents = new Map<string, any>(current.components.map((c) => [toolKey(c), c]));
+  const keptServices = new Map<string, any>(current.services.map((s) => [toolKey(s), s]));
   const components = [...current.components];
   const services = [...current.services];
-  for (const input of inputs || []) {
+  const inputList = inputs || [];
+  const renames: Map<string, string>[] = [];
+  inputList.forEach((input) => {
+    const renamed = new Map<string, string>();
+    renames.push(renamed);
     const t = toolsOf(input);
     for (const c of t.components) {
       if (isRearmTool(c)) continue;
       const key = toolKey(c);
-      if (seenComponents.has(key)) continue;
-      seenComponents.add(key);
-      const copy = copyTool(c, usedRefs);
+      const kept = keptComponents.get(key);
+      if (kept) { mapDuplicateRef(c, kept, usedRefs, renamed); continue; }
+      const copy = copyTool(c, usedRefs, renamed);
       // `type` is required on a 1.5+ component; a producer that left it out still named a tool.
       if (!copy.type) copy.type = 'application';
+      keptComponents.set(key, copy);
       components.push(copy);
     }
     for (const s of t.services) {
       if (isRearmTool(s)) continue;
       const key = toolKey(s);
-      if (seenServices.has(key)) continue;
-      seenServices.add(key);
-      services.push(copyTool(s, usedRefs));
+      const kept = keptServices.get(key);
+      if (kept) { mapDuplicateRef(s, kept, usedRefs, renamed); continue; }
+      const copy = copyTool(s, usedRefs, renamed);
+      keptServices.set(key, copy);
+      services.push(copy);
     }
-  }
+  });
+  repointEvidence(merged, inputList, renames);
   if (isLegacySpec(merged.specVersion)) {
     // 1.4 has no tool services; the legacy array holds tool entries only.
     merged.metadata.tools = components.map(componentAsLegacyTool);

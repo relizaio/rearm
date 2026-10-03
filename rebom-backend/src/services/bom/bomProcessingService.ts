@@ -314,27 +314,46 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
 }
 
 /**
- * The version for the rearm tool entry: the ReARM product version when the deployment passes it
+ * The ReARM version named on ReARM's tool entry when the deployment does not pass one (a local
+ * run, a compose file without REARM_PRODUCT_VERSION). Must match the backend's
+ * Utils.REARM_PRODUCT_VERSION_FALLBACK.
+ */
+export const REARM_PRODUCT_VERSION_FALLBACK = '26.08.95';
+
+/**
+ * The version for the rearm tool entry: the ReARM product version the deployment passes
  * (REARM_PRODUCT_VERSION, the chart's appVersion, which is also what the UI shows as the ReARM
- * version), else rebom's own release: REBOM_VERSION, then the version the image was built with
- * (/app/version, written by the Dockerfile), then package.json. npm_package_version, used before,
- * is only set when the process is started through npm, so a deployed image named the tool
- * without a version (`rearm null`).
+ * version), else {@link REARM_PRODUCT_VERSION_FALLBACK}. rebom's own release is not used: the
+ * entry names ReARM, and rebom's version is not one a reader can match to a ReARM release.
  */
 export function rebomToolVersion(): string {
-  if (process.env.REARM_PRODUCT_VERSION) return process.env.REARM_PRODUCT_VERSION;
-  if (process.env.REBOM_VERSION) return process.env.REBOM_VERSION;
-  try {
-    const line = fs.readFileSync('/app/version', 'utf8').split('\n').find((l) => l.startsWith('version='));
-    const v = line ? line.substring('version='.length).trim() : '';
-    if (v && v !== 'not_versioned') return v;
-  } catch {
-    // no image version file: running outside the image
-  }
-  return require('../../../package.json').version;
+  const v = process.env.REARM_PRODUCT_VERSION?.trim();
+  return v ? v : REARM_PRODUCT_VERSION_FALLBACK;
 }
 
+function isLegacyToolsSpec(specVersion?: string): boolean {
+  const v = typeof specVersion === 'string' && specVersion ? specVersion : '1.4';
+  return parseFloat(v.split('.').slice(0, 2).join('.')) < 1.5;
+}
+
+/**
+ * ReARM's tool entry in the shape the BOM's spec version defines.
+ *
+ * 1.5 and later: a tool component. 1.4 and earlier: a legacy tool, which allows only vendor,
+ * name, version, hashes and (from 1.4) externalReferences -- writing the component shape there
+ * (group, supplier, licenses, ...) made every 1.4 document fail schema validation.
+ */
 export function createRebomToolObject(specVersion: string): any {
+  if (isLegacyToolsSpec(specVersion)) {
+    const legacyTool: any = { vendor: "io.reliza", name: "rearm", version: rebomToolVersion() };
+    if (specVersion === '1.4' || !specVersion) {
+      legacyTool.externalReferences = [
+        { url: "ssh://git@github.com/relizaio/rearm.git", type: "vcs" },
+        { url: "https://rearmhq.com", type: "website" }
+      ];
+    }
+    return legacyTool;
+  }
   const rebomTool: any = {
     type: "application",
     name: "rearm",
