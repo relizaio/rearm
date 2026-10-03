@@ -84,7 +84,8 @@ describe('documents view contract', () => {
         const sections = [...pane.matchAll(/<div class="container"(?: v-if="([^"]*)")?[^>]*>\s*<h3>\s*([^<\n]*?)\s*(?:<|\n)/g)]
             .map(m => ({ guard: m[1] ?? '', heading: m[2] }))
         expect(sections.map(s => s.heading)).toEqual(['Document round', 'Components', 'Source Code Entries',
-            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Produced Deliverables', 'Inbound Deliverables'])
+            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Generated artifacts', 'Produced Deliverables',
+            'Inbound Deliverables'])
         // A round's component is never a PRODUCT, so a PRODUCT-only section does not render for one.
         const shownForARound = sections.filter(s => s.guard !== 'false' && !s.guard.includes('!isDocumentRound')
             && !/componentDetails\.type === 'PRODUCT'$/.test(s.guard))
