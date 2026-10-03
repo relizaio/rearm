@@ -5,6 +5,18 @@
  * table. Pure functions, no Vue import, so they run under vitest.
  */
 
+import { isProEdition } from './editionCapabilities'
+
+/**
+ * Whether this edition serves generated artifacts. The Pro backend does; the CE backend has no
+ * Release.syntheticArtifactDetails yet (the 2026-10 TEA work ships no CE backend sync), so a CE UI
+ * does not send the query and shows no section. generatedArtifactsSchemaDrift.spec.ts ties this to
+ * the CE schema and fails once that schema gains the field: lift the gate then.
+ */
+export function syntheticArtifactsAvailable (installationType: string | undefined | null): boolean {
+    return isProEdition(installationType)
+}
+
 const BELONGS_TO_LABELS: Record<string, string> = {
     RELEASE: 'Release',
     SCE: 'Source Code Entry',
@@ -28,17 +40,16 @@ export function isSyntheticArtifact (ad: any): boolean {
 
 /**
  * Rows for the Generated artifacts table: the release's syntheticArtifactDetails only, in list
- * order, each marked as generated for this release. Empty when the release carries none.
+ * order, each marked as generated for the release. Empty when the release carries none.
  */
-export function generatedArtifactRows (release: any): any[] {
-    const details = release?.syntheticArtifactDetails
+export function generatedArtifactRows (details: any[] | null | undefined, releaseUuid: string | null | undefined): any[] {
     if (!Array.isArray(details)) return []
     return details.map((ad: any) => ({
         ...ad,
         tags: Array.isArray(ad.tags) ? ad.tags : [],
         belongsTo: belongsToLabel('SYNTHETIC'),
         belongsToId: '',
-        belongsToUUID: release.uuid
+        belongsToUUID: releaseUuid ?? ''
     }))
 }
 
@@ -46,9 +57,9 @@ export function generatedArtifactRows (release: any): any[] {
  * The History text of a SYNTHETIC_ARTIFACT event: the generated artifact named by its type and
  * display id while it is still bound, its uuid once it is not (a REMOVED row).
  */
-export function syntheticHistoryText (objectId: string | null | undefined, release: any): string {
-    const ad = Array.isArray(release?.syntheticArtifactDetails)
-        ? release.syntheticArtifactDetails.find((a: any) => a && a.uuid === objectId)
+export function syntheticHistoryText (objectId: string | null | undefined, details: any[] | null | undefined): string {
+    const ad = Array.isArray(details)
+        ? details.find((a: any) => a && a.uuid === objectId)
         : undefined
     if (!ad) return `Generated artifact ${objectId ?? ''}`.trim()
     return ['Generated artifact', ad.type, ad.displayIdentifier].filter(Boolean).join(' ')

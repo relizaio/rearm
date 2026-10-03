@@ -7,7 +7,8 @@ import { fileURLToPath } from 'url'
  * stripped (the narrow style of releaseViewCoverageImports.spec.ts). The behaviour of the rows
  * lives in utils/generatedArtifacts.spec.ts, where the code runs; this pins the wiring a running
  * test cannot reach in a repo without a DOM environment: the import, the section, the read-only
- * actions, the inventory computed staying blind to the list, the History branch and the queries.
+ * actions, the inventory computed staying blind to the list, the History branch and the gated
+ * query that loads the list.
  */
 const read = (rel: string) => readFileSync(fileURLToPath(new URL(rel, import.meta.url)), 'utf8')
 const strip = (source: string) => source
@@ -31,7 +32,7 @@ function declaration (name: string): string {
 describe('ReleaseView Generated artifacts section', () => {
     it('imports and calls generatedArtifactRows', () => {
         expect(source).toMatch(/import\s+\{[^}]*\bgeneratedArtifactRows\b[^}]*\}\s+from\s+'@\/utils\/generatedArtifacts'/)
-        expect(code).toMatch(/generatedArtifactRows\(updatedRelease\.value\)/)
+        expect(code).toMatch(/generatedArtifactRows\(syntheticArtifactDetails\.value, syntheticArtifactsRelease\.value\)/)
     })
 
     it('renders the section with its own table', () => {
@@ -53,17 +54,30 @@ describe('ReleaseView Generated artifacts section', () => {
     })
 
     it('names SYNTHETIC_ARTIFACT events in the History renderer', () => {
-        expect(code).toMatch(/row\.rus === 'SYNTHETIC_ARTIFACT'[\s\S]{0,120}syntheticHistoryText\(row\.objectId, updatedRelease\.value\)/)
+        expect(code).toMatch(/row\.rus === 'SYNTHETIC_ARTIFACT'[\s\S]{0,120}syntheticHistoryText\(row\.objectId, syntheticArtifactDetails\.value\)/)
     })
 })
 
-describe('release queries carry syntheticArtifactDetails', () => {
+describe('the generated list rides its own gated query, never the shared release fragments', () => {
     const queries = strip(read('../utils/graphqlQueries.ts'))
 
-    it.each(['singleReleaseDataNoParent', 'singleReleaseProductNoParent'])('%s selects it', (fragment) => {
+    it.each(['singleReleaseDataNoParent', 'singleReleaseProductNoParent'])('%s does not select it', (fragment) => {
         const start = queries.indexOf(`const ${fragment} =`)
         expect(start).toBeGreaterThanOrEqual(0)
         const end = queries.indexOf('`', queries.indexOf('`', start) + 1)
-        expect(queries.slice(start, end)).toMatch(/syntheticArtifactDetails\s*\{/)
+        expect(queries.slice(start, end)).not.toContain('syntheticArtifactDetails')
+    })
+
+    it('loads the list only where syntheticArtifactsAvailable says the backend serves it', () => {
+        const load = code.slice(code.indexOf('async function loadSyntheticArtifacts'))
+        const gate = load.indexOf('if (!syntheticArtifactsAvailable(myUser?.installationType)) return')
+        const query = load.indexOf('graphqlQueries.ReleaseSyntheticArtifactsGql')
+        expect(gate).toBeGreaterThan(0)
+        expect(query).toBeGreaterThan(gate)
+    })
+
+    it('starts the load from fetchRelease', () => {
+        const fetch = code.slice(code.indexOf('async function fetchRelease ()'))
+        expect(fetch.slice(0, fetch.indexOf('\n}\n'))).toContain('loadSyntheticArtifacts()')
     })
 })

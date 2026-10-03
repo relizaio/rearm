@@ -2129,7 +2129,7 @@ import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSel
 import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
-import { generatedArtifactRows, belongsToLabel, syntheticHistoryText } from '@/utils/generatedArtifacts'
+import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -3183,6 +3183,8 @@ async function fetchRelease () {
         })
     }
 
+    loadSyntheticArtifacts()
+
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     // Backend-computed designation (true for hardware components AND product
     // releases containing at least one hardware component); fall back to the
@@ -3929,6 +3931,35 @@ async function loadApprovalRequests () {
         if (approvalRequestsList.value.length && !users.value.length) loadUsers()
     } catch (e) {
         console.warn('Failed to load approval requests for release', e)
+    }
+}
+
+// Generated artifacts (TEA-4) are a Pro-only schema surface too: the CE backend has no
+// Release.syntheticArtifactDetails (the 2026-10 TEA work ships no CE backend sync), so they ride
+// their own gated query, like the approval requests above. Fire-and-forget from fetchRelease; a
+// refresh of the same release keeps the rows until the answer replaces them.
+const syntheticArtifactDetails: Ref<any[]> = ref([])
+const syntheticArtifactsRelease: Ref<string> = ref('')
+let syntheticArtifactsLoadSeq = 0
+async function loadSyntheticArtifacts () {
+    const seq = ++syntheticArtifactsLoadSeq
+    const forRelease = releaseUuid.value
+    if (syntheticArtifactsRelease.value !== forRelease) {
+        syntheticArtifactDetails.value = []
+        syntheticArtifactsRelease.value = forRelease
+    }
+    if (!syntheticArtifactsAvailable(myUser?.installationType)) return
+    try {
+        const response = await graphqlClient.query({
+            query: graphqlQueries.ReleaseSyntheticArtifactsGql,
+            variables: { releaseID: forRelease, orgID: props.orgprop },
+            fetchPolicy: 'no-cache'
+        })
+        // Drop out-of-order responses (prev/next navigation mid-flight).
+        if (seq !== syntheticArtifactsLoadSeq) return
+        syntheticArtifactDetails.value = response.data?.release?.syntheticArtifactDetails || []
+    } catch (e) {
+        console.warn('Failed to load generated artifacts for release', e)
     }
 }
 
@@ -5384,7 +5415,8 @@ function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string
 }
 
 // Never folded into the artifacts computed below: generated documents are not inventory.
-const generatedArtifacts: ComputedRef<any[]> = computed((): any[] => generatedArtifactRows(updatedRelease.value))
+const generatedArtifacts: ComputedRef<any[]> = computed((): any[] =>
+    generatedArtifactRows(syntheticArtifactDetails.value, syntheticArtifactsRelease.value))
 
 const artifacts: ComputedRef<any> = computed((): any => {
     let artifacts: any[] = []
@@ -6792,7 +6824,7 @@ const releaseHistoryFields = computed(() => [
             }
             // A generated artifact bound or removed (TEA-4): named while bound, its uuid once removed.
             if (row.rus === 'SYNTHETIC_ARTIFACT') {
-                return syntheticHistoryText(row.objectId, updatedRelease.value)
+                return syntheticHistoryText(row.objectId, syntheticArtifactDetails.value)
             }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
