@@ -72,5 +72,10 @@ describe('TEA surfaces contract', () => {
         const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA"')
         const editor = cv.slice(tea, cv.indexOf('</n-tab-pane>', tea))
         expect(editor).toContain(`:object-archived="componentData?.status === 'ARCHIVED'"`)
+        // The page loads the component through ComponentFullData; without status the notice never shows.
+        const q = src('../utils/graphqlQueries.ts')
+        const start = q.indexOf('const COMPONENT_FULL_DATA = `')
+        const full = q.slice(start, q.indexOf('`', start + 'const COMPONENT_FULL_DATA = `'.length))
+        expect(full.split('\n').map(l => l.trim())).toContain('status')
     })
 })

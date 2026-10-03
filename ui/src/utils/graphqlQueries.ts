@@ -1259,6 +1259,8 @@ const COMPONENT_FULL_DATA = `
     org
     resourceGroup
     type
+    # Read by the TEA tab: an archived component's TEA profile can only hide it (TEA-9).
+    status
     # Read by ComponentView to decide whether the device support window panel applies (D7).
     # CE declares Component.deviceClass too, so this needs no CORE/FULL split -- unlike
     # medicalProfile.deviceSupportWindow, which CE does not declare and which therefore has
