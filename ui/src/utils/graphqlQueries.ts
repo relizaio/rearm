@@ -1899,6 +1899,21 @@ query releaseApprovalRequests($releaseID: ID!, $orgID: ID) {
     }
 }`
 
+// TEA-4: the documents ReARM generated for a release (aggregated SBOMs, VDR snapshots). A Pro-only
+// schema surface: the CE backend has no Release.syntheticArtifactDetails (the 2026-10 TEA work ships
+// no CE backend sync), so it rides this separate query, sent only where syntheticArtifactsAvailable
+// says the backend serves it, instead of the shared release fragments whose failure would blank the
+// whole release page on CE. generatedArtifactsSchemaDrift.spec.ts pins both schemas.
+const RELEASE_SYNTHETIC_ARTIFACTS_GQL = gql`
+query releaseSyntheticArtifacts($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        uuid
+        syntheticArtifactDetails {
+            ${ARTIFACT_DETAIL_DATA}
+        }
+    }
+}`
+
 const COMPONENT_SHORT_DATA = `
     uuid
     name
@@ -2092,6 +2107,7 @@ export default {
     ApproveReleaseGqlMutate: APPROVE_RELEASE_GQL_MUTATE,
     RequestReleaseApprovalsGqlMutate: REQUEST_RELEASE_APPROVALS_GQL_MUTATE,
     ReleaseApprovalRequestsGql: RELEASE_APPROVAL_REQUESTS_GQL,
+    ReleaseSyntheticArtifactsGql: RELEASE_SYNTHETIC_ARTIFACTS_GQL,
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,
     UserData: USER_GQL_DATA,
