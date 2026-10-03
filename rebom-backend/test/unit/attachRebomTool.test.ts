@@ -1,5 +1,6 @@
 import { describe, it, expect, afterEach } from 'vitest';
 import { attachRebomToolToBom } from '../../src/services/bom/bomProcessingService';
+import validateBom from '../../src/validateBom';
 
 const cdxgen = { type: 'application', group: '@cdxgen', name: 'cdxgen', version: '13.2.0' };
 
@@ -43,5 +44,28 @@ describe('attachRebomToolToBom', () => {
     ] } } };
     attachRebomToolToBom(bom);
     expect(bom.metadata.tools.components.map((t: any) => t.group)).toEqual(['com.example', 'io.reliza']);
+  });
+
+  // 1.4 and earlier define a tool as vendor/name/version/hashes(/externalReferences); the
+  // component-shaped entry rebom wrote before failed the strict schema on every legacy BOM.
+  for (const specVersion of ['1.2', '1.3', '1.4']) {
+    it(`writes a schema-valid legacy tool entry into a ${specVersion} BOM`, async () => {
+      const bom: any = { bomFormat: 'CycloneDX', specVersion, version: 1,
+        serialNumber: 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79',
+        metadata: { tools: [{ vendor: 'aquasecurity', name: 'trivy', version: '0.50.0' }] }, components: [] };
+      attachRebomToolToBom(bom);
+      expect(bom.metadata.tools[1]).toMatchObject({ vendor: 'io.reliza', name: 'rearm' });
+      expect(bom.metadata.tools[1].group).toBeUndefined();
+      await expect(validateBom(bom)).resolves.toBe(true);
+    });
+  }
+
+  it('writes a schema-valid tool component into a 1.5 and a 1.6 BOM', async () => {
+    for (const specVersion of ['1.5', '1.6']) {
+      const bom: any = { bomFormat: 'CycloneDX', specVersion, version: 1,
+        serialNumber: 'urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79', metadata: {}, components: [] };
+      attachRebomToolToBom(bom);
+      await expect(validateBom(bom)).resolves.toBe(true);
+    }
   });
 });

@@ -239,7 +239,7 @@
                                         <QuestionCircle20Regular />
                                     </n-icon>
                                 </template>
-                                Keeps ReARM's own markers (reliza:* properties other than support) and the SBOM generator's internal:* working data (for example build paths, also where component evidence repeats them) in the export. Off produces a BOM with only the manufacturer's own content. Either way, metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
+                                Keeps ReARM's own markers (reliza:* properties other than support) in the export. Off removes them. What your SBOM generator wrote, build paths included, is exported as uploaded either way. Either way, metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
                             </n-tooltip>
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>

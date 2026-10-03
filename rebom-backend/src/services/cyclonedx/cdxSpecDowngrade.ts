@@ -1,3 +1,4 @@
+import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 import { logger } from '../../logger';
 
 /**
@@ -30,12 +31,11 @@ const SUPPORTED_DOWNGRADES: Record<string, string> = {
  * raw artifact while a deep-cloned, downgraded copy goes through validation
  * + augmentation).
  *
- * Transform is deliberately minimal — only `specVersion` and the `$schema`
- * URL are rewritten. We don't strip 1.7-only fields; cyclonedx-go's lenient
- * decoder ignores unknown JSON fields and the 1.6 strict validator should
- * tolerate additive ones. If a future BOM trips the strict validator on a
- * 1.7-only field, the validator error will tell us exactly what to strip;
- * revisit then.
+ * A 1.7 BOM is rewritten into the 1.6 shape, not only relabelled: the 1.6
+ * strict validator rejects every field 1.7 added (cdxgen's formulation
+ * certificates carry `certificateProperties.serialNumber`, for example), so
+ * relabelling alone failed the upload. See {@link downgrade17To16} for what
+ * changes. The raw 1.7 bytes stay untouched in OCI.
  */
 /**
  * Spec versions our processing + validation stack (cyclonedx-go,
@@ -64,6 +64,7 @@ export function downgradeCycloneDxSpecIfNeeded<T extends { specVersion?: string;
     const target = SUPPORTED_DOWNGRADES[bom.specVersion];
     if (!target) return bom;
     const original = bom.specVersion;
+    if (original === '1.7' && target === '1.6') downgrade17To16(bom);
     bom.specVersion = target;
     if (typeof bom.$schema === 'string' && bom.$schema.includes(original)) {
         bom.$schema = bom.$schema.replace(original, target);
@@ -71,4 +72,138 @@ export function downgradeCycloneDxSpecIfNeeded<T extends { specVersion?: string;
     logger.info({ originalSpecVersion: original, targetSpecVersion: target },
         'Downgraded CycloneDX BOM specVersion before processing — raw bytes preserved in OCI');
     return bom;
+}
+
+const PATENT_EXTERNAL_REFERENCE_TYPES = new Set(['patent', 'patent-family', 'patent-assertion', 'citation']);
+const HASH_ALGORITHMS_NEW_IN_17 = new Set(['Streebog-256', 'Streebog-512']);
+const PROTOCOL_TYPES_NEW_IN_17 = new Set(['dtls', 'quic', 'eap-aka', 'eap-aka-prime', 'prins', '5g-aka']);
+const CERTIFICATE_PROPERTIES_NEW_IN_17 = ['serialNumber', 'certificateFileExtension', 'fingerprint', 'certificateState',
+    'creationDate', 'activationDate', 'deactivationDate', 'revocationDate', 'destructionDate',
+    'certificateExtensions', 'relatedCryptographicAssets'];
+const IKEV2_TRANSFORM_TYPES = ['encr', 'prf', 'integ', 'ke', 'auth'];
+/** Keys under which CycloneDX holds component objects. */
+const COMPONENT_LIST_KEYS = new Set(['components', 'ancestors', 'descendants', 'variants']);
+
+const isObject = (v: unknown): v is Record<string, any> => !!v && typeof v === 'object' && !Array.isArray(v);
+
+/**
+ * Rewrites the CycloneDX 1.7 additions into what 1.6 can carry, in place.
+ *
+ * Each change applies only where the 1.7 schema defines the field (a component's `isExternal`,
+ * a certificate's `serialNumber`), never by key name alone: `serialNumber` is also the BOM's
+ * own identifier, and `properties` is also a component's. What changes:
+ * - removed, as 1.6 has no field for them: top-level `citations`, `definitions.patents`,
+ *   `metadata.distributionConstraints`; a component's `versionRange`, `isExternal` and
+ *   `patentAssertions`; a service's `patentAssertions`; an external reference's `properties`;
+ *   the certificate, related-material, protocol and cipher-suite fields 1.7 added;
+ * - mapped: a certificate's `certificateFileExtension` becomes 1.6's `certificateExtension`
+ *   (as cdxgen itself does when it writes 1.6); external-reference types, the `key-wrap`
+ *   primitive and protocol types 1.6 does not know become `other`; IKEv2 transform objects
+ *   become the algorithm refs 1.6 lists;
+ * - dropped: Streebog hashes, which 1.6 has no algorithm for;
+ * - licenses: 1.7 lets one list mix licenses and expressions; 1.6 takes a list of licenses or
+ *   one expression. A mixed list keeps every entry, an expression becoming a license (its SPDX
+ *   id when it is one, else its text as the name). The fields 1.7 added to an expression go.
+ */
+export function downgrade17To16(bom: any): void {
+    if (!isObject(bom)) return;
+    delete bom.citations;
+    if (isObject(bom.definitions)) {
+        delete bom.definitions.patents;
+        if (!Object.keys(bom.definitions).length) delete bom.definitions;
+    }
+    if (isObject(bom.metadata)) delete bom.metadata.distributionConstraints;
+    if (isObject(bom.metadata?.component)) downgradeComponent(bom.metadata.component);
+    walk(bom, undefined);
+}
+
+function walk(node: unknown, key: string | undefined): void {
+    if (Array.isArray(node)) {
+        if (key && COMPONENT_LIST_KEYS.has(key)) node.forEach((c) => isObject(c) && downgradeComponent(c));
+        if (key === 'services') node.forEach((s) => isObject(s) && delete s.patentAssertions);
+        if (key === 'externalReferences') node.forEach((r) => isObject(r) && downgradeExternalReference(r));
+        if (key === 'licenses') downgradeLicenses(node);
+        if (key === 'hashes') {
+            for (let i = node.length - 1; i >= 0; i--) {
+                if (isObject(node[i]) && HASH_ALGORITHMS_NEW_IN_17.has(node[i].alg)) node.splice(i, 1);
+            }
+        }
+        node.forEach((v) => walk(v, undefined));
+        return;
+    }
+    if (!isObject(node)) return;
+    if (key === 'cryptoProperties') downgradeCryptoProperties(node);
+    for (const [k, v] of Object.entries(node)) walk(v, k);
+}
+
+function downgradeComponent(component: Record<string, any>): void {
+    delete component.versionRange;
+    delete component.isExternal;
+    delete component.patentAssertions;
+}
+
+function downgradeExternalReference(ref: Record<string, any>): void {
+    delete ref.properties;
+    if (PATENT_EXTERNAL_REFERENCE_TYPES.has(ref.type)) ref.type = 'other';
+}
+
+function downgradeLicenses(licenses: any[]): void {
+    for (const entry of licenses) {
+        if (isObject(entry) && 'expression' in entry) {
+            delete entry.expressionDetails;
+            delete entry.licensing;
+            delete entry.properties;
+        }
+    }
+    const expressions = licenses.filter((e) => isObject(e) && typeof e.expression === 'string');
+    if (!expressions.length || (expressions.length === 1 && licenses.length === 1)) return;
+    for (let i = 0; i < licenses.length; i++) {
+        const e = licenses[i];
+        if (!isObject(e) || typeof e.expression !== 'string') continue;
+        const id = CDXSpdx.fixupSpdxId(e.expression);
+        const license: any = id ? { id } : { name: e.expression };
+        if (typeof e.acknowledgement === 'string') license.acknowledgement = e.acknowledgement;
+        if (typeof e['bom-ref'] === 'string') license['bom-ref'] = e['bom-ref'];
+        licenses[i] = { license };
+    }
+}
+
+function downgradeCryptoProperties(crypto: Record<string, any>): void {
+    const algorithm = crypto.algorithmProperties;
+    if (isObject(algorithm)) {
+        delete algorithm.algorithmFamily;
+        delete algorithm.ellipticCurve;
+        if (algorithm.primitive === 'key-wrap') algorithm.primitive = 'other';
+    }
+    const certificate = crypto.certificateProperties;
+    if (isObject(certificate)) {
+        if (!certificate.certificateExtension && typeof certificate.certificateFileExtension === 'string') {
+            certificate.certificateExtension = certificate.certificateFileExtension;
+        }
+        for (const k of CERTIFICATE_PROPERTIES_NEW_IN_17) delete certificate[k];
+    }
+    const material = crypto.relatedCryptoMaterialProperties;
+    if (isObject(material)) {
+        delete material.fingerprint;
+        delete material.relatedCryptographicAssets;
+    }
+    const protocol = crypto.protocolProperties;
+    if (isObject(protocol)) {
+        delete protocol.relatedCryptographicAssets;
+        if (PROTOCOL_TYPES_NEW_IN_17.has(protocol.type)) protocol.type = 'other';
+        if (Array.isArray(protocol.cipherSuites)) {
+            for (const suite of protocol.cipherSuites) {
+                if (isObject(suite)) { delete suite.tlsGroups; delete suite.tlsSignatureSchemes; }
+            }
+        }
+        const ike = protocol.ikev2TransformTypes;
+        if (isObject(ike)) {
+            for (const t of IKEV2_TRANSFORM_TYPES) {
+                if (!Array.isArray(ike[t])) continue;
+                ike[t] = ike[t]
+                    .map((v: unknown) => (typeof v === 'string' ? v : isObject(v) && typeof v.algorithm === 'string' ? v.algorithm : null))
+                    .filter((v: string | null) => v !== null);
+            }
+        }
+    }
 }
