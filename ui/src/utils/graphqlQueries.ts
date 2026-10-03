@@ -796,6 +796,9 @@ const singleReleaseDataNoParent = `
     artifactDetails {
         ${ARTIFACT_DETAIL_DATA}
     }
+    syntheticArtifactDetails {
+        ${ARTIFACT_DETAIL_DATA}
+    }
     inboundDeliverables
     inboundDeliverableDetails{
         ${DELIVERABLE_DETAIL_DATA}
@@ -1456,6 +1459,9 @@ const singleReleaseProductNoParent = `
     fdaAssessmentNarrative
     artifacts
     artifactDetails {
+        ${ARTIFACT_DETAIL_DATA}
+    }
+    syntheticArtifactDetails {
         ${ARTIFACT_DETAIL_DATA}
     }
     inboundDeliverables
