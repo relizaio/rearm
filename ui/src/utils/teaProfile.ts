@@ -18,6 +18,18 @@ export function teaProfilesAvailable (installationType: string | undefined | nul
     return isProEdition(installationType)
 }
 
+/** The permission functions that exist only where the backend serves TEA (task TEA-3). */
+export const TEA_PERMISSION_FUNCTIONS: string[] = ['PUBLISH_EXTERNALLY']
+
+/**
+ * The permission functions the editors may offer on this edition: every one of `functions`, less the
+ * TEA functions where the backend serves no TEA. The CE schema has no such PermissionFunction value,
+ * so a save carrying one would fail there as a whole.
+ */
+export function editionPermissionFunctions (functions: string[], installationType: string | undefined | null): string[] {
+    return teaProfilesAvailable(installationType) ? functions : functions.filter(f => !TEA_PERMISSION_FUNCTIONS.includes(f))
+}
+
 export interface Option { label: string, value: string }
 
 const opt = (value: string, label: string): Option => ({ label, value })

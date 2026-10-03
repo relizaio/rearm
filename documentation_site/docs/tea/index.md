@@ -47,7 +47,7 @@ A TEA profile says whether, and how, releases are published on the Transparency 
 
 Publication profiles and TEA ids are available in ReARM Pro. ReARM Community Edition does not offer them yet, and its settings show no Transparency Exchange or TEA tab.
 
-A component resolves its profile in this order: its own profile when it carries one (an override, or a choice to follow one of its perspectives), then the profile of its single perspective that has one, then the organization profile, then the built-in defaults. When two or more of the component's perspectives carry a profile and the component has none of its own, the component is in conflict: publishing it is refused, naming the perspectives, until the component overrides or follows one of them. A product's profile is its own component-scope profile, and a product publishes its component releases under that one profile, so a product never conflicts.
+A component resolves its profile in this order: its own profile when it carries one (an override, or a choice to follow one of its perspectives), then the profile of its single perspective that has one, then the organization profile, then the built-in defaults. When two or more of the component's perspectives carry a profile and the component has none of its own, the component is in conflict: publishing it is refused, naming the perspectives, until the component overrides or follows one of them. A product's profile is its own component-scope profile, so a product never conflicts.
 
 Every profile carries these settings (defaults in brackets):
 
@@ -85,6 +85,52 @@ Organization Settings, Transparency Exchange shows the `.well-known/tea` documen
 ```
 
 The TEA 1.0.0 endpoints that read these profiles and ids land in a later release; until then the profiles are stored and validated, and the `/tea/v0.4.0/` surface above is unchanged.
+
+## Publishing releases
+
+Publishing is an explicit act on a release: nothing is published on TEA until someone publishes it, and what is published does not change until it is re-published. Publishing is available in ReARM Pro for now.
+
+### What a publication is
+
+A publication gives the release a TEA release id, which is also the id of its TEA collection; the id never changes. Each publish generates the release's aggregated SBOM with the knobs of the effective profile (dependency depth, structure, sources, excluded coverage, support and internal metadata) and freezes it as a generated artifact of the release, listed under Generated artifacts on the release page. The collection then gets a new version: version 1 on the first publish, and one more each time the published content changes. Every collection version is immutable and keeps its own list of artifacts, each with a TEA id and a revision, and the reason it was written (initial release, VEX updated, artifact added, removed or updated).
+
+### Gates
+
+A publish is refused, with the reason, when:
+
+- the release lifecycle is below ASSEMBLED, or below the profile's minimum lifecycle;
+- the component resolves to no single profile (a conflict between perspectives), or its profile has publishing DISABLED;
+- the release or its component is archived, or the release has no SBOM to aggregate;
+- the caller lacks the Publish Externally (TEA) permission on the release's component. Users and RBAC (FREEFORM or USER) API keys can hold it; organization admins have it implicitly;
+- another publish or hide of the same release is still running on another ReARM instance after five minutes of waiting; the act can simply be repeated.
+
+### Re-publish and hide
+
+Re-publish regenerates the aggregated SBOM and writes a new collection version only when something changed; otherwise it reports that nothing changed since the latest version. Hide stops serving the release on TEA. Nothing is deleted: the collections stay, and a later re-publish makes the release served again and continues their numbering.
+
+Visibility is live, content is frozen: the profile's visibility (PRIVATE or PUBLIC) and publishing setting are applied when TEA is read, so changing them changes who can read what is already published, while the content of each collection version stays as it was published.
+
+A published release whose lifecycle falls below ASSEMBLED (cancelled, rejected, pending, draft) is concealed on TEA while it stays there, without a hide; it is served again once it is back at ASSEMBLED or beyond.
+
+### Products
+
+When a product's profile has Product components set to PUBLISH_WITH_PRODUCT, publishing the product also publishes each of its component releases of the product's own organization; a component release of another organization is reported as not found and left untouched. The product's profile decides the shape of each component release's aggregated SBOM (sources, dependency depth, structure, excluded coverage, support metadata, TEI). The component's own TEA profile still applies: a component release whose own profile disables publishing, or that is in conflict, is refused and reported, and its visibility is never wider than its own profile allows, nor wider than the product's. Raw artifacts and internal metadata follow the narrower of the two profiles, and the stricter of the two minimum lifecycles applies. A component release that cannot be published (for example a DRAFT one) is reported without stopping the product. A component release that is already published directly, or that was hidden, is left as it is. A component release bundled by several products belongs to the product that published it first: the others report it as published with that product, and a product takes it over only when that product is hidden or no longer lists it. Hiding the product conceals the component releases published with it.
+
+### Ride-along artifacts
+
+With Raw artifacts set to NON_BOM or ALL, the release's own artifacts are published alongside the aggregated SBOM (NON_BOM leaves out BOMs). An artifact is publishable when its version is an integer (its TEA revision) and ReARM holds its checksum: for an artifact stored in ReARM, the retained raw bytes of the upload; for an externally stored one, a download link and a declared checksum. Signatures are published with the artifact they sign. An artifact that does not qualify is skipped and named in the publish summary; it never fails the publish.
+
+### TEI
+
+When the profile's TEI is UUID, the publication carries the TEI `tei://<TEI domain>/uuid/<TEA release id>`, recomputed on each publish.
+
+### On the release page and in the API
+
+The release page header offers Publish on TEA, and once published a TEA badge with the collection version (red when the release is public), Re-publish on TEA and Hide from TEA. Each asks for confirmation first; a public profile is called out with the URL anyone can read. A public release also shows a red banner under its title. The Transparency Exchange (TEA) section of the release page shows the state (and why it is concealed, when it is), the TEA release id and URL, the profile applied and its revision (or the product it was published with), the TEI, the last publish, and every collection version with its artifacts. The release History tab records each publish, re-publish and hide.
+
+The same acts are available through GraphQL: `publishReleaseOnTea`, `republishReleaseOnTea`, `hideReleaseOnTea` and the query `releaseTeaPublicationView`, and for API keys `publishReleaseOnTeaProgrammatic`, `republishReleaseOnTeaProgrammatic`, `hideReleaseOnTeaProgrammatic` and `releaseTeaPublicationViewProgrammatic`. Notification subscriptions can listen for Release published on TEA and Release hidden from TEA.
+
+The TEA 1.0.0 surface that serves publications to TEA clients lands in a later release; until then publications are recorded and visible in ReARM, and publishing is ReARM Pro only.
 
 ## Known issues, limitations and notes
 - The data present via TEA is consistent with what is visible via ReARM UI, ReARM CLI or ReARM's own GraphQL API. For example, on ReARM Demo Instance, you may explore data using UI

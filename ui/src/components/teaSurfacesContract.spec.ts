@@ -129,4 +129,13 @@ describe('TEA surfaces contract', () => {
         const full = q.slice(start, q.indexOf('`', start + 'const COMPONENT_FULL_DATA = `'.length))
         expect(full.split('\n').map(l => l.trim())).toContain('status')
     })
+
+    it('graphqlQueries holds the four TEA publication documents (TEA-5)', () => {
+        const q = src('../utils/graphqlQueries.ts')
+        const docs = ['RELEASE_TEA_PUBLICATION_VIEW', 'PUBLISH_RELEASE_ON_TEA', 'REPUBLISH_RELEASE_ON_TEA', 'HIDE_RELEASE_ON_TEA']
+        for (const doc of docs) {
+            expect(q).toContain('const ' + doc + ' = gql`')
+        }
+        expect(q.match(/^const \w+ = gql`\n(query ReleaseTeaPublicationView|mutation (Publish|Republish|Hide)ReleaseOnTea)\(/gm)).toHaveLength(docs.length)
+    })
 })

@@ -376,6 +376,7 @@ import constants from '@/utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import PermissionFunctionLabel from '@/components/PermissionFunctionLabel.vue'
 import { boardNameOf, boardScopeFunctions, isBoardFunction } from '@/utils/boardPermissions'
+import { editionPermissionFunctions } from '@/utils/teaProfile'
 
 interface ApprovalRole {
     id: string
@@ -448,7 +449,8 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
-const permissionFunctions: string[] = constants.PermissionFunctions
+// The TEA functions only where the backend serves TEA (editionPermissionFunctions).
+const permissionFunctions = computed((): string[] => editionPermissionFunctions(constants.PermissionFunctions, installationType.value))
 const essentialReadPermissionFunctions: string[] = constants.EssentialReadPermissionFunctions
 const hasDevOps = computed(() => installationType.value !== 'OSS')
 
@@ -462,7 +464,7 @@ const orgPermission = ref<OrgPermission>({
 // non-OSS installation (SaaS, managed service, on-prem Pro); OSS hides them. At ESSENTIAL_READ we
 // only expose the functions that explicitly support it (currently AGENT) —
 // most org-wide functions are paired with READ_ONLY / READ_WRITE.
-const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
+const orgPermissionFunctions = computed(() => permissionFunctions.value.filter(f =>
     f !== 'RESOURCE' &&
     (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     (props.showSbomProbing || f !== 'SBOM_PROBING') &&
@@ -473,7 +475,7 @@ const orgPermissionFunctions = computed(() => permissionFunctions.filter(f =>
 
 // Perspective / Product / Component scopes never expose DEVOPS_*: those grants
 // belong on cluster / instance scopes.
-const scopedPermissionFunctions = computed(() => permissionFunctions.filter(f =>
+const scopedPermissionFunctions = computed(() => permissionFunctions.value.filter(f =>
     f !== 'RESOURCE' &&
     (!props.allowedFunctions || props.allowedFunctions.includes(f)) &&
     f !== 'FINDING_ANALYSIS_WRITE' &&

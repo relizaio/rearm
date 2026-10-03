@@ -168,3 +168,23 @@ describe('board events are not team events (82880ea6)', () => {
         expect(offered).toEqual(['RELEASE_CREATED'])
     })
 })
+
+describe('Pro-only team events (TEA-5)', () => {
+    it('offers the TEA publication events on Pro and drops them on CE, whose schema has no such value', async () => {
+        const { ownedComponentEventTypes } = await import('./teamNotificationEventTypes')
+        // notificationsCommon.spec.ts pins that eventTypeOptions flags both proOnly; importing it here
+        // would pull the GraphQL client into a DOM-less run.
+        const eventTypeOptions = [
+            { label: 'Release created', value: 'RELEASE_CREATED' },
+            { label: 'Release published on TEA', value: 'RELEASE_TEA_PUBLISHED', proOnly: true },
+            { label: 'Release hidden from TEA', value: 'RELEASE_TEA_HIDDEN', proOnly: true },
+        ]
+        const pro = ownedComponentEventTypes(eventTypeOptions).map(o => o.value)
+        const ce = ownedComponentEventTypes(eventTypeOptions, false).map(o => o.value)
+        for (const t of ['RELEASE_TEA_PUBLISHED', 'RELEASE_TEA_HIDDEN']) {
+            expect(pro, t).toContain(t)
+            expect(ce, t).not.toContain(t)
+        }
+        expect(ce).toContain('RELEASE_CREATED')
+    })
+})
