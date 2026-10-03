@@ -1256,6 +1256,11 @@
                             />
                         </div>
                     </div>
+                    <!-- TEA-4: documents ReARM generated for this release. Read-only: download only. -->
+                    <div class="container" v-if="generatedArtifacts.length && !isDocumentRound">
+                        <h3>Generated artifacts</h3>
+                        <n-data-table :data="generatedArtifacts" :columns="generatedArtifactsTableFields" :row-key="artifactsRowKey" />
+                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
                             Produced Deliverables
@@ -2124,6 +2129,7 @@ import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSel
 import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
+import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -3177,6 +3183,8 @@ async function fetchRelease () {
         })
     }
 
+    loadSyntheticArtifacts()
+
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     // Backend-computed designation (true for hardware components AND product
     // releases containing at least one hardware component); fall back to the
@@ -3923,6 +3931,35 @@ async function loadApprovalRequests () {
         if (approvalRequestsList.value.length && !users.value.length) loadUsers()
     } catch (e) {
         console.warn('Failed to load approval requests for release', e)
+    }
+}
+
+// Generated artifacts (TEA-4) are a Pro-only schema surface too: the CE backend has no
+// Release.syntheticArtifactDetails (the 2026-10 TEA work ships no CE backend sync), so they ride
+// their own gated query, like the approval requests above. Fire-and-forget from fetchRelease; a
+// refresh of the same release keeps the rows until the answer replaces them.
+const syntheticArtifactDetails: Ref<any[]> = ref([])
+const syntheticArtifactsRelease: Ref<string> = ref('')
+let syntheticArtifactsLoadSeq = 0
+async function loadSyntheticArtifacts () {
+    const seq = ++syntheticArtifactsLoadSeq
+    const forRelease = releaseUuid.value
+    if (syntheticArtifactsRelease.value !== forRelease) {
+        syntheticArtifactDetails.value = []
+        syntheticArtifactsRelease.value = forRelease
+    }
+    if (!syntheticArtifactsAvailable(myUser?.installationType)) return
+    try {
+        const response = await graphqlClient.query({
+            query: graphqlQueries.ReleaseSyntheticArtifactsGql,
+            variables: { releaseID: forRelease, orgID: props.orgprop },
+            fetchPolicy: 'no-cache'
+        })
+        // Drop out-of-order responses (prev/next navigation mid-flight).
+        if (seq !== syntheticArtifactsLoadSeq) return
+        syntheticArtifactDetails.value = response.data?.release?.syntheticArtifactDetails || []
+    } catch (e) {
+        console.warn('Failed to load generated artifacts for release', e)
     }
 }
 
@@ -5377,6 +5414,10 @@ function setArtifactBelongsTo (art: any, belongsTo: string, belongsToId?: string
     return adc
 }
 
+// Never folded into the artifacts computed below: generated documents are not inventory.
+const generatedArtifacts: ComputedRef<any[]> = computed((): any[] =>
+    generatedArtifactRows(syntheticArtifactDetails.value, syntheticArtifactsRelease.value))
+
 const artifacts: ComputedRef<any> = computed((): any => {
     let artifacts: any[] = []
 
@@ -6781,6 +6822,10 @@ const releaseHistoryFields = computed(() => [
                 const txt = formatNarrativeChange(row.oldValue, row.newValue)
                 return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
+            // A generated artifact bound or removed (TEA-4): named while bound, its uuid once removed.
+            if (row.rus === 'SYNTHETIC_ARTIFACT') {
+                return syntheticHistoryText(row.objectId, syntheticArtifactDetails.value)
+            }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {
                 const art = row.artifact.artifactDetails || row.artifact
@@ -6795,11 +6840,7 @@ const releaseHistoryFields = computed(() => [
                 const factContent: any[] = []
                 factContent.push(h('li', h('span', [`UUID: ${art.uuid || row.artifact.artifactUuid}`, h(ClipboardCheck, {size: 1, class: 'icons clickable iconInTooltip', onclick: () => copyToClipboard(art.uuid || row.artifact.artifactUuid) })])))
                 if (art.internalBom && art.internalBom.belongsTo) {
-                    let belongsToDisplay = art.internalBom.belongsTo
-                    if (belongsToDisplay === 'RELEASE') belongsToDisplay = 'Release'
-                    else if (belongsToDisplay === 'SCE') belongsToDisplay = 'Source Code Entry'
-                    else if (belongsToDisplay === 'DELIVERABLE') belongsToDisplay = 'Deliverable'
-                    factContent.push(h('li', h('span', `Belongs To: ${belongsToDisplay}`)))
+                    factContent.push(h('li', h('span', `Belongs To: ${belongsToLabel(art.internalBom.belongsTo)}`)))
                 }
                 if (art.tags && art.tags.length) art.tags.filter((t: any) => t.key !== 'COVERAGE_TYPE').forEach((t: any) => factContent.push(h('li', `${t.key}: ${t.value}`)))
                 if (art.displayIdentifier) factContent.push(h('li', `Display ID: ${art.displayIdentifier}`))
@@ -7265,7 +7306,7 @@ function renderArtifactTypeColumn (row: any) {
 
 function renderArtifactBelongsToColumn (row: any) {
     const els: any[] = [
-        h('span', row.belongsTo)
+        h('span', belongsToLabel(row.belongsTo))
     ]
     if (row.belongsToId) {
         els.push(
@@ -7500,6 +7541,25 @@ const artifactsTableFields: DataTableColumns<any> = [
             }
             if (!els.length) els.push(h('span', 'N/A'))
             return h('div', els)
+        }
+    }
+]
+
+// Generated artifacts are owned by the generator that wrote them: no upload, tag edit, delete or
+// Dependency-Track action, whatever isWritable says. Download through the existing endpoints only.
+const generatedArtifactsTableFields: DataTableColumns<any> = [
+    { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
+    { key: 'facts', title: 'Facts', render: renderArtifactFactsColumn },
+    // Not renderArtifactStatusColumn: its Dependency-Track pill would read "Scan pending" forever
+    // for a document that is never submitted as inventory.
+    { key: 'status', title: 'Status', render: () => h(NTag, { size: 'small', round: true, title: 'Generated by ReARM for this release; not scanned as inventory' }, () => 'Generated') },
+    {
+        key: 'actions',
+        title: 'Actions',
+        render: (row: any) => {
+            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
+            if (!isDownloadable) return h('span', 'N/A')
+            return h('div', [h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download))])
         }
     }
 ]
