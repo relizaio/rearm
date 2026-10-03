@@ -253,6 +253,32 @@ describe('TeaProfileEditor', () => {
         expect(plain.emitted('removed')).toHaveLength(1)
     })
 
+    // TEA-9 round 2, design 4.5 case 54.
+    it('asks the PUBLIC dialog before a perspective-row removal that makes a member PUBLIC, naming it', async () => {
+        const stored = view({ stored: profile({ scope: 'PERSPECTIVE', visibility: 'PRIVATE' }) })
+        const w = await mountWith(stored, { scope: 'PERSPECTIVE', objectUuid: 'p2' },
+            exposure('PRIVATE', 'PRIVATE', 'REMOVAL_RESOLVES_PUBLIC', { widened: [{ component: 'c16', name: 'checkout-api',
+                afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' }] }))
+        fire.mockResolvedValueOnce({ isConfirmed: false })
+        await w.find('[data-testid="tea-remove"]').trigger('click')
+        await flushPromises()
+        expect(exposureCalls()[0][0].variables).toEqual({ org: 'o1', scope: 'PERSPECTIVE', object: 'p2', profile: null })
+        expect(fire.mock.calls[0][0].title).toBe('Make this TEA profile public?')
+        expect(fire.mock.calls[0][0].icon).toBe('warning')
+        expect(fire.mock.calls[0][0].text).toContain('1 component(s) of this perspective then resolve to a PUBLIC profile: checkout-api.')
+        expect(fire.mock.calls[0][0].confirmButtonText).toBe('Remove and make them public')
+        expect(mutate).not.toHaveBeenCalled()
+
+        fire.mockResolvedValueOnce({ isConfirmed: true })
+        mutate.mockResolvedValueOnce({ data: { deleteTeaProfile: true } })
+        await w.find('[data-testid="tea-remove"]').trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(operation({ query: mutate.mock.calls[0][0].mutation })).toBe('DeleteTeaProfile')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'PERSPECTIVE', object: 'p2' })
+        expect(w.emitted('removed')).toHaveLength(1)
+    })
+
     it('shows a failed dry-run as an error and neither asks nor sends', async () => {
         const w = await mountWith(view(), {}, new Error('minimumLifecycle DRAFT is too low'))
         await w.find('[data-testid="tea-save"]').trigger('click')

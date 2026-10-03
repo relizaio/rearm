@@ -56,15 +56,66 @@ describe('TEA surfaces contract', () => {
         expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
     })
 
-    it('graphqlQueries holds the seven TEA documents', () => {
+    it('graphqlQueries holds the eight TEA documents', () => {
         const q = src('../utils/graphqlQueries.ts')
-        for (const doc of ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE',
-            'TEA_PROFILE_EXPOSURE_CHANGE', 'TEA_COMPONENT_NAME']) {
+        const docs = ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE',
+            'TEA_PROFILE_EXPOSURE_CHANGE', 'TEA_COMPONENT_NAME', 'TEA_MEMBERSHIP_EXPOSURE_CHANGE']
+        expect(docs).toHaveLength(8)
+        for (const doc of docs) {
             expect(q).toContain('const ' + doc + ' = gql`')
         }
         expect(q).toContain('teaProfileEditorView(org: $org, scope: $scope, object: $object)')
         expect(q).toContain('saveTeaProfile(org: $org, scope: $scope, object: $object, profile: $profile)')
         expect(q).toContain('teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile)')
+        expect(q).toContain('teaMembershipExposureChange(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids)')
+        expect(q).toContain('TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,')
+    })
+
+    // TEA-9 round 2 (design 3.11): the three UI writes of setPerspectivesOnComponent confirm on the
+    // membership dry-run of exactly the list they send, before they send it.
+    const MEMBERSHIP_WRITES: [string, string][] = [
+        ['ComponentView.vue', 'async function savePerspectives'],
+        ['OrgSettings.vue', 'async function addComponentToPerspective'],
+        ['OrgSettings.vue', 'async function addProductToPerspective'],
+    ]
+    it.each(MEMBERSHIP_WRITES)('%s %s queries the membership dry-run and confirms before setPerspectivesOnComponent', (file, fn) => {
+        const f = src(file)
+        const start = f.indexOf(fn + '(')
+        expect(start).toBeGreaterThan(0)
+        const body = f.slice(start, f.indexOf('\n}\n', start))
+        const gate = body.indexOf('if (teaProfilesAvailable(')
+        const dryRun = body.indexOf('graphqlQueries.TeaMembershipExposureChangeGql')
+        const confirm = body.indexOf('teaConfirmBeforeMembership(')
+        const swal = body.indexOf('Swal.fire({ ...confirm, icon: \'warning\', showCancelButton: true')
+        const mutation = body.indexOf('setPerspectivesOnComponent(')
+        expect(gate).toBeGreaterThan(0)
+        expect(dryRun).toBeGreaterThan(gate)
+        expect(body.slice(dryRun, confirm)).toContain("fetchPolicy: 'no-cache'")
+        expect(confirm).toBeGreaterThan(dryRun)
+        expect(swal).toBeGreaterThan(confirm)
+        expect(body.slice(swal, mutation)).toContain('if (!answer?.isConfirmed) return')
+        expect(mutation).toBeGreaterThan(swal)
+        const delta = body.indexOf('teaMembershipDelta(')
+        expect(delta).toBeGreaterThan(dryRun)
+        expect(delta).toBeLessThan(confirm)
+    })
+
+    it('the membership dry-run sends exactly the list each write sends', () => {
+        const cv = src('ComponentView.vue')
+        const save = cv.slice(cv.indexOf('async function savePerspectives('), cv.indexOf('\nfunction resetPerspectives'))
+        expect(save).toContain('variables: { componentUuid: componentUuid, perspectiveUuids: selectedPerspectives.value }')
+        expect(save).toContain('perspectiveUuids: selectedPerspectives.value\n')
+        expect(save).toContain("isComponent.value ? 'component' : 'product'")
+        const os = src('OrgSettings.vue')
+        for (const [fn, sel, word] of [['addComponentToPerspective', 'selectedComponentToAdd', 'component'],
+            ['addProductToPerspective', 'selectedProductToAdd', 'product']]) {
+            const start = os.indexOf('async function ' + fn + '(')
+            const body = os.slice(start, os.indexOf('\n}\n', start))
+            expect(body).toContain('const perspectiveUuids = [selectedPerspectiveUuid.value]')
+            expect(body).toContain('variables: { componentUuid: ' + sel + '.value, perspectiveUuids }')
+            expect(body).toMatch(/componentUuid: \w+\.value,\s+perspectiveUuids\s+\}/)
+            expect(body).toContain("delta.names, '" + word + "')")
+        }
     })
 
     it('ComponentView tells the TEA editor whether the component is archived (TEA-9)', () => {

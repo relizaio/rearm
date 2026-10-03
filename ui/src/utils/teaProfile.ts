@@ -261,10 +261,20 @@ export function teaPublicConfirmText (publishedReleases: number): string {
 export interface TeaExposureChange {
     before: 'PUBLIC' | 'PRIVATE' | 'UNRESOLVED'
     after: 'PUBLIC' | 'PRIVATE' | 'UNRESOLVED'
-    path: 'NONE' | 'ROW_PUBLIC' | 'FOLLOW_RESOLVES_PUBLIC' | 'REMOVAL_RESOLVES_PUBLIC'
+    path: 'NONE' | 'ROW_PUBLIC' | 'FOLLOW_RESOLVES_PUBLIC' | 'REMOVAL_RESOLVES_PUBLIC' | 'MEMBERSHIP_RESOLVES_PUBLIC'
     afterSource?: string | null
     afterSourceObject?: string | null
     publishedReleases: number
+    /** The other components the write makes PUBLIC (a perspective-row removal, TEA-9 round 2). */
+    widened?: TeaWidenedComponent[] | null
+}
+
+/** A component, other than the assessed object, that the write makes PUBLIC. */
+export interface TeaWidenedComponent {
+    component: string
+    name: string
+    afterSource?: string | null
+    afterSourceObject?: string | null
 }
 
 /** A Swal confirmation: what the editor shows before sending the save or the removal. */
@@ -272,9 +282,17 @@ export interface TeaConfirm { title: string, text: string, confirmButtonText: st
 
 const PUBLIC_CONFIRM_TITLE = 'Make this TEA profile public?'
 
-/** Whether the operation makes the object PUBLIC where it was not: what needs the red confirmation. */
-export function teaNeedsPublicConfirm (exposure: TeaExposureChange | null | undefined): boolean {
+/** Whether the operation makes the object itself PUBLIC where it was not. */
+function teaObjectWidens (exposure: TeaExposureChange | null | undefined): boolean {
     return exposure?.after === 'PUBLIC' && exposure?.before !== 'PUBLIC'
+}
+
+/**
+ * Whether the operation makes the object, or any other component, PUBLIC where it was not: what
+ * needs the red confirmation. A missing `widened` (an older backend) counts as empty.
+ */
+export function teaNeedsPublicConfirm (exposure: TeaExposureChange | null | undefined): boolean {
+    return teaObjectWidens(exposure) || (exposure?.widened?.length ?? 0) > 0
 }
 
 /**
@@ -294,18 +312,80 @@ export function teaConfirmBeforeSave (exposure: TeaExposureChange | null | undef
         confirmButtonText: 'Make it public' }
 }
 
-/** The confirmation before a removal: the plain one, or the PUBLIC one when the parent it falls back to is PUBLIC. */
+/** How many names a confirmation lists before it says "and <N> more". */
+const LISTED_NAMES = 5
+
+/**
+ * The confirmation before a removal: the plain one, or the PUBLIC one when the parent it falls
+ * back to is PUBLIC or, for a perspective row, when members of the perspective then resolve to a
+ * PUBLIC profile (named, up to five).
+ */
 export function teaConfirmBeforeRemoval (exposure: TeaExposureChange | null | undefined, scopeWord: string,
     names: Record<string, string> = {}): TeaConfirm {
     if (!exposure || !teaNeedsPublicConfirm(exposure)) {
         return { title: 'Remove this TEA profile override?',
             text: 'The ' + scopeWord + ' then resolves its TEA profile from its parent again.', confirmButtonText: 'Remove' }
     }
-    return { title: PUBLIC_CONFIRM_TITLE,
-        text: 'Removing the override lets this ' + scopeWord + ' resolve to the PUBLIC profile of '
+    const widened = exposure.widened ?? []
+    const objectWidens = teaObjectWidens(exposure)
+    let text = ''
+    if (widened.length) {
+        const listed = widened.slice(0, LISTED_NAMES).map(w => w.name).join(', ')
+        const more = widened.length > LISTED_NAMES ? ', and ' + (widened.length - LISTED_NAMES) + ' more' : ''
+        text += widened.length + ' component(s) of this perspective then resolve to a PUBLIC profile: ' + listed + more + '. '
+    }
+    if (objectWidens) {
+        text += 'Removing the override lets this ' + scopeWord + ' resolve to the PUBLIC profile of '
+            + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
+    }
+    return { title: PUBLIC_CONFIRM_TITLE, text: text + teaPublicConfirmText(exposure.publishedReleases),
+        confirmButtonText: objectWidens ? 'Remove and make it public' : 'Remove and make them public' }
+}
+
+/** A perspective as the membership helpers read it: the org list and a component's perspectiveDetails. */
+export interface TeaPerspectiveRef { uuid: string, name?: string | null }
+
+/** What a membership write changes, by perspective name, and the names map its confirmation reads. */
+export interface TeaMembershipDelta { added: string[], removed: string[], names: Record<string, string> }
+
+/**
+ * The perspectives a membership write adds and removes, by name: `next` is exactly the list the
+ * write sends, `current` what the component holds today (its perspectiveDetails; null or missing
+ * when the caller does not know, so nothing reads as removed), `perspectives` the organization's
+ * perspective list the page holds. A uuid no list names reads as itself.
+ */
+export function teaMembershipDelta (next: string[], current: TeaPerspectiveRef[] | null | undefined,
+    perspectives: TeaPerspectiveRef[] | null | undefined): TeaMembershipDelta {
+    const names: Record<string, string> = {}
+    for (const p of current ?? []) if (p?.uuid && p.name) names[p.uuid] = p.name
+    for (const p of perspectives ?? []) if (p?.uuid && p.name) names[p.uuid] = p.name
+    const held = (current ?? []).map(p => p.uuid)
+    const nameOf = (u: string) => names[u] || u
+    return {
+        added: next.filter(u => !held.includes(u)).map(nameOf),
+        removed: held.filter(u => !next.includes(u)).map(nameOf),
+        names,
+    }
+}
+
+/**
+ * The confirmation before a membership write (setPerspectivesOnComponent) makes the component
+ * PUBLIC, or null when it does not. `added` and `removed` are perspective names (teaMembershipDelta);
+ * `scopeWord` says "product" where the caller edits a product.
+ */
+export function teaConfirmBeforeMembership (exposure: TeaExposureChange | null | undefined, added: string[],
+    removed: string[], names: Record<string, string> = {}, scopeWord = 'component'): TeaConfirm | null {
+    if (!exposure || !teaNeedsPublicConfirm(exposure)) return null
+    const changes = [
+        ...(added.length ? ['adding ' + added.join(', ')] : []),
+        ...(removed.length ? ['removing ' + removed.join(', ')] : []),
+    ]
+    const what = changes.length ? ' (' + changes.join('; ') + ')' : ''
+    return { title: 'Make this ' + scopeWord + ' public?',
+        text: 'Changing this ' + scopeWord + "'s perspectives" + what + ' resolves it to the PUBLIC profile of '
             + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
             + teaPublicConfirmText(exposure.publishedReleases),
-        confirmButtonText: 'Remove and make it public' }
+        confirmButtonText: 'Make it public' }
 }
 
 /** What the org TEA table knows of an object: its name and, for a component or product, its status. */

@@ -6,7 +6,8 @@ import {
     TEA_MODE_OPTIONS, TEA_OPTIONAL_DEPENDENCIES_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
     TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_SOURCES_OPTIONS, TEA_STRUCTURE_OPTIONS,
     TEA_SUPPORT_METADATA_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaFormFromView,
-    teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaNeedsPublicConfirm, teaProfileInput,
+    teaConfirmBeforeMembership, teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaMembershipDelta,
+    teaNeedsPublicConfirm, teaProfileInput,
     teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
 } from './teaProfile'
 
@@ -174,5 +175,85 @@ describe('the exposure confirmations (TEA-9)', () => {
         expect(teaRowObject({ object: 'c2' }, objects)).toEqual({ name: 'old-widget', archived: true })
         expect(teaRowObject({ object: 'p1' }, objects)).toEqual({ name: 'Payments', archived: false })
         expect(teaRowObject({ object: 'c9' }, objects)).toEqual({ name: 'c9', archived: false })
+    })
+})
+
+// Task TEA-9 round 2, design 4.5 cases 51-53: membership changes and perspective-row removals that
+// make other components PUBLIC.
+describe('the membership and member confirmations (TEA-9 round 2)', () => {
+    const names = { p1: 'Payments', p2: 'Internal' }
+    const member = (n: number) => ({ component: 'c' + n, name: 'comp-' + n, afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' })
+    const members = (k: number) => Array.from({ length: k }, (_, i) => member(i + 1))
+
+    it('asks when a member widens although the object itself stays PRIVATE; a missing widened list is empty', () => {
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PRIVATE', 'REMOVAL_RESOLVES_PUBLIC', { widened: [member(1)] }))).toBe(true)
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PRIVATE', 'NONE', { widened: [] }))).toBe(false)
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PRIVATE', 'NONE', { widened: null }))).toBe(false)
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PRIVATE', 'NONE'))).toBe(false)
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PUBLIC', 'MEMBERSHIP_RESOLVES_PUBLIC', { widened: [] }))).toBe(true)
+    })
+
+    it('confirms a membership change naming what it adds and removes, the source and the count; null when nothing widens', () => {
+        expect(teaConfirmBeforeMembership(exposure('PUBLIC', 'PUBLIC', 'NONE'), ['Payments'], [], names)).toBeNull()
+        expect(teaConfirmBeforeMembership(exposure('PRIVATE', 'PRIVATE', 'NONE'), ['Internal'], [], names)).toBeNull()
+        expect(teaConfirmBeforeMembership(null, ['Payments'], [], names)).toBeNull()
+
+        const both = teaConfirmBeforeMembership(exposure('PRIVATE', 'PUBLIC', 'MEMBERSHIP_RESOLVES_PUBLIC',
+            { afterSource: 'PERSPECTIVE', afterSourceObject: 'p1', publishedReleases: 4 }), ['Payments'], ['Internal'], names)!
+        expect(both).toEqual({ title: 'Make this component public?',
+            text: "Changing this component's perspectives (adding Payments; removing Internal) resolves it to the PUBLIC "
+                + 'profile of perspective Payments. ' + teaPublicConfirmText(4),
+            confirmButtonText: 'Make it public' })
+        expect(both.text).toContain('4 published release(s)')
+
+        const addedOnly = teaConfirmBeforeMembership(exposure('PRIVATE', 'PUBLIC', 'MEMBERSHIP_RESOLVES_PUBLIC',
+            { afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' }), ['Payments'], [], names)!
+        expect(addedOnly.text).toContain('(adding Payments)')
+        expect(addedOnly.text).not.toContain('removing')
+        expect(addedOnly.text).toContain(teaPublicConfirmText(0))
+    })
+
+    it('says product for a product, and drops the adding clause when the change only removes', () => {
+        const removedOnly = teaConfirmBeforeMembership(exposure('UNRESOLVED', 'PUBLIC', 'MEMBERSHIP_RESOLVES_PUBLIC',
+            { afterSource: 'ORGANIZATION' }), [], ['Internal'], names, 'product')!
+        expect(removedOnly.title).toBe('Make this product public?')
+        expect(removedOnly.text).toBe("Changing this product's perspectives (removing Internal) resolves it to the PUBLIC profile "
+            + 'of organization. ' + teaPublicConfirmText(0))
+    })
+
+    it('confirms a perspective-row removal that widens members, naming up to five', () => {
+        const two = teaConfirmBeforeRemoval(exposure('PRIVATE', 'PRIVATE', 'REMOVAL_RESOLVES_PUBLIC',
+            { widened: members(2) }), 'perspective', names)
+        expect(two.title).toBe('Make this TEA profile public?')
+        expect(two.confirmButtonText).toBe('Remove and make them public')
+        expect(two.text).toBe('2 component(s) of this perspective then resolve to a PUBLIC profile: comp-1, comp-2. '
+            + teaPublicConfirmText(0))
+
+        const seven = teaConfirmBeforeRemoval(exposure('PRIVATE', 'PRIVATE', 'REMOVAL_RESOLVES_PUBLIC',
+            { widened: members(7) }), 'perspective', names)
+        expect(seven.text).toContain('7 component(s) of this perspective then resolve to a PUBLIC profile: '
+            + 'comp-1, comp-2, comp-3, comp-4, comp-5, and 2 more. ')
+        expect(seven.text).not.toContain('comp-6')
+
+        const both = teaConfirmBeforeRemoval(exposure('PRIVATE', 'PUBLIC', 'REMOVAL_RESOLVES_PUBLIC',
+            { afterSource: 'ORGANIZATION', widened: members(1), publishedReleases: 1 }), 'perspective', names)
+        expect(both.text).toBe('1 component(s) of this perspective then resolve to a PUBLIC profile: comp-1. '
+            + 'Removing the override lets this perspective resolve to the PUBLIC profile of organization. ' + teaPublicConfirmText(1))
+        expect(both.confirmButtonText).toBe('Remove and make it public')
+    })
+
+    it('computes what a membership write adds and removes by name, from the list it sends and the stored set', () => {
+        const org = [{ uuid: 'p1', name: 'Payments' }, { uuid: 'p2', name: 'Internal' }, { uuid: 'p3', name: 'Retail' }]
+        expect(teaMembershipDelta(['p1', 'p3'], [{ uuid: 'p2', name: 'Internal' }, { uuid: 'p3', name: 'Retail' }], org))
+            .toEqual({ added: ['Payments'], removed: ['Internal'],
+                names: { p1: 'Payments', p2: 'Internal', p3: 'Retail' } })
+        // The members modal sends one perspective and does not know the stored set: nothing reads as removed.
+        expect(teaMembershipDelta(['p1'], undefined, org)).toEqual({ added: ['Payments'], removed: [],
+            names: { p1: 'Payments', p2: 'Internal', p3: 'Retail' } })
+        expect(teaMembershipDelta([], [{ uuid: 'p1' }], org).removed).toEqual(['Payments'])
+        // A stored perspective the org list no longer holds keeps its own name; an unknown uuid reads as itself.
+        expect(teaMembershipDelta(['px'], [{ uuid: 'old', name: 'Legacy' }], null)).toEqual({ added: ['px'], removed: ['Legacy'],
+            names: { old: 'Legacy' } })
+        expect(teaMembershipDelta(['p1'], [{ uuid: 'p1', name: 'Payments' }], org)).toMatchObject({ added: [], removed: [] })
     })
 })

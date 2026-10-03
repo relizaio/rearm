@@ -22,6 +22,8 @@ const DOCS = {
     SaveTeaProfileGql: graphqlQueries.SaveTeaProfileGql,
     DeleteTeaProfileGql: graphqlQueries.DeleteTeaProfileGql,
     TeaProfileExposureChangeGql: graphqlQueries.TeaProfileExposureChangeGql,
+    // The membership dry-run (TEA-9 round 2): what setPerspectivesOnComponent would do to the visibility.
+    TeaMembershipExposureChangeGql: graphqlQueries.TeaMembershipExposureChangeGql,
 }
 
 // The org TEA table's name read of an archived component (TEA-9) selects only long-standing
@@ -44,6 +46,15 @@ describe('TEA profile documents and the edition gate', () => {
     it('the CE schema answers either every TEA document or none, so the one gate covers them all', () => {
         const valid = Object.values(DOCS).map(d => validate(ceSchema, d).length === 0)
         expect(valid.every(v => v === ceServesTea())).toBe(true)
+    })
+
+    it('lists the seven TEA-profile documents beside the component name read: eight TEA documents', () => {
+        expect(Object.keys(DOCS)).toHaveLength(7)
+        expect(DOCS.TeaMembershipExposureChangeGql).toBeDefined()
+    })
+
+    it('the membership dry-run is one of the documents the CE schema does not serve', () => {
+        expect(validate(ceSchema, DOCS.TeaMembershipExposureChangeGql).length > 0).toBe(!ceServesTea())
     })
 
     it.runIf(proSchema)('every TEA document validates against the Pro schema', () => {

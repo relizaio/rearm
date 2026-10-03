@@ -1429,7 +1429,7 @@ import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaOrgPanel from './TeaOrgPanel.vue'
-import { teaProfilesAvailable } from '@/utils/teaProfile'
+import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
@@ -2792,6 +2792,24 @@ async function addComponentToPerspective() {
     
     processingMode.value = true
     try {
+        // The list the mutation sends: it replaces the component's perspectives (design TEA-9 section 5).
+        const perspectiveUuids = [selectedPerspectiveUuid.value]
+        // TEA-9: confirm on the server's dry-run of exactly that list when it makes the component PUBLIC.
+        if (teaProfilesAvailable(myUser.value.installationType)) {
+            const exposureResp: any = await graphqlClient.query({
+                query: graphqlQueries.TeaMembershipExposureChangeGql,
+                variables: { componentUuid: selectedComponentToAdd.value, perspectiveUuids },
+                fetchPolicy: 'no-cache'
+            })
+            const delta = teaMembershipDelta(perspectiveUuids,
+                store.getters.componentById(selectedComponentToAdd.value)?.perspectiveDetails, perspectives.value)
+            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
+                delta.removed, delta.names, 'component')
+            if (confirm) {
+                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+                if (!answer?.isConfirmed) return
+            }
+        }
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
@@ -2807,7 +2825,7 @@ async function addComponentToPerspective() {
                 }`,
             variables: {
                 componentUuid: selectedComponentToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
+                perspectiveUuids
             }
         })
         
@@ -2834,6 +2852,24 @@ async function addProductToPerspective() {
     
     processingMode.value = true
     try {
+        // The list the mutation sends: it replaces the product's perspectives (design TEA-9 section 5).
+        const perspectiveUuids = [selectedPerspectiveUuid.value]
+        // TEA-9: confirm on the server's dry-run of exactly that list when it makes the product PUBLIC.
+        if (teaProfilesAvailable(myUser.value.installationType)) {
+            const exposureResp: any = await graphqlClient.query({
+                query: graphqlQueries.TeaMembershipExposureChangeGql,
+                variables: { componentUuid: selectedProductToAdd.value, perspectiveUuids },
+                fetchPolicy: 'no-cache'
+            })
+            const delta = teaMembershipDelta(perspectiveUuids,
+                store.getters.componentById(selectedProductToAdd.value)?.perspectiveDetails, perspectives.value)
+            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
+                delta.removed, delta.names, 'product')
+            if (confirm) {
+                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+                if (!answer?.isConfirmed) return
+            }
+        }
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
@@ -2849,7 +2885,7 @@ async function addProductToPerspective() {
                 }`,
             variables: {
                 componentUuid: selectedProductToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
+                perspectiveUuids
             }
         })
         
