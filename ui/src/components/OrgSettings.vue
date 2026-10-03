@@ -838,6 +838,27 @@
                     <n-modal
                         preset="dialog"
                         :show-icon="false"
+                        v-model:show="showPerspectiveTeaModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :bordered="false" role="dialog" aria-modal="true"
+                            :title="'TEA profile of perspective: ' + selectedPerspectiveName">
+                            <!-- A product-derived perspective is the product: its TEA profile is the
+                                 product component's COMPONENT-scope row (TEA-2 design 3.2). -->
+                            <TeaProfileEditor
+                                v-if="showPerspectiveTeaModal"
+                                :org-uuid="orgResolved"
+                                :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                :object-uuid="selectedPerspectiveUuid"
+                                :object-name="selectedPerspectiveName"
+                                :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                :is-writable="isOrgAdmin"
+                                :is-org-admin="isOrgAdmin"
+                                :installation-type="myUser.installationType"/>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
                         v-model:show="showPerspectiveComponentsModal"
                         style="width: 900px;">
                         <n-card size="huge" :bordered="false"
@@ -1290,6 +1311,14 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     </n-form>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
+                <TeaOrgPanel
+                    :org-uuid="orgResolved"
+                    :is-org-admin="isOrgAdmin"
+                    :installation-type="myUser.installationType"
+                    :perspectives="perspectives"
+                    :components="teaNamedObjects" />
+            </n-tab-pane>
             <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
                 <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
                     <n-tab-pane name="downloadLog" tab="Download Log">
@@ -1366,7 +1395,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions, { SwalData } from '@/utils/commonFunctions'
@@ -1399,6 +1428,9 @@ import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } f
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
+import TeaOrgPanel from './TeaOrgPanel.vue'
+import { teaProfilesAvailable } from '@/utils/teaProfile'
+import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
@@ -1476,6 +1508,14 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     } else if (tabName === "perspectives") {
         loadPerspectives()
+    } else if (tabName === "tea") {
+        // The Transparency Exchange table names its rows from the perspectives list (Pro) and the
+        // products store; load both here so the tab reads the same when it is opened directly.
+        // Components come from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
         loadOrgSettings()
@@ -1717,8 +1757,9 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings']
-const proOnlyTabs = ['policies', 'committers', 'perspectives']
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea']
+// tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
+const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
@@ -2258,6 +2299,8 @@ const userGroupPermissionsDirty = computed(() => {
 })
 
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
+// Names for the TEA profile rows of the organization: components and products.
+const teaNamedObjects = computed(() => [...orgComponents.value, ...(store.getters.productsOfOrg(orgResolved.value) || [])])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
 
@@ -2364,6 +2407,7 @@ const newPerspective: Ref<any> = ref({
 })
 const showPerspectiveComponentsModal = ref(false)
 const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
+const showPerspectiveTeaModal: Ref<boolean> = ref(false)
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')
@@ -2511,6 +2555,22 @@ const perspectiveFields = [
                 )
             ]
 
+            // The TEA profile of every row: a real perspective's own, a product's as its
+            // COMPONENT-scope profile (TEA-2).
+            actions.push(
+                h(
+                    NIcon,
+                    {
+                        title: 'TEA profile',
+                        class: 'icons clickable',
+                        size: 25,
+                        'data-testid': 'perspective-tea-action',
+                        onClick: () => showPerspectiveTeaModalFn(row.uuid, row.name, row.type)
+                    },
+                    () => h(WorldIcon)
+                )
+            )
+
             // Guards are readable on every real perspective; product-derived ones are not
             // editable at all, so they carry none.
             if (row.type !== 'PRODUCT') {
@@ -2631,6 +2691,13 @@ function resetCreatePerspective() {
         name: ''
     }
     showCreatePerspectiveModal.value = false
+}
+
+function showPerspectiveTeaModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    selectedPerspectiveType.value = perspectiveType
+    showPerspectiveTeaModal.value = true
 }
 
 function showPerspectiveGuardsModalFn(perspectiveUuid: string, perspectiveName: string) {
