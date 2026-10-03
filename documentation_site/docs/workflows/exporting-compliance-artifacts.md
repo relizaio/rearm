@@ -112,12 +112,15 @@ What "ReARM's own markers" means, precisely:
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
 
-**Not removed: what your SBOM generator wrote.** Its properties (including cdxgen's
-`SrcFile`, `ResolvedUrl` and similar working data, prefixed `internal:` from cdxgen 13),
-component evidence, npm registry analysis, annotations and formulation are your content and are
-exported as uploaded, with either setting. Build-machine paths in particular are not removed: if
-an SBOM must not disclose them, remove them before you upload it (for cdxgen, see its options for
-excluding evidence and formulation).
+**Not removed: what your SBOM generator wrote.** It is your content, and this setting does not
+touch it. Component properties (including cdxgen's `SrcFile`, `ResolvedUrl` and similar working
+data, prefixed `internal:` from cdxgen 13), component evidence and cdxgen's npm registry analysis
+are exported as uploaded, in merged release exports and single-artifact downloads alike.
+Formulation, annotations and services also appear in a **single-artifact download**. A **merged
+release export** leaves those three sections out, with either setting: the merge does not
+carry them over from its inputs. Build-machine paths in particular are not
+removed: if an SBOM must not disclose them, remove them before you upload it (for cdxgen, see its
+options for excluding evidence and formulation).
 
 **Always kept: `metadata.tools`.** ReARM's own entry (`io.reliza` / `rearm`) names the ReARM
 version that produced the export (the deployment's ReARM version; `26.08.95` when the deployment
@@ -134,7 +137,9 @@ are already gone.
 
 **With both switches off, no `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
-`includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools`.
+`includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools` and,
+where rebom recorded one, the top-level `bom` external reference to the document as uploaded
+("Source document as uploaded by the producer", a `urn:cdx:` BOM-Link to ReARM's stored copy).
 
 That marker exists to disambiguate an *absent* support property: "we hold no attestation for
 this component" versus "this document asserts nothing about support". The ambiguity is only real

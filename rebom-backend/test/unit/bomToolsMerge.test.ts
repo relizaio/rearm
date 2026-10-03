@@ -66,6 +66,31 @@ describe('mergeToolsFromInputs', () => {
     expect(merged.components.map((c: any) => c.evidence.identity[0].tools[0])).toEqual(['tool-1', 'tool-1-2']);
   });
 
+  it('points evidence at the kept entry when two inputs name the same tool under different refs', () => {
+    const cites = (ref: string, tool: string) => ({ name: ref, 'bom-ref': ref,
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: [tool] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-a' }] });
+    a.components = [cites('pkg:npm/a@1', 'tool-a')];
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-b' }] });
+    b.components = [cites('pkg:npm/b@1', 'tool-b')];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [cites('pkg:npm/a@1', 'tool-a'), cites('pkg:npm/b@1', 'tool-b')];
+    mergeToolsFromInputs(merged, [a, b]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['tool-a']);
+    expect(merged.components.map((c: any) => c.evidence.identity[0].tools[0])).toEqual(['tool-a', 'tool-a']);
+  });
+
+  it('gives the kept entry the duplicate\'s ref when the kept one had none', () => {
+    const { 'bom-ref': _, ...cdxgenNoRef } = cdxgen;
+    const merged: any = bom('1.6', { components: [] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-b' }] });
+    b.components = [{ name: 'x', 'bom-ref': 'pkg:npm/x@1', evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-b'] }] } }];
+    merged.components = structuredClone(b.components);
+    mergeToolsFromInputs(merged, [bom('1.6', { components: [cdxgenNoRef] }), b]);
+    expect(merged.metadata.tools.components.map((t: any) => t['bom-ref'])).toEqual(['tool-b']);
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-b']);
+  });
+
   it('leaves the evidence of a component both inputs cite under the clashing ref as it was', () => {
     const shared = { name: 'shared', 'bom-ref': 'pkg:npm/shared@1',
       evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1'] }] } };

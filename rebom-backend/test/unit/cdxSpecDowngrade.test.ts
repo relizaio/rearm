@@ -84,8 +84,33 @@ function every17Addition(): any {
                 certificateFormat: 'X.509', certificateFileExtension: 'pem',
                 fingerprint: { alg: 'SHA-256', content: 'aa'.repeat(32) },
                 certificateState: [{ state: 'active' }], creationDate: '2025-01-01T00:00:00Z',
+                relatedCryptographicAssets: [
+                    { type: 'algorithm', ref: 'crypto/algorithm/sha256-rsa' },
+                    { type: 'publicKey', ref: 'crypto/key/ca-public' },
+                    { type: 'privateKey', ref: 'crypto/key/ca-private' },
+                ],
             },
         },
+    };
+    const algorithm = {
+        type: 'cryptographic-asset', name: 'ecdsa', 'bom-ref': 'crypto/algorithm/sha256-rsa',
+        cryptoProperties: { assetType: 'algorithm',
+            algorithmProperties: { primitive: 'signature', ellipticCurve: 'secg/secp256r1', algorithmFamily: 'ECDSA' } },
+    };
+    const key = {
+        type: 'cryptographic-asset', name: 'ca-public', 'bom-ref': 'crypto/key/ca-public',
+        cryptoProperties: { assetType: 'related-crypto-material',
+            relatedCryptoMaterialProperties: { type: 'public-key',
+                relatedCryptographicAssets: [{ type: 'algorithm', ref: 'crypto/algorithm/sha256-rsa' }] } },
+    };
+    const protocol = {
+        type: 'cryptographic-asset', name: 'tls', 'bom-ref': 'crypto/protocol/tls',
+        cryptoProperties: { assetType: 'protocol',
+            protocolProperties: { type: 'tls', version: '1.3', cryptoRefArray: ['crypto/key/ca-public'],
+                relatedCryptographicAssets: [
+                    { type: 'publicKey', ref: 'crypto/key/ca-public' },
+                    { type: 'algorithm', ref: 'crypto/algorithm/sha256-rsa' },
+                ] } },
     };
     return {
         bomFormat: 'CycloneDX', specVersion: '1.7', version: 1,
@@ -105,8 +130,11 @@ function every17Addition(): any {
               licenses: [{ license: { id: 'MIT' } }, { expression: 'Apache-2.0 OR GPL-2.0-only' }],
               properties: [{ name: 'cdx:npm:package:development', value: 'true' }] },
             { type: 'library', name: 'expr-only', licenses: [{ expression: 'MIT OR Apache-2.0' }] },
+            { type: 'library', name: 'expr-licensed', licenses: [{ expression: 'LicenseRef-Acme-EULA',
+                licensing: { licenseTypes: ['perpetual'], licensor: { organization: { name: 'Acme' } } },
+                properties: [{ name: 'acme:seat', value: '42' }] }] },
         ],
-        formulation: [{ 'bom-ref': 'formulation-1', components: [cert] }],
+        formulation: [{ 'bom-ref': 'formulation-1', components: [cert, algorithm, key, protocol] }],
     };
 }
 
@@ -143,12 +171,23 @@ describe('downgrade17To16', () => {
         expect(lib.licenses).toEqual([{ license: { id: 'MIT' } }, { license: { name: 'Apache-2.0 OR GPL-2.0-only' } }]);
         // a lone expression is valid 1.6 and stays an expression
         expect(bom.components[1].licenses).toEqual([{ expression: 'MIT OR Apache-2.0' }]);
-        const cert = bom.formulation[0].components[0];
+        // an expression carrying licensing data becomes a license, which 1.6 lets carry it
+        expect(bom.components[2].licenses).toEqual([{ license: { name: 'LicenseRef-Acme-EULA',
+            licensing: { licenseTypes: ['perpetual'], licensor: { organization: { name: 'Acme' } } },
+            properties: [{ name: 'acme:seat', value: '42' }] } }]);
+        const [cert, algorithm, key, protocol] = bom.formulation[0].components;
         expect(cert.properties).toEqual([{ name: 'cdx:crypto:trustDomain', value: 'system' }]);
+        // related assets land on 1.6's ref fields; a type 1.6 has no field for goes
         expect(cert.cryptoProperties.certificateProperties).toEqual({
             subjectName: 'CN=Example CA', issuerName: 'CN=Example CA', certificateFormat: 'X.509',
             certificateExtension: 'pem',
+            signatureAlgorithmRef: 'crypto/algorithm/sha256-rsa', subjectPublicKeyRef: 'crypto/key/ca-public',
         });
+        expect(algorithm.cryptoProperties.algorithmProperties).toEqual({ primitive: 'signature', curve: 'secg/secp256r1' });
+        expect(key.cryptoProperties.relatedCryptoMaterialProperties)
+            .toEqual({ type: 'public-key', algorithmRef: 'crypto/algorithm/sha256-rsa' });
+        expect(protocol.cryptoProperties.protocolProperties).toEqual({ type: 'tls', version: '1.3',
+            cryptoRefArray: ['crypto/key/ca-public', 'crypto/algorithm/sha256-rsa'] });
     });
 
     it('leaves a 1.6 document as it is', () => {

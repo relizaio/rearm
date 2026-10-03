@@ -92,18 +92,23 @@ const isObject = (v: unknown): v is Record<string, any> => !!v && typeof v === '
  * Each change applies only where the 1.7 schema defines the field (a component's `isExternal`,
  * a certificate's `serialNumber`), never by key name alone: `serialNumber` is also the BOM's
  * own identifier, and `properties` is also a component's. What changes:
+ * - mapped onto the 1.6 field that carries the same data: `ellipticCurve` -> `curve`; a
+ *   certificate's `certificateFileExtension` -> `certificateExtension` (as cdxgen itself does
+ *   when it writes 1.6); `relatedCryptographicAssets` -> the 1.6 refs (a certificate's
+ *   `signatureAlgorithmRef` / `subjectPublicKeyRef`, related material's `algorithmRef`, a
+ *   protocol's `cryptoRefArray`) where the entry's type says which; external-reference types,
+ *   the `key-wrap` primitive and protocol types 1.6 does not know -> `other`; IKEv2 transform
+ *   objects -> the algorithm refs 1.6 lists;
+ * - licenses: 1.7 lets one list mix licenses and expressions, and lets an expression carry
+ *   `licensing` and `properties`; 1.6 takes a list of licenses or one bare expression, and only
+ *   a license carries those two. An expression that is mixed in a list, or carries either field,
+ *   becomes a license (its SPDX id when it is one, else its text as the name) that keeps them;
  * - removed, as 1.6 has no field for them: top-level `citations`, `definitions.patents`,
  *   `metadata.distributionConstraints`; a component's `versionRange`, `isExternal` and
  *   `patentAssertions`; a service's `patentAssertions`; an external reference's `properties`;
- *   the certificate, related-material, protocol and cipher-suite fields 1.7 added;
- * - mapped: a certificate's `certificateFileExtension` becomes 1.6's `certificateExtension`
- *   (as cdxgen itself does when it writes 1.6); external-reference types, the `key-wrap`
- *   primitive and protocol types 1.6 does not know become `other`; IKEv2 transform objects
- *   become the algorithm refs 1.6 lists;
- * - dropped: Streebog hashes, which 1.6 has no algorithm for;
- * - licenses: 1.7 lets one list mix licenses and expressions; 1.6 takes a list of licenses or
- *   one expression. A mixed list keeps every entry, an expression becoming a license (its SPDX
- *   id when it is one, else its text as the name). The fields 1.7 added to an expression go.
+ *   an expression's `expressionDetails`; the remaining certificate, related-material and
+ *   cipher-suite fields 1.7 added, and related assets whose type maps to no 1.6 ref;
+ * - dropped: Streebog hashes, which 1.6 has no algorithm for.
  */
 export function downgrade17To16(bom: any): void {
     if (!isObject(bom)) return;
@@ -148,22 +153,21 @@ function downgradeExternalReference(ref: Record<string, any>): void {
 }
 
 function downgradeLicenses(licenses: any[]): void {
+    const isExpression = (e: unknown): e is Record<string, any> => isObject(e) && typeof e.expression === 'string';
     for (const entry of licenses) {
-        if (isObject(entry) && 'expression' in entry) {
-            delete entry.expressionDetails;
-            delete entry.licensing;
-            delete entry.properties;
-        }
+        if (isExpression(entry)) delete entry.expressionDetails;
     }
-    const expressions = licenses.filter((e) => isObject(e) && typeof e.expression === 'string');
-    if (!expressions.length || (expressions.length === 1 && licenses.length === 1)) return;
+    const mixed = licenses.length > 1 && licenses.some(isExpression);
     for (let i = 0; i < licenses.length; i++) {
         const e = licenses[i];
-        if (!isObject(e) || typeof e.expression !== 'string') continue;
+        if (!isExpression(e)) continue;
+        // A lone bare expression is valid 1.6 and keeps its expression semantics.
+        if (!mixed && e.licensing === undefined && e.properties === undefined) continue;
         const id = CDXSpdx.fixupSpdxId(e.expression);
         const license: any = id ? { id } : { name: e.expression };
-        if (typeof e.acknowledgement === 'string') license.acknowledgement = e.acknowledgement;
-        if (typeof e['bom-ref'] === 'string') license['bom-ref'] = e['bom-ref'];
+        for (const k of ['acknowledgement', 'bom-ref', 'licensing', 'properties']) {
+            if (e[k] !== undefined) license[k] = e[k];
+        }
         licenses[i] = { license };
     }
 }
@@ -172,6 +176,7 @@ function downgradeCryptoProperties(crypto: Record<string, any>): void {
     const algorithm = crypto.algorithmProperties;
     if (isObject(algorithm)) {
         delete algorithm.algorithmFamily;
+        if (!algorithm.curve && typeof algorithm.ellipticCurve === 'string') algorithm.curve = algorithm.ellipticCurve;
         delete algorithm.ellipticCurve;
         if (algorithm.primitive === 'key-wrap') algorithm.primitive = 'other';
     }
@@ -180,15 +185,23 @@ function downgradeCryptoProperties(crypto: Record<string, any>): void {
         if (!certificate.certificateExtension && typeof certificate.certificateFileExtension === 'string') {
             certificate.certificateExtension = certificate.certificateFileExtension;
         }
+        mapRelatedAssets(certificate, { signatureAlgorithmRef: ALGORITHM_TYPES, subjectPublicKeyRef: PUBLIC_KEY_TYPES });
         for (const k of CERTIFICATE_PROPERTIES_NEW_IN_17) delete certificate[k];
     }
     const material = crypto.relatedCryptoMaterialProperties;
     if (isObject(material)) {
         delete material.fingerprint;
+        mapRelatedAssets(material, { algorithmRef: ALGORITHM_TYPES });
         delete material.relatedCryptographicAssets;
     }
     const protocol = crypto.protocolProperties;
     if (isObject(protocol)) {
+        // 1.6 lists a protocol's related assets as plain refs, whatever their type.
+        const refs = relatedAssetRefs(protocol, () => true);
+        if (refs.length) {
+            const existing: unknown[] = Array.isArray(protocol.cryptoRefArray) ? protocol.cryptoRefArray : [];
+            protocol.cryptoRefArray = [...new Set([...existing, ...refs])];
+        }
         delete protocol.relatedCryptographicAssets;
         if (PROTOCOL_TYPES_NEW_IN_17.has(protocol.type)) protocol.type = 'other';
         if (Array.isArray(protocol.cipherSuites)) {
@@ -205,5 +218,29 @@ function downgradeCryptoProperties(crypto: Record<string, any>): void {
                     .filter((v: string | null) => v !== null);
             }
         }
+    }
+}
+
+const ALGORITHM_TYPES = new Set(['algorithm', 'signaturealgorithm']);
+const PUBLIC_KEY_TYPES = new Set(['publickey', 'subjectpublickey']);
+
+/** The refs of an object's 1.7 `relatedCryptographicAssets` whose type passes `wanted`. */
+function relatedAssetRefs(node: Record<string, any>, wanted: (type: string) => boolean): string[] {
+    const assets = node.relatedCryptographicAssets;
+    if (!Array.isArray(assets)) return [];
+    return assets
+        .filter((a: any) => isObject(a) && typeof a.ref === 'string' && wanted(typeof a.type === 'string' ? a.type.toLowerCase() : ''))
+        .map((a: any) => a.ref);
+}
+
+/**
+ * Fills each 1.6 single-ref field from the first related asset of a matching type, unless the
+ * field is already set. The caller removes `relatedCryptographicAssets` afterwards.
+ */
+function mapRelatedAssets(node: Record<string, any>, fields: Record<string, Set<string>>): void {
+    for (const [field, types] of Object.entries(fields)) {
+        if (typeof node[field] === 'string' && node[field]) continue;
+        const [ref] = relatedAssetRefs(node, (t) => types.has(t));
+        if (ref) node[field] = ref;
     }
 }

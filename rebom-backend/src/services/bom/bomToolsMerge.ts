@@ -105,6 +105,24 @@ function copyTool(tool: any, usedRefs: Set<string>, renamed: Map<string, string>
   return { ...copy, 'bom-ref': fresh };
 }
 
+/**
+ * A tool an earlier input already named, under this input's own ref: the duplicate is not
+ * copied, so this input's evidence must cite the kept entry. The kept entry takes the ref when
+ * it has none and the ref is free; otherwise the ref is recorded as renamed to the kept one.
+ */
+function mapDuplicateRef(duplicate: any, kept: any, usedRefs: Set<string>, renamed: Map<string, string>): void {
+  const ref = duplicate['bom-ref'];
+  if (typeof ref !== 'string' || !ref || ref === kept['bom-ref']) return;
+  if (typeof kept['bom-ref'] !== 'string' || !kept['bom-ref']) {
+    if (!usedRefs.has(ref)) { kept['bom-ref'] = ref; usedRefs.add(ref); return; }
+    let fresh = ref;
+    for (let n = 2; usedRefs.has(fresh); n++) fresh = `${ref}-${n}`;
+    kept['bom-ref'] = fresh;
+    usedRefs.add(fresh);
+  }
+  renamed.set(ref, kept['bom-ref']);
+}
+
 /** Calls `visit` on every component object in a BOM: components, nested and in formulation. */
 function forEachComponent(bom: any, visit: (c: any) => void): void {
   const walk = (list: unknown) => {
@@ -165,8 +183,10 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
   if (!merged.metadata) merged.metadata = {};
   const usedRefs = bomRefsIn(merged, new Set<string>());
   const current = toolsOf(merged);
-  const seenComponents = new Set(current.components.map(toolKey));
-  const seenServices = new Set(current.services.map(toolKey));
+  // The entry kept for each tool, so a later input naming the same tool under another ref can
+  // be pointed at it.
+  const keptComponents = new Map<string, any>(current.components.map((c) => [toolKey(c), c]));
+  const keptServices = new Map<string, any>(current.services.map((s) => [toolKey(s), s]));
   const components = [...current.components];
   const services = [...current.services];
   const inputList = inputs || [];
@@ -176,19 +196,22 @@ export function mergeToolsFromInputs(merged: any, inputs: any[]): any {
     for (const c of t.components) {
       if (isRearmTool(c)) continue;
       const key = toolKey(c);
-      if (seenComponents.has(key)) continue;
-      seenComponents.add(key);
+      const kept = keptComponents.get(key);
+      if (kept) { mapDuplicateRef(c, kept, usedRefs, renamed); continue; }
       const copy = copyTool(c, usedRefs, renamed);
       // `type` is required on a 1.5+ component; a producer that left it out still named a tool.
       if (!copy.type) copy.type = 'application';
+      keptComponents.set(key, copy);
       components.push(copy);
     }
     for (const s of t.services) {
       if (isRearmTool(s)) continue;
       const key = toolKey(s);
-      if (seenServices.has(key)) continue;
-      seenServices.add(key);
-      services.push(copyTool(s, usedRefs, renamed));
+      const kept = keptServices.get(key);
+      if (kept) { mapDuplicateRef(s, kept, usedRefs, renamed); continue; }
+      const copy = copyTool(s, usedRefs, renamed);
+      keptServices.set(key, copy);
+      services.push(copy);
     }
     repointEvidence(merged, inputList, index, renamed);
   });
