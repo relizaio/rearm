@@ -621,14 +621,6 @@ class VariableQueries {
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
 			""";
 	
-	// Twin of FIND_RELEASES_BY_ARTIFACT_AND_ORG over the generated-artifact list; the same
-	// top-level containment rides idx_releases_record_data_gin (jsonb_path_ops).
-	protected static final String FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG = """
-			select * from rearm.releases
-			WHERE record_data @> jsonb_build_object('syntheticArtifacts', jsonb_build_array(:artifactUuidAsString))
-			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
-			""";
-	
 	// Commit membership is expressed as whole-document containment
 	// (record_data @> {"commits": [sce]}) rather than
 	// jsonb_contains(record_data->'commits', ...): the two are

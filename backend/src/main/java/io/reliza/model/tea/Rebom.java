@@ -70,13 +70,6 @@ public class Rebom {
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure) {
             this(null, null,  null, belongsTo, null, tldOnly, ignoreDev, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
-
-        /** A copy of these options with {@code belongsTo} replaced; every other component kept. */
-        public RebomOptions withBelongsTo(ArtifactBelongsTo newBelongsTo) {
-            return new RebomOptions(name, group, version, newBelongsTo, hash, tldOnly, ignoreDev, structure, notes,
-                    stripBom, serialNumber, bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl,
-                    rootComponentMergeMode, bomVersion);
-        }
     }
 
     public record RebomResponse(

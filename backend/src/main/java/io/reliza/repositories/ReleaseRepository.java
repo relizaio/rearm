@@ -138,11 +138,6 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesByReleaseArtifact(String artifactUuidAsString, String orgUuidAsString);
 
 	@Query(
-			value = VariableQueries.FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG,
-			nativeQuery = true)
-	List<Release> findReleasesBySyntheticArtifact(String artifactUuidAsString, String orgUuidAsString);
-
-	@Query(
 			value = VariableQueries.FIND_PENDING_RELEASES_AFTER_CUTOFF,
 			nativeQuery = true)
 	List<Release> findPendingReleasesAfterCutoff(String lifecycle, String cutOffDate, int limit);

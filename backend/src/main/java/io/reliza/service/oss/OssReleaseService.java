@@ -596,15 +596,6 @@ public class OssReleaseService {
 					+ ", attempted=" + releaseDto.getSidComponentName() + ")");
 		}
 		List<UuidDiff> artDiff = Utils.diffUuidLists(rData.getArtifacts(), releaseDto.getArtifacts());
-		// A generated artifact (ReleaseData.syntheticArtifacts) is never attached as inventory; refused
-		// before anything is changed or saved. The synthetic list itself is not on the dto and stays.
-		List<UUID> syntheticArtifacts = rData.getSyntheticArtifacts();
-		for (UuidDiff ad : artDiff) {
-			if (ad.diffAction() == ReleaseUpdateAction.ADDED && syntheticArtifacts.contains(ad.object())) {
-				throw new RelizaException("artifact " + ad.object() + " is a generated artifact of release "
-						+ r.getUuid() + "; it cannot be attached as inventory");
-			}
-		}
 		if (!artDiff.isEmpty()) {
 			rData.setArtifacts(releaseDto.getArtifacts());
 			artDiff.forEach(ad -> {

@@ -49,10 +49,6 @@ public class ArtifactGatherService {
 	 * reference to a source code entry or a deliverable that does not exist
 	 * contributes nothing and is logged, rather than failing every caller
 	 * (the release metrics compute, the release save's artifact collection).
-	 *
-	 * <p>Never ReleaseData.syntheticArtifacts, by design: a document ReARM generated is not
-	 * inventory, so it never enters the release collection. No per-artifact guard here, since a
-	 * load per artifact on every release save is not worth a case the lists already separate.
 	 */
 	public Set<UUID> gatherReleaseArtifacts (ReleaseData rd) {
 		Set<UUID> artifactIds = new HashSet<>(rd.getArtifacts());

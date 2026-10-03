@@ -98,7 +98,6 @@ public class CommonVariables {
 	public static final String NOTES_FIELD = "notes";
 	public static final String IDENTIFIER_FIELD = "identifier";
 	public static final String ARTIFACTS_FIELD = "artifacts";
-	public static final String SYNTHETIC_ARTIFACTS_FIELD = "syntheticArtifacts";
 	public static final String ARTIFACT_DETAILS_FIELD = "artifactDetails";
 	public static final String ARTIFACT_FIELD = "artifact";
 	public static final String DELIVERABLE_FIELD = "deliverable";
@@ -326,10 +325,6 @@ public class CommonVariables {
 	public static final String VDR_SNAPSHOT_VALUE_TAG_KEY = "VDR_SNAPSHOT_VALUE";
 	public static final String VDR_SNAPSHOT_TRIGGER_TAG_KEY = "VDR_SNAPSHOT_TRIGGER";
 	public static final String VDR_SNAPSHOT_KEY_TAG_KEY = "VDR_SNAPSHOT_KEY";
-	/** System tag on an artifact ReARM generated itself (value {@code true}); see ReleaseData.syntheticArtifacts. */
-	public static final String SYNTHETIC_ARTIFACT_TAG_KEY = "syntheticArtifact";
-	/** System tag naming the release a synthetic artifact was generated for (value: the release uuid). */
-	public static final String SYNTHETIC_OF_RELEASE_TAG_KEY = "syntheticOfRelease";
 
 	/*** K8s Labels
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/

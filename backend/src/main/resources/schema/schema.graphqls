@@ -941,13 +941,6 @@ type Release {
 	pullRequests: [PullRequest]
 	artifacts: [ID]
 	artifactDetails: [Artifact]
-	"""
-	Artifacts ReARM generated for this release (a published aggregated SBOM, a VDR
-	snapshot). Never merge sources, never in the release collection, never scanned
-	as inventory, not editable: owned by the generator that wrote them.
-	"""
-	syntheticArtifacts: [ID]
-	syntheticArtifactDetails: [Artifact]
 	inboundDeliverables: [ID]
 	inboundDeliverableDetails: [Deliverable]
 	tickets: [ID]
@@ -2491,9 +2484,6 @@ enum ReleaseUpdateScopeEnum {
 	# The per-release FDA assessment narrative override. Distinct from SUPPORT_WINDOW: the
 	# window is a factual commitment, this is the manufacturer's justification prose.
 	FDA_NARRATIVE
-	# A generated artifact bound to or removed from the release (Release.syntheticArtifacts).
-	# Added in the same change as the Java value: see the SUPPORT_WINDOW note above.
-	SYNTHETIC_ARTIFACT
 }
 
 enum ReleaseUpdateActionEnum {

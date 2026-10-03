@@ -1027,8 +1027,6 @@ public class Utils {
 		RELEASE,
 		SCE,
 		AGENT_SESSION,
-		/** A BOM ReARM generated itself; never a merge source, never inventory. */
-		SYNTHETIC,
 	}
 	public static enum StripBom {
 		TRUE,
