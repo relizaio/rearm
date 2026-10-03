@@ -98,6 +98,19 @@ describe('the copy', () => {
         expect(teaPublicBanner({ stored: null, effective: { profile: { visibility: 'PRIVATE' } } })).toBeNull()
     })
 
+    it('banners a FOLLOW_PERSPECTIVE row by the profile it resolves to, since the row stores no visibility', () => {
+        const follow = { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', visibility: null }
+        expect(teaPublicBanner({ stored: follow, effective: { source: 'FOLLOWED_PERSPECTIVE', sourceObject: 'p1',
+            profile: { visibility: 'PUBLIC' } } }, { p1: 'zeta-p1' })).toBe('This TEA profile is PUBLIC, inherited from '
+            + 'perspective zeta-p1: releases resolving to it are readable without authentication.')
+        expect(teaPublicBanner({ stored: follow, effective: { source: 'FOLLOWED_PERSPECTIVE', sourceObject: 'p1',
+            profile: { visibility: 'PRIVATE' } } })).toBeNull()
+        // A dangling FOLLOW resolves through the candidates; a conflict there has no profile and no banner.
+        expect(teaPublicBanner({ stored: follow, effective: { source: 'ORGANIZATION', profile: { visibility: 'PUBLIC' } } }))
+            .toContain('PUBLIC, inherited from organization')
+        expect(teaPublicBanner({ stored: follow, effective: { status: 'CONFLICT', profile: null } })).toBeNull()
+    })
+
     it('states how many published releases a PUBLIC save exposes, and handles none', () => {
         expect(teaPublicConfirmText(3)).toContain('3 published release(s)')
         expect(teaPublicConfirmText(0)).toBe('No release is published under this profile yet; every future publication under it will be public.')

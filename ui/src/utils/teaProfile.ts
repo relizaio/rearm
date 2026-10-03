@@ -211,10 +211,15 @@ export function teaSourceLine (view: any, names: Record<string, string> = {}): s
     return 'No override: pre-filled from ' + teaSourceLabel(parent.source, parent.sourceObject, names)
 }
 
-/** The persistent red banner, or null when nothing here is public. */
+/**
+ * The persistent red banner, or null when nothing here is public. A stored row with its own fields decides by its
+ * own visibility; a FOLLOW_PERSPECTIVE row stores no fields, so like no row at all it is decided by the effective
+ * profile it resolves to.
+ */
 export function teaPublicBanner (view: any, names: Record<string, string> = {}): string | null {
-    if (view?.stored) {
-        return view.stored.visibility === 'PUBLIC'
+    const stored = view?.stored
+    if (stored && stored.mode !== 'FOLLOW_PERSPECTIVE') {
+        return stored.visibility === 'PUBLIC'
             ? 'This TEA profile is PUBLIC: releases resolving to it are readable without authentication.'
             : null
     }

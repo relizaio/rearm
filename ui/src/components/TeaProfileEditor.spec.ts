@@ -90,6 +90,19 @@ describe('TeaProfileEditor', () => {
         expect(inherited.find('[data-testid="tea-public-banner"]').text()).toContain('inherited from perspective Payments')
     })
 
+    it('shows the red banner for a FOLLOW row whose followed perspective is PUBLIC, and none when it is PRIVATE', async () => {
+        const follow = { uuid: 'row', mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', publishing: null, visibility: null }
+        const pub = await mountWith(view({ stored: follow,
+            effective: resolved('FOLLOWED_PERSPECTIVE', profile({ visibility: 'PUBLIC' }), 'p1') }))
+        const banner = pub.find('[data-testid="tea-public-banner"]')
+        expect(banner.exists()).toBe(true)
+        expect(banner.text()).toContain('PUBLIC, inherited from perspective Payments')
+
+        const priv = await mountWith(view({ stored: follow,
+            effective: resolved('FOLLOWED_PERSPECTIVE', profile({ visibility: 'PRIVATE' }), 'p1') }))
+        expect(priv.find('[data-testid="tea-public-banner"]').exists()).toBe(false)
+    })
+
     it('asks before a PUBLIC save, says how many releases it exposes, and sends nothing on cancel', async () => {
         const w = await mountWith(view({ publishedReleases: 3 }))
         await select(w, 'tea-visibility').vm.$emit('update:value', 'PUBLIC')
