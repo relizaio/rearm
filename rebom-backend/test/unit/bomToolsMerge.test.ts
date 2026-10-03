@@ -133,7 +133,25 @@ describe('mergeToolsFromInputs', () => {
     expect(merged.components[0].evidence.identity[0].tools).toEqual(['tool-1']);
   });
 
-  it('leaves the evidence of a component both inputs cite under the clashing ref as it was', () => {
+  it('never leaves shared evidence citing a ref no kept tool has (three inputs disagreeing)', () => {
+    const syft = { type: 'application', group: 'anchore', name: 'syft', version: '1.0.0' };
+    const x = () => ({ name: 'x', 'bom-ref': 'pkg:npm/x@1',
+      evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['t'] }] } });
+    const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'a-cdxgen' }, { ...syft, 'bom-ref': 'a-syft' }] });
+    const b = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 't' }] });
+    b.components = [x()];
+    const c = bom('1.6', { components: [{ ...syft, 'bom-ref': 't' }] });
+    c.components = [x()];
+    const merged: any = bom('1.6', { components: [] });
+    merged.components = [x()];
+    mergeToolsFromInputs(merged, [a, b, c]);
+    const kept = merged.metadata.tools.components.map((t: any) => t['bom-ref']);
+    expect(kept).toEqual(['a-cdxgen', 'a-syft']);
+    // B is the first input with x citing t; its t (cdxgen) became a-cdxgen
+    expect(merged.components[0].evidence.identity[0].tools).toEqual(['a-cdxgen']);
+  });
+
+  it('gives a component both inputs cite under the clashing ref the first input\'s attribution', () => {
     const shared = { name: 'shared', 'bom-ref': 'pkg:npm/shared@1',
       evidence: { identity: [{ field: 'purl', confidence: 1, tools: ['tool-1'] }] } };
     const a = bom('1.6', { components: [{ ...cdxgen, 'bom-ref': 'tool-1' }] });

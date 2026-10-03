@@ -14,7 +14,8 @@ import { isRearmToolEntry as isRearmTool } from './bomProcessingService';
  * one after the merge, and an input's copy would name an older rebom. A copied tool keeps its
  * `bom-ref`, because component evidence points at it (`evidence.identity[].tools`). Refs are
  * unique per document, so when the ref is already taken the tool gets a fresh one, and the
- * evidence of that input's components is pointed at it.
+ * evidence of that input's components is pointed at it (for a component several inputs share,
+ * the first input's attribution, as for the component itself).
  */
 
 type Tools = { components: any[]; services: any[] };
@@ -167,21 +168,20 @@ function citations(input: any): Map<string, Set<string>> {
  * evidence identity: every cited ref is mapped once, so a ref one input renamed is never
  * renamed again by another input's rename that happens to produce it.
  *
- * A merged component (by bom-ref) citing ref `t` is rewritten to what `t` became in the inputs
- * that have that component citing `t`. When they all agree -- one input, or several naming the
- * same tool under `t` -- it takes that ref; when they disagree (`t` named different tools in
- * different inputs) the attribution would be a guess, and `t` is left as it is. A ref listed
- * twice after mapping is listed once.
+ * A merged component (by bom-ref) citing ref `t` is rewritten to what `t` became in the FIRST
+ * input, in input order, that has that component citing `t` -- the CLI's own rule for a
+ * component several inputs share (the first input's copy wins). When those inputs disagree
+ * (`t` named different tools in different inputs), keeping `t` unchanged could leave a ref no
+ * kept tool has, or name a tool from an input that never contained the component; the first
+ * citing input's target always exists. A component no input cites `t` for keeps `t`. A ref
+ * listed twice after mapping is listed once.
  */
 function repointEvidence(merged: any, inputs: any[], renames: Map<string, string>[]): void {
   if (!renames.some((r) => r.size)) return;
   const cited = inputs.map(citations);
   const resolve = (componentRef: string, t: string): string => {
-    const targets = new Set<string>();
-    cited.forEach((byTool, i) => {
-      if (byTool.get(t)?.has(componentRef)) targets.add(renames[i].get(t) ?? t);
-    });
-    return targets.size === 1 ? [...targets][0] : t;
+    const first = cited.findIndex((byTool) => byTool.get(t)?.has(componentRef));
+    return first < 0 ? t : (renames[first].get(t) ?? t);
   };
   forEachComponent(merged, (c) => {
     const componentRef = c['bom-ref'];
