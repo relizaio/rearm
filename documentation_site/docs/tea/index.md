@@ -101,7 +101,8 @@ A publish is refused, with the reason, when:
 - the release lifecycle is below ASSEMBLED, or below the profile's minimum lifecycle;
 - the component resolves to no single profile (a conflict between perspectives), or its profile has publishing DISABLED;
 - the release or its component is archived, or the release has no SBOM to aggregate;
-- the caller lacks the Publish Externally (TEA) permission on the release's component. Users and RBAC (FREEFORM or USER) API keys can hold it; organization admins have it implicitly.
+- the caller lacks the Publish Externally (TEA) permission on the release's component. Users and RBAC (FREEFORM or USER) API keys can hold it; organization admins have it implicitly;
+- another publish or hide of the same release is still running on another ReARM instance after five minutes of waiting; the act can simply be repeated.
 
 ### Re-publish and hide
 
