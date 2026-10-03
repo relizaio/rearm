@@ -21,7 +21,12 @@ const DOCS = {
     TeaOrgDiscoveryGql: graphqlQueries.TeaOrgDiscoveryGql,
     SaveTeaProfileGql: graphqlQueries.SaveTeaProfileGql,
     DeleteTeaProfileGql: graphqlQueries.DeleteTeaProfileGql,
+    TeaProfileExposureChangeGql: graphqlQueries.TeaProfileExposureChangeGql,
 }
+
+// The org TEA table's name read of an archived component (TEA-9) selects only long-standing
+// Component fields, so it validates on CE too; it is sent only from the TEA tab, which the gate hides.
+const COMPONENT_NAME_READ = graphqlQueries.TeaComponentNameGql
 
 const ceServesTea = () => Boolean(ceSchema.getQueryType()?.getFields().teaProfileEditorView)
 
@@ -42,8 +47,12 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it.runIf(proSchema)('every TEA document validates against the Pro schema', () => {
-        for (const [name, doc] of Object.entries(DOCS)) {
+        for (const [name, doc] of Object.entries({ ...DOCS, TeaComponentNameGql: COMPONENT_NAME_READ })) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
+    })
+
+    it('the component name read of the org TEA table validates on CE as well', () => {
+        expect(validate(ceSchema, COMPONENT_NAME_READ).map(e => e.message)).toEqual([])
     })
 })

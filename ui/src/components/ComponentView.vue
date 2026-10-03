@@ -886,6 +886,7 @@
                                             :object-uuid="componentUuid"
                                             :object-name="componentData?.name"
                                             :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :object-archived="componentData?.status === 'ARCHIVED'"
                                             :is-writable="isAdmin"
                                             :is-org-admin="isAdmin"
                                             :perspective-options="teaPerspectiveOptions"

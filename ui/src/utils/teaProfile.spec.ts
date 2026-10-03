@@ -6,7 +6,8 @@ import {
     TEA_MODE_OPTIONS, TEA_OPTIONAL_DEPENDENCIES_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
     TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_SOURCES_OPTIONS, TEA_STRUCTURE_OPTIONS,
     TEA_SUPPORT_METADATA_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaFormFromView,
-    teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner, teaPublicConfirmText, teaSourceLine,
+    teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaNeedsPublicConfirm, teaProfileInput,
+    teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
 } from './teaProfile'
 
 const values = (opts: { label: string, value: string }[]) => opts.map(o => o.value)
@@ -116,10 +117,62 @@ describe('the copy', () => {
         expect(teaPublicConfirmText(0)).toBe('No release is published under this profile yet; every future publication under it will be public.')
     })
 
-    it('asks only when the save makes the row PUBLIC', () => {
-        const pub = { ...teaBuiltInDefaults(), visibility: 'PUBLIC' }
-        expect(teaNeedsPublicConfirm(pub, 'ORGANIZATION', { stored: null })).toBe(true)
-        expect(teaNeedsPublicConfirm(pub, 'ORGANIZATION', { stored: { visibility: 'PUBLIC' } })).toBe(false)
-        expect(teaNeedsPublicConfirm({ ...pub, mode: 'FOLLOW_PERSPECTIVE' }, 'COMPONENT', { stored: null })).toBe(false)
+})
+
+// Task TEA-9, design 4.5 cases 21-24: the confirmations follow the server's exposure answer, and the
+// org table names a row by name with an archived tag.
+const exposure = (before: string, after: string, path: string, changes: Record<string, any> = {}): TeaExposureChange =>
+    ({ before, after, path, afterSource: null, afterSourceObject: null, publishedReleases: 0, ...changes } as any)
+
+describe('the exposure confirmations (TEA-9)', () => {
+    const names = { p1: 'Payments' }
+
+    it('asks exactly when the object becomes PUBLIC', () => {
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PUBLIC', 'ROW_PUBLIC'))).toBe(true)
+        expect(teaNeedsPublicConfirm(exposure('UNRESOLVED', 'PUBLIC', 'FOLLOW_RESOLVES_PUBLIC'))).toBe(true)
+        expect(teaNeedsPublicConfirm(exposure('PUBLIC', 'PUBLIC', 'ROW_PUBLIC'))).toBe(false)
+        expect(teaNeedsPublicConfirm(exposure('PRIVATE', 'PRIVATE', 'NONE'))).toBe(false)
+        expect(teaNeedsPublicConfirm(exposure('PUBLIC', 'PRIVATE', 'NONE'))).toBe(false)
+        expect(teaNeedsPublicConfirm(null)).toBe(false)
+    })
+
+    it('confirms a save on a PUBLIC row with the count, and on a FOLLOW naming the perspective and the source', () => {
+        expect(teaConfirmBeforeSave(exposure('PUBLIC', 'PUBLIC', 'NONE'), 'component', names)).toBeNull()
+        const three = teaConfirmBeforeSave(exposure('PRIVATE', 'PUBLIC', 'ROW_PUBLIC', { publishedReleases: 3 }), 'component')!
+        expect(three.title).toBe('Make this TEA profile public?')
+        expect(three.confirmButtonText).toBe('Make it public')
+        expect(three.text).toBe(teaPublicConfirmText(3))
+        expect(three.text).toContain('3 published release(s)')
+        expect(teaConfirmBeforeSave(exposure('PRIVATE', 'PUBLIC', 'ROW_PUBLIC'), 'perspective')!.text)
+            .toContain('No release is published under this profile yet')
+
+        const follow = teaConfirmBeforeSave(exposure('PRIVATE', 'PUBLIC', 'FOLLOW_RESOLVES_PUBLIC',
+            { afterSource: 'FOLLOWED_PERSPECTIVE', afterSourceObject: 'p1' }), 'component', names, 'p1')!
+        expect(follow.text).toBe('Following perspective Payments resolves this component to the PUBLIC profile of '
+            + 'perspective Payments. ' + teaPublicConfirmText(0))
+        const throughOrg = teaConfirmBeforeSave(exposure('PRIVATE', 'PUBLIC', 'FOLLOW_RESOLVES_PUBLIC',
+            { afterSource: 'ORGANIZATION' }), 'product', names, 'p1')!
+        expect(throughOrg.text).toContain('Following perspective Payments resolves this product to the PUBLIC profile of organization. ')
+    })
+
+    it('confirms a removal plainly, or as a PUBLIC change naming the source and the count', () => {
+        const plain = teaConfirmBeforeRemoval(exposure('PRIVATE', 'PRIVATE', 'NONE'), 'component', names)
+        expect(plain).toEqual({ title: 'Remove this TEA profile override?',
+            text: 'The component then resolves its TEA profile from its parent again.', confirmButtonText: 'Remove' })
+        const widening = teaConfirmBeforeRemoval(exposure('PRIVATE', 'PUBLIC', 'REMOVAL_RESOLVES_PUBLIC',
+            { afterSource: 'PERSPECTIVE', afterSourceObject: 'p1', publishedReleases: 2 }), 'component', names)
+        expect(widening.title).toBe('Make this TEA profile public?')
+        expect(widening.confirmButtonText).toBe('Remove and make it public')
+        expect(widening.text).toBe('Removing the override lets this component resolve to the PUBLIC profile of perspective '
+            + 'Payments. ' + teaPublicConfirmText(2))
+    })
+
+    it('names an org table row by name, tags an archived one, and falls back to the uuid only for an unknown object', () => {
+        const objects = { c1: { name: 'widget', status: 'ACTIVE' }, c2: { name: 'old-widget', status: 'ARCHIVED' },
+            p1: { name: 'Payments' } }
+        expect(teaRowObject({ object: 'c1' }, objects)).toEqual({ name: 'widget', archived: false })
+        expect(teaRowObject({ object: 'c2' }, objects)).toEqual({ name: 'old-widget', archived: true })
+        expect(teaRowObject({ object: 'p1' }, objects)).toEqual({ name: 'Payments', archived: false })
+        expect(teaRowObject({ object: 'c9' }, objects)).toEqual({ name: 'c9', archived: false })
     })
 })

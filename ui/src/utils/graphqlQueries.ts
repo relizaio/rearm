@@ -631,6 +631,28 @@ mutation SaveTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID, $profi
     }
 }`
 
+const TEA_PROFILE_EXPOSURE_CHANGE = gql`
+query TeaProfileExposureChange($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput) {
+    teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile) {
+        before
+        after
+        path
+        afterSource
+        afterSourceObject
+        publishedReleases
+    }
+}`
+
+const TEA_COMPONENT_NAME = gql`
+query TeaComponentName($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) {
+        uuid
+        name
+        type
+        status
+    }
+}`
+
 const DELETE_TEA_PROFILE = gql`
 mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
     deleteTeaProfile(org: $org, scope: $scope, object: $object)
@@ -2029,6 +2051,8 @@ export default {
     TeaProfilesOfOrgGql: TEA_PROFILES_OF_ORG,
     TeaOrgDiscoveryGql: TEA_ORG_DISCOVERY,
     SaveTeaProfileGql: SAVE_TEA_PROFILE,
+    TeaProfileExposureChangeGql: TEA_PROFILE_EXPOSURE_CHANGE,
+    TeaComponentNameGql: TEA_COMPONENT_NAME,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,

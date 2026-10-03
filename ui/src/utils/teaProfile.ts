@@ -1,7 +1,8 @@
 // TEA profiles (task TEA-2): the option lists the profile editor renders, and the pure logic of the
 // editor -- what the form starts from, what a save sends, and the copy of the source line, the
-// public banner and the confirmation before a profile goes PUBLIC. Kept out of the .vue files so
-// the specs pin them.
+// public banner and the confirmation before a profile goes PUBLIC (on the server's exposure answer
+// since task TEA-9), plus how the org table names a row. Kept out of the .vue files so the specs
+// pin them.
 
 import { isProEdition } from './editionCapabilities'
 
@@ -252,8 +253,71 @@ export function teaPublicConfirmText (publishedReleases: number): string {
         + 'the TEA URL as soon as you save; visibility is live.'
 }
 
-/** Whether saving this form needs the PUBLIC confirmation first. */
-export function teaNeedsPublicConfirm (form: TeaProfileForm, scope: TeaScope, view: any): boolean {
-    if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') return false
-    return form.visibility === 'PUBLIC' && view?.stored?.visibility !== 'PUBLIC'
+/**
+ * The server's answer to "what does this save or removal do to the effective visibility here"
+ * (teaProfileExposureChange, task TEA-9). The editor confirms on it rather than on the form, so
+ * the UI and the server's organization-admin gate cannot disagree.
+ */
+export interface TeaExposureChange {
+    before: 'PUBLIC' | 'PRIVATE' | 'UNRESOLVED'
+    after: 'PUBLIC' | 'PRIVATE' | 'UNRESOLVED'
+    path: 'NONE' | 'ROW_PUBLIC' | 'FOLLOW_RESOLVES_PUBLIC' | 'REMOVAL_RESOLVES_PUBLIC'
+    afterSource?: string | null
+    afterSourceObject?: string | null
+    publishedReleases: number
+}
+
+/** A Swal confirmation: what the editor shows before sending the save or the removal. */
+export interface TeaConfirm { title: string, text: string, confirmButtonText: string }
+
+const PUBLIC_CONFIRM_TITLE = 'Make this TEA profile public?'
+
+/** Whether the operation makes the object PUBLIC where it was not: what needs the red confirmation. */
+export function teaNeedsPublicConfirm (exposure: TeaExposureChange | null | undefined): boolean {
+    return exposure?.after === 'PUBLIC' && exposure?.before !== 'PUBLIC'
+}
+
+/**
+ * The confirmation before a save, or null when nothing becomes PUBLIC. A FOLLOW names the followed
+ * perspective (from the form) and the profile it resolves to; a PUBLIC row carries the count only.
+ */
+export function teaConfirmBeforeSave (exposure: TeaExposureChange | null | undefined, scopeWord: string,
+    names: Record<string, string> = {}, followedPerspective: string | null = null): TeaConfirm | null {
+    if (!exposure || !teaNeedsPublicConfirm(exposure)) return null
+    let path = ''
+    if (exposure.path === 'FOLLOW_RESOLVES_PUBLIC') {
+        const followed = (followedPerspective && names[followedPerspective]) || followedPerspective || ''
+        path = 'Following perspective ' + followed + ' resolves this ' + scopeWord + ' to the PUBLIC profile of '
+            + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
+    }
+    return { title: PUBLIC_CONFIRM_TITLE, text: path + teaPublicConfirmText(exposure.publishedReleases),
+        confirmButtonText: 'Make it public' }
+}
+
+/** The confirmation before a removal: the plain one, or the PUBLIC one when the parent it falls back to is PUBLIC. */
+export function teaConfirmBeforeRemoval (exposure: TeaExposureChange | null | undefined, scopeWord: string,
+    names: Record<string, string> = {}): TeaConfirm {
+    if (!exposure || !teaNeedsPublicConfirm(exposure)) {
+        return { title: 'Remove this TEA profile override?',
+            text: 'The ' + scopeWord + ' then resolves its TEA profile from its parent again.', confirmButtonText: 'Remove' }
+    }
+    return { title: PUBLIC_CONFIRM_TITLE,
+        text: 'Removing the override lets this ' + scopeWord + ' resolve to the PUBLIC profile of '
+            + teaSourceLabel(exposure.afterSource, exposure.afterSourceObject, names) + '. '
+            + teaPublicConfirmText(exposure.publishedReleases),
+        confirmButtonText: 'Remove and make it public' }
+}
+
+/** What the org TEA table knows of an object: its name and, for a component or product, its status. */
+export interface TeaNamedObject { name: string, status?: string | null }
+
+/**
+ * How the org TEA table names the object of a row: by name, tagged archived when it is. The uuid
+ * shows only for an object in no list that could not be read either.
+ */
+export function teaRowObject (row: { object?: string | null }, objects: Record<string, TeaNamedObject>):
+    { name: string, archived: boolean } {
+    const o = row.object ? objects[row.object] : undefined
+    if (!o) return { name: row.object ?? '', archived: false }
+    return { name: o.name || row.object || '', archived: o.status === 'ARCHIVED' }
 }

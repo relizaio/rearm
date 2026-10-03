@@ -7,6 +7,10 @@
             <div v-if="loadError" data-testid="tea-load-error" class="text-danger">{{ loadError }}</div>
             <template v-else-if="view">
                 <p data-testid="tea-source" class="text-muted">{{ sourceLine }}</p>
+                <n-alert v-if="objectArchived" data-testid="tea-archived" type="warning" :closable="false" class="tea-alert">
+                    This {{ scopeWord }} is archived: its TEA profile can only hide what it published (publishing
+                    DISABLED, visibility PRIVATE); any other save is refused.
+                </n-alert>
                 <n-alert v-if="view.parent?.status === 'CONFLICT'" data-testid="tea-conflict" type="warning" class="tea-alert">
                     The perspectives {{ conflictNames }} each carry a TEA profile, so this {{ scopeWord }} cannot
                     resolve one: a publish is refused until you choose OVERRIDE or FOLLOW one of them here.
@@ -117,7 +121,8 @@ import {
     TEA_INTERNAL_METADATA_OPTIONS, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS, TEA_OPTIONAL_DEPENDENCIES_OPTIONS,
     TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_SOURCES_OPTIONS,
     TEA_STRUCTURE_OPTIONS, TEA_SUPPORT_METADATA_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults,
-    teaFormFromView, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner, teaPublicConfirmText, teaSourceLine,
+    teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView, teaProfileInput, teaPublicBanner, teaSourceLine,
+    TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
 
 const props = withDefaults(defineProps<{
@@ -126,6 +131,7 @@ const props = withDefaults(defineProps<{
     objectUuid?: string | null
     objectName?: string | null
     objectIsProduct?: boolean
+    objectArchived?: boolean
     isWritable?: boolean
     isOrgAdmin?: boolean
     perspectiveOptions?: Option[]
@@ -134,6 +140,7 @@ const props = withDefaults(defineProps<{
     objectUuid: null,
     objectName: null,
     objectIsProduct: false,
+    objectArchived: false,
     isWritable: false,
     isOrgAdmin: false,
     perspectiveOptions: () => [],
@@ -187,24 +194,43 @@ async function load () {
     }
 }
 
-async function save () {
-    if (teaNeedsPublicConfirm(form.value, props.scope, view.value)) {
-        const answer: any = await Swal.fire({
-            title: 'Make this TEA profile public?',
-            text: teaPublicConfirmText(view.value?.publishedReleases ?? 0),
-            icon: 'warning',
-            showCancelButton: true,
-            confirmButtonText: 'Make it public',
-            cancelButtonText: 'Cancel',
+/**
+ * The server's dry-run of a save (profile given) or a removal (profile null): what it does to the
+ * effective visibility here. An error (a validation message, an archived component's refusal) shows
+ * at once and answers null, so nothing is confirmed and nothing is sent.
+ */
+async function exposureOf (profile: Record<string, any> | null): Promise<TeaExposureChange | null> {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.TeaProfileExposureChangeGql,
+            variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid, profile },
+            fetchPolicy: 'no-cache',
         })
-        if (!answer?.isConfirmed) return
+        return resp.data.teaProfileExposureChange
+    } catch (err: any) {
+        console.error(err)
+        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        return null
     }
+}
+
+async function confirmed (c: TeaConfirm | null): Promise<boolean> {
+    if (!c) return true
+    const answer: any = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return Boolean(answer?.isConfirmed)
+}
+
+async function save () {
+    const profile = teaProfileInput(form.value, props.scope)
+    const exposure = await exposureOf(profile)
+    if (!exposure) return
+    if (!await confirmed(teaConfirmBeforeSave(exposure, scopeWord.value, perspectiveNames.value,
+        follows.value ? form.value.followedPerspective : null))) return
     saving.value = true
     try {
         const resp: any = await graphqlClient.mutate({
             mutation: graphqlQueries.SaveTeaProfileGql,
-            variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid,
-                profile: teaProfileInput(form.value, props.scope) },
+            variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid, profile },
         })
         emit('saved', resp.data.saveTeaProfile)
         await load()
@@ -216,15 +242,9 @@ async function save () {
 }
 
 async function remove () {
-    const answer: any = await Swal.fire({
-        title: 'Remove this TEA profile override?',
-        text: 'The ' + scopeWord.value + ' then resolves its TEA profile from its parent again.',
-        icon: 'warning',
-        showCancelButton: true,
-        confirmButtonText: 'Remove',
-        cancelButtonText: 'Cancel',
-    })
-    if (!answer?.isConfirmed) return
+    const exposure = await exposureOf(null)
+    if (!exposure) return
+    if (!await confirmed(teaConfirmBeforeRemoval(exposure, scopeWord.value, perspectiveNames.value))) return
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.DeleteTeaProfileGql,

@@ -56,12 +56,21 @@ describe('TEA surfaces contract', () => {
         expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
     })
 
-    it('graphqlQueries holds the five TEA documents', () => {
+    it('graphqlQueries holds the seven TEA documents', () => {
         const q = src('../utils/graphqlQueries.ts')
-        for (const doc of ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE']) {
+        for (const doc of ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE',
+            'TEA_PROFILE_EXPOSURE_CHANGE', 'TEA_COMPONENT_NAME']) {
             expect(q).toContain('const ' + doc + ' = gql`')
         }
         expect(q).toContain('teaProfileEditorView(org: $org, scope: $scope, object: $object)')
         expect(q).toContain('saveTeaProfile(org: $org, scope: $scope, object: $object, profile: $profile)')
+        expect(q).toContain('teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile)')
+    })
+
+    it('ComponentView tells the TEA editor whether the component is archived (TEA-9)', () => {
+        const cv = src('ComponentView.vue')
+        const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA"')
+        const editor = cv.slice(tea, cv.indexOf('</n-tab-pane>', tea))
+        expect(editor).toContain(`:object-archived="componentData?.status === 'ARCHIVED'"`)
     })
 })
