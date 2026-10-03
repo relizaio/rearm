@@ -631,6 +631,48 @@ mutation SaveTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID, $profi
     }
 }`
 
+// Every field of TeaExposureChange; widened lists the other components a write makes PUBLIC (TEA-9).
+const TEA_EXPOSURE_CHANGE_FIELDS_GQL = `
+    before
+    after
+    path
+    afterSource
+    afterSourceObject
+    publishedReleases
+    widened {
+        component
+        name
+        afterSource
+        afterSourceObject
+    }
+`
+
+const TEA_PROFILE_EXPOSURE_CHANGE = gql`
+query TeaProfileExposureChange($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput) {
+    teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile) {
+        ${TEA_EXPOSURE_CHANGE_FIELDS_GQL}
+    }
+}`
+
+// What setPerspectivesOnComponent with exactly these perspectives would do to the component's
+// effective visibility (TEA-9 round 2); the membership writes confirm on it.
+const TEA_MEMBERSHIP_EXPOSURE_CHANGE = gql`
+query TeaMembershipExposureChange($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
+    teaMembershipExposureChange(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
+        ${TEA_EXPOSURE_CHANGE_FIELDS_GQL}
+    }
+}`
+
+const TEA_COMPONENT_NAME = gql`
+query TeaComponentName($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) {
+        uuid
+        name
+        type
+        status
+    }
+}`
+
 const DELETE_TEA_PROFILE = gql`
 mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
     deleteTeaProfile(org: $org, scope: $scope, object: $object)
@@ -1279,6 +1321,8 @@ const COMPONENT_FULL_DATA = `
     org
     resourceGroup
     type
+    # Read by the TEA tab: an archived component's TEA profile can only hide it (TEA-9).
+    status
     # Read by ComponentView to decide whether the device support window panel applies (D7).
     # CE declares Component.deviceClass too, so this needs no CORE/FULL split -- unlike
     # medicalProfile.deviceSupportWindow, which CE does not declare and which therefore has
@@ -2086,6 +2130,9 @@ export default {
     TeaProfilesOfOrgGql: TEA_PROFILES_OF_ORG,
     TeaOrgDiscoveryGql: TEA_ORG_DISCOVERY,
     SaveTeaProfileGql: SAVE_TEA_PROFILE,
+    TeaProfileExposureChangeGql: TEA_PROFILE_EXPOSURE_CHANGE,
+    TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,
+    TeaComponentNameGql: TEA_COMPONENT_NAME,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
     ExternalApiKeysGql: EXTERNAL_API_KEYS,
     CreateExternalApiKeyGql: CREATE_EXTERNAL_API_KEY,

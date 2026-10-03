@@ -54,7 +54,7 @@ Every profile carries these settings (defaults in brackets):
 | Setting | Values |
 |---|---|
 | Publishing | ENABLED, DISABLED [DISABLED]: DISABLED conceals everything resolving to the profile and blocks new publishes |
-| Visibility | PRIVATE, PUBLIC [PRIVATE]: resolved at request time; only an organization admin can save a PUBLIC profile |
+| Visibility | PRIVATE, PUBLIC [PRIVATE]: resolved at request time; only an organization admin can make a component PUBLIC: by saving a PUBLIC profile, by following a PUBLIC perspective or removing an override under one, by adding the component to a PUBLIC perspective or removing the perspective that kept it private, or by removing a perspective profile or deleting a perspective its members resolved through |
 | Dependency depth | FULL, TOP_LEVEL_ONLY [FULL] |
 | Optional dependencies | INCLUDE, EXCLUDE [INCLUDE] |
 | SBOM structure | FLAT, HIERARCHICAL [FLAT] |
@@ -69,6 +69,10 @@ Every profile carries these settings (defaults in brackets):
 | Vulnerability documents | NONE (reserved) |
 
 Edit the organization profile under Organization Settings, Transparency Exchange; a component's or product's in its settings, on the TEA tab; a perspective's from the TEA profile action on the Perspectives tab of Organization Settings (ReARM Pro). A PUBLIC profile shows a red banner wherever it applies.
+
+An archived component or product keeps its profile so an admin can hide what it published: it accepts only a profile with publishing DISABLED and visibility PRIVATE, and the Transparency Exchange table tags it as archived. An archived component or product also takes no perspective change that would make it resolve to a profile with publishing ENABLED or visibility PUBLIC.
+
+Creating a component or product in a PUBLIC perspective (from the perspective's page, through an API key with write access to it, or by a CI run that names it) makes the new component PUBLIC from the start: the organization admin who made the perspective PUBLIC chose that for its members, and a new component exposes nothing it published before.
 
 ### TEA ids and discovery
 
