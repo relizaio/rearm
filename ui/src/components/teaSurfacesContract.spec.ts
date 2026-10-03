@@ -32,6 +32,17 @@ describe('TEA surfaces contract', () => {
         expect(os).toMatch(/:title="'TEA profile of perspective: ' \+ selectedPerspectiveName"/)
     })
 
+    it('OrgSettings loads the perspectives (Pro) and products for the Transparency Exchange tab itself', () => {
+        const os = src('OrgSettings.vue')
+        const start = os.indexOf('async function loadTabSpecificData')
+        const body = os.slice(start, os.indexOf('\n}\n', start))
+        const branch = body.indexOf('} else if (tabName === "tea") {')
+        expect(branch).toBeGreaterThan(0)
+        const tea = body.slice(branch, body.indexOf('} else if', branch + 1))
+        expect(tea).toContain("...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : [])")
+        expect(tea).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+    })
+
     it('graphqlQueries holds the five TEA documents', () => {
         const q = src('../utils/graphqlQueries.ts')
         for (const doc of ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE']) {

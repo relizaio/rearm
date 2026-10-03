@@ -1507,6 +1507,14 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     } else if (tabName === "perspectives") {
         loadPerspectives()
+    } else if (tabName === "tea") {
+        // The Transparency Exchange table names its rows from the perspectives list (Pro) and the
+        // products store; load both here so the tab reads the same when it is opened directly.
+        // Components come from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
         loadOrgSettings()
