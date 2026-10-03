@@ -886,6 +886,7 @@
                                             :object-uuid="componentUuid"
                                             :object-name="componentData?.name"
                                             :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :object-archived="componentData?.status === 'ARCHIVED'"
                                             :is-writable="isAdmin"
                                             :is-org-admin="isAdmin"
                                             :perspective-options="teaPerspectiveOptions"
@@ -1336,7 +1337,7 @@ import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
-import { teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
+import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
 import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
@@ -2022,6 +2023,23 @@ async function fetchPerspectives() {
 
 async function savePerspectives() {
     try {
+        // TEA-9: a membership change that makes the component PUBLIC is confirmed first, on the
+        // server's dry-run of exactly this list. A refusal (validation, archived) shows and stops.
+        if (teaProfilesAvailable(myUser.installationType)) {
+            const exposureResp: any = await graphqlClient.query({
+                query: graphqlQueries.TeaMembershipExposureChangeGql,
+                variables: { componentUuid: componentUuid, perspectiveUuids: selectedPerspectives.value },
+                fetchPolicy: 'no-cache'
+            })
+            const delta = teaMembershipDelta(selectedPerspectives.value, updatedComponent.value?.perspectiveDetails,
+                orgPerspectives.value)
+            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
+                delta.removed, delta.names, isComponent.value ? 'component' : 'product')
+            if (confirm) {
+                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+                if (!answer?.isConfirmed) return
+            }
+        }
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
