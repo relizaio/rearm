@@ -76,8 +76,8 @@ export function teaPublishConfirm (view: any, names: TeaPublishNames): TeaConfir
     if (view?.kind === 'PRODUCT_RELEASE' && view?.cascades) {
         const n = view.cascadeChildren ?? 0
         parts.push(n === 1
-            ? 'Its 1 component release is published with it.'
-            : 'Its ' + n + ' component releases are published with it.')
+            ? 'Its 1 component release is published with it unless its own TEA profile forbids it.'
+            : 'Its ' + n + ' component releases are published with it unless their own TEA profile forbids it.')
     }
     const confirm: TeaConfirm = {
         title: verb + ' ' + (names?.component ?? '') + ' ' + (names?.version ?? '') + ' on TEA?',
@@ -121,6 +121,13 @@ const CHILD_PUBLISHED = ['PUBLISHED', 'REPUBLISHED', 'UNCHANGED']
 const CHILD_SKIPPED: Record<string, string> = {
     SKIPPED_DIRECT: 'skipped, published directly',
     SKIPPED_HIDDEN: 'skipped, hidden',
+    SKIPPED_OTHER_PRODUCT: 'skipped, published with another product',
+}
+
+/** A skipped child's text; SKIPPED_OTHER_PRODUCT carries its owner in the detail ("published with product <label>"). */
+function childSkipText (c: any): string {
+    if (c?.outcome === 'SKIPPED_OTHER_PRODUCT' && c?.detail) return 'skipped, ' + c.detail
+    return CHILD_SKIPPED[c?.outcome]
 }
 
 function aggregateRevision (result: any): number | null {
@@ -171,7 +178,7 @@ export function teaPublishSummary (result: any): string {
             + refused.length + ' refused')
         text = parts.join('; ')
         const reasons = [
-            ...skippedChildren.map(c => childName(c) + ': ' + CHILD_SKIPPED[c.outcome]),
+            ...skippedChildren.map(c => childName(c) + ': ' + childSkipText(c)),
             ...refused.map(c => childName(c) + ': refused' + (c.refusal ? ' (' + c.refusal + ')' : '')
                 + (c.detail ? ': ' + c.detail : '')),
         ]
@@ -180,6 +187,34 @@ export function teaPublishSummary (result: any): string {
         text = parts.join('; ')
     }
     return text
+}
+
+/**
+ * The section's state line when the exposure is CONCEALED: why, per TeaConcealReason, or null
+ * while the publication is served. LIFECYCLE_BELOW_ASSEMBLED names the release's lifecycle when
+ * the page knows it; PRODUCT_CONCEALED names the product through cascadeOfLabel.
+ */
+export function teaConcealedText (publication: any, lifecycle?: string | null): string | null {
+    if (!publication || publication.exposure !== 'CONCEALED') return null
+    const product = publication.cascadeOfLabel
+    switch (publication.concealedBecause) {
+    case 'HIDDEN': return 'Concealed: hidden'
+    case 'RELEASE_MISSING': return 'Concealed: the release is missing'
+    case 'RELEASE_ARCHIVED': return 'Concealed: the release is archived'
+    case 'LIFECYCLE_BELOW_ASSEMBLED': return 'Concealed: the release is ' + (lifecycle || 'below ASSEMBLED')
+    case 'COMPONENT_MISSING': return 'Concealed: the component is missing'
+    case 'PROFILE_CONFLICT': return 'Concealed: the component\'s TEA profiles conflict'
+    case 'PUBLISHING_DISABLED': return 'Concealed: publishing is disabled by the component\'s own TEA profile'
+    case 'PRODUCT_MISSING': return 'Concealed: the product it was published with is missing'
+    case 'PRODUCT_CONCEALED': return 'Concealed: with its product' + (product ? ' ' + product : '')
+    default: return 'Concealed'
+    }
+}
+
+/** Where the section says a publication's profile came from: its product for a cascade child, else the source. */
+export function teaPublishedWithText (publication: any): string | null {
+    if (!publication?.cascadeOf) return null
+    return 'Published with product ' + (publication.cascadeOfLabel || publication.cascadeOf)
 }
 
 /** The persistent red banner of a release served on TEA to anyone, or null. */
@@ -247,14 +282,19 @@ export function teaEntryRows (collection: any, apiBase: string | null | undefine
 
 /**
  * The History text of a TEA_PUBLICATION release event: ADDED is the first publish ("v1"),
- * CHANGED a re-publish ("v1" -> "v2", or "HIDDEN" -> "PUBLISHED v3"), REMOVED a hide. The
+ * CHANGED a re-publish ("v1" -> "v2", or "HIDDEN" -> "PUBLISHED v3") or a cascade child handed
+ * to another product ("with <product>" -> "with <product>"), REMOVED a hide. The
  * view is accepted for the signature the other helpers share; the row carries everything.
  */
 export function teaPublicationHistoryText (row: any, view?: any): string {
     switch (row?.rua) {
     case 'ADDED': return 'Published on TEA' + (row.newValue ? ': ' + row.newValue : '')
-    case 'CHANGED': return 'Re-published on TEA' + (row.oldValue || row.newValue
-        ? ': ' + (row.oldValue ?? '') + ' -> ' + (row.newValue ?? '') : '')
+    case 'CHANGED':
+        if (typeof row.oldValue === 'string' && row.oldValue.startsWith('with ')) {
+            return 'Published on TEA with another product: ' + row.oldValue + ' -> ' + (row.newValue ?? '')
+        }
+        return 'Re-published on TEA' + (row.oldValue || row.newValue
+            ? ': ' + (row.oldValue ?? '') + ' -> ' + (row.newValue ?? '') : '')
     case 'REMOVED': return 'Hidden from TEA'
     default: return [row?.rua, row?.newValue].filter(Boolean).join(' ')
     }

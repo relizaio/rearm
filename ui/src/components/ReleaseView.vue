@@ -1287,14 +1287,16 @@
                     <div class="container" v-if="teaView?.publication && !isDocumentRound" data-testid="tea-section">
                         <h3>Transparency Exchange (TEA)</h3>
                         <div style="margin-bottom: 8px;">
-                            <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})<span v-if="teaView.publication.cascadeOf">, published with its product</span></div>
+                            <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})</div>
+                            <div v-if="teaConcealedLine" data-testid="tea-concealed">{{ teaConcealedLine }}</div>
                             <div><strong>TEA release id: </strong>{{ teaView.publication.uuid }}
                                 <Icon class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.uuid)"><Copy20Regular/></Icon>
                             </div>
                             <div><strong>TEA URL: </strong>{{ teaPublicUrlText(teaView) }}
                                 <Icon v-if="teaView.publication.publicUrl" class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.publicUrl)"><Copy20Regular/></Icon>
                             </div>
-                            <div><strong>Profile: </strong>{{ teaProfileSourceText }}</div>
+                            <div v-if="teaView.publication.cascadeOf" data-testid="tea-published-with">{{ teaPublishedWithText(teaView.publication) }}</div>
+                            <div v-else><strong>Profile: </strong>{{ teaProfileSourceText }}</div>
                             <div v-if="teaView.publication.tei"><strong>TEI: </strong>{{ teaView.publication.tei }}</div>
                             <div v-if="teaView.publication.lastPublishedDate"><strong>Last published: </strong>{{ new Date(teaView.publication.lastPublishedDate).toLocaleString('en-CA') }}<span v-if="teaView.publication.lastPublishedBy"> by {{ resolveUserById(teaView.publication.lastPublishedBy) }}</span></div>
                             <div v-if="teaView.publication.state === 'HIDDEN' && teaView.publication.lastHiddenDate"><strong>Hidden: </strong>{{ new Date(teaView.publication.lastHiddenDate).toLocaleString('en-CA') }}</div>
@@ -2172,7 +2174,7 @@ import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
-    teaPublicationBanner, teaPublicationHistoryText } from '@/utils/teaPublication'
+    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -4037,6 +4039,8 @@ async function loadTeaPublication () {
 }
 
 const teaBanner: ComputedRef<string | null> = computed(() => teaPublicationBanner(teaView.value))
+const teaConcealedLine: ComputedRef<string | null> = computed(() => teaConcealedText(teaView.value?.publication,
+    updatedRelease.value?.lifecycle))
 const teaCollections: ComputedRef<any[]> = computed(() => teaCollectionRows(teaView.value?.collections))
 
 function teaPerspectiveNames (): Record<string, string> {

@@ -661,6 +661,8 @@ const TEA_PUBLICATION_FIELDS_GQL = `
     lastHiddenDate
     lastPublishedBy
     exposure
+    concealedBecause
+    cascadeOfLabel
     publicUrl
 `
 

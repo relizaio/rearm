@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import {
     teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
-    teaPublicationBanner, teaPublicationHistoryText,
+    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
 } from './teaPublication'
 
 // TEA publications (task TEA-5, design 4.10 tests 54 to 57): the release page's pure helpers.
@@ -82,7 +82,10 @@ describe('teaPublishConfirm and teaHideConfirm (54)', () => {
     it('a product with PUBLISH_WITH_PRODUCT adds the children sentence; PRODUCT_ONLY does not', () => {
         const cascading = teaPublishConfirm(view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 4 }), NAMES)
         expect(cascading.text).toContain('Published as a TEA product release')
-        expect(cascading.text).toContain('Its 4 component releases are published with it.')
+        expect(cascading.text).toContain('Its 4 component releases are published with it unless their own TEA profile '
+            + 'forbids it.')
+        const one = teaPublishConfirm(view({ kind: 'PRODUCT_RELEASE', cascades: true, cascadeChildren: 1 }), NAMES)
+        expect(one.text).toContain('Its 1 component release is published with it unless its own TEA profile forbids it.')
         const productOnly = teaPublishConfirm(view({ kind: 'PRODUCT_RELEASE', cascades: false, cascadeChildren: 0 }), NAMES)
         expect(productOnly.text).not.toContain('component releases are published')
     })
@@ -134,10 +137,62 @@ describe('teaPublishSummary (55)', () => {
         expect(text).toBe('Re-published: collection version 2; aggregate SBOM revision 2; 0 artifacts published, 0 skipped')
     })
 
+    it('SKIPPED_OTHER_PRODUCT is skipped and names the owning product from its detail (round 2, 80)', () => {
+        const text = teaPublishSummary({
+            outcome: 'PUBLISHED',
+            publication: publication({ latestVersion: 1 }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [],
+            children: [
+                { release: 'c-1', componentName: 'web', version: '2.0', outcome: 'SKIPPED_OTHER_PRODUCT',
+                    detail: 'published with product platform 3.1.0' },
+                { release: 'c-2', componentName: 'db', version: '0.9', outcome: 'REFUSED', refusal: 'PUBLISHING_DISABLED',
+                    detail: 'publishing is DISABLED by the component c-2 TEA profile' },
+                { release: 'c-3', outcome: 'REFUSED', refusal: 'RELEASE_NOT_FOUND', detail: 'not found' },
+            ],
+        })
+        expect(text).toBe('Published: collection version 1; aggregate SBOM revision 1; 0 artifacts published, 0 skipped; '
+            + '0 component releases published, 1 skipped, 2 refused. '
+            + 'web 2.0: skipped, published with product platform 3.1.0; '
+            + 'db 0.9: refused (PUBLISHING_DISABLED): publishing is DISABLED by the component c-2 TEA profile; '
+            + 'c-3: refused (RELEASE_NOT_FOUND): not found')
+    })
+
     it('UNCHANGED names the version', () => {
         expect(teaPublishSummary({ outcome: 'UNCHANGED', publication: publication({ latestVersion: 3 }),
             collection: { version: 3, entries: [] }, artifacts: [], children: [] }))
             .toBe('Nothing changed since collection version 3')
+    })
+})
+
+describe('teaConcealedText and teaPublishedWithText (round 2, 80)', () => {
+    const concealed = (reason: string, over: Record<string, any> = {}) =>
+        teaConcealedText(publication({ exposure: 'CONCEALED', concealedBecause: reason, ...over }), 'CANCELLED')
+
+    it('renders every TeaConcealReason', () => {
+        expect(concealed('HIDDEN')).toBe('Concealed: hidden')
+        expect(concealed('RELEASE_MISSING')).toBe('Concealed: the release is missing')
+        expect(concealed('RELEASE_ARCHIVED')).toBe('Concealed: the release is archived')
+        expect(concealed('LIFECYCLE_BELOW_ASSEMBLED')).toBe('Concealed: the release is CANCELLED')
+        expect(concealed('COMPONENT_MISSING')).toBe('Concealed: the component is missing')
+        expect(concealed('PROFILE_CONFLICT')).toBe('Concealed: the component\'s TEA profiles conflict')
+        expect(concealed('PUBLISHING_DISABLED')).toBe('Concealed: publishing is disabled by the component\'s own TEA profile')
+        expect(concealed('PRODUCT_MISSING')).toBe('Concealed: the product it was published with is missing')
+        expect(concealed('PRODUCT_CONCEALED', { cascadeOf: 'pub-0', cascadeOfLabel: 'platform 3.1.0' }))
+            .toBe('Concealed: with its product platform 3.1.0')
+    })
+
+    it('answers null while the publication is served, and a lifecycle-less fallback', () => {
+        expect(teaConcealedText(publication({ exposure: 'PRIVATE' }))).toBeNull()
+        expect(teaConcealedText(null)).toBeNull()
+        expect(teaConcealedText(publication({ exposure: 'CONCEALED', concealedBecause: 'LIFECYCLE_BELOW_ASSEMBLED' })))
+            .toBe('Concealed: the release is below ASSEMBLED')
+    })
+
+    it('names the product a cascade child is published with, and nothing for a direct publication', () => {
+        expect(teaPublishedWithText(publication({ cascadeOf: 'pub-0', cascadeOfLabel: 'platform 3.1.0' })))
+            .toBe('Published with product platform 3.1.0')
+        expect(teaPublishedWithText(publication())).toBeNull()
     })
 })
 
@@ -195,6 +250,8 @@ describe('teaCollectionRows, teaEntryRows and teaPublicationHistoryText (57)', (
         expect(teaPublicationHistoryText({ rua: 'CHANGED', oldValue: 'HIDDEN', newValue: 'PUBLISHED v3' }))
             .toBe('Re-published on TEA: HIDDEN -> PUBLISHED v3')
         expect(teaPublicationHistoryText({ rua: 'REMOVED', newValue: 'HIDDEN' })).toBe('Hidden from TEA')
+        expect(teaPublicationHistoryText({ rua: 'CHANGED', oldValue: 'with left 1.0.0', newValue: 'with right 2.0.0' }))
+            .toBe('Published on TEA with another product: with left 1.0.0 -> with right 2.0.0')
     })
 })
 

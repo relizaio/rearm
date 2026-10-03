@@ -24,7 +24,7 @@ const template = code.slice(0, code.indexOf('<script'))
 describe('ReleaseView TEA publication', () => {
     it('imports the helpers', () => {
         const helpers = ['teaPublishConfirm', 'teaHideConfirm', 'teaPublicUrlText', 'teaPublishSummary', 'teaCollectionRows',
-            'teaEntryRows', 'teaPublicationBanner', 'teaPublicationHistoryText']
+            'teaEntryRows', 'teaPublicationBanner', 'teaPublicationHistoryText', 'teaConcealedText', 'teaPublishedWithText']
         const imp = source.match(/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/teaPublication'/)
         expect(imp).not.toBeNull()
         for (const h of helpers) expect(imp![1], h).toMatch(new RegExp('\\b' + h + '\\b'))
@@ -58,6 +58,19 @@ describe('ReleaseView TEA publication', () => {
         expect(banner).toBeGreaterThan(grid)
         expect(banner).toBeLessThan(template.indexOf('<n-tabs'))
         expect(template).toMatch(/<n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false"/)
+    })
+
+    it('the section names why it is concealed and, for a cascade child, the product in place of the profile (round 2, 80)', () => {
+        const section = template.slice(template.indexOf('data-testid="tea-section"'))
+        const body = section.slice(0, section.indexOf('<n-data-table'))
+        expect(body).toContain('<div v-if="teaConcealedLine" data-testid="tea-concealed">{{ teaConcealedLine }}</div>')
+        expect(body).toMatch(/<div v-if="teaView\.publication\.cascadeOf" data-testid="tea-published-with">\{\{ teaPublishedWithText\(teaView\.publication\) \}\}<\/div>\s*<div v-else><strong>Profile: <\/strong>/)
+        expect(code).toMatch(/const teaConcealedLine[^=]*= computed\(\(\) => teaConcealedText\(teaView\.value\?\.publication,\s*updatedRelease\.value\?\.lifecycle\)\)/)
+        const queries = strip(read('../utils/graphqlQueries.ts'))
+        const fields = queries.slice(queries.indexOf('const TEA_PUBLICATION_FIELDS_GQL'))
+        const block = fields.slice(0, fields.indexOf('`', fields.indexOf('`') + 1))
+        expect(block).toContain('concealedBecause')
+        expect(block).toContain('cascadeOfLabel')
     })
 
     it('has a TEA_PUBLICATION branch in the History renderer', () => {
