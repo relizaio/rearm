@@ -202,7 +202,9 @@ class GraphQlSchemaEnumSyncTest {
 			// schema enum is input-only (CreateArtifactInput, the SBOM export inputs);
 			// DownloadConfig.belongsTo only echoes the export input. Exposing the value would let
 			// clients send one no input handler supports.
-			entry("ArtifactBelongsToEnum", Set.of("AGENT_SESSION")),
+			// SYNTHETIC marks a BOM ReARM generated itself (ReleaseData.syntheticArtifacts), written
+			// only by SyntheticArtifactService; no client may upload one or select it as a merge source.
+			entry("ArtifactBelongsToEnum", Set.of("AGENT_SESSION", "SYNTHETIC")),
 			// A "match any status" filter value used inside MarketingReleaseService; no field
 			// returns it and no input should accept it.
 			entry("Status", Set.of("ANY")));

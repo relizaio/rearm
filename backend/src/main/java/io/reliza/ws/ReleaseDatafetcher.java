@@ -1470,6 +1470,9 @@ public class ReleaseDatafetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		ReleaseData rd = ord.get();
+		// A generated artifact of the release is owned by the generator that wrote it: no new
+		// version of it is uploaded here, in place or as a replacement.
+		ReleaseService.assertNotSynthetic(rd, inputArtifactUuid);
 
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
 		OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).orElseThrow();
@@ -2232,7 +2235,21 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		List<UUID> artUuids = rd.getArtifacts();
+		return artifactDetailsInOrder(rd.getArtifacts(), dfe, rd.getUuid());
+	}
+
+	/**
+	 * The artifacts ReARM generated for the release (ReleaseData.syntheticArtifacts), read the
+	 * way artifactDetails reads the inventory list. Never part of artifactDetails.
+	 */
+	@DgsData(parentType = "Release", field = "syntheticArtifactDetails")
+	public List<ArtifactData> syntheticArtifactsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		return artifactDetailsInOrder(rd.getSyntheticArtifacts(), dfe, rd.getUuid());
+	}
+
+	private List<ArtifactData> artifactDetailsInOrder(List<UUID> artUuids, DgsDataFetchingEnvironment dfe,
+			UUID releaseUuid) {
 		if (null == artUuids || artUuids.isEmpty()) {
 			return new LinkedList<>();
 		}
@@ -2252,7 +2269,7 @@ public class ReleaseDatafetcher {
 			if (ad != null) {
 				artList.add(ad);
 			} else {
-				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, rd.getUuid());
+				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, releaseUuid);
 				// Skip missing artifacts instead of crashing
 			}
 		}

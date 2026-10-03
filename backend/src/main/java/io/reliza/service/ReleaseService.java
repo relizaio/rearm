@@ -1052,7 +1052,7 @@ public class ReleaseService {
 
 		if (type == ComponentType.COMPONENT
 				&& (null == typeFilter || typeFilter.equals(ArtifactBelongsTo.DELIVERABLE))) {
-			bomIds.addAll(bomIdsOf(getAllDeliverableDataFromRelease(rd).stream()
+			bomIds.addAll(bomIdsOf(rd, getAllDeliverableDataFromRelease(rd).stream()
 					.map(d -> d.getArtifacts())
 					.flatMap(x -> x.stream()), excludeCoverageTypes));
 		}
@@ -1062,27 +1062,41 @@ public class ReleaseService {
 			var sceData = null == rd.getSourceCodeEntry() ? Optional.<SourceCodeEntryData>empty()
 					: getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
 			if (sceData.isPresent()) {
-				bomIds.addAll(bomIdsOf(sceData.get().getArtifacts().stream()
+				bomIds.addAll(bomIdsOf(rd, sceData.get().getArtifacts().stream()
 						.filter(scea -> rd.getComponent().equals(scea.componentUuid()))
 						.map(scea -> scea.artifactUuid()), excludeCoverageTypes));
 			}
 		}
 
 		if (null == typeFilter || typeFilter.equals(ArtifactBelongsTo.RELEASE)) {
-			bomIds.addAll(bomIdsOf(rd.getArtifacts().stream(), excludeCoverageTypes));
+			bomIds.addAll(bomIdsOf(rd, rd.getArtifacts().stream(), excludeCoverageTypes));
 		}
 		return new ArrayList<>(bomIds);
 	}
 
-	private List<UUID> bomIdsOf(java.util.stream.Stream<UUID> artifactUuids,
+	/**
+	 * The internal BOM ids of the given inventory artifacts. A SYNTHETIC internal BOM (a document
+	 * ReARM generated, which belongs in {@code ReleaseData.syntheticArtifacts} only) is never a
+	 * merge source: should one sit in an inventory list, it is dropped with a WARN rather than
+	 * merged into its own successor.
+	 */
+	private List<UUID> bomIdsOf(ReleaseData rd, java.util.stream.Stream<UUID> artifactUuids,
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 		return artifactUuids
 				.map(a -> artifactService.getArtifactData(a))
 				.filter(art -> art.isPresent() && null != art.get().getInternalBom())
+				.filter(art -> !isSyntheticInInventory(rd, art.get()))
 				.filter(art -> !isArtifactExcludedByCoverageType(art.get(), excludeCoverageTypes))
 				.map(a -> a.get().getInternalBom().id())
 				.distinct()
 				.toList();
+	}
+
+	private static boolean isSyntheticInInventory(ReleaseData rd, ArtifactData ad) {
+		if (null == ad.getInternalBom() || ad.getInternalBom().belongsTo() != ArtifactBelongsTo.SYNTHETIC) return false;
+		log.warn("[SYNTHETIC-IN-INVENTORY] release {} lists synthetic artifact {} as inventory; it is not a merge source",
+				rd.getUuid(), ad.getUuid());
+		return true;
 	}
 
 	private Optional<UUID> generateComponentReleaseBomForConfig(ReleaseData rd, ComponentData pd,
@@ -1560,11 +1574,12 @@ public class ReleaseService {
 	}
 
 	@Transactional
-	public Boolean addArtifact(UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
+	public Boolean addArtifact(UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) throws RelizaException {
 		Boolean added = false;
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
+			assertNotSynthetic(rd, artifactUuid);
 			componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
 					LockedOperation.RELEASE_CONTENT);
 				List<UUID> artifacts = rd.getArtifacts();
@@ -1580,6 +1595,18 @@ public class ReleaseService {
 		return added;
 	}
 	
+	/**
+	 * A generated artifact of the release (ReleaseData.syntheticArtifacts) is owned by the
+	 * generator that wrote it: it is never attached as inventory, nor replaced, through the
+	 * release artifact flows.
+	 */
+	public static void assertNotSynthetic(ReleaseData rd, UUID artifactUuid) throws RelizaException {
+		if (null != artifactUuid && rd.getSyntheticArtifacts().contains(artifactUuid)) {
+			throw new RelizaException("artifact " + artifactUuid + " is a generated artifact of release "
+					+ rd.getUuid() + "; it cannot be attached as inventory");
+		}
+	}
+
 	/**
 	 * Parse an inbound artifact map's {@code type} field into the {@link ArtifactType}
 	 * enum. The map comes off a GraphQL input where the value is either an enum already
@@ -1936,7 +1963,7 @@ public class ReleaseService {
 	}
 
 	@Transactional
-	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
+	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) throws RelizaException {
 		sharedReleaseService.getReleaseData(releaseUuid).ifPresent(rd ->
 				componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
 						LockedOperation.RELEASE_CONTENT));
@@ -1944,6 +1971,8 @@ public class ReleaseService {
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
+			assertNotSynthetic(rd, artifactUuid);
+			assertNotSynthetic(rd, replaceArtifactUuid);
 				List<UUID> artifacts = rd.getArtifacts();
 				artifacts.remove(replaceArtifactUuid);
 				artifacts.add(artifactUuid);

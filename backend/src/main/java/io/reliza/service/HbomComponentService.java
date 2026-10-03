@@ -80,6 +80,7 @@ public class HbomComponentService {
 		return listByRelease(releaseUuid);
 	}
 
+	/** The release's inventory BOM artifacts; never ReleaseData.syntheticArtifacts. */
 	private Set<UUID> collectBomArtifactUuids(ReleaseData rd) {
 		Set<UUID> artifactUuids = new LinkedHashSet<>();
 		List<UUID> deliverableUuids = new ArrayList<>();
@@ -106,6 +107,12 @@ public class HbomComponentService {
 			if (oad.isEmpty()) continue;
 			ArtifactData ad = oad.get();
 			if (ad.getInternalBom() == null || ad.getInternalBom().id() == null) continue;
+			if (ad.getInternalBom().belongsTo() == Utils.ArtifactBelongsTo.SYNTHETIC) {
+				// Generated documents live in ReleaseData.syntheticArtifacts and are never inventory.
+				log.warn("[SYNTHETIC-IN-INVENTORY] HBOM reconcile of release {}: synthetic artifact {} is listed as inventory; not reconciled",
+						releaseUuid, artifactUuid);
+				continue;
+			}
 			ParsedHbom parsed;
 			try {
 				parsed = rebomService.parseHbom(ad.getInternalBom().id(), org);

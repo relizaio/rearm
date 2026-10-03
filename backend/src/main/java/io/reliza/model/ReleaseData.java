@@ -93,7 +93,15 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		 * and an auditor asking "when did the wording change" must not have to read through
 		 * date edits to find out.
 		 */
-		FDA_NARRATIVE
+		FDA_NARRATIVE,
+		/**
+		 * A generated artifact bound to or removed from the release
+		 * ({@link ReleaseData#getSyntheticArtifacts()}). Deliberately NOT {@link #ARTIFACT}:
+		 * the release page derives ARTIFACT rows from the acollection comparison, which a
+		 * generated artifact never enters, and {@code OssReleaseService.updateRelease} reads
+		 * ARTIFACT as inventory history.
+		 */
+		SYNTHETIC_ARTIFACT
 	}
 	
 	public enum ReleaseUpdateAction {
@@ -314,6 +322,36 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
 	private List<UUID> artifacts = new LinkedList<>();
+	
+	/**
+	 * Artifacts ReARM generated for this release itself (a published aggregated SBOM, a VDR
+	 * snapshot). Never inventory: no merge, collection gather, sbom_components reconcile or
+	 * Dependency-Track path reads this list, and no user flow writes it. The only writer is
+	 * {@code SyntheticArtifactService}; the getter returns a copy so no reader can fold it into
+	 * {@link #artifacts} through an alias.
+	 */
+	@JsonProperty(CommonVariables.SYNTHETIC_ARTIFACTS_FIELD)
+	private List<UUID> syntheticArtifacts = new LinkedList<>();
+	
+	public List<UUID> getSyntheticArtifacts () {
+		return new LinkedList<>(this.syntheticArtifacts);
+	}
+	
+	/**
+	 * @return true when the artifact was not bound yet and has been added
+	 */
+	public boolean addSyntheticArtifact (UUID artifactUuid) {
+		if (null == artifactUuid || this.syntheticArtifacts.contains(artifactUuid)) return false;
+		this.syntheticArtifacts.add(artifactUuid);
+		return true;
+	}
+	
+	/**
+	 * @return true when the artifact was bound and has been removed
+	 */
+	public boolean removeSyntheticArtifact (UUID artifactUuid) {
+		return null != artifactUuid && this.syntheticArtifacts.remove(artifactUuid);
+	}
 	
 	@JsonProperty
 	private List<UUID> inboundDeliverables = new LinkedList<>();

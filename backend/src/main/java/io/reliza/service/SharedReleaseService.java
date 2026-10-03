@@ -1468,6 +1468,7 @@ public class SharedReleaseService {
 		releases.addAll(allDirectReleases);
 		releases.addAll(allSceReleases);
 		releases.addAll(allDeliverableReleases);
+		releases.addAll(findReleasesBySyntheticArtifact(artifactUuid, orgUuid).stream().map(Release::getUuid).collect(Collectors.toSet()));
 		return releases;
 	}
 
@@ -1522,6 +1523,15 @@ public class SharedReleaseService {
 	
 	public List<Release> findReleasesByReleaseArtifact (UUID artifactUuid, UUID orgUuid) {
 		return repository.findReleasesByReleaseArtifact(artifactUuid.toString(), orgUuid.toString());
+	}
+	
+	/**
+	 * Releases holding the artifact in their {@code syntheticArtifacts} list (a document ReARM
+	 * generated for them). Feeds {@link #gatherReleasesForArtifact} so the download endpoints
+	 * authorize a generated artifact at the component scope of its release.
+	 */
+	public List<Release> findReleasesBySyntheticArtifact (UUID artifactUuid, UUID orgUuid) {
+		return repository.findReleasesBySyntheticArtifact(artifactUuid.toString(), orgUuid.toString());
 	}
 	
 	/**
