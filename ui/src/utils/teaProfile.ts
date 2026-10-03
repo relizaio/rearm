@@ -3,7 +3,19 @@
 // public banner and the confirmation before a profile goes PUBLIC. Kept out of the .vue files so
 // the specs pin them.
 
+import { isProEdition } from './editionCapabilities'
+
 export type TeaScope = 'ORGANIZATION' | 'PERSPECTIVE' | 'COMPONENT'
+
+/**
+ * Whether this edition serves TEA profiles. The Pro backend does; the CE backend has no TEA profile
+ * fields yet (the 2026-10 TEA work ships no CE backend sync), so a CE UI hides the TEA tabs and the
+ * page banner instead of failing their reads. teaProfileSchemaDrift.spec.ts ties this to the CE
+ * schema and fails once that schema gains the fields: lift the gate then.
+ */
+export function teaProfilesAvailable (installationType: string | undefined | null): boolean {
+    return isProEdition(installationType)
+}
 
 export interface Option { label: string, value: string }
 

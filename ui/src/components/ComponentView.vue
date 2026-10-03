@@ -877,9 +877,9 @@
                                             :is-writable="isAdmin"
                                             :component-word="words.component"/>
                                     </n-tab-pane>
-                                    <n-tab-pane name="tea" tab="TEA">
-                                        <!-- Both editions: the TEA profile backend is shared. Shown to
-                                             everyone, writable by an admin, as the Guards tab. -->
+                                    <n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">
+                                        <!-- Pro only until the CE backend serves TEA profiles (teaProfilesAvailable).
+                                             Shown to everyone, writable by an admin, as the Guards tab. -->
                                         <TeaProfileEditor
                                             :org-uuid="orguuid"
                                             scope="COMPONENT"
@@ -1336,7 +1336,7 @@ import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
-import { teaPublicBanner } from '@/utils/teaProfile'
+import { teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
 import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
@@ -1490,6 +1490,10 @@ const teaPerspectiveOptions = computed(() => ((updatedComponent.value?.perspecti
     .map((p: any) => ({ label: p.name, value: p.uuid })))
 
 async function loadTeaBanner () {
+    if (!teaProfilesAvailable(myUser.installationType)) {
+        teaBanner.value = null
+        return
+    }
     try {
         const resp: any = await graphqlClient.query({
             query: graphqlQueries.TeaProfileEditorViewGql,

@@ -1311,7 +1311,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     </n-form>
                 </div>
             </n-tab-pane>
-            <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin">
+            <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
                 <TeaOrgPanel
                     :org-uuid="orgResolved"
                     :is-org-admin="isOrgAdmin"
@@ -1429,6 +1429,7 @@ import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaOrgPanel from './TeaOrgPanel.vue'
+import { teaProfilesAvailable } from '@/utils/teaProfile'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
@@ -1756,8 +1757,9 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings']
-const proOnlyTabs = ['policies', 'committers', 'perspectives']
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea']
+// tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
+const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false

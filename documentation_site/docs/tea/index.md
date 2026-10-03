@@ -45,6 +45,8 @@ rearm tea full_tea_flow --debug true --tei "urn:tei:uuid:demo.rearmhq.com:34de20
 
 A TEA profile says whether, and how, releases are published on the Transparency Exchange API. Profiles live at three scopes: the organization, a perspective (ReARM Pro) and a component or product. A profile at a lower scope replaces its parent as a whole, never field by field; the editor pre-fills a new profile from the profile the scope would otherwise resolve to.
 
+Publication profiles and TEA ids are available in ReARM Pro. ReARM Community Edition does not offer them yet, and its settings show no Transparency Exchange or TEA tab.
+
 A component resolves its profile in this order: its own profile when it carries one (an override, or a choice to follow one of its perspectives), then the profile of its single perspective that has one, then the organization profile, then the built-in defaults. When two or more of the component's perspectives carry a profile and the component has none of its own, the component is in conflict: publishing it is refused, naming the perspectives, until the component overrides or follows one of them. A product's profile is its own component-scope profile, and a product publishes its component releases under that one profile, so a product never conflicts.
 
 Every profile carries these settings (defaults in brackets):
