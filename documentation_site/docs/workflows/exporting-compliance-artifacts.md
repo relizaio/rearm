@@ -111,7 +111,17 @@ What "ReARM's own markers" means, precisely:
 | Removed when off | Note |
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
-| The `io.reliza` / `ReARM` entry under `metadata.tools` | Other producers' tool entries -- your scanner, your build system -- are your toolchain and are left alone |
+| `internal:*` properties written by your SBOM generator | cdxgen's working data: `internal:SrcFile` (the manifest path on the build machine), `internal:ResolvedUrl`, `internal:ImportedModules`, `internal:LocalNodeModulesPath` |
+| The same values repeated elsewhere | cdxgen repeats the manifest path in `evidence.identity` (a method's value, and on Maven components the `concludedValue`), in `cdx:bom:componentSrcFiles`, under the same build directory in `cdx:npm:binPaths`, and in its generated summary annotation. Those properties and evidence entries go, and annotation text reads `[redacted]` where it named the path. Paths that are not under the build directory, such as file paths inside a container image, stay |
+| Component `evidence.occurrences` | Where the generator found each component in your source tree (file and line of each import, from cdxgen's import analysis) |
+| cdxgen's npm registry analysis (`cdx:npm:*`) | Maintainer and publisher sets with their email addresses, publish times, release-gap and cadence statistics and drift flags. The package flags (`cdx:npm:package:*`), hashes, scripts, binaries and provenance stay |
+| The link to ReARM's stored copy of your document | The top-level `bom` external reference "Source document as uploaded by the producer", a `urn:cdx:` link a reader cannot resolve |
+
+**Always kept: `metadata.tools`.** ReARM's own entry (`io.reliza` / `rearm`) names the ReARM
+version that produced the export, and stays with both settings: ReARM generated the merged
+document and wrote any support disclosure in it, so a reader needs to see it among the tools.
+The tools that produced the SBOMs you uploaded -- your SBOM generator, your build plugin, your
+scanner -- are carried into merged and aggregated exports beside it.
 
 **Not removed**, because they are the disclosure rather than provenance about ReARM:
 `reliza:support:*`, `reliza:device:*` (the device's own 524B support window), and the
@@ -119,9 +129,9 @@ What "ReARM's own markers" means, precisely:
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**With both switches off, nothing of ReARM's remains** -- not one `reliza:` property. That
-includes the `reliza:support:disclosure` marker, which is withheld when a caller sends
-`includeSupportMetadata: false`.
+**With both switches off, no `reliza:` property remains**, not even the
+`reliza:support:disclosure` marker, which is withheld when a caller sends
+`includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools`.
 
 That marker exists to disambiguate an *absent* support property: "we hold no attestation for
 this component" versus "this document asserts nothing about support". The ambiguity is only real

@@ -313,12 +313,33 @@ export function overrideRootComponent(bom: any, rebomOverride: RebomOptions, las
   return augmentBomWithComponentContext(bom, rebomOverride, lastUpdatedDate);
 }
 
+/**
+ * The version for the rearm tool entry: the ReARM product version when the deployment passes it
+ * (REARM_PRODUCT_VERSION, the chart's appVersion, which is also what the UI shows as the ReARM
+ * version), else rebom's own release: REBOM_VERSION, then the version the image was built with
+ * (/app/version, written by the Dockerfile), then package.json. npm_package_version, used before,
+ * is only set when the process is started through npm, so a deployed image named the tool
+ * without a version (`rearm null`).
+ */
+export function rebomToolVersion(): string {
+  if (process.env.REARM_PRODUCT_VERSION) return process.env.REARM_PRODUCT_VERSION;
+  if (process.env.REBOM_VERSION) return process.env.REBOM_VERSION;
+  try {
+    const line = fs.readFileSync('/app/version', 'utf8').split('\n').find((l) => l.startsWith('version='));
+    const v = line ? line.substring('version='.length).trim() : '';
+    if (v && v !== 'not_versioned') return v;
+  } catch {
+    // no image version file: running outside the image
+  }
+  return require('../../../package.json').version;
+}
+
 export function createRebomToolObject(specVersion: string): any {
   const rebomTool: any = {
     type: "application",
     name: "rearm",
     group: "io.reliza",
-    version: process.env.npm_package_version,
+    version: rebomToolVersion(),
     supplier: { name: "Reliza Incorporated" },
     description: "The evidence store for your entire supply chain",
     licenses: [
@@ -337,87 +358,61 @@ export function createRebomToolObject(specVersion: string): any {
   return rebomTool;
 }
 
-/**
- * Checks if the rearm tool is already present in the BOM's metadata.tools.
- * 
- * @param finalBom - BOM to check
- * @returns true if rearm tool is already present
- */
-function hasRearmTool(finalBom: any): boolean {
-  const specVersion = finalBom.specVersion || '1.4';
-  const majorMinor = specVersion.split('.').slice(0, 2).join('.');
-  const isLegacyFormat = parseFloat(majorMinor) < 1.5;
-  
-  if (isLegacyFormat) {
-    // CycloneDX 1.4 and earlier: tools is an array
-    if (Array.isArray(finalBom.metadata?.tools)) {
-      return finalBom.metadata.tools.some((tool: any) => 
-        tool.name === 'rearm' && tool.group === 'io.reliza'
-      );
-    }
-  } else {
-    // CycloneDX 1.5+: tools is an object with components array
-    if (Array.isArray(finalBom.metadata?.tools?.components)) {
-      return finalBom.metadata.tools.components.some((tool: any) => 
-        tool.name === 'rearm' && tool.group === 'io.reliza'
-      );
-    }
-  }
-  return false;
+/** Whether a tool entry is ReARM's own: the io.reliza namespace (group, or a 1.4 vendor) under
+ * the current name or the historic "rebom". */
+export function isRearmToolEntry(tool: any): boolean {
+  return !!tool && (tool.name === 'rearm' || tool.name === 'rebom')
+    && (tool.group === 'io.reliza' || tool.vendor === 'io.reliza');
 }
 
 /**
  * Attaches rebom tool information to a BOM's metadata.
  * This marks the BOM as having been processed by rebom.
- * 
- * This function is idempotent - if the rearm tool is already present,
- * it will not be added again.
- * 
+ *
+ * An entry already present is REPLACED by the current one rather than kept: a stored BOM
+ * processed by an older rebom carries that rebom's entry (before the version fix, one with no
+ * version at all), and keeping it would serve the stale entry forever. Never more than one
+ * ReARM entry results, so the call stays idempotent.
+ *
  * Handles both CycloneDX formats:
  * - 1.4 and earlier: metadata.tools is an array
  * - 1.5 and later: metadata.tools is an object with components array
- * 
+ *
  * @param finalBom - BOM to attach tool information to
  * @returns BOM with rebom tool information added
  */
 export function attachRebomToolToBom(finalBom: any): any {
-  // Check if rearm tool is already present to prevent duplicates
-  if (hasRearmTool(finalBom)) {
-    return finalBom;
-  }
-  
   const rebomTool = createRebomToolObject(finalBom.specVersion);
-  
+
   // Determine spec version to handle format differences
   const specVersion = finalBom.specVersion || '1.4';
   const majorMinor = specVersion.split('.').slice(0, 2).join('.');
   const isLegacyFormat = parseFloat(majorMinor) < 1.5;
-  
+  if (!finalBom.metadata) {
+    finalBom.metadata = {};
+  }
+
   if (isLegacyFormat) {
     // CycloneDX 1.4 and earlier: tools is an array
-    if (!finalBom.metadata.tools) {
-      finalBom.metadata.tools = [];
-    }
-    // Ensure it's an array (in case it was incorrectly set as object)
+    // Ensure it's an array (in case it was missing or incorrectly set as object)
     if (!Array.isArray(finalBom.metadata.tools)) {
       finalBom.metadata.tools = [];
     }
+    finalBom.metadata.tools = finalBom.metadata.tools.filter((t: any) => !isRearmToolEntry(t));
     finalBom.metadata.tools.push(rebomTool);
   } else {
     // CycloneDX 1.5+: tools is an object with components array
-    if (!finalBom.metadata.tools) {
+    // Ensure it's an object (in case it was missing or incorrectly set as array)
+    if (!finalBom.metadata.tools || Array.isArray(finalBom.metadata.tools)) {
       finalBom.metadata.tools = { components: [] };
     }
-    // Ensure it's an object (in case it was incorrectly set as array)
-    if (Array.isArray(finalBom.metadata.tools)) {
-      finalBom.metadata.tools = { components: [] };
-    }
-    if (!finalBom.metadata.tools.components) {
+    if (!Array.isArray(finalBom.metadata.tools.components)) {
       finalBom.metadata.tools.components = [];
     }
+    finalBom.metadata.tools.components = finalBom.metadata.tools.components.filter((t: any) => !isRearmToolEntry(t));
     finalBom.metadata.tools.components.push(rebomTool);
   }
-  
+
   return finalBom;
 }
 

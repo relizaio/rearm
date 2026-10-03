@@ -25,6 +25,8 @@ spec:
       - name: rebom-backend-container
         image: {{ .Values.image.rebomBackend }}
         env:
+        - name: REARM_PRODUCT_VERSION
+          value: {{ .Chart.AppVersion | quote }}
         - name: POSTGRES_HOST
           value: {{ if .Values.use_external_postgres }}{{ .Values.rebom_postgres_host }}{{ else }}{{ .Release.Name }}-rebom-postgres{{ end }}
         - name: POSTGRES_DATABASE

@@ -32,6 +32,8 @@ spec:
         - name: {{ .Release.Name }}-backend
           image: "{{ .Values.image.backEndImage }}"
           env:
+            - name: REARM_PRODUCT_VERSION
+              value: {{ .Chart.AppVersion | quote }}
             - name: RELIZAPROP_REBOM_URI
               value: http://{{ .Release.Name }}-rebom-backend-service:4000/
             - name: RELIZAPROP_REBOM_ENABLED
