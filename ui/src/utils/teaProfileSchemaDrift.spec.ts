@@ -1,8 +1,9 @@
 import { describe, it, expect } from 'vitest'
 import { validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
-import { teaProfilesAvailable } from './teaProfile'
-import { ceSchema, proSchema } from './schemaDriftSupport'
+import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
+import constants from './constants'
+import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
 /**
  * The TEA profile documents (task TEA-2) against both schemas, and the edition gate that keeps a
@@ -45,5 +46,50 @@ describe('TEA profile documents and the edition gate', () => {
         for (const [name, doc] of Object.entries(DOCS)) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
+    })
+})
+
+/**
+ * The EXTERNAL key documents (task TEA-3) and the TEA permission functions, under the same gate: the
+ * External Keys pane shows only where teaProfilesAvailable, reads these documents itself, and the
+ * editors offer PUBLISH_EXTERNALLY only there. The shared apiKeys document of OrgSettings names none
+ * of the new fields (teaSurfacesContract.spec.ts), so the CE Programmatic Access tab keeps loading.
+ */
+const EXTERNAL_KEY_DOCS = {
+    ExternalApiKeysGql: graphqlQueries.ExternalApiKeysGql,
+    CreateExternalApiKeyGql: graphqlQueries.CreateExternalApiKeyGql,
+    SetApiKeyHolderNameGql: graphqlQueries.SetApiKeyHolderNameGql,
+}
+
+describe('EXTERNAL key documents, the TEA functions and the edition gate', () => {
+    it('the CE schema answers none of the EXTERNAL key documents while it serves no TEA', () => {
+        for (const [name, doc] of Object.entries(EXTERNAL_KEY_DOCS)) {
+            expect(validate(ceSchema, doc).length === 0, name).toBe(ceServesTea())
+        }
+    })
+
+    it.runIf(proSchema)('every EXTERNAL key document validates against the Pro schema', () => {
+        for (const [name, doc] of Object.entries(EXTERNAL_KEY_DOCS)) {
+            expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it('the CE schema has the TEA permission functions exactly when it serves TEA, so the editors offer them only then', () => {
+        const ce = enumValuesOf(ceSchema, 'PermissionFunction')
+        for (const f of TEA_PERMISSION_FUNCTIONS) expect(ce.includes(f), f).toBe(ceServesTea())
+        expect(editionPermissionFunctions(constants.PermissionFunctions, 'OSS').some(f => TEA_PERMISSION_FUNCTIONS.includes(f)))
+            .toBe(ceServesTea())
+    })
+
+    it('a licensed edition offers every function, the TEA ones included', () => {
+        for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE', undefined, null]) {
+            expect(editionPermissionFunctions(constants.PermissionFunctions, t)).toEqual(constants.PermissionFunctions)
+        }
+    })
+
+    it.runIf(proSchema)('the Pro schema has every function the editors offer, TEA_READ, and the EXTERNAL key type', () => {
+        const pro = enumValuesOf(proSchema!, 'PermissionFunction')
+        for (const f of [...constants.PermissionFunctions, 'TEA_READ']) expect(pro, f).toContain(f)
+        expect(enumValuesOf(proSchema!, 'ApiTypeEnum')).toContain('EXTERNAL')
     })
 })
