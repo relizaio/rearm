@@ -129,4 +129,41 @@ describe('TEA surfaces contract', () => {
         const full = q.slice(start, q.indexOf('`', start + 'const COMPONENT_FULL_DATA = `'.length))
         expect(full.split('\n').map(l => l.trim())).toContain('status')
     })
+
+    // EXTERNAL API keys (task TEA-3, design 3.11 and 4.10)
+    it('OrgSettings hosts the External Keys pane after Federated Identities, where TEA is served', () => {
+        const os = src('OrgSettings.vue')
+        const fed = os.indexOf('<n-tab-pane name="federatedIdentities" tab="Federated Identities">')
+        const ext = os.indexOf('<n-tab-pane name="externalKeys" tab="External Keys" v-if="teaProfilesAvailable(myUser?.installationType)">')
+        expect(fed).toBeGreaterThan(0)
+        expect(ext).toBeGreaterThan(fed)
+        expect(os.slice(ext, os.indexOf('</n-tab-pane>', ext))).toContain('<ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />')
+        expect(os).toMatch(/const programmaticSubTab = ref<[^>]*'externalKeys'[^>]*>/)
+    })
+
+    it('the Scoped Keys table never lists an EXTERNAL key', () => {
+        const os = src('OrgSettings.vue')
+        const start = os.indexOf('const computedProgrammaticAccessKeys')
+        const body = os.slice(start, os.indexOf('\n})\n', start))
+        expect(body).toContain("k.type !== 'EXTERNAL'")
+    })
+
+    it('the shared apiKeys document asks for none of the Pro-only key fields, so CE keeps loading the tab', () => {
+        const os = src('OrgSettings.vue')
+        const start = os.indexOf('query apiKeys($orgUuid: ID!)')
+        expect(start).toBeGreaterThan(0)
+        const doc = os.slice(start, os.indexOf('`', start))
+        expect(doc).toContain('apiKeys(orgUuid: $orgUuid)')
+        for (const field of ['keyId', 'holderName', 'teaOrg']) expect(doc, field).not.toMatch(new RegExp('\\b' + field + '\\b'))
+    })
+
+    it('graphqlQueries holds the three EXTERNAL key documents', () => {
+        const q = src('../utils/graphqlQueries.ts')
+        for (const doc of ['EXTERNAL_API_KEYS', 'CREATE_EXTERNAL_API_KEY', 'SET_API_KEY_HOLDER_NAME']) {
+            expect(q).toContain('const ' + doc + ' = gql`')
+        }
+        expect(q).toContain('externalApiKeys(orgUuid: $orgUuid)')
+        expect(q).toContain('createExternalApiKey(orgUuid: $orgUuid, holderName: $holderName, notes: $notes)')
+        expect(q).toContain('setApiKeyHolderName(apiKeyUuid: $apiKeyUuid, holderName: $holderName)')
+    })
 })

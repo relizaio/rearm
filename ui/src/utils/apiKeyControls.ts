@@ -206,9 +206,44 @@ export function apiKeyIdsColumn (): any {
 /** Left-most column of every key table. */
 export const apiKeyTypeColumn = { key: 'type', width: 130, title: 'Type' }
 
-/** The id string a client presents for this key (Basic user name / client_id). */
+/**
+ * The id string a client presents for this key (Basic user name / client_id): the server's printed
+ * keyId when the query asked for it (an EXTERNAL key carries the organization's TEA id, not its
+ * object), else derived from the row as before.
+ */
 export function apiKeyIdOf (row: any): string {
+    if (row.keyId) return row.keyId
     let keyId = row.type + '__' + row.object
     if (row.keyOrder) keyId += '__ord__' + row.keyOrder
     return keyId
+}
+
+const counted = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** What an EXTERNAL key's grants summary says when it reads nothing. */
+export const EXTERNAL_GRANTS_NONE = 'none: reads nothing yet'
+
+/**
+ * One line for the grants of an EXTERNAL key: "organization-wide", or "2 perspectives, 1 product,
+ * 3 components" (products told from components by the org's product uuids), or
+ * EXTERNAL_GRANTS_NONE. Grants of another organization and NONE entries count for nothing.
+ */
+export function externalGrantsSummary (permissions: any[] | null | undefined, orgUuid: string,
+    productUuids: Set<string>): string {
+    const grants = (permissions || []).filter((p: any) => p && (!p.org || p.org === orgUuid) && p.type && p.type !== 'NONE')
+    if (grants.some((p: any) => p.scope === 'ORGANIZATION')) return 'organization-wide'
+    const perspectives = grants.filter((p: any) => p.scope === 'PERSPECTIVE').length
+    const comps = grants.filter((p: any) => p.scope === 'COMPONENT')
+    const products = comps.filter((p: any) => productUuids.has(p.object)).length
+    const components = comps.length - products
+    const parts: string[] = []
+    if (perspectives) parts.push(counted(perspectives, 'perspective', 'perspectives'))
+    if (products) parts.push(counted(products, 'product', 'products'))
+    if (components) parts.push(counted(components, 'component', 'components'))
+    return parts.length ? parts.join(', ') : EXTERNAL_GRANTS_NONE
+}
+
+/** The TEA token endpoint on an organization's API base, or null while the org has no TEA id. */
+export function teaTokenUrl (apiBase: string | null | undefined): string | null {
+    return apiBase ? apiBase.replace(/\/+$/, '') + '/v1.0.0/token' : null
 }

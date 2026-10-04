@@ -86,9 +86,17 @@ Organization Settings, Transparency Exchange shows the `.well-known/tea` documen
 
 The TEA 1.0.0 endpoints that read these profiles and ids land in a later release; until then the profiles are stored and validated, and the `/tea/v0.4.0/` surface above is unchanged.
 
+## Authentication
+
+A profile's visibility decides who reads what resolves to it: a PUBLIC profile publishes to anyone, a PRIVATE profile only to holders of an [external key](../configure/programmatic-access#external-keys-tea) whose grants cover the object. An external key is a key the organization hands to a party outside it; it reaches nothing but TEA. The holder exchanges it for a one-hour Bearer token at the token endpoint on the organization's API base, `POST <API base>/v1.0.0/token` with `grant_type=client_credentials`, where the API base is `<your ReARM URL>/tea/<organization TEA id>`.
+
+A PRIVATE object requested without a token is answered `401` with a `WWW-Authenticate: Bearer realm="tea"` challenge. An invalid, expired or revoked token is answered `401` with `error="invalid_token"` in the challenge, and the client exchanges its key again and retries once. A valid token whose key does not cover the object is answered `404` with `OBJECT_UNKNOWN`, exactly as an object that does not exist or is not published. A PUBLIC object is served to every caller, and a token sent along is ignored.
+
+External keys and the token endpoint are available in ReARM Pro. The TEA 1.0.0 resource surface that applies these rules lands in a later release.
+
 ## Known issues, limitations and notes
 - The data present via TEA is consistent with what is visible via ReARM UI, ReARM CLI or ReARM's own GraphQL API. For example, on ReARM Demo Instance, you may explore data using UI
 - ReARM supports TEIs of `uuid` and `purl` types where uuid equals uuid of the Product in ReARM and purl must be set explicitly per release (or can be cnfigured in the Component / Product settings to propagate to releases)
-- TEA authentication and authorization is not yet fully defined in the TEA specification and have not been implemented by ReARM. However, links from TEA for downloading artifacts lead to standard ReARM authentication and authorization mechanism. For the [ReARM Demo Instance](https://demo.rearmhq.com), you need to be registered to download artifacts via TEA - Note that registration on ReARM Demo is publicly available
+- The `/tea/v0.4.0/` surface has no authentication; the [authentication](#authentication) above applies to TEA 1.0.0. Links from TEA for downloading artifacts lead to standard ReARM authentication and authorization mechanism. For the [ReARM Demo Instance](https://demo.rearmhq.com), you need to be registered to download artifacts via TEA - Note that registration on ReARM Demo is publicly available
 - Data on [ReARM Demo Instance](https://demo.rearmhq.com) under the Demo Organization that can be obtained via TEA, including downloadable artifacts referenced in TEA and hosted on ReARM Demo, is distributed under the [Creative Commons Attribution 4.0 International (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/) license. Note that this license applies only to the aforementioned data and artifacts. It does not apply to, without limitation, any ReARM components or source code or any other data obtained from or related to ReARM
 - Data on [ReARM Demo Instance](https://demo.rearmhq.com) is subject to change without notice at any time, it may be extended, added or removed entirely.

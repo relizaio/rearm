@@ -678,6 +678,48 @@ mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
     deleteTeaProfile(org: $org, scope: $scope, object: $object)
 }`
 
+// EXTERNAL API keys (task TEA-3): keys handed to a party outside the organization, which reach
+// nothing but TEA. Pro only, like the TEA profile documents above: the CE schema has none of these
+// fields or operations, so the External Keys pane reads them itself and the shared apiKeys
+// document of OrgSettings never names keyId, holderName or teaOrg.
+const EXTERNAL_API_KEYS = gql`
+query ExternalApiKeys($orgUuid: ID!) {
+    externalApiKeys(orgUuid: $orgUuid) {
+        uuid
+        keyId
+        holderName
+        teaOrg
+        object
+        type
+        keyOrder
+        createdDate
+        accessDate
+        notes
+        status
+        adminDisabled
+        secrets { slot active createdDate lastUsedDate expiresDate }
+        permissions { permissions { org scope object type functions } }
+    }
+}`
+
+const CREATE_EXTERNAL_API_KEY = gql`
+mutation CreateExternalApiKey($orgUuid: ID!, $holderName: String!, $notes: String) {
+    createExternalApiKey(orgUuid: $orgUuid, holderName: $holderName, notes: $notes) {
+        uuid
+        keyId
+        holderName
+        teaOrg
+    }
+}`
+
+const SET_API_KEY_HOLDER_NAME = gql`
+mutation SetApiKeyHolderName($apiKeyUuid: ID!, $holderName: String!) {
+    setApiKeyHolderName(apiKeyUuid: $apiKeyUuid, holderName: $holderName) {
+        uuid
+        holderName
+    }
+}`
+
 // Org default view (Pro org setting). Deliberately its own tiny document:
 // the boot-time organizations query must keep working on a backend that
 // predates the field. Uses the organizations list (the single-organization
@@ -2092,6 +2134,9 @@ export default {
     TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,
     TeaComponentNameGql: TEA_COMPONENT_NAME,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
+    ExternalApiKeysGql: EXTERNAL_API_KEYS,
+    CreateExternalApiKeyGql: CREATE_EXTERNAL_API_KEY,
+    SetApiKeyHolderNameGql: SET_API_KEY_HOLDER_NAME,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,
