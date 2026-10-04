@@ -149,6 +149,10 @@ The key id has the form `EXTERNAL__<organization TEA id>__ord__<key order>`. Rot
 expiry, deactivation and deletion work as for every other key: see
 [Rotating a secret without downtime](#rotating-a-secret-without-downtime).
 
+External keys are managed in the External Keys tab only. They cannot be declared in a key file,
+and the programmatic key listing (`rearm apikey list`, the Terraform provider) never shows them,
+whatever the calling key's permissions.
+
 ### Exchanging an external key for a token
 
 The token endpoint sits on the organization's TEA API base, which is
