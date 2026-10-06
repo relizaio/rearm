@@ -1,0 +1,73 @@
+SPDXVersion: SPDX-2.3
+DataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+DocumentName: example-device-app-5.0.0
+DocumentNamespace: https://example.com/spdx/example-device-app-5.0.0
+Creator: Organization: Example Devices Inc.
+Creator: Tool: example-scanner-4.2.0
+Created: 2026-10-01T12:00:00Z
+
+Relationship: SPDXRef-DOCUMENT DESCRIBES SPDXRef-app
+
+PackageName: example-device-app
+SPDXID: SPDXRef-app
+PackageVersion: 5.0.0
+PackageSupplier: Organization: Example Devices Inc.
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageChecksum: SHA256: b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+PackageLicenseDeclared: LicenseRef-Proprietary
+ExternalRef: PACKAGE-MANAGER purl pkg:generic/example-device-app@5.0.0
+ValidUntilDate: 2031-01-01T00:00:00Z
+
+PackageName: alpha
+SPDXID: SPDXRef-alpha
+PackageVersion: 1.0.0
+PackageSupplier: Organization: Alpha Org
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageChecksum: SHA256: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+PackageLicenseDeclared: MIT
+ExternalRef: PACKAGE-MANAGER purl pkg:npm/alpha@1.0.0
+ExternalRef: SECURITY cpe23Type cpe:2.3:a:alpha:alpha:1.0.0:*:*:*:*:*:*:*
+ValidUntilDate: 2028-12-31T00:00:00Z
+
+PackageName: beta
+SPDXID: SPDXRef-beta
+PackageVersion: 2.0.0
+PackageOriginator: Organization: Beta Labs
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageChecksum: SHA1: a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+PackageLicenseConcluded: Apache-2.0 OR MIT
+ExternalRef: PACKAGE-MANAGER purl pkg:maven/org.beta/beta@2.0.0
+ValidUntilDate: 2025-06-30T00:00:00Z
+
+PackageName: gamma
+SPDXID: SPDXRef-gamma
+PackageVersion: 3.1.0
+PackageSupplier: Person: Gamma Author
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageChecksum: SHA512: ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff
+PackageLicenseDeclared: LicenseRef-Gamma
+ExternalRef: PACKAGE-MANAGER purl pkg:pypi/gamma@3.1.0
+ExternalRef: PERSISTENT-ID swh swh:1:cnt:94a9ed024d3859793618152ea559a168bbcbb5e2
+ValidUntilDate: 2024-01-15T00:00:00Z
+
+PackageName: delta
+SPDXID: SPDXRef-delta
+PackageVersion: 0.4.2
+PackageSupplier: Organization: Delta Maintainers
+PackageDownloadLocation: NOASSERTION
+FilesAnalyzed: false
+PackageChecksum: SHA256: fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+PackageLicenseDeclared: BSD-3-Clause
+ExternalRef: PACKAGE-MANAGER purl pkg:golang/example.com/delta@v0.4.2
+ExternalRef: PERSISTENT-ID gitoid gitoid:blob:sha1:261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64
+ValidUntilDate: 2030-03-01T00:00:00Z
+
+Relationship: SPDXRef-app DEPENDS_ON SPDXRef-alpha
+Relationship: SPDXRef-app DEPENDS_ON SPDXRef-beta
+Relationship: SPDXRef-beta DEPENDS_ON SPDXRef-gamma
+Relationship: SPDXRef-gamma DEPENDS_ON SPDXRef-delta

@@ -1,3 +1,10 @@
+# Temporary pin (SCORE-4 design 3.7): the rearm CLI with `bomutils score` comes from the
+# rearm-cli integration-branch image until a released zip carries the command; the repin
+# then deletes this stage, the COPY and the amd64-only check below, and sets the released
+# zip on both architectures. The image is linux/amd64 only, so arm64 keeps zip 26.07.9 and
+# answers CLI_UNAVAILABLE for scoreBomProbe until then.
+FROM --platform=linux/amd64 registry.relizahub.com/library/rearm-cli:2026-10-sbom-score.1@sha256:e7461c016fda71f552273c44c6d19aaf5ad7b400d1d16f2fe49af40e76bb3e13 AS rearm-cli-score
+
 FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS builder
 
 ARG TARGETARCH
@@ -23,9 +30,9 @@ WORKDIR /app
 
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
+COPY --from=rearm-cli-score /app/app /opt/rearm-score/rearm
 RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.9/rearm-26.07.9-linux-amd64.zip ;\
-        unzip rearm-26.07.9-linux-amd64.zip ;\
+        cp /opt/rearm-score/rearm ./rearm ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
@@ -37,7 +44,8 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     sha256sum -c /tmp/tools.sha256 && \
     mv rearm /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/rearm && \
-    chmod +x /usr/local/bin/cyclonedx-cli
+    chmod +x /usr/local/bin/cyclonedx-cli && \
+    if [ "$TARGETARCH" = "amd64" ]; then rearm bomutils score --help | grep -q -- '--profile'; fi
 
 COPY package*.json ./
 RUN npm ci --ignore-scripts

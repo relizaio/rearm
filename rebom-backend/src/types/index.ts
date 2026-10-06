@@ -16,6 +16,8 @@ export {
     BomConversionError,
     BomMergeError,
     OciStorageError,
+    BomScoreError,
+    BomScoreErrorReason,
     ERROR_CODES,
     toGraphQLError,
     type ErrorCode,
