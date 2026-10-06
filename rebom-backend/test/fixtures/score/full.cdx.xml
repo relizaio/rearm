@@ -1,0 +1,148 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<bom xmlns="http://cyclonedx.org/schema/bom/1.6" serialNumber="urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79" version="1">
+  <metadata>
+    <timestamp>2026-10-01T12:00:00Z</timestamp>
+    <lifecycles>
+      <lifecycle>
+        <phase>build</phase>
+      </lifecycle>
+    </lifecycles>
+    <tools>
+      <components>
+        <component type="application">
+          <name>example-scanner</name>
+          <version>4.2.0</version>
+        </component>
+      </components>
+    </tools>
+    <authors>
+      <author>
+        <name>Jane Builder</name>
+        <email>jane@example.com</email>
+      </author>
+    </authors>
+    <component type="application" bom-ref="app">
+      <name>example-device-app</name>
+      <version>5.0.0</version>
+    </component>
+    <manufacturer>
+      <name>Example Devices Inc.</name>
+    </manufacturer>
+  </metadata>
+  <components>
+    <component type="library" bom-ref="alpha">
+      <supplier>
+        <name>Alpha Org</name>
+      </supplier>
+      <name>alpha</name>
+      <version>1.0.0</version>
+      <hashes>
+        <hash alg="SHA-256">2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae</hash>
+      </hashes>
+      <licenses>
+        <license>
+          <id>MIT</id>
+        </license>
+      </licenses>
+      <cpe>cpe:2.3:a:alpha:alpha:1.0.0:*:*:*:*:*:*:*</cpe>
+      <purl>pkg:npm/alpha@1.0.0</purl>
+      <properties>
+        <property name="reliza:support:levelOfSupport">actively maintained</property>
+        <property name="cdx:lifecycle:milestone:endOfSupport">2028-12-31</property>
+      </properties>
+    </component>
+    <component type="library" bom-ref="beta">
+      <manufacturer>
+        <name>Beta Labs</name>
+      </manufacturer>
+      <name>beta</name>
+      <version>2.0.0</version>
+      <hashes>
+        <hash alg="SHA-1">a94a8fe5ccb19ba61c4c0873d391e987982fbbd3</hash>
+      </hashes>
+      <licenses>
+        <expression>Apache-2.0 OR MIT</expression>
+      </licenses>
+      <purl>pkg:maven/org.beta/beta@2.0.0</purl>
+      <swid tagId="swidgen-beta-2.0.0" name="beta"/>
+      <properties>
+        <property name="reliza:support:levelOfSupport">no longer maintained</property>
+        <property name="cdx:lifecycle:milestone:endOfSupport">2025-06-30T00:00:00Z</property>
+      </properties>
+      <components>
+        <component type="library" bom-ref="gamma">
+          <authors>
+            <author>
+              <name>Gamma Author</name>
+            </author>
+          </authors>
+          <name>gamma</name>
+          <version>3.1.0</version>
+          <hashes>
+            <hash alg="SHA-512">ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff</hash>
+          </hashes>
+          <licenses>
+            <license>
+              <name>Gamma Custom License</name>
+            </license>
+          </licenses>
+          <purl>pkg:pypi/gamma@3.1.0</purl>
+          <swhid>swh:1:cnt:94a9ed024d3859793618152ea559a168bbcbb5e2</swhid>
+          <properties>
+            <property name="reliza:support:levelOfSupport">abandoned</property>
+            <property name="cdx:lifecycle:milestone:endOfSupport">2024-01-15</property>
+          </properties>
+          <components>
+            <component type="library" bom-ref="delta">
+              <author>Delta Maintainer</author>
+              <name>delta</name>
+              <version>0.4.2</version>
+              <hashes>
+                <hash alg="SHA-256">fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9</hash>
+              </hashes>
+              <licenses>
+                <license>
+                  <id>BSD-3-Clause</id>
+                </license>
+              </licenses>
+              <purl>pkg:golang/example.com/delta@v0.4.2</purl>
+              <omniborId>gitoid:blob:sha1:261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64</omniborId>
+              <properties>
+                <property name="reliza:support:levelOfSupport">actively maintained</property>
+                <property name="cdx:lifecycle:milestone:endOfSupport">2030-03-01</property>
+              </properties>
+            </component>
+          </components>
+        </component>
+      </components>
+    </component>
+  </components>
+  <dependencies>
+    <dependency ref="app">
+      <dependency ref="alpha"/>
+      <dependency ref="beta"/>
+    </dependency>
+    <dependency ref="alpha"/>
+    <dependency ref="beta">
+      <dependency ref="gamma"/>
+    </dependency>
+    <dependency ref="gamma">
+      <dependency ref="delta"/>
+    </dependency>
+    <dependency ref="delta"/>
+  </dependencies>
+  <ds:Signature xmlns:ds="http://www.w3.org/2000/09/xmldsig#">
+    <ds:SignedInfo>
+      <ds:CanonicalizationMethod Algorithm="http://www.w3.org/TR/2001/REC-xml-c14n-20010315"/>
+      <ds:SignatureMethod Algorithm="http://www.w3.org/2001/04/xmldsig-more#rsa-sha256"/>
+      <ds:Reference URI="">
+        <ds:Transforms>
+          <ds:Transform Algorithm="http://www.w3.org/2000/09/xmldsig#enveloped-signature"/>
+        </ds:Transforms>
+        <ds:DigestMethod Algorithm="http://www.w3.org/2001/04/xmlenc#sha256"/>
+        <ds:DigestValue>dGVzdC1kaWdlc3Q=</ds:DigestValue>
+      </ds:Reference>
+    </ds:SignedInfo>
+    <ds:SignatureValue>dGVzdC1zaWduYXR1cmUtdmFsdWUtbm90LXZlcmlmaWVk</ds:SignatureValue>
+  </ds:Signature>
+</bom>

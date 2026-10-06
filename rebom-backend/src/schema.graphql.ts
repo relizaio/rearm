@@ -24,6 +24,7 @@ const typeDefs = gql`
     getBearIntegration(org: ID!): BearIntegration
     getBomDigestProbe(bomContent: BomContentInput!): String!
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
+    scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
   }
 
