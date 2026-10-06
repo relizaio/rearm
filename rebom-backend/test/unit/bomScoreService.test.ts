@@ -148,16 +148,22 @@ describe('scoreBom: the CLI call (U-3, U-4, U-5)', () => {
     });
 
     it('U-4 returns stdout verbatim, indentation and trailing newline included', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
         mockedExec.mockResolvedValue(result({ stdout: REPORT_V1 }));
         const report = await scoreBom('{}', ['fda']);
         expect(report === REPORT_V1).toBe(true);
+        // the current report version is not worth a warning (U-5)
+        expect(warnSpy).not.toHaveBeenCalled();
         await expectDirsRemoved();
     });
 
-    it('U-5 passes a newer reportVersion through unchanged', async () => {
+    it('U-5 passes a newer reportVersion through unchanged and warns once with its number', async () => {
+        const warnSpy = vi.spyOn(logger, 'warn').mockImplementation(() => undefined);
         const v2 = JSON.stringify({ reportVersion: 2, extra: [1, 2] }, null, 2) + '\n';
         mockedExec.mockResolvedValue(result({ stdout: v2 }));
         expect(await scoreBom('{}', ['fda'])).toBe(v2);
+        expect(warnSpy).toHaveBeenCalledTimes(1);
+        expect(warnSpy.mock.calls[0][0]).toMatchObject({ reportVersion: 2 });
     });
 });
 
@@ -181,6 +187,9 @@ describe('scoreBom: outcomes (U-6, U-7)', () => {
             BomScoreErrorReason.CLI_UNAVAILABLE, 'SBOM scoring is not available: the rearm CLI in this rebom image has no bomutils score'],
         ['row 9 other exit 1', { code: 1, stdout: '', stderr: 'open /tmp/x: permission denied\n' }, BomScoreErrorReason.CLI_FAILED,
             'SBOM scoring failed'],
+        // row 7 needs the refusal prefix at the start of the line; elsewhere the line may name the temp path
+        ['row 9 refusal marker not at the line start', { code: 1, stdout: '', stderr: 'open /tmp/rebom-score-x/bom: unparsable SBOM: x\n' },
+            BomScoreErrorReason.CLI_FAILED, 'SBOM scoring failed'],
         ['row 10 exit 2', { code: 2, stdout: '', stderr: 'unknown --profile "fda"; valid profiles: cisa-2026\n' }, BomScoreErrorReason.CLI_FAILED,
             'SBOM scoring failed: unknown --profile "fda"; valid profiles: cisa-2026'],
         ['row 11 exit 3', { code: 3 }, BomScoreErrorReason.CLI_FAILED, 'SBOM scoring failed'],
@@ -270,6 +279,45 @@ describe('scoreBom: concurrency (U-9)', () => {
         expect(outcomes.filter((o) => !o.ok)).toHaveLength(1);
         await expectDirsRemoved();
     });
+
+    it('hands a freed slot to the waiting calls in the order they arrived', async () => {
+        const pending: Array<(r: ShellResult) => void> = [];
+        const startedInputs: string[] = [];
+        mockedExec.mockImplementation(async (_cmd, args) => {
+            startedInputs.push(fs.readFileSync(args[args.length - 1], 'utf8'));
+            return new Promise<ShellResult>((resolve) => pending.push(resolve));
+        });
+
+        const calls: Array<Promise<string>> = [];
+        try {
+            for (let i = 1; i <= 4; i++) calls.push(scoreBom(`call-${i}`, ['fda']));
+            await vi.waitFor(() => expect(mockedExec).toHaveBeenCalledTimes(4));
+            // calls 5 and 6 queue behind the four running ones, 5 first
+            calls.push(scoreBom('call-5', ['fda']));
+            calls.push(scoreBom('call-6', ['fda']));
+            await new Promise((r) => setTimeout(r, 50));
+            expect(mockedExec).toHaveBeenCalledTimes(4);
+            expect([...startedInputs].sort()).toEqual(['call-1', 'call-2', 'call-3', 'call-4']);
+
+            pending[0](result());
+            await vi.waitFor(() => expect(mockedExec).toHaveBeenCalledTimes(5));
+            await new Promise((r) => setTimeout(r, 50));
+            expect(mockedExec).toHaveBeenCalledTimes(5);
+            expect(startedInputs[4]).toBe('call-5');
+
+            pending[1](result());
+            await vi.waitFor(() => expect(mockedExec).toHaveBeenCalledTimes(6));
+            expect(startedInputs[5]).toBe('call-6');
+        } finally {
+            // free every slot even when an assertion failed, so later tests are not starved
+            for (let i = 0; i < 6; i++) {
+                await vi.waitFor(() => expect(pending.length).toBeGreaterThan(i), { timeout: 2000 }).catch(() => undefined);
+                pending[i]?.(result());
+            }
+            await Promise.allSettled(calls);
+        }
+        await expectDirsRemoved();
+    });
 });
 
 describe('scoreBom: stateless (U-10)', () => {
@@ -328,5 +376,25 @@ describe('scoreBom: logging (U-12)', () => {
         // the failure line carries the first stderr line, the success line the report version
         expect(text).toContain('permission denied');
         expect(text).toContain('reportVersion: 2');
+    });
+});
+
+describe('scoreBom: a failed clean-up (U-13)', () => {
+    it('returns the report and logs the path when removing the temp directory fails', async () => {
+        const errorSpy = vi.spyOn(logger, 'error').mockImplementation(() => undefined);
+        const rmSpy = vi.spyOn(fs.promises, 'rm').mockRejectedValueOnce(new Error('EBUSY'));
+        let dir: string | undefined;
+        try {
+            mockedExec.mockResolvedValue(result({ stdout: REPORT_V1 }));
+            await expect(scoreBom('{}', ['fda'])).resolves.toBe(REPORT_V1);
+            dir = (await createdDirs())[0];
+            expect(dir).toBeDefined();
+            expect(rmSpy).toHaveBeenCalledTimes(1);
+            expect(errorSpy).toHaveBeenCalledTimes(1);
+            expect(errorSpy.mock.calls[0][0]).toMatchObject({ path: dir });
+        } finally {
+            rmSpy.mockRestore();
+            if (dir) await fs.promises.rm(dir, { recursive: true, force: true });
+        }
     });
 });

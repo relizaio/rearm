@@ -70,6 +70,33 @@ describe('shellExecDetailed', () => {
         expect(r.code).toBe(0);
         expect(r.stdout).toBe('a\u20acb');
     });
+
+    it('H-8 keeps only the first 64 KiB of stderr by default, and the first maxStderrBytes when given', async () => {
+        // 102400 bytes of a repeating digit pattern, so a prefix is distinguishable from any other slice
+        const script = 'process.stderr.write("0123456789".repeat(10240))';
+        const written = '0123456789'.repeat(10240);
+
+        const byDefault = await shellExecDetailed(NODE, ['-e', script], OPTS);
+        expect(byDefault.code).toBe(0);
+        expect(Buffer.byteLength(byDefault.stderr)).toBe(65536);
+        expect(byDefault.stderr).toBe(written.substring(0, 65536));
+
+        const capped = await shellExecDetailed(NODE, ['-e', script], { ...OPTS, maxStderrBytes: 10 });
+        expect(capped.code).toBe(0);
+        expect(capped.stderr).toBe('0123456789');
+    });
+
+    it('H-9 keeps stdout of exactly maxStdoutBytes whole and trips the overflow one byte later', async () => {
+        const exact = await shellExecDetailed(NODE, ['-e', 'process.stdout.write("x".repeat(1000))'],
+            { timeoutMs: 10000, maxStdoutBytes: 1000 });
+        expect(exact.stdoutOverflow).toBe(false);
+        expect(exact.code).toBe(0);
+        expect(exact.stdout).toBe('x'.repeat(1000));
+
+        const over = await shellExecDetailed(NODE, ['-e', 'process.stdout.write("x".repeat(1001))'],
+            { timeoutMs: 10000, maxStdoutBytes: 1000 });
+        expect(over.stdoutOverflow).toBe(true);
+    });
 });
 
 describe('shellExec (H-7: behaviour unchanged)', () => {
