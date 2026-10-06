@@ -5,10 +5,11 @@
  */
 package io.reliza.ws.tea;
 
+import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaErrorResponse;
-import io.reliza.model.tea.TeaRelease;
+import io.reliza.model.tea.TeaPaginatedComponentReleaseResponse;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,7 +38,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "CLE", description = "the CLE API")
 public interface ComponentApi {
@@ -107,7 +108,11 @@ public interface ComponentApi {
      * Get releases of the component
      *
      * @param uuid UUID of TEA Component in the TEA server (required)
-     * @return Requested Releases of TEA Component found and returned (status code 200)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque token used to retrieve the next page of results.  This should be copied exactly from the &#x60;nextPageToken&#x60; field of a previous response.  (optional)
+     * @param sortField The field by which to sort the results. (optional, default to createdDate)
+     * @param sortOrder The direction of the sort. (optional, default to asc)
+     * @return A paginated response containing TEA Component Releases (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
@@ -116,8 +121,8 @@ public interface ComponentApi {
         description = "Get releases of the component",
         tags = { "TEA Component" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Requested Releases of TEA Component found and returned", content = {
-                @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaRelease.class)))
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Component Releases", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedComponentReleaseResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
             @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
@@ -134,13 +139,17 @@ public interface ComponentApi {
         value = ComponentApi.PATH_GET_RELEASES_BY_COMPONENT_ID,
         produces = { "application/json" }
     )
-    default ResponseEntity<List<TeaRelease>> getReleasesByComponentId(
-        @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<TeaPaginatedComponentReleaseResponse> getReleasesByComponentId(
+        @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.  This should be copied exactly from the `nextPageToken` field of a previous response. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ]";
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
