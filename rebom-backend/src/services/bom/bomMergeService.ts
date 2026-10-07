@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -13,6 +13,9 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
+    // Before the file filter: the filter keys what it drops by bom-ref and assumes one
+    // component per ref, and a hoisted subtree can hold file components it has to see.
+    if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
     if (mergedBom && rebomOptions.excludeFileComponents === true) {
       // On the merged graph, not per input: merge-boms re-roots the inputs, and the
       // splice has to run on the graph the root actually has. The inputs of a product

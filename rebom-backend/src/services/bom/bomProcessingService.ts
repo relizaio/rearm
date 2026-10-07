@@ -351,6 +351,282 @@ export function fileComponentsExcludedOf(bom: any): number {
   return Number.isFinite(n) && n > 0 ? n : 0
 }
 
+/**
+ * Metadata property a merged BOM carries when the merge had to fold components that
+ * shared one bom-ref (SCORE-13): how many copies were folded into their first
+ * occurrence. Written only when that number is above 0, so a merge without a duplicate
+ * produces the same document as before.
+ */
+export const BOM_REFS_DEDUPLICATED_PROPERTY = 'reliza:export:bomRefsDeduplicated'
+
+export type BomRefDedupResult = {
+  bom: any,
+  count: number
+}
+
+/** Fields that never move from a duplicate onto its survivor (the survivor's stand). */
+const DEDUP_SKIPPED_FIELDS = new Set(['bom-ref', 'type', 'components'])
+
+function bomRefOf(component: any): string | undefined {
+  const ref = component?.['bom-ref']
+  return typeof ref === 'string' && ref !== '' ? ref : undefined
+}
+
+function isEmptyValue(value: any): boolean {
+  if (value === undefined || value === null || value === '') return true
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value).length === 0
+  return false
+}
+
+/**
+ * The survivor's list followed by the duplicate's entries whose key it does not hold yet,
+ * in their order. Returns the survivor's own list (same object) when nothing is added.
+ */
+function unionByKey(survivor: any, duplicate: any, keyOf: (entry: any) => string, prepare?: (list: any[]) => any[]): any {
+  if (!Array.isArray(duplicate) || duplicate.length === 0) return survivor
+  if (isEmptyValue(survivor)) return duplicate
+  if (!Array.isArray(survivor)) return survivor
+  const seen = new Set<string>((prepare ? prepare(survivor) : survivor).map(keyOf))
+  const added: any[] = []
+  for (const entry of (prepare ? prepare(duplicate) : duplicate)) {
+    const key = keyOf(entry)
+    if (seen.has(key)) continue
+    seen.add(key)
+    added.push(entry)
+  }
+  return added.length ? [...survivor, ...added] : survivor
+}
+
+function licenseKey(entry: any): string {
+  if (typeof entry?.expression === 'string') return `expression:${entry.expression}`
+  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}`
+  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}`
+  return `json:${JSON.stringify(entry)}`
+}
+
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
+  licenses: (s, d) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list) || []),
+  hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
+  externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
+  properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
+  tags: (s, d) => unionByKey(s, d, (t) => (typeof t === 'string' ? t : JSON.stringify(t)))
+}
+
+/**
+ * SCORE-13 ADR-4: the survivor wins, nothing is dropped. A field the survivor lacks or has empty
+ * is taken from the duplicate; a non-empty survivor value is never overwritten. The
+ * identity lists are unioned, survivor first. The duplicate's `type` is dropped and its
+ * `components` are hoisted by the caller.
+ */
+function mergeDuplicateInto(survivor: any, duplicate: any): void {
+  for (const key of Object.keys(duplicate)) {
+    if (DEDUP_SKIPPED_FIELDS.has(key)) continue
+    const union = DEDUP_LIST_UNIONS[key]
+    if (union) {
+      survivor[key] = union(survivor[key], duplicate[key])
+    } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
+      survivor[key] = duplicate[key]
+    }
+  }
+}
+
+function hasRepeatedBomRef(bom: any): boolean {
+  const seen = new Set<string>()
+  let repeated = false
+  const visit = (component: any) => {
+    if (repeated || !component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    if (ref) {
+      if (seen.has(ref)) {
+        repeated = true
+        return
+      }
+      seen.add(ref)
+    }
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  visit(bom?.metadata?.component)
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return repeated
+}
+
+/**
+ * SCORE-13 ADR-3: one pre-order, depth-first walk, `metadata.component` first, then `components[]`
+ * in document order, each component before its own children. The first occurrence of a
+ * bom-ref survives; a later one is removed where it sits, merged into the survivor, and
+ * its children are appended after the survivor's children (once the survivor's own list
+ * has been walked) and walked in turn, so a duplicate nested in a duplicate is found too.
+ * Works on shallow copies: the input is never changed.
+ */
+function dedupeComponentTree(root: any, components: any): { root: any, components: any, count: number } {
+  const survivors = new Map<string, any>()
+  // A survivor whose children are being walked, with the children of its duplicates
+  // found meanwhile, appended once the current list is done.
+  const open = new Map<any, any[]>()
+  let count = 0
+
+  const fill = (survivor: any, children: any[]) => {
+    const pending = open.get(survivor)
+    if (pending) {
+      pending.push(...children)
+      return
+    }
+    if (!Array.isArray(survivor.components)) survivor.components = []
+    let batch = children
+    while (batch.length) {
+      open.set(survivor, [])
+      walkInto(batch, survivor.components)
+      batch = open.get(survivor)!
+    }
+    open.delete(survivor)
+  }
+
+  const place = (component: any, out: any[]): void => {
+    if (!component || typeof component !== 'object') {
+      out.push(component)
+      return
+    }
+    const ref = bomRefOf(component)
+    const survivor = ref ? survivors.get(ref) : undefined
+    if (survivor) {
+      count++
+      mergeDuplicateInto(survivor, component)
+      if (Array.isArray(component.components) && component.components.length) fill(survivor, component.components)
+      return
+    }
+    const copy = { ...component }
+    if (ref) survivors.set(ref, copy)
+    out.push(copy)
+    if (Array.isArray(component.components)) {
+      copy.components = []
+      fill(copy, component.components)
+    }
+  }
+
+  const walkInto = (list: any[], out: any[]) => {
+    for (const component of list) place(component, out)
+  }
+
+  let rootOut = root
+  if (root && typeof root === 'object') {
+    const rootList: any[] = []
+    place(root, rootList)
+    rootOut = rootList[0]
+  }
+  let componentsOut = components
+  if (Array.isArray(components)) {
+    componentsOut = []
+    walkInto(components, componentsOut)
+  }
+  return { root: rootOut, components: componentsOut, count }
+}
+
+function uniqueInOrder(refs: any[]): any[] {
+  return Array.from(new Set(refs))
+}
+
+function hasRepeats(refs: any): boolean {
+  return Array.isArray(refs) && new Set(refs).size !== refs.length
+}
+
+/** Entries with one `ref` folded into the first; the named lists unioned in order. */
+function foldByRef(entries: any, listKeys: string[], unionList: (a: any[], b: any[]) => any[]): any {
+  if (!Array.isArray(entries)) return entries
+  const position = new Map<string, number>()
+  const out: any[] = []
+  let folded = false
+  for (const entry of entries) {
+    const ref = entry?.ref
+    if (typeof ref !== 'string' || !position.has(ref)) {
+      if (typeof ref === 'string') position.set(ref, out.length)
+      out.push(entry)
+      continue
+    }
+    folded = true
+    const index = position.get(ref)!
+    const merged = { ...out[index] }
+    for (const key of listKeys) {
+      if (!Array.isArray(entry[key])) continue
+      merged[key] = unionList(Array.isArray(merged[key]) ? merged[key] : [], entry[key])
+    }
+    out[index] = merged
+  }
+  return folded ? out : entries
+}
+
+function withoutRepeats(entry: any, keys: string[]): any {
+  if (!keys.some((key) => hasRepeats(entry?.[key]))) return entry
+  const next = { ...entry }
+  for (const key of keys) if (hasRepeats(entry[key])) next[key] = uniqueInOrder(entry[key])
+  return next
+}
+
+/** The list itself when no entry changed, else a new list of the (possibly new) entries. */
+function mapIfChanged(list: any, fn: (entry: any) => any): any {
+  if (!Array.isArray(list)) return list
+  const mapped = list.map(fn)
+  return mapped.some((entry, i) => entry !== list[i]) ? mapped : list
+}
+
+function affectedVersionKey(v: any): string {
+  return JSON.stringify([v?.version, v?.range, v?.status])
+}
+
+/**
+ * Folds the components that share one bom-ref into its first occurrence (SCORE-13).
+ * CycloneDX requires bom-refs to be unique; merge-boms reads only the top level of its
+ * inputs, so a component an input repeats inside its own subtree (and the nesting a
+ * HIERARCHICAL merge builds) reaches the merged document twice. Rules:
+ * - the key is the bom-ref string exactly (SCORE-13 ADR-2); components without one are not touched;
+ * - walk and survivor as in dedupeComponentTree (SCORE-13 ADR-3), fields as in mergeDuplicateInto
+ *   (SCORE-13 ADR-4);
+ * - reference lists (SCORE-13 ADR-5): no ref changes, because the survivor keeps the bom-ref every
+ *   reference already names; `dependencies` entries of one ref are folded into the first
+ *   (`dependsOn` and `provides` unioned in order), composition `assemblies` and
+ *   `dependencies` lose repeats, `vulnerabilities[].affects` of one ref are folded
+ *   (`versions` unioned), `annotations[].subjects` lose repeats; a list with nothing to
+ *   repair is the same object.
+ * With no duplicate the input is returned as is; otherwise the document gains
+ * BOM_REFS_DEDUPLICATED_PROPERTY with the number of copies folded.
+ */
+export function dedupeBomRefs(bom: any): BomRefDedupResult {
+  if (!bom || typeof bom !== 'object' || !hasRepeatedBomRef(bom)) return { bom, count: 0 }
+
+  const tree = dedupeComponentTree(bom.metadata?.component, bom.components)
+  const out: any = { ...bom }
+  if (bom.components !== undefined) out.components = tree.components
+
+  if ('dependencies' in bom) {
+    out.dependencies = foldByRef(bom.dependencies, ['dependsOn', 'provides'], (a, b) => uniqueInOrder([...a, ...b]))
+  }
+  if ('compositions' in bom) {
+    out.compositions = mapIfChanged(bom.compositions, (c: any) => withoutRepeats(c, ['assemblies', 'dependencies']))
+  }
+  if ('vulnerabilities' in bom) {
+    out.vulnerabilities = mapIfChanged(bom.vulnerabilities, (v: any) => {
+      if (!Array.isArray(v?.affects)) return v
+      const affects = foldByRef(v.affects, ['versions'], (a, b) => unionByKey(a, b, affectedVersionKey))
+      return affects === v.affects ? v : { ...v, affects }
+    })
+  }
+  if ('annotations' in bom) {
+    out.annotations = mapIfChanged(bom.annotations, (a: any) => withoutRepeats(a, ['subjects']))
+  }
+
+  const metadata = { ...(bom.metadata || {}) }
+  if (bom.metadata?.component !== undefined) metadata.component = tree.root
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== BOM_REFS_DEDUPLICATED_PROPERTY)
+    : []
+  properties.push({ name: BOM_REFS_DEDUPLICATED_PROPERTY, value: String(tree.count) })
+  metadata.properties = properties
+  out.metadata = metadata
+
+  logger.info(`bom-ref de-dup: ${tree.count} duplicate components folded into their first occurrence`)
+  return { bom: out, count: tree.count }
+}
+
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {
   let purlStr = rebomOverride.purl
   if (!purlStr) {
