@@ -7,6 +7,8 @@ package io.reliza.service.oss;
 import static org.junit.jupiter.api.Assertions.*;
 
 import java.util.*;
+import java.util.concurrent.*;
+import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -22,8 +24,10 @@ import io.reliza.model.BranchData.AutoIntegrateState;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.Component;
+import io.reliza.model.FlowControl;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.Organization;
+import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -35,6 +39,7 @@ import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.VersionAssignmentService;
 import io.reliza.ws.App;
 import io.reliza.ws.oss.TestInitializer;
 
@@ -65,6 +70,9 @@ public class AutoIntegrateProductsTest {
 	
 	@Autowired
 	private TestInitializer testInitializer;
+
+	@Autowired
+	private VersionAssignmentService versionAssignmentService;
 	
 	/**
 	 * Test 1: Basic auto-integrate flow
@@ -344,11 +352,18 @@ public class AutoIntegrateProductsTest {
 			System.out.println("  - " + rd.getVersion() + " (UUID: " + rd.getUuid() + ")");
 		}
 		
-		// Call autoIntegrateProducts directly (with TestAsyncConfig, it runs synchronously)
-		ossReleaseService.autoIntegrateProducts(newReleaseData);
-		
-		// Assert - verify a NEW product release was created with correct components
+		// Trigger auto-integrate for the new release. createRelease's own
+		// after-commit dispatch may already hold the processing claim (the
+		// atomic lease that prevents double integration), in which case this
+		// direct call is a no-op and the bounded-executor worker does the
+		// work — so await the outcome instead of asserting immediately.
+		triggerAutoIntegrateSynchronously(newReleaseData);
+
 		List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		for (int i = 0; i < 40 && productReleasesAfter.size() <= countBefore; i++) {
+			try { Thread.sleep(250); } catch (InterruptedException ie) { Thread.currentThread().interrupt(); break; }
+			productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+		}
 		int countAfter = productReleasesAfter.size();
 		System.out.println("DEBUG: Product releases after autoIntegrateProducts: " + countAfter);
 		
@@ -482,7 +497,7 @@ public class AutoIntegrateProductsTest {
 		
 		// Act - trigger auto-integrate
 		ReleaseData releaseData = sharedReleaseService.getReleaseData(release.getUuid()).get();
-		ossReleaseService.autoIntegrateProducts(releaseData);
+		triggerAutoIntegrateSynchronously(releaseData);
 		
 		// Give async operation time to complete
 		try {
@@ -583,7 +598,7 @@ public class AutoIntegrateProductsTest {
 		
 		// Act - trigger auto-integrate
 		ReleaseData releaseData = sharedReleaseService.getReleaseData(release.getUuid()).get();
-		ossReleaseService.autoIntegrateProducts(releaseData);
+		triggerAutoIntegrateSynchronously(releaseData);
 		
 		// Give async operation time to complete
 		try {
@@ -687,7 +702,7 @@ public class AutoIntegrateProductsTest {
 		
 		// Act - trigger auto-integrate with v2.0.0
 		ReleaseData release2Data = sharedReleaseService.getReleaseData(release2.getUuid()).get();
-		ossReleaseService.autoIntegrateProducts(release2Data);
+		triggerAutoIntegrateSynchronously(release2Data);
 		
 		// Assert - verify NO new product release was created (pinned dependency should skip)
 		List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
@@ -795,13 +810,13 @@ public class AutoIntegrateProductsTest {
 		
 		// Act 1 - trigger auto-integrate for component1 (should create product release)
 		ReleaseData release1Data = sharedReleaseService.getReleaseData(release1.getUuid()).get();
-		ossReleaseService.autoIntegrateProducts(release1Data);
+		triggerAutoIntegrateSynchronously(release1Data);
 		
 		List<ReleaseData> productReleasesAfterFirst = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
 		int countAfterFirst = productReleasesAfterFirst.size();
 		
 		// Act 2 - trigger auto-integrate AGAIN for the SAME release (should NOT create duplicate)
-		ossReleaseService.autoIntegrateProducts(release1Data);
+		triggerAutoIntegrateSynchronously(release1Data);
 		
 		// Assert - verify NO duplicate was created
 		List<ReleaseData> productReleasesAfterSecond = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
@@ -917,7 +932,7 @@ public class AutoIntegrateProductsTest {
 		
 		// Act - trigger auto-integrate
 		ReleaseData releaseData = sharedReleaseService.getReleaseData(release.getUuid()).get();
-		ossReleaseService.autoIntegrateProducts(releaseData);
+		triggerAutoIntegrateSynchronously(releaseData);
 		
 		// Assert - verify product releases created for BOTH feature sets
 		int count1After = sharedReleaseService.listReleaseDataOfBranch(featureSet1.getUuid()).size();
@@ -1040,7 +1055,7 @@ public void testAutoIntegrateProducts_BaseBranchPriority() throws RelizaExceptio
     // Act - trigger auto-integrate with FEATURE branch release v2.0.0
     // This should use BASE branch release v1.0.0 instead due to priority logic
     ReleaseData featureReleaseData = sharedReleaseService.getReleaseData(featureRelease.getUuid()).get();
-    ossReleaseService.autoIntegrateProducts(featureReleaseData);
+    triggerAutoIntegrateSynchronously(featureReleaseData);
     
     // Assert - verify product release was created with BASE branch release (v1.0.0), NOT feature release (v2.0.0)
     List<ReleaseData> productReleasesAfter = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
@@ -1322,7 +1337,7 @@ public void testAutoIntegrateProducts_PatternWithOverrideIgnored() throws Reliza
     Release release2 = ossReleaseService.createRelease(release2Dto, WhoUpdated.getTestWhoUpdated());
     
     ReleaseData release2Data = sharedReleaseService.getReleaseData(release2.getUuid()).get();
-    ossReleaseService.autoIntegrateProducts(release2Data);
+    triggerAutoIntegrateSynchronously(release2Data);
     
     // Give async operation time to complete
     try {
@@ -1453,7 +1468,7 @@ public void testAutoIntegrateProducts_PatternAndManualDependencies() throws Reli
     Release release3 = ossReleaseService.createRelease(release3Dto, WhoUpdated.getTestWhoUpdated());
     
     ReleaseData release3Data = sharedReleaseService.getReleaseData(release3.getUuid()).get();
-    ossReleaseService.autoIntegrateProducts(release3Data);
+    triggerAutoIntegrateSynchronously(release3Data);
     
     // Give async operation time to complete
     try {
@@ -1612,8 +1627,280 @@ public void testAutoIntegrateProducts_PatternMatchingOnlyBaseBranch() throws Rel
     System.out.println("DEBUG Test11: Product releases after bugfix branch release: " + countAfterBugfixRelease);
     
     // Assert 2: NO new product release should be created for non-BASE branch release
-    assertEquals(countAfterMainRelease, countAfterBugfixRelease, 
+    assertEquals(countAfterMainRelease, countAfterBugfixRelease,
         "Pattern-based auto-integrate should NOT create product release for non-BASE branch release. " +
         "Pattern defaults to BASE branch, so bugfix branch releases should be ignored.");
 }
+
+/**
+ * Direct trigger with the create-time worker awaited first. createRelease queues an
+ * after-commit auto-integrate hop on a REAL background executor (see TestAsyncConfig);
+ * a direct autoIntegrateProducts() call racing that in-flight worker loses its claim to
+ * the worker's lease and returns without integrating -- the assertion right after then
+ * fails intermittently (the CI coin-flip on testAutoIntegrateProducts_BaseBranchPriority).
+ * Await the release's queue entry draining before triggering explicitly.
+ */
+private void triggerAutoIntegrateSynchronously(ReleaseData rd) {
+    awaitAutoIntegrateDrained(rd);
+    ossReleaseService.autoIntegrateProducts(rd);
+}
+
+/**
+ * Blocks until this release's auto-integrate queue entry clears, i.e. the create-time
+ * background worker is done with it.
+ *
+ * <p>Fails rather than returning on timeout: proceeding anyway lets the caller's direct
+ * trigger lose its claim to the still-running worker's lease and silently do nothing, which
+ * shows up later as an unrelated count assertion failing for a reason the message does not
+ * mention.
+ */
+private void awaitAutoIntegrateDrained(ReleaseData rd) {
+    long deadline = System.currentTimeMillis() + 15000;
+    while (System.currentTimeMillis() < deadline) {
+        FlowControl fc = sharedReleaseService.getRelease(rd.getUuid())
+            .orElseThrow().getFlowControl();
+        if (fc == null || fc.autoIntegrateRequestedAt() == null) return;
+        try {
+            Thread.sleep(100);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            break;
+        }
+    }
+    fail("auto-integrate queue entry for release " + rd.getUuid()
+        + " did not drain within 15s; the test's own trigger would race the background worker");
+}
+
+/**
+ * Two component releases that are both dependencies of ONE feature set, integrated
+ * concurrently, must still produce exactly ONE product release.
+ *
+ * <p>Drives {@code integrateFeatureSetTx} directly from two barrier-synchronised threads
+ * rather than relying on the create-time workers, because the race needs executor backlog to
+ * line up and is otherwise seen only rarely under full-suite load.
+ */
+@Test
+public void testAutoIntegrateProducts_ConcurrentIntegrationCreatesOneProduct() throws Exception {
+    Organization org = testInitializer.obtainOrganization();
+
+    Component component1 = componentService.createComponent("dupRaceC1_" + UUID.randomUUID(),
+        org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null,
+        WhoUpdated.getTestWhoUpdated());
+    Branch component1Branch = branchService.getBaseBranchOfComponent(component1.getUuid()).orElseThrow();
+
+    Component component2 = componentService.createComponent("dupRaceC2_" + UUID.randomUUID(),
+        org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null,
+        WhoUpdated.getTestWhoUpdated());
+    Branch component2Branch = branchService.getBaseBranchOfComponent(component2.getUuid()).orElseThrow();
+
+    // Created BEFORE the feature set exists, so the create-time workers find no feature set
+    // depending on them and no-op -- leaving this test in control of when integration runs.
+    Release release1 = ossReleaseService.createRelease(ReleaseDto.builder()
+        .component(component1.getUuid()).branch(component1Branch.getUuid()).org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE).lifecycle(ReleaseLifecycle.ASSEMBLED).version("1.0.0")
+        .build(), WhoUpdated.getTestWhoUpdated());
+    Release release2 = ossReleaseService.createRelease(ReleaseDto.builder()
+        .component(component2.getUuid()).branch(component2Branch.getUuid()).org(org.getUuid())
+        .status(ReleaseStatus.ACTIVE).lifecycle(ReleaseLifecycle.ASSEMBLED).version("1.0.0")
+        .build(), WhoUpdated.getTestWhoUpdated());
+
+    Component product = componentService.createComponent("dupRaceProd_" + UUID.randomUUID(),
+        org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null,
+        WhoUpdated.getTestWhoUpdated());
+    Branch featureSetBranch = branchService.createBranch("dupRaceFeatureSet",
+        product.getUuid(), BranchType.FEATURE, WhoUpdated.getTestWhoUpdated());
+
+    BranchData featureSetData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+    branchService.updateBranch(BranchDto.builder()
+        .uuid(featureSetData.getUuid())
+        .name(featureSetData.getName())
+        .versionSchema(featureSetData.getVersionSchema())
+        .type(featureSetData.getType())
+        .dependencies(List.of(
+            ChildComponent.builder().uuid(component1.getUuid())
+                .branch(component1Branch.getUuid()).status(StatusEnum.REQUIRED).build(),
+            ChildComponent.builder().uuid(component2.getUuid())
+                .branch(component2Branch.getUuid()).status(StatusEnum.REQUIRED).build()))
+        .autoIntegrate(AutoIntegrateState.ENABLED)
+        .build(), WhoUpdated.getTestWhoUpdated());
+
+    ReleaseData release1Data = sharedReleaseService.getReleaseData(release1.getUuid()).get();
+    ReleaseData release2Data = sharedReleaseService.getReleaseData(release2.getUuid()).get();
+    awaitAutoIntegrateDrained(release1Data);
+    awaitAutoIntegrateDrained(release2Data);
+
+    // Without this the race below can be vacuous: if a create-time worker already integrated,
+    // both threads would correctly skip and the test would pass with or without the fix.
+    assertEquals(0, sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid()).size(),
+        "precondition: no product release should exist before the concurrent integration");
+
+    BranchData fsData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+    CountDownLatch startGate = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(2);
+    try {
+        List<Future<?>> results = new ArrayList<>();
+        for (ReleaseData trigger : List.of(release1Data, release2Data)) {
+            results.add(pool.submit(() -> {
+                startGate.await();
+                ossReleaseService.integrateFeatureSetTx(fsData, trigger);
+                return null;
+            }));
+        }
+        startGate.countDown();
+        // Bare get(): ExecutionException already carries the task's cause with its stack, and
+        // catching inside the task would swallow Errors (an AssertionError among them).
+        for (Future<?> f : results) {
+            f.get(60, TimeUnit.SECONDS);
+        }
+    } finally {
+        pool.shutdownNow();
+    }
+
+    assertEquals(1, sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid()).size(),
+        "two concurrent integrations of the same feature set must produce exactly ONE product "
+        + "release; 2 means the duplicate check and the create are not serialized");
+}
+
+/**
+ * Wider version of the two-thread case: N dependency releases integrated at once.
+ *
+ * <p>Guards the failure mode the lock could plausibly INTRODUCE, which the narrow test cannot
+ * see -- serializing makes the losers skip, and a skip is only correct when the skipping
+ * release is itself already carried by the winner's product. If the guard were keyed on
+ * anything coarser than the triggering release, this fix would trade duplicate products for
+ * silently dropped dependency updates, which is the worse bug. So it asserts both directions:
+ * exactly one product, AND every one of the N releases present in it.
+ */
+@Test
+public void testAutoIntegrateProducts_ManyConcurrentIntegrationsLoseNothing() throws Exception {
+    // Bounded by the surefire connection-pool cap in pom.xml: each concurrent integrator pins a
+    // connection while blocked on the feature-set lock, and the winner needs one more for its
+    // nested REQUIRES_NEW version mint. Raising this means raising that cap.
+    final int deps = 6;
+    Organization org = testInitializer.obtainOrganization();
+
+    List<ChildComponent> dependencies = new ArrayList<>();
+    List<ReleaseData> triggers = new ArrayList<>();
+    Set<UUID> expectedParents = new HashSet<>();
+    for (int i = 0; i < deps; i++) {
+        Component c = componentService.createComponent("stressC" + i + "_" + UUID.randomUUID(),
+            org.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null,
+            WhoUpdated.getTestWhoUpdated());
+        Branch cBranch = branchService.getBaseBranchOfComponent(c.getUuid()).orElseThrow();
+        Release r = ossReleaseService.createRelease(ReleaseDto.builder()
+            .component(c.getUuid()).branch(cBranch.getUuid()).org(org.getUuid())
+            .status(ReleaseStatus.ACTIVE).lifecycle(ReleaseLifecycle.ASSEMBLED).version("1.0.0")
+            .build(), WhoUpdated.getTestWhoUpdated());
+        dependencies.add(ChildComponent.builder().uuid(c.getUuid()).branch(cBranch.getUuid())
+            .status(StatusEnum.REQUIRED).build());
+        triggers.add(sharedReleaseService.getReleaseData(r.getUuid()).get());
+        expectedParents.add(r.getUuid());
+    }
+
+    Component product = componentService.createComponent("stressProd_" + UUID.randomUUID(),
+        org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null,
+        WhoUpdated.getTestWhoUpdated());
+    Branch featureSetBranch = branchService.createBranch("stressFeatureSet", product.getUuid(),
+        BranchType.FEATURE, WhoUpdated.getTestWhoUpdated());
+    BranchData fsSeed = branchService.getBranchData(featureSetBranch.getUuid()).get();
+    branchService.updateBranch(BranchDto.builder()
+        .uuid(fsSeed.getUuid()).name(fsSeed.getName()).versionSchema(fsSeed.getVersionSchema())
+        .type(fsSeed.getType()).dependencies(dependencies)
+        .autoIntegrate(AutoIntegrateState.ENABLED).build(), WhoUpdated.getTestWhoUpdated());
+
+    for (ReleaseData t : triggers) {
+        awaitAutoIntegrateDrained(t);
+    }
+    assertEquals(0, sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid()).size(),
+        "precondition: no product release should exist before the concurrent integration");
+
+    BranchData fsData = branchService.getBranchData(featureSetBranch.getUuid()).get();
+    CountDownLatch startGate = new CountDownLatch(1);
+    ExecutorService pool = Executors.newFixedThreadPool(deps);
+    try {
+        List<Future<?>> results = new ArrayList<>();
+        for (ReleaseData trigger : triggers) {
+            results.add(pool.submit(() -> {
+                startGate.await();
+                ossReleaseService.integrateFeatureSetTx(fsData, trigger);
+                return null;
+            }));
+        }
+        startGate.countDown();
+        for (Future<?> f : results) {
+            f.get(120, TimeUnit.SECONDS);
+        }
+    } finally {
+        pool.shutdownNow();
+    }
+
+    List<ReleaseData> products = sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid());
+    assertEquals(1, products.size(),
+        deps + " concurrent integrations of one feature set must produce exactly ONE product release");
+
+    Set<UUID> actualParents = products.get(0).getParentReleases().stream()
+        .map(ParentRelease::getRelease).collect(Collectors.toSet());
+    assertTrue(actualParents.containsAll(expectedParents),
+        "the single product release must carry every dependency release; missing "
+        + expectedParents.stream().filter(u -> !actualParents.contains(u)).toList()
+        + " means serialization dropped an integration instead of merging it");
+}
+
+	/**
+	 * A feature set whose explicit dependency is a component of ANOTHER organization. Its latest
+	 * release would become a parent of the product release, which createRelease refuses -- but only
+	 * after createProductRelease had minted the version, and the empty result then armed the
+	 * auto-integrate retry, which fails the same way on every attempt. The parent check now runs
+	 * before the mint and the feature set is skipped: no version, no product release, no retry.
+	 */
+	@Test
+	public void testAutoIntegrateProducts_CrossOrgDependencyIsSkippedWithoutMintOrRetry() throws Exception {
+		WhoUpdated wu = WhoUpdated.getTestWhoUpdated();
+		Organization org = testInitializer.obtainOrganization();
+		Organization otherOrg = testInitializer.obtainOrganization();
+		Component own = componentService.createComponent("crossOrgOwn_" + UUID.randomUUID(), org.getUuid(),
+			ComponentType.COMPONENT, "semver", "Branch.Micro", null, wu);
+		Branch ownBranch = branchService.getBaseBranchOfComponent(own.getUuid()).orElseThrow();
+		Component foreign = componentService.createComponent("crossOrgForeign_" + UUID.randomUUID(),
+			otherOrg.getUuid(), ComponentType.COMPONENT, "semver", "Branch.Micro", null, wu);
+		Branch foreignBranch = branchService.getBaseBranchOfComponent(foreign.getUuid()).orElseThrow();
+		ossReleaseService.createRelease(ReleaseDto.builder().component(foreign.getUuid())
+			.branch(foreignBranch.getUuid()).org(otherOrg.getUuid()).status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED).version("1.0.0").build(), wu);
+
+		Component product = componentService.createComponent("crossOrgProduct_" + UUID.randomUUID(),
+			org.getUuid(), ComponentType.PRODUCT, "semver", "Branch.Micro", null, wu);
+		Branch featureSetBranch = branchService.createBranch("crossOrgFeatureSet", product.getUuid(),
+			BranchType.FEATURE, wu);
+		BranchData fsSeed = branchService.getBranchData(featureSetBranch.getUuid()).get();
+		branchService.updateBranch(BranchDto.builder()
+			.uuid(fsSeed.getUuid()).name(fsSeed.getName()).versionSchema(fsSeed.getVersionSchema())
+			.type(fsSeed.getType())
+			.dependencies(List.of(
+				ChildComponent.builder().uuid(own.getUuid()).branch(ownBranch.getUuid())
+					.status(StatusEnum.REQUIRED).build(),
+				ChildComponent.builder().uuid(foreign.getUuid()).branch(foreignBranch.getUuid())
+					.status(StatusEnum.REQUIRED).build()))
+			.autoIntegrate(AutoIntegrateState.ENABLED).build(), wu);
+
+		// The trigger: an ASSEMBLED release of the feature set's own-org dependency. Its create
+		// queues the real after-commit auto-integrate worker; wait for it to settle.
+		Release trigger = ossReleaseService.createRelease(ReleaseDto.builder().component(own.getUuid())
+			.branch(ownBranch.getUuid()).org(org.getUuid()).status(ReleaseStatus.ACTIVE)
+			.lifecycle(ReleaseLifecycle.ASSEMBLED).version("1.0.0").build(), wu);
+		FlowControl fc = null;
+		long deadline = System.currentTimeMillis() + 30000;
+		while (System.currentTimeMillis() < deadline) {
+			fc = sharedReleaseService.getRelease(trigger.getUuid()).orElseThrow().getFlowControl();
+			if (fc == null || fc.autoIntegrateRequestedAt() == null || fc.autoIntegrateFailureCount() != null) break;
+			Thread.sleep(100);
+		}
+
+		assertTrue(sharedReleaseService.listReleaseDataOfBranch(featureSetBranch.getUuid()).isEmpty(),
+			"no product release may be created over another organization's release");
+		assertTrue(versionAssignmentService.getLatestVersionAssignmentOfBranch(featureSetBranch.getUuid(), 10).isEmpty(),
+			"the refusal must come before the version is minted");
+		assertTrue(fc == null || (fc.autoIntegrateRequestedAt() == null && fc.autoIntegrateFailureCount() == null),
+			"a cross-org dependency is permanent: the release must not stay queued with a retry armed, got " + fc);
+	}
 }

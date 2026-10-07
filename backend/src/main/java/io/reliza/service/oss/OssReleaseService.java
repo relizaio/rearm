@@ -28,9 +28,13 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
-import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import io.reliza.model.FlowControl;
+import io.reliza.util.BackoffPolicy;
+import io.reliza.service.AutoIntegrateDispatcher;
+import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionSynchronization;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.SidPurlUtils;
@@ -155,7 +159,14 @@ public class OssReleaseService {
 	@Lazy
 	private OssReleaseService self;
 
-	private static final int AUTO_INTEGRATE_BACKOFF_SECONDS = 120;
+	// Separate bean that owns the @Async hop into auto-integration. Crossing the
+	// async boundary bean-to-bean (rather than via self.) keeps this bean's
+	// @Transactional advice intact on the nested marker / integrateFeatureSetTx
+	// writes -- see AutoIntegrateDispatcher for the full rationale.
+	@Autowired
+	@Lazy
+	private AutoIntegrateDispatcher autoIntegrateDispatcher;
+
 	private static final int AUTO_INTEGRATE_LEASE_SECONDS = 600;
 
 	/**
@@ -958,47 +969,103 @@ public class OssReleaseService {
 		}
 	}
 	
-	@Async
+	/**
+	 * Dispatcher (NOT the worker). Durably marks the release as needing product
+	 * auto-integration (flow_control queue), then runs the actual integration.
+	 *
+	 * <p>If called inside a transaction (the release-create path, which is where
+	 * the Hikari-pool exhaustion happened) the work is deferred to AFTER COMMIT on
+	 * the bounded autoIntegrateExecutor — so it never holds the release-create
+	 * connection while a feature-set integration acquires the REQUIRES_NEW
+	 * version-assignment connection. Crucially this also runs on a clean thread:
+	 * an after-commit synchronization still has the (now-committed, dead) JPA
+	 * session bound, so a feature-set @Transactional started inline there would
+	 * join that dead session and fail with "no active transaction" — handing off
+	 * to the executor thread starts a genuinely fresh transaction.
+	 *
+	 * <p>If there is NO active transaction (on-demand / post-commit batch path)
+	 * there is no connection to free and no dead session to trip over, so the work
+	 * runs INLINE/synchronously — each feature set still opens its own fresh
+	 * transaction. The durable marker guarantees the scheduler retries anything
+	 * an immediate attempt misses.
+	 */
 	public void autoIntegrateProducts(ReleaseData rd) {
-		autoIntegrateProductsForRelease(rd, new HashSet<>());
+		if (rd == null || rd.getUuid() == null) return;
+		final UUID releaseUuid = rd.getUuid();
+		repository.markAutoIntegrateRequested(releaseUuid);
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override public void afterCommit() { autoIntegrateDispatcher.asyncProcess(releaseUuid); }
+			});
+		} else {
+			processAutoIntegrateForRelease(releaseUuid);
+		}
 	}
 
 	/**
-	 * Batch auto-integrate. Processes each release in order against a shared set of
-	 * already-processed feature sets, so a given feature set is auto-integrated at
-	 * most once for the whole batch. Only ASSEMBLED releases trigger integration —
-	 * mixed-lifecycle batches behave like single creates (lifecycle gating unchanged).
+	 * Batch auto-integrate: the counterpart of {@link #autoIntegrateProducts} for a batch create
+	 * (addReleasesProgrammatic), which passes deferAutoIntegrate=true and calls this once for the
+	 * whole batch. Only ASSEMBLED releases trigger integration -- mixed-lifecycle batches behave
+	 * like single creates (lifecycle gating unchanged).
+	 *
+	 * <p>Same shape as the single-release path, and for the same reason. The queue markers are
+	 * written FIRST, in the caller's transaction, so they commit atomically with the releases; the
+	 * integration itself runs only AFTER that commit, off the request thread. This used to be a bare
+	 * {@code @Async} call made inside the batch's transaction: the worker could run before the
+	 * commit, when the batch's releases are invisible to it. The triggering release -- a parent of
+	 * the product release it integrates into -- then read as missing, the product release was
+	 * deferred, and the retry marker was an UPDATE on a row not committed yet, which matched
+	 * nothing: the product release was lost. Now a run that fails, is dropped by the bounded
+	 * executor, or dies leaves the committed marker for the scheduler drain.
 	 */
-	@Async
 	public void autoIntegrateProductsForBatch(List<ReleaseData> releases) {
 		if (null == releases || releases.isEmpty()) {
 			return;
 		}
+		List<UUID> queued = releases.stream()
+				.filter(rd -> rd.getLifecycle() == ReleaseLifecycle.ASSEMBLED)
+				.map(ReleaseData::getUuid).distinct().toList();
+		if (queued.isEmpty()) {
+			return;
+		}
+		// One statement, in the caller's transaction like autoIntegrateProducts' marker.
+		repository.markAutoIntegrateRequestedAll(queued);
+		if (TransactionSynchronizationManager.isSynchronizationActive()) {
+			// Off-thread on the bounded executor, never inline: work in afterCommit would join the
+			// finished transaction and its writes would be discarded (see autoIntegrateProducts).
+			TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
+				@Override public void afterCommit() { autoIntegrateDispatcher.asyncProcessBatch(queued); }
+			});
+		} else {
+			processAutoIntegrateForBatch(queued);
+		}
+	}
+
+	/**
+	 * Drive the batch's queued releases in order against a shared set of already-processed feature
+	 * sets, so a given feature set is auto-integrated at most once for the whole batch. Each release
+	 * goes through the same processQueuedRelease as {@link #processAutoIntegrateForRelease}; one the
+	 * drain already claimed is skipped.
+	 */
+	public void processAutoIntegrateForBatch(List<UUID> releaseUuids) {
 		Set<UUID> processedFeatureSets = new HashSet<>();
-		for (ReleaseData rd : releases) {
-			if (rd.getLifecycle() == ReleaseLifecycle.ASSEMBLED) {
-				try {
-					autoIntegrateProductsForRelease(rd, processedFeatureSets);
-				} catch (Exception e) {
-					log.error("autoIntegrateProducts failed for release {} in batch", rd.getUuid(), e);
-				}
+		for (UUID releaseUuid : releaseUuids) {
+			// Per release: a failure outside the integration itself (claim, read, clear, failure
+			// bookkeeping) must not stop the rest of the batch. Its marker stays for the drain.
+			try {
+				processQueuedRelease(releaseUuid, processedFeatureSets, AutoIntegrateRun.BATCH_HOP);
+			} catch (Exception e) {
+				log.error("batch auto-integrate failed for release {}; left queued for the drain", releaseUuid, e);
 			}
 		}
 	}
 
 	/**
-	 * Drive a batch's releases in order against a shared set of already-processed feature sets, so a
-	 * given feature set is auto-integrated at most once for the whole batch. Shared-API parity with
-	 * Pro's after-commit batch hop: CE integrates inline ({@link #autoIntegrateProductsForBatch}) and
-	 * never queues, so nothing here claims or clears a marker.
+	 * @return true if every matching feature set integrated (or there was nothing to
+	 *   integrate). False if any feature set's integration failed — its caller leaves
+	 *   the release queued for retry. Each feature set runs in its OWN transaction
+	 *   ({@link #integrateFeatureSetTx}) so one failure can't abort the rest.
 	 */
-	public void processAutoIntegrateForBatch(List<UUID> releaseUuids) {
-		if (null == releaseUuids || releaseUuids.isEmpty()) return;
-		Map<UUID, ReleaseData> byUuid = sharedReleaseService.getReleaseDataListLight(releaseUuids).stream()
-				.collect(Collectors.toMap(ReleaseData::getUuid, Function.identity(), (x, y) -> x));
-		autoIntegrateProductsForBatch(releaseUuids.stream().distinct().map(byUuid::get).filter(Objects::nonNull).toList());
-	}
-
 	private boolean autoIntegrateProductsForRelease(ReleaseData rd, Set<UUID> processedFeatureSets) {
 		if (null == rd.getBranch()) {
 			return true;
@@ -1060,12 +1127,41 @@ public class OssReleaseService {
 	
 	
 	/**
-	 * Drive product auto-integration for one queued release (off-request worker).
-	 * Claims the queued marker, integrates, then clears it on full success or
-	 * records a backoff failure so the scheduler retries idempotently (already-
-	 * integrated feature sets are skipped).
+	 * Drive auto-integration for one queued release. Claims the queue entry
+	 * first (atomic lease) so the immediate after-commit run and the per-minute
+	 * scheduler drain can never process the same release concurrently — that
+	 * double processing minted duplicate same-second product releases. Clears
+	 * the flow_control marker only when EVERY feature set integrated (or there
+	 * was nothing to do); otherwise records a failure with backoff so the
+	 * scheduler retries — idempotently, since already-integrated feature sets
+	 * are skipped.
 	 */
 	public void processAutoIntegrateForRelease(UUID releaseUuid) {
+		processQueuedRelease(releaseUuid, new HashSet<>(), AutoIntegrateRun.RELEASE_HOP);
+	}
+
+	/** Which worker drove a queued release, named in its failure log. */
+	private enum AutoIntegrateRun {
+		/** The after-commit hop of one release (or its inline run when there was no transaction). */
+		RELEASE_HOP("release hop"),
+		/** The after-commit hop of a batch create. */
+		BATCH_HOP("batch hop"),
+		/** The scheduler drain of queued releases. */
+		DRAIN("drain");
+
+		private final String label;
+
+		AutoIntegrateRun(String label) {
+			this.label = label;
+		}
+	}
+
+	/**
+	 * The one retry policy for a queued release, shared by the release hop, the batch hop and the
+	 * drain: claim it (skip when the claim is lost), integrate it against
+	 * {@code processedFeatureSets}, then clear the marker, or record the failure and arm the backoff.
+	 */
+	private void processQueuedRelease(UUID releaseUuid, Set<UUID> processedFeatureSets, AutoIntegrateRun run) {
 		if (self.claimAutoIntegrateTx(releaseUuid) == 0) {
 			log.debug("auto-integrate for release {} skipped — not queued or already claimed", releaseUuid);
 			return;
@@ -1074,51 +1170,62 @@ public class OssReleaseService {
 		if (ord.isEmpty()) { self.clearAutoIntegrateMarkerTx(releaseUuid); return; }
 		boolean allOk;
 		try {
-			allOk = autoIntegrateProductsForRelease(ord.get(), new HashSet<>());
+			allOk = autoIntegrateProductsForRelease(ord.get(), processedFeatureSets);
 		} catch (Exception e) {
-			log.error("auto-integrate drain failed for release {}", releaseUuid, e);
+			log.error("auto-integrate ({}) failed for release {}", run.label, releaseUuid, e);
 			allOk = false;
 		}
 		if (allOk) {
 			self.clearAutoIntegrateMarkerTx(releaseUuid);
 		} else {
-			self.recordAutoIntegrateFailureTx(releaseUuid, AUTO_INTEGRATE_BACKOFF_SECONDS);
+			self.recordAutoIntegrateFailureTx(releaseUuid);
 		}
 	}
 
-	/**
-	 * Scheduler drain: process a batch of releases still pending auto-integration.
-	 *
-	 * <p><b>Dormant on CE by design.</b> CE auto-integrates inline via the
-	 * {@code @Async autoIntegrateProducts} path on the release-save flow and
-	 * does not enqueue ({@code markAutoIntegrateRequested} is never called
-	 * here), so this drain finds no rows. The queued/claimed/backoff path is
-	 * present for shared-API parity and is Pro-activated; adopting the bounded
-	 * queue on CE is a separate change.
+	/*
+	 * The flow_control marker mutations are @Modifying writes that need an
+	 * active transaction. This worker runs off the request thread (after-commit
+	 * on the bounded executor, or the scheduler drain) where there is no ambient
+	 * transaction, and the repository's own method-level @Transactional is not
+	 * honoured in that invocation context — so route the writes through these
+	 * self-proxied service methods, which reliably open their own transaction
+	 * (same pattern as integrateFeatureSetTx).
 	 */
-	public void processPendingAutoIntegrate(int batchLimit) {
-		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit, AUTO_INTEGRATE_LEASE_SECONDS)) {
-			try { processAutoIntegrateForRelease(u); }
-			catch (Exception e) { log.error("pending auto-integrate failed for release {}", u, e); }
-		}
-	}
-
-	// The flow_control marker mutations are @Modifying writes that need an active
-	// transaction; off-request invocation contexts don't honour the repository's
-	// own @Transactional, so route them through these self-proxied methods.
 	@Transactional
 	public void clearAutoIntegrateMarkerTx(UUID releaseUuid) {
 		repository.clearAutoIntegrateRequested(releaseUuid);
 	}
 
+	/** Queue a release for the scheduler drain. Self-proxied for the same reason as the markers above. */
 	@Transactional
-	public void recordAutoIntegrateFailureTx(UUID releaseUuid, int backoffSeconds) {
-		repository.recordAutoIntegrateFailure(releaseUuid, backoffSeconds);
+	public void markAutoIntegrateRequestedTx(UUID releaseUuid) {
+		repository.markAutoIntegrateRequested(releaseUuid);
+	}
+
+	@Transactional
+	public void recordAutoIntegrateFailureTx(UUID releaseUuid) {
+		// Curve lives in BackoffPolicy#autoIntegrateSkipSeconds, not inlined here or in SQL.
+		// Reading the prior count and writing the fence in two statements is near-serialized by the
+		// claim lease; an integration outrunning the lease can let the drain re-claim, but the SQL
+		// increments the count atomically, so the worst case is picking a delay one step low.
+		FlowControl fc = repository.findById(releaseUuid).map(Release::getFlowControl).orElse(null);
+		int priorFailures = (null != fc && null != fc.autoIntegrateFailureCount())
+				? fc.autoIntegrateFailureCount() : 0;
+		repository.recordAutoIntegrateFailure(releaseUuid,
+				BackoffPolicy.autoIntegrateSkipSeconds(priorFailures + 1));
 	}
 
 	@Transactional
 	public int claimAutoIntegrateTx(UUID releaseUuid) {
 		return repository.claimAutoIntegrate(releaseUuid, AUTO_INTEGRATE_LEASE_SECONDS);
+	}
+
+	/** Scheduler drain: process a batch of releases still pending auto-integration. */
+	public void processPendingAutoIntegrate(int batchLimit) {
+		for (UUID u : repository.findUuidsOfReleasesPendingAutoIntegrate(batchLimit, AUTO_INTEGRATE_LEASE_SECONDS)) {
+			try { processQueuedRelease(u, new HashSet<>(), AutoIntegrateRun.DRAIN); }
+			catch (Exception e) { log.error("pending auto-integrate failed for release {}", u, e); }
+		}
 	}
 
 	/** One feature set in its OWN transaction so a single failure can't poison others. */
@@ -1143,6 +1250,37 @@ public class OssReleaseService {
 		if (!shouldProceedWithAutoIntegrate(featureSet, triggeringRelease, matchingDependency.get())) {
 			return;
 		}
+		
+		// 2b. Take the feature-set lock now. Steps 1-2 are a pure pre-filter that answers "nothing
+		// to do" for most feature sets, so locking before them made every ASSEMBLED release create
+		// exclusively lock every pattern-bearing feature set in the org. From here on, every read
+		// whose result feeds the write happens under the lock -- the duplicate re-check below,
+		// gatherReleasesFromDependencies, determineReleaseToUse and isReleaseAlreadyInProduct all
+		// re-query, so a concurrent integrator that committed while we were unlocked is visible.
+		//
+		// This relies on READ COMMITTED (the default here, not overridden anywhere): statements
+		// after the lock see the winner's committed rows. Under REPEATABLE READ the snapshot would
+		// predate the lock and this would be unsound.
+		//
+		// NOT covered, and unchanged from before: featureSet and effectiveDependencies are a
+		// pre-lock snapshot of the branch's CONFIG. A concurrent dependency edit is therefore
+		// applied stale. That is a different race from the one this lock closes (integrators do
+		// not edit branch config) and it predates this method's locking entirely.
+		if (branchService.getBranchWriteLocked(featureSet.getUuid()).isEmpty()) {
+			// Not merely "nothing to do": everything below assumes this lock is held, so a vanished
+			// feature set must not read as a successful no-op integration.
+			throw new IllegalStateException("Cannot integrate feature set " + featureSet.getUuid()
+					+ ": branch not found");
+		}
+
+		// 2c. Re-check under the lock: step 2 ran unlocked, so a concurrent integrator may have
+		// committed the product release in between. This deliberately runs step 2's queries twice
+		// for any release that gets past the pre-filter -- cheaper than holding the lock across
+		// them for every pattern feature set in the org.
+		if (!shouldProceedWithAutoIntegrate(featureSet, triggeringRelease, matchingDependency.get())) {
+			return;
+		}
+
 		
 		// 3. Gather releases from all dependencies
 		Optional<Set<ParentRelease>> dependencyReleasesOpt = gatherReleasesFromDependencies(featureSet, triggeringRelease, effectiveDependencies);
@@ -1182,8 +1320,12 @@ public class OssReleaseService {
 			return;
 		}
 
-		// 7. Create the product release
-		createProductRelease(featureSet, triggeringRelease.getOrg(), updatedReleases);
+		// 7. Create the product release -- empty means the create FAILED, not "nothing to do".
+		if (createProductRelease(featureSet, triggeringRelease.getOrg(), updatedReleases).isEmpty()) {
+			throw new IllegalStateException("Auto-integrate could not create the product release for feature set "
+					+ featureSet.getUuid() + " triggered by release " + triggeringRelease.getUuid()
+					+ "; leaving it queued for retry");
+		}
 	}
 	
 	/**
