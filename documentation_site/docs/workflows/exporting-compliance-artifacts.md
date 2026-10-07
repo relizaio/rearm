@@ -99,11 +99,14 @@ Every caller written before these arguments existed -- including `rearm-cli` -- 
 
 **Shown whenever the server offers the option**, and **off by default**. The organization
 setting says the disclosure is *allowed*; it does not say every download wants it, so each export
-opts in. When the organization setting is off the switch is **greyed out**, with a hint that
-support disclosure is off for this organization and that an organization admin turns it on in
-**Organization Settings -> Support disclosure export**. A greyed-out switch sends nothing, so the
-organization setting decides. A server that does not offer the option at all (a ReARM CE
-installation before its next sync) shows no switch, and says so.
+opts in. The switch follows the setting of the organization that **owns the release**, which may
+differ from the organization selected in the header. When that setting is off the switch is
+**greyed out**, with a hint that support disclosure is off for this organization and that an
+organization admin turns it on in **Organization Settings -> Support disclosure export**. While
+ReARM checks the setting, or when it cannot, the switch is greyed out and the export follows the
+organization setting. A greyed-out switch sends nothing, so the organization setting decides. A
+server that does not offer the option at all (a ReARM CE installation before its next sync) shows
+no switch, and says so.
 
 | Setting | Effect |
 |---|---|
@@ -284,8 +287,8 @@ it is not, because the person holding the file is the one who asked for it that 
 stripped identically -- only the statement differs.
 
 Note that the export modal now defaults the support switch **off**, so a document downloaded from
-the UI without touching it is the declined case and carries no marker. When the organization
-setting is off the switch is greyed out and sends nothing, so that document is marked
+the UI without touching it is the declined case and carries no marker. When the release's
+organization setting is off the switch is greyed out and sends nothing, so that document is marked
 `provenance-stripped-no-disclosure`. Scripted callers that omit
 the argument are unaffected: omission means "the organization decides" and is marked as before.
 
