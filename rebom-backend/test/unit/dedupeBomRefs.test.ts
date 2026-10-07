@@ -11,6 +11,7 @@ import {
 
 const X = 'pkg:maven/io.example/app@1.0.0?type=jar';
 const SUPPLIER = { name: 'Example Supplier' };
+const LODASH = 'pkg:npm/lodash@4.17.21';
 
 function doc(components: any[], extra: any = {}): any {
     return {
@@ -103,6 +104,57 @@ describe('dedupeBomRefs', () => {
             lib('Z', { components: [lib('Z1'), lib('Z2')] })
         ]);
         expect(marker(bom)).toStrictEqual([{ name: BOM_REFS_DEDUPLICATED_PROPERTY, value: '1' }]);
+    });
+
+    it('keys on the bom-ref, not the purl: one purl under different bom-refs stays, one bom-ref across purls folds (ADR-2)', () => {
+        // merge-boms collapses equal purls only at the top level: nested components and the
+        // subtrees HIERARCHICAL hangs under each root keep their own bom-refs.
+        const input = doc([
+            lib('lodash-a', { purl: LODASH }),
+            lib('X', {
+                purl: 'pkg:npm/x@1',
+                components: [
+                    lib('lodash-b', { purl: LODASH }),
+                    lib('X', { purl: 'pkg:npm/x-copy@1', description: 'copy' }),
+                    lib('Y')
+                ]
+            }),
+            lib('lodash-c', { purl: LODASH })
+        ]);
+
+        const { bom, count } = dedupeBomRefs(input);
+
+        expect(count).toBe(1);
+        expect(bom.components).toStrictEqual([
+            lib('lodash-a', { purl: LODASH }),
+            lib('X', {
+                purl: 'pkg:npm/x@1',
+                components: [lib('lodash-b', { purl: LODASH }), lib('Y')],
+                description: 'copy'
+            }),
+            lib('lodash-c', { purl: LODASH })
+        ]);
+        expect(allRefs(bom)).toStrictEqual(['ROOT', 'lodash-a', 'X', 'lodash-b', 'Y', 'lodash-c']);
+    });
+
+    it('keeps bom-refs that differ only in case (ADR-2)', () => {
+        const upper = 'pkg:npm/Foo@1';
+        const lower = 'pkg:npm/foo@1';
+        const input = doc([
+            lib(upper, { name: 'Foo' }),
+            lib('B'),
+            lib('A', { components: [lib(lower, { name: 'foo' }), lib('B'), lib('C')] })
+        ]);
+
+        const { bom, count } = dedupeBomRefs(input);
+
+        expect(count).toBe(1);
+        expect(bom.components).toStrictEqual([
+            lib(upper, { name: 'Foo' }),
+            lib('B'),
+            lib('A', { components: [lib(lower, { name: 'foo' }), lib('C')] })
+        ]);
+        expect(allRefs(bom)).toStrictEqual(['ROOT', upper, 'B', 'A', lower, 'C']);
     });
 
     it('collapses a component equal to metadata.component into the root (T-4)', () => {
@@ -289,6 +341,43 @@ describe('dedupeBomRefs', () => {
             scope: 'required'
         });
         expect(bom.components.slice(1)).toStrictEqual([lib('A', { components: [] }), lib('B')]);
+    });
+
+    it('unions externalReferences by type and url together, so one url under two types stays twice (ADR-4)', () => {
+        // The common case: a website and a vcs reference both pointing at the repository.
+        const repo = 'https://github.com/example/app';
+        const input = doc([
+            lib(X, { externalReferences: [{ type: 'website', url: repo }, { type: 'vcs', url: 'https://example.com/a' }] }),
+            lib('A', {
+                components: [
+                    lib(X, {
+                        externalReferences: [
+                            { type: 'vcs', url: repo },
+                            { type: 'website', url: repo },
+                            { type: 'website', url: 'https://example.com/a' }
+                        ]
+                    }),
+                    lib('A1')
+                ]
+            }),
+            lib('B')
+        ]);
+
+        const { bom, count } = dedupeBomRefs(input);
+
+        expect(count).toBe(1);
+        expect(bom.components).toStrictEqual([
+            lib(X, {
+                externalReferences: [
+                    { type: 'website', url: repo },
+                    { type: 'vcs', url: 'https://example.com/a' },
+                    { type: 'vcs', url: repo },
+                    { type: 'website', url: 'https://example.com/a' }
+                ]
+            }),
+            lib('A', { components: [lib('A1')] }),
+            lib('B')
+        ]);
     });
 
     it('finds a duplicate nested inside a duplicate (T-8)', () => {
