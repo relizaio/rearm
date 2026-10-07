@@ -651,6 +651,23 @@ const RELEASE_COLLECTION_DATA = `
     }
     
 `
+// SBOM readiness score (SCORE-6): the scoring engine's report as a JSON string, or one error
+// with extensions.code SBOM_SCORE_ERROR and extensions.reason. Queries, always sent no-cache.
+// The release one takes exactly the export's shaping arguments, so it scores what Export gives.
+const RELEASE_SBOM_SCORE_GQL = gql`
+query releaseSbomScore($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType,
+    $belongsTo: ArtifactBelongsToEnum, $excludeCoverageTypes: [ArtifactCoverageType],
+    $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean, $profiles: [String!]!) {
+    releaseSbomScore(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure,
+        belongsTo: $belongsTo, excludeCoverageTypes: $excludeCoverageTypes,
+        includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata, profiles: $profiles)
+}`
+
+const ARTIFACT_SBOM_SCORE_GQL = gql`
+query artifactSbomScore($artifact: ID!, $raw: Boolean, $version: Int, $profiles: [String!]!) {
+    artifactSbomScore(artifact: $artifact, raw: $raw, version: $version, profiles: $profiles)
+}`
+
 const ARTIFACT_DETAIL_DATA = `
     uuid
     displayIdentifier
@@ -1959,4 +1976,6 @@ export default {
     LatestReleasesOfComponentGql: LATEST_RELEASES_OF_COMPONENT_GQL,
     FeatureSetsUsingComponentGql: FEATURE_SETS_USING_COMPONENT_GQL,
     FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
+    ReleaseSbomScoreGql: RELEASE_SBOM_SCORE_GQL,
+    ArtifactSbomScoreGql: ARTIFACT_SBOM_SCORE_GQL,
 }

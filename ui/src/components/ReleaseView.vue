@@ -10,6 +10,7 @@
                 v-model:show="showExportSBOMModal"
                 title='Export Release BOM'
                 preset="dialog"
+                :style="sbomScoreRequested ? 'width: 90%; max-width: 1100px' : undefined"
                 :show-icon="false" >
                 <n-form-item label="Select BOM Type">
                     <n-radio-group v-model:value="exportBomType" name="xBomType">
@@ -312,14 +313,47 @@
                             </div>
                         </div>
                     </n-form-item>
-                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
-                        <n-button type="success" 
-                            :disabled="bomExportPending"
-                            @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
-                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
-                            <span v-else>Export</span>
-                        </n-button>
-                    </n-spin>
+                    <n-space :size="8" style="margin-top: 5px;">
+                        <!-- SCORE-6: scores the document Export gives for the same options. Beside
+                             Export, no permission gate of its own: the backend checks the same
+                             download permission the export needs. -->
+                        <n-spin :show="sbomScorePending" small>
+                            <n-tooltip trigger="hover" :disabled="!releaseSbomScoreDisabled">
+                                <template #trigger>
+                                    <span>
+                                        <n-button type="default"
+                                            data-testid="release-sbom-score"
+                                            :disabled="releaseSbomScoreDisabled || sbomScorePending"
+                                            @click="scoreReleaseSbom">
+                                            <span v-if="sbomScorePending" class="ml-2">Scoring...</span>
+                                            <span v-else>Score</span>
+                                        </n-button>
+                                    </span>
+                                </template>
+                                Scoring applies to SBOM exports in JSON
+                            </n-tooltip>
+                        </n-spin>
+                        <n-spin :show="bomExportPending" small>
+                            <n-button type="success" 
+                                :disabled="bomExportPending"
+                                @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
+                                <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                                <span v-else>Export</span>
+                            </n-button>
+                        </n-spin>
+                    </n-space>
+                    <div v-if="sbomScoreRequested" style="margin-top: 12px;">
+                        <div v-if="releaseSbomScoreOptionsChanged" data-testid="release-sbom-score-stale"
+                            style="color: #999; font-size: 12px; margin-bottom: 6px;">
+                            Options changed; score again
+                        </div>
+                        <sbom-score-panel
+                            :key="sbomScoreRun"
+                            v-model:pending="sbomScorePending"
+                            :load="loadReleaseSbomScore"
+                            file-kind="release"
+                            :file-id="updatedRelease.uuid" />
+                    </div>
                 </n-form>
                 <n-form v-if="exportBomType === 'OBOM'">
                     <h3>Format: CycloneDX 1.6 (JSON)</h3>
@@ -1010,6 +1044,21 @@
                 <n-button type="success" @click="executeDownload">
                     Download
                 </n-button>
+            </n-modal>
+            <n-modal
+                v-model:show="showSbomScoreModal"
+                :title="`SBOM score: ${sbomScoreArtifact?.displayIdentifier || sbomScoreArtifact?.uuid || ''}`"
+                preset="dialog"
+                style="width: 90%; max-width: 1100px"
+                :show-icon="false" >
+                <div style="color: #999; font-size: 12px; margin-bottom: 8px;">Scored: augmented document, latest version</div>
+                <sbom-score-panel
+                    v-if="showSbomScoreModal && sbomScoreArtifact"
+                    :key="sbomScoreArtifactRun"
+                    v-model:pending="sbomArtifactScorePending"
+                    :load="loadArtifactSbomScore"
+                    file-kind="artifact"
+                    :file-id="sbomScoreArtifact.uuid" />
             </n-modal>
             <div v-if="release && release.componentDetails">
                 <n-grid :cols="7">
@@ -2106,6 +2155,7 @@ import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
@@ -2122,6 +2172,7 @@ import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
 import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
@@ -2140,7 +2191,7 @@ import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, Tag, Trash, Refresh, X } from '@vicons/tabler'
+import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
@@ -3401,6 +3452,8 @@ function openExportModal () {
     // OFF over a file that carries the attestations anyway would be the worst of both.
     includeSupportMetadata.value = false
     includeInternalMetadata.value = false
+    // A reopened dialog starts without a score: the last one may be of other options.
+    sbomScoreRequested.value = false
     showExportSBOMModal.value = true
 }
 
@@ -5914,6 +5967,82 @@ const SBOM_EXPORT_CORE = gql`
         releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
     }`
 
+/**
+ * SBOM readiness score of the export (SCORE-6). The variables are the export's own, mapped by
+ * buildReleaseScoreVariables exactly as exportReleaseSbom maps them, so the score is of the
+ * document Export gives. Each click mounts a fresh SbomScorePanel (sbomScoreRun is its key),
+ * which runs the query, owns the 185 s abort and shows the report or the error in this dialog.
+ */
+const sbomScoreRequested: Ref<boolean> = ref(false)
+const sbomScorePending: Ref<boolean> = ref(false)
+const sbomScoreRun: Ref<number> = ref(0)
+// The variables of the score on show, as JSON, to say when the form no longer matches it.
+const sbomScoredVariables: Ref<string> = ref('')
+
+const releaseSbomScoreDisabled: ComputedRef<boolean> = computed((): boolean =>
+    exportBomType.value !== 'SBOM' || selectedSbomMediaType.value !== 'JSON')
+
+function currentReleaseScoreVariables (): Record<string, any> {
+    return buildReleaseScoreVariables({
+        release: updatedRelease.value.uuid,
+        tldOnly: tldOnly.value,
+        ignoreDev: ignoreDev.value,
+        selectedBomStructureType: selectedBomStructureType.value,
+        selectedRebomType: selectedRebomType.value,
+        computedExcludeCoverageTypes: computedExcludeCoverageTypes.value,
+        includeSupportMetadata: includeSupportMetadata.value,
+        includeInternalMetadata: includeInternalMetadata.value,
+        orgSupportInjectionEnabled: orgSupportInjectionEnabled.value,
+        exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value
+    })
+}
+
+const releaseSbomScoreOptionsChanged: ComputedRef<boolean> = computed((): boolean =>
+    sbomScoreRequested.value && JSON.stringify(currentReleaseScoreVariables()) !== sbomScoredVariables.value)
+
+function scoreReleaseSbom () {
+    if (releaseSbomScoreDisabled.value || sbomScorePending.value) return
+    sbomScoredVariables.value = JSON.stringify(currentReleaseScoreVariables())
+    sbomScoreRequested.value = true
+    sbomScoreRun.value++
+}
+
+async function loadReleaseSbomScore (signal: AbortSignal): Promise<string> {
+    const resp: any = await graphqlClient.query({
+        query: graphqlQueries.ReleaseSbomScoreGql,
+        variables: JSON.parse(sbomScoredVariables.value),
+        fetchPolicy: 'no-cache',
+        context: { fetchOptions: { signal } }
+    })
+    return resp.data?.releaseSbomScore
+}
+
+/**
+ * The score of one BOM artifact (SCORE-6), offered beside its Download icon: the augmented
+ * document, latest version (design D-11). The dialog scores on open and drops the report on close.
+ */
+const showSbomScoreModal: Ref<boolean> = ref(false)
+const sbomScoreArtifact: Ref<any> = ref(null)
+const sbomArtifactScorePending: Ref<boolean> = ref(false)
+const sbomScoreArtifactRun: Ref<number> = ref(0)
+
+function openSbomScoreModal (artifact: any) {
+    if (sbomArtifactScorePending.value) return
+    sbomScoreArtifact.value = artifact
+    sbomScoreArtifactRun.value++
+    showSbomScoreModal.value = true
+}
+
+async function loadArtifactSbomScore (signal: AbortSignal): Promise<string> {
+    const resp: any = await graphqlClient.query({
+        query: graphqlQueries.ArtifactSbomScoreGql,
+        variables: { artifact: sbomScoreArtifact.value.uuid, raw: false, profiles: [...SBOM_SCORE_PROFILES] },
+        fetchPolicy: 'no-cache',
+        context: { fetchOptions: { signal } }
+    })
+    return resp.data?.artifactSbomScore
+}
+
 function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {
     return graphqlClient.mutate({ mutation, variables, fetchPolicy: 'no-cache' })
 }
@@ -7477,6 +7606,22 @@ function renderDtrackPill (row: any): any {
     return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Awaiting Dependency-Track submission' }, () => 'Scan pending')
 }
 
+/**
+ * The Download icon and, for a downloadable BOM, the Score SBOM icon beside it (SCORE-6). One
+ * helper for both artifact tables so their rows cannot drift; the score follows exactly the
+ * download's condition plus type BOM, and the backend enforces the download permission.
+ */
+function renderArtifactActionIcons (row: any): any[] {
+    const els: any[] = []
+    const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
+    if (!isDownloadable) return els
+    els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+    if (row.type === 'BOM') {
+        els.push(h(NIcon, { title: 'Score SBOM', class: 'icons clickable', size: 25, 'data-testid': 'artifact-sbom-score', onClick: () => openSbomScoreModal(row) }, () => h(ReportAnalytics)))
+    }
+    return els
+}
+
 const artifactsTableFields: DataTableColumns<any> = [
     { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
     { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
@@ -7488,9 +7633,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            let els: any[] = renderArtifactActionIcons(row)
             els.push(h(NIcon, { title: 'Upload New Artifact Version', class: 'icons clickable', size: 25, onClick: () => uploadNewBomVersion(row) }, () => h(Edit)))
             if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
             renderArtifactDtrackActions(row, els)
@@ -7515,9 +7658,7 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            let els: any[] = renderArtifactActionIcons(row)
             if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
             renderArtifactDtrackActions(row, els)
             if (!els.length) els.push(h('span', 'N/A'))
