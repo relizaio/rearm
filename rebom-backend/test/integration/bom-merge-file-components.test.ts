@@ -106,8 +106,9 @@ describe('BOM merge leaving out file components', () => {
             for (const r of dep.dependsOn || []) expect(r.startsWith('file-')).toBe(false);
         }
         expect(refs.size).toBeGreaterThan(0);
+        // The name written out on purpose: ReARM's export keeps exactly this name through its strips.
         expect(bom.metadata.properties.filter((p: any) => p.name === FILE_COMPONENTS_EXCLUDED_PROPERTY))
-            .toEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '3' }]);
+            .toEqual([{ name: 'reliza:export:fileComponentsExcluded', value: '3' }]);
         expect(record.meta.excludeFileComponents).toBe(true);
     });
 

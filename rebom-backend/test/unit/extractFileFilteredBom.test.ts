@@ -149,6 +149,87 @@ describe('extractFileFilteredBom', () => {
         });
     });
 
+    describe('what counts as a file (ADR-3)', () => {
+        it('drops type file exactly, and keeps an absent, unknown or other-case type', () => {
+            const input = graphBom();
+            input.components.push(
+                { name: 'untyped', version: '1', 'bom-ref': 'U' },
+                { type: 'File', name: 'upper', 'bom-ref': 'FU' },
+                { type: 'FILE', name: 'caps', 'bom-ref': 'FC' },
+                { type: 'files', name: 'plural', 'bom-ref': 'FP' },
+                { type: 'not-a-cyclonedx-type', name: 'unknown', 'bom-ref': 'X' }
+            );
+            input.dependencies.push({ ref: 'C', dependsOn: ['U', 'FU', 'FC', 'FP', 'X'] });
+            const { bom, excludedCount } = extractFileFilteredBom(input);
+
+            expect(excludedCount).toBe(3);
+            expect(bom.components.map((c: any) => c['bom-ref']))
+                .toEqual(['A', 'B', 'C', 'P', 'D', 'OS', 'U', 'FU', 'FC', 'FP', 'X']);
+            expect(bom.dependencies.filter((d: any) => d.ref === 'C').pop().dependsOn)
+                .toEqual(['U', 'FU', 'FC', 'FP', 'X']);
+        });
+    });
+
+    describe('what is kept is kept as it was (ADR-4)', () => {
+        function richBom(): any {
+            const bom = graphBom();
+            for (const c of [...bom.components, bom.components[5].components[1]]) {
+                c.purl = `pkg:generic/${c.name}@1`;
+                c.licenses = [{ license: { id: 'MIT' } }];
+                c.properties = [{ name: 'cdx:x', value: c.name }];
+                c.hashes = [{ alg: 'SHA-256', content: 'a'.repeat(64) }];
+            }
+            return bom;
+        }
+
+        it('keeps every field of every kept component, nested ones included', () => {
+            const input = richBom();
+            const expected = JSON.parse(JSON.stringify(input.components.filter((c: any) => c.type !== 'file')));
+            expected.find((c: any) => c['bom-ref'] === 'P').components = [JSON.parse(JSON.stringify(input.components[5].components[1]))];
+            const { bom } = extractFileFilteredBom(input);
+
+            expect(bom.components).toStrictEqual(expected);
+        });
+
+        it('leaves a document without file components as it was, apart from the count', () => {
+            const input = richBom();
+            input.components = input.components.filter((c: any) => c.type !== 'file');
+            input.components.find((c: any) => c['bom-ref'] === 'P').components.splice(0, 1);
+            input.dependencies = [
+                { ref: ROOT, dependsOn: ['A', 'P'] },
+                { ref: 'A', dependsOn: ['B'], provides: ['C'] },
+                { ref: 'B', dependsOn: [] },
+                { ref: 'C', dependsOn: ['D'] },
+                { ref: 'P', dependsOn: ['N'] }
+            ];
+            input.compositions = [{ aggregate: 'complete', assemblies: ['A'], dependencies: [ROOT] }];
+            input.vulnerabilities = [{ id: 'V-1', affects: [{ ref: 'A' }] }];
+            const before = JSON.parse(JSON.stringify(input));
+            const { bom, excludedCount } = extractFileFilteredBom(input);
+
+            expect(excludedCount).toBe(0);
+            const { metadata, ...rest } = bom;
+            const { metadata: metadataBefore, ...restBefore } = before;
+            expect(rest).toStrictEqual(restBefore);
+            expect(metadata).toStrictEqual({
+                ...metadataBefore,
+                properties: [{ name: 'reliza:export:fileComponentsExcluded', value: '0' }]
+            });
+        });
+
+        it('de-duplicates what two files splice into one entry, first-seen order', () => {
+            const input = graphBom();
+            input.components.push({ type: 'file', name: 'f4', 'bom-ref': 'F4' });
+            depOf(input, 'F1').dependsOn = ['B', 'C'];
+            input.dependencies.push({ ref: 'F4', dependsOn: ['B'] });
+            input.dependencies.push({ ref: 'X', dependsOn: ['F1', 'C', 'F4', 'B'] });
+            const { bom } = extractFileFilteredBom(input);
+
+            expect(depOf(bom, 'X').dependsOn).toEqual(['B', 'C']);
+            expect(depOf(bom, 'A').dependsOn).toEqual(['B', 'C']);
+        });
+    });
+
     describe('compositions, vulnerabilities and annotations (T-2)', () => {
         function withRefs(): any {
             const bom = graphBom();
@@ -200,6 +281,16 @@ describe('extractFileFilteredBom', () => {
             const { bom } = extractFileFilteredBom(graphBom());
 
             expect(excludedProps(bom)).toEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '3' }]);
+        });
+
+        it('names the property reliza:export:fileComponentsExcluded, outside the namespace ReARM strips', () => {
+            // Written out, not imported: ReARM's export keeps exactly this name through its
+            // reliza:support:* strip and its internal-metadata strip, so a rename here would
+            // silently drop the record from every export.
+            const { bom } = extractFileFilteredBom(graphBom());
+
+            expect(FILE_COMPONENTS_EXCLUDED_PROPERTY).toBe('reliza:export:fileComponentsExcluded');
+            expect(bom.metadata.properties).toEqual([{ name: 'reliza:export:fileComponentsExcluded', value: '3' }]);
         });
 
         it('records 0 on a document with no file component', () => {
