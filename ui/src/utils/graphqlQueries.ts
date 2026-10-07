@@ -657,10 +657,12 @@ const RELEASE_COLLECTION_DATA = `
 const RELEASE_SBOM_SCORE_GQL = gql`
 query releaseSbomScore($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType,
     $belongsTo: ArtifactBelongsToEnum, $excludeCoverageTypes: [ArtifactCoverageType],
-    $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean, $profiles: [String!]!) {
+    $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean, $excludeFileComponents: Boolean,
+    $profiles: [String!]!) {
     releaseSbomScore(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure,
         belongsTo: $belongsTo, excludeCoverageTypes: $excludeCoverageTypes,
-        includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata, profiles: $profiles)
+        includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata,
+        excludeFileComponents: $excludeFileComponents, profiles: $profiles)
 }`
 
 const ARTIFACT_SBOM_SCORE_GQL = gql`

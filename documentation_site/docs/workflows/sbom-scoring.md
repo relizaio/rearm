@@ -59,9 +59,15 @@ in the same dialog.
 
 The score is of exactly the document **Export** would give you with the same options: SBOM
 configuration, structure, top-level dependencies only, ignore optional dependencies, the coverage
-type filter and the support and internal metadata options all change the scored document. Scoring
-applies to JSON SBOM exports only; for CSV and Excel the button is disabled. If you change an
-option after scoring, the dialog says "Options changed; score again" until you score again.
+type filter, the support and internal metadata options and **Leave out file components** all change
+the scored document. Scoring applies to JSON SBOM exports only; for CSV and Excel the button is
+disabled. If you change an option after scoring, the dialog says "Options changed; score again"
+until you score again.
+
+With **Leave out file components** on, the score is of the document the dialog would export,
+without the file components; the report's `componentsSkipped` is the CLI flag's count (see
+`--skip-files` below) and stays 0 here, because the files are already gone from the document. The
+number left out is on the exported document, in `reliza:export:fileComponentsExcluded`.
 
 ### A BOM artifact
 

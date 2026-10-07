@@ -278,6 +278,30 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
+                    <!-- SCORE-11. Beside the other filters that shape WHICH COMPONENTS the BOM
+                         lists, not among the metadata switches: unlike those it changes CSV and
+                         EXCEL too (rebom stores the filtered merge and renders all three from it),
+                         so the "inert for this format" line above must not read as covering it.
+                         Disabled, not hidden, on a server without it: the operator asked for a
+                         document this server cannot make, and the reason is worth showing. -->
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Leave out file components:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                <span v-if="exportFileSwitchAvailable">
+                                    Drops components of type file (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out.
+                                </span>
+                                <span v-else>Not available on this server.</span>
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" data-testid="export-exclude-file-components"
+                            v-model:value="excludeFileComponents" :disabled="!exportFileSwitchAvailable"/>
+                    </n-form-item>
                     <n-form-item>
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
@@ -2174,7 +2198,8 @@ import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/rele
 import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
-import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
 import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -3432,6 +3457,13 @@ const includeInternalMetadata: Ref<boolean> = ref(false)
 const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
 
 /**
+ * "Leave out file components" (SCORE-11): the switch, its availability on this server, the export
+ * document it sends and its refusal latch, in utils/useFileComponentsSwitch so a test can run them.
+ */
+const fileComponentsSwitch = useFileComponentsSwitch(exportMetadataArgsUnsupported)
+const { excludeFileComponents, exportFileSwitchAvailable, excludeFileComponentsRequested } = fileComponentsSwitch
+
+/**
  * Whether the two metadata options can change the file the operator is about to get.
  *
  * They are still SENT and still validated for CSV and EXCEL, but rebom renders those two from a
@@ -3456,6 +3488,7 @@ function openExportModal () {
     // OFF over a file that carries the attestations anyway would be the worst of both.
     includeSupportMetadata.value = false
     includeInternalMetadata.value = false
+    fileComponentsSwitch.reset()
     // A reopened dialog starts without a score: the last one may be of other options.
     releaseSbomScore.reset()
     showExportSBOMModal.value = true
@@ -5955,23 +5988,6 @@ async function exportSupportDocument () {
 }
 
 /**
- * The release BOM export, in two shapes.
- *
- * FULL carries the per-export metadata flags; CORE is the document every backend has always
- * accepted. Written out as two constants rather than built by string concatenation so both
- * are parsed at module load and validate-graphql.mjs can see them.
- */
-const SBOM_EXPORT_WITH_METADATA_FLAGS = gql`
-    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType], $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean) {
-        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes, includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata)
-    }`
-
-const SBOM_EXPORT_CORE = gql`
-    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
-        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
-    }`
-
-/**
  * SBOM readiness score of the export (SCORE-6). The variables are the export's own, mapped by
  * buildReleaseScoreVariables exactly as exportReleaseSbom maps them, so the score is of the
  * document Export gives. Each click mounts a fresh SbomScorePanel (sbomScoreRun is its key),
@@ -5992,7 +6008,8 @@ function currentReleaseScoreVariables (): Record<string, any> {
         includeSupportMetadata: includeSupportMetadata.value,
         includeInternalMetadata: includeInternalMetadata.value,
         orgSupportInjectionEnabled: orgSupportInjectionEnabled.value,
-        exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value
+        exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value,
+        excludeFileComponents: excludeFileComponentsRequested.value
     })
 }
 
@@ -6070,18 +6087,21 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         // The retry rule lives in utils/exportMetadataFallback so it can be RUN -- including
         // the case that matters most, that the server's deliberate refusal is NOT retried
         // into the flagless document the refusal exists to prevent.
-        const attempt = await exportWithMetadataFallback({
-            runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
-                ...baseVariables,
-                // Three outcomes, and the no-switch one must be NULL rather than false --
-                // the rule and the reason live in utils/exportMetadataFallback so they can
-                // be run, because nothing in the unit suite mounts this component.
-                includeSupportMetadata: supportMetadataArg(
-                    orgSupportInjectionEnabled.value, includeSupportMetadata.value),
-                includeInternalMetadata: includeInternalMetadata.value
-            }),
-            runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
-            flagsUnsupported: exportMetadataArgsUnsupported.value,
+        const fullVariables: Record<string, any> = {
+            ...baseVariables,
+            // Three outcomes, and the no-switch one must be NULL rather than false --
+            // the rule and the reason live in utils/exportMetadataFallback so they can
+            // be run, because nothing in the unit suite mounts this component.
+            includeSupportMetadata: supportMetadataArg(
+                orgSupportInjectionEnabled.value, includeSupportMetadata.value),
+            includeInternalMetadata: includeInternalMetadata.value
+        }
+        // Which document goes with the file switch on or off, and that a switched export is
+        // never retried without it, are in utils/useFileComponentsSwitch.
+        const attempt = await fileComponentsSwitch.exportReleaseSbom({
+            run: runSbomExport,
+            baseVariables,
+            fullVariables,
             isDriftError: isSchemaDriftError
         })
         if (attempt.justDiscovered) {
@@ -6118,6 +6138,11 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
+        if (fileComponentsSwitch.latchRefusal(err)) {
+            // This server cannot leave the files out; nothing was exported. Say why.
+            Swal.fire('Error!', err.message, 'error')
+            return
+        }
         Swal.fire(
             'Error!',
             commonFunctions.parseGraphQLError(err.message),

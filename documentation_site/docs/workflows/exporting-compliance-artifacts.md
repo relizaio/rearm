@@ -53,6 +53,7 @@ Exports the merged SBOM for the release. Options:
 | **Media Type** | `JSON`, `CSV`, or `Excel` |
 | **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
 | **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
+| **Leave out file components** | Drops components of type `file` (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out in the metadata property `reliza:export:fileComponentsExcluded`; it applies to every media type. On the API: `releaseSbomExport(excludeFileComponents: true)` |
 
 Click **Export** to download the file.
 
@@ -142,7 +143,13 @@ scanner -- are carried into merged and aggregated exports beside it.
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**With both switches off, no `reliza:` property remains**, not even the
+**Not removed either: `reliza:export:fileComponentsExcluded`.** It is on the document only when
+**Leave out file components** was on, and it is the file's own record that file components were
+left out of it, and how many. It describes the document you hold rather than ReARM's working
+state, so a reader of an export with internal metadata off can still tell that the inventory is
+not complete.
+
+**With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
 `includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools` and,
 where rebom recorded one, the top-level `bom` external reference to the document as uploaded
