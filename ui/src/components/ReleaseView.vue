@@ -198,13 +198,18 @@
                          do not move.
 
                          HOW MANY SWITCHES SHOW IS NOT FIXED. Support is offered only when the
-                         organization publishes attestations, so this form shows one control or
-                         two and nothing below it may say "these two". -->
-                    <!-- ABSENT, not disabled, when the organization does not publish support
-                         attestations. A switch that cannot be moved is a question the operator
-                         has no way to answer; the organization setting is where that decision
-                         is made, and it is not made here. Operator decision 2026-09-22. -->
-                    <n-form-item v-if="orgSupportInjectionEnabled">
+                         server offers the option, so this form shows one control or two and
+                         nothing below it may say "these two". -->
+                    <!-- DISABLED WITH A HINT, not absent, when the organization does not publish
+                         support attestations: the reader sees that the option exists and where
+                         it is turned on. A disabled switch still sends null (the organization
+                         default), so the server refusal of an explicit true stays unreachable
+                         from here. Supersedes the 2026-09-22 "absent, not disabled" decision:
+                         SCORE-12 round 1 D-2 / round 2 ADR-2, operator input of 2026-10-07.
+                         The gate reads the RELEASE organization's supportExportState, never the
+                         organization selected in the header: SCORE-21 round 2 ADR-11, after
+                         run 1 T-1. Unknown (checking, failed) is disabled too, with its own hint. -->
+                    <n-form-item v-if="orgSupportInjectionSupported">
                         <span style="display: inline-flex; align-items: center;">
                             Include support metadata:
                             <n-tooltip trigger="hover" style="max-width: 380px;">
@@ -216,16 +221,17 @@
                                 Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
                             </n-tooltip>
                         </span>
-                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"
+                            :disabled="!orgSupportInjectionEnabled" data-testid="export-include-support-metadata"/>
                     </n-form-item>
-                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one. The operator
-                         ruled that an organization which does not publish attestations gets no
-                         switch and no explanation -- the settings screen is where that is
-                         decided, and it is reachable. A backend that does not declare the
-                         setting at all is different: there is nothing the operator can go and
-                         change, so an unexplained missing control is just a missing control.
-                         This is the hint the "absent, not disabled" change removed without
-                         meaning to. -->
+                    <div v-if="exportSupportHint" data-testid="export-support-hint"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        {{ exportSupportHint }}
+                    </div>
+                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one above: a backend
+                         that does not declare the setting at all has nothing the operator can go
+                         and change, so the switch is absent and this says why. The two hints
+                         never show together. -->
                     <div v-if="!orgSupportInjectionSupported"
                         style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
                         This server does not offer the support-metadata disclosure yet, so that
@@ -2195,7 +2201,6 @@ import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
-import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
@@ -2216,6 +2221,7 @@ import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
+import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import { useReleaseSbomScore } from '@/utils/useReleaseSbomScore'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
@@ -3419,19 +3425,33 @@ const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed(
     (): SupportExportFormat[] => supportExportFormatsFor(isProductReleaseForStatement.value))
 
 /**
- * Whether this organization has support metadata turned on for exports.
+ * The export dialog's support switch, run in utils/useExportSupportSwitch: whether it moves,
+ * which hint sits under it, and the coverage load when the dialog opens before anything asked.
  *
- * Read through supportInjectionFromSettings, the same helper the organization settings screen
- * reads its own toggle back with, so the two cannot disagree about what a missing or unknown
- * value means. On a backend that does not declare the setting it reads false, which is the
- * safe direction: the switch is not offered rather than offering a disclosure the server will
- * not produce.
- *
- * This is the ONLY gate on whether the support switch is rendered at all, and on whether the
- * argument is sent. It is deliberately NOT the switch's default value -- see openExportModal.
+ * The RELEASE organization decides, through sbomComponentSupportCoverage(orgUuid, releaseUuid)
+ * .supportExportState -- the predicate the server gates the export with, for this release --
+ * never the organization selected in the header (SCORE-21 round 2 ADR-11, after run 1 T-1:
+ * a release of another organization showed "off" over a file that carried the disclosure).
+ * Getters, because sbomCoverageState is set up further down.
  */
-const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
-    orgSupportInjectionSupported.value && supportInjectionFromSettings(store.getters.myorg?.settings))
+const exportSupportSwitch = useExportSupportSwitch({
+    supported: (): boolean => orgSupportInjectionSupported.value,
+    coverage: () => sbomCoverage.value,
+    loading: (): boolean => sbomCoverageLoading.value,
+    load: (): Promise<void> => loadSbomCoverage()
+})
+
+/**
+ * Whether the switch can be moved: the server offers the option and the release organization's
+ * export state (exportSupportSwitch.exportState: ENABLED, DISABLED, or UNKNOWN for no coverage
+ * yet, a failed request or the retired PARTIAL) is ENABLED. Gates the switch's :disabled and,
+ * through supportMetadataArg, whether its value is sent at all (null otherwise). It is
+ * deliberately NOT the switch's default value -- see openExportModal.
+ */
+const orgSupportInjectionEnabled: ComputedRef<boolean> = exportSupportSwitch.offered
+
+/** The one hint under the switch: off, checking, could not determine, or none. */
+const exportSupportHint: ComputedRef<string | null> = exportSupportSwitch.hint
 
 /**
  * Whether this BACKEND declares the setting at all -- the third state, which the store already
@@ -3472,8 +3492,9 @@ const { excludeFileComponents, exportFileSwitchAvailable, excludeFileComponentsR
  * over a file they do not move.
  *
  * <p>The validation that goes with them is now an API-only path: this form cannot ask for a
- * disclosure the organization has disabled, because the switch is not rendered on such an org
- * and supportMetadataArg sends null rather than true. A script still can, and is still refused.
+ * disclosure the organization has disabled, because the switch is disabled unless the release's
+ * organization answers ENABLED and supportMetadataArg then sends null rather than true. A
+ * script still can, and is still refused.
  *
  * <p>Named for the two options COLLECTIVELY and worded the same way, because how many of them
  * render is not fixed -- see the support switch's v-if.
@@ -3491,6 +3512,10 @@ function openExportModal () {
     fileComponentsSwitch.reset()
     // A reopened dialog starts without a score: the last one may be of other options.
     releaseSbomScore.reset()
+    // The switch follows the release organization's export state; ask for it now when neither
+    // the SBOM list nor the Support tab has yet. Not awaited: the dialog opens in the checking
+    // state and flips when the answer lands.
+    exportSupportSwitch.loadIfUnknown()
     showExportSBOMModal.value = true
 }
 
@@ -5988,10 +6013,11 @@ async function exportSupportDocument () {
 }
 
 /**
- * SBOM readiness score of the export (SCORE-6). The variables are the export's own, mapped by
- * buildReleaseScoreVariables exactly as exportReleaseSbom maps them, so the score is of the
- * document Export gives. Each click mounts a fresh SbomScorePanel (sbomScoreRun is its key),
- * which runs the query, owns the 185 s abort and shows the report or the error in this dialog.
+ * SBOM readiness score of the export (SCORE-6). The content options are the export's own, mapped
+ * by buildReleaseScoreVariables exactly as exportReleaseSbom maps them; the two metadata switches
+ * are not sent, so the score follows the organization setting (SCORE-12 ADR-3). Each click
+ * mounts a fresh SbomScorePanel (sbomScoreRun is its key), which runs the query, owns the 185 s
+ * abort and shows the report or the error in this dialog.
  * The snapshot, the options-changed line and the disabled state live in useReleaseSbomScore.
  */
 const releaseSbomScoreDisabled: ComputedRef<boolean> = computed((): boolean =>
@@ -6005,9 +6031,6 @@ function currentReleaseScoreVariables (): Record<string, any> {
         selectedBomStructureType: selectedBomStructureType.value,
         selectedRebomType: selectedRebomType.value,
         computedExcludeCoverageTypes: computedExcludeCoverageTypes.value,
-        includeSupportMetadata: includeSupportMetadata.value,
-        includeInternalMetadata: includeInternalMetadata.value,
-        orgSupportInjectionEnabled: orgSupportInjectionEnabled.value,
         exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value,
         excludeFileComponents: excludeFileComponentsRequested.value
     })
