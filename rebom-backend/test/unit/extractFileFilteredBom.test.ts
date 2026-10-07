@@ -191,6 +191,31 @@ describe('extractFileFilteredBom', () => {
             expect(bom.components).toStrictEqual(expected);
         });
 
+        it('keeps every field of a component lifted out of a dropped file, nested ones included (T-7)', () => {
+            const rich = (name: string, ref: string, extra: any = {}): any => ({
+                type: 'library', name, version: '1', 'bom-ref': ref,
+                purl: `pkg:generic/${name}@1`,
+                licenses: [{ license: { id: 'MIT' } }],
+                properties: [{ name: 'cdx:x', value: name }],
+                hashes: [{ alg: 'SHA-256', content: 'b'.repeat(64) }],
+                ...extra
+            });
+            const input = richBom();
+            // F1 (top level) holds a library that holds a library; F3 (under P) holds a file
+            // that holds a library, so that one is lifted through two dropped files.
+            input.components[1].components = [rich('inner', 'I', { components: [rich('innermost', 'II')] })];
+            input.components[5].components[0].components = [
+                { type: 'file', name: 'f5', 'bom-ref': 'F5', components: [rich('deep', 'DP')] }
+            ];
+            const liftedFromF1 = JSON.parse(JSON.stringify(input.components[1].components[0]));
+            const liftedFromF5 = JSON.parse(JSON.stringify(input.components[5].components[0].components[0].components[0]));
+            const { bom, excludedCount } = extractFileFilteredBom(input);
+
+            expect(excludedCount).toBe(4);
+            expect(bom.components[1]).toStrictEqual(liftedFromF1);
+            expect(bom.components.find((c: any) => c['bom-ref'] === 'P').components[0]).toStrictEqual(liftedFromF5);
+        });
+
         it('leaves a document without file components as it was, apart from the count', () => {
             const input = richBom();
             input.components = input.components.filter((c: any) => c.type !== 'file');
