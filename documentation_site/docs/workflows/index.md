@@ -14,6 +14,7 @@ sidebarDepth: 2
 - [Importing VEX](./importing-vex)
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
+- [Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring)
 - [Pull Requests](./pull-requests)
 - [Committers & Commit Signing](./committers)
 

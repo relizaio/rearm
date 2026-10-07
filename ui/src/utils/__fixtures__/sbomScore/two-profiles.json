@@ -1,0 +1,234 @@
+{
+  "reportVersion": 1,
+  "engine": {
+    "name": "rearm-cli",
+    "version": "test"
+  },
+  "input": {
+    "format": "CycloneDX",
+    "specVersion": "1.6",
+    "serialization": "json",
+    "components": 4,
+    "sha256": "0000000000000000000000000000000000000000000000000000000000000000"
+  },
+  "profiles": [
+    {
+      "key": "cisa-2026",
+      "title": "CISA Minimum Elements for an SBOM (2026)",
+      "source": {
+        "title": "CISA et al., 2026 Minimum Elements for a Software Bill of Materials (SBOM)",
+        "version": "2.1",
+        "date": "2026-07-29",
+        "url": "https://www.cisa.gov/sites/default/files/2026-07/2026_cisa_sbom_minimum_elements_508c.pdf"
+      },
+      "verdict": "NOT_READY",
+      "score": null,
+      "summary": {
+        "pass": 2,
+        "fail": 2,
+        "notAssessed": 1,
+        "errors": 1
+      },
+      "checks": [
+        {
+          "id": "cisa.component.name",
+          "title": "Component Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "2.1 Component Name",
+          "remedy": "keep a name on every component",
+          "note": ""
+        },
+        {
+          "id": "cisa.component.license",
+          "title": "License",
+          "level": "INFO",
+          "scope": "COMPONENT",
+          "status": "FAIL",
+          "passed": 2,
+          "total": 4,
+          "failing": [
+            "pkg:npm/alpha@1.0.0",
+            "pkg:pypi/gamma@3.1.0"
+          ],
+          "failingTruncated": false,
+          "ref": "2.1 License",
+          "remedy": "declare the license",
+          "note": "license is optional in this profile"
+        },
+        {
+          "id": "cisa.document.generation-context",
+          "title": "Generation Context",
+          "level": "INFO",
+          "scope": "COMPONENT",
+          "status": "NOT_ASSESSED",
+          "passed": 0,
+          "total": 0,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "2.1 Generation Context",
+          "remedy": "record when and how the SBOM was generated",
+          "note": "the document does not say when it was generated"
+        },
+        {
+          "id": "cisa.component.hash",
+          "title": "Component Hash",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "FAIL",
+          "passed": 1,
+          "total": 4,
+          "failing": [
+            "pkg:golang/example.com/delta@v0.4.2",
+            "pkg:maven/org.beta/beta@2.0.0"
+          ],
+          "failingTruncated": true,
+          "ref": "2.1 Component Hash",
+          "remedy": "regenerate the SBOM with hashes",
+          "note": "a hash is required for every component"
+        },
+        {
+          "id": "cisa.component.supplier",
+          "title": "Supplier Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "ERROR",
+          "passed": 0,
+          "total": 0,
+          "failing": [
+            "pkg:npm/epsilon@5.0.0"
+          ],
+          "failingTruncated": false,
+          "ref": "2.1 Supplier Name",
+          "remedy": "name the supplier of every component",
+          "note": ""
+        },
+        {
+          "id": "cisa.document.author",
+          "title": "Author Name",
+          "level": "INFO",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "2.1 Author Name",
+          "remedy": "",
+          "note": ""
+        }
+      ]
+    },
+    {
+      "key": "fda",
+      "title": "FDA Premarket SBOM (2026)",
+      "source": {
+        "title": "FDA, Cybersecurity in Medical Devices, section V.A.4(b)",
+        "version": "",
+        "date": "2026-02-03",
+        "url": "https://www.fda.gov/media/119933/download"
+      },
+      "verdict": "READY",
+      "score": 100,
+      "summary": {
+        "pass": 2,
+        "fail": 0,
+        "notAssessed": 1,
+        "errors": 0
+      },
+      "checks": [
+        {
+          "id": "fda.baseline.author-name",
+          "title": "Author Name",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.component.end-of-support",
+          "title": "End-of-support date",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.document.vulnerabilities",
+          "title": "Known vulnerabilities and their assessment",
+          "level": "INFO",
+          "scope": "DOCUMENT",
+          "status": "NOT_ASSESSED",
+          "passed": 0,
+          "total": 0,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "",
+          "note": "delivered as VDR/VEX with the submission, not in the SBOM"
+        }
+      ]
+    }
+  ],
+  "structure": {
+    "checks": [
+      {
+        "id": "structure.json.valid",
+        "title": "Valid JSON",
+        "level": "REQUIRED",
+        "scope": "DOCUMENT",
+        "status": "PASS",
+        "passed": 1,
+        "total": 1,
+        "failing": [],
+        "failingTruncated": false,
+        "ref": "",
+        "remedy": "",
+        "note": ""
+      },
+      {
+        "id": "structure.cdx.schema",
+        "title": "CycloneDX schema",
+        "level": "INFO",
+        "scope": "DOCUMENT",
+        "status": "FAIL",
+        "passed": 0,
+        "total": 1,
+        "failing": [
+          "$.components[2].hashes"
+        ],
+        "failingTruncated": false,
+        "ref": "",
+        "remedy": "fix the hash entry",
+        "note": ""
+      }
+    ]
+  },
+  "errors": [
+    {
+      "check": "cisa.component.supplier",
+      "message": "supplier field has an unexpected type"
+    },
+    {
+      "check": "",
+      "message": "the dependency graph could not be read"
+    }
+  ]
+}

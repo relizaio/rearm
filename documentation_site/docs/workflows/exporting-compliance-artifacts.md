@@ -56,6 +56,13 @@ Exports the merged SBOM for the release. Options:
 
 Click **Export** to download the file.
 
+### Scoring the export
+
+Beside **Export**, **Score** checks the document the export would give you, with the same options,
+against the CISA 2026 minimum elements and the FDA premarket SBOM expectations, and shows the
+report in the same dialog. It applies to the CycloneDX 1.6 (JSON) format. See
+[Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring).
+
 ## Per-export metadata options
 
 One release is often the source of two documents with opposite requirements. An FDA premarket
