@@ -10,7 +10,7 @@
                 v-model:show="showExportSBOMModal"
                 title='Export Release BOM'
                 preset="dialog"
-                :style="sbomScoreRequested ? 'width: 90%; max-width: 1100px' : undefined"
+                :style="releaseSbomScoreShown ? 'width: 90%; max-width: 1100px' : undefined"
                 :show-icon="false" >
                 <n-form-item label="Select BOM Type">
                     <n-radio-group v-model:value="exportBomType" name="xBomType">
@@ -342,18 +342,6 @@
                             </n-button>
                         </n-spin>
                     </n-space>
-                    <div v-if="sbomScoreRequested" style="margin-top: 12px;">
-                        <div v-if="releaseSbomScoreOptionsChanged" data-testid="release-sbom-score-stale"
-                            style="color: #999; font-size: 12px; margin-bottom: 6px;">
-                            Options changed; score again
-                        </div>
-                        <sbom-score-panel
-                            :key="sbomScoreRun"
-                            v-model:pending="sbomScorePending"
-                            :load="loadReleaseSbomScore"
-                            file-kind="release"
-                            :file-id="updatedRelease.uuid" />
-                    </div>
                 </n-form>
                 <n-form v-if="exportBomType === 'OBOM'">
                     <h3>Format: CycloneDX 1.6 (JSON)</h3>
@@ -671,6 +659,21 @@
                         <span v-else>Export</span>
                     </n-button>
                 </n-form>
+                <!-- SCORE-6: the export score, outside the SBOM-only form so another BOM type
+                     hides it (v-show) instead of unmounting it: back on SBOM the same report is
+                     there and nothing is sent again (D-10). -->
+                <div v-if="sbomScoreRequested" v-show="releaseSbomScoreShown" style="margin-top: 12px;">
+                    <div v-if="releaseSbomScoreOptionsChanged" data-testid="release-sbom-score-stale"
+                        style="color: #999; font-size: 12px; margin-bottom: 6px;">
+                        Options changed; score again
+                    </div>
+                    <sbom-score-panel
+                        :key="sbomScoreRun"
+                        v-model:pending="sbomScorePending"
+                        :load="loadReleaseSbomScore"
+                        file-kind="release"
+                        :file-id="updatedRelease.uuid" />
+                </div>
             </n-modal>
             <n-modal
                 v-model:show="bulkModalOpen"
@@ -5995,9 +5998,11 @@ function currentReleaseScoreVariables (): Record<string, any> {
 
 const releaseSbomScore = useReleaseSbomScore({
     variables: currentReleaseScoreVariables,
-    formDisabled: () => releaseSbomScoreDisabled.value
+    formDisabled: () => releaseSbomScoreDisabled.value,
+    sbomForm: () => exportBomType.value === 'SBOM'
 })
 const sbomScoreRequested = releaseSbomScore.requested
+const releaseSbomScoreShown = releaseSbomScore.shown
 const sbomScorePending = releaseSbomScore.pending
 const sbomScoreRun = releaseSbomScore.run
 const releaseSbomScoreOptionsChanged = releaseSbomScore.optionsChanged

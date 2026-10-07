@@ -7,8 +7,13 @@ import { computed, ref, type ComputedRef, type Ref } from 'vue'
  * key that mounts a fresh SbomScorePanel on each click. The panel owns the request itself.
  */
 export interface ReleaseSbomScore {
-    /** A score was asked for since the dialog opened: the panel is shown. */
+    /** A score was asked for since the dialog opened: the panel is mounted. */
     requested: Ref<boolean>
+    /**
+     * The mounted panel is visible: the dialog is on the SBOM form. Another BOM type hides it
+     * without unmounting it, so going back to SBOM shows the same report and sends nothing (D-10).
+     */
+    shown: ComputedRef<boolean>
     /** The panel's v-model:pending. */
     pending: Ref<boolean>
     /** The panel's key; each Score click bumps it, so the panel mounts afresh and scores again. */
@@ -30,6 +35,8 @@ export interface ReleaseSbomScoreDeps {
     variables: () => Record<string, any>
     /** The form is not on a JSON SBOM export. */
     formDisabled: () => boolean
+    /** The dialog's BOM type is SBOM. */
+    sbomForm: () => boolean
 }
 
 export function useReleaseSbomScore (deps: ReleaseSbomScoreDeps): ReleaseSbomScore {
@@ -41,6 +48,8 @@ export function useReleaseSbomScore (deps: ReleaseSbomScoreDeps): ReleaseSbomSco
 
     const optionsChanged = computed((): boolean =>
         requested.value && JSON.stringify(deps.variables()) !== snapshot.value)
+
+    const shown = computed((): boolean => requested.value && deps.sbomForm())
 
     const buttonDisabled = computed((): boolean => deps.formDisabled() || pending.value)
 
@@ -57,6 +66,7 @@ export function useReleaseSbomScore (deps: ReleaseSbomScoreDeps): ReleaseSbomSco
 
     return {
         requested,
+        shown,
         pending,
         run,
         optionsChanged,

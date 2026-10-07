@@ -9,11 +9,13 @@ import { useReleaseSbomScore } from './useReleaseSbomScore'
 function setup () {
     const form = ref({ release: 'r1', tldOnly: true, ignoreDev: false })
     const formDisabled = ref(false)
+    const bomType = ref('SBOM')
     const score = useReleaseSbomScore({
         variables: () => ({ ...form.value, profiles: ['cisa-2026', 'fda'] }),
-        formDisabled: () => formDisabled.value
+        formDisabled: () => formDisabled.value,
+        sbomForm: () => bomType.value === 'SBOM'
     })
-    return { form, formDisabled, score }
+    return { form, formDisabled, bomType, score }
 }
 
 describe('useReleaseSbomScore', () => {
@@ -84,12 +86,29 @@ describe('useReleaseSbomScore', () => {
         expect(score.buttonDisabled.value).toBe(false)
     })
 
+    it('hides the panel on another BOM type without dropping it, and shows the same score back on SBOM (D-10)', () => {
+        const { bomType, score } = setup()
+        expect(score.shown.value).toBe(false)
+        score.score()
+        expect(score.shown.value).toBe(true)
+
+        bomType.value = 'OBOM'
+        expect(score.shown.value).toBe(false)
+        expect(score.requested.value).toBe(true)
+        bomType.value = 'SBOM'
+        // Same panel key and snapshot: nothing remounts, so nothing is sent without a click.
+        expect(score.shown.value).toBe(true)
+        expect(score.run.value).toBe(1)
+        expect(score.optionsChanged.value).toBe(false)
+    })
+
     it('drops the panel and the options line when the dialog is reopened', () => {
         const { form, score } = setup()
         score.score()
         form.value = { ...form.value, tldOnly: false }
         score.reset()
         expect(score.requested.value).toBe(false)
+        expect(score.shown.value).toBe(false)
         expect(score.optionsChanged.value).toBe(false)
     })
 })

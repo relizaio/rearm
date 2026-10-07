@@ -1,6 +1,10 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { parse as parseSfc } from '@vue/compiler-sfc'
+
+// NodeTypes.DIRECTIVE of @vue/compiler-core, which compiler-sfc does not re-export.
+const DIRECTIVE = 7
 
 /**
  * Wiring guard for the SBOM score buttons in ReleaseView (SCORE-6). ReleaseView is never
@@ -10,10 +14,12 @@ import { fileURLToPath } from 'url'
  * What only a scan can check: the helpers are imported (no vue-tsc, so a missing import is a
  * runtime ReferenceError), both artifact tables render their icons through the one helper (so
  * the Score icon cannot be on one table and missing from the other), and the two queries are
- * sent uncached with the panel's abort signal, and the export dialog binds the state that
- * useReleaseSbomScore holds (its behaviour is in useReleaseSbomScore.spec.ts).
+ * sent uncached with the panel's abort signal, the export dialog binds the state that
+ * useReleaseSbomScore holds (its behaviour is in useReleaseSbomScore.spec.ts), and the export
+ * panel sits under no BOM-type v-if, so a type switch does not remount it (parsed template).
  */
-const code = readFileSync(fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
+const source = readFileSync(fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
+const code = source
     .replace(/<!--[\s\S]*?-->/g, '')
     .replace(/\/\*[\s\S]*?\*\//g, '')
     .replace(/(^|[^:])\/\/.*$/gm, '$1')
@@ -53,19 +59,39 @@ describe('ReleaseView SBOM score wiring', () => {
     })
 
     it('binds the export dialog to useReleaseSbomScore: disabled while pending, stale line, fresh panel per click', () => {
-        expect(code).toMatch(/const releaseSbomScore = useReleaseSbomScore\(\{\s*variables: currentReleaseScoreVariables,\s*formDisabled: \(\) => releaseSbomScoreDisabled\.value\s*\}\)/)
-        for (const [alias, field] of [['sbomScoreRequested', 'requested'], ['sbomScorePending', 'pending'], ['sbomScoreRun', 'run'],
+        expect(code).toMatch(/const releaseSbomScore = useReleaseSbomScore\(\{\s*variables: currentReleaseScoreVariables,\s*formDisabled: \(\) => releaseSbomScoreDisabled\.value,\s*sbomForm: \(\) => exportBomType\.value === 'SBOM'\s*\}\)/)
+        for (const [alias, field] of [['sbomScoreRequested', 'requested'], ['releaseSbomScoreShown', 'shown'], ['sbomScorePending', 'pending'], ['sbomScoreRun', 'run'],
             ['releaseSbomScoreOptionsChanged', 'optionsChanged'], ['releaseSbomScoreButtonDisabled', 'buttonDisabled'], ['scoreReleaseSbom', 'score']]) {
             expect(code, alias).toMatch(new RegExp(`const ${alias}(: [^=]+)? = releaseSbomScore\\.${field}\\n`))
         }
         const button = code.match(/<n-button[^>]*data-testid="release-sbom-score"[^>]*>/)?.[0] || ''
         expect(button).toMatch(/:disabled="releaseSbomScoreButtonDisabled"/)
         expect(button).toMatch(/@click="scoreReleaseSbom"/)
-        const block = code.match(/<div v-if="sbomScoreRequested"[\s\S]*?<\/div>\s*<\/n-form>/)?.[0] || ''
+        const block = code.match(/<div v-if="sbomScoreRequested"[\s\S]*?:file-id="updatedRelease\.uuid" \/>/)?.[0] || ''
         expect(block).toMatch(/v-if="releaseSbomScoreOptionsChanged"[^>]*>\s*Options changed; score again/)
         expect(block).toMatch(/<sbom-score-panel\s+:key="sbomScoreRun"\s+v-model:pending="sbomScorePending"\s+:load="loadReleaseSbomScore"/)
         const load = code.match(/async function loadReleaseSbomScore[\s\S]*?\n\}/)?.[0] || ''
         expect(load).toMatch(/variables: releaseSbomScore\.scoredVariables\(\)/)
+    })
+
+    it('keeps the export score mounted across a BOM type switch: hidden by v-show, not under a type v-if (D-10)', () => {
+        // A panel under the SBOM-only form unmounts on OBOM/VDR and mounts afresh back on SBOM,
+        // and its onMounted sends the score again without a click (tester run 2, T-6).
+        const ast = parseSfc(source).descriptor.template?.ast
+        let path: any[] = []
+        const walk = (node: any, ancestors: any[]): void => {
+            if (node.tag === 'sbom-score-panel' && node.props.some((p: any) => p.exp?.content === 'loadReleaseSbomScore')) path = [...ancestors, node]
+            for (const child of node.children || []) walk(child, [...ancestors, node])
+        }
+        walk(ast, [])
+        expect(path.length).toBeGreaterThan(0)
+        const conditions = (dir: string) => path.flatMap((n: any) => (n.props || [])
+            .filter((p: any) => p.type === DIRECTIVE && p.name === dir).map((p: any) => p.exp?.content))
+        expect(conditions('if')).toEqual(['sbomScoreRequested'])
+        expect(conditions('else-if')).toEqual([])
+        expect(conditions('else')).toEqual([])
+        expect(path[path.length - 2].props.find((p: any) => p.name === 'show')?.exp?.content).toBe('releaseSbomScoreShown')
+        expect(code).toMatch(/:style="releaseSbomScoreShown \? 'width: 90%; max-width: 1100px' : undefined"/)
     })
 
     it('sends both queries uncached, with the abort signal, the artifact one on the augmented latest document', () => {
