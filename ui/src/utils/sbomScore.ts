@@ -6,7 +6,6 @@
 
 import { graphqlErrorsOf, httpStatusOf, isSchemaDriftError } from './graphqlDriftFallback'
 import commonFunctions from './commonFunctions'
-import { supportMetadataArg } from './exportMetadataFallback'
 
 // Types mirror rearm-cli internal/bomscore/report.go and check.go, names as in the JSON.
 export type SbomScoreStatus = 'PASS' | 'FAIL' | 'NOT_ASSESSED' | 'ERROR'
@@ -132,10 +131,6 @@ export interface ReleaseScoreForm {
     selectedBomStructureType: string
     selectedRebomType: string
     computedExcludeCoverageTypes: string[]
-    includeSupportMetadata: boolean
-    includeInternalMetadata: boolean
-    // Whether the support switch is offered on this org (exportReleaseSbom's supportMetadataArg).
-    orgSupportInjectionEnabled: boolean
     // This server rejected the metadata arguments on an export: the score omits them too.
     exportMetadataArgsUnsupported: boolean
     // "Leave out file components" (SCORE-11), as the export would send it: false when the switch
@@ -144,9 +139,12 @@ export interface ReleaseScoreForm {
 }
 
 /**
- * releaseSbomScore's variables for the export form, mapped exactly as exportReleaseSbom maps
- * them for releaseSbomExport (backend rule: same names, same defaults), so the score is of the
- * document the Export button gives. No mediaType: the score is always of the JSON export.
+ * releaseSbomScore's variables for the export form. The content options are mapped exactly as
+ * exportReleaseSbom maps them for releaseSbomExport (backend rule: same names, same defaults).
+ * The two metadata flags are always omitted (null): the score has no metadata switches and
+ * follows the organization setting, support facts included when the support disclosure is
+ * ENABLED and ReARM's markers kept (SCORE-12 ADR-3). No mediaType: the score is always of the
+ * JSON export.
  */
 export function buildReleaseScoreVariables (form: ReleaseScoreForm): Record<string, any> {
     const variables: Record<string, any> = {
@@ -161,8 +159,8 @@ export function buildReleaseScoreVariables (form: ReleaseScoreForm): Record<stri
         profiles: [...SBOM_SCORE_PROFILES]
     }
     if (!form.exportMetadataArgsUnsupported) {
-        variables.includeSupportMetadata = supportMetadataArg(form.orgSupportInjectionEnabled, form.includeSupportMetadata)
-        variables.includeInternalMetadata = form.includeInternalMetadata
+        variables.includeSupportMetadata = null
+        variables.includeInternalMetadata = null
     }
     return variables
 }

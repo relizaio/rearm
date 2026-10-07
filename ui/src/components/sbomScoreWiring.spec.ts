@@ -1,7 +1,11 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { parse as parseSfc } from '@vue/compiler-sfc'
+import { buildReleaseScoreVariables } from '@/utils/sbomScore'
+
+// commonFunctions pulls in the Apollo client and Keycloak; buildReleaseScoreVariables needs none of it.
+vi.mock('@/utils/commonFunctions', () => ({ default: {} }))
 
 // NodeTypes.DIRECTIVE of @vue/compiler-core, which compiler-sfc does not re-export.
 const DIRECTIVE = 7
@@ -72,6 +76,37 @@ describe('ReleaseView SBOM score wiring', () => {
         expect(block).toMatch(/<sbom-score-panel\s+:key="sbomScoreRun"\s+v-model:pending="sbomScorePending"\s+:load="loadReleaseSbomScore"/)
         const load = code.match(/async function loadReleaseSbomScore[\s\S]*?\n\}/)?.[0] || ''
         expect(load).toMatch(/variables: releaseSbomScore\.scoredVariables\(\)/)
+    })
+
+    // T-14 (SCORE-21, SCORE-12 ADR-3): the Score click's variables, built from ReleaseView's own
+    // call with its refs stubbed, carry two nulls whatever the modal's switches and the org say.
+    it('scores with both metadata flags null while the support switch is ticked, in either org state', () => {
+        const fn = code.match(/function currentReleaseScoreVariables \(\): Record<string, any> \{[\s\S]*?\n\}/)?.[0] || ''
+        const literal = fn.match(/buildReleaseScoreVariables\((\{[\s\S]*\})\)\s*\n\}$/)?.[1] || ''
+        expect(literal).toMatch(/release: updatedRelease\.value\.uuid/)
+        expect(literal).not.toMatch(/includeSupportMetadata|includeInternalMetadata|orgSupportInjectionEnabled/)
+        // eslint-disable-next-line no-new-func
+        const formFrom = new Function('refs', `with (refs) { return (${literal}) }`) as (refs: object) => any
+        for (const orgSupportInjectionEnabled of [false, true]) {
+            for (const excludeFileComponentsRequested of [false, true]) {
+                const refs = {
+                    updatedRelease: { value: { uuid: 'r-1' } }, tldOnly: { value: false }, ignoreDev: { value: false },
+                    selectedBomStructureType: { value: 'FLAT' }, selectedRebomType: { value: '' },
+                    computedExcludeCoverageTypes: { value: [] }, exportMetadataArgsUnsupported: { value: false },
+                    excludeFileComponentsRequested: { value: excludeFileComponentsRequested },
+                    includeSupportMetadata: { value: true }, includeInternalMetadata: { value: true },
+                    orgSupportInjectionEnabled: { value: orgSupportInjectionEnabled }
+                }
+                const v = buildReleaseScoreVariables(formFrom(refs))
+                const label = `org ${orgSupportInjectionEnabled}, file switch ${excludeFileComponentsRequested}`
+                expect(v.release, label).toBe('r-1')
+                expect('includeSupportMetadata' in v, label).toBe(true)
+                expect(v.includeSupportMetadata, label).toBeNull()
+                expect('includeInternalMetadata' in v, label).toBe(true)
+                expect(v.includeInternalMetadata, label).toBeNull()
+                expect(v.excludeFileComponents, label).toBe(excludeFileComponentsRequested ? true : null)
+            }
+        }
     })
 
     it('keeps the export score mounted across a BOM type switch: hidden by v-show, not under a type v-if (D-10)', () => {
