@@ -3,9 +3,6 @@
 */
 package io.reliza.ws.oss;
 
-import java.util.HashMap;
-import java.util.HashSet;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -100,28 +97,8 @@ public class OssComponentDataFetcher {
 		orgCheckList.add(ro);
 		if (null != ocd.get().getVcs()) orgCheckList.add(vcsRepositoryService
 				.getVcsRepositoryData(ocd.get().getVcs()).get());
-		// Users already stored on an action are tolerated as-is: the UI resends the full actions list
-		// on almost every component save, and a user who has since been deactivated would otherwise
-		// block every save of the component. Only users newly added to an action -- compared per
-		// action uuid with the stored actions; every user of a new action is new -- must be active
-		// org members.
-		Map<UUID, Set<UUID>> storedUsersByAction = new HashMap<>();
-		List<ReleaseOutputEvent> storedActions = ocd.get().getOutputTriggers();
-		if (null != storedActions) {
-			for (var stored : storedActions) {
-				if (null != stored.getUuid() && null != stored.getUsers()) {
-					storedUsersByAction.put(stored.getUuid(), stored.getUsers());
-				}
-			}
-		}
 		if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
-			// A duplicated action uuid is refused: it is invalid on its own, and it would let a stored
-			// user ride along unchecked onto a second entry.
-			Set<UUID> seenActionUuids = new HashSet<>();
 			for (var trigger : ucdto.getOutputTriggers()) {
-				if (null != trigger.getUuid() && !seenActionUuids.add(trigger.getUuid())) {
-					throw new RelizaException("Duplicate action uuid: " + trigger.getUuid());
-				}
 				if (null != trigger.getIntegration()) {
 					orgCheckList.add(integrationService.getIntegrationData(trigger.getIntegration()).get());
 				}
@@ -130,16 +107,7 @@ public class OssComponentDataFetcher {
 							.getVcsRepositoryData(trigger.getVcs()).get());
 				}
 				if (null != trigger.getUsers() && !trigger.getUsers().isEmpty()) {
-					Set<UUID> storedUsers = null != trigger.getUuid()
-							? storedUsersByAction.getOrDefault(trigger.getUuid(), Set.of())
-							: Set.of();
-					Set<UUID> addedUsers = new LinkedHashSet<>(trigger.getUsers());
-					addedUsers.removeAll(storedUsers);
-					Optional<UUID> foreignUser = authorizationService.findUserNotInOrg(addedUsers, ro.getOrg());
-					if (foreignUser.isPresent()) {
-						throw new RelizaException("User " + foreignUser.get() + " added to action '" + trigger.getName()
-								+ "' is not an active member of this organization");
-					}
+					authorizationService.doUsersBelongToOrg(trigger.getUsers(), ro.getOrg());
 				}
 				if (StringUtils.isNotEmpty(trigger.getNotificationMessage())) {
 					trigger.setNotificationMessage(Jsoup.clean(trigger.getNotificationMessage(), Safelist.basic()));
