@@ -9,7 +9,7 @@
             </n-h5>
             <n-radio-group v-model:value="orgPermission.type" @update:value="onOrgPermissionTypeUpdate">
                 <n-radio-button
-                    v-for="pt in permissionTypesWithAdmin"
+                    v-for="pt in orgTypeOptions"
                     :key="pt"
                     :value="pt"
                     :disabled="(lockOrgType && pt !== orgPermission.type) || (!!maxOrgType && permissionTypesWithAdmin.indexOf(pt) > permissionTypesWithAdmin.indexOf(maxOrgType))"
@@ -34,7 +34,7 @@
         </n-space>
 
         <!-- Organization-Wide Functions -->
-        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && orgPermissionFunctions.length">
+        <n-space style="margin-bottom: 20px;" v-if="!externalKey && orgPermission.type !== 'ADMIN' && orgPermission.type !== 'NONE' && orgPermissionFunctions.length">
             <n-h5>
                 <n-text depth="1">
                     Organization-Wide Functions:
@@ -48,7 +48,7 @@
         </n-space>
 
         <!-- Organization-Wide Approvals -->
-        <n-space style="margin-bottom: 20px;" v-if="orgPermission.type !== 'NONE' && (orgPermission.type !== 'ADMIN' || showAdminApprovals) && approvalRoles && approvalRoles.length">
+        <n-space style="margin-bottom: 20px;" v-if="!externalKey && orgPermission.type !== 'NONE' && (orgPermission.type !== 'ADMIN' || showAdminApprovals) && approvalRoles && approvalRoles.length">
             <n-h5>
                 <n-text depth="1">
                     Organization-Wide Approval Permissions:
@@ -85,11 +85,12 @@
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center">
                         <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
-                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                        <n-text v-if="externalKey" data-testid="external-key-read-only">Read Only</n-text>
+                        <n-radio-group v-else v-model:value="sp.type" size="small" @update:value="emitUpdate">
                             <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
                         </n-radio-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in scopedPermissionFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
@@ -97,7 +98,7 @@
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
                             <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
@@ -120,14 +121,14 @@
         <!-- Per-Board Permissions (scope BOARD, board-permissions.md §5; task 428b4a71). After the
              perspectives: the two scopes that hold other things sit together. A grant on a board the
              editor cannot list shows its uuid and stays, so a save keeps it. -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)">
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="!externalKey && orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)">
             <n-h5>
                 <n-text depth="1">
                     Per-Board Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)" data-testid="board-permissions">
+        <div v-if="!externalKey && orgPermission.type !== 'ADMIN' && (boardList.length || scopedBoardPermissions.length)" data-testid="board-permissions">
             <n-space vertical>
                 <n-card v-for="sp in scopedBoardPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;"
                         data-testid="board-permission-card">
@@ -187,11 +188,12 @@
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center">
                         <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
-                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                        <n-text v-if="externalKey" data-testid="external-key-read-only">Read Only</n-text>
+                        <n-radio-group v-else v-model:value="sp.type" size="small" @update:value="emitUpdate">
                             <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
                         </n-radio-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in componentScopedFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
@@ -199,7 +201,7 @@
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
                             <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
@@ -237,11 +239,12 @@
                     </n-space>
                     <n-space style="margin-top: 8px;" align="center">
                         <n-text depth="3" style="font-size: 12px;">Permission:</n-text>
-                        <n-radio-group v-model:value="sp.type" size="small" @update:value="emitUpdate">
+                        <n-text v-if="externalKey" data-testid="external-key-read-only">Read Only</n-text>
+                        <n-radio-group v-else v-model:value="sp.type" size="small" @update:value="emitUpdate">
                             <n-radio-button v-for="pt in permissionTypes" :key="pt" :value="pt" :label="translatePermissionName(pt)" />
                         </n-radio-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE'">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE'">
                         <n-text depth="3" style="font-size: 12px;">Functions:</n-text>
                         <n-checkbox-group v-model:value="sp.functions" @update:value="onFunctionsUpdate($event, sp)">
                             <n-checkbox v-for="f in componentScopedFunctions" :key="f" :value="f" :title="translateFunctionName(f)">
@@ -249,7 +252,7 @@
                                 </n-checkbox>
                         </n-checkbox-group>
                     </n-space>
-                    <n-space style="margin-top: 8px;" align="center" v-if="sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
+                    <n-space style="margin-top: 8px;" align="center" v-if="!externalKey && sp.type !== 'NONE' && approvalRoles && approvalRoles.length">
                         <n-text depth="3" style="font-size: 12px;">Approvals:</n-text>
                         <n-checkbox-group v-model:value="sp.approvals" @update:value="emitUpdate">
                             <n-checkbox v-for="a in approvalRoles" :key="a.id" :value="a.id" :label="a.displayView" :title="a.displayView" />
@@ -271,14 +274,14 @@
         </div>
 
         <!-- Per-Cluster Permissions (scope=INSTANCE on a CLUSTER row). SAAS-only. -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="!externalKey && hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Cluster Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
+        <div v-if="!externalKey && hasDevOps && orgPermission.type !== 'ADMIN' && clusters.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedClusterPermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -315,14 +318,14 @@
         </div>
 
         <!-- Per-Instance Permissions (scope=INSTANCE on a STANDALONE_INSTANCE / CLUSTER_INSTANCE row). SAAS-only. -->
-        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
+        <n-space style="margin-top: 20px; margin-bottom: 10px;" v-if="!externalKey && hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
             <n-h5>
                 <n-text depth="1">
                     Per-Instance Permissions:
                 </n-text>
             </n-h5>
         </n-space>
-        <div v-if="hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
+        <div v-if="!externalKey && hasDevOps && orgPermission.type !== 'ADMIN' && instances.length">
             <n-space vertical>
                 <n-card v-for="sp in scopedInstancePermissions" :key="sp.objectId" size="small" style="margin-bottom: 8px;">
                     <n-space align="center" justify="space-between" style="width: 100%;">
@@ -433,6 +436,13 @@ interface Props {
      * itself (agentBoardsOfOrg, which an org admin sees whole).
      */
     boards?: any[]
+    /**
+     * The grants of an EXTERNAL key (task TEA-3): read-only access to what is published on TEA at
+     * the organization, a perspective, a product or a component. Organization-wide NONE or Read Only,
+     * read-only cards, and no functions, approvals, boards, instances or clusters: the server forces
+     * every grant to READ_ONLY with TEA_READ.
+     */
+    externalKey?: boolean
     modelValue: {
         orgPermission: OrgPermission
         scopedPermissions: ScopedPermission[]
@@ -449,10 +459,13 @@ const installationType = computed(() => store.getters.myuser?.installationType)
 
 const permissionTypesWithAdmin: string[] = constants.PermissionTypesWithAdmin
 const permissionTypes: string[] = constants.PermissionTypes
+const externalKeyOrgTypes: string[] = constants.ExternalKeyOrgPermissionTypes
 // The TEA functions only where the backend serves TEA (editionPermissionFunctions).
 const permissionFunctions = computed((): string[] => editionPermissionFunctions(constants.PermissionFunctions, installationType.value))
 const essentialReadPermissionFunctions: string[] = constants.EssentialReadPermissionFunctions
 const hasDevOps = computed(() => installationType.value !== 'OSS')
+// An EXTERNAL key reads or reads nothing: the organization-wide radio offers only these two.
+const orgTypeOptions = computed(() => props.externalKey ? externalKeyOrgTypes : permissionTypesWithAdmin)
 
 const orgPermission = ref<OrgPermission>({
     type: 'NONE',
@@ -496,7 +509,7 @@ const boardFunctions = computed(() => boardScopeFunctions(props.allowedFunctions
 const loadedBoards = ref<any[]>([])
 const boardList = computed(() => props.boards ?? loadedBoards.value)
 watch(() => props.orgUuid, async (org: string) => {
-    if (props.boards || !org) return
+    if (props.boards || props.externalKey || !org) return
     try {
         loadedBoards.value = await store.dispatch('fetchAgentBoardNamesOfOrg', org) ?? []
     } catch {
