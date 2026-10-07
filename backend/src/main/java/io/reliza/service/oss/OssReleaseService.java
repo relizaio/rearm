@@ -33,6 +33,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.model.FlowControl;
 import io.reliza.util.BackoffPolicy;
 import io.reliza.service.AutoIntegrateDispatcher;
+import io.reliza.service.ComponentLockService;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 
@@ -123,6 +124,9 @@ public class OssReleaseService {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private ComponentLockService componentLockService;
 
 	@Autowired
 	private GetOrganizationService getOrganizationService;
@@ -1235,6 +1239,15 @@ public class OssReleaseService {
 	}
 
 	private void autoIntegrateFeatureSetProduct(BranchData featureSet, ReleaseData triggeringRelease) {
+		// A locked product takes no auto-integrated release, and says so in the log rather than
+		// failing the component's own addrelease: the component did nothing wrong, and a build
+		// that cannot publish its own release because somebody locked a product two levels up
+		// would be a confusing way to learn about it.
+		if (componentLockService.isLocked(featureSet.getComponent(), featureSet.getUuid())) {
+			log.info("Skipping auto-integration into product {} feature set {}: it is locked",
+					featureSet.getComponent(), featureSet.getUuid());
+			return;
+		}
 		// Resolve effective dependencies (patterns + overrides + manual)
 		List<ChildComponent> effectiveDependencies = 
 			dependencyPatternService.resolveEffectiveDependencies(featureSet);
@@ -1548,6 +1561,17 @@ public class OssReleaseService {
 			null,
 			VersionTypeEnum.DEV
 		);
+
+		// Retries exhausted. Thrown rather than returned empty so the cause is named -- a bare
+		// ova.get() here surfaced only as "NoSuchElementException: No value present". It also keeps
+		// version exhaustion distinguishable from the ordinary empty return: this method is shared
+		// with the manual-integrate path, which propagates the Optional to the caller, where
+		// "could not mint a version" and "requirements not met" must not look alike.
+		if (ova.isEmpty()) {
+			throw new IllegalStateException("Could not obtain a version for feature set "
+					+ featureSet.getUuid() + " -- repeated (branch, version) collisions, missing branch,"
+					+ " or no version schema on the component or branch; product release not created");
+		}
 
 		// Build and create release
 		ReleaseDto releaseDto = ReleaseDto.builder()
