@@ -68,6 +68,7 @@ export class BomMapper {
             lastUpdatedDate: record.last_updated_date,
             ignoreDev: record.meta.ignoreDev,
             excludeFileComponents: record.meta.excludeFileComponents,
+            mergeVersion: record.meta.mergeVersion,
             enrichmentStatus: record.meta.enrichmentStatus,
             enrichmentTimestamp: record.meta.enrichmentTimestamp,
             enrichmentError: record.meta.enrichmentError,

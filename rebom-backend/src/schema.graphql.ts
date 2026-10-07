@@ -133,6 +133,11 @@ const typeDefs = gql`
     RebomOptions input); null or false when they were kept.
     """
     excludeFileComponents: Boolean
+    """
+    The merge rule set a merged BOM was built with (see the RebomOptions input); null on
+    merges stored before rebom de-duplicated bom-refs.
+    """
+    mergeVersion: Int
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
     enrichmentError: String
@@ -326,6 +331,9 @@ input RebomOptions {
     # Merge only: leave components of type file out of the merged BOM. Null or false
     # keeps them. The merged document then carries reliza:export:fileComponentsExcluded.
     excludeFileComponents: Boolean
+    # Merge only: the caller's version of the merge rules, stored verbatim with the merged
+    # BOM so the caller can tell merges built before a rule change; rebom does not read it.
+    mergeVersion: Int
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 
