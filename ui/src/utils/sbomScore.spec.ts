@@ -74,6 +74,15 @@ describe('parseSbomScoreReport', () => {
         expect(parseError('{"reportVersion":1}').kind).toBe('MALFORMED')
         expect(parseError('{"reportVersion":1,"profiles":[]}').kind).toBe('MALFORMED')
     })
+
+    it('refuses a report that has its input section but no profiles array (D-1)', () => {
+        // Each half of the guard on its own: the report view reads profiles[0] and input.format.
+        const input = '"input":{"format":"CycloneDX","specVersion":"1.6","serialization":"json","components":1,"sha256":""}'
+        expect(parseError(`{"reportVersion":1,${input}}`).kind).toBe('MALFORMED')
+        expect(parseError(`{"reportVersion":1,${input},"profiles":{}}`).kind).toBe('MALFORMED')
+        expect(parseError(`{"reportVersion":1,${input},"profiles":null}`).kind).toBe('MALFORMED')
+        expect(parseError('{"reportVersion":1,"profiles":[],"input":null}').kind).toBe('MALFORMED')
+    })
 })
 
 describe('orderChecks', () => {

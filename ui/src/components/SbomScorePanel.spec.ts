@@ -97,7 +97,15 @@ describe('SbomScorePanel', () => {
         expect(loading).toContain('Large SBOMs can take up to 3 minutes')
         expect(signals[0].aborted).toBe(false)
 
-        await vi.advanceTimersByTimeAsync(185_000 - 31_000)
+        // D-9: the backend's TIMEOUT (180 s) or the edge's 504 comes first; the abort is the
+        // backstop, so it must not fire one millisecond before 185 s.
+        await vi.advanceTimersByTimeAsync(184_999 - 31_000)
+        expect(signals[0].aborted).toBe(false)
+        expect(w.find('[data-testid="sbom-score-error"]').exists()).toBe(false)
+        expect(w.find('[data-testid="sbom-score-loading"]').exists()).toBe(true)
+        expect(w.emitted('update:pending')?.at(-1)).toEqual([true])
+
+        await vi.advanceTimersByTimeAsync(1)
         expect(signals[0].aborted).toBe(true)
         expect(w.find('[data-testid="sbom-score-error"]').text()).toContain(SBOM_SCORE_TIMEOUT_MESSAGE)
         expect(w.emitted('update:pending')?.at(-1)).toEqual([false])
@@ -107,6 +115,29 @@ describe('SbomScorePanel', () => {
         expect(load).toHaveBeenCalledTimes(2)
         expect(signals[1].aborted).toBe(false)
         expect(w.find('[data-testid="sbom-score-loading"]').text()).toContain('0s')
+        w.unmount()
+    })
+
+    // T-13, a load that ignores the abort: its late answer, report or error, does not replace the TIMEOUT line.
+    it.each([
+        ['a report', (r: any) => r.resolve(fixtureText('fda.cdx'))],
+        ['an error', (r: any) => r.reject(scoreError('SCORING_FAILED'))],
+    ])('keeps the TIMEOUT line when %s arrives after the 185 s abort', async (_name, answer) => {
+        const pendingLoad: any = {}
+        const w = mountPanel(() => new Promise<string>((resolve, reject) => { pendingLoad.resolve = resolve; pendingLoad.reject = reject }))
+        await flushPromises()
+        await vi.advanceTimersByTimeAsync(185_000)
+        expect(w.find('[data-testid="sbom-score-error"]').text()).toContain(SBOM_SCORE_TIMEOUT_MESSAGE)
+        const pendingEvents = w.emitted('update:pending')!.length
+
+        answer(pendingLoad)
+        await flushPromises()
+        expect(w.find('[data-testid="sbom-score-error"]').text()).toContain(SBOM_SCORE_TIMEOUT_MESSAGE)
+        expect(w.find('[data-testid="sbom-score-error"]').text()).not.toContain('The scoring engine failed')
+        expect(w.findComponent({ name: 'SbomScoreReport' }).exists()).toBe(false)
+        expect(w.find('[data-testid="sbom-score-download"]').exists()).toBe(false)
+        expect(w.find('[data-testid="sbom-score-retry"]').exists()).toBe(true)
+        expect(w.emitted('update:pending')!.length).toBe(pendingEvents)
         w.unmount()
     })
 

@@ -323,7 +323,7 @@
                                     <span>
                                         <n-button type="default"
                                             data-testid="release-sbom-score"
-                                            :disabled="releaseSbomScoreDisabled || sbomScorePending"
+                                            :disabled="releaseSbomScoreButtonDisabled"
                                             @click="scoreReleaseSbom">
                                             <span v-if="sbomScorePending" class="ml-2">Scoring...</span>
                                             <span v-else>Score</span>
@@ -2189,6 +2189,7 @@ import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDeta
 import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
+import { useReleaseSbomScore } from '@/utils/useReleaseSbomScore'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, X } from '@vicons/tabler'
@@ -3453,7 +3454,7 @@ function openExportModal () {
     includeSupportMetadata.value = false
     includeInternalMetadata.value = false
     // A reopened dialog starts without a score: the last one may be of other options.
-    sbomScoreRequested.value = false
+    releaseSbomScore.reset()
     showExportSBOMModal.value = true
 }
 
@@ -5972,13 +5973,8 @@ const SBOM_EXPORT_CORE = gql`
  * buildReleaseScoreVariables exactly as exportReleaseSbom maps them, so the score is of the
  * document Export gives. Each click mounts a fresh SbomScorePanel (sbomScoreRun is its key),
  * which runs the query, owns the 185 s abort and shows the report or the error in this dialog.
+ * The snapshot, the options-changed line and the disabled state live in useReleaseSbomScore.
  */
-const sbomScoreRequested: Ref<boolean> = ref(false)
-const sbomScorePending: Ref<boolean> = ref(false)
-const sbomScoreRun: Ref<number> = ref(0)
-// The variables of the score on show, as JSON, to say when the form no longer matches it.
-const sbomScoredVariables: Ref<string> = ref('')
-
 const releaseSbomScoreDisabled: ComputedRef<boolean> = computed((): boolean =>
     exportBomType.value !== 'SBOM' || selectedSbomMediaType.value !== 'JSON')
 
@@ -5997,20 +5993,21 @@ function currentReleaseScoreVariables (): Record<string, any> {
     })
 }
 
-const releaseSbomScoreOptionsChanged: ComputedRef<boolean> = computed((): boolean =>
-    sbomScoreRequested.value && JSON.stringify(currentReleaseScoreVariables()) !== sbomScoredVariables.value)
-
-function scoreReleaseSbom () {
-    if (releaseSbomScoreDisabled.value || sbomScorePending.value) return
-    sbomScoredVariables.value = JSON.stringify(currentReleaseScoreVariables())
-    sbomScoreRequested.value = true
-    sbomScoreRun.value++
-}
+const releaseSbomScore = useReleaseSbomScore({
+    variables: currentReleaseScoreVariables,
+    formDisabled: () => releaseSbomScoreDisabled.value
+})
+const sbomScoreRequested = releaseSbomScore.requested
+const sbomScorePending = releaseSbomScore.pending
+const sbomScoreRun = releaseSbomScore.run
+const releaseSbomScoreOptionsChanged = releaseSbomScore.optionsChanged
+const releaseSbomScoreButtonDisabled = releaseSbomScore.buttonDisabled
+const scoreReleaseSbom = releaseSbomScore.score
 
 async function loadReleaseSbomScore (signal: AbortSignal): Promise<string> {
     const resp: any = await graphqlClient.query({
         query: graphqlQueries.ReleaseSbomScoreGql,
-        variables: JSON.parse(sbomScoredVariables.value),
+        variables: releaseSbomScore.scoredVariables(),
         fetchPolicy: 'no-cache',
         context: { fetchOptions: { signal } }
     })

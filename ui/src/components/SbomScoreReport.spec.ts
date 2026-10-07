@@ -8,12 +8,25 @@ import { mount, flushPromises } from '@vue/test-utils'
 
 vi.mock('@/utils/commonFunctions', () => ({ default: { extractGraphQLErrorMessage: (e: any) => e?.message } }))
 
+import { NTag } from 'naive-ui'
 import SbomScoreReport from './SbomScoreReport.vue'
 import { parseSbomScoreReport } from '@/utils/sbomScore'
 import { fixtureText } from '@/utils/__fixtures__/sbomScore/fixtures'
 
 function mountReport (name: string) {
     return mount(SbomScoreReport, { props: { report: parseSbomScoreReport(fixtureText(name)) }, attachTo: document.body })
+}
+
+// A fixture changed in place, for the cases the files do not carry.
+function mountEdited (name: string, edit: (report: any) => void) {
+    const report = JSON.parse(fixtureText(name))
+    edit(report)
+    return mount(SbomScoreReport, { props: { report: parseSbomScoreReport(JSON.stringify(report)) }, attachTo: document.body })
+}
+
+function verdictTagType (w: ReturnType<typeof mountReport>) {
+    const tag = w.findAllComponents(NTag).find(t => t.attributes('data-testid') === 'sbom-score-verdict')!
+    return tag.props('type')
 }
 
 function bodyRows (w: ReturnType<typeof mountReport>, testid = 'sbom-score-checks') {
@@ -62,6 +75,13 @@ describe('SbomScoreReport', () => {
         expect(hash.text()).toContain('a hash is required for every component')
         expect(hash.text()).toContain('Remedy: regenerate the SBOM with hashes')
         expect(rows.filter(r => r.text().includes('Remedy:')).map(r => r.text().includes('FAIL'))).toEqual([true, true])
+        // The fixture gives a remedy to a PASS, a NOT_ASSESSED and an ERROR check too; none is shown.
+        for (const id of ['cisa.component.name', 'cisa.document.generation-context', 'cisa.component.supplier']) {
+            expect(byId(id).text(), id).not.toContain('Remedy:')
+        }
+        expect(w.text()).not.toContain('keep a name on every component')
+        expect(w.text()).not.toContain('record when and how the SBOM was generated')
+        expect(w.text()).not.toContain('name the supplier of every component')
         expect(w.text()).not.toContain('pkg:maven/org.beta/beta@2.0.0')
 
         // FAIL with a failing list expands to it, with the truncation line.
@@ -70,8 +90,11 @@ describe('SbomScoreReport', () => {
         const failing = w.find('[data-testid="sbom-score-failing"]')
         expect(failing.text()).toContain('pkg:maven/org.beta/beta@2.0.0')
         expect(failing.text()).toContain('list truncated by the engine')
-        // A PASS row has no expand trigger.
+        // A PASS row has no expand trigger, and neither has the ERROR row although it carries a failing list.
         expect(byId('cisa.component.name').find('.n-data-table-expand-trigger').exists()).toBe(false)
+        expect(byId('cisa.component.supplier').find('.n-data-table-expand-trigger').exists()).toBe(false)
+        expect(rows.filter(r => r.find('.n-data-table-expand-trigger').exists())).toHaveLength(2)
+        expect(w.text()).not.toContain('pkg:npm/epsilon@5.0.0')
 
         // The unmatched engine error is listed on its own.
         expect(w.find('[data-testid="sbom-score-engine-errors"]').text()).toContain('the dependency graph could not be read')
@@ -105,6 +128,50 @@ describe('SbomScoreReport', () => {
         expect(plain.find('[data-testid="sbom-score-header"]').text()).not.toContain('skipped')
         expect(plain.find('[data-testid="sbom-score-header"]').text()).toContain('CycloneDX 1.6 (json), 4 components')
         plain.unmount()
+    })
+
+    // Design 3.5: the skipped count shows when componentsSkipped > 0 or options.skipFiles, either alone.
+    it.each([
+        ['componentsSkipped alone', { componentsSkipped: 3 }, undefined, '(3 file components skipped, not counted)'],
+        ['skipFiles alone, no count', {}, { skipFiles: true }, '(0 file components skipped, not counted)'],
+        ['skipFiles with a zero count', { componentsSkipped: 0 }, { skipFiles: true }, '(0 file components skipped, not counted)'],
+        ['a zero count, no options', { componentsSkipped: 0 }, undefined, null],
+        ['a zero count, skipFiles false', { componentsSkipped: 0 }, { skipFiles: false }, null],
+    ])('skipped-files text: %s', (_name, input, options, expected) => {
+        const w = mountEdited('fda.cdx', r => {
+            Object.assign(r.input, input)
+            if (options === undefined) delete r.options
+            else r.options = options
+        })
+        const header = w.find('[data-testid="sbom-score-header"]').text()
+        if (expected === null) expect(header).not.toContain('skipped')
+        else expect(header).toContain(expected)
+        w.unmount()
+    })
+
+    // Design 3.5: READY green, NOT READY red, anything else grey.
+    it.each([
+        ['READY', 'READY', 'success'],
+        ['NOT_READY', 'NOT READY', 'error'],
+        ['UNKNOWN', 'UNKNOWN', 'default'],
+    ])('colours the %s verdict tag', (verdict, text, type) => {
+        const w = mountEdited('fda.cdx', r => { r.profiles[0].verdict = verdict })
+        expect(w.find('[data-testid="sbom-score-verdict"]').text()).toBe(text)
+        expect(verdictTagType(w)).toBe(type)
+        w.unmount()
+    })
+
+    it('shows remedies on FAIL rows only, on a golden whose PASS rows carry one', () => {
+        const report = parseSbomScoreReport(fixtureText('fda.cdx'))
+        const passWithRemedy = report.profiles[0].checks.filter(c => c.status === 'PASS' && c.remedy)
+        expect(passWithRemedy.length).toBeGreaterThan(0)
+        const w = mountReport('fda.cdx')
+        const rows = bodyRows(w)
+        for (const c of passWithRemedy) {
+            const row = rows.find(r => r.text().includes(c.id))!
+            expect(row.text(), c.id).not.toContain('Remedy:')
+        }
+        w.unmount()
     })
 
     it('leaves the structure block out when the report has no structure checks', () => {

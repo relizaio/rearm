@@ -41,7 +41,7 @@
           "failing": [],
           "failingTruncated": false,
           "ref": "2.1 Component Name",
-          "remedy": "",
+          "remedy": "keep a name on every component",
           "note": ""
         },
         {
@@ -72,7 +72,7 @@
           "failing": [],
           "failingTruncated": false,
           "ref": "2.1 Generation Context",
-          "remedy": "",
+          "remedy": "record when and how the SBOM was generated",
           "note": "the document does not say when it was generated"
         },
         {
@@ -100,10 +100,12 @@
           "status": "ERROR",
           "passed": 0,
           "total": 0,
-          "failing": [],
+          "failing": [
+            "pkg:npm/epsilon@5.0.0"
+          ],
           "failingTruncated": false,
           "ref": "2.1 Supplier Name",
-          "remedy": "",
+          "remedy": "name the supplier of every component",
           "note": ""
         },
         {

@@ -10,7 +10,8 @@ import { fileURLToPath } from 'url'
  * What only a scan can check: the helpers are imported (no vue-tsc, so a missing import is a
  * runtime ReferenceError), both artifact tables render their icons through the one helper (so
  * the Score icon cannot be on one table and missing from the other), and the two queries are
- * sent uncached with the panel's abort signal.
+ * sent uncached with the panel's abort signal, and the export dialog binds the state that
+ * useReleaseSbomScore holds (its behaviour is in useReleaseSbomScore.spec.ts).
  */
 const code = readFileSync(fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
     .replace(/<!--[\s\S]*?-->/g, '')
@@ -21,7 +22,7 @@ const importBlock = (code.match(/^import\s[^;]*?\sfrom\s+'[^']+'/gms) || []).joi
 
 describe('ReleaseView SBOM score wiring', () => {
     it('imports what it uses', () => {
-        for (const name of ['SbomScorePanel', 'buildReleaseScoreVariables', 'SBOM_SCORE_PROFILES', 'ReportAnalytics']) {
+        for (const name of ['SbomScorePanel', 'buildReleaseScoreVariables', 'SBOM_SCORE_PROFILES', 'ReportAnalytics', 'useReleaseSbomScore']) {
             expect(importBlock).toMatch(new RegExp(`\\b${name}\\b`))
         }
     })
@@ -48,7 +49,23 @@ describe('ReleaseView SBOM score wiring', () => {
 
     it('starts a reopened export dialog without a score', () => {
         const open = code.match(/function openExportModal \(\) \{[\s\S]*?\n\}/)?.[0] || ''
-        expect(open).toMatch(/sbomScoreRequested\.value = false/)
+        expect(open).toMatch(/releaseSbomScore\.reset\(\)/)
+    })
+
+    it('binds the export dialog to useReleaseSbomScore: disabled while pending, stale line, fresh panel per click', () => {
+        expect(code).toMatch(/const releaseSbomScore = useReleaseSbomScore\(\{\s*variables: currentReleaseScoreVariables,\s*formDisabled: \(\) => releaseSbomScoreDisabled\.value\s*\}\)/)
+        for (const [alias, field] of [['sbomScoreRequested', 'requested'], ['sbomScorePending', 'pending'], ['sbomScoreRun', 'run'],
+            ['releaseSbomScoreOptionsChanged', 'optionsChanged'], ['releaseSbomScoreButtonDisabled', 'buttonDisabled'], ['scoreReleaseSbom', 'score']]) {
+            expect(code, alias).toMatch(new RegExp(`const ${alias}(: [^=]+)? = releaseSbomScore\\.${field}\\n`))
+        }
+        const button = code.match(/<n-button[^>]*data-testid="release-sbom-score"[^>]*>/)?.[0] || ''
+        expect(button).toMatch(/:disabled="releaseSbomScoreButtonDisabled"/)
+        expect(button).toMatch(/@click="scoreReleaseSbom"/)
+        const block = code.match(/<div v-if="sbomScoreRequested"[\s\S]*?<\/div>\s*<\/n-form>/)?.[0] || ''
+        expect(block).toMatch(/v-if="releaseSbomScoreOptionsChanged"[^>]*>\s*Options changed; score again/)
+        expect(block).toMatch(/<sbom-score-panel\s+:key="sbomScoreRun"\s+v-model:pending="sbomScorePending"\s+:load="loadReleaseSbomScore"/)
+        const load = code.match(/async function loadReleaseSbomScore[\s\S]*?\n\}/)?.[0] || ''
+        expect(load).toMatch(/variables: releaseSbomScore\.scoredVariables\(\)/)
     })
 
     it('sends both queries uncached, with the abort signal, the artifact one on the augmented latest document', () => {
