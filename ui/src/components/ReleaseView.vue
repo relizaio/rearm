@@ -2198,8 +2198,8 @@ import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/rele
 import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
-import { FileSwitchUnsupportedError, exportWithMetadataFallback, fileSwitchAvailable, supportMetadataArg } from '@/utils/exportMetadataFallback'
-import { SBOM_EXPORT_CORE, SBOM_EXPORT_WITH_FILE_SWITCH, SBOM_EXPORT_WITH_METADATA_FLAGS } from '@/utils/releaseSbomExportDocuments'
+import { supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
 import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
@@ -3456,15 +3456,12 @@ const includeInternalMetadata: Ref<boolean> = ref(false)
 /** This server rejected the metadata arguments, so stop sending them. See exportReleaseSbom. */
 const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
 
-/** "Leave out file components" (SCORE-11). Off by default and on every reopen of the dialog. */
-const excludeFileComponents: Ref<boolean> = ref(false)
-/** This server rejected the document carrying the file switch. See exportReleaseSbom. */
-const exportFileSwitchUnsupported: Ref<boolean> = ref(false)
-const exportFileSwitchAvailable: ComputedRef<boolean> = computed((): boolean =>
-    fileSwitchAvailable(exportMetadataArgsUnsupported.value, exportFileSwitchUnsupported.value))
-/** What the export and the score send: the switch, counted only where it can be honoured. */
-const excludeFileComponentsRequested: ComputedRef<boolean> = computed((): boolean =>
-    excludeFileComponents.value && exportFileSwitchAvailable.value)
+/**
+ * "Leave out file components" (SCORE-11): the switch, its availability on this server, the export
+ * document it sends and its refusal latch, in utils/useFileComponentsSwitch so a test can run them.
+ */
+const fileComponentsSwitch = useFileComponentsSwitch(exportMetadataArgsUnsupported)
+const { excludeFileComponents, exportFileSwitchAvailable, excludeFileComponentsRequested } = fileComponentsSwitch
 
 /**
  * Whether the two metadata options can change the file the operator is about to get.
@@ -3491,7 +3488,7 @@ function openExportModal () {
     // OFF over a file that carries the attestations anyway would be the worst of both.
     includeSupportMetadata.value = false
     includeInternalMetadata.value = false
-    excludeFileComponents.value = false
+    fileComponentsSwitch.reset()
     // A reopened dialog starts without a score: the last one may be of other options.
     releaseSbomScore.reset()
     showExportSBOMModal.value = true
@@ -6099,17 +6096,13 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
                 orgSupportInjectionEnabled.value, includeSupportMetadata.value),
             includeInternalMetadata: includeInternalMetadata.value
         }
-        // The file switch has its own document, sent only when it is on: see
-        // releaseSbomExportDocuments for why it is not folded into the metadata one.
-        const leaveOutFiles = excludeFileComponentsRequested.value
-        const attempt = await exportWithMetadataFallback({
-            runFull: () => leaveOutFiles
-                ? runSbomExport(SBOM_EXPORT_WITH_FILE_SWITCH, { ...fullVariables, excludeFileComponents: true })
-                : runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, fullVariables),
-            runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
-            flagsUnsupported: exportMetadataArgsUnsupported.value,
-            isDriftError: isSchemaDriftError,
-            excludeFileComponents: leaveOutFiles
+        // Which document goes with the file switch on or off, and that a switched export is
+        // never retried without it, are in utils/useFileComponentsSwitch.
+        const attempt = await fileComponentsSwitch.exportReleaseSbom({
+            run: runSbomExport,
+            baseVariables,
+            fullVariables,
+            isDriftError: isSchemaDriftError
         })
         if (attempt.justDiscovered) {
             // Latched only now that the flagless document has actually WORKED, and said out
@@ -6145,11 +6138,8 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
-        if (err instanceof FileSwitchUnsupportedError) {
-            // Not retried without the switch: that would quietly hand back the files the
-            // operator asked to leave out. Latch, turn the switch off and say why.
-            exportFileSwitchUnsupported.value = true
-            excludeFileComponents.value = false
+        if (fileComponentsSwitch.latchRefusal(err)) {
+            // This server cannot leave the files out; nothing was exported. Say why.
             Swal.fire('Error!', err.message, 'error')
             return
         }

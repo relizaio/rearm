@@ -9,7 +9,8 @@ const DIRECTIVE = 7
 /**
  * Wiring guard for "Leave out file components" in ReleaseView's Export Release BOM dialog
  * (SCORE-11). ReleaseView is never mounted in tests, so this checks the template position and
- * bindings only; the behaviour runs in utils/fileComponentsSwitch.spec.ts.
+ * bindings only; the behaviour runs in utils/useFileComponentsSwitch.spec.ts and
+ * utils/fileComponentsSwitch.spec.ts.
  */
 const source = readFileSync(fileURLToPath(new URL('./ReleaseView.vue', import.meta.url)), 'utf8')
 const code = source
@@ -35,8 +36,7 @@ const isSwitch = (node: any) => node.tag === 'n-switch'
 
 describe('ReleaseView file components switch wiring', () => {
     it('imports what it uses', () => {
-        for (const name of ['FileSwitchUnsupportedError', 'fileSwitchAvailable', 'SBOM_EXPORT_WITH_FILE_SWITCH',
-            'SBOM_EXPORT_WITH_METADATA_FLAGS', 'SBOM_EXPORT_CORE']) {
+        for (const name of ['useFileComponentsSwitch', 'supportMetadataArg', 'isSchemaDriftError']) {
             expect(importBlock).toMatch(new RegExp(`\\b${name}\\b`))
         }
     })
@@ -58,18 +58,17 @@ describe('ReleaseView file components switch wiring', () => {
 
     it('starts every opening of the dialog with the switch off', () => {
         const open = code.match(/function openExportModal \(\) \{[\s\S]*?\n\}/)?.[0] || ''
-        expect(open).toMatch(/excludeFileComponents\.value = false/)
+        expect(open).toMatch(/fileComponentsSwitch\.reset\(\)/)
     })
 
-    it('scores and exports what the switch says where it can be honoured, and latches a refusal', () => {
-        expect(code).toMatch(/const excludeFileComponentsRequested: ComputedRef<boolean> = computed\(\(\): boolean =>\s*excludeFileComponents\.value && exportFileSwitchAvailable\.value\)/)
-        expect(code).toMatch(/fileSwitchAvailable\(exportMetadataArgsUnsupported\.value, exportFileSwitchUnsupported\.value\)/)
+    it('takes the switch from the composable, scores what it requests and exports and latches through it', () => {
+        expect(code).toMatch(/const fileComponentsSwitch = useFileComponentsSwitch\(exportMetadataArgsUnsupported\)/)
+        expect(code).toMatch(/const \{ excludeFileComponents, exportFileSwitchAvailable, excludeFileComponentsRequested \} = fileComponentsSwitch/)
         const vars = code.match(/function currentReleaseScoreVariables \(\)[\s\S]*?\n\}/)?.[0] || ''
         expect(vars).toMatch(/excludeFileComponents: excludeFileComponentsRequested\.value/)
         const exp = code.match(/async function exportReleaseSbom \([\s\S]*?\n\}/)?.[0] || ''
-        expect(exp).toMatch(/runSbomExport\(SBOM_EXPORT_WITH_FILE_SWITCH, \{ \.\.\.fullVariables, excludeFileComponents: true \}\)/)
-        expect(exp).toMatch(/runSbomExport\(SBOM_EXPORT_WITH_METADATA_FLAGS, fullVariables\)/)
-        expect(exp).toMatch(/excludeFileComponents: leaveOutFiles/)
-        expect(exp).toMatch(/err instanceof FileSwitchUnsupportedError\) \{\s*exportFileSwitchUnsupported\.value = true\s*excludeFileComponents\.value = false/)
+        expect(exp).toMatch(/const attempt = await fileComponentsSwitch\.exportReleaseSbom\(\{\s*run: runSbomExport,\s*baseVariables,\s*fullVariables,\s*isDriftError: isSchemaDriftError\s*\}\)/)
+        expect(exp).toMatch(/if \(fileComponentsSwitch\.latchRefusal\(err\)\) \{[\s\S]*?return\s*\}/)
+        expect(exp).not.toMatch(/SBOM_EXPORT_|exportWithMetadataFallback/)
     })
 })

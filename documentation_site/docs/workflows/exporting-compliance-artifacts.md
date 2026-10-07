@@ -143,7 +143,13 @@ scanner -- are carried into merged and aggregated exports beside it.
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**With both switches off, no `reliza:` property remains**, not even the
+**Not removed either: `reliza:export:fileComponentsExcluded`.** It is on the document only when
+**Leave out file components** was on, and it is the file's own record that file components were
+left out of it, and how many. It describes the document you hold rather than ReARM's working
+state, so a reader of an export with internal metadata off can still tell that the inventory is
+not complete.
+
+**With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
 `includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools` and,
 where rebom recorded one, the top-level `bom` external reference to the document as uploaded
