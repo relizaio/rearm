@@ -89,6 +89,8 @@ public class OssComponentDataFetcher {
 		if (null != ucdto.getApprovalPolicy()) ros.add(approvalPolicyService.getApprovalPolicyData(ucdto.getApprovalPolicy()).orElseThrow());
 
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, ros, CallType.WRITE);
+		// A global admin passes the check above without an object to check against.
+		if (ocd.isEmpty()) throw new RelizaException("Component not found");
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		List<RelizaObject> orgCheckList = new LinkedList<>();
@@ -104,7 +106,7 @@ public class OssComponentDataFetcher {
 					orgCheckList.add(vcsRepositoryService
 							.getVcsRepositoryData(trigger.getVcs()).get());
 				}
-				if (null != trigger.getUsers() && trigger.getUsers().isEmpty()) {
+				if (null != trigger.getUsers() && !trigger.getUsers().isEmpty()) {
 					authorizationService.doUsersBelongToOrg(trigger.getUsers(), ro.getOrg());
 				}
 				if (StringUtils.isNotEmpty(trigger.getNotificationMessage())) {
@@ -115,8 +117,11 @@ public class OssComponentDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, orgCheckList, CallType.WRITE);
 
 		try {
-			List<ReleaseOutputEvent> processedOutputTriggers = new LinkedList<>();
-			if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
+			// Null outputTriggers = leave the stored actions unchanged; an explicit empty list clears
+			// them. Passing [] for an omitted argument would wipe every action on a one-field update.
+			List<ReleaseOutputEvent> processedOutputTriggers = null;
+			if (null != ucdto.getOutputTriggers()) {
+				processedOutputTriggers = new LinkedList<>();
 				for (var trigger : ucdto.getOutputTriggers()) {
 					IntegrationType it = null;
 					if (trigger.getType() == EventType.INTEGRATION_TRIGGER) {

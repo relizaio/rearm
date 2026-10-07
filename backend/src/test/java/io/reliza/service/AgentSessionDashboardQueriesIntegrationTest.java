@@ -111,8 +111,9 @@ public class AgentSessionDashboardQueriesIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		// createComponent already made the base branch, and a component may have only one (the
+		// invariant this branch introduces), so take the one that exists rather than adding a second.
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		UUID vcsUuid = vcsRepositoryService.provisionVcsRepository(org.getUuid(),
 				"github.com/example/agent-dash-" + UUID.randomUUID(), VcsType.GIT,

@@ -17,6 +17,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.RearmIdentifier;
+import io.reliza.model.ReleaseData.DocumentRef;
 import io.reliza.model.ReleaseData.GudidRecord;
 import io.reliza.model.ReleaseData.GudidStatus;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -64,6 +65,13 @@ public class ReleaseDto {
 	
 	@JsonProperty
 	private List<RearmIdentifier> identifiers;
+
+	/**
+	 * Pointer to the document bytes, for releases of specification components. Carried on the dto
+	 * so a document release is created through the one release-creation path, with its locks,
+	 * version minting and parent checks, rather than being patched on afterwards.
+	 */
+	private DocumentRef document;
 
 	/** Version-specific GUDID record (UDI-bearing release). */
 	@JsonProperty

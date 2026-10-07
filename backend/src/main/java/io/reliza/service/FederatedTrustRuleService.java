@@ -24,6 +24,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.FederatedContext;
+import io.reliza.common.EditedListValidation;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey;
@@ -102,6 +103,15 @@ public class FederatedTrustRuleService {
 			ZonedDateTime expiresDate, WhoUpdated wu) throws RelizaException {
 		if (StringUtils.isBlank(name)) throw new RelizaException("Trust rule needs a name");
 		if (matcher == null || StringUtils.isBlank(matcher.getOwner())) throw new RelizaException("Trust rule needs the owner (organization or user) on the provider side");
+		// Against what the rule holds now: an empty matcher for a rule being created.
+		FederatedMatcher stored = r.matcherOf();
+		checkMatcherList("repositories", matcher.getRepositories(), stored.getRepositories());
+		checkMatcherList("excludeRepositories", matcher.getExcludeRepositories(), stored.getExcludeRepositories());
+		checkMatcherList("refs", matcher.getRefs(), stored.getRefs());
+		checkMatcherList("environments", matcher.getEnvironments(), stored.getEnvironments());
+		checkMatcherList("workflows", matcher.getWorkflows(), stored.getWorkflows());
+		checkMatcherList("events", matcher.getEvents(), stored.getEvents());
+		checkMatcherList("subjects", matcher.getSubjects(), stored.getSubjects());
 		if (grant == null) grant = new FederatedGrant();
 		if (grant.getType() == GrantType.KEY) {
 			if (grant.getKeyUuid() == null) throw new RelizaException("A key-bound rule needs the key to act as");
@@ -120,6 +130,23 @@ public class FederatedTrustRuleService {
 		r.setExpiresDate(expiresDate);
 		r.setLastUpdatedDate(ZonedDateTime.now());
 		r.setLastUpdatedBy(wu.getLastUpdatedBy());
+	}
+
+	/**
+	 * Every matcher list is matched during the token exchange, which anyone holding a token of
+	 * the issuer can call; the caps in {@link FederatedMatching} bound what one rule costs there.
+	 * They hold what an edit adds (see {@link EditedListValidation}): a rule saved before the caps
+	 * keeps matching at exchange, and must stay editable for an unrelated change -- its name, its
+	 * grant, another list.
+	 */
+	static void checkMatcherList(String field, List<String> entries, List<String> stored) throws RelizaException {
+		EditedListValidation.validateNewEntries(entries, stored, "Matcher " + field, FederatedMatching.MAX_LIST_ENTRIES,
+				(glob, i) -> {
+					if (glob.trim().length() > FederatedMatching.MAX_GLOB_LENGTH) {
+						throw new RelizaException("Matcher " + field + " entry exceeds " + FederatedMatching.MAX_GLOB_LENGTH
+								+ " characters");
+					}
+				});
 	}
 
 	@Transactional

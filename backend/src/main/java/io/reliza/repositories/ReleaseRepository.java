@@ -420,6 +420,20 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	void touchLastScanned(@Param("uuid") UUID uuid);
 
 	/**
+	 * What decides whether a release is scanned at all (task RD4-11), in one row: its component's
+	 * kind as stored and whether it carries a board document. A primary-key read on each table, so
+	 * the enqueue paths can ask without loading the release's JSONB columns. Empty for a missing
+	 * release. Rows are [String kind (null when the component row or its kind is absent), Boolean
+	 * document].
+	 */
+	@Query(value = "SELECT c.record_data->>'kind' AS kind, "
+			+ "coalesce(jsonb_typeof(r.record_data->'document') = 'object', false) AS document "
+			+ "FROM rearm.releases r "
+			+ "LEFT JOIN rearm.components c ON c.uuid = CAST(r.record_data->>'component' AS uuid) "
+			+ "WHERE r.uuid = :uuid", nativeQuery = true)
+	List<Object[]> findScanFactsOf(@Param("uuid") UUID uuid);
+
+	/**
 	 * The ONLY writer of {@code approval_events}. The column is mapped
 	 * {@code updatable = false} (see {@link Release}), so an
 	 * ordinary release save cannot touch it and a stale caller cannot erase a
@@ -713,9 +727,24 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.releases "
-			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateRequestedAt}', to_jsonb(now()), true) "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateRequestedAt}', to_jsonb(clock_timestamp()), true) "
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void markAutoIntegrateRequested(@Param("uuid") UUID uuid);
+
+	/**
+	 * {@link #markAutoIntegrateRequested} for several releases in one statement (a batch create).
+	 *
+	 * <p>Both stamp {@code clock_timestamp()}, not {@code now()}: {@code now()} is the START of the
+	 * caller's transaction, so a request written late in a long transaction could be dated before a
+	 * worker's claim that happened meanwhile, and that worker's clear (which keeps the queue entry
+	 * only when requestedAt > claimedAt) would then wipe the new request.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(coalesce(flow_control, '{}'::jsonb), '{autoIntegrateRequestedAt}', to_jsonb(clock_timestamp()), true) "
+			+ "WHERE uuid IN (:uuids)", nativeQuery = true)
+	void markAutoIntegrateRequestedAll(@Param("uuids") Collection<UUID> uuids);
 
 	/**
 	 * Atomic claim of a queued auto-integrate. The immediate after-commit run

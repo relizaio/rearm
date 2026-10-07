@@ -168,6 +168,11 @@ type Component {
 	actionGuards: [ActionGuard!]
 	"""Locks raised on this component, active and recently released."""
 	locks: [Lock!]
+	"""
+	For a BOARD_DOCUMENT component, the board whose document series it is (board-documents.md §5); null for
+	every other kind and for a document no board owns. The board page checks the board's permissions.
+	"""
+	agentBoard: AgentBoardRef
 }
 
 """A freeform stakeholder contact for someone who is not a registered ReARM user."""
@@ -211,6 +216,8 @@ type ComponentOwnership {
 enum ComponentKind {
 	HELM
 	GENERIC
+	"""A board's document series. Boards set it; a component update cannot change a kind to or from it."""
+	BOARD_DOCUMENT
 }
 
 type Identifier {
@@ -374,6 +381,11 @@ type IgnoreViolation {
 type Settings {
 	declarativePrune: DeclarativePruneMode
 	justificationMandatory: Boolean
+	"""
+	How many review item priority levels this organization uses, 1 being the highest. Null
+	means the default. Write side is SettingsInput.reviewItemPriorityLevels, which bounds it.
+	"""
+	reviewItemPriorityLevels: Int
 	branchSuffixMode: BranchSuffixMode
 	vexComplianceFramework: VexComplianceFramework
 	"""
@@ -394,6 +406,8 @@ type Settings {
 	deliveries, read marks). Null means the 90-day default.
 	"""
 	notificationRetentionDays: Int
+	"""Hours an agent session may go without a call before it is closed; null means 24. A session holding a task or a coordinator seat gets twice this."""
+	agentSessionIdleCloseHours: Int
 	"""
 	The submission-level justification: what FDA L1021-1022 asks for literally, the reason
 	per-component support information cannot be included. At the measured 2.3% upstream
@@ -584,6 +598,116 @@ enum ApiKeyStatus {
 }
 
 """
+An API_KEYS file (task RD3-11): an organization's FREEFORM keys by declared name -- identity and settings,
+never a secret.
+"""
+type ApiKeysSpec {
+	kind: DeclarativeKind!
+	version: Int!
+	authoritative: Boolean
+	keys: [ApiKeySpec!]
+}
+
+type ApiKeySpec {
+	name: String!
+	"""FREEFORM: the one type a file declares."""
+	type: ApiTypeEnum
+	"""Null when the key has none."""
+	permissions: ApiKeyPermissionsSpec
+	notes: String
+	status: ApiKeyStatus
+	secretExpiresDays: Int
+	sessionMaxMinutes: Int
+	provenance: DeclarativeProvenance
+}
+
+"""A FREEFORM key's permissions: the organization-wide level, functions and approval roles, and grants on single objects."""
+type ApiKeyPermissionsSpec {
+	type: PermissionType
+	functions: [PermissionFunction!]
+	approvals: [String!]
+	objects: [ApiKeyObjectPermissionSpec!]
+}
+
+type ApiKeyObjectPermissionSpec {
+	scope: PermissionScope!
+	object: ID!
+	type: PermissionType!
+	functions: [PermissionFunction!]
+	approvals: [String!]
+}
+
+input ApiKeysSpecInput {
+	kind: DeclarativeKind!
+	version: Int!
+	"""Deactivate declared keys the file leaves out, under the organization's declarativePrune (ARCHIVE); false by default."""
+	authoritative: Boolean
+	keys: [ApiKeySpecInput!]
+}
+
+"""One key. A setting left out is left alone; one sent as null is cleared."""
+input ApiKeySpecInput {
+	"""Unique among the organization's live keys: the key's declared identity."""
+	name: String!
+	"""FREEFORM, the one type a file declares; left out, FREEFORM."""
+	type: ApiTypeEnum
+	"""Replaces the key's permissions whole."""
+	permissions: ApiKeyPermissionsSpecInput
+	notes: String
+	"""ACTIVE or INACTIVE."""
+	status: ApiKeyStatus
+	"""Days a minted secret lives, 1 to 3650; null mints secrets that do not expire."""
+	secretExpiresDays: Int
+	"""Bounds device-login sessions approved on the key, in minutes (task RD3-7)."""
+	sessionMaxMinutes: Int
+}
+
+input ApiKeyPermissionsSpecInput {
+	type: PermissionType
+	functions: [PermissionFunction!]
+	approvals: [String!]
+	objects: [ApiKeyObjectPermissionSpecInput!]
+}
+
+input ApiKeyObjectPermissionSpecInput {
+	scope: PermissionScope!
+	object: ID!
+	type: PermissionType!
+	functions: [PermissionFunction!]
+	approvals: [String!]
+}
+
+"""A key as the provider and `rearm apikey list` read it: its declaration, identity and secrets' metadata."""
+type DeclaredApiKey {
+	uuid: ID!
+	"""The id a client presents with a secret (REARM_APIKEYID): stable across rotation, not itself a secret."""
+	keyId: String!
+	"""The declared name; null for a key nobody has declared."""
+	name: String
+	type: ApiTypeEnum
+	status: ApiKeyStatus
+	adminDisabled: Boolean
+	notes: String
+	permissions: ApiKeyPermissionsSpec
+	secretExpiresDays: Int
+	sessionMaxMinutes: Int
+	"""The key's secrets: slot, state and dates -- never a value or a hash."""
+	secretSlots: [ApiKeySecretInfo!]
+	declarative: DeclarativeProvenance
+}
+
+"""A secret minted, or not: minted false and no secret when the slot already held one and no rotation was asked."""
+type MintedApiKeySecret {
+	keyId: String!
+	name: String
+	slot: Int!
+	minted: Boolean!
+	"""The value, this once; it is stored hashed and cannot be read again."""
+	secret: String
+	expiresDate: DateTime
+}
+
+"""
 One of up to two secrets of a key id (rotation: add the second, move clients, retire the first).
 Only metadata: the secret itself is shown once, when created or regenerated.
 """
@@ -618,6 +742,19 @@ type ApiKey {
 	origin: ApiKeyOrigin
 	"FEDERATED rows: the external repository this identity stands for"
 	federation: FederatedIdentity
+	"""
+	Bounds device-login sessions approved on this key: a session ends this many minutes after its
+	approval, refreshes included (1 to 129600; null for no bound but the 90-day cap). Direct use of
+	the key's secret is bounded by the secret's expiry instead. A change applies to sessions
+	approved afterwards, not to open ones.
+	"""
+	sessionMaxMinutes: Int
+	"""The name an API_KEYS file knows this key by (task RD3-11); null for a key nobody has declared."""
+	declaredName: String
+	"""The declarative apply that last wrote this key: when, and from which repository and path."""
+	declarative: DeclarativeProvenance
+	"""Days a secret minted through the declarative mint lives; null for no expiry."""
+	secretExpiresDays: Int
 	"""
 	Root agents this key is bound to via the agent-identity it
 	resolves to (agent_identity_credentials). Empty until an agent
@@ -961,6 +1098,11 @@ type Release {
 	updateEvents: [ReleaseUpdateEvent]
 	metrics: DependencyTrackMetrics
 	identifiers: [Identifier]
+	"""
+	Pointer to the document bytes this release publishes. Non-null only on releases of
+	specification components -- an ordinary software release has no document.
+	"""
+	document: DocumentRef
 	gudidRecord: GudidRecord
 	gudidStatus: GudidStatus
 	"""
@@ -2199,6 +2341,12 @@ enum PermissionFunction {
 	CONFIGURATION_READ
 	"""Apply declarative configuration through the programmatic API; implies CONFIGURATION_READ."""
 	CONFIGURATION_WRITE
+	"""Read an agent task board and its task records (READ_ONLY floor)."""
+	BOARD_READ
+	"""Work a board as an agent: poll, assign, sign off, publish (READ_ONLY floor); implies BOARD_READ."""
+	BOARD_AGENT
+	"""Run a board: register, authorize, seat, holds, decisions (READ_WRITE floor); implies BOARD_READ."""
+	BOARD_WRITE
 }
 
 
@@ -2206,6 +2354,8 @@ enum PermissionScope {
 	ORGANIZATION
 	INSTANCE
 	PERSPECTIVE
+	"""An agent task board: a leaf beside a component, reaching no component."""
+	BOARD
 	COMPONENT
 	BRANCH
 	RELEASE
@@ -2539,6 +2689,25 @@ enum SpecificationType {
 	TEST_PLAN
 	GLOSSARY
 	DECISION_RECORD
+	"""One review round of one task. Task-scoped: one component per board target holds every task's rounds."""
+	BOARD_REVIEW_ITEMS
+	"""One test run of one task. Task-scoped, like BOARD_REVIEW_ITEMS."""
+	BOARD_TEST_REPORT
+	"""
+	What one hop could not proceed without knowing. Task-scoped, like BOARD_REVIEW_ITEMS, and
+	usually published with no file at all -- the items are the document.
+	"""
+	BOARD_QUESTIONS
+	"""
+	What the element checks found on one document of one task (gaps §2.A). Task-scoped and always
+	index-only: the board cuts it, no agent publishes it, and it has no path.
+	"""
+	BOARD_ELEMENT_CHECK_REPORT
+	"""
+	What one investigation found (task RD4-12): the deliverable of an INVESTIGATION task, which comes back
+	pinned on the task that commissioned it. Task-scoped prose whose elements are references only.
+	"""
+	BOARD_INVESTIGATION_REPORT
 }
 
 
@@ -2993,6 +3162,2112 @@ type AgentSessionCounts {
 	openSessions: Int
 	closedSessions: Int
 }
+# ==================================================================
+# Agent task boards -- hub-and-spoke task distribution over an
+# external tracker. The tracker stays the human interface and plan
+# store; ReARM is the coordination and audit authority. Design:
+# backend/ai-plans/agentic/task-boards.md.
+# ==================================================================
+
+enum AgentBoardStatus { ACTIVE ARCHIVED }
+
+"""How strictly coordinator priority binds assignment. LAX: the poll offers work in priority order but a worker may assign any eligible task (advisory). STRICT: assignment is refused unless the task is the top eligible offer for that agent."""
+enum AgentBoardPriorityType { LAX STRICT }
+
+"""A pause stops NEW assignments only; the coordinator cannot lift or override an OPERATOR pause."""
+enum AgentBoardPauseLevel { NONE COORDINATOR OPERATOR }
+
+"""
+DELIVERING: every required role passed and a linked PR is not merged yet. Not terminal -- dependents
+wait for COMPLETED, which means merged. It completes when the PR merges and goes back to the
+coordinator when a PR closes without merging.
+"""
+enum AgentTaskStatus { PENDING_INTAKE QUEUED ASSIGNED AWAITING_COORDINATOR ON_HOLD DELIVERING COMPLETED CANCELLED }
+
+enum AgentBoardEventKind { PAUSED RESUMED ALERT INFO }
+
+"""The verbs an assignee must be able to perform. Declared on roles; implicit/unverified on agents in v1."""
+enum AgentCapability { TRACKER_READ TRACKER_WRITE CODE_PUSH PR_MERGE }
+
+"""Who works this role. AGENTIC: agents poll/assume/sign off through sessions. HUMAN: a deliberate human workflow stage -- never offered to agent polls; an org admin signs off directly from the queue."""
+enum AgentRoleKind { AGENTIC HUMAN }
+
+"""Whether the coordinator may skip this role. REQUIRED: a task cannot be COMPLETED unless its most recent sign-off in this role is PASSED (cancel and split parents with completed children exempt)."""
+enum AgentRoleNecessity { OPTIONAL REQUIRED }
+
+"""Conditional human review of this role's sign-offs. Fires only when the role actually signs off. ON_PASS: PASSED sign-offs park ON_HOLD for a human verdict; ON_ANY_SIGNOFF: rejections gate too."""
+enum AgentHumanGate { NONE ON_PASS ON_ANY_SIGNOFF }
+
+"""Two-tier task hold, mirroring board pauses: the coordinator cannot lift an OPERATOR hold."""
+enum AgentTaskHoldLevel { COORDINATOR OPERATOR }
+
+"""
+MANUAL: coordinator/operator parked the task. HUMAN_GATE: a gated role signed off; only a human
+review verdict (not a plain lift) resolves it. QUESTION: the board could not route a question
+and the coordinator escalated -- lifting THAT hold with words records them as the answer to the
+open ids, which lifting any other hold must never do.
+"""
+enum AgentTaskHoldKind { MANUAL HUMAN_GATE QUESTION }
+
+"""The routing stop that placed a hold (board-mechanics §6.2)."""
+enum AgentTaskHoldStop { CYCLE_CAP NO_PROGRESS BUDGET }
+
+type AgentTaskHold {
+	level: AgentTaskHoldLevel
+	kind: AgentTaskHoldKind
+	"""Role whose sign-off is under review; set when kind = HUMAN_GATE."""
+	gateRole: String
+	reason: String
+	heldBy: AgentActor
+	heldAt: DateTime
+	"""
+	The routing stop that placed the hold; null on any other hold. A no-progress or cycle-cap stop at
+	COORDINATOR level is the coordinator's to lift once; at OPERATOR level it is the operator's
+	(task c0a2134c).
+	"""
+	stop: AgentTaskHoldStop
+	"""
+	The status the task returns to when a person answers: set only when the coordinator seat parked the task for an
+	operator decision (task RD4-17), whose release puts it back where it was -- DELIVERING stays DELIVERING. Null on
+	every other hold.
+	"""
+	returnTo: AgentTaskStatus
+	"""
+	The PRs linked to the task while the coordinator seat had it parked for the operator (task RD4-19), oldest first:
+	preparation for the person's decision, never its answer. Empty or null on every other hold.
+	"""
+	linked: [AgentTaskHoldLink]
+}
+
+"""A PR linked to a task the coordinator seat parked for the operator (task RD4-19): recorded on the decision, not the answer."""
+type AgentTaskHoldLink {
+	prUrl: String
+	"""Who linked it: the linking key's agent."""
+	by: String
+	at: DateTime
+}
+
+"""
+Who did something on a board: the identity on a pause, an event, a hold or a human sign-off.
+
+These were all String, and every writer invented its own encoding -- a session uuid behind a
+"coordinator-session:" prefix, a user's email, the bare literal "operator". Reading one meant
+knowing the convention and splitting on a colon. kind says which identity space uuid belongs
+to; name is what a human should read. Rows written before this are decoded on read, so an
+older pause still resolves.
+"""
+type AgentActor {
+	kind: AgentActorKind
+	"""The session or user uuid, when the writer knew it. Null on older rows and on SYSTEM."""
+	uuid: ID
+	"""Display text: an email for a user, a detail such as "humanGate" for SYSTEM."""
+	name: String
+}
+
+"""SESSION is an agent session, USER a human, SYSTEM the application acting on its own."""
+enum AgentActorKind { SESSION USER SYSTEM }
+
+type AgentBoardEvent {
+	kind: AgentBoardEventKind
+	message: String
+	actor: AgentActor
+	eventAt: DateTime
+}
+
+"""An event as a board's event log holds it: the event with its cursor (task 1c5442d2)."""
+type AgentBoardLoggedEvent {
+	"""The cursor: strictly increasing in the order events were written."""
+	seq: Long
+	uuid: ID
+	kind: AgentBoardEventKind
+	message: String
+	actor: AgentActor
+	eventAt: DateTime
+}
+
+"""A page of a board's event log, oldest first (task 1c5442d2)."""
+type AgentBoardEventPage {
+	events: [AgentBoardLoggedEvent]
+	"""Pass this as the next page's after: the last seq returned, or the after asked for when the page is empty."""
+	nextAfter: Long
+	"""True when more events follow this page."""
+	hasMore: Boolean
+	"""Where the board's retention window starts: now minus its eventRetentionDays. Null when the board keeps everything."""
+	truncatedBefore: DateTime
+	"""
+	True when the retention sweep deleted events this read's after or since asked for: the page starts
+	at the oldest event still kept. Re-read the tasks rather than trusting the feed for the time between.
+	"""
+	gap: Boolean
+}
+
+enum AgentSignOffOutcome { PASSED REJECTED }
+
+"""Why an assigned agent handed the task back to the coordinator. SESSION_CLOSED is system-generated on any session-close path."""
+enum AgentTaskReturnReason { TASK_UNCLEAR ROLE_MISMATCH MISSING_CAPABILITY BLOCKED_ON_DEPENDENCY NEEDS_HUMAN SESSION_CLOSED OTHER }
+
+type AgentBoardPause {
+	level: AgentBoardPauseLevel
+	reason: String
+	pausedBy: AgentActor
+	pausedAt: DateTime
+}
+
+"""Singleton coordinator seat: one session per board, held until that session closes."""
+type AgentCoordinatorSeat {
+	session: ID
+	agent: ID
+	claimedAt: DateTime
+}
+
+"""What a task must be able to read before an agent may start it: the board's Ready rule."""
+enum AgentInputKind { DOCUMENT RELEASE }
+
+"""Which release a RELEASE requirement is about: any release of the component, or one linked to this very task."""
+enum AgentInputScope { COMPONENT TASK }
+
+"""
+Which release satisfies a threshold. LATEST_PASSING (default) takes the newest release at or
+above it, so a fresh draft never un-satisfies a baselined version; STRICT_LATEST demands the
+component's own latest release clear it.
+"""
+enum AgentInputResolution { LATEST_PASSING STRICT_LATEST }
+
+type AgentTaskPrerequisite {
+	kind: AgentInputKind
+	"""DOCUMENT only: which specification document, resolved against the board's target node."""
+	specification: SpecificationType
+	"""RELEASE only."""
+	scope: AgentInputScope
+	"""RELEASE with COMPONENT scope: null means the board's target node."""
+	component: ID
+	minLifecycle: ReleaseLifecycleEnum
+	"""Null falls back to the board's defaultInputResolution."""
+	resolution: AgentInputResolution
+	"""One release pinned by uuid (task RD4-12): an investigation's inputs, a report returned; null otherwise."""
+	release: ID
+}
+
+input AgentTaskPrerequisiteInput {
+	kind: AgentInputKind!
+	specification: SpecificationType
+	scope: AgentInputScope
+	component: ID
+	minLifecycle: ReleaseLifecycleEnum!
+	resolution: AgentInputResolution
+}
+
+"""
+What a hop in this role must leave behind: the mirror of AgentTaskPrerequisiteInput, and the other
+half of the contract between roles. It is also the routing graph -- open items are sent to
+whichever active role produces the specification they are about -- so a board whose roles declare
+nothing routes every question to its coordinator instead.
+
+BOARD_QUESTIONS is refused here and in requiredInputs: a question is a side channel any role may emit,
+never a role's contracted product or prerequisite.
+"""
+input AgentProducedOutputInput {
+	specification: SpecificationType!
+	scope: AgentInputScope
+	"""False makes it advisory, for roles that sometimes have nothing to write."""
+	required: Boolean
+}
+
+"""
+What a requirement resolved to when the task was assigned, pinned on the assignment: the version
+the agent works from, and the trail from a later rejection back to the work that consumed it.
+"""
+type AgentTaskResolvedPrerequisite {
+	kind: AgentInputKind
+	specification: SpecificationType
+	component: ID
+	release: ID
+	version: String
+	lifecycle: ReleaseLifecycleEnum
+}
+
+"""A board as configuration: enough to stand the same board up elsewhere, and no runtime state."""
+type BoardSpec {
+	kind: DeclarativeKind!
+	version: Int!
+	name: String
+	description: String
+	"""Name of the component this board builds -- a spec is portable, so names rather than uuids."""
+	target: String
+	defaultWorkLevel: Int
+	defaultInputResolution: AgentInputResolution
+	priorityType: AgentBoardPriorityType
+	perAgentWipLimit: Int
+	sources: [String]
+	"""
+	Where documents are written, as the repository URI rather than the row uuid: a spec
+	is portable, and the uuid of a repository row means nothing in another organization.
+	Applying resolves it the same way agentBoardUpdate does.
+	"""
+	documentsRepo: String
+	"""Per-type path templates, keyed by SpecificationType. Omitted types use the defaults by scope."""
+	documentPaths: Object
+	"""Element id families over the defaults: prefix to a family name, or to {family, definedIn} where the board sets definedIn (grammar 1.2)."""
+	elementFamilies: Object
+	"""The element checks: which block the hand-over, mandatory fields per level, orphan families."""
+	elementChecks: ElementCheckPolicy
+	"""How a task proves it was delivered (task 18c5c293); absent means PR_ROWS."""
+	delivery: AgentDeliveryPolicy
+	"""How the board names its documents; absent means after the board (board-documents.md D2)."""
+	documents: BoardDocumentsSpec
+	"""
+	Perspectives, product: marking a PRODUCT component (board-permissions.md §3): by name when exactly
+	one of the organization carries it, else by uuid.
+	"""
+	perspectives: [String]
+	"""The task-key prefix (board-documents.md D8)."""
+	taskPrefix: String
+	coordinatorPrompt: String
+	"""Verbs the coordinator seat performs itself (PR_MERGE, CODE_PUSH); absent means only the tracker verbs."""
+	coordinatorCapabilities: [AgentCapability!]
+	"""The board's budget and stops; a null value is the board default."""
+	settings: BoardSettingsSpec
+	"""The task groups in display order, closed ones included (task RD2-30)."""
+	groups: [BoardGroupSpec]
+	roles: [BoardRoleSpec]
+}
+
+"""A task group as a board file declares it: configuration only, dependencies by key."""
+type BoardGroupSpec {
+	key: String
+	name: String
+	description: String
+	"""The keys of the groups this one waits on."""
+	dependsOn: [String]
+	"""The work level its tasks read when they set none (task, then group, then board)."""
+	defaultWorkLevel: Int
+	status: AgentTaskGroupStatus
+}
+
+"""A perspective a board holds: a real perspective, or a PRODUCT component when product is true."""
+type BoardPerspectiveRef {
+	uuid: ID!
+	name: String!
+	"""A PRODUCT component used as a perspective; a board file writes it with the product: marker."""
+	product: Boolean!
+}
+
+"""A board file's documents block."""
+type BoardDocumentsSpec {
+	"""Replaces the board name in its document components' names, <prefix>-<specification>, both slugged."""
+	prefix: String
+	"""The documents repository serves several boards: the default root is boards/{board}/."""
+	shared: Boolean
+	"""The root outright, relative to the repository; empty is the repository root."""
+	root: String
+}
+
+type BoardSettingsSpec {
+	"""What the board may spend, in USD micros; null means no board budget."""
+	budgetMicros: Long
+	softAlertPercent: Int
+	cycleCap: Int
+	noProgressRepeatsToStop: Int
+	humanQueueAgeMinutes: Int
+	"""Review items at or above this priority send work back; null means every open review item does."""
+	blockingPriority: Int
+	"""Review items at or above this priority stop completion; null means every open review item does."""
+	completionPriority: Int
+	"""Whether a no-progress or cycle-cap stop parks for the coordinator first; null means the default, on."""
+	coordinatorStopLift: Boolean
+	"""Days the event log keeps an event; null means the default, 15, and 0 keeps everything."""
+	eventRetentionDays: Int
+	"""Staleness thresholds that post ALERTs (task RD3-4); null when every rule is off."""
+	staleness: AgentBoardStaleness
+	"""The level ladder (task RD3-6); null when the board has none."""
+	ladder: AgentBoardLadder
+}
+
+"""
+A board's level ladder (task RD3-6), opt-in. With one, every task has a work level (the board default is 0 when unset),
+a work level off the ladder is refused, and the served prompts carry a ladder section; without one, work levels
+stay null and a work level is refused.
+"""
+type AgentBoardLadder {
+	"""The rungs, 0 first and without gaps."""
+	levels: [AgentBoardLadderLevel]
+	"""The ladder section served on this board, overriding the default; {{levels}} and {{last}} are rendered in. Null serves the default."""
+	prompt: String
+}
+
+type AgentBoardLadderLevel {
+	number: Int
+	name: String
+	description: String
+}
+
+"""The ladder as input: declared, it replaces the board's; null removes it, refused while a task carries a work level."""
+input AgentBoardLadderInput {
+	levels: [AgentBoardLadderLevelInput!]!
+	prompt: String
+}
+
+"""A rung: its number, when given, is its place from 0; the name is required and unique on the ladder."""
+input AgentBoardLadderLevelInput {
+	number: Int
+	name: String!
+	description: String
+}
+
+"""
+When a board ALERTs that work has gone stale (task RD3-4), minutes each; null turns a rule off. Only an
+ALERT is posted: no task changes state, and a person releases a stalled assignment by hand.
+"""
+type AgentBoardStaleness {
+	"""A task QUEUED for a role this long while no session of that role polled the board within the same span."""
+	roleUnstaffedMinutes: Int
+	"""A task ASSIGNED this long with nothing from the holder: no document, sign-off, question or usage report."""
+	hopNoProgressMinutes: Int
+	"""A task DELIVERING this long with a linked PR not delivered, or nothing delivered."""
+	deliveryStuckMinutes: Int
+	"""A task waiting on the coordinator (PENDING_INTAKE or AWAITING_COORDINATOR) this long while the seat is held."""
+	seatSilentMinutes: Int
+	"""How long a standing breach stays quiet before it is alerted again; null is 240."""
+	repeatMinutes: Int
+	"""An investigation (task RD4-12) neither completed nor cancelled this long past its deadline; 0 alerts at the deadline."""
+	investigationOverdueMinutes: Int
+}
+
+"""The staleness block as input: declared, it replaces the board's whole block; each threshold at least 1, null off."""
+input AgentBoardStalenessInput {
+	roleUnstaffedMinutes: Int
+	hopNoProgressMinutes: Int
+	deliveryStuckMinutes: Int
+	seatSilentMinutes: Int
+	repeatMinutes: Int
+	"""Minutes past an investigation's deadline before it alerts; 0 alerts at the deadline, null off."""
+	investigationOverdueMinutes: Int
+}
+
+"""A role's model strength in portable form: override models by reference, not uuid."""
+type BoardStrengthSpec {
+	requiredStrength: Float
+	strengthHeadroom: Float
+	strengthCategory: ModelRoleCategory
+	modelStrengths: [BoardModelStrengthSpec]
+}
+
+type BoardModelStrengthSpec {
+	"""The model's canonical id, or name-version: resolved through the organization's model aliases."""
+	model: String
+	strength: Float
+}
+
+"""An organization's role presets as one file. Presets seed every new board's roles."""
+type RolePresetsSpec {
+	kind: DeclarativeKind!
+	version: Int!
+	authoritative: Boolean
+	presets: [BoardRoleSpec]
+}
+
+"""
+A board file (kind BOARD). Keyed by name within the organization. A field left out is untouched;
+a field set to null is cleared where that means something: description, each setting, a role's
+wipLimit, hopBudgetMicros and each part of its strength. A role the file does not list is
+deactivated, never deleted.
+"""
+input BoardSpecInput {
+	kind: DeclarativeKind!
+	version: Int!
+	name: String!
+	description: String
+	"""Component name in this organization; required when the file creates the board."""
+	target: String
+	defaultWorkLevel: Int
+	defaultInputResolution: AgentInputResolution
+	priorityType: AgentBoardPriorityType
+	perAgentWipLimit: Int
+	sources: [String!]
+	documentsRepo: String
+	documentPaths: Object
+	"""
+	Element id families over the defaults; declared null restores the defaults, absent leaves them. An entry is a
+	family name, or {family, definedIn} (grammar 1.2, elements.md §1.1): definedIn lists the specification types that
+	define the prefix's ids, in order of precedence; absent takes the family's default, [] means references only.
+	"""
+	elementFamilies: Object
+	"""The element checks (elements.md §7); declared null restores the defaults, absent leaves them."""
+	elementChecks: ElementCheckPolicyInput
+	"""How a task proves it was delivered; declared null restores the default, PR_ROWS."""
+	delivery: AgentDeliveryPolicyInput
+	"""How the board names its documents; declared null restores the default, absent leaves it."""
+	documents: BoardDocumentsSpecInput
+	"""
+	Perspectives by name or uuid, product: marking a PRODUCT component. A name several carry resolves
+	to the one already in the board's set, else it is refused; name it by uuid. The target must be a
+	member of each; adding or removing one needs BOARD_WRITE and CONFIGURATION_WRITE covering it.
+	Declared null clears, absent leaves them.
+	"""
+	perspectives: [String]
+	"""The task-key prefix; declared null derives one from the name, absent leaves it."""
+	taskPrefix: String
+	coordinatorPrompt: String
+	"""
+	Verbs the coordinator seat performs itself: PR_MERGE, CODE_PUSH. The tracker verbs are
+	implicit and refused. Declared null clears, as [] does; absent leaves them.
+	"""
+	coordinatorCapabilities: [AgentCapability!]
+	settings: BoardSettingsSpecInput
+	"""
+	The task groups in display order (task RD2-30). A listed group is created or updated by key, a
+	member declared null cleared and one left out kept; a group the list leaves out is closed, never
+	deleted. Declared null or [] deletes every group, refused while one holds tasks; absent leaves them.
+	"""
+	groups: [BoardGroupSpecInput!]
+	roles: [BoardRoleSpecInput!]
+}
+
+"""A task group in a board file: dependsOn names groups of the board or of the file by key."""
+input BoardGroupSpecInput {
+	key: String!
+	name: String
+	description: String
+	dependsOn: [String]
+	defaultWorkLevel: Int
+	status: AgentTaskGroupStatus
+}
+
+input BoardDocumentsSpecInput {
+	"""Replaces the board name in its document components' names; needs a letter or a digit."""
+	prefix: String
+	"""The documents repository serves several boards: the default root becomes boards/{board}/."""
+	shared: Boolean
+	"""The root outright, relative to the repository, with no '..'; empty is the repository root."""
+	root: String
+}
+
+input BoardSettingsSpecInput {
+	budgetMicros: Long
+	softAlertPercent: Int
+	cycleCap: Int
+	noProgressRepeatsToStop: Int
+	"""Minutes a task may wait on a person before AGENT_TASK_QUEUE_AGE is sent; null or 0 is off."""
+	humanQueueAgeMinutes: Int
+	blockingPriority: Int
+	completionPriority: Int
+	"""Whether a no-progress or cycle-cap stop parks for the coordinator first; null restores the default, on."""
+	coordinatorStopLift: Boolean
+	"""Days the event log keeps an event; null restores the default, 15, 0 keeps everything, and a negative number is refused."""
+	eventRetentionDays: Int
+	"""The staleness block (task RD3-4): given, it replaces the board's whole block; null turns every rule off."""
+	staleness: AgentBoardStalenessInput
+	"""The level ladder (task RD3-6): given, it replaces the board's; null removes it, refused while a task carries a work level."""
+	ladder: AgentBoardLadderInput
+}
+
+"""One role, or one preset: always complete on the wire -- a file's file: and promptFile: are inlined by the client."""
+input BoardRoleSpecInput {
+	name: String!
+	prompt: String
+	"""Absent on a new role: ten times its position in the list. Absent on an existing role: unchanged."""
+	orderIndex: Int
+	wipLimit: Int
+	requireDistinctAgent: Boolean
+	"""Operator-only. The role reads its task without earlier hops' notes, sessions and agents (task 0192a587)."""
+	blindReview: Boolean
+	"""Absent: true -- declaring a role is what reactivates it."""
+	active: Boolean
+	kind: AgentRoleKind
+	necessity: AgentRoleNecessity
+	humanGate: AgentHumanGate
+	requiredCapabilities: [AgentCapability!]
+	requiredInputs: [BoardRequiredInputSpecInput!]
+	producesOutputs: [BoardProducedOutputSpecInput!]
+	"""Allowance for one assignment of this role, in USD micros: the projection's estimate when the board has no history for the role, told to the worker at assignment, and flagged on the hop and the board when a hop exceeds it. Not enforced mid-hop -- agents pull, and the server learns the cost when it is reported."""
+	hopBudgetMicros: Long
+	"""Who the role may commission for a report (task RD4-12); null commissions nobody."""
+	commissions: AgentRoleCommissionsInput
+	strength: BoardStrengthSpecInput
+}
+
+input BoardRequiredInputSpecInput {
+	kind: AgentInputKind
+	specification: SpecificationType
+	scope: AgentInputScope
+	"""Component name in this organization."""
+	component: String
+	minLifecycle: ReleaseLifecycleEnum
+	resolution: AgentInputResolution
+}
+
+input BoardProducedOutputSpecInput {
+	specification: SpecificationType
+	scope: AgentInputScope
+	required: Boolean
+}
+
+input BoardStrengthSpecInput {
+	requiredStrength: Float
+	strengthHeadroom: Float
+	strengthCategory: ModelRoleCategory
+	modelStrengths: [BoardModelStrengthSpecInput!]
+}
+
+input BoardModelStrengthSpecInput {
+	model: String!
+	strength: Float!
+}
+
+"""A presets file (kind ROLE_PRESETS). authoritative deactivates presets the file does not list."""
+input RolePresetsSpecInput {
+	kind: DeclarativeKind!
+	version: Int!
+	authoritative: Boolean
+	presets: [BoardRoleSpecInput!]
+}
+
+type BoardRoleSpec {
+	name: String
+	prompt: String
+	orderIndex: Int
+	wipLimit: Int
+	requireDistinctAgent: Boolean
+	blindReview: Boolean
+	active: Boolean
+	kind: AgentRoleKind
+	necessity: AgentRoleNecessity
+	humanGate: AgentHumanGate
+	requiredCapabilities: [String]
+	requiredInputs: [BoardRequiredInputSpec]
+	producesOutputs: [BoardProducedOutputSpec]
+	"""Allowance for one assignment of this role, in USD micros: the projection's estimate when the board has no history for the role, told to the worker at assignment, and flagged on the hop and the board when a hop exceeds it. Not enforced mid-hop -- agents pull, and the server learns the cost when it is reported."""
+	hopBudgetMicros: Long
+	"""Who the role may commission for a report (task RD4-12); null commissions nobody."""
+	commissions: AgentRoleCommissions
+	strength: BoardStrengthSpec
+}
+
+"""A document a board role is expected to publish; mirrors BoardRequiredInputSpec."""
+type BoardProducedOutputSpec {
+	specification: SpecificationType
+	scope: AgentInputScope
+	required: Boolean
+}
+
+type BoardRequiredInputSpec {
+	kind: AgentInputKind
+	specification: SpecificationType
+	scope: AgentInputScope
+	component: String
+	minLifecycle: ReleaseLifecycleEnum
+	resolution: AgentInputResolution
+}
+
+type AgentBoard {
+	uuid: ID
+	org: ID
+	name: String
+	description: String
+	status: AgentBoardStatus
+	"""Wired tracker repos, e.g. github:owner/repo. Registration validates task refs against them."""
+	sources: [String]
+	"""
+	Where this board's documents are written, as the repository row it resolves
+	to. Set by passing a URI to agentBoardUpdate; the row is the identity, so a
+	remote written as ssh on one machine and https on another is the same
+	repository here.
+	"""
+	documentsRepo: VcsRepository
+	"""Per-type path templates inside documentsRepo, as overridden on this board; omitted types use the defaults by scope (effectiveDocumentPaths)."""
+	documentPaths: Object
+	"""
+	The repository path a new document of this type would take, relative to the repository root,
+	with every placeholder filled and the board's documentsRoot in front: {key} = the task's key
+	(RD-42), {round} = the task's next round of this type, {type} = lower case, {component} = the
+	component's name slugged. task is required for task-scoped types, component for
+	component-scoped ones. The release records the path actually used; this is what the CLI uses
+	when no --file is given.
+	"""
+	documentPath(specification: SpecificationType!, task: ID, component: ID): String
+	"""
+	Every type's template after overrides and scope defaults, without the root: the built-in index
+	types per task; at TASK scope ARCHITECTURE under design/{key}/architecture-{round}.md,
+	DETAILED_DESIGN under impl/{key}/notes-{round}.md and any other type under
+	design/{key}/{type}-{round}.md; at COMPONENT scope docs/{type}/{component}.md.
+	"""
+	effectiveDocumentPaths: Object
+	"""
+	Where this board's documents sit in its repository, resolved (board-documents.md D6): the
+	documents.root it sets, else boards/<board slug>/ when documents.shared, else empty. Every
+	documentPath starts with it.
+	"""
+	documentsRoot: String
+	"""How this board names its documents, as set; null is the default, named after the board (board-documents.md D2)."""
+	documents: AgentBoardDocuments
+	"""The prefix of new task keys (RD in RD-42), claimed in the organization and never reused (board-documents.md D8, D9)."""
+	taskPrefix: String
+	"""Every prefix the board has held, oldest first; tasks keep the key they were given."""
+	taskPrefixHistory: [String]
+	"""
+	The board's task groups (task-groups-and-tags.md §2, task RD2-29), in display order: each with its
+	progress over its tasks and what they spent. A task belongs to one group or none; a group that
+	depends on another holds its tasks back from offers until that group has nothing open.
+	"""
+	groups: [TaskGroup]
+	"""
+	The perspectives the board hangs off (board-permissions.md §3): real perspectives or PRODUCT
+	components used as perspectives. A PERSPECTIVE grant on any of them covers the board.
+	"""
+	perspectives: [ID]
+	"""
+	What the caller may do on this board (board-permissions.md §4): the subset of BOARD_READ,
+	BOARD_AGENT, BOARD_WRITE, CONFIGURATION_READ and CONFIGURATION_WRITE held on it, for the person
+	signed in or the key calling. The UI shows only the controls these allow.
+	"""
+	myPermissions: [PermissionFunction!]
+	"""
+	perspectives by name, one for one with perspectives, product: marking a PRODUCT component. Always
+	the name, even one several perspectives share; the board file's export writes those by uuid.
+	"""
+	perspectiveNames: [String]
+	"""
+	The component holding each of this board's document series, one per specification, as the board
+	records them (board-documents.md D3). A board from before the map lists a series once it has
+	published into it again.
+	"""
+	documentComponents: [AgentBoardDocumentComponent!]
+	"""
+	Whether a specification with no recorded component may adopt a legacy document component of the
+	target (board-documents.md D3, task RD2-33): true for a board from before the map, false for every
+	board created since, whose first publish of each specification creates its own. Read-only.
+	"""
+	adoptsLegacyDocuments: Boolean
+	"""What the board has produced: one entry per document series in documentComponents, with its latest round."""
+	documentSeries: [AgentBoardDocumentSeries!]
+	"""
+	Element id families as this board declared them over the defaults: prefix to family name, or to {family,
+	definedIn} for a prefix with its own definedIn (grammar 1.2); null when it uses the defaults alone.
+	"""
+	elementFamilies: Object
+	"""The defaults with this board's entries over them, prefix to family name: what the CLI parses documents against (gaps §2.A)."""
+	effectiveElementFamilies: Object
+	"""
+	Every effective family prefix with the specification types that define its ids, in order of precedence
+	(grammar 1.2, elements.md §1.1): the board's own list where it sets one, else the family's default.
+	"""
+	effectiveElementFamilyEntries: [ElementFamilyEntry!]
+	"""The element check policy as this board declared it; null when it uses the defaults (elements.md §7)."""
+	elementCheckPolicy: ElementCheckPolicy
+	"""The policy in force: the declared one, or the defaults (report only, test and requirement orphans)."""
+	effectiveElementCheckPolicy: ElementCheckPolicy
+	"""How a task on this board proves it was delivered, as set; null is the default (task 18c5c293)."""
+	deliveryPolicy: AgentDeliveryPolicy
+	"""deliveryPolicy with its defaults resolved."""
+	effectiveDeliveryPolicy: AgentDeliveryPolicy
+	"""Append-only board notices, newest last (pauses and resumes auto-append; coordinator posts ALERT/INFO). Replaces the coordinating-issue concept."""
+	events: [AgentBoardEvent]
+	"""Delivery-minimum alert: capabilities covered neither by an active role nor by the coordinator (coordinatorCapabilities). The minimum is CODE_PUSH + PR_MERGE; the tracker verbs are always the coordinator's."""
+	missingCapabilities: [String]
+	"""
+	What no key of the organization can do on this board (board-permissions.md D13): BOARD_AGENT when
+	an active agent role exists and no key covers it, BOARD_WRITE when the coordinator seat is empty and
+	no key can take it. Each key is judged as it would be on a call. Read for the board panel only.
+	"""
+	missingCoverage: [BoardCoverageGap!]
+	"""Served prompt of the implicit, non-removable coordinator role."""
+	coordinatorPrompt: String
+	"""
+	The coordinator seat's prompt as served (task 71a3dd22): coordinatorPrompt, then who merges on
+	this board and how. Read this one when taking the seat; edit coordinatorPrompt.
+	"""
+	servedCoordinatorPrompt: String
+	"""
+	Verbs the coordinator seat performs itself on this board, e.g. PR_MERGE when it merges once
+	the last required role has passed. Unverified, like a role's capabilities; the delivery-loop
+	alert (missingCapabilities) counts them as covered.
+	"""
+	coordinatorCapabilities: [AgentCapability]
+	pause: AgentBoardPause
+	coordinatorSeat: AgentCoordinatorSeat
+	"""Max concurrently ASSIGNED tasks per agent on this board (default 2)."""
+	perAgentWipLimit: Int
+	"""What every task on this board may spend together, in USD micros; null means no board limit."""
+	budgetMicros: Long
+	"""Percent of a budget at which the board posts one alert and nothing stops (default 80)."""
+	softAlertPercent: Int
+	"""
+	The board's average coordinator share per coordinator-caused transition, in
+	micros (board-mechanics §5.3): coordinatorSharesMicros / coordinatorTransitions,
+	0 before any. Added to every projected round, and named in a refusal.
+	"""
+	coordinatorOverheadMicros: Long
+	"""Coordinator spend apportioned to tasks so far (D16), in micros. The same money as the seat's usage rows, which board spend already counts."""
+	coordinatorSharesMicros: Long
+	"""Coordinator-caused transitions the apportioned spend was split over (D16)."""
+	coordinatorTransitions: Long
+	"""Rounds between one pair of roles before a task parks (default 3)."""
+	cycleCap: Int
+	"""Repeated rounds at which a task parks; 1, the default, parks on the first repeat."""
+	noProgressRepeatsToStop: Int
+	"""Minutes a task may wait on a person before AGENT_TASK_QUEUE_AGE is sent; null or 0 is off."""
+	humanQueueAgeMinutes: Int
+	"""Priority number at or below which an open item blocks routing, 1 being most urgent. Null is strict."""
+	blockingPriority: Int
+	"""Priority number at or below which an open item prevents a policy completion. Null is strict."""
+	completionPriority: Int
+	"""
+	Whether a no-progress or cycle-cap stop parks for the coordinator first, which may release it once
+	per stop kind per task or escalate it (task c0a2134c). As set: null is the default, on.
+	"""
+	coordinatorStopLift: Boolean
+	"""coordinatorStopLift with its default resolved."""
+	effectiveCoordinatorStopLift: Boolean
+	"""
+	Days the event log keeps an event before the daily sweep deletes it (task 04dedcc5). As set: null
+	is the default, 15; 0 keeps everything.
+	"""
+	eventRetentionDays: Int
+	"""eventRetentionDays with its default resolved; 0 keeps everything."""
+	effectiveEventRetentionDays: Int
+	"""Staleness thresholds that post ALERTs (task RD3-4); null when every rule is off."""
+	staleness: AgentBoardStaleness
+	"""
+	The level ladder (task RD3-6); null when the board has none, and then every task's work level reads null and the
+	work level UI is hidden.
+	"""
+	ladder: AgentBoardLadder
+	"""Whether coordinator priority is advisory (LAX, default) or enforced at assignment (STRICT)."""
+	priorityType: AgentBoardPriorityType
+	"""The component this board builds -- the node documents and implementation hang off."""
+	target: ID
+	targetDetails: Component
+	"""Work level applied to tasks of this board that do not declare one."""
+	defaultWorkLevel: Int
+	"""Resolution mode for requirements of this board that do not name one."""
+	defaultInputResolution: AgentInputResolution
+	createdDate: DateTime
+	"""The board file that last applied to this board; null on a board never applied from a file."""
+	declarative: DeclarativeProvenance
+	"""
+	The board's spend in a window broken down so the parts add up to the total (task RD2-8): by the
+	role of the hop each usage row fell in, closed or open; the coordinator seat's own rows; and
+	rows no hop owns. Computed from the same rows and prices as agentBoardUsage. A null window is
+	the board's life.
+	"""
+	spendBreakdown(from: DateTime, to: DateTime): BoardSpendBreakdown
+	"""
+	Who works the board (task RD3-5): every session that worked or polled it, open ones first, then closed, each
+	by last activity, newest first. Spend and cache share are for the window, as spendBreakdown's; a null window
+	is the board's life.
+	"""
+	agents(from: DateTime, to: DateTime): [BoardAgentRow]
+}
+
+"""One session on a board's Agents tab (task RD3-5)."""
+type BoardAgentRow {
+	session: ID
+	agent: ID
+	"""The agent's display name, else its name."""
+	agentName: String
+	"""The roles it worked here; for a session that only polled, the roles it asked for."""
+	roles: [String]
+	state: BoardAgentState
+	lastPollAt: DateTime
+	lastOfferAt: DateTime
+	"""The newest of its polls, offers, assignments, sign-offs, returns and session activity here."""
+	lastActivityAt: DateTime
+	"""Completed tasks it signed off on."""
+	tasksCompleted: Int
+	"""Its usage on the board in the window; null when it reported none."""
+	tokens: UsageTotals
+	costMicros: Long
+	"""Cache read tokens over input plus cache read plus cache write; null when none were counted."""
+	cacheShare: Float
+	"""The staleness rules that name it or its task, with the ALERT each posts; empty when none."""
+	stale: [BoardAgentStaleMark]
+}
+
+"""WORKING a task since its assignment; WAITING since its last poll; IDLE since its last activity; CLOSED at its close."""
+enum BoardAgentStateKind { WORKING WAITING IDLE CLOSED }
+
+type BoardAgentState {
+	kind: BoardAgentStateKind
+	"""For WORKING, the task and its key."""
+	taskUuid: ID
+	"""The task's key alone, e.g. RD3-5 -- not its title; null for a task without a key."""
+	taskKey: String
+	since: DateTime
+	"""For CLOSED, who closed it."""
+	closedBy: AgentActor
+}
+
+type BoardAgentStaleMark {
+	"""The staleness rule: hopNoProgress, seatSilent or deliveryStuck."""
+	rule: String
+	message: String
+}
+
+"""Board-scoped role definition. The coordinator is implicit and never a row here."""
+type AgentTaskRoleConfig {
+	"""Allowance for one assignment of this role, in USD micros: the projection's estimate when the board has no history for the role, told to the worker at assignment, and flagged on the hop and the board when a hop exceeds it. Not enforced mid-hop -- agents pull, and the server learns the cost when it is reported. Null sets no allowance."""
+	hopBudgetMicros: Long
+	"""
+	Model strength this role needs; null admits every model. At most two decimal places;
+	within 0.001 either side counts as meeting it.
+	"""
+	requiredStrength: Float
+	"""How far above requiredStrength a model may be and still take the role. 0 means an exact match."""
+	strengthHeadroom: Float
+	"""
+	Which of a model's per-category strengths this role reads, so a board role with its own name
+	(PLANNER) can use a model's ARCHITECT strength. Null reads the model's base strength.
+	"""
+	strengthCategory: ModelRoleCategory
+	"""
+	Per-model strength overrides for this role, consulted first: override, then the model's
+	strength for strengthCategory, then its base strength. Re-pointed when a model is merged.
+	"""
+	modelStrengths: [RoleModelStrength!]
+	uuid: ID
+	board: ID
+	org: ID
+	name: String
+	prompt: String
+	"""
+	The prompt as a worker in this role is served it (task RD3-9): the prompt, then the board's
+	routing rules composed from its settings and merge procedure -- what assign and task next hand over,
+	readable without taking a task, so a fresh context can brief itself.
+	"""
+	servedPrompt: String
+	"""The version the served prompt is pinned by on a sign-off: a hash of the prompt alone."""
+	promptVersion: String
+	"""Advisory routing order for the coordinator; routing is a per-hop decision, not a pipeline."""
+	orderIndex: Int
+	"""Optional cap on concurrently ASSIGNED tasks in this role on this board."""
+	wipLimit: Int
+	"""Assigned agent must differ from the last sign-off's agent (separation of duties)."""
+	requireDistinctAgent: Boolean
+	"""A session assigned in this role reads its task without earlier hops' note, session, agent and return description; documents are untouched."""
+	blindReview: Boolean
+	active: Boolean
+	"""Capabilities an assignee of this role must hold (declared, unverified in v1)."""
+	requiredCapabilities: [AgentCapability]
+	"""Operator-only: who works this role (default AGENTIC)."""
+	kind: AgentRoleKind
+	"""Operator-only: may the coordinator skip this role (default OPTIONAL)."""
+	necessity: AgentRoleNecessity
+	"""Operator-only: conditional human review of this role's sign-offs (default NONE; AGENTIC roles only)."""
+	humanGate: AgentHumanGate
+	"""What every task in this role must be able to read before it starts."""
+	requiredInputs: [AgentTaskPrerequisite]
+	"""
+	What a hop in this role must leave behind: the mirror of requiredInputs.
+	Enforced at sign-off, not at assignment -- the hop has to run before it
+	can produce anything.
+	"""
+	producesOutputs: [AgentProducedOutput]
+	"""Who this role may commission for a report (task RD4-12); null when it commissions nobody. Operator-only."""
+	commissions: AgentRoleCommissions
+}
+
+"""How a commission from a role enters the board (task RD4-12)."""
+enum AgentCommissionIntake {
+	"""Queued for the investigating role at once."""
+	AUTO
+	"""PENDING_INTAKE, authorised by the coordinator like any registered task."""
+	COORDINATOR
+}
+
+"""
+Which roles a role may commission an investigation from (task RD4-12). Every role named must produce
+BOARD_INVESTIGATION_REPORT at TASK scope; an apply or an upsert that names one that does not is refused.
+"""
+type AgentRoleCommissions {
+	"""The investigating roles, by name."""
+	roles: [String]
+	"""AUTO (the default) or COORDINATOR."""
+	intake: AgentCommissionIntake
+	"""The investigation's budget when a commission names none, in USD micros; capped by the board's."""
+	defaultBudgetMicros: Long
+	"""The role that reviews the report before it returns, when a commission names none; null for no review."""
+	review: String
+}
+
+"""A role's commissions as input (task RD4-12); an empty roles list, or null, commissions nobody."""
+input AgentRoleCommissionsInput {
+	roles: [String!]
+	intake: AgentCommissionIntake
+	defaultBudgetMicros: Long
+	review: String
+}
+
+"""What a task is for (task RD4-12)."""
+enum AgentTaskKind {
+	"""An ordinary task, and every task from before kinds."""
+	WORK
+	"""Research one role commissions from another: it delivers a report, links no PRs and has no delivery step."""
+	INVESTIGATION
+}
+
+"""Where an investigation's report goes when it completes (task RD4-12)."""
+enum AgentInvestigationReturnTo {
+	"""Pinned on the commissioning task, which is offered back to the commissioning role."""
+	TASK
+	"""A standalone investigation: the report stays on it."""
+	NONE
+}
+
+"""Who commissioned an investigation (task RD4-12)."""
+type AgentInvestigationCommissioner {
+	"""The commissioning role; for a person, the role of the task it was commissioned from, else null."""
+	role: String
+	roleUuid: ID
+	"""The commissioning session; null for a person."""
+	session: ID
+	"""The task it was commissioned from, which the report returns to; null when none."""
+	task: ID
+	"""The session or the person."""
+	by: AgentActor
+}
+
+"""The investigation block of an INVESTIGATION task (task RD4-12)."""
+type AgentInvestigation {
+	commissionedBy: AgentInvestigationCommissioner
+	"""What it delivers: BOARD_INVESTIGATION_REPORT."""
+	deliverable: SpecificationType
+	"""The investigating role, whatever role the task is queued for now."""
+	role: String
+	roleUuid: ID
+	"""The role that reviews the report before it returns; null when none."""
+	review: String
+	reviewUuid: ID
+	"""When the report is due; the board's investigationOverdue staleness rule alerts past it."""
+	deadline: DateTime
+	returnTo: AgentInvestigationReturnTo
+	"""The report release the investigation completed with; null until then."""
+	report: ID
+	completedAt: DateTime
+}
+
+"""A report an investigation commissioned from this task brought back (task RD4-12)."""
+type AgentReturnedReport {
+	investigation: ID
+	investigationKey: String
+	"""The report release, pinned as an input on this task; null when the investigation was cancelled."""
+	report: ID
+	"""The session that commissioned it; a poll prefers it when the task is offered back."""
+	session: ID
+	role: String
+	at: DateTime
+	"""Whether the return queued this task for the commissioning role again."""
+	reoffered: Boolean
+	"""Whether the investigation was cancelled: no report came back, and this task no longer waits on it."""
+	cancelled: Boolean
+	"""What the cancel said; null for a report that came back."""
+	note: String
+}
+
+"""
+Commission an investigation (task RD4-12). A session commissions from the task it holds (fromTask), in that
+task's role, a role its commissions name; a person with BOARD_WRITE commissions any role that produces
+BOARD_INVESTIGATION_REPORT, from a task or from none.
+"""
+input AgentTaskCommissionInput {
+	boardUuid: ID!
+	"""The commissioning session; required on agentTaskCommissionProgrammatic from an agent, refused on agentTaskCommission."""
+	sessionUuid: ID
+	"""The investigating role, by name: it must produce BOARD_INVESTIGATION_REPORT at TASK scope."""
+	role: String!
+	title: String!
+	"""What to investigate: the task's description."""
+	brief: String
+	"""The task it is commissioned from, which the report returns to."""
+	fromTask: ID
+	"""Releases the investigation reads, pinned as its required inputs."""
+	inputs: [ID!]
+	"""What it may spend, in USD micros; left out, the commissioning role's default, capped by the board's budget."""
+	budgetMicros: Long
+	deadline: DateTime
+	"""The role that reviews the report; left out, the commissioning role's default."""
+	review: String
+	"""Left out: TASK with a fromTask, NONE without."""
+	returnTo: AgentInvestigationReturnTo
+	workLevel: Int
+	group: String
+	tags: [TagRecordInput]
+}
+
+"""A document a role is expected to publish during its hop."""
+type AgentProducedOutput {
+	specification: SpecificationType
+	scope: AgentInputScope
+	"""False makes it advisory, for roles that sometimes have nothing to write."""
+	required: Boolean
+}
+
+"""The single live assignment -- bound to session liveness, ended on any session close."""
+type AgentTaskWorkAssignment {
+	session: ID
+	agent: ID
+	role: String
+	"""The role config row `role` named when this assignment was made. Null on assignments made before this field existed."""
+	roleUuid: ID
+	assignedAt: DateTime
+	promptVersion: String
+	"""Versions this assignment is bound to work from."""
+	resolvedInputs: [AgentTaskResolvedPrerequisite]
+}
+
+"""Append-only per-hop sign-off stored in ReARM; promptVersion pins the served prompt the agent assumed."""
+type AgentTaskSignOff {
+	role: String
+	"""The role config row `role` named at the time. Null on hops recorded before this field existed."""
+	roleUuid: ID
+	agent: ID
+	session: ID
+	assignedAt: DateTime
+	signedOffAt: DateTime
+	outcome: AgentSignOffOutcome
+	note: String
+	promptVersion: String
+	"""Reviewer identity of a HUMAN sign-off (human role stage or gate verdict); null on agent sign-offs. Non-null reviewedBy IS the human marker."""
+	reviewedBy: AgentActor
+	"""What this hop consumed, snapshotted when the hop closed and filled in by reports its session sends afterwards (refreshedAt). Null on human sign-offs and on hops that predate usage reporting."""
+	usage: HopUsage
+	"""
+	Document releases this hop published, in publish order. Recorded on the hop rather
+	than only on the task because a later round's reader needs to know WHICH hop produced
+	a document to carry its open review items forward.
+	"""
+	outputs: [ID]
+	"""How far this hop went over its allowance: null when the allowance or the cost is unknown, 0 within it."""
+	overAllowanceMicros: Long
+	"""
+	The documents this sign-off reviewed, and what its review did to each. For a reviewer's hop:
+	what it had pinned, for either outcome. For a person's approval at a gate: the gated hop's
+	outputs and what a gated reviewer had reviewed. Null when the hop reviewed nothing.
+	"""
+	reviewedInputs: [AgentTaskReviewedPrerequisite]
+	"""
+	The documents this sign-off's review would have promoted and an organization guard kept where
+	they were, with the guard's reason. Empty when nothing was refused.
+	"""
+	refusedPromotions: [AgentTaskRefusedPromotion]
+	"""True when the hop said its round changes nothing to build (sign-off noChange, task RD4-13); null otherwise."""
+	noChange: Boolean
+	"""The review item round this hop answered with a round of its own document (task RD4-13): it answered the work rather than made it. Null otherwise."""
+	answered: ID
+	"""True when the hop said its round changed no code (sign-off noCode, task RD4-2); null otherwise."""
+	noCode: Boolean
+}
+
+"""One document a sign-off reviewed."""
+type AgentTaskReviewedPrerequisite {
+	release: ID
+	"""The document's type, when the release is a board document."""
+	specification: SpecificationType
+	"""Its round, for a review item index or a question round."""
+	round: Int
+	"""
+	The lifecycle this review moved it to: READY_TO_SHIP when the review promoted it. Null when it
+	did not: a rejection, a pass that left something blocking, a gate not yet approved, a document
+	already past ASSEMBLED, or a guard's refusal (see refusedPromotions).
+	"""
+	promotedTo: ReleaseLifecycleEnum
+}
+
+"""A document a review would have promoted and a guard kept where it was."""
+type AgentTaskRefusedPromotion {
+	release: ID
+	specification: SpecificationType
+	round: Int
+	"""The guard's words."""
+	reason: String
+}
+
+"""
+What caused a status transition. An enum because the cycle-time metrics filter on
+it -- "time from AUTHORIZE to ASSIGN" is a question asked of this field, and
+asking it of free text means every caller agreeing on spelling forever.
+"""
+enum AgentStatusTrigger {
+	REGISTER
+	AUTHORIZE
+	ASSIGN
+	SIGNOFF
+	RETURN
+	COMPLETE
+	CANCEL
+	SPLIT
+	HOLD
+	LIFT_HOLD
+	HUMAN_GATE
+	HUMAN_ACCEPT
+	HUMAN_REJECT
+	HUMAN_SIGNOFF
+	SESSION_CLOSED
+	"""A person unassigned the task, back to the queue, with a reason (task RD3-4)."""
+	UNASSIGN
+	"""
+	The board completed a task whose loop ran out -- a cycle cap, a no-progress stop or a budget --
+	with items left open below what the board requires resolved. Distinct from COMPLETE: the work
+	finished in one case and the loop stopped in the other.
+	"""
+	POLICY_COMPLETE
+	"""A completed task sent back to a role, with a reason. A decision, not a loop."""
+	REOPEN
+	"""The work passed and a linked PR is not merged yet: into DELIVERING."""
+	DELIVER_WAIT
+	"""Every linked PR merged: DELIVERING to COMPLETED."""
+	DELIVERED
+	"""A linked PR closed without merging: to the coordinator."""
+	PR_CLOSED
+	"""A delivery unit was declared abandoned: to the coordinator (task 18c5c293)."""
+	DELIVERY_ABANDONED
+}
+
+"""
+One unanswered question: who asked, about what, and who is expected to answer.
+
+Questions nest -- a tester asks the coder, who cannot answer without asking the architect -- so
+each answer pops one frame and the chain unwinds to whoever started it.
+"""
+type AgentQuestionFrame {
+	askingRole: ID
+	askingSession: ID
+	askingAgent: ID
+	"""The index release carrying the items."""
+	questionsRelease: ID
+	"""The role that produces the questioned input; null while the coordinator is deciding who that is."""
+	answeringRole: ID
+	askedAt: DateTime
+}
+
+"""
+Everything an agent needs to see what else is happening on its board, in one read.
+
+An agent that must ask N questions to understand the board will not ask them; one that gets the
+answer in a poll's worth of latency will. Read-only and board-scoped, and nothing appears before
+it is published -- a hop has no outputs until it signs off.
+"""
+type AgentBoardSnapshot {
+	board: AgentBoard
+	tasks: [AgentTaskSnapshot]
+}
+
+type AgentTaskSnapshot {
+	task: AgentTask
+	"""Who holds it now, or null when nobody does."""
+	holder: AgentActor
+	heldSince: DateTime
+	"""What it waits on, with each dependency's own status."""
+	dependsOn: [AgentTaskDependency]
+	"""Newest release per specification type, so a reader sees the current document set."""
+	latestDocuments: [Release]
+	"""Top of the question stack. Null when nothing is outstanding."""
+	waitingOn: AgentQuestionFrame
+	"""
+	What the task has spent, in USD micros, as the budget counts it: the derived
+	cost of every usage row attributed to it, whenever it was reported, plus its
+	apportioned coordinator estimate. Rows without a price count 0.
+	"""
+	spentMicros: Long
+	budgetMicros: Long
+}
+
+"""One task another task waits on, with enough of its state to tell whether the wait is over."""
+type AgentTaskDependency {
+	task: ID
+	externalRef: String
+	title: String
+	status: AgentTaskStatus
+}
+
+"""
+One status transition, written atomically with the transition. Intervals between rows are the
+cycle-time metrics (notably AWAITING_COORDINATOR -> QUEUED = coordinator routing latency).
+
+actor is who caused it: the worker or coordinator session, the human who approved at a gate, or
+the system on a sweep. It was a bare session uuid, so every human-caused transition recorded
+null -- "who moved this task" had no answer for exactly the moves a person made.
+"""
+type AgentTaskStatusChange {
+	from: AgentTaskStatus
+	to: AgentTaskStatus
+	at: DateTime
+	trigger: AgentStatusTrigger
+	actor: AgentActor
+	"""What the actor said: a completion's or cancellation's note, or routing's reason and the role it sent the task to (RD2-23). Null on changes recorded before notes were kept."""
+	note: String
+	"""On the row that leaves a hold the coordinator seat placed for the operator, the PRs linked while it stood (task RD4-19); null otherwise."""
+	linked: [AgentTaskHoldLink]
+}
+
+"""An assignment a person ended by unassigning the task (task RD3-4); the unassigned session's later sign-off, publish or question is refused."""
+type AgentTaskUnassignment {
+	role: String
+	roleUuid: ID
+	agent: ID
+	session: ID
+	assignedAt: DateTime
+	unassignedAt: DateTime
+	unassignedBy: AgentActor
+	reason: String
+	"""What the hop had spent when it was unassigned."""
+	usage: HopUsage
+}
+
+type AgentTaskReturn {
+	role: String
+	"""The role config row `role` named at the time. Null on hops recorded before this field existed."""
+	roleUuid: ID
+	agent: ID
+	session: ID
+	reason: AgentTaskReturnReason
+	description: String
+	returnedAt: DateTime
+	"""What this hop consumed before it was handed back. A returned hop still costs money."""
+	usage: HopUsage
+	"""Document releases published before the hop was handed back; a returned hop can still have produced one."""
+	outputs: [ID]
+	"""How far this hop went over its allowance: null when the allowance or the cost is unknown, 0 within it."""
+	overAllowanceMicros: Long
+}
+
+"""
+Pointer from a release to document bytes in a repository, present only on
+releases of specification components. The commit and repository are NOT
+repeated here: they come from the release's source code entry, so the
+recognised-commit predicate and signature verification apply to a document
+exactly as they do to code.
+"""
+type DocumentRef {
+	specification: SpecificationType
+	"""Repo-relative path at the release's commit."""
+	path: String
+	digest: String
+	mediaType: String
+	indexPath: String
+	indexDigest: String
+	"""The task this round belongs to, for TASK-scoped types."""
+	task: ID
+	"""The session that published it."""
+	session: ID
+	"""1-based count of this task's rounds of this type."""
+	round: Int
+	"""The review item index for BOARD_REVIEW_ITEMS and BOARD_TEST_REPORT; absent otherwise."""
+	reviewItems: BoardReviewItemIndex
+	"""The element index of a prose document, as the CLI parsed it and the server checked it (gaps §2.A); absent when none was published."""
+	elements: ElementIndex
+	"""On a BOARD_ELEMENT_CHECK_REPORT round: what the element checks found (elements.md §7)."""
+	elementChecks: ElementCheckReport
+	"""
+	A round a role published on a task it did not hold (task e97fde56): assembled at publish, never
+	a hop's output. False or absent on every other round.
+	"""
+	advisory: Boolean
+	"""The role the round was published as: the holding role, or for an advisory round the author's. Absent on older rounds."""
+	publishedByRole: String
+	"""
+	The release that replaced this version of the round (task RD4-7): the same hop published the same path
+	again, so that release keeps this round number as its newer version. Newest-round reads skip a version
+	that has one; it stays readable by uuid and in the task's documents. Absent means not replaced.
+	"""
+	supersededBy: ID
+}
+
+"""
+What the named element checks found on one document (elements.md §7). Deterministic: the same
+scope gives the same report, and the digest is its identity.
+"""
+type ElementCheckReport {
+	"""The catalogue the checks came from; bumped on any change to a check's meaning."""
+	catalogueVersion: String
+	"""The element grammar of the checked document's index."""
+	grammarVersion: String
+	scope: ElementCheckScope
+	"""One per check in the catalogue, in catalogue order."""
+	results: [ElementCheckResult]
+	"""sha256 of the report's canonical JSON without the digest."""
+	digest: String
+}
+
+type ElementCheckScope {
+	"""The task the report was cut on."""
+	task: ID
+	"""The release the report is about."""
+	checked: ID
+	"""Every release whose elements the checks could see, the checked one first."""
+	releases: [ElementCheckScopedRelease]
+}
+
+"""One release in scope, as it stood when the checks ran."""
+type ElementCheckScopedRelease {
+	release: ID
+	specification: SpecificationType
+	elementsDigest: String
+	lifecycle: String
+}
+
+type ElementCheckResult {
+	"""The check's name, e.g. trace.parent_exists."""
+	check: String
+	result: ElementCheckOutcome
+	"""Whether the board blocked the hand-over on this check when it ran."""
+	blocking: Boolean
+	"""Why a check was skipped, or a one-line summary of a failure."""
+	reason: String
+	offences: [ElementCheckOffence]
+}
+
+"""SKIP is a result, never silence: a check that cannot run says why."""
+enum ElementCheckOutcome {
+	PASS
+	FAIL
+	SKIP
+}
+
+"""One element a check failed on."""
+type ElementCheckOffence {
+	elementId: String
+	release: ID
+	message: String
+}
+
+"""What a board does with the element checks (elements.md §7)."""
+type ElementCheckPolicy {
+	"""Checks whose failure refuses the sign-off that hands the document over; empty means report only."""
+	blocking: [String]
+	"""Level to the attributes an element at that level must carry (parent, traces, assumes, speculative)."""
+	mandatoryFields: Object
+	"""Families that must take part in verification: test, requirement."""
+	orphans: [String]
+	"""The board's coverage gates by name, each {select, require, description}: the check coverage.<name> (elements.md §7.5)."""
+	coverage: Object
+}
+
+input ElementCheckPolicyInput {
+	"""Check names from the catalogue; an unknown name is refused with the catalogue's list."""
+	blocking: [String!]
+	"""Level (as a key) to attribute names."""
+	mandatoryFields: Object
+	"""test and/or requirement; absent means test."""
+	orphans: [String!]
+	"""Gate name to {select, require, description}; both expressions are CEL over e and scope, validated on save."""
+	coverage: Object
+}
+
+"""One check of the catalogue."""
+type ElementCheckCatalogueEntry {
+	"""The check's name; coverage.<gate> stands for every board gate."""
+	name: String
+	description: String
+	"""When the check reports SKIP instead of a result; null when it always runs."""
+	skipsWhen: String
+}
+
+"""
+What a prose document says about its elements: requirements, functions, interfaces, tests and
+the like, each with an id, a title, a parent, typed links and a digest of its content. Problems are
+warnings on the index; nothing here refuses a publish.
+"""
+type ElementIndex {
+	"""The grammar the parser implemented: "1", "1.1" or "1.2"."""
+	grammarVersion: String
+	"""The elements the document defines; under grammar 1.2 only those in a type their family lists."""
+	elements: [Element]
+	warnings: [ElementWarning]
+	"""sha256 of the JSON the CLI sent, tying the index to one parse of the file."""
+	digest: String
+	"""
+	Grammar 1.2: headings and table rows naming an id the document does not define, because its family is defined
+	in other document types. Empty before 1.2.
+	"""
+	references: [ElementReference]
+}
+
+"""A heading or table row that names an id without defining it (grammar 1.2)."""
+type ElementReference {
+	id: String
+	"""The family name the board maps the id's prefix to; null for an unknown family."""
+	family: String
+	title: String
+	"""1-based line of the heading or table row."""
+	line: Int
+}
+
+"""An element family prefix of a board and the specification types that define its ids (grammar 1.2)."""
+type ElementFamilyEntry {
+	prefix: String!
+	family: String!
+	"""In order of precedence: a document of an earlier type that defines an id owns it; empty means references only."""
+	definedIn: [SpecificationType!]!
+}
+
+type Element {
+	id: String
+	"""The family name the board maps the id's prefix to; null for an unknown family."""
+	family: String
+	title: String
+	"""Explicit parent, else the enclosing element heading."""
+	parent: String
+	level: Int
+	traces: [ElementLink]
+	assumes: [String]
+	"""Inputs cited below their floor."""
+	speculative: [String]
+	"""sha256 of the element's content, line endings normalised: what a per-element diff compares."""
+	contentDigest: String
+	"""1-based line of the heading or table row."""
+	line: Int
+	"""Glossary terms the element's content uses, **term** (grammar 1.1); empty under grammar 1."""
+	terms: [String]
+}
+
+"""A typed link. Verbs are kept as written."""
+type ElementLink {
+	verb: String
+	target: String
+}
+
+"""DUPLICATE_ID, UNKNOWN_FAMILY, UNRESOLVED_PARENT, UNRESOLVED_TARGET or MALFORMED_ATTRIBUTE."""
+type ElementWarning {
+	code: String
+	elementId: String
+	message: String
+}
+
+"""The closure of what depends on an element."""
+type ElementDependents {
+	element: String
+	"""False when no release in scope defines the element."""
+	found: Boolean
+	"""The size of the closure."""
+	count: Int
+	"""Whether the depth bound stopped the walk."""
+	truncated: Boolean
+	dependents: [ElementDependent]
+}
+
+"""One element of the closure, with the edges that pulled it in."""
+type ElementDependent {
+	element: AgentTaskElement
+	via: [ElementEdge]
+	"""1 for a direct dependent."""
+	distance: Int
+}
+
+"""An edge from a dependent to what it depends on."""
+type ElementEdge {
+	from: String
+	to: String
+	"""parent, assumes, or the trace verb as written."""
+	kind: String
+}
+
+"""An element in one round of its document."""
+type ElementVersion {
+	release: ID
+	round: Int
+	specification: String
+	contentDigest: String
+	line: Int
+	"""Whether the content digest differs from the round before; false on the first."""
+	changed: Boolean
+}
+
+"""An element of one of a task's documents, with the release and specification it came from."""
+type AgentTaskElement {
+	id: String
+	family: String
+	title: String
+	parent: String
+	level: Int
+	traces: [ElementLink]
+	assumes: [String]
+	speculative: [String]
+	contentDigest: String
+	line: Int
+	release: ID
+	specification: String
+	"""Glossary terms the element uses (grammar 1.1)."""
+	terms: [String]
+}
+
+"""
+The machine-read half of a review or test document: what was found, how badly it
+matters and whether it is still open. The prose lives in the markdown the release
+points at, under a heading carrying each review item's id.
+"""
+type BoardReviewItemIndex {
+	kind: SpecificationType
+	"""1-based round for display; the authoritative value is on the release."""
+	round: Int
+	verdict: BoardReviewVerdict
+	"""Totals on a BOARD_TEST_REPORT; absent on a review."""
+	counts: TestCounts
+	reviewItems: [BoardReviewItem]
+	"""
+	The input these items are about, which is what sends them to the role that produces it.
+	Absent on a review, where the work under review is meant.
+	"""
+	about: BoardReviewItemsAbout
+	"""
+	The PR heads a BOARD_TEST_REPORT or BOARD_REVIEW_ITEMS round covered, one per linked PR (task 3b97ccfd).
+	A passing BOARD_TEST_REPORT of a task with linked PRs names every one of them; on BOARD_REVIEW_ITEMS it is
+	optional and informative (task 5ec48b02). Every head named must be of a linked PR.
+	"""
+	tested: [TestedHead]
+}
+
+"""A linked PR and the commit a review or test covered."""
+type TestedHead {
+	pr: String
+	"""The commit sha tested, 7 to 40 hex characters."""
+	head: String
+}
+
+"""What an index's items are about, and therefore who answers them."""
+type BoardReviewItemsAbout {
+	specification: SpecificationType
+	"""The release of that input the items refer to, so an answer is recognisable as one."""
+	release: ID
+}
+
+enum BoardReviewVerdict { PASSED REJECTED }
+
+"""
+Where a review item stands. The closed statuses are not interchangeable: RESOLVED says the work was
+done, ACCEPTED says an operator took the risk knowingly, POLICY_ACCEPTED says nobody looked --
+the loop ran out under a cycle cap, a no-progress stop or a budget, and the board completed the
+task with the item still open -- and WITHDRAWN says the reviewer was wrong. Only OPEN must be
+carried into the next round.
+"""
+enum BoardReviewItemStatus { OPEN RESOLVED ACCEPTED POLICY_ACCEPTED WITHDRAWN }
+
+type BoardReviewItem {
+	"""Stable within a task across rounds: an open review item is carried forward under the same id."""
+	id: String
+	"""1 highest, at most the organization's level count."""
+	priority: Int
+	status: BoardReviewItemStatus
+	"""One line; the reasoning is in the markdown under a heading carrying the id."""
+	title: String
+	location: BoardReviewItemLocation
+	"""
+	The uuid of the release whose round closed it -- a pointer, never text. Null while the item is
+	open. A round that closes an item names itself here, unless another release already answers
+	for it: when an upstream role answered by republishing its document, this points at that
+	document rather than at the round recording the closure.
+	"""
+	resolvedBy: String
+	"""
+	The words that closed it: a fixer's note, a policy stop's reason, or the answer to a question.
+	"""
+	resolution: String
+	"""
+	Who last decided this review item -- accepted, dismissed or re-prioritised it, or filed it by hand --
+	a person or the agent session whose round did. Written by the server, never by an agent. Null
+	when nobody has decided it: an agent's review item as filed, or a decision made before this was kept.
+	"""
+	decidedBy: AgentActor
+	"""The release of the round that made that decision."""
+	decidedIn: ID
+	"""When that decision was made: the creation time of decidedIn's release. Computed per read."""
+	decidedAt: DateTime
+	"""
+	True on an item a person filed while approving a gate: work the task was approved past. Open and
+	carried until its producer closes it, but it never blocks routing or completion. Only a person
+	sets it, and an agent's round carries it from the previous one. Null when not a correction.
+	"""
+	correction: Boolean
+	"""
+	The element location.element names, as it was in the index of the release the round is about
+	(or, in a task's open items, as the task's documents have it now); null without an element or an index.
+	"""
+	element: AgentTaskElement
+}
+
+"""What a person does to one review item."""
+enum BoardReviewItemDecisionAction {
+	"""The risk is taken knowingly: ACCEPTED, with a resolution saying why."""
+	ACCEPT
+	"""The review item does not apply: WITHDRAWN, with a reason."""
+	DISMISS
+	"""A new priority for the review item; its status is unchanged."""
+	SET_PRIORITY
+	"""
+	A new review item, OPEN, numbered P-1, P-2... by the board. Filed with an approval at a human gate it
+	is a correction, which never blocks; anywhere else it blocks like any review item.
+	"""
+	FILE
+}
+
+"""path and line for code, ref for a requirement or design section. All optional."""
+type BoardReviewItemLocation {
+	path: String
+	line: Int
+	ref: String
+	"""
+	The id of the element the review item is about (elements.md §8). With it, path and line are filled
+	in from the index when the author left them out; the rework point is about.release + element.
+	"""
+	element: String
+}
+
+type TestCounts {
+	passed: Int
+	failed: Int
+	skipped: Int
+}
+
+type AgentTask {
+	uuid: ID
+	org: ID
+	board: ID
+	"""WORK, or INVESTIGATION for a commissioned report (task RD4-12)."""
+	kind: AgentTaskKind
+	"""The investigation block; null on a WORK task."""
+	investigation: AgentInvestigation
+	"""Reports investigations commissioned from this task brought back, oldest first."""
+	reportsReturned: [AgentReturnedReport]
+	"""The task's number on its board, stamped at registration and never changed (board-documents.md D7)."""
+	number: Int
+	"""<prefix>-<number>, e.g. RD-42: how people and agents name the task. Immutable; a prefix rename keeps it."""
+	key: String
+	"""What the task is, beyond its one-line title (board-documents.md §4.5); set at registration, null on older tasks."""
+	description: String
+	"""What this task may spend, in USD micros; null means only the board's limit applies."""
+	budgetMicros: Long
+	"""
+	Coordinator spend apportioned to this task (D16): each coordinator usage delta
+	is split equally among the tasks the seat moved since the previous one, else
+	the board's open tasks, and frozen when computed. An estimate, not a
+	measurement. The task's spend in the budget is its usage rows plus this; the
+	board's spend counts the seat's rows and never these shares, so task spends do
+	not add up to the board's.
+	"""
+	coordinatorEstimateMicros: Long
+	"""
+	What the board charges this task, in USD micros: its usage rows plus coordinatorEstimateMicros,
+	the figure the task's budget is held to. 0 for a task that has spent nothing. A row without an
+	applicable price counts 0, so this is a lower bound when usage.costComplete is false.
+	"""
+	spentMicros: Long
+	"""
+	When the task last changed: any save, a transition, an assignment, a sign-off, a return, a hold, a
+	budget or a PR link. The cursor of agentTasksProgrammatic(changedSince:) (task 9540d3b6).
+	"""
+	updatedAt: DateTime
+	"""The elements of the task's documents: the union over its latest release per specification (gaps §2.A)."""
+	elements: [AgentTaskElement]
+	"""The newest element check report for each of the task's element-bearing documents (elements.md §7)."""
+	elementChecks: [ElementCheckReport]
+	"""
+	What depends on an element, transitively, nearest first (elements.md §8): over the task's
+	documents, its bound inputs and the latest release of each document series under the board's
+	target. depth defaults to 8; truncated says the bound was hit.
+	"""
+	dependentsOf(element: String!, depth: Int): ElementDependents
+	"""An element across the task's rounds of the document that defines it, oldest first: which rounds changed it."""
+	elementHistory(element: String!): [ElementVersion]
+	"""When the task was last reopened; null when never."""
+	reopenedAt: DateTime
+	"""How many times the task has been reopened. A second reopen is a signal to split or cancel."""
+	reopenCount: Int
+	"""Every reopen, oldest first: the role it went back to, when, by whom and why."""
+	reopens: [AgentTaskReopen]
+	"""
+	The linked PRs (prUrls) as ReARM knows them from CI's PR registrations, resolved per read.
+	A task completes when every one has merged; registered false means CI never reported the URL.
+	"""
+	pullRequests: [AgentTaskPullRequest]
+	"""
+	The PR heads the newest passing BOARD_TEST_REPORT round covered, one per linked PR (task 3b97ccfd): merge
+	at these. A review's heads are informative and not read here (task 5ec48b02). Empty when no passing
+	test report names any.
+	"""
+	testedHeads: [TestedHead]
+	"""Delivery declarations, oldest first; the newest per unit counts (task 18c5c293)."""
+	deliveries: [AgentTaskDelivery]
+	"""Model strength this task requires, overriding the role's when set."""
+	requiredStrength: Float
+	"""Who set requiredStrength, and when. Not a status transition: the status did not change."""
+	strengthSetBy: AgentActor
+	strengthSetAt: DateTime
+	"""Rounds counted per pair of roles, keyed by the asking and answering role uuids."""
+	cycles: Object
+	"""Who is waiting on whom, innermost last. Empty when nothing is outstanding."""
+	questionStack: [AgentQuestionFrame]
+	externalRef: String
+	title: String
+	sourceUrl: String
+	status: AgentTaskStatus
+	"""Role the task is queued for / worked in; retained as last role until re-authorized."""
+	role: String
+	"""The role config row `role` names, so a reader reaches its prompt, capabilities and gate without a second lookup. Null on tasks authorized before this field existed."""
+	roleUuid: ID
+	"""Coordinator-set priority; polls serve lowest first among ELIGIBLE tasks."""
+	orderIndex: Int
+	"""Who last set orderIndex, the coordinator or a person, and when."""
+	orderSetBy: AgentActor
+	"""Who last set or cleared budgetMicros, and when."""
+	budgetSetBy: AgentActor
+	budgetSetAt: DateTime
+	orderSetAt: DateTime
+	"""Required roles a person completed the task without, having said why in the completing status change."""
+	requiredRolesSkipped: [String]
+	"""Tasks that must be COMPLETED before this one is assignable (coordinator-declared, gate-enforced)."""
+	dependsOn: [ID]
+	"""Hold state while ON_HOLD; null otherwise."""
+	hold: AgentTaskHold
+	"""Per-task add-only human gate: the next sign-off, whatever the role, parks the task for human review."""
+	requireHumanReview: Boolean
+	assignment: AgentTaskWorkAssignment
+	signOffs: [AgentTaskSignOff]
+	returns: [AgentTaskReturn]
+	"""Assignments a person ended by unassigning the task, oldest first (task RD3-4)."""
+	unassignments: [AgentTaskUnassignment]
+	parentTask: ID
+	childTasks: [ID]
+	"""Every session that ever held the assignment."""
+	sessions: [ID]
+	prUrls: [String]
+	registeredBySession: ID
+	"""Append-only status transition log, oldest first."""
+	statusHistory: [AgentTaskStatusChange]
+	createdDate: DateTime
+	completedAt: DateTime
+	"""The component this task produces -- a document component, or the implementation."""
+	producesComponent: ID
+	producesComponentDetails: Component
+	"""Releases produced under this task, linked by the worker."""
+	releases: [ID]
+	"""
+	Declared work level, 0 to 9; null when not set, in which case the board's defaultWorkLevel
+	applies (effectiveWorkLevel). The default is resolved on read, never written here (RD2-1).
+	"""
+	workLevel: Int
+	"""The work level the board reads: workLevel, else the board's defaultWorkLevel, else null (RD2-1)."""
+	effectiveWorkLevel: Int
+	"""The task's group, one or none (task-groups-and-tags.md D2, task RD2-29)."""
+	group: TaskGroupRef
+	"""Free labels (D8): the key is the label; the value is stored, not shown in v1."""
+	tags: [TagRecord]
+	"""The keys of the groups its group waits on that still have an open task; empty when it waits on none (D4)."""
+	waitingOnGroups: [String]
+	"""Who last set or cleared the work level after registration, and when (RD2-1)."""
+	workLevelSetBy: AgentActor
+	workLevelSetAt: DateTime
+	"""Requirements this task adds on top of its role's -- add-only."""
+	requiredInputs: [AgentTaskPrerequisite]
+	"""Pinned inputs that have since moved below what the requirement asks for; computed per read."""
+	regressedInputs: [String]
+	"""
+	Everything attributed to this task, across every hop and session that
+	touched it. Computed per read rather than stored, so late attribution is
+	reflected without a rewrite. Null until the first report lands. Built from
+	the hop snapshots, which are taken when a hop ends and filled in when its
+	session reports after that (refreshedAt on the hop), just after the report
+	commits; the budget reads the usage rows (spentMicros on the board
+	snapshot), so once a hop is filled in the two agree for it.
+	The coordinator's share is not in it: see coordinatorEstimateMicros.
+	"""
+	usage: HopUsage
+	"""This task's document releases, newest first."""
+	documents: [Release]
+	"""
+	Review items still open on this task, from the NEWEST round of each indexed
+	type, ordered by priority. Newest round only by design: every round
+	carries forward what the previous one left open, so the newest is the
+	current state and summing rounds would count one review item several times.
+	"""
+	openReviewItems: [BoardReviewItem]
+	"""
+	The open items of the newest BOARD_QUESTIONS round only, which is what a human answers. Separate
+	from openReviewItems, which flattens every indexed type and carries nothing on an item saying
+	which round it came from.
+	"""
+	openQuestions: [BoardReviewItem]
+}
+
+"""What a polling/assigned worker receives: the task, the role to assume and its served prompt."""
+type AgentTaskAssignment {
+	task: AgentTask
+	role: String
+	"""The role config row `role` names, so a worker can read that role's configuration without a lookup by name."""
+	roleUuid: ID
+	rolePrompt: String
+	promptVersion: String
+	"""Versions the agent is to work from, resolved at assignment."""
+	resolvedInputs: [AgentTaskResolvedPrerequisite]
+	"""
+	What this hop is expected to cost, in USD micros: the role's allowance. Not a cap -- a hop that
+	will blow it should be returned (reason OTHER, saying so) rather than pressed on. Null when the
+	role sets none.
+	"""
+	hopBudgetMicros: Long
+}
+
+"""A board's documents block (board-documents.md D2)."""
+type AgentBoardDocuments {
+	"""Replaces the board name in its document components' names, <prefix>-<specification>, both slugged."""
+	prefix: String
+	"""The documents repository serves several boards, so the default root is boards/{board}/."""
+	shared: Boolean
+	"""The root as set, relative to the repository; documentsRoot on the board is the resolved one."""
+	root: String
+}
+
+"""A board function no key can exercise on a board, and the line the board panel shows for it."""
+type BoardCoverageGap {
+	function: PermissionFunction!
+	message: String!
+}
+
+"""The board a document component belongs to, as its page names it."""
+type AgentBoardRef {
+	uuid: ID!
+	name: String
+	taskPrefix: String
+	"""
+	Whether you may open the board: BOARD_READ on it (task RD2-9). The component is read under its own
+	permission and the board under the board's, so a page links to the board only when this is true.
+	Null for a caller that is not a person.
+	"""
+	readable: Boolean
+}
+
+"""One of a board's document series, as the board page lists it (board-documents.md §5)."""
+type AgentBoardDocumentSeries {
+	specification: SpecificationType!
+	component: AgentBoardDocumentSeriesComponent!
+	"""The newest settled round of the series, of any task; null when none was published."""
+	latestRound: AgentBoardDocumentRound
+	"""Settled rounds the series holds, every task's."""
+	roundsCount: Int!
+	"""For an index type, the OPEN items across each task's latest round; null for prose."""
+	openReviewItems: Int
+	"""The newest element check report on the latest round: FAIL (a blocking element check failed), WARN, PASS; null when unchecked."""
+	elementCheckVerdict: String
+	"""That report's results counted as the task page counts them (task RD2-24); null when unchecked."""
+	elementCheckCounts: AgentBoardElementCheckCounts
+}
+
+"""An element check report's results by outcome; elementCheckVerdict is read from these (task RD2-24)."""
+type AgentBoardElementCheckCounts {
+	pass: Int!
+	fail: Int!
+	skip: Int!
+	"""Failed element checks the board blocks the hand-over on."""
+	blockingFailed: Int!
+}
+
+type AgentBoardDocumentSeriesComponent {
+	uuid: ID!
+	name: String
+}
+
+type AgentBoardDocumentRound {
+	"""The task's round number of this type."""
+	round: Int
+	version: String
+	lifecycle: ReleaseLifecycleEnum
+	path: String
+	task: ID
+	release: ID
+}
+
+"""One of a board's document series: the specification and the component that holds it."""
+type AgentBoardDocumentComponent {
+	specification: SpecificationType!
+	component: ID!
+}
+
+input AgentBoardInput {
+	name: String
+	description: String
+	sources: [String!]
+	coordinatorPrompt: String
+	"""
+	Verbs the coordinator seat performs itself (PR_MERGE, CODE_PUSH); the tracker verbs are
+	refused. Null leaves them unchanged, [] clears them.
+	"""
+	coordinatorCapabilities: [AgentCapability!]
+	perAgentWipLimit: Int
+	priorityType: AgentBoardPriorityType
+	status: AgentBoardStatus
+	"""
+	On create: copy the org's active role presets onto the board, including each role's required
+	inputs and produced outputs. The coordinator prompt comes from the preset named
+	coordinator-tracker when the board is created with sources and coordinator-board-truth when it
+	is not; there is no fallback between them, and a board whose preset is missing is created with
+	no coordinator prompt and an ALERT saying which one it wanted.
+	"""
+	seedFromPresets: Boolean
+	"""Required on creation: the component this board builds. Must be active and in the same org."""
+	target: ID
+	defaultWorkLevel: Int
+	defaultInputResolution: AgentInputResolution
+	"""
+	Where this board's documents are written, as a git URI on any host. Resolved
+	once to a repository row at save, which becomes the board's identity for it.
+	Must correspond to one of sources, so the coordinator's rogue-activity watch
+	covers document writes -- unless the board has no sources at all, where that
+	watch does not exist and there is nothing to smuggle past it.
+	Partial-patch idiom: null leaves it unchanged.
+	"""
+	documentsRepo: String
+	"""
+	Per-type path templates inside documentsRepo, keyed by SpecificationType.
+	Placeholders: {key}, {round}, {type}, {component}; {task} is read as {key}.
+	Omitted types use the defaults by scope. Null leaves the existing map unchanged.
+	"""
+	documentPaths: Object
+	"""
+	Budget and stops, as in a board file's settings (task 40f270be): left out, every setting stays;
+	inside it, a field left out stays and a field sent as null is cleared. Checked as a file's are.
+	"""
+	settings: BoardSettingsSpecInput
+	"""
+	Element id families over the defaults: prefix to a family name, or to {family, definedIn} (grammar 1.2); {}
+	restores the defaults, absent leaves them.
+	"""
+	elementFamilies: Object
+	"""The element check policy; null restores the defaults, absent leaves it (elements.md §7)."""
+	elementCheckPolicy: ElementCheckPolicyInput
+	"""How a task proves it was delivered (task 18c5c293); null restores PR_ROWS, absent leaves it."""
+	deliveryPolicy: AgentDeliveryPolicyInput
+	"""
+	How the board names its documents: prefix replaces the board name in the document components'
+	names. Absent leaves it; null, or prefix sent as null, restores the default.
+	"""
+	documents: BoardDocumentsSpecInput
+	"""
+	The board's perspectives, by uuid: real perspectives or PRODUCT components. The target must be a
+	member of each, and adding or removing one needs BOARD_WRITE and CONFIGURATION_WRITE covering it.
+	Absent leaves them; null clears.
+	"""
+	perspectives: [ID]
+	"""
+	The task-key prefix: 2 to 8 letters and digits, never used by another board of the organization.
+	Absent leaves it; null derives one from the name. Existing keys never change.
+	"""
+	taskPrefix: String
+	"""
+	The task groups, with a board file's rules (task RD2-30): a listed group is created or updated --
+	by uuid when it carries one, which renames it while no task names it -- and one left out is
+	closed; null or [] deletes every group, refused while one holds tasks; absent leaves them. A
+	group's order defaults to its place in the list.
+	"""
+	groups: [TaskGroupInput!]
+}
+
+input AgentTaskRegisterInput {
+	boardUuid: ID!
+	externalRef: String
+	"""One line of at most 120 characters: what a card shows. The rest goes in description."""
+	title: String!
+	"""What the task is, beyond its title: free text of at most 4000 characters, kept whole."""
+	description: String
+	sourceUrl: String
+	"""Registering agent's session (intake provenance)."""
+	sessionUuid: ID
+	parentTask: ID
+	producesComponent: ID
+	workLevel: Int
+	requiredInputs: [AgentTaskPrerequisiteInput]
+	"""A group of the board by key (task RD2-29); refused when unknown or CLOSED. The orderIndex defaults after the group's last task."""
+	group: String
+	"""Free labels; each key lower-cased, at most 20."""
+	tags: [TagRecordInput]
+}
+
+input AgentTaskSplitChildInput {
+	externalRef: String
+	"""One line of at most 120 characters, as a registered task's."""
+	title: String!
+	"""The child's description, as a registered task's."""
+	description: String
+	sourceUrl: String
+	"""Sibling-index dependencies (0-based within this split), encoding the architect's proposed ordering."""
+	dependsOnSiblingIndexes: [Int!]
+	producesComponent: ID
+	"""Omitted children inherit the parent task's work level."""
+	workLevel: Int
+	"""A group by key; omitted children inherit the parent's group (D9)."""
+	group: String
+	"""Omitted children inherit the parent's tags (D9)."""
+	tags: [TagRecordInput]
+}
+
+input AgentTaskRoleConfigInput {
+	name: String!
+	prompt: String
+	orderIndex: Int
+	wipLimit: Int
+	requireDistinctAgent: Boolean
+	"""Operator-only; rejected on the coordinator-seat path."""
+	blindReview: Boolean
+	active: Boolean
+	requiredCapabilities: [AgentCapability!]
+	"""Operator-only; rejected on the coordinator-seat path."""
+	kind: AgentRoleKind
+	"""Operator-only; rejected on the coordinator-seat path."""
+	necessity: AgentRoleNecessity
+	"""Operator-only; rejected on the coordinator-seat path."""
+	humanGate: AgentHumanGate
+	"""Operator-only, like prompts and capabilities."""
+	requiredInputs: [AgentTaskPrerequisiteInput]
+	"""Operator-only, like prompts and capabilities. Also the board's routing graph."""
+	producesOutputs: [AgentProducedOutputInput]
+	"""Operator-only (task RD4-12). Left out, unchanged; sent as null, or naming no role, the role commissions nobody."""
+	commissions: AgentRoleCommissionsInput
+	"""
+	Operator-only. The floor a model must meet for this role, at most two decimal places. Left
+	out, unchanged; sent as null, the floor is removed.
+	"""
+	requiredStrength: Float
+	"""Operator-only. How far above requiredStrength a model may be; 0 is an exact match."""
+	strengthHeadroom: Float
+	"""Operator-only. Which of a model's per-category strengths this role reads; null reads the base."""
+	strengthCategory: ModelRoleCategory
+	"""Operator-only. Replaces the role's per-model overrides; an empty list clears them."""
+	modelStrengths: [RoleModelStrengthInput!]
+	"""
+	Operator-only. The allowance for one hop of this role, in USD micros; left out, unchanged; sent
+	as null, removed. Refused when negative.
+	"""
+	hopBudgetMicros: Long
+}
+
+"""One model's strength for one role, overriding what the catalogue says about the model."""
+input RoleModelStrengthInput {
+	"""A model in this organization's catalogue."""
+	model: ID!
+	strength: Float!
+}
+
+"""
+The kinds of work a model's strength can differ by. A board role maps to one of these through
+AgentTaskRoleConfig.strengthCategory.
+"""
+enum ModelRoleCategory {
+	ARCHITECT
+	CODER
+	QA
+	REVIEWER
+}
+
+"""A model's strength for one kind of work."""
+type ModelRoleStrength {
+	category: ModelRoleCategory!
+	strength: Float!
+}
+
+"""A role's strength override for one model."""
+type RoleModelStrength {
+	model: ID!
+	strength: Float!
+}
+
+
 
 """
 A single agent-policy evaluation outcome on a session. SAAS-only --
@@ -3321,8 +5596,35 @@ type Session {
 	startedAt: DateTime
 	closedAt: DateTime
 	lastActivityAt: DateTime
+	"""Who closed the session (task 6e7fe6fe): the session itself when its agent closed it, the person who force-closed it, or SYSTEM idle-sweep. Null while open."""
+	closedBy: AgentActor
+	"""Why it was closed: "closed by the agent", a person's reason, or the idle time and window."""
+	closeReason: String
+	"""When the idle sweep warned that the session closes soon; cleared by any call made with its id."""
+	idleWarnedAt: DateTime
+	"""
+	When the idle sweep closes this session unless it calls again (task RD2-15): its last activity plus its
+	org's idle window, twice that while it holds a task or a seat. Null once closed.
+	"""
+	idleCloseAt: DateTime
+	"""Rollup of this session's usage rows; null until the first report arrives."""
+	usageTotals: UsageTotals
+	usageCompleteness: SessionUsageCompleteness
+	"""Observed usage resolved to a different model than the session declared."""
+	modelMismatch: Boolean
 	"""Artifact UUIDs attached to this session (reuses rearm.artifacts)."""
 	artifacts: [ID]
+	"""
+	The boards this session worked (task RD2-5): recorded when it took a task, derived from the tasks
+	for a session from before. Force-closing it needs BOARD_WRITE on one of them; a session with none
+	needs the org admin.
+	"""
+	boardsWorked: [ID]
+	"""
+	The tasks this session worked (task RD2-11): the tasks of its boards that list it, with the role it
+	last worked each as. A person sees those on boards they may read.
+	"""
+	tasksWorked: [AgentSessionTaskRef]
 	"""
 	SCE UUIDs attributed to this session via the commit-trailer parser
 	(PR 2). Order is append-order; head of list is the earliest commit.
@@ -3366,7 +5668,109 @@ type Session {
 	session signature's authority.
 	"""
 	modelAssertion: ModelAssertionState!
+	"""
+	The agent tool's own sessions this ReARM session ran in -- what joins it back to the
+	conversation and transcript that produced its work. Empty when the client reported none.
+	Not unique either way: one tool session often opens many ReARM sessions, and a ReARM
+	session resumed in a new conversation records both.
+	"""
+	providerSessions: [ProviderSession!]
+	"""
+	How the session came to be opened: the credential, the person behind it when anything names
+	one, and the device. Captured once at initialize; null on sessions opened before it was
+	recorded. Hostnames, IP addresses and a federated actor are withheld unless the reader is an
+	org admin, the session's owner, or the key that opened it -- see SessionOrigin.restricted.
+	"""
+	origin: SessionOrigin
 	createdDate: DateTime
+}
+
+"""How a session's caller authenticated when it opened the session."""
+enum SessionAuthMethod {
+	"""An API key's secret, directly or exchanged for an access token. Says which key, never who."""
+	KEY_SECRET
+	"""A CLI browser login (device flow) a signed-in user approved."""
+	CLI_LOGIN
+	"""A federated identity exchange, e.g. a GitHub Actions OIDC token."""
+	FEDERATED
+}
+
+"""
+Where SessionOrigin.ownerUser came from, strongest first. A login names who approved the
+device; a personal key names whose key it is; a holder is only the user accountable for a
+secret that may since have been handed to anyone.
+"""
+enum SessionOwnerSource {
+	CLI_LOGIN
+	USER_KEY
+	KEY_HOLDER
+}
+
+"""See Session.origin."""
+type SessionOrigin {
+	authMethod: SessionAuthMethod
+	"""The CLI login the session was opened through, when authMethod is CLI_LOGIN."""
+	cliSession: ID
+	"""
+	The person the session is attributed to, or null when nothing names one -- an organisation
+	key, a federated identity, or a Free Form key with no holder.
+	"""
+	ownerUser: ID
+	ownerSource: SessionOwnerSource
+	"""What the CLI login recorded about its device when it was approved."""
+	loginDevice: SessionDevice
+	"""What the client said about its device when it opened the session."""
+	reportedDevice: SessionDevice
+	"""The client address the server saw when the session was opened. Restricted."""
+	observedIp: String
+	"""The external identity, when authMethod is FEDERATED."""
+	federation: SessionFederation
+	capturedAt: DateTime
+	"""
+	True when this reader is not allowed the personal fields, which then read null. Lets a UI
+	tell "hidden from you" from "never reported".
+	"""
+	restricted: Boolean!
+}
+
+"""A device as described to ReARM. hostname and observedIp are restricted -- see SessionOrigin."""
+type SessionDevice {
+	hostname: String
+	os: String
+	timeZone: String
+	"""The client and its version, e.g. rearm-cli/26.09.4."""
+	client: String
+	"""The address the server saw, when the description came with a request."""
+	observedIp: String
+}
+
+"""The claims a federated session came through. actor names a person and is restricted."""
+type SessionFederation {
+	ruleUuids: [ID]
+	provider: String
+	issuer: String
+	owner: String
+	repository: String
+	repositoryUri: String
+	ref: String
+	sha: String
+	workflowRef: String
+	environment: String
+	event: String
+	actor: String
+	runId: String
+}
+
+"""One agent-tool session a ReARM session ran in. See Session.providerSessions."""
+type ProviderSession {
+	"""The tool, as the reporting client names it ("claude-code")."""
+	provider: String!
+	"""The tool's local id for the session -- for Claude Code, its transcript id."""
+	id: String!
+	"""The id a hosted surface of the tool knows the session by; null for a purely local run."""
+	remoteId: String
+	"""When ReARM first heard of this pairing."""
+	reportedAt: DateTime
 }
 
 """
@@ -3413,12 +5817,48 @@ type ModelOntology {
 	description: String
 	"""Optional canonical id (e.g. "pkg:huggingface/anthropic/claude-sonnet@4.5")."""
 	purl: String
+	"""The version the last declaration resolved onto this row gave: information, never identity (task RD2-26)."""
+	declaredVersion: String
 	"""
 	CycloneDX ML-BOM model component (type machine-learning-model)
 	stored opaquely. Empty {} on auto-registration; the user attaches
 	a fuller card later via setModelOntologyModelCardProgrammatic.
 	"""
 	modelCard: Object
+	"""
+	Which CycloneDX spec the stored card is written in: V1_6 or V2_0. Absent means
+	the card predates the converter and is 1.6 by definition. The enum members are
+	V1_6 / V2_0 because "1.6" is not a valid GraphQL enum value; the stored wire
+	form is still "1.6" / "2.0".
+	"""
+	modelCardSpecVersion: ModelCardSpecVersion
+	"""The provider's own API model id, e.g. claude-fable-5-1."""
+	canonicalId: String
+	"""Normalised strings resolving to this row. Provider-qualified forms are not aliases."""
+	aliases: [String]
+	"""contextWindow, maxOutputTokens, modalities, hostingKind, releaseDate, ..."""
+	facts: ModelFacts
+	"""Where the model comes from; admin-set. Provenance, not capability -- see strength."""
+	tier: ModelTier
+	"""
+	How capable this model is, on the organization's scale; null means unrated. Operator-set, never
+	declared by an agent. At most two decimal places.
+	"""
+	strength: Float
+	"""Per-category strengths, each overriding strength for roles of that category."""
+	strengthByRole: [ModelRoleStrength!]
+	"""RESOLVED when linked to a bundled entry or admin-confirmed; UNRESOLVED otherwise."""
+	resolution: ModelResolution
+	pricing: [PricingEntry]
+	"""
+	Other rows of this org to merge with: one carrying this row's canonical id first, then the rest
+	by similarity, resolved rows included; never the synthetic pseudo-model.
+	"""
+	mergeCandidates: [ModelOntology]
+	"""Sessions and usage lines on this model in the last days (default 30), to tell a live duplicate from a dead one."""
+	usage(days: Int = 30): ModelUsageCount
+	"""The bundled canonical id this row's name and version resolve to, if any: the edit form's suggestion."""
+	suggestedCanonicalId: String
 	notes: String
 	createdDate: DateTime
 }
@@ -3760,6 +6200,8 @@ type ActionGuard {
 enum GuardedAction {
 	"""Moving a release forward through its lifecycle, however the move was requested."""
 	RELEASE_PROMOTION
+	"""Recording approvals on a release, from a person or an API key; the expression sees action.approvals."""
+	RELEASE_APPROVAL
 }
 
 """What happens when a guard is not satisfied."""
@@ -3772,3 +6214,511 @@ enum GuardMode {
 	BLOCK
 }
 
+
+# ========== Agent usage telemetry ==========
+
+"""Where a usage report came from, which is also how far it is to be trusted."""
+enum SessionUsageSource { SELF_REPORTED TRANSCRIPT OTEL PROVIDER }
+
+"""
+Where a model was served from. Not an identity dimension -- the catalogue holds
+one row per model and the Bedrock / Vertex / Azure forms resolve onto it -- but a
+pricing one, because the same model bills differently per provider.
+"""
+enum SessionUsageHosting { DIRECT BEDROCK VERTEX AZURE OTHER }
+
+"""How a usage row found its task; the answer changes what the number means."""
+enum SessionUsageAttribution { EXPLICIT IMPLICIT COORDINATOR UNATTRIBUTED }
+
+"""
+How much of a session's consumption we believe we have. INCOMPLETE means the
+scheduler or an operator ended the session, so the tail is missing; NONE means
+nothing ever reported. A cheap session and an unreported one are not the same claim.
+"""
+enum SessionUsageCompleteness { COMPLETE INCOMPLETE NONE }
+
+type UsageByModel {
+	model: ID
+	"""Display name of the model row, so a breakdown renders without fetching the catalogue."""
+	modelName: String
+	inputTokens: Long
+	outputTokens: Long
+	cacheReadTokens: Long
+	cacheWriteTokens: Long
+	requests: Int
+	turns: Int
+	"""Null when no price entry covered these rows."""
+	derivedCostMicros: Long
+}
+
+"""
+Rollup of usage rows. Tokens are facts and never change; cost is derived from a
+dated price entry, so every rollup names the entries it used.
+"""
+type UsageTotals {
+	inputTokens: Long
+	outputTokens: Long
+	cacheReadTokens: Long
+	cacheWriteTokens: Long
+	requests: Int
+	turns: Int
+	toolCalls: Int
+	wallSeconds: Int
+	"""Number of report lines rolled up here."""
+	reports: Int
+	byModel: [UsageByModel]
+	derivedCostMicros: Long
+	priceVersions: [ID]
+	"""False when some row had no applicable price: the cost is a lower bound."""
+	costComplete: Boolean
+}
+
+"""A task's linked PR, from the PR rows CI registers."""
+type AgentTaskPullRequest {
+	url: String
+	"""OPEN, CLOSED or MERGED; null when unregistered."""
+	state: String
+	targetBranch: String
+	mergedDate: DateTime
+	"""False when no PR row has this URL: the repository's CI is not reporting PRs."""
+	registered: Boolean
+	"""The PR's newest commit sha as CI last reported it; null when unregistered (task 3b97ccfd)."""
+	head: String
+	"""
+	Commits ReARM recorded on the PR's target branch since the task's newest round started (task RD4-2): "base
+	moved: N commits since your round". From CI reports of builds on that branch, so a merge nobody reported is
+	not counted; it says nothing about whether the PR still merges. Null when the PR is not registered here, the
+	round recorded no base, or the branch has no entry at all -- never zero for those.
+	"""
+	baseMovedBy: Int
+	"""The newest declaration for this PR, when one was recorded (task 18c5c293)."""
+	declaration: AgentTaskDelivery
+}
+
+"""
+How a board's tasks prove delivery (task 18c5c293). PR_ROWS: the linked PRs' rows on this ReARM,
+merged, or a declaration per PR. DECLARED: the linked PRs register elsewhere, so a declaration per
+PR (a merged row here counts too). NONE: no PRs; the task completes at its last pass, or with
+awaitDeclaration, once its delivery is declared.
+"""
+enum AgentDeliveryMode { PR_ROWS DECLARED NONE }
+
+"""
+SUPERSEDED (task RD3-13): a linked PR closed unmerged and replaced by another linked PR on its repository,
+named in supersededBy; delivery counts the replacement. Declared with agentTaskSupersedePullRequest, never
+through agentTaskDeclareDelivery.
+"""
+enum AgentDeliveryOutcome { DELIVERED ABANDONED SUPERSEDED }
+
+type AgentDeliveryPolicy {
+	mode: AgentDeliveryMode
+	"""On NONE: wait for a declaration of a push or release instead of completing at the last pass."""
+	awaitDeclaration: Boolean
+	"""
+	Who merges and how (task 71a3dd22). As declared on deliveryPolicy, null parts meaning their
+	defaults; resolved on effectiveDeliveryPolicy.
+	"""
+	merge: AgentMergeProcedure
+}
+
+input AgentDeliveryPolicyInput {
+	mode: AgentDeliveryMode
+	awaitDeclaration: Boolean
+	merge: AgentMergeProcedureInput
+}
+
+"""How a board's PRs are merged: a merge commit, a squash, a rebase, or a fast-forward of the target."""
+enum AgentMergeMethod { MERGE SQUASH REBASE FAST_FORWARD }
+
+"""Which of several passed tasks merges first: the order the notes give, or the oldest pass first."""
+enum AgentMergeOrder { NOTE_ORDER OLDEST_PASS_FIRST }
+
+"""A board's merge procedure (task 71a3dd22)."""
+type AgentMergeProcedure {
+	"""
+	Who merges: COORDINATOR, PERSON, or ROLE:<name>. Resolved default: the coordinator when its
+	capabilities cover PR_MERGE, else the first active role that carries PR_MERGE, else a person.
+	"""
+	by: String
+	"""Default MERGE."""
+	method: AgentMergeMethod
+	"""Merge only at the head the passing review or test covered. Default true."""
+	atTestedHead: Boolean
+	"""Declare each merge (agentTaskDeclareDelivery). Default false; always true on a DECLARED board."""
+	requireDeclaration: Boolean
+	"""Default NOTE_ORDER."""
+	order: AgentMergeOrder
+}
+
+input AgentMergeProcedureInput {
+	"""COORDINATOR, PERSON, or ROLE:<name>; the role must be active and carry PR_MERGE."""
+	by: String
+	method: AgentMergeMethod
+	atTestedHead: Boolean
+	"""Refused as false on a DECLARED board."""
+	requireDeclaration: Boolean
+	order: AgentMergeOrder
+}
+
+"""A declaration that a delivery unit landed, or never will (task 18c5c293)."""
+type AgentTaskDelivery {
+	"""A linked PR's URL, or on a board delivering without PRs a branch or release reference."""
+	unit: String
+	"""The merged or pushed sha."""
+	commit: String
+	outcome: AgentDeliveryOutcome
+	by: AgentActor
+	at: DateTime
+	note: String
+	"""For SUPERSEDED, the linked PR that replaces the unit (task RD3-13)."""
+	supersededBy: String
+}
+
+"""A completed task sent back to a role."""
+type AgentTaskReopen {
+	role: String
+	roleUuid: ID
+	at: DateTime
+	by: AgentActor
+	reason: String
+}
+
+"""
+One hop's consumption, taken when the hop ended. Rows its session reports
+later are folded in (refreshedAt); rows are never re-priced, so the figure
+only ever grows by rows.
+"""
+type HopUsage {
+	inputTokens: Long
+	outputTokens: Long
+	cacheReadTokens: Long
+	cacheWriteTokens: Long
+	requests: Int
+	turns: Int
+	reports: Int
+	derivedCostMicros: Long
+	priceVersions: [ID]
+	costComplete: Boolean
+	"""The role's allowance when the hop ended; null when it set none, and on hops recorded before allowances were kept."""
+	allowanceMicros: Long
+	"""When usage reported after the hop ended was folded in -- "reported after sign-off"; null when the snapshot taken at the hop's end is the whole story."""
+	refreshedAt: DateTime
+}
+
+"""
+A dated rate, in micros per million tokens. Entries are never edited: a
+correction is a new entry plus an expiry on the old one, so a recorded price
+version always means the same numbers.
+"""
+type PricingEntry {
+	uuid: ID
+	effectiveFrom: DateTime
+	effectiveTo: DateTime
+	currency: String
+	unit: PricingUnit
+	inputMicros: Long
+	outputMicros: Long
+	cacheReadMicros: Long
+	cacheWriteMicros: Long
+	reasoningMicros: Long
+	appliesTo: PricingSelector
+	source: String
+	note: String
+	createdBy: ID
+	createdAt: DateTime
+}
+
+"""
+Which rows an entry applies to. Every stated field must match; the entry with the
+most fields stated wins, so a base rate and a qualified rate coexist without
+priority rules.
+"""
+type PricingSelector {
+	"""
+	Matches when a request's FULL context -- input plus cache read plus cache
+	write -- exceeds this. Not inputTokens, which with prompt caching counts only
+	the uncached remainder and on a long session never approaches a threshold.
+	"""
+	contextAboveTokens: Long
+	contextVariant: String
+	serviceTier: ServiceTier
+	hosting: SessionUsageHosting
+	reasoning: ReasoningMatch
+}
+
+input PricingSelectorInput {
+	contextAboveTokens: Long
+	contextVariant: String
+	serviceTier: ServiceTier
+	hosting: SessionUsageHosting
+	reasoning: ReasoningMatch
+}
+
+input PricingEntryInput {
+	effectiveFrom: DateTime!
+	effectiveTo: DateTime
+	currency: String
+	unit: PricingUnit
+	inputMicros: Long
+	outputMicros: Long
+	cacheReadMicros: Long
+	cacheWriteMicros: Long
+	reasoningMicros: Long
+	appliesTo: PricingSelectorInput
+	source: String
+	note: String
+}
+
+"""One line of a usage report: one model, one hosting, one context band."""
+input SessionUsageLineInput {
+	model: String
+	hosting: SessionUsageHosting
+	"""
+	Floor of the pricing band these requests fall in, in tokens: 0 for the base
+	band, 200000 above the long-context threshold. A number rather than a label,
+	so it sorts and compares against a pricing entry's contextAboveTokens
+	directly. Absent means the base band.
+	"""
+	contextBand: Long
+	requests: Int!
+	inputTokens: Long!
+	outputTokens: Long!
+	cacheReadTokens: Long
+	cacheWriteTokens: Long
+	reasoningTokens: Long
+	maxRequestContextTokens: Long
+	minRequestContextTokens: Long
+	reportedCostMicros: Long
+}
+
+input SessionUsageReportInput {
+	sessionUuid: ID
+	clientSessionId: String
+	"""Monotonic per session; the transcript byte offset in the CLI, so 64-bit."""
+	clientSeq: Long!
+	source: SessionUsageSource!
+	windowStart: DateTime
+	windowEnd: DateTime
+	turns: Int
+	toolCalls: Int
+	wallSeconds: Int
+	reasoningLevel: String
+	taskUuid: ID
+	raw: Object
+	lines: [SessionUsageLineInput!]!
+}
+
+type SessionUsageAck {
+	accepted: Int!
+	duplicates: Int!
+	"""One message per line that could not be filed, with the reason."""
+	refused: [String!]!
+	attribution: SessionUsageAttribution!
+	task: ID
+	"""The allowance of the hop this session is working, when its role sets one."""
+	hopAllowanceMicros: Long
+	"""What that hop has cost so far; compare with hopAllowanceMicros. Null without an allowance."""
+	hopSpentMicros: Long
+}
+
+# ========== Model catalogue vocabularies ==========
+# Closed sets that used to travel as strings. A consumer branching on one of
+# these was matching text; now the schema states what the values can be.
+
+"""How much a model has been used lately (task RD2-27)."""
+type ModelUsageCount {
+	sessions: Int
+	lines: Int
+	days: Int
+}
+
+"""One entry of the bundled model catalogue."""
+type ModelBundleEntry {
+	canonicalId: String
+	name: String
+	version: String
+	publisher: String
+}
+
+"""
+Where a model comes from: who built it and whether its weights are open. Provenance, not
+capability -- how capable a model is lives in `strength`, which an operator sets and a role
+requires.
+"""
+enum ModelTier {
+	"""Closed model from a frontier lab."""
+	FRONTIER
+	"""Open weights, as released."""
+	OPEN_WEIGHT_STOCK
+	"""Open weights tuned by this organization or a vendor."""
+	OPEN_WEIGHT_FINE_TUNED
+	"""Closed model from any other vendor."""
+	THIRD_PARTY_PROPRIETARY
+	"""This organization's own closed model."""
+	FIRST_PARTY_PROPRIETARY
+}
+
+"""
+RESOLVED when the row is linked to a bundled catalogue entry or confirmed by an
+admin; UNRESOLVED when it auto-created from a string nobody mapped. Unresolved
+rows price nothing. SYNTHETIC is the one pseudo-model per organization that placeholder
+declarations (<synthetic>, blank, unknown) report against: priced at zero, not counted as
+unresolved (task RD2-26).
+"""
+enum ModelResolution { RESOLVED UNRESOLVED SYNTHETIC }
+
+"""
+Which CycloneDX spec a stored model card is written in. V1_6 and V2_0 rather than
+"1.6" and "2.0" because those are not valid GraphQL enum values; the persisted
+wire form is unchanged.
+"""
+enum ModelCardSpecVersion { V1_6 V2_0 }
+
+"""What pricing rates are quoted per."""
+enum PricingUnit { PER_MILLION_TOKENS }
+
+"""Provider tier a request ran on; the same model bills differently per tier."""
+enum ServiceTier { STANDARD BATCH PRIORITY }
+
+"""
+Whether a pricing entry applies to requests that used extended thinking. ANY is
+not "unset": it deliberately covers both, while an absent field does not
+discriminate at all.
+"""
+enum ReasoningMatch { ON OFF ANY }
+
+"""What a model can read and write."""
+enum Modality { TEXT IMAGE AUDIO VIDEO }
+
+"""
+How a model is served. Distinct from SessionUsageHosting, which says where ONE
+request went; this says what kind of thing the model is.
+"""
+enum ModelHostingKind { API SELF_HOSTED EMBEDDED }
+
+"""
+What is true of a model regardless of who serves it. A typed record rather than a
+free-form map: a routing floor reading contextWindow needs a number, and a typo in
+a key used to become a fact nobody would ever read.
+"""
+type ModelFacts {
+	contextWindow: Long
+	maxOutputTokens: Long
+	modalities: [Modality]
+	hostingKind: ModelHostingKind
+	"""ISO-8601 date. A String rather than a scalar: the schema has no Date scalar,
+	and adding one with its coercion for three fields is more surface than it buys.
+	The Java side keeps LocalDate, so a malformed date fails when the catalogue loads."""
+	releaseDate: String
+	deprecatedAt: String
+	knowledgeCutoff: String
+}
+
+"""Whether a group takes new tasks (task-groups-and-tags.md D6); done is derived, never set."""
+enum AgentTaskGroupStatus { OPEN CLOSED }
+
+"""A task a session worked, as the session page names it (task RD2-11)."""
+type AgentSessionTaskRef {
+	uuid: ID
+	key: String
+	title: String
+	"""The role the session last worked the task as."""
+	role: String
+	board: ID
+	"""The board's name, so a page names it without reading the boards."""
+	boardName: String
+}
+
+"""
+A board's spend in a window, whose parts add up: totalMicros = the roles' costMicros +
+coordinatorEstimateMicros + unattributedMicros (task RD2-8).
+"""
+type BoardSpendBreakdown {
+	"""Every usage row of the board in the window, priced; the period rollup's total."""
+	totalMicros: Long
+	"""False when some row had no price: every figure is then a lower bound."""
+	costComplete: Boolean
+	"""By the role of the hop each row fell in, the costliest first."""
+	byRole: [BoardRoleSpend]
+	"""By session, the costliest first."""
+	bySession: [BoardSessionSpend]
+	"""
+	The coordinator seat's own rows (they name the board and no task): the money each task's
+	coordinator estimate apportions, counted here once.
+	"""
+	coordinatorEstimateMicros: Long
+	"""Rows naming a task that no hop of their session owns, e.g. reported before its assignment."""
+	unattributedMicros: Long
+	from: DateTime
+	to: DateTime
+}
+
+type BoardRoleSpend {
+	role: String
+	tokens: UsageTotals
+	costMicros: Long
+	"""Closed hops (sign-offs and returns) of the role that spent in the window."""
+	closedHops: Int
+	"""Hops still open that spent in the window."""
+	openHops: Int
+}
+
+type BoardSessionSpend {
+	session: ID
+	agent: ID
+	"""The role the session's spend fell in; coordinator for the seat; null when no hop owns it."""
+	role: String
+	tokens: UsageTotals
+	costMicros: Long
+}
+
+"""A batch of a board's tasks (task-groups-and-tags.md §2.1, task RD2-29)."""
+type TaskGroup {
+	uuid: ID
+	"""The handle people type: lower case, 2 to 24 characters, unique on the board; fixed once a task names it."""
+	key: String
+	name: String
+	description: String
+	"""Display order among the board's groups; a task registered into the group is ordered after its last."""
+	order: Int
+	"""The keys of the groups this one waits on."""
+	dependsOn: [String]
+	"""The work level its tasks read when they set none (task, then group, then board)."""
+	defaultWorkLevel: Int
+	status: AgentTaskGroupStatus
+	createdAt: DateTime
+	progress: TaskGroupProgress
+	"""What the group's tasks spent: their usage rows plus their coordinator shares, in USD micros."""
+	spentMicros: Long
+}
+
+"""A group's tasks by state. complete is every task COMPLETED or CANCELLED, and at least one task."""
+type TaskGroupProgress {
+	total: Int
+	done: Int
+	open: Int
+	complete: Boolean
+}
+
+"""The group a task belongs to."""
+type TaskGroupRef {
+	uuid: ID
+	key: String
+	name: String
+}
+
+"""
+A group to create or edit, by key (task RD2-29). Omitted fields are left as they are on an edit;
+defaultWorkLevel sent as null clears it. uuid names the group when its key is changing, which is refused
+once a task names the group. status CLOSED is the close, OPEN the reopen.
+"""
+input TaskGroupInput {
+	uuid: ID
+	key: String!
+	name: String
+	description: String
+	order: Int
+	dependsOn: [String]
+	defaultWorkLevel: Int
+	status: AgentTaskGroupStatus
+}

@@ -65,9 +65,14 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @DgsComponent
 public class OrganizationDataFetcher {
+
+	/** Upper bound on the findings priority scale; see updateOrganizationSettings. */
 	
 	@Autowired
 	private ApiKeyService apiKeyService;
+
+	@Autowired
+	private io.reliza.service.ApiKeyDeclarativeService apiKeyDeclarativeService;
 	
 	@Autowired
 	private AuthorizationService authorizationService;
@@ -366,6 +371,7 @@ public class OrganizationDataFetcher {
 		}
 		List<PermissionDto> convertedPermissions = permissions == null ? List.of() : permissions.stream()
 				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		authorizationService.assertGrantObjectsExist(orgUuid, convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(p.approvals(), od.get())) {
 				throw new RuntimeException("Invalid approvals sent");
@@ -549,9 +555,8 @@ public class OrganizationDataFetcher {
 				(List<String>) ignoreViolation.get("operationalViolationRegexIgnore") : null;
 		
 		// Validate regex patterns
-		validateRegexPatterns(licenseViolationRegexIgnore, "licenseViolationRegexIgnore");
-		validateRegexPatterns(securityViolationRegexIgnore, "securityViolationRegexIgnore");
-		validateRegexPatterns(operationalViolationRegexIgnore, "operationalViolationRegexIgnore");
+		OrganizationService.validateIgnoreViolation(licenseViolationRegexIgnore, securityViolationRegexIgnore,
+				operationalViolationRegexIgnore, odIgnore.map(OrganizationData::getIgnoreViolation).orElse(null));
 		
 		return organizationService.updateIgnoreViolation(orgUuid, licenseViolationRegexIgnore, 
 				securityViolationRegexIgnore, operationalViolationRegexIgnore, wu);
@@ -659,6 +664,7 @@ public class OrganizationDataFetcher {
 		OrganizationData od = getOrganizationService.getOrganizationData(oakd.get().getOrg()).get();
 		List<PermissionDto> convertedPermissions = permissions.stream()
 				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		authorizationService.assertGrantObjectsExist(od.getUuid(), convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty()) {
 				if (!Utils.isSanitizedApprovalsSent(p.approvals(), od)) {
@@ -694,17 +700,29 @@ public class OrganizationDataFetcher {
 		return apiKeyService.setNotesOnApiKey(apiKeyUuid, notes, wu);
 	}
 
-	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
-		if (patterns == null) {
-			return;
-		}
-		for (String pattern : patterns) {
-			try {
-				java.util.regex.Pattern.compile(pattern);
-			} catch (java.util.regex.PatternSyntaxException e) {
-				throw new RelizaException("Invalid regex pattern in " + fieldName + ": " + pattern + " - " + e.getMessage());
-			}
-		}
+	/** The device-login session bound of a key (task RD3-7): the same gate as its notes. */
+	/**
+	 * Declare a key made by hand under a name, or release its name with null (task RD3-11): the next apply of an
+	 * API_KEYS file naming it updates this key rather than creating another. An organization administrator's.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "declareApiKey")
+	public ApiKeyDto declareApiKey(@InputArgument("apiKeyUuid") UUID apiKeyUuid, @InputArgument("name") String name)
+			throws RelizaException {
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		UUID org = apiKeyService.getApiKey(apiKeyUuid).map(ApiKey::getOrg).orElseThrow(() -> new RelizaException("API key not found"));
+		return ApiKeyDto.fromApiKey(apiKeyDeclarativeService.declare(org, apiKeyUuid, name, wu));
 	}
-	
+
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeySessionMaxMinutes")
+	public ApiKeyDto setApiKeySessionMaxMinutes(
+			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
+			@InputArgument("sessionMaxMinutes") Integer sessionMaxMinutes
+		) throws RelizaException {
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
+		return apiKeyService.setSessionMaxMinutesOnApiKey(apiKeyUuid, sessionMaxMinutes, wu);
+	}
+
 }

@@ -22,5 +22,11 @@ public enum DtrackFetchStatus {
     /** Most recent fetch attempt completed. Cleared failure state. */
     OK,
     /** Most recent fetch attempt threw. {@code dtrackFetchSkipUntil} pushes the next attempt out. */
-    FAILED
+    FAILED,
+    /**
+     * Never scanned, by kind: served on {@code Release.metrics} for a board's document round
+     * (task RD4-11, {@link io.reliza.service.ComponentKindPolicy}) so a reader hides the scan state
+     * rather than showing it pending. Never stored on an artifact.
+     */
+    NOT_APPLICABLE
 }

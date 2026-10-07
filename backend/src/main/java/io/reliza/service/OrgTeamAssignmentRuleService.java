@@ -9,8 +9,6 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -180,18 +178,7 @@ public class OrgTeamAssignmentRuleService {
 			if (!seenLowerNames.add(r.getName().toLowerCase())) {
 				throw new RelizaException("Duplicate rule name (case-insensitive): '" + r.getName() + "'");
 			}
-			if (StringUtils.isBlank(r.getNamePattern())) {
-				throw new RelizaException("Rule '" + r.getName() + "' has a blank namePattern");
-			}
-			if (r.getNamePattern().length() > MAX_PATTERN_LENGTH) {
-				throw new RelizaException("Rule '" + r.getName() + "' namePattern exceeds "
-						+ MAX_PATTERN_LENGTH + " characters");
-			}
-			try {
-				Pattern.compile(r.getNamePattern());
-			} catch (PatternSyntaxException e) {
-				throw new RelizaException("Rule '" + r.getName() + "' has an invalid regex: " + e.getMessage());
-			}
+			SafeRegex.validate(r.getNamePattern(), "Rule '" + r.getName() + "' namePattern");
 			if (null == r.getOwnerTeam()) {
 				throw new RelizaException("Rule '" + r.getName() + "' has no ownerTeam set");
 			}

@@ -137,6 +137,7 @@ public class UserDataFetcher {
 				udWebDto.setSystemSealed(true);
 			}
 			udWebDto.setInstallationType(systemInstallationType.toString());
+			udWebDto.setDefaultDashboard(userService.getDefaultDashboard());
 			udWebDto.setIsLicenseValid(licenseStatus.isLicenseValid());
 			return udWebDto;
 		} catch (RelizaException re) {

@@ -42,7 +42,9 @@ import lombok.extern.slf4j.Slf4j;
  * personal keys, or a Free Form key they hold). The CLI then collects an opaque refresh token
  * (delivered once, stored hashed) and trades it for the usual one-hour access tokens. No key
  * secret is ever minted or shown. Expiry slides 30 days on each refresh, capped at 90 days
- * after approval. Revoking the session kills its access tokens through the token fingerprint.
+ * after approval, and at the session's hard end when the key bounds its sessions
+ * (sessionMaxMinutes, task RD3-7). Revoking the session kills its access tokens through the
+ * token fingerprint.
  */
 @Service
 @Slf4j
@@ -56,8 +58,19 @@ public class CliSessionService {
 	/** What the CLI gets back when it starts a login. */
 	public record DeviceAuthorization(String deviceCode, String userCode, String verificationUri, String verificationUriComplete, long expiresIn, int interval) {}
 
-	/** What the CLI gets back when it collects an approved login. */
+	/** What the CLI gets back when it collects an approved login; no refresh token when the session ends inside the first access token. */
 	public record Delivery(CliSession session, String refreshToken) {}
+
+	/** A refresh presented at or after the session's hard end: refused with the time it ended. */
+	public static class SessionEnded extends RuntimeException {
+		private static final long serialVersionUID = 1L;
+		private final ZonedDateTime endedAt;
+		public SessionEnded(ZonedDateTime endedAt) {
+			super("session ended at " + endedAt.toInstant() + "; run rearm login");
+			this.endedAt = endedAt;
+		}
+		public ZonedDateTime getEndedAt() { return endedAt; }
+	}
 
 	public String verificationUri() {
 		String base = relizaConfigProps.getBaseuri();
@@ -145,6 +158,12 @@ public class CliSessionService {
 	 */
 	@Transactional
 	public CliSession approveWithKey(String userCode, UserData user, UUID apiKeyUuid) throws RelizaException {
+		return approveWithKey(userCode, user, apiKeyUuid, null);
+	}
+
+	/** The same, the approver optionally shortening the session below the key's bound ({@code maxMinutes}). */
+	@Transactional
+	public CliSession approveWithKey(String userCode, UserData user, UUID apiKeyUuid, Integer maxMinutes) throws RelizaException {
 		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
@@ -152,23 +171,31 @@ public class CliSessionService {
 				|| (ak.getObjectType() == ApiTypeEnum.FREEFORM && user.getUuid().equals(akd.getHolder()));
 		if (!mine) throw new RelizaException("Only a personal key you own or a Free Form key you hold can back a CLI session");
 		if (akd.getStatus() != ApiKeyStatus.ACTIVE) throw new RelizaException("This key is not active");
-		return activate(s, user, ak);
+		return activate(s, user, ak, sessionMinutes(akd.getSessionMaxMinutes(), maxMinutes));
 	}
 
 	/** The user approves a pending request with a fresh personal key created for this session in the given org. */
 	@Transactional
 	public CliSession approveWithNewKey(String userCode, UserData user, UUID orgUuid, String notes, WhoUpdated wu) throws RelizaException {
-		return approveWithNewKey(userCode, user, orgUuid, notes, null, List.of(), wu);
+		return approveWithNewKey(userCode, user, orgUuid, notes, null, List.of(), null, wu);
+	}
+
+	@Transactional
+	public CliSession approveWithNewKey(String userCode, UserData user, UUID orgUuid, String notes,
+			PermissionType orgType, List<PermissionDto> permissions, WhoUpdated wu) throws RelizaException {
+		return approveWithNewKey(userCode, user, orgUuid, notes, orgType, permissions, null, wu);
 	}
 
 	/**
 	 * The same, giving the new key a permission set. The caller passes permissions already reduced to
 	 * what the approver holds; key creation, the permission write and the activation share one
-	 * transaction, so a rejected set leaves no approved session behind.
+	 * transaction, so a rejected set leaves no approved session behind. A fresh key carries no bound,
+	 * so {@code maxMinutes} is checked only against the 90-day cap, before the key exists.
 	 */
 	@Transactional
 	public CliSession approveWithNewKey(String userCode, UserData user, UUID orgUuid, String notes,
-			PermissionType orgType, List<PermissionDto> permissions, WhoUpdated wu) throws RelizaException {
+			PermissionType orgType, List<PermissionDto> permissions, Integer maxMinutes, WhoUpdated wu) throws RelizaException {
+		Integer minutes = sessionMinutes(null, maxMinutes);
 		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		if (!user.isGlobalAdmin() && !user.getOrganizations().contains(orgUuid)) throw new RelizaException("Not a member of this organization");
 		String n = (notes == null || notes.isBlank()) ? "CLI session" + (s.getRequestedFrom() == null ? "" : " on " + s.getRequestedFrom()) : notes;
@@ -179,18 +206,30 @@ public class CliSessionService {
 			apiKeyService.setPermissionsOnApiKey(ak.getUuid(), orgType == null ? PermissionType.NONE : orgType,
 					permissions == null ? List.of() : permissions, wu);
 		}
-		return activate(s, user, ak);
+		return activate(s, user, ak, minutes);
 	}
 
-	private CliSession activate(CliSession s, UserData user, ApiKey ak) {
+	/** The key's bound, or the approver's shorter choice; RelizaException with the approver's words otherwise. */
+	private static Integer sessionMinutes(Integer keyBound, Integer maxMinutes) throws RelizaException {
+		try {
+			return CliSessionCodes.sessionMinutes(keyBound, maxMinutes);
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
+	}
+
+	/** The hard end is fixed here, at approval: a later change to the key's bound does not touch this session. */
+	private CliSession activate(CliSession s, UserData user, ApiKey ak, Integer minutes) {
 		ZonedDateTime now = ZonedDateTime.now();
 		s.setStatus(Status.ACTIVE);
 		s.setUser(user.getUuid());
 		s.setApiKey(ak.getUuid());
 		s.setOrg(ak.getOrg());
 		s.setApprovedDate(now);
-		s.setExpiresDate(CliSessionCodes.slidExpiry(now, now));
-		log.info("CLI login {} approved by user {} with key {} (org {})", s.getUuid(), user.getUuid(), ak.getUuid(), ak.getOrg());
+		s.setHardExpiresDate(CliSessionCodes.hardEnd(now, minutes));
+		s.setExpiresDate(CliSessionCodes.slidExpiry(now, now, s.getHardExpiresDate()));
+		log.info("CLI login {} approved by user {} with key {} (org {}, {})", s.getUuid(), user.getUuid(), ak.getUuid(), ak.getOrg(),
+				minutes == null ? "no hard end" : "ends in " + minutes + " minutes");
 		return repository.save(s);
 	}
 
@@ -213,6 +252,8 @@ public class CliSessionService {
 	/**
 	 * The CLI collects the approved login. The refresh token is generated here, at collection time,
 	 * because only its hash is stored and the browser must never see it; the device code is single-use.
+	 * When the session ends inside the first access token the token is not delivered: its hash is
+	 * still stored, because the access token's fingerprint is taken from it.
 	 */
 	@Transactional
 	public PollResult poll(String deviceCode) {
@@ -237,7 +278,8 @@ public class CliSessionService {
 				s.setDeviceCodeHash(null);
 				s.setLastUsedDate(now);
 				repository.save(s);
-				return new PollResult(PollOutcome.DELIVERED, new Delivery(s, refresh));
+				return new PollResult(PollOutcome.DELIVERED,
+						new Delivery(s, CliSessionCodes.refreshTokenUseful(now, s.getHardExpiresDate()) ? refresh : null));
 		}
 	}
 
@@ -265,6 +307,7 @@ public class CliSessionService {
 	 * request); after the window its reuse means two holders, and the session is revoked.
 	 * The retired token cannot be returned to the caller in the grace case because only its hash
 	 * is stored, so the grace path re-rotates: the caller gets a fresh token either way.
+	 * At or after the session's hard end it throws {@link SessionEnded}.
 	 */
 	@Transactional
 	public Optional<Refreshed> refresh(String refreshToken, String ip) {
@@ -277,6 +320,10 @@ public class CliSessionService {
 		if (os.isEmpty()) os = repository.findByPreviousRefreshTokenHashForUpdate(hash);
 		if (os.isEmpty()) return Optional.empty();
 		CliSession s = os.get();
+		// past the hard end the answer is that the session ended, whichever of its tokens is presented
+		if (s.getStatus() == Status.ACTIVE && s.getHardExpiresDate() != null && !s.getHardExpiresDate().isAfter(now)) {
+			throw new SessionEnded(s.getHardExpiresDate());
+		}
 		RefreshVerdict verdict = verdict(s, hash, now);
 		// the key behind the session must still be usable before anything on the row changes: a refusal here
 		// must not retire the client's token for a session that is dead anyway, and the managed entity would
@@ -304,7 +351,7 @@ public class CliSessionService {
 		}
 		String fresh = CliSessionCodes.newOpaqueSecret();
 		s.setRefreshTokenHash(CliSessionCodes.sha256Hex(fresh));
-		s.setExpiresDate(CliSessionCodes.slidExpiry(s.getApprovedDate(), now));
+		s.setExpiresDate(CliSessionCodes.slidExpiry(s.getApprovedDate(), now, s.getHardExpiresDate()));
 		s.setLastUsedDate(now);
 		repository.save(s);
 		return Optional.of(new Refreshed(s, fresh));

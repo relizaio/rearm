@@ -91,4 +91,8 @@ public class CliSession implements Serializable {
 
 	@Column(name = "revoked_date")
 	private ZonedDateTime revokedDate;
+
+	/** The session's hard end, fixed at approval from the key's sessionMaxMinutes or the approver's shorter choice; null for no bound but the 90-day cap. */
+	@Column(name = "hard_expires_date")
+	private ZonedDateTime hardExpiresDate;
 }

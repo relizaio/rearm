@@ -278,6 +278,18 @@ public final class SyntheticEventTemplates {
                             UpdateStatus.CONVERGED, "1.4.5", "1.4.4", "sample failure detail",
                             UUID.randomUUID(), UUID.randomUUID())),
                     List.of("CONVERGED"), NotificationSeverity.MEDIUM);
+            case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> {
+                UUID task = UUID.randomUUID();
+                yield new io.reliza.model.dto.notifications.AgentBoardEventPayload(UUID.randomUUID(), "Sample board",
+                        eventType == NotificationEventType.AGENT_BOARD_ALERT ? null : task,
+                        eventType == NotificationEventType.AGENT_BOARD_ALERT ? null : "Sample task",
+                        eventType == NotificationEventType.AGENT_BOARD_ALERT ? "ALERT" : "HUMAN_GATE",
+                        "Task sample-task stopped by no progress: [F-1] stayed OPEN after a coder round",
+                        eventType == NotificationEventType.AGENT_TASK_NEEDS_PERSON ? "HUMAN_GATE" : null,
+                        eventType == NotificationEventType.AGENT_TASK_NEEDS_PERSON ? "OPERATOR" : null,
+                        io.reliza.model.dto.notifications.AgentBoardEventPayload.taskLink(task),
+                        eventType == NotificationEventType.AGENT_TASK_QUEUE_AGE ? 45L : null);
+            }
         };
     }
 

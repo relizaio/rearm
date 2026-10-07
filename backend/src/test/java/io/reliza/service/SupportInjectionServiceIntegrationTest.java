@@ -134,9 +134,9 @@ public class SupportInjectionServiceIntegrationTest {
 		Map<String, String> b = propMap(comps.get(1));
 		assertEquals("MANUAL", b.get(SupportBomInjector.PROP_SOURCE_PREFIX + "endOfSupport"),
 				"encoding-drifted (+ vs %2B) component matched via the fallback");
-		// Future EOS -> UNKNOWN. The point of this assertion is that the component MATCHED
-		// (proved by the MANUAL provenance above); the derived status is future-dated.
-		assertEquals("UNKNOWN", b.get(SupportBomInjector.PROP_STATUS));
+		// Future EOS -> WITHIN_SUPPORT_WINDOW. The point of this assertion is that the component
+		// MATCHED (proved by the MANUAL provenance above); the derived status is future-dated.
+		assertEquals("WITHIN_SUPPORT_WINDOW", b.get(SupportBomInjector.PROP_STATUS));
 
 		assertTrue(propMap(comps.get(2)).isEmpty(), "unmatched component gets no support properties");
 

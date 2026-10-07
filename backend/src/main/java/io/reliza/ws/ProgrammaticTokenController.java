@@ -159,17 +159,23 @@ public class ProgrammaticTokenController {
 				if (oak.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "the key behind this login is gone");
 				String token = apiTokenService.issueForSession(oak.get(), s, ApiTokenService.AUD_PROGRAMMATIC);
 				log.info("CLI session {} delivered to {} (key {}, org {})", s.getUuid(), request.getRemoteAddr(), s.getApiKey(), s.getOrg());
-				return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").header(HttpHeaders.PRAGMA, "no-cache")
-						.body(Map.of("access_token", token, "token_type", "Bearer", "expires_in", ApiTokenService.TTL_SECONDS,
-								"refresh_token", r.delivery().refreshToken(), "api_key_id", ApiKeyService.keyIdOf(oak.get()),
-								"api_key_uuid", oak.get().getUuid().toString(), "org", String.valueOf(oak.get().getOrg()),
-								"session", s.getUuid().toString(), "session_expires_at", s.getExpiresDate().toInstant().toString()));
+				Map<String, Object> body = sessionTokenBody(token, s, r.delivery().refreshToken());
+				body.put("api_key_id", ApiKeyService.keyIdOf(oak.get()));
+				body.put("api_key_uuid", oak.get().getUuid().toString());
+				body.put("org", String.valueOf(oak.get().getOrg()));
+				body.put("session", s.getUuid().toString());
+				return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").header(HttpHeaders.PRAGMA, "no-cache").body(body);
 		}
 	}
 
 	/** RFC 6749 §6: a live session's refresh token buys the next one-hour access token and slides the session expiry. */
 	private ResponseEntity<Map<String, Object>> refreshGrant(HttpServletRequest request, String refreshToken) {
-		Optional<CliSessionService.Refreshed> or = cliSessionService.refresh(refreshToken, request.getRemoteAddr());
+		Optional<CliSessionService.Refreshed> or;
+		try {
+			or = cliSessionService.refresh(refreshToken, request.getRemoteAddr());
+		} catch (CliSessionService.SessionEnded e) {
+			return softError(OAuthErrors.INVALID_GRANT, e.getMessage());
+		}
 		if (or.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "unknown, expired or revoked refresh token, or the key behind the session is inactive; log in again");
 		CliSession s = or.get().session();
 		Optional<ApiKey> oak = apiKeyService.getApiKey(s.getApiKey());
@@ -178,8 +184,23 @@ public class ProgrammaticTokenController {
 		}
 		String token = apiTokenService.issueForSession(oak.get(), s, ApiTokenService.AUD_PROGRAMMATIC);
 		return ResponseEntity.ok().header(HttpHeaders.CACHE_CONTROL, "no-store").header(HttpHeaders.PRAGMA, "no-cache")
-				.body(Map.of("access_token", token, "token_type", "Bearer", "expires_in", ApiTokenService.TTL_SECONDS,
-						"refresh_token", or.get().refreshToken(), "session_expires_at", s.getExpiresDate().toInstant().toString()));
+				.body(sessionTokenBody(token, s, or.get().refreshToken()));
+	}
+
+	/**
+	 * The token response of the device and refresh grants: expires_in is the token's real life (an
+	 * hour, or less when the session ends first), the refresh token only when there is one worth
+	 * having, and session_hard_expiry when the key bounds its sessions (task RD3-7).
+	 */
+	static Map<String, Object> sessionTokenBody(String token, CliSession s, String refreshToken) {
+		Map<String, Object> body = new java.util.LinkedHashMap<>();
+		body.put("access_token", token);
+		body.put("token_type", "Bearer");
+		body.put("expires_in", io.reliza.common.CliSessionCodes.expiresInSeconds(java.time.ZonedDateTime.now(), s.getExpiresDate()));
+		if (refreshToken != null) body.put("refresh_token", refreshToken);
+		body.put("session_expires_at", s.getExpiresDate().toInstant().toString());
+		if (s.getHardExpiresDate() != null) body.put("session_hard_expiry", s.getHardExpiresDate().toInstant().toString());
+		return body;
 	}
 
 	/**

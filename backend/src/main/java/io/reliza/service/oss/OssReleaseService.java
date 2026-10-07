@@ -17,6 +17,11 @@ import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.time.Duration;
+import java.time.Instant;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.LinkedHashSet;
+import java.util.HashMap;
 import java.util.function.Function;
 import java.util.stream.Collectors;
 
@@ -56,6 +61,7 @@ import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseData.ReservationEndedBy;
 import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.VcsRepositoryData;
@@ -65,6 +71,10 @@ import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.ComponentLockService;
+import io.reliza.service.ComponentLockService.LockedOperation;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuditService;
@@ -113,6 +123,9 @@ public class OssReleaseService {
 	private GetComponentService getComponentService;
 
 	@Autowired
+	private ComponentLockService componentLockService;
+
+	@Autowired
 	private GetOrganizationService getOrganizationService;
 
 	@Autowired
@@ -150,7 +163,18 @@ public class OssReleaseService {
 	private static final int AUTO_INTEGRATE_BACKOFF_SECONDS = 120;
 	private static final int AUTO_INTEGRATE_LEASE_SECONDS = 600;
 
+	/**
+	 * Rate limit of the ERROR checkProductParents logs for a product release over another org's
+	 * parents, keyed on the feature set and the refused parents: every automatic trigger re-finds
+	 * the same bad dependency until an operator fixes it.
+	 */
+	static final Duration FOREIGN_PARENT_LOG_INTERVAL = Duration.ofHours(1);
+	private final Map<String, Instant> lastForeignParentReport = new ConcurrentHashMap<>();
+
 	private final ReleaseRepository repository;
+
+	@PersistenceContext
+	private EntityManager entityManager;
 	
 	OssReleaseService(ReleaseRepository repository) {
 		this.repository = repository;
@@ -389,12 +413,47 @@ public class OssReleaseService {
 	@Transactional
 	public Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu,
 			boolean considerTriggers, UUID triggerUuid, String reason) {
+		return updateReleaseLifecycle(releaseId, newLifecycle, wu, considerTriggers, triggerUuid, reason, null);
+	}
+
+	/**
+	 * End a PENDING reservation unbuilt (to CANCELLED or REJECTED) and record who ended it on the
+	 * LIFECYCLE event.
+	 *
+	 * <p>Decided under a write lock on the row, on its committed state, not as the caller last saw
+	 * it: addrelease may have completed the reservation since. Then the scheduler leaves it alone (it
+	 * is no longer abandoned), and a person's move is an ordinary lifecycle change. addrelease
+	 * completing a reservation takes the same lock (createRelease), so neither write can overwrite
+	 * the other. Reloading the row discards unflushed changes the caller made to this release in the
+	 * same transaction: call it before touching the release, not after.
+	 */
+	@Transactional
+	public Release endReservation (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu,
+			ReservationEndedBy endedBy) throws RelizaException {
+		Release r = repository.findByIdWriteLocked(releaseId)
+				.orElseThrow(() -> new RelizaException("Release not found: " + releaseId));
+		// The lock statement does not discard a copy already in the persistence context -- the
+		// mutation path loaded the release before calling here -- so read the committed row.
+		entityManager.refresh(r);
+		if (!ReleaseData.endsReservation(ReleaseData.dataFromRecord(r).getLifecycle(), newLifecycle)
+				&& endedBy == ReservationEndedBy.SCHEDULER) {
+			log.debug("release {} is no longer a pending reservation, not cancelling it", releaseId);
+			return r;
+		}
+		return updateReleaseLifecycle(releaseId, newLifecycle, wu, true, null, null, endedBy);
+	}
+
+	private Release updateReleaseLifecycle (UUID releaseId, ReleaseLifecycle newLifecycle, WhoUpdated wu,
+			boolean considerTriggers, UUID triggerUuid, String reason, ReservationEndedBy endedBy) {
 		Release r = sharedReleaseService.getRelease(releaseId).get();
 		ReleaseData rd = ReleaseData.dataFromRecord(r);
 		ReleaseLifecycle oldLifecycle = rd.getLifecycle();
 		rd.setLifecycle(newLifecycle);
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.LIFECYCLE, ReleaseUpdateAction.CHANGED, oldLifecycle.name(),
-				newLifecycle.name(), null, null, ZonedDateTime.now(), wu);
+				newLifecycle.name(), null, null, ZonedDateTime.now(), wu,
+				ReleaseData.endsReservation(oldLifecycle, newLifecycle)
+						|| (ReleaseLifecycle.isEnded(oldLifecycle) && ReleaseLifecycle.isEnded(newLifecycle))
+						? endedBy : null);
 		rd.addUpdateEvent(rue);
 		r = saveRelease(r, rd, wu, considerTriggers);
 		ReleaseData savedRd = ReleaseData.dataFromRecord(r);
@@ -550,6 +609,14 @@ public class OssReleaseService {
 	 */
 	@Transactional
 	public Release updateRelease (ReleaseDto releaseDto, UpdateReleaseStrength strength, WhoUpdated wu) throws RelizaException {
+		// Content changes are refused while locked; the lifecycle is not, deliberately. A locked
+		// release can still be rejected or cancelled -- a lock stops work being built on an
+		// unresolved problem, it does not trap a release in place.
+		if (null != releaseDto.getUuid()) {
+			sharedReleaseService.getReleaseData(releaseDto.getUuid()).ifPresent(existing ->
+				componentLockService.assertUnlocked(existing.getComponent(), existing.getBranch(),
+						LockedOperation.RELEASE_CONTENT));
+		}
 		Release r = null;
 		// locate and lock release in db
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseDto.getUuid());
@@ -586,8 +653,184 @@ public class OssReleaseService {
 	}
 	
 
+	/**
+	 * One rule for the references a release stores to other rows by uuid: every source code entry
+	 * (sourceCodeEntry, commits[]) and every parent release must exist and be referenceable from
+	 * {@code org} -- the release's own organization or the shared external-components one, see
+	 * {@link SharedReleaseService#isReferenceableFromOrg}. Without it a caller with write access to
+	 * one release could point it at another organization's commit or release and read that row back
+	 * through the release.
+	 *
+	 * <p>Pass only what is being newly set: a reference already stored on the release is not
+	 * re-checked, so an update that merely echoes it back is never refused because of it.
+	 *
+	 * <p>A null entry and the all-zero {@link SourceCodeEntryData#NULL_SCE_UUID} are refused as
+	 * source code entries. getSceDataList answers both with a synthetic "details unavailable"
+	 * placeholder for read-side rendering; the org-scoped getReferenceableSceDataList used here
+	 * leaves them out, so they count as not found rather than passing for an existing entry.
+	 *
+	 * <p>A uuid that does not exist and one owned by another organization get the same message, so
+	 * the refusal cannot be used to probe for other organizations' uuids.
+	 */
+	private void validateReleaseReferences (UUID org, Collection<UUID> sceUuids,
+			Collection<UUID> parentReleaseUuids) throws RelizaException {
+		boolean hasSces = null != sceUuids && !sceUuids.isEmpty();
+		boolean hasParents = null != parentReleaseUuids && !parentReleaseUuids.isEmpty();
+		if (null == org && (hasSces || hasParents)) {
+			throw new RelizaException("Release organization is required when setting source code entries or parent releases");
+		}
+		if (hasSces) {
+			Set<UUID> found = getSourceCodeEntryService.getReferenceableSceDataList(sceUuids, org).stream()
+					.map(SourceCodeEntryData::getUuid).collect(Collectors.toSet());
+			List<UUID> refused = new LinkedHashSet<>(sceUuids).stream().filter(u -> !found.contains(u)).toList();
+			if (!refused.isEmpty()) {
+				throw new RelizaException("Source code entry not found in this organization: " + refused);
+			}
+		}
+		if (hasParents) {
+			UnreferenceableParents refused = findUnreferenceableParentReleases(org, parentReleaseUuids);
+			if (!refused.isEmpty()) {
+				throw new RelizaException("Parent release not found in this organization: " + refused.refused());
+			}
+		}
+	}
+
+	/**
+	 * Parent release uuids a release of some org may not reference. {@code refused} is every one of
+	 * them in the order requested -- missing and foreign interleaved as the caller sent them, so the
+	 * user-facing refusal does not tell which of them exists in another org by where it is listed.
+	 * {@code foreign} is the subset that exists in another org (not the shared external-components
+	 * one), mapped to its component; the rest are missing (no such release visible, or null).
+	 */
+	public record UnreferenceableParents(List<UUID> refused, Map<UUID, UUID> foreign) {
+		public boolean isEmpty() {
+			return refused.isEmpty();
+		}
+
+		public List<UUID> missing() {
+			return refused.stream().filter(u -> !foreign.containsKey(u)).toList();
+		}
+	}
+
+	/** One batch read; see {@link UnreferenceableParents}. Empty when every parent is fine. */
+	public UnreferenceableParents findUnreferenceableParentReleases (UUID org, Collection<UUID> parentReleaseUuids) {
+		List<UUID> refused = new LinkedList<>();
+		Map<UUID, UUID> foreign = new LinkedHashMap<>();
+		if (null == parentReleaseUuids || parentReleaseUuids.isEmpty()) return new UnreferenceableParents(refused, foreign);
+		Set<UUID> requested = new LinkedHashSet<>(parentReleaseUuids);
+		Set<UUID> resolvable = requested.stream().filter(Objects::nonNull).collect(Collectors.toSet());
+		Map<UUID, ReleaseData> found = resolvable.isEmpty() ? new HashMap<>()
+				: sharedReleaseService.getReleaseDataListLight(resolvable).stream()
+					.collect(Collectors.toMap(ReleaseData::getUuid, Function.identity(), (x, y) -> x));
+		for (UUID u : requested) {
+			ReleaseData prd = (null == u) ? null : found.get(u);
+			if (null == prd) {
+				refused.add(u);
+			} else if (!SharedReleaseService.isReferenceableFromOrg(prd.getOrg(), org)) {
+				refused.add(u);
+				foreign.put(u, prd.getComponent());
+			}
+		}
+		return new UnreferenceableParents(refused, foreign);
+	}
+
+	/**
+	 * The rate limit of checkProductParents' ERROR: ALWAYS reports (and leaves the clock alone);
+	 * RATE_LIMITED reports a {@code key} (feature set plus the sorted refused parents) at most once
+	 * per {@link #FOREIGN_PARENT_LOG_INTERVAL} and stamps it when it does. Static over an explicit map
+	 * so it can be tested without the clock or the log.
+	 */
+	static boolean shouldReportForeignParents (Map<String, Instant> lastReport, String key,
+			ProductParentsLogging logging, Instant now) {
+		if (ProductParentsLogging.ALWAYS == logging) return true;
+		// compute, so two workers hitting the same key at once cannot both decide to report.
+		boolean[] report = {false};
+		lastReport.compute(key, (k, last) -> {
+			if (null != last && !last.isBefore(now.minus(FOREIGN_PARENT_LOG_INTERVAL))) return last;
+			report[0] = true;
+			return now;
+		});
+		return report[0];
+	}
+
+	/** Outcome of {@link #checkProductParents}, i.e. what a product-release path does next. */
+	public enum ProductParentsCheck {
+		/** Every parent may be referenced: go on and mint. */
+		REFERENCEABLE,
+		/**
+		 * A parent exists in another organization: a data problem only an operator can fix (a feature
+		 * set or instance pointing across orgs). Skip the product release, do not retry -- every
+		 * attempt would fail the same way. Wins over MISSING when both occur.
+		 */
+		FOREIGN,
+		/**
+		 * A parent is not visible. Nothing is minted; the auto-integrate caller re-queues the trigger
+		 * on the existing backoff curve, the same as any failed integration on main. Parents are
+		 * re-gathered on every attempt, so the retry ends once the dependency resolves differently,
+		 * and a transient cause -- replication lag or visibility, if any is left -- recovers on a
+		 * later attempt.
+		 */
+		MISSING
+	}
+
+	/** Whether a FOREIGN refusal is logged on every call or rate-limited. */
+	public enum ProductParentsLogging {
+		/** Automatic triggers, which re-find the same bad dependency on every run. */
+		RATE_LIMITED,
+		/** An operator's on-demand trigger, who should see why nothing was created. */
+		ALWAYS
+	}
+
+	/**
+	 * Pre-mint check for the paths that assemble a product release's parents themselves
+	 * (auto-integrate, on-demand integrate, instance product generation). createRelease would refuse
+	 * the same parents, but only after the version had been minted. A FOREIGN outcome logs an ERROR
+	 * naming the feature set and the offending parent releases with their components; a MISSING one
+	 * a WARN, since it is retried.
+	 */
+	public ProductParentsCheck checkProductParents (UUID featureSet, UUID org, Collection<ParentRelease> parents,
+			String context, ProductParentsLogging logging) {
+		UnreferenceableParents refused = findUnreferenceableParentReleases(org, (null == parents) ? List.of()
+				: parents.stream().map(ParentRelease::getRelease).toList());
+		if (refused.isEmpty()) return ProductParentsCheck.REFERENCEABLE;
+		if (refused.foreign().isEmpty()) {
+			log.warn("Not creating a product release for feature set {} of org {} ({}) yet: dependency release(s) {} "
+					+ "not visible; left to the retry", featureSet, org, context, refused.missing());
+			return ProductParentsCheck.MISSING;
+		}
+		String key = featureSet + "|" + refused.foreign().keySet().stream().map(UUID::toString).sorted()
+				.collect(Collectors.joining(","));
+		if (shouldReportForeignParents(lastForeignParentReport, key, logging, Instant.now())) {
+			String offending = refused.foreign().entrySet().stream()
+				.map(e -> "release " + e.getKey() + " (component " + e.getValue() + ")")
+				.collect(Collectors.joining(", "));
+			log.error("Skipping product release for feature set {} of org {} ({}): dependency release(s) of another "
+					+ "organization: {}. Fix the feature set's dependencies; this is not retried.",
+					featureSet, org, context, offending);
+		}
+		return ProductParentsCheck.FOREIGN;
+	}
+
 	private Release doUpdateRelease (final Release r, ReleaseData rData, ReleaseDto releaseDto, WhoUpdated wu) throws RelizaException {
 		log.debug("updating exisiting rd, with dto: {}", releaseDto);
+		// The commit and parent diffs, computed ONCE: what is validated here is exactly what is stored
+		// and recorded as update events below. Order-preserving, so the refusal lists the newly
+		// supplied references in the order the caller sent them.
+		List<UuidDiff> commitDiff = Utils.diffUuidLists(rData.getCommits(), releaseDto.getCommits());
+		List<UuidDiff> parentReleaseDiff = (null == releaseDto.getParentReleases()) ? List.of()
+				: Utils.diffUuidLists(rData.getParentReleases().stream().map(ParentRelease::getRelease).toList(),
+						releaseDto.getParentReleases().stream().map(ParentRelease::getRelease).toList());
+		// Newly supplied references only -- see validateReleaseReferences. Ahead of everything
+		// below, which mutates rData and archives detached artifacts before the save.
+		List<UUID> newSces = new LinkedList<>();
+		if (null != releaseDto.getSourceCodeEntry() && !releaseDto.getSourceCodeEntry().equals(rData.getSourceCodeEntry())) {
+			newSces.add(releaseDto.getSourceCodeEntry());
+		}
+		commitDiff.stream().filter(cd -> cd.diffAction() == ReleaseUpdateAction.ADDED)
+				.forEach(cd -> newSces.add(cd.object()));
+		List<UUID> newParents = parentReleaseDiff.stream().filter(pd -> pd.diffAction() == ReleaseUpdateAction.ADDED)
+				.map(UuidDiff::object).toList();
+		validateReleaseReferences(rData.getOrg(), newSces, newParents);
 		// sidComponentName is system-controlled. Reject mutation; allow idempotent pass.
 		if (releaseDto.getSidComponentName() != null
 				&& !releaseDto.getSidComponentName().equals(rData.getSidComponentName())) {
@@ -619,7 +862,6 @@ public class OssReleaseService {
 		}
 		if(null != releaseDto.getParentReleases()){
 			sharedReleaseService.checkCircularDependency(r.getUuid(), releaseDto.getParentReleases());
-			List<UuidDiff> parentReleaseDiff = Utils.diffUuidLists(rData.getParentReleases().stream().map(x -> x.getRelease()).toList(), releaseDto.getParentReleases().stream().map(x -> x.getRelease()).toList());
 			if (!parentReleaseDiff.isEmpty()) {
 				rData.setParentReleases(releaseDto.getParentReleases());
 				parentReleaseDiff.forEach(pd -> rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.PARENT_RELEASE, pd.diffAction(),
@@ -627,7 +869,6 @@ public class OssReleaseService {
 			}
 		}
 		
-		List<UuidDiff> commitDiff = Utils.diffUuidLists(rData.getCommits(), releaseDto.getCommits());
 		if (!commitDiff.isEmpty()) {
 			rData.setCommits(releaseDto.getCommits());
 			commitDiff.forEach(cd -> rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.SOURCE_CODE_ENTRY, cd.diffAction(),
@@ -712,14 +953,20 @@ public class OssReleaseService {
 	
 	@Transactional
 	private void processReleaseLifecycleEvents (ReleaseData rData, ReleaseLifecycle curLifecycle, ReleaseLifecycle oldLifecycle) {
-		if (curLifecycle == ReleaseLifecycle.DRAFT && oldLifecycle != ReleaseLifecycle.DRAFT) {
+		// Notify on EVERY real transition. The previous chain notified only on DRAFT / ASSEMBLED /
+		// CANCELLED / REJECTED, so a subscription to RELEASE_LIFECYCLE_CHANGED validated, saved, and
+		// then never fired for READY_TO_SHIP, GENERAL_AVAILABILITY and every end-of-life stage.
+		//
+		// The old != cur guard is deliberate: the previous chain carried it only on the DRAFT arm,
+		// so re-saving an already-CANCELLED (or REJECTED, or ASSEMBLED) release re-announced a
+		// transition that had not happened.
+		if (oldLifecycle != curLifecycle) {
 			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.CANCELLED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.REJECTED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
+		}
+		// ASSEMBLED alone drives product auto-integration. Deliberately NOT folded into the notify
+		// branch above: it is state machinery, not notification, and must keep firing on exactly
+		// the condition it always did -- including a re-save of an already ASSEMBLED release.
+		if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
 			autoIntegrateProducts(rData);
 		}
 	}
@@ -756,6 +1003,19 @@ public class OssReleaseService {
 				}
 			}
 		}
+	}
+
+	/**
+	 * Drive a batch's releases in order against a shared set of already-processed feature sets, so a
+	 * given feature set is auto-integrated at most once for the whole batch. Shared-API parity with
+	 * Pro's after-commit batch hop: CE integrates inline ({@link #autoIntegrateProductsForBatch}) and
+	 * never queues, so nothing here claims or clears a marker.
+	 */
+	public void processAutoIntegrateForBatch(List<UUID> releaseUuids) {
+		if (null == releaseUuids || releaseUuids.isEmpty()) return;
+		Map<UUID, ReleaseData> byUuid = sharedReleaseService.getReleaseDataListLight(releaseUuids).stream()
+				.collect(Collectors.toMap(ReleaseData::getUuid, Function.identity(), (x, y) -> x));
+		autoIntegrateProductsForBatch(releaseUuids.stream().distinct().map(byUuid::get).filter(Objects::nonNull).toList());
 	}
 
 	private boolean autoIntegrateProductsForRelease(ReleaseData rd, Set<UUID> processedFeatureSets) {
@@ -929,6 +1189,15 @@ public class OssReleaseService {
 		} catch (RelizaException re) {
 			log.error("Skipping auto-integration into feature set {} triggered by release {}: {}",
 					featureSet.getUuid(), triggeringRelease.getUuid(), re.getMessage(), re);
+			return;
+		}
+
+		// Same for a dependency release of another organization: createRelease would refuse it after
+		// the version was minted. A MISSING parent is not skipped here -- createProductRelease
+		// declines it before the mint.
+		if (ProductParentsCheck.FOREIGN == checkProductParents(featureSet.getUuid(), triggeringRelease.getOrg(),
+				updatedReleases, "auto-integrate triggered by release " + triggeringRelease.getUuid(),
+				ProductParentsLogging.RATE_LIMITED)) {
 			return;
 		}
 
@@ -1124,6 +1393,13 @@ public class OssReleaseService {
 		} catch (RelizaException re) {
 			log.error("Refusing to create a product release for feature set {}: {}",
 					featureSet.getUuid(), re.getMessage(), re);
+			return Optional.empty();
+		}
+		// Missing or other-org parents, likewise before the mint. The auto-integrate caller has already
+		// skipped FOREIGN, so what reaches here from it is MISSING. Otherwise this is the on-demand
+		// trigger, whose operator should always see why: no rate limit.
+		if (ProductParentsCheck.REFERENCEABLE != checkProductParents(featureSet.getUuid(), orgUuid, parentReleases,
+				"product release", ProductParentsLogging.ALWAYS)) {
 			return Optional.empty();
 		}
 
@@ -1536,6 +1812,36 @@ public class OssReleaseService {
 			}
 		}
 		if (null == releaseDto.getComponent()) throw new IllegalStateException("Component or Product is required on release creation");
+		// A locked component or branch takes no new releases. Checked here rather than in the
+		// fetchers because four of them create releases and a lock one path forgets is not a lock.
+		componentLockService.assertUnlocked(releaseDto.getComponent(), releaseDto.getBranch(),
+				LockedOperation.RELEASE_CREATION);
+		// Whether this create makes a NEW release or completes an existing one (rebuild / PENDING)
+		// decides how the references are checked.
+		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(
+				releaseDto.getComponent(), releaseDto.getVersion());
+		Optional<ReleaseData> existingReleaseData = (ova.isPresent() && null != ova.get().getRelease())
+				? sharedReleaseService.getReleaseData(ova.get().getRelease())
+				: Optional.empty();
+		List<UUID> suppliedParents = (null == releaseDto.getParentReleases()) ? List.of()
+				: releaseDto.getParentReleases().stream().map(ParentRelease::getRelease).toList();
+		// Ahead of the cycle checks below either way, so a foreign parent's ancestry is never walked
+		// and its refusal is the uniform "not found in this organization".
+		if (!(ova.isPresent() && null != ova.get().getRelease())) {
+			// A new release: every reference the caller supplies is new, so all of them are checked.
+			List<UUID> suppliedSces = new LinkedList<>();
+			if (null != releaseDto.getSourceCodeEntry()) suppliedSces.add(releaseDto.getSourceCodeEntry());
+			if (null != releaseDto.getCommits()) suppliedSces.addAll(releaseDto.getCommits());
+			validateReleaseReferences(releaseDto.getOrg(), suppliedSces, suppliedParents);
+		} else if (existingReleaseData.isPresent()) {
+			// Rebuild / PENDING: the arm completes through updateRelease, which checks the references
+			// that differ from the stored release -- a legacy one re-sent unchanged does not block it.
+			// Only the parents it adds are checked here already, for the cycle checks' sake.
+			Set<UUID> storedParents = existingReleaseData.get().getParentReleases().stream()
+					.map(ParentRelease::getRelease).collect(Collectors.toSet());
+			validateReleaseReferences(existingReleaseData.get().getOrg(), List.of(),
+					suppliedParents.stream().filter(p -> !storedParents.contains(p)).toList());
+		}
 		// One rule on every door: parents are validated on create as well as on update. On a rebuild
 		// the dto carries the existing uuid and the check is the same one updateRelease runs; on a
 		// fresh release that uuid cannot be in anyone's ancestry yet, so what is checkable is the
@@ -1564,19 +1870,14 @@ public class OssReleaseService {
 		}
 		
 		// --- sid identity ---
-		// Look up version assignment first so we know whether this is a fresh create or
-		// an update; the orchestrator runs only on fresh creates so existing sid identity
+		// The version assignment and existing release (looked up above) tell a fresh create from an update;
+		// the orchestrator runs only on fresh creates so existing sid identity
 		// is never re-derived (write-once invariant).
 		ComponentData cd = getComponentService.getComponentData(releaseDto.getComponent()).get();
 		OrganizationData org = getOrganizationService.getOrganizationData(releaseDto.getOrg())
 				.orElseThrow(() -> new RelizaException("Organization not found: " + releaseDto.getOrg()));
 
-		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(
-				releaseDto.getComponent(), releaseDto.getVersion());
-		Optional<ReleaseData> existingReleaseData = (ova.isPresent() && null != ova.get().getRelease())
-				? sharedReleaseService.getReleaseData(ova.get().getRelease())
-				: Optional.empty();
-
+		// The version assignment and existing release were looked up above.
 		if (existingReleaseData.isPresent()) {
 			// Rebuild / PENDING-update — preserve stored sid identity, do not re-derive.
 			seedDtoWithExistingSidIdentity(releaseDto, existingReleaseData.get());
@@ -1601,6 +1902,13 @@ public class OssReleaseService {
 			final String dtoVersion = rData.getVersion(); // capture for lambda — rData is reassigned below
 			ReleaseData existingRd = existingReleaseData.orElseThrow(() ->
 					new RelizaException("Cannot find the existing release data associated with the version = " + dtoVersion));
+			// Lock the row and decide on its committed state: endReservation (a person or the
+			// scheduler ending this reservation) takes the same lock, so a reservation it ended in
+			// the meantime is seen as ended here and refused below, instead of being overwritten.
+			Release lockedExisting = repository.findByIdWriteLocked(existingRd.getUuid())
+					.orElseThrow(() -> new RelizaException("Cannot find the existing release associated with the version = " + dtoVersion));
+			entityManager.refresh(lockedExisting);
+			existingRd = ReleaseData.dataFromRecord(lockedExisting);
 			
 			// If rebuildRelease is true, strip and rebuild the release regardless of lifecycle
 			if (rebuildRelease) {

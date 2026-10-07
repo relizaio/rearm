@@ -11,6 +11,7 @@ import java.util.UUID;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.CommonVariables.PerspectiveType;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.RelizaObject;
@@ -22,6 +23,14 @@ public class OssPerspectiveService {
 
 	public static class PerspectiveData implements RelizaObject {
 		public PerspectiveType getType() {
+			return null;
+		}
+
+		public String getName() {
+			return null;
+		}
+
+		public StatusEnum getStatus() {
 			return null;
 		}
 
@@ -62,6 +71,14 @@ public class OssPerspectiveService {
 	 */
 	public Optional<PerspectiveData> getPerspectiveData (UUID uuid) {
 		return Optional.empty();
+	}
+
+	/**
+	 * The organization's active real perspectives (not PRODUCT components).
+	 * Part of ReARM Pro only — CE has no real perspectives, so this is empty.
+	 */
+	public List<PerspectiveData> listRealPerspectivesOfOrg (UUID orgUuid) {
+		return List.of();
 	}
 
 	/**

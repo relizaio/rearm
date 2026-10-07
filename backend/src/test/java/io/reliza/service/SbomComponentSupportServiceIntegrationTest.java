@@ -170,10 +170,10 @@ public class SbomComponentSupportServiceIntegrationTest {
 		assertEquals(2, auditRepository.findBySbomComponentUuidOrderByAssertedDateDesc(sc.getUuid()).size());
 		assertEquals(futureEos, supportOf(sc.getUuid()).milestoneDate(SupportMilestoneType.END_OF_SUPPORT));
 
-		// A FUTURE EOS derives UNKNOWN, never ACTIVELY_SUPPORTED. A published horizon says
-		// nothing about whether anyone is maintaining the component today; claiming otherwise
-		// was ReARM asserting upstream maintenance on the manufacturer's behalf.
-		assertEquals(SupportStatus.UNKNOWN,
+		// A FUTURE EOS derives WITHIN_SUPPORT_WINDOW, never ACTIVELY_SUPPORTED. A published
+		// horizon says nothing about whether anyone is maintaining the component today; claiming
+		// otherwise was ReARM asserting upstream maintenance on the manufacturer's behalf.
+		assertEquals(SupportStatus.WITHIN_SUPPORT_WINDOW,
 				SupportStatus.derive(null, futureEos, LocalDate.now()));
 
 		// Coverage counts the (only, non-root) MANUAL-attested component in this fresh org.

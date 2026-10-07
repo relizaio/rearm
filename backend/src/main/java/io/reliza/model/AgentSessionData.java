@@ -4,6 +4,7 @@
 
 package io.reliza.model;
 
+import java.io.Serializable;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.LinkedList;
@@ -117,6 +118,31 @@ public class AgentSessionData extends RelizaDataParent implements RelizaObject {
 	private ZonedDateTime lastActivityAt;
 
 	/**
+	 * Who closed the session (task 6e7fe6fe): the session itself when its agent closed it, the
+	 * person who force-closed it, or the idle sweep. Null while open, and on sessions closed before
+	 * this was recorded.
+	 */
+	@JsonProperty
+	private AgentActor closedBy;
+
+	/** Why it was closed, in words: "closed by the agent", a person's reason, or the idle time. */
+	@JsonProperty
+	private String closeReason;
+
+	/**
+	 * When the idle sweep warned that the session will close (task 6e7fe6fe). Cleared by any
+	 * activity, so a session warned twice was idle twice.
+	 */
+	@JsonProperty
+	private ZonedDateTime idleWarnedAt;
+
+	/** The session did something at {@code at}: its idle clock restarts and any idle warning is spent. */
+	public void markActive(ZonedDateTime at) {
+		this.lastActivityAt = at;
+		this.idleWarnedAt = null;
+	}
+
+	/**
 	 * Artifacts the agent has attached. Reuses the existing
 	 * {@code rearm.artifacts} table — each entry is an Artifact UUID.
 	 * The reverse lookup (session-by-artifact) is via this list; v1
@@ -135,6 +161,14 @@ public class AgentSessionData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty(CommonVariables.COMMITS_FIELD)
 	private List<UUID> commits = new ArrayList<>();
+
+	/**
+	 * Boards this session was assigned a task on (board-permissions.md D15): who may read it
+	 * besides its own agent. Recorded after each assignment commits; empty on sessions from before,
+	 * which are read from their tasks once and written then.
+	 */
+	@JsonProperty
+	private java.util.LinkedHashSet<UUID> boardsWorked = new java.util.LinkedHashSet<>();
 
 	/**
 	 * Append-only log of policy evaluations against this session.
@@ -185,6 +219,177 @@ public class AgentSessionData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private ModelAssertionState modelAssertion = ModelAssertionState.DECLARED;
 
+	/**
+	 * How much of this session's consumption we believe we have.
+	 *
+	 * <p>{@code COMPLETE}: the agent closed the session itself and reported after its last
+	 * assignment opened. {@code INCOMPLETE}: the idle auto-close scheduler or an operator ended
+	 * it, so the tail is missing. {@code NONE}: nothing ever reported. Enforcement later treats
+	 * the last two conservatively; dashboards show which one they are looking at, because a
+	 * cheap-looking session and an unreported session are not the same claim.
+	 */
+	public enum UsageCompleteness { COMPLETE, INCOMPLETE, NONE }
+
+	/**
+	 * Per-model slice of a session's consumption.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	/**
+	 * @param model the catalogue row uuid
+	 * @param modelName its display name, carried alongside so a consumer does not have to fetch
+	 *        the whole catalogue to render a breakdown -- the rollup already has the row in hand
+	 */
+	public static record UsageByModel(UUID model, String modelName, long inputTokens, long outputTokens,
+			long cacheReadTokens, long cacheWriteTokens, int requests, int turns,
+			Long derivedCostMicros) implements Serializable {
+
+		/** Pre-name constructor, so stored rollups written before this field read unchanged. */
+		public UsageByModel(UUID model, long inputTokens, long outputTokens, long cacheReadTokens,
+				long cacheWriteTokens, int requests, int turns, Long derivedCostMicros) {
+			this(model, null, inputTokens, outputTokens, cacheReadTokens, cacheWriteTokens,
+					requests, turns, derivedCostMicros);
+		}
+	}
+
+	/**
+	 * Rollup of the session's usage rows. A cache of the table, rebuildable from it at any time;
+	 * held here so the common read -- "what has this session spent" -- is one row rather than a
+	 * scan.
+	 *
+	 * @param priceVersions the pricing entries the derived cost was computed under, so a figure
+	 *        stays meaningful after a rate changes
+	 * @param costComplete false when any row had no applicable price entry; the cost is then a
+	 *        lower bound rather than the answer
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record UsageTotals(long inputTokens, long outputTokens, long cacheReadTokens,
+			long cacheWriteTokens, int requests, int turns, int toolCalls, int wallSeconds,
+			int reports, List<UsageByModel> byModel, Long derivedCostMicros,
+			List<UUID> priceVersions, boolean costComplete) implements Serializable {
+
+		public static UsageTotals empty() {
+			return new UsageTotals(0, 0, 0, 0, 0, 0, 0, 0, 0, List.of(), null, List.of(), true);
+		}
+	}
+
+	/**
+	 * The agent tool's own id for a session this ReARM session ran in -- Claude Code's
+	 * {@code session_id}, and whatever the equivalent is for the next tool. It is what joins a
+	 * ReARM session back to the tool's transcript, and what a human needs to find the
+	 * conversation that produced a commit.
+	 *
+	 * <p>Not unique in either direction. One tool session commonly opens many ReARM sessions, one
+	 * per unit of work; and one ReARM session can outlive the tool session that opened it -- a
+	 * conversation resumed elsewhere reports its new id against the same ReARM session. So this is
+	 * a list, appended to and deduplicated on (provider, id).
+	 *
+	 * @param provider the tool, as the reporting client names it ({@code claude-code})
+	 * @param id the tool's local id for the session -- for Claude Code, the id its transcript is
+	 *        filed under
+	 * @param remoteId the id a hosted surface of the tool knows the session by, when there is one
+	 *        (Claude Code's bridge / web session id); null for a purely local run
+	 * @param reportedAt when ReARM first heard of this pairing
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record ProviderSession(String provider, String id, String remoteId,
+			ZonedDateTime reportedAt) implements Serializable {}
+
+	/** How the session's caller authenticated when it opened the session. */
+	public enum AuthMethod {
+		/** An API key's secret, directly or exchanged for an access token. Says which key, never who. */
+		KEY_SECRET,
+		/** A CLI browser login (device flow) a signed-in user approved. */
+		CLI_LOGIN,
+		/** A federated identity exchange, e.g. a GitHub Actions OIDC token. */
+		FEDERATED
+	}
+
+	/**
+	 * Where {@link SessionOrigin#ownerUser()} came from, strongest first. They make different
+	 * claims and the UI words them differently: a login says who approved this device, a
+	 * personal key says whose key it is, and a holder is only the user accountable for a secret
+	 * that may since have been handed to anyone.
+	 */
+	public enum OwnerSource { CLI_LOGIN, USER_KEY, KEY_HOLDER }
+
+	/**
+	 * A device as described to ReARM. Hostname and IP are personal data -- a hostname is often
+	 * the owner's name -- and are shown only to org admins and the session's owner.
+	 *
+	 * @param observedIp the address the server saw, when the description came with a request
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record SessionDevice(String hostname, String os, String timeZone, String client,
+			String observedIp) implements Serializable {}
+
+	/**
+	 * The external identity a federated session came through, as the exchange's claims gave it.
+	 * {@code actor} names a person and is restricted like a hostname; the rest describes a
+	 * repository and a run.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record SessionFederation(List<UUID> ruleUuids, String provider, String issuer,
+			String owner, String repository, String repositoryUri, String ref, String sha,
+			String workflowRef, String environment, String event, String actor, String runId)
+			implements Serializable {}
+
+	/**
+	 * How the session came to be opened, captured once at initialize: the session is the record
+	 * of the work, so it keeps its own copy rather than pointing at a login that may be revoked
+	 * and purged. Null on sessions opened before this was recorded.
+	 *
+	 * @param cliSession the CLI login, when {@link AuthMethod#CLI_LOGIN}
+	 * @param ownerUser the person the session is attributed to, or null when nothing names one --
+	 *        an organisation key, a federated identity, or a Free Form key with no holder
+	 * @param loginDevice what the CLI login recorded about its device when it was approved
+	 * @param reportedDevice what the client said about its device on initialize
+	 * @param observedIp the address the server saw on initialize
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record SessionOrigin(AuthMethod authMethod, UUID cliSession, UUID ownerUser,
+			OwnerSource ownerSource, SessionDevice loginDevice, SessionDevice reportedDevice,
+			String observedIp, SessionFederation federation, ZonedDateTime capturedAt)
+			implements Serializable {}
+
+	/** See {@link SessionOrigin}. Read through a resolver that withholds personal fields. */
+	@JsonProperty
+	private SessionOrigin origin;
+
+	/** See {@link ProviderSession}. Empty on sessions whose client reported none. */
+	@JsonProperty
+	private List<ProviderSession> providerSessions = new ArrayList<>();
+
+	/** Rollup of this session's usage rows; null until the first report arrives. */
+	@JsonProperty
+	private UsageTotals usageTotals;
+
+	/** See {@link UsageCompleteness}. */
+	@JsonProperty
+	private UsageCompleteness usageCompleteness = UsageCompleteness.NONE;
+
+	/**
+	 * Set when observed usage resolved to a different catalogue row than the session declared.
+	 * The declared model stays primary -- the declaration is what the agent claimed and the
+	 * mismatch is the finding -- and the rollup's byModel shows what actually ran.
+	 */
+	@JsonProperty
+	private boolean modelMismatch;
+
+	/**
+	 * Per board (keyed by board uuid), when this session last polled it for work and last was offered a
+	 * task, and the roles the poll declared -- empty for any role (task RD3-4). Written by `task next`
+	 * through a targeted update, not a revision; the staleness sweep and the board's Agents tab read it.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record BoardActivity(ZonedDateTime lastPollAt, ZonedDateTime lastOfferAt, List<String> roles)
+			implements java.io.Serializable {
+		private static final long serialVersionUID = 20260928L;
+	}
+
+	@JsonProperty
+	private Map<String, BoardActivity> boardActivity;
+
+
 	public void addArtifact(UUID artifactUuid) {
 		if (this.artifacts == null) {
 			this.artifacts = new LinkedList<>();
@@ -201,6 +406,34 @@ public class AgentSessionData extends RelizaDataParent implements RelizaObject {
 		if (!this.commits.contains(sceUuid)) {
 			this.commits.add(sceUuid);
 		}
+	}
+
+	/**
+	 * Record a provider session, deduplicated on (provider, id). A repeat that now carries a
+	 * remote id the first report lacked fills it in -- a client may learn the hosted id after it
+	 * opened the session -- and keeps the original {@code reportedAt}. A repeat naming a
+	 * different remote id is refused by the caller, not here.
+	 *
+	 * @return true when the list changed
+	 */
+	public boolean recordProviderSession(ProviderSession ps) {
+		if (null == ps) return false;
+		if (null == this.providerSessions) {
+			this.providerSessions = new ArrayList<>();
+		}
+		for (int i = 0; i < this.providerSessions.size(); i++) {
+			ProviderSession cur = this.providerSessions.get(i);
+			if (cur.provider().equals(ps.provider()) && cur.id().equals(ps.id())) {
+				if (null == cur.remoteId() && null != ps.remoteId()) {
+					this.providerSessions.set(i, new ProviderSession(cur.provider(), cur.id(),
+							ps.remoteId(), cur.reportedAt()));
+					return true;
+				}
+				return false;
+			}
+		}
+		this.providerSessions.add(ps);
+		return true;
 	}
 
 	public void addPolicyEvent(io.reliza.service.AgentPolicyHook.PolicyEvent event) {

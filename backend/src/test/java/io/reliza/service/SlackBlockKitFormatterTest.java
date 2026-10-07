@@ -402,6 +402,21 @@ class SlackBlockKitFormatterTest {
         assertTrue(factsText.contains("Resolved by:* bob"), "Expected resolver fact: " + factsText);
     }
 
+    @Test
+    void aCommitWithoutALinkRendersAsTheBareHash() {
+        // Utils.linkifyCommit returns null for a VCS URI it cannot link safely; the commit fact
+        // must still show, as plain text.
+        ReleaseRef r = new ReleaseRef(UUID.randomUUID(), "v2.0", UUID.randomUUID(), "myapp",
+                ComponentType.COMPONENT, UUID.randomUUID(), "main", ReleaseLifecycle.DRAFT,
+                "abc1234", null, null, "alice", "alice@example.com");
+        Map<String, Object> payload = formatter.format(
+                eventOf(NotificationEventType.RELEASE_CREATED, new ReleaseCreatedPayload(r, false)));
+        @SuppressWarnings("unchecked")
+        String factsText = extractSectionText((List<Map<String, Object>>) payload.get("blocks"));
+        assertTrue(factsText.contains("*Commit:* abc1234"), "Expected the bare hash: " + factsText);
+        assertFalse(factsText.contains("|abc1234>"), "Expected no link: " + factsText);
+    }
+
     private static ReleaseRef sampleRelease(UUID releaseUuid, ComponentType type,
             ReleaseLifecycle lifecycle) {
         return new ReleaseRef(releaseUuid, "v2.0", UUID.randomUUID(), "myapp", type,

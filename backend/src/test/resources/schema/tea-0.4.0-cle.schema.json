@@ -1,0 +1,196 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$comment": "The CLE schemas of the TEA OpenAPI spec 0.4.0 (components/schemas: cle, cle-event, cle-event-type, cle-version-specifier, identifier, identifier-type, cle-definitions, cle-support-definition), copied verbatim with $refs pointed at $defs and examples dropped. Used by TeaCleDocumentSchemaTest; refresh on a TEA bump.",
+  "$ref": "#/$defs/cle",
+  "$defs": {
+    "cle": {
+      "type": "object",
+      "description": "Common Lifecycle Enumeration (CLE) object based on ECMA-428 TC54 TG3 CLE Specification v1.0.0.\nContains lifecycle events and optional reusable definitions for a component or product.\n",
+      "properties": {
+        "events": {
+          "type": "array",
+          "description": "Ordered array of CLE Event objects representing lifecycle events.\nMUST be ordered by ID in descending order (newest events with highest IDs first).\n",
+          "items": {
+            "$ref": "#/$defs/cle-event"
+          }
+        },
+        "definitions": {
+          "description": "Container for reusable policy definitions referenced by events",
+          "$ref": "#/$defs/cle-definitions"
+        }
+      },
+      "required": [
+        "events"
+      ]
+    },
+    "cle-event": {
+      "type": "object",
+      "description": "A discrete lifecycle event from the CLE specification",
+      "properties": {
+        "id": {
+          "type": "integer",
+          "description": "A unique, auto-incrementing integer identifier for the event"
+        },
+        "type": {
+          "description": "The type of lifecycle event",
+          "$ref": "#/$defs/cle-event-type"
+        },
+        "effective": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp (UTC) when the event takes effect"
+        },
+        "published": {
+          "type": "string",
+          "format": "date-time",
+          "description": "ISO 8601 timestamp (UTC) when the event was first published"
+        },
+        "version": {
+          "type": "string",
+          "description": "Version string (used by released event type)"
+        },
+        "versions": {
+          "type": "array",
+          "description": "List of version specifiers affected by this event",
+          "items": {
+            "$ref": "#/$defs/cle-version-specifier"
+          }
+        },
+        "supportId": {
+          "type": "string",
+          "description": "Reference to a support policy ID defined in the definitions section"
+        },
+        "license": {
+          "type": "string",
+          "description": "License identifier (used by released event type)"
+        },
+        "supersededByVersion": {
+          "type": "string",
+          "description": "Version string that supersedes the affected versions (used by supersededBy event type)"
+        },
+        "identifiers": {
+          "type": "array",
+          "description": "New identifiers for the component (used by componentRenamed event type)",
+          "items": {
+            "$ref": "#/$defs/identifier"
+          }
+        },
+        "eventId": {
+          "type": "integer",
+          "description": "ID of the event being withdrawn (used by withdrawn event type)"
+        },
+        "reason": {
+          "type": "string",
+          "description": "Human-readable explanation (used by withdrawn event type)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the event"
+        },
+        "references": {
+          "type": "array",
+          "description": "List of URLs to supporting documentation",
+          "items": {
+            "type": "string",
+            "format": "uri"
+          }
+        }
+      },
+      "required": [
+        "id",
+        "type",
+        "effective",
+        "published"
+      ]
+    },
+    "cle-event-type": {
+      "type": "string",
+      "description": "The type of CLE lifecycle event",
+      "enum": [
+        "released",
+        "endOfDevelopment",
+        "endOfSupport",
+        "endOfLife",
+        "endOfDistribution",
+        "endOfMarketing",
+        "supersededBy",
+        "componentRenamed",
+        "withdrawn"
+      ]
+    },
+    "cle-version-specifier": {
+      "type": "object",
+      "description": "A version specifier that can be either a single version or a version range",
+      "properties": {
+        "version": {
+          "type": "string",
+          "description": "A specific version string"
+        },
+        "range": {
+          "type": "string",
+          "description": "A version range in vers format (e.g. \"vers:npm/>=1.0.0|<2.0.0\")"
+        }
+      }
+    },
+    "identifier": {
+      "type": "object",
+      "description": "An identifier with a specified type",
+      "properties": {
+        "idType": {
+          "description": "Type of identifier, e.g. `TEI`, `PURL`, `CPE`",
+          "$ref": "#/$defs/identifier-type"
+        },
+        "idValue": {
+          "description": "Identifier value",
+          "type": "string"
+        }
+      }
+    },
+    "identifier-type": {
+      "type": "string",
+      "description": "Enumeration of identifiers types",
+      "enum": [
+        "CPE",
+        "TEI",
+        "PURL",
+        "COMPLIANCE_DOCUMENT"
+      ]
+    },
+    "cle-definitions": {
+      "type": "object",
+      "description": "Container for reusable CLE policy definitions",
+      "properties": {
+        "support": {
+          "type": "array",
+          "description": "List of support policies",
+          "items": {
+            "$ref": "#/$defs/cle-support-definition"
+          }
+        }
+      }
+    },
+    "cle-support-definition": {
+      "type": "object",
+      "description": "A support policy definition from CLE",
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique identifier for the support policy"
+        },
+        "description": {
+          "type": "string",
+          "description": "Human-readable description of the policy"
+        },
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "description": "URL to detailed documentation about this support policy"
+        }
+      },
+      "required": [
+        "id",
+        "description"
+      ]
+    }
+  }
+}

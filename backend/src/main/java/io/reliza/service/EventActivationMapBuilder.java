@@ -82,6 +82,9 @@ public class EventActivationMapBuilder {
                 case APPROVAL_RESOLVED -> populateApprovalResolved(eventMap, event);
                 case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED ->
                         populateInstanceDeployment(eventMap, event);
+                // event.board, event.kind, event.holdKind ... so a subscription narrows by board or kind
+                case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING ->
+                        AgentBoardRenderSupport.populate(eventMap, AgentBoardRenderSupport.payload(event));
             }
         }
 

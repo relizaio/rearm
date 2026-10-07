@@ -89,8 +89,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		UUID r1 = createRelease(org, component, branch, "2.0.0");
 		saveMetrics(r1, metrics());
@@ -125,8 +124,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		// R1 (earlier): empty -> {A}. R2 (later): empty -> {A(HIGH),C} -> {A(CRITICAL),C} (within-R2 bump).
 		UUID r1 = createRelease(org, component, branch, "1.0.0");
@@ -173,8 +171,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		UUID r1 = createRelease(org, component, branch, "3.0.0");
 		saveMetrics(r1, metrics());
@@ -275,8 +272,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		UUID r1 = createRelease(org, component, branch, "1.0.0");
 		saveMetrics(r1, metrics(vuln("CVE-A", PURL_A, VulnerabilitySeverity.HIGH),
@@ -320,8 +316,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		VulnerabilityDto a = vuln("CVE-A", PURL_A, VulnerabilitySeverity.HIGH);
 		VulnerabilityDto b = vuln("CVE-B", PURL_C, VulnerabilitySeverity.MEDIUM);
@@ -364,8 +359,7 @@ public class FindingDimV3ReadFlipEquivalenceIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		// 5 releases on ONE branch, each carrying the SAME inherited CVE-A, each RE-SCANNED several times so a
 		// release spans MULTIPLE windows (mimicking demo's deep per-release audit history + the windowed path).

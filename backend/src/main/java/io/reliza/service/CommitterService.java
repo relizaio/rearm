@@ -70,7 +70,9 @@ public class CommitterService {
 		for (Committer c : repository.findByOrg(orgUuid.toString())) {
 			CommitterData cd = CommitterData.dataFromRecord(c);
 			if (cd.getStatus() != CommitterStatus.ACTIVE || cd.getUser() == null) continue;
-			Optional<UserData> u = userService.getUserData(cd.getUser());
+			// Only a user who is still an active member of this org lends
+			// their emails; a departed or foreign linked user does not.
+			Optional<UserData> u = userService.getUserDataWithOrg(cd.getUser(), orgUuid);
 			if (u.isPresent() && u.get().getAllEmailStrings().contains(lower)) {
 				return Optional.of(cd);
 			}
@@ -93,7 +95,9 @@ public class CommitterService {
 
 		Committer entity;
 		if (seed.getUuid() != null) {
-			entity = repository.findByIdWriteLocked(seed.getUuid())
+			// Org-scoped: a uuid owned by another org is "not found", never
+			// overwritten (and re-homed) with the caller's org.
+			entity = repository.findByIdAndOrgWriteLocked(seed.getUuid(), seed.getOrg().toString())
 					.orElseThrow(() -> new RelizaException("Committer not found: " + seed.getUuid()));
 		} else {
 			Optional<Committer> existing = repository.findByOrgAndEmail(seed.getOrg().toString(), seed.getEmail());
@@ -102,7 +106,23 @@ public class CommitterService {
 
 		if (seed.getStatus() == null) seed.setStatus(CommitterStatus.ACTIVE);
 
+		CommitterData stored = (entity.getRecordData() != null) ? CommitterData.dataFromRecord(entity) : null;
+		// The user link must point at an active member of this org. Same message
+		// for a missing user and one outside the org (no oracle). The one
+		// exemption: a plain edit of a live row that resends its unchanged link
+		// (the UI always does) to a user who has since left -- that user's emails
+		// are then simply not claimed. Reactivating an ARCHIVED row is checked
+		// like a new link.
+		Optional<UserData> linkedUser = Optional.empty();
 		if (seed.getUser() != null) {
+			linkedUser = userService.getUserDataWithOrg(seed.getUser(), seed.getOrg());
+			boolean liveRowUnchangedLink = stored != null
+					&& stored.getStatus() == CommitterStatus.ACTIVE
+					&& seed.getStatus() == CommitterStatus.ACTIVE
+					&& seed.getUser().equals(stored.getUser());
+			if (linkedUser.isEmpty() && !liveRowUnchangedLink) {
+				throw new RelizaException("User not found in this organization: " + seed.getUser());
+			}
 			repository.findActiveByOrgAndUser(seed.getOrg().toString(), seed.getUser().toString())
 					.filter(other -> !other.getUuid().equals(entity.getUuid()))
 					.ifPresent(other -> { throw new IllegalArgumentException(
@@ -115,9 +135,7 @@ public class CommitterService {
 		if (seed.getAliases() != null) {
 			for (String a : seed.getAliases()) if (StringUtils.isNotBlank(a)) claimed.add(a.toLowerCase());
 		}
-		if (seed.getUser() != null) {
-			userService.getUserData(seed.getUser()).ifPresent(u -> claimed.addAll(u.getAllEmailStrings()));
-		}
+		linkedUser.ifPresent(u -> claimed.addAll(u.getAllEmailStrings()));
 		for (String emailToClaim : claimed) {
 			Optional<CommitterData> conflict = findEmailOwner(seed.getOrg(), emailToClaim);
 			if (conflict.isPresent() && !conflict.get().getUuid().equals(entity.getUuid())) {

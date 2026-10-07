@@ -146,6 +146,7 @@ public class SbomComponentService {
 	// the snapshot resolve + changelog cache; lazy keeps startup wiring cycle-safe.
 	@Autowired @Lazy private AcollectionService acollectionService;
 	@Autowired private ReleaseRepository releaseRepository;
+	@Autowired private ComponentKindPolicy componentKindPolicy;
 
 	/**
 	 * Self-injection so {@link #processPendingReconciles(int)} can call the
@@ -262,9 +263,26 @@ public class SbomComponentService {
 	// Queue API (unchanged from V25/V27/V28)
 	// ===================================================================
 
+	/**
+	 * Queue a release for SBOM reconcile -- unless it is not scanned at all (task RD4-11): a
+	 * board's document round has no BOM to reconcile, bucket or send to Dependency-Track, and no
+	 * BOM diff to notify about, so it never enters the queue.
+	 */
 	public void requestReconcile(UUID releaseUuid) {
 		if (releaseUuid == null) return;
+		if (!componentKindPolicy.isScannableRelease(releaseUuid)) return;
 		releaseRepository.markSbomReconcileRequested(releaseUuid);
+	}
+
+	/**
+	 * The dequeue half of the rule above: a release that is not scanned but already sits in the
+	 * queue (queued before RD4-11, or by a path that wrote the marker directly) has its marker
+	 * dropped instead of being reconciled. Returns whether it was dropped.
+	 */
+	public boolean dropIfNotScannable(UUID releaseUuid) {
+		if (componentKindPolicy.isScannableRelease(releaseUuid)) return false;
+		releaseRepository.clearSbomReconcileRequested(releaseUuid);
+		return true;
 	}
 
 	public void processPendingReconciles(int batchLimit) {
@@ -309,6 +327,10 @@ public class SbomComponentService {
 				}
 			}
 			try {
+				if (dropIfNotScannable(releaseUuid)) {
+					processed++;
+					continue;
+				}
 				int skippedArts = self.reconcileReleaseSbomComponents(releaseUuid);
 				if (skippedArts > 0) {
 					// Incomplete pass: keep the queue marker and back off on

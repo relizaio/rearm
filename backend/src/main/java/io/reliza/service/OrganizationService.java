@@ -45,6 +45,8 @@ import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.CommonVariables.SidPurlMode;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.EditedListValidation;
+import io.reliza.common.SafeRegex;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
@@ -68,6 +70,13 @@ import io.reliza.ws.RelizaConfigProps;
 
 @Service
 public class OrganizationService {
+
+	/**
+	 * Most patterns one ignoreViolation list may hold. Every pattern is matched against every
+	 * violation of every Dependency-Track sync, each under the full match budget, so the length of
+	 * the list multiplies the worst case of a sync; real lists hold a handful.
+	 */
+	public static final int MAX_IGNORE_VIOLATION_PATTERNS = 100;
 
 	@Autowired
     private AuditService auditService;
@@ -186,6 +195,20 @@ public class OrganizationService {
 		od.setSettings(settings);
 		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu);
 		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
+	/**
+	 * Record a task-key prefix claim (board-documents.md D9). Persistence only: the caller holds
+	 * the org's AGENT_TASK_PREFIXES lock and has checked the prefix is free.
+	 */
+	@Transactional
+	public void recordTaskPrefixClaim(UUID orgUuid, String prefix, UUID board, WhoUpdated wu) throws RelizaException {
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		if (null == od.getAgentTaskPrefixes()) od.setAgentTaskPrefixes(new java.util.LinkedHashMap<>());
+		od.getAgentTaskPrefixes().putIfAbsent(prefix, new OrganizationData.TaskPrefixClaim(board, ZonedDateTime.now()));
+		saveOrganization(org, Utils.dataToRecord(od), wu);
 	}
 
 	/** Persist validated team-assignment rules (T2). Validation lives in
@@ -625,12 +648,13 @@ public class OrganizationService {
 
 	/**
 	 * Updates the ignore violation settings for an organization.
-	 * Validates that all provided patterns are valid Java regex.
+	 * Validates that all provided patterns are valid Java regex. Each list is a
+	 * patch: null leaves the stored list unchanged, an empty list clears it.
 	 * 
 	 * @param orgUuid organization UUID
-	 * @param licenseViolationRegexIgnore list of regex patterns for license violations to ignore
-	 * @param securityViolationRegexIgnore list of regex patterns for security violations to ignore
-	 * @param operationalViolationRegexIgnore list of regex patterns for operational violations to ignore
+	 * @param licenseViolationRegexIgnore list of regex patterns for license violations to ignore; null = unchanged
+	 * @param securityViolationRegexIgnore list of regex patterns for security violations to ignore; null = unchanged
+	 * @param operationalViolationRegexIgnore list of regex patterns for operational violations to ignore; null = unchanged
 	 * @param wu who updated
 	 * @return updated OrganizationData
 	 */
@@ -644,10 +668,18 @@ public class OrganizationService {
 			OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
 					.orElseThrow(() -> new IllegalArgumentException("Organization not found: " + orgUuid));
 			
-			// Validate all regex patterns
-			validateRegexPatterns(licenseViolationRegexIgnore, "licenseViolationRegexIgnore");
-			validateRegexPatterns(securityViolationRegexIgnore, "securityViolationRegexIgnore");
-			validateRegexPatterns(operationalViolationRegexIgnore, "operationalViolationRegexIgnore");
+			if (null == licenseViolationRegexIgnore && null == securityViolationRegexIgnore
+					&& null == operationalViolationRegexIgnore) {
+				return od; // nothing to change: no write, no revision
+			}
+
+			// Validate the regex patterns that are new against the stored lists
+			try {
+				validateIgnoreViolation(licenseViolationRegexIgnore, securityViolationRegexIgnore,
+						operationalViolationRegexIgnore, od.getIgnoreViolation());
+			} catch (RelizaException e) {
+				throw new IllegalArgumentException(e.getMessage());
+			}
 			
 			// Get or create ignoreViolation object
 			OrganizationData.IgnoreViolation ignoreViolation = od.getIgnoreViolation();
@@ -655,13 +687,16 @@ public class OrganizationService {
 				ignoreViolation = new OrganizationData.IgnoreViolation();
 			}
 			
-			// Set the lists (empty list if null)
-			ignoreViolation.setLicenseViolationRegexIgnore(
-					licenseViolationRegexIgnore != null ? licenseViolationRegexIgnore : new java.util.LinkedList<>());
-			ignoreViolation.setSecurityViolationRegexIgnore(
-					securityViolationRegexIgnore != null ? securityViolationRegexIgnore : new java.util.LinkedList<>());
-			ignoreViolation.setOperationalViolationRegexIgnore(
-					operationalViolationRegexIgnore != null ? operationalViolationRegexIgnore : new java.util.LinkedList<>());
+			// Null leaves the stored list unchanged; an empty list clears it
+			if (null != licenseViolationRegexIgnore) {
+				ignoreViolation.setLicenseViolationRegexIgnore(licenseViolationRegexIgnore);
+			}
+			if (null != securityViolationRegexIgnore) {
+				ignoreViolation.setSecurityViolationRegexIgnore(securityViolationRegexIgnore);
+			}
+			if (null != operationalViolationRegexIgnore) {
+				ignoreViolation.setOperationalViolationRegexIgnore(operationalViolationRegexIgnore);
+			}
 			
 			od.setIgnoreViolation(ignoreViolation);
 			
@@ -742,6 +777,31 @@ public class OrganizationService {
 							+ OrganizationData.Settings.NOTIFICATION_RETENTION_DAYS_MAX + " days");
 				}
 				settings.setNotificationRetentionDays(retentionDays);
+			}
+
+			Integer idleHours = settingsPatch.getAgentSessionIdleCloseHours();
+			if (idleHours != null) {
+				if (idleHours < OrganizationData.Settings.AGENT_SESSION_IDLE_CLOSE_HOURS_MIN
+						|| idleHours > OrganizationData.Settings.AGENT_SESSION_IDLE_CLOSE_HOURS_MAX) {
+					throw new RelizaException("agentSessionIdleCloseHours must be between "
+							+ OrganizationData.Settings.AGENT_SESSION_IDLE_CLOSE_HOURS_MIN + " and "
+							+ OrganizationData.Settings.AGENT_SESSION_IDLE_CLOSE_HOURS_MAX + " hours");
+				}
+				settings.setAgentSessionIdleCloseHours(idleHours);
+			}
+
+			// Bounded here rather than in the data fetcher so every write path validates. Zero or a
+			// negative count would make every review item index unpublishable, with the refusal
+			// pointing at the document rather than at the setting that caused it; the upper bound is
+			// arbitrary but keeps a typo from turning a priority scale into something no reviewer
+			// can reason about.
+			Integer priorityLevels = settingsPatch.getReviewItemPriorityLevels();
+			if (priorityLevels != null) {
+				if (priorityLevels < 1 || priorityLevels > OrganizationData.MAX_REVIEW_ITEM_PRIORITY_LEVELS) {
+					throw new RelizaException("reviewItemPriorityLevels must be between 1 and "
+							+ OrganizationData.MAX_REVIEW_ITEM_PRIORITY_LEVELS + ", got " + priorityLevels);
+				}
+				settings.setReviewItemPriorityLevels(priorityLevels);
 			}
 
 			// PATCH-shaped like the prose slots: null leaves the stored value alone, a supplied
@@ -869,16 +929,33 @@ public class OrganizationService {
 		}
 	}
 
-	private void validateRegexPatterns(List<String> patterns, String fieldName) {
-		if (patterns == null) {
-			return;
-		}
-		for (String pattern : patterns) {
-			try {
-				java.util.regex.Pattern.compile(pattern);
-			} catch (java.util.regex.PatternSyntaxException e) {
-				throw new IllegalArgumentException("Invalid regex pattern in " + fieldName + ": " + pattern + " - " + e.getMessage());
-			}
-		}
+	/**
+	 * Write-time check of the three ignoreViolation lists about to replace {@code stored} (null if
+	 * the org has none yet), shared by the mutation and {@link #updateIgnoreViolation}; see
+	 * {@link #validateIgnoreViolationPatterns}.
+	 */
+	public static void validateIgnoreViolation(List<String> licenseViolationRegexIgnore,
+			List<String> securityViolationRegexIgnore, List<String> operationalViolationRegexIgnore,
+			OrganizationData.IgnoreViolation stored) throws RelizaException {
+		validateIgnoreViolationPatterns(licenseViolationRegexIgnore,
+				null == stored ? null : stored.getLicenseViolationRegexIgnore(), "licenseViolationRegexIgnore");
+		validateIgnoreViolationPatterns(securityViolationRegexIgnore,
+				null == stored ? null : stored.getSecurityViolationRegexIgnore(), "securityViolationRegexIgnore");
+		validateIgnoreViolationPatterns(operationalViolationRegexIgnore,
+				null == stored ? null : stored.getOperationalViolationRegexIgnore(), "operationalViolationRegexIgnore");
 	}
+
+	/**
+	 * Write-time check of one ignoreViolation list: each new entry must pass
+	 * {@link SafeRegex#validate}, and the list is held to {@link #MAX_IGNORE_VIOLATION_PATTERNS};
+	 * see {@link EditedListValidation} for which entries count as new and how a list already over
+	 * the cap is treated. Blank entries are accepted, as they always were -- the settings form
+	 * saves empty rows -- and match only an empty purl.
+	 */
+	public static void validateIgnoreViolationPatterns(List<String> patterns, List<String> stored, String fieldName)
+			throws RelizaException {
+		EditedListValidation.validateNewEntries(patterns, stored, fieldName, MAX_IGNORE_VIOLATION_PATTERNS,
+				(pattern, i) -> SafeRegex.validate(pattern, fieldName + "[" + i + "]"));
+	}
+
 }

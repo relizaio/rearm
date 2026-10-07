@@ -76,6 +76,14 @@ public class ProgrammaticSchemaSplitTest {
 	}
 
 	@Test
+	void reopenIsSeatBoundOnTheProgrammaticEndpointAndAPersonsVerbOnTheOther() throws IOException {
+		ProgrammaticSchemaRegistry r = new ProgrammaticSchemaRegistry();
+		assertTrue(r.allows(OperationDefinition.Operation.MUTATION, "agentTaskReopenProgrammatic"));
+		assertFalse(r.allows(OperationDefinition.Operation.MUTATION, "agentTaskReopen"), "the person's verb is JWT-only");
+		assertTrue(baseRootFields(read("schema/user.graphqls")).get("Mutation").contains("agentTaskReopen"));
+	}
+
+	@Test
 	void rootSelectionFollowsFragmentsAndOperationName() {
 		String doc = "fragment R on Release { uuid } query A { release(releaseUuid: \"x\") { ...R } } "
 				+ "mutation B { createComponent(component: {name: \"n\", type: COMPONENT}) { uuid } ...F } fragment F on Mutation { addReleaseProgrammatic(release: {}) { uuid } }";

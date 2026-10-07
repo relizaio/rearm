@@ -3,7 +3,6 @@
 */
 package io.reliza.ws;
 
-import java.util.Arrays;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -34,7 +33,6 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
-import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
@@ -43,12 +41,13 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.dto.AuthorizationResponse;
-import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.dto.DeliverableDto.AddOutboundDeliverablesInput;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.ProgrammaticReleaseTargetService;
+import io.reliza.service.ProgrammaticReleaseTargetService.ProgrammaticReleaseTarget;
+import io.reliza.service.ProgrammaticReleaseTargetService.RbacKeyPolicy;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
@@ -65,6 +64,9 @@ public class DeliverableDataFetcher {
 	
 	@Autowired
 	AuthorizationService authorizationService;
+
+	@Autowired
+	ProgrammaticReleaseTargetService programmaticReleaseTargetService;
 	
 	@Autowired
 	DeliverableService deliverableService;
@@ -187,45 +189,25 @@ public class DeliverableDataFetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
 		Map<String, Object> addDeliverablesInputMap = dfe.getArgument("deliverables");
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) addDeliverablesInputMap.get(CommonVariables.COMPONENT_FIELD), ahp);
-		
 		String version = (String) addDeliverablesInputMap.get(CommonVariables.VERSION_FIELD);
-
-		Optional<ReleaseData> ord = Optional.empty();
-
 		String releaseUuidStr = (String) addDeliverablesInputMap.get(CommonVariables.RELEASE_FIELD);
 		String variantUuidStr = (String) addDeliverablesInputMap.get("variant");
-
-		if (StringUtils.isNotEmpty(releaseUuidStr)) ord = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
-		if (ord.isEmpty() && StringUtils.isNotEmpty(version) && null != componentId) ord = releaseService.getReleaseDataByComponentAndVersion(componentId, version);
-
-		if(!ord.isEmpty() && null == componentId)
-			componentId = ord.get().getComponent();
-
-		List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-		Optional<ComponentData> ocd = getComponentService.getComponentData(componentId);
-		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro)	ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
-		
-		Optional<VariantData> ovd = Optional.empty();
-		
-		if(StringUtils.isNotEmpty(variantUuidStr)) ovd = variantService.getVariantData(UUID.fromString(variantUuidStr));
-		
-		if (ord.isEmpty() && ovd.isEmpty()) {
-			throw new RuntimeException("Either release or variant must be supplied.");
+		if (StringUtils.isEmpty(releaseUuidStr) && StringUtils.isEmpty(variantUuidStr) && StringUtils.isEmpty(version)) {
+			throw new RelizaException("Either release or variant must be supplied.");
 		}
-		
-		if (ord.isPresent() && ovd.isPresent() && !ovd.get().getRelease().equals(ord.get().getUuid())) {
-			throw new RuntimeException("Release and variant don't match.");
-		}
-		
+
+		// Resolve and authorize the target release and variant (by release UUID, component+version
+		// or the variant's release): only the authorized component's, in the key's org; anything
+		// else reads "not found". RBAC keys are not accepted on this mutation.
+		ProgrammaticReleaseTarget target = programmaticReleaseTargetService.resolveProgrammaticReleaseTarget(ahp,
+				(String) addDeliverablesInputMap.get(CommonVariables.COMPONENT_FIELD), releaseUuidStr, version,
+				variantUuidStr, RbacKeyPolicy.REFUSED);
+		Optional<ReleaseData> ord = Optional.of(target.release());
+		Optional<VariantData> ovd = target.variant();
+		WhoUpdated wu = target.whoUpdated();
+
 		if (ovd.isEmpty()) {
 			ovd = Optional.of(variantService.getBaseVariantForRelease(ord.get().getUuid()));
-		}
-		
-		if (ord.isEmpty()) {
-			ord = sharedReleaseService.getReleaseData(ovd.get().getRelease());
 		}
 		
 		BranchData bd = branchService.getBranchData(ord.get().getBranch()).get();
@@ -236,11 +218,10 @@ public class DeliverableDataFetcher {
 		var deliverablesList = (List<Map<String,Object>>) addDeliverablesInputMap.get("deliverables");
 		Utils.addReleaseProgrammaticValidateDeliverables(deliverablesList, bd);
 		
-		WhoUpdated wu = ar.getWhoUpdated();
 		List<UUID> deliverables = new LinkedList<>();
 		if (null != deliverablesList && !deliverablesList.isEmpty()) {
 			deliverables = deliverableService.prepareListofDeliverables(deliverablesList,
-					bd.getUuid(), version, ar.getWhoUpdated());
+					bd.getUuid(), version, wu);
 		}
 
 		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);

@@ -63,6 +63,9 @@ public class ReleaseMetricsComputeService {
 	@Autowired
 	private KevAssertionService kevAssertionService;
 
+	@Autowired
+	private ComponentKindPolicy componentKindPolicy;
+
 	/** Diagnostics only: re-derives which artifacts the SCE contributed, which the union erases. */
 	@Autowired
 	private GetSourceCodeEntryService getSourceCodeEntryService;
@@ -86,6 +89,10 @@ public class ReleaseMetricsComputeService {
 		r = lockedRelease.get();
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		var rd = ReleaseData.dataFromRecord(r);
+		if (!componentKindPolicy.isScannableRelease(rd)) {
+			settleNotScannable(r, rd);
+			return false;
+		}
 		var originalMetrics = null != rd.getMetrics() ? rd.getMetrics().clone() : null;
 		if (null == originalMetrics || null == originalMetrics.getLastScanned() || lastScanned.isAfter(originalMetrics.getLastScanned())) {
 			ReleaseMetricsDto rmd = new ReleaseMetricsDto();
@@ -168,7 +175,10 @@ public class ReleaseMetricsComputeService {
 			// (a gathered BOM that scanned to zero -- remediation) also does not fire: artsFindings==0 but
 			// the gather is non-empty AND nothing is unscanned, so neither arm of the OR is true.
 			// LEAF only -- a PRODUCT derives from its children (the rollup below), not its own artifacts.
-			boolean hasChildRels = rd.getParentReleases() != null && !rd.getParentReleases().isEmpty();
+			// Children that are not scanned (a board's document rounds, task RD4-11) are no input:
+			// a product composed of them alone is a leaf here, like one with no children.
+			List<ReleaseData> scannedChildren = scannedChildrenOf(rd);
+			boolean hasChildRels = !scannedChildren.isEmpty();
 			if (!hasChildRels
 					&& isScannableLifecycle(rd.getLifecycle())
 					&& countFindings(originalMetrics) > 0
@@ -179,7 +189,7 @@ public class ReleaseMetricsComputeService {
 				fenceIncompleteCompute(r);
 				return false;
 			}
-			ReleaseMetricsDto rolledUp = rollUpProductReleaseMetrics(rd);
+			ReleaseMetricsDto rolledUp = rollUpProductReleaseMetrics(rd, scannedChildren);
 			// Counted separately from the artifact sum: a PRODUCT release's findings come from its children,
 			// not its own artifacts, so a rollup collapse would otherwise read as "artifacts empty" on the
 			// loss line and send the reader to the wrong subsystem entirely.
@@ -227,7 +237,7 @@ public class ReleaseMetricsComputeService {
 			// this by returning a metrics DTO with firstScanned=null when at least one
 			// child is unscanned. Override here because mergeWithByContent above can't
 			// distinguish "child rollup says null" from "no child contribution at all".
-			boolean hasChildren = rd.getParentReleases() != null && !rd.getParentReleases().isEmpty();
+			boolean hasChildren = hasChildRels;
 			boolean childrenIncomplete = hasChildren && rolledUp.getFirstScanned() == null;
 			if (childrenIncomplete) {
 				rmd.setFirstScanned(null);
@@ -852,6 +862,8 @@ public class ReleaseMetricsComputeService {
 		}
 		r = lockedRelease.get();
 		var rd = ReleaseData.dataFromRecord(r);
+		// A release that is not scanned has nothing to triage (task RD4-11).
+		if (!componentKindPolicy.isScannableRelease(rd)) return false;
 		if (null != rd.getMetrics()) {
 			ReleaseMetricsDto originalMetrics = rd.getMetrics();
 			ReleaseMetricsDto clonedMetrics = originalMetrics.clone();
@@ -1052,10 +1064,41 @@ public class ReleaseMetricsComputeService {
 		}
 	}
 
-	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd) {
-		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+	/**
+	 * The release's child releases that are scanned, in order. A child that is not (a board's
+	 * document round, task RD4-11) never gets a firstScanned, so counting it would hold every
+	 * product composed of one in "Scan pending" for ever.
+	 */
+	private List<ReleaseData> scannedChildrenOf(ReleaseData rd) {
 		var parents = rd.getParentReleases();
-		if (parents == null || parents.isEmpty()) {
+		if (parents == null || parents.isEmpty()) return List.of();
+		List<ReleaseData> out = new ArrayList<>();
+		for (var p : parents) {
+			ReleaseData child = sharedReleaseService.getReleaseData(p.getRelease(), rd.getOrg()).get();
+			if (componentKindPolicy.isScannableRelease(child)) out.add(child);
+		}
+		return out;
+	}
+
+	/**
+	 * Settle a release that is not scanned (task RD4-11) without deriving anything for it: no
+	 * findings, no firstScanned, no metrics revision or audit row, no notification and no push to
+	 * containing products. Only the finder's watermark moves -- lastScanned, and only when the
+	 * release is in the BY_UPDATE pool -- because the pool is "last_updated_date is past
+	 * lastScanned", so without it the release would be re-picked every tick for ever. Any backoff
+	 * fence is dropped with it: this is the dequeue drop for the metrics queue.
+	 */
+	private void settleNotScannable(Release r, ReleaseData rd) {
+		repository.clearMetricsComputeBackoff(r.getUuid());
+		ZonedDateTime watermark = null == rd.getMetrics() ? null : rd.getMetrics().getLastScanned();
+		if (null == watermark || null == r.getLastUpdatedDate() || r.getLastUpdatedDate().isAfter(watermark)) {
+			sharedReleaseService.touchReleaseLastScanned(r.getUuid());
+		}
+	}
+
+	private ReleaseMetricsDto rollUpProductReleaseMetrics(ReleaseData rd, List<ReleaseData> children) {
+		ReleaseMetricsDto rmd = new ReleaseMetricsDto();
+		if (children.isEmpty()) {
 			return rmd;
 		}
 		// Track all-or-nothing for children's firstScanned: a product release's
@@ -1064,15 +1107,13 @@ public class ReleaseMetricsComputeService {
 		// firstScanned must stay null.
 		final boolean[] allChildrenScanned = { true };
 		final ZonedDateTime[] maxChildFirstScanned = { null };
-		parents.forEach(r -> {
-			ReleaseData parentRd = sharedReleaseService
-					.getReleaseData(r.getRelease(), rd.getOrg()).get();
+		children.forEach(parentRd -> {
 			ReleaseMetricsDto parentReleaseMetrics = parentRd.getMetrics();
 			if (parentReleaseMetrics == null) {
 				allChildrenScanned[0] = false;
 				return;
 			}
-			parentReleaseMetrics.enrichSourcesWithRelease(r.getRelease());
+			parentReleaseMetrics.enrichSourcesWithRelease(parentRd.getUuid());
 			rmd.mergeWithByContent(parentReleaseMetrics);
 			rmd.computeMetricsFromFacts();
 			ZonedDateTime childFs = parentReleaseMetrics.getFirstScanned();

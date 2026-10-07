@@ -11,6 +11,9 @@ import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
 
 import io.reliza.model.SystemInfo;
+import org.springframework.data.jpa.repository.Lock;
+import org.springframework.transaction.annotation.Transactional;
+import jakarta.persistence.LockModeType;
 
 public interface SystemInfoRepository extends CrudRepository<SystemInfo, Integer> {
     @Query(nativeQuery = true, value = VariableQueries.FIND_SYSTEM_INFO)
@@ -30,4 +33,13 @@ public interface SystemInfoRepository extends CrudRepository<SystemInfo, Integer
     @Modifying(flushAutomatically = true, clearAutomatically = true)
     @Query(nativeQuery = true, value = VariableQueries.SET_API_TOKEN_PEPPER_IF_ABSENT)
     int setApiTokenPepperIfAbsent(@Param("pepper") String pepper);
+
+	/**
+	 * Row-locked read for the write-once flags. Two pods claiming a one-time sweep at the same
+	 * moment must serialise here, or both would run it.
+	 */
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "SELECT s FROM SystemInfo s")
+	SystemInfo findSystemInfoWriteLocked();
 }

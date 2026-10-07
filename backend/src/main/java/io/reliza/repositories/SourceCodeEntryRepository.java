@@ -34,6 +34,16 @@ public interface SourceCodeEntryRepository extends CrudRepository<SourceCodeEntr
 	List<SourceCodeEntry> findByCommitsAndVcs(List<String> commits, String vcsUuidAsString);
 
 	@Query(
+			value = VariableQueries.FIND_NEWEST_SCE_ON_VCS_BRANCH,
+			nativeQuery = true)
+	Optional<SourceCodeEntry> findNewestOnVcsBranch(String vcsUuidAsString, String vcsBranch);
+
+	@Query(
+			value = VariableQueries.COUNT_SCES_ON_VCS_BRANCH_AFTER,
+			nativeQuery = true)
+	long countOnVcsBranchAfter(String vcsUuidAsString, String vcsBranch, java.time.ZonedDateTime after);
+
+	@Query(
 			value = VariableQueries.FIND_SCE_BY_COMMIT_OR_TAG_AND_ORG,
 			nativeQuery = true)
 	List<SourceCodeEntry> findByCommitOrTag(String orgUuidAsString, String commit, String tag);

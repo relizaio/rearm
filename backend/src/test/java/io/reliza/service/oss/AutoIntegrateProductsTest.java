@@ -87,12 +87,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component1Branch = branchService.createBranch(
-			"main", 
-			component1.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component1Branch = branchService.getBaseBranchOfComponent(component1.getUuid()).orElseThrow();
 		
 		// Create first release for component1
 		ReleaseDto release1v1Dto = ReleaseDto.builder()
@@ -116,12 +111,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component2Branch = branchService.createBranch(
-			"main", 
-			component2.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component2Branch = branchService.getBaseBranchOfComponent(component2.getUuid()).orElseThrow();
 		
 		ReleaseDto release2Dto = ReleaseDto.builder()
 			.component(component2.getUuid())
@@ -242,12 +232,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component1Branch = branchService.createBranch(
-			"main", 
-			component1.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component1Branch = branchService.getBaseBranchOfComponent(component1.getUuid()).orElseThrow();
 		
 		ReleaseDto release1v1Dto = ReleaseDto.builder()
 			.component(component1.getUuid())
@@ -270,12 +255,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component2Branch = branchService.createBranch(
-			"main", 
-			component2.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component2Branch = branchService.getBaseBranchOfComponent(component2.getUuid()).orElseThrow();
 		
 		ReleaseDto release2Dto = ReleaseDto.builder()
 			.component(component2.getUuid())
@@ -439,12 +419,7 @@ public class AutoIntegrateProductsTest {
 		);
 		
 		// Create a branch for the component
-		Branch componentBranch = branchService.createBranch(
-			"main", 
-			component.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch componentBranch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		
 		// Create a product (for the feature set)
 		Component product = componentService.createComponent(
@@ -545,12 +520,7 @@ public class AutoIntegrateProductsTest {
 		);
 		
 		// Create a branch for the component
-		Branch componentBranch = branchService.createBranch(
-			"main", 
-			component.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch componentBranch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		
 		// Create a product (for the feature set)
 		Component product = componentService.createComponent(
@@ -650,12 +620,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch componentBranch = branchService.createBranch(
-			"main", 
-			component.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch componentBranch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		
 		// Create first release (this will be the pinned release)
 		ReleaseDto release1Dto = ReleaseDto.builder()
@@ -751,12 +716,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component1Branch = branchService.createBranch(
-			"main", 
-			component1.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component1Branch = branchService.getBaseBranchOfComponent(component1.getUuid()).orElseThrow();
 		
 		Component component2 = componentService.createComponent(
 			"testComponent2_" + UUID.randomUUID(), 
@@ -768,12 +728,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch component2Branch = branchService.createBranch(
-			"main", 
-			component2.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch component2Branch = branchService.getBaseBranchOfComponent(component2.getUuid()).orElseThrow();
 		
 		// Create releases for both components
 		ReleaseDto release1Dto = ReleaseDto.builder()
@@ -878,12 +833,7 @@ public class AutoIntegrateProductsTest {
 			WhoUpdated.getTestWhoUpdated()
 		);
 		
-		Branch componentBranch = branchService.createBranch(
-			"main", 
-			component.getUuid(), 
-			BranchType.BASE, 
-			WhoUpdated.getTestWhoUpdated()
-		);
+		Branch componentBranch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		
 		// Create release
 		ReleaseDto releaseDto = ReleaseDto.builder()
@@ -1008,12 +958,7 @@ public void testAutoIntegrateProducts_BaseBranchPriority() throws RelizaExceptio
     );
     
     // Create BASE branch (main)
-    Branch baseBranch = branchService.createBranch(
-        "main", 
-        component.getUuid(), 
-        BranchType.BASE, 
-        WhoUpdated.getTestWhoUpdated()
-    );
+    Branch baseBranch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
     
     // Create FEATURE branch
     Branch featureBranch = branchService.createBranch(

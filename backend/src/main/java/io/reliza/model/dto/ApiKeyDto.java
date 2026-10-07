@@ -43,6 +43,11 @@ public class ApiKeyDto {
 	private boolean adminDisabled;
 	private io.reliza.model.ApiKeyData.ApiKeyOrigin origin;
 	private io.reliza.model.FederatedIdentity federation;
+	private Integer sessionMaxMinutes;
+	/** The declarative name of the key and the apply that last wrote it (task RD3-11); null for a hand-made key. */
+	private String declaredName;
+	private io.reliza.model.DeclarativeProvenance declarative;
+	private Integer secretExpiresDays;
 	private ZonedDateTime accessDate;
 	@JsonProperty(CommonVariables.LAST_UPDATED_BY_FIELD)
 	private UUID lastUpdatedBy;
@@ -70,6 +75,10 @@ public class ApiKeyDto {
 							.adminDisabled(akData.isAdminDisabled())
 							.origin(akData.getOrigin())
 							.federation(akData.getFederation())
+							.sessionMaxMinutes(akData.getSessionMaxMinutes())
+							.declaredName(akData.getDeclaredName())
+							.declarative(akData.getDeclarative())
+							.secretExpiresDays(akData.getSecretExpiresDays())
 							.secrets(akData.effectiveSecrets(ak.getApiKey()).stream()
 									.map(x -> new io.reliza.model.ApiKeyData.ApiKeySecret(x.getSlot(), null, x.isActive(), x.getCreatedDate(), x.getLastUsedDate(), x.getExpiresDate()))
 									.toList()) // hashes never leave the server

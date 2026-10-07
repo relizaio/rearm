@@ -9,9 +9,21 @@ import static org.junit.jupiter.api.Assertions.fail;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayDeque;
+import java.util.Deque;
+import java.util.LinkedHashMap;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.Map;
+import java.util.Set;
+import java.util.TreeSet;
 
 import org.junit.jupiter.api.Test;
 
+import graphql.language.Document;
+import graphql.language.Node;
+import graphql.language.TypeDefinition;
+import graphql.language.TypeName;
 import graphql.parser.Parser;
 import graphql.parser.ParserEnvironment;
 import graphql.parser.ParserOptions;
@@ -84,4 +96,129 @@ class SchemaParsesTest {
 			throw new RuntimeException(e);
 		}
 	}
+
+	/**
+	 * The three schema files together contain no UNREACHABLE type: every type defined is
+	 * reachable from Query, Mutation or Subscription by following field, argument, union
+	 * and interface references.
+	 *
+	 * <p>An unreachable type is not a style complaint. GraphQL has no way to query one, so a
+	 * type that nothing points at is a feature with no read path -- the backend stores the
+	 * data, the client cannot ask for it, and nothing fails. That is exactly what happened
+	 * here: {@code DocumentRef} was defined in full, with docstrings, while {@code Release}
+	 * never got the {@code document} field that returns it. The Java compiled, the schema
+	 * parsed, the suite was green, and the UI query that read {@code release.document} was
+	 * rejected by the server at runtime.
+	 *
+	 * <p>Checked as TEXT across all three files rather than against the runtime schema,
+	 * because the runtime schema is assembled by a Spring context this test deliberately
+	 * does not start (see the class docs).
+	 */
+	@Test
+	void everyDefinedTypeIsReachable() {
+		Map<String,String> defined = new LinkedHashMap<>();
+		Set<String> referenced = new LinkedHashSet<>();
+		for (String file : SCHEMA_FILES) {
+			Document doc = parse(readResource("/schema/" + file), file);
+			for (var def : doc.getDefinitions()) {
+				if (def instanceof TypeDefinition<?> td) defined.put(td.getName(), file);
+				collectTypeNames(def, referenced);
+			}
+		}
+		Set<String> unreachable = new TreeSet<>(defined.keySet());
+		unreachable.removeAll(referenced);
+		unreachable.removeAll(ROOTS);
+		unreachable.removeAll(KNOWN_DEAD);
+		if (!unreachable.isEmpty()) {
+			StringBuilder sb = new StringBuilder("Type(s) defined but reachable from nothing:\n");
+			unreachable.forEach(n -> sb.append("  ").append(n).append("  (").append(defined.get(n)).append(")\n"));
+			fail(sb + "\nNo client can query these. Either give them a field on a reachable type"
+					+ " -- which is usually the whole point of having defined them -- or delete them."
+					+ " If a type is genuinely dead and staying, add it to KNOWN_DEAD with a reason.");
+		}
+	}
+
+	/**
+	 * Types reachable from nothing BEFORE this check existed. Listed rather than deleted: each
+	 * is unqueryable today whether it is in the schema or not, so removing them is a separate,
+	 * unrelated change. Nothing may be added here to make a new failure go away -- a newly
+	 * unreachable type is a missing field, which is the defect this test exists to name.
+	 */
+	private static final Set<String> KNOWN_DEAD = Set.of(
+			"ApprovalEntryState", "ExternalBom", "ExternalBomInput",
+			"ReleaseSbomExportInput", "ReleaseStatus");
+
+	private static final Set<String> ROOTS = Set.of("Query", "Mutation", "Subscription");
+
+	private static final List<String> SCHEMA_FILES =
+			List.of("schema.graphqls", "user.graphqls", "programmatic.graphqls");
+
+	/** Every TypeName anywhere under this node: field types, argument types, union members, implements. */
+	private static void collectTypeNames(Node<?> root, Set<String> into) {
+		Deque<Node<?>> stack = new ArrayDeque<>();
+		stack.push(root);
+		while (!stack.isEmpty()) {
+			Node<?> n = stack.pop();
+			if (n instanceof TypeName tn) into.add(tn.getName());
+			for (Node<?> child : n.getChildren()) stack.push(child);
+		}
+	}
+
+	private static Document parse(String sdl, String name) {
+		ParserOptions options = ParserOptions.newParserOptions()
+				.maxTokens(MAX_TOKENS)
+				.maxCharacters(Integer.MAX_VALUE)
+				.build();
+		try {
+			return new Parser().parseDocument(ParserEnvironment.newParserEnvironment()
+					.document(sdl).parserOptions(options).build());
+		} catch (Exception e) {
+			throw new IllegalStateException(name + " is not valid GraphQL: " + e.getMessage(), e);
+		}
+	}
+
+	private static String readResource(String path) {
+		try (InputStream in = SchemaParsesTest.class.getResourceAsStream(path)) {
+			if (in == null) throw new IllegalStateException(path + " not on test classpath");
+			return new String(in.readAllBytes(), StandardCharsets.UTF_8);
+		} catch (java.io.IOException e) {
+			throw new RuntimeException(e);
+		}
+	}
+
+	/**
+	 * Every type a field refers to is defined somewhere in the three files.
+	 *
+	 * <p>The reachability check above looks the other way -- a type nothing points at -- and a
+	 * syntax check sees neither. A field whose type does not exist parses cleanly and then fails
+	 * the Spring context at startup, twelve minutes into a suite, reported as
+	 * "ApplicationContext failure threshold exceeded" with no mention of the schema. This is the
+	 * same defect the file-level parse test exists to name, one level up.
+	 *
+	 * <p>It caught {@code questionStack: [AgentQuestionFrame]} pointing at a type a silent
+	 * find-and-replace had failed to insert.
+	 */
+	@Test
+	void everyReferencedTypeIsDefined() {
+		Set<String> defined = new TreeSet<>(BUILT_IN_SCALARS);
+		Set<String> referenced = new LinkedHashSet<>();
+		for (String file : SCHEMA_FILES) {
+			Document doc = parse(readResource("/schema/" + file), file);
+			for (var def : doc.getDefinitions()) {
+				if (def instanceof TypeDefinition<?> td) defined.add(td.getName());
+				collectTypeNames(def, referenced);
+			}
+		}
+		Set<String> undefined = new TreeSet<>(referenced);
+		undefined.removeAll(defined);
+		if (!undefined.isEmpty()) {
+			fail("Field(s) refer to type(s) nothing defines: " + undefined
+					+ "\n\nThis parses and then fails the Spring context at startup, where the"
+					+ " message names neither the type nor the schema.");
+		}
+	}
+
+	/** Defined by the GraphQL spec rather than by these files. */
+	private static final Set<String> BUILT_IN_SCALARS =
+			Set.of("String", "Int", "Float", "Boolean", "ID");
 }

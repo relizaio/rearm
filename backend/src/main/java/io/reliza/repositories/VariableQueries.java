@@ -1124,6 +1124,19 @@ class VariableQueries {
 			+ " where sce.record_data->>'" + CommonVariables.COMMIT_FIELD + "' = :commit and"
 			+ " sce.record_data->>'vcs' = :vcsUuidAsString";
 
+	/**
+	 * The newest source code entry on a repository's branch (task RD4-2): what a hop records as its PR's base.
+	 * The leading {@code vcs} expression of the (vcs, commit) unique index narrows it to the repository.
+	 */
+	protected static final String FIND_NEWEST_SCE_ON_VCS_BRANCH = "select * from rearm.source_code_entries sce"
+			+ " where sce.record_data->>'vcs' = :vcsUuidAsString and sce.record_data->>'"
+			+ CommonVariables.VCS_BRANCH_FIELD + "' = :vcsBranch order by sce.created_date desc limit 1";
+
+	/** How many source code entries ReARM recorded on a repository's branch after an instant (task RD4-2). */
+	protected static final String COUNT_SCES_ON_VCS_BRANCH_AFTER = "select count(*) from rearm.source_code_entries sce"
+			+ " where sce.record_data->>'vcs' = :vcsUuidAsString and sce.record_data->>'"
+			+ CommonVariables.VCS_BRANCH_FIELD + "' = :vcsBranch and sce.created_date > :after";
+
 	protected static final String FIND_SCE_BY_COMMITS_AND_VCS = "select * from rearm.source_code_entries sce"
 			+ " where sce.record_data->>'" + CommonVariables.COMMIT_FIELD + "' in (:commits) and"
 			+ " sce.record_data->>'vcs' = :vcsUuidAsString";
@@ -1154,6 +1167,25 @@ class VariableQueries {
 	protected static final String FIND_VCS_REPOS_BY_ORG = "select * from rearm.vcs_repositories v"
 			+ " where v.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " and (v.record_data->>'status' != 'ARCHIVED' or v.record_data->>'status' is null)";
+
+	/**
+	 * Case-insensitive variant of the lookup below, used only after the byte-equal one misses and
+	 * only when the host is one the tracker enum knows to resolve case-insensitively.
+	 *
+	 * <p>Ordered so a caller can take the oldest of several: two rows differing only by case
+	 * already exist on any instance that saw both spellings, and merging them is an operator
+	 * action. The org predicate is the leading column of the existing unique index, so this stays
+	 * an index scan over one org's repositories.
+	 */
+	protected static final String FIND_VCS_REPOS_BY_ORG_AND_URI_FOLDED = """
+			select * from rearm.vcs_repositories v
+			where v.record_data->>'org' = :orgUuidAsString and
+			(lower(v.record_data->>'uri') = lower(:uri)
+			 or lower(v.record_data->>'uri') = 'https://' || lower(:uri)
+			 or lower(v.record_data->>'uri') = 'http://' || lower(:uri))
+			and (v.record_data->>'status' != 'ARCHIVED' or v.record_data->>'status' is null)
+			order by v.record_data->>'createdDate' asc
+			""";
 
 	protected static final String FIND_VCS_REPO_BY_ORG_AND_URI = """
 			select * from rearm.vcs_repositories v

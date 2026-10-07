@@ -1,0 +1,71 @@
+# Bundled model catalogue.
+#
+# Facts and aliases only, never prices (D2): a rate that ships with the product is a rate that
+# goes stale in the field, and a wrong rate is worse than no rate. An org enters its own prices
+# through the catalogue UI; a model with no price entry yields no cost and a flag, never a guess.
+#
+# Used two ways: to pre-fill an org row the first time a string resolves onto a known model, and
+# by `applyModelCataloguePreset` when an admin refreshes one. Neither touches pricing or any
+# admin-set field.
+#
+# Aliases are matched after normalisation (lower case, punctuation dropped), so only forms that
+# differ by more than punctuation need listing here. Provider-qualified forms -- the Bedrock,
+# Vertex and Azure shapes -- are NOT aliases: the peel table maps them onto the model and records
+# where it was served from, because that is a pricing dimension rather than an identity.
+# NOTE ON DATES: quote them. An unquoted 2026-01-31 is parsed by snakeyaml as a
+# java.util.Date, which will not convert to the LocalDate that ModelFacts declares,
+# and the whole catalogue then fails to load -- silently, since the loader catches.
+# Write releaseDate: "2026-01-31".
+version: 1
+models:
+  - canonicalId: claude-opus-5
+    publisher: Anthropic
+    name: claude-opus
+    version: "5"
+    aliases: [claudeopus5, opus5, claudeopus50]
+    tier: FRONTIER
+    strength: 4
+    facts:
+      contextWindow: 1000000
+      maxOutputTokens: 128000
+      modalities: [TEXT, IMAGE]
+      hostingKind: API
+
+  - canonicalId: claude-fable-5-1
+    publisher: Anthropic
+    name: claude-fable
+    version: "5.1"
+    aliases: [claudefable51, fable, fable51, claudefable5]
+    tier: FRONTIER
+    strength: 5
+    facts:
+      contextWindow: 1000000
+      maxOutputTokens: 128000
+      modalities: [TEXT, IMAGE]
+      hostingKind: API
+
+  - canonicalId: claude-sonnet-5
+    publisher: Anthropic
+    name: claude-sonnet
+    version: "5"
+    aliases: [claudesonnet5, sonnet5]
+    tier: FRONTIER
+    strength: 3
+    facts:
+      contextWindow: 1000000
+      maxOutputTokens: 128000
+      modalities: [TEXT, IMAGE]
+      hostingKind: API
+
+  - canonicalId: claude-haiku-4-5-20251001
+    publisher: Anthropic
+    name: claude-haiku
+    version: "4.5"
+    aliases: [claudehaiku45, haiku45, claudehaiku4520251001]
+    tier: FRONTIER
+    strength: 2
+    facts:
+      contextWindow: 200000
+      maxOutputTokens: 64000
+      modalities: [TEXT, IMAGE]
+      hostingKind: API

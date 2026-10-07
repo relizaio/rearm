@@ -5,23 +5,25 @@ package io.reliza.ws;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.Optional;
+import java.util.stream.Collectors;
 
-import org.springframework.core.io.ClassPathResource;
-import org.springframework.core.io.Resource;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PathVariable;
 
 /**
  * Public discovery endpoint for AI-agent runtimes.
  *
- * <p>Serves {@code orientation.md} (under
- * {@code backend/src/main/resources/static/agents/}) at
+ * <p>Serves the orientation (under
+ * {@code backend/src/main/resources/static/agents/orientation/}): the whole document at
  * {@code GET /api/agents/orientation.md} — the canonical URL cited
  * from the user-facing "bootstrap your agent" docs and from the
- * agent's first prompt.
+ * agent's first prompt — and, since task RD3-10, its core and each
+ * section alone at {@code GET /api/agents/orientation/<section>.md}.
  *
  * <p>The endpoint is unauthenticated by design: a fresh agent fetches
  * this doc before any auth is configured, and the contents are
@@ -37,23 +39,26 @@ import org.springframework.web.bind.annotation.GetMapping;
 @Controller
 public class AgentDocsController {
 
-	private static final String ORIENTATION_RESOURCE = "static/agents/orientation.md";
 	private static final MediaType TEXT_MARKDOWN = MediaType.parseMediaType("text/markdown;charset=UTF-8");
 
+	/** The whole orientation: the core, then every section in the core's order (task RD3-10). */
 	@GetMapping("/api/agents/orientation.md")
 	public ResponseEntity<byte[]> orientation() throws IOException {
-		Resource resource = new ClassPathResource(ORIENTATION_RESOURCE);
-		byte[] body = resource.getInputStream().readAllBytes();
-		HttpHeaders headers = new HttpHeaders();
-		headers.setContentType(TEXT_MARKDOWN);
-		// Short cache so a fresh agent picks up the latest doc on
-		// each bootstrap. Long enough to keep load off the backend
-		// during a session's polling lifetime; short enough that an
-		// operator can roll the doc and have agents see it on the
-		// next bootstrap.
-		headers.setCacheControl("public, max-age=300");
-		headers.setContentLength(body.length);
-		return new ResponseEntity<>(body, headers, 200);
+		return markdown(AgentOrientation.full(), 200);
+	}
+
+	/**
+	 * The core, or one section by the name the core's "Where to read what" table gives it (task RD3-10).
+	 * An unknown name answers 404 with the names there are.
+	 */
+	@GetMapping("/api/agents/orientation/{section}.md")
+	public ResponseEntity<byte[]> orientationSection(@PathVariable("section") String section) throws IOException {
+		Optional<String> doc = AgentOrientation.section(section);
+		if (doc.isPresent()) return markdown(doc.get(), 200);
+		String names = AgentOrientation.sections().stream().map(AgentOrientation.Section::key)
+				.collect(Collectors.joining(", "));
+		return markdown("No orientation section named '" + section + "'. The sections are: " + AgentOrientation.CORE + ", "
+				+ names + ".\n", 404);
 	}
 
 	/**
@@ -66,7 +71,17 @@ public class AgentDocsController {
 		return orientation();
 	}
 
-	private static String asUtf8(byte[] bytes) {
-		return new String(bytes, StandardCharsets.UTF_8);
+	private static ResponseEntity<byte[]> markdown(String text, int status) {
+		byte[] body = text.getBytes(StandardCharsets.UTF_8);
+		HttpHeaders headers = new HttpHeaders();
+		headers.setContentType(TEXT_MARKDOWN);
+		// Short cache so a fresh agent picks up the latest doc on
+		// each bootstrap. Long enough to keep load off the backend
+		// during a session's polling lifetime; short enough that an
+		// operator can roll the doc and have agents see it on the
+		// next bootstrap.
+		headers.setCacheControl("public, max-age=300");
+		headers.setContentLength(body.length);
+		return new ResponseEntity<>(body, headers, status);
 	}
 }

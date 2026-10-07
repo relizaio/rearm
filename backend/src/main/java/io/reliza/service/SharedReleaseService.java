@@ -236,6 +236,18 @@ public class SharedReleaseService {
 	}
 
 	/**
+	 * Whether a row owned by {@code referencedOrg} (a source code entry, a parent release) may be
+	 * referenced from -- and shown through -- a release or other row of {@code ownerOrg}: the owner's
+	 * own organization, or the shared external-components organization, which the org-scoped release
+	 * lookup (FIND_RELEASE_BY_ID_AND_ORG), the dependency unwind and the ticket lookup in
+	 * createRelease already accept. A null org matches nothing.
+	 */
+	public static boolean isReferenceableFromOrg (UUID referencedOrg, UUID ownerOrg) {
+		return null != referencedOrg
+				&& (referencedOrg.equals(ownerOrg) || CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(referencedOrg));
+	}
+
+	/**
 	 * Validates that adding the given parent releases to release {@code selfUuid} would not
 	 * create a circular dependency. Walks the ancestry graph of each proposed parent
 	 * transitively; if {@code selfUuid} is encountered, the dependency chain is circular.
@@ -774,7 +786,7 @@ public class SharedReleaseService {
 					retListOfUuids.add(depData.getUuid());
 					retListOfReleases.add(depData);
 					// security check - org must either match base release of be known external org
-					if (!depData.getOrg().equals(rd.getOrg()) && !depData.getOrg().equals(CommonVariables.EXTERNAL_PROJ_ORG_UUID)) {
+					if (!isReferenceableFromOrg(depData.getOrg(), rd.getOrg())) {
 						log.error("Security: Release from another organization with id " + depData.getUuid() + " is detected among dependencies of release " + rd.getUuid());
 						throw new IllegalStateException("Security: Detected release from a different organization");
 					} else {
@@ -1031,7 +1043,7 @@ public class SharedReleaseService {
 			.stream()
 			.map(release -> release.getAllCommits())
 			.flatMap(x -> x.stream())
-			.map(x -> (null == x) ? new UUID(0,0) : x)
+			.map(x -> (null == x) ? SourceCodeEntryData.NULL_SCE_UUID : x)
 			.collect(Collectors.toList());
 		List<SourceCodeEntryData> sces = new ArrayList<>();
 		if(null!= commitIds && commitIds.size() > 0)
@@ -1916,21 +1928,38 @@ public class SharedReleaseService {
 	 */
 	public List<ReleaseData> listReleaseDataOfOrgBetweenDates(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit,
 			io.reliza.model.ComponentData.ComponentType componentType) {
+		return listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, componentType, null);
+	}
+
+	/**
+	 * As the 5-arg variant, and only releases of components of {@code componentKinds} (RD4-10: the
+	 * home page's most-recent-releases widget asks for the software kinds, so a board's document
+	 * rounds stay out of it). Null or empty kinds match every kind, as {@link ComponentData#ofKinds}
+	 * does. Both filters run before the limit, so a window whose newest releases are documents still
+	 * fills the page with software; each component is looked up once per call.
+	 */
+	public List<ReleaseData> listReleaseDataOfOrgBetweenDates(UUID orgUuid, ZonedDateTime startDate, ZonedDateTime endDate, Integer limit,
+			io.reliza.model.ComponentData.ComponentType componentType, Collection<ComponentData.ComponentKind> componentKinds) {
 		var stream = repository.findReleasesOfOrgBetweenDates(orgUuid.toString(), startDate, endDate)
 				.stream()
 				.map(ReleaseData::dataFromRecord)
 				.sorted(new ReleaseData.ReleaseDateComparator());
-		if (componentType != null) {
-			stream = stream.filter(rd -> matchesComponentType(rd, componentType));
+		boolean byKind = null != componentKinds && !componentKinds.isEmpty();
+		if (componentType != null || byKind) {
+			Map<UUID, Optional<ComponentData>> components = new HashMap<>();
+			stream = stream.filter(rd -> matchesComponent(rd, componentType, componentKinds, components));
 		}
 		if (limit != null) stream = stream.limit(limit);
 		return stream.collect(Collectors.toList());
 	}
 
-	private boolean matchesComponentType(ReleaseData rd, io.reliza.model.ComponentData.ComponentType componentType) {
+	private boolean matchesComponent(ReleaseData rd, io.reliza.model.ComponentData.ComponentType componentType,
+			Collection<ComponentData.ComponentKind> componentKinds, Map<UUID, Optional<ComponentData>> components) {
 		if (rd == null || rd.getComponent() == null) return false;
-		var ocd = getComponentService.getComponentData(rd.getComponent());
-		return ocd.isPresent() && componentType.equals(ocd.get().getType());
+		var ocd = components.computeIfAbsent(rd.getComponent(), getComponentService::getComponentData);
+		if (ocd.isEmpty()) return false;
+		if (componentType != null && !componentType.equals(ocd.get().getType())) return false;
+		return ComponentData.isOfKinds(ocd.get(), componentKinds);
 	}
 
 	/** Most recent releases of the component across all branches, newest first, {@code limit} capped at 200. */

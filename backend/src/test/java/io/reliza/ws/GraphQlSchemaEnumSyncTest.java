@@ -39,21 +39,31 @@ import graphql.schema.idl.TypeDefinitionRegistry;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.oss.LicensingConstants;
 import io.reliza.dto.ChangelogRecords;
+import io.reliza.model.AgentActor;
+import io.reliza.model.AgentBoardData;
+import io.reliza.model.AgentSessionData;
+import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskInput;
+import io.reliza.model.AgentTaskRoleConfigData;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.AttestationData;
 import io.reliza.model.CliSession;
 import io.reliza.model.ComponentLock;
 import io.reliza.model.DeliverableData;
+import io.reliza.model.ElementCheckReport;
 import io.reliza.model.EmailDigestPolicy;
 import io.reliza.model.FederatedGrant;
 import io.reliza.model.FederatedTrustRule;
 import io.reliza.model.IntegrationData.IntegrationType;
+import io.reliza.model.ModelFacts;
+import io.reliza.model.ModelOntologyData;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.dto.notifications.EvaluationMode;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.TeaCollectionUpdateReasonType;
+import io.reliza.service.BoardAgentsService;
 import io.reliza.service.DeclarativeConfigService;
 import io.reliza.service.SyntheticEventTemplates;
 
@@ -124,6 +134,32 @@ class GraphQlSchemaEnumSyncTest {
 	 * collides with an unrelated Java enum.
 	 */
 	private static final Map<String, Class<?>> OVERRIDES = Map.ofEntries(
+			entry("AgentActorKind", AgentActor.ActorKind.class),
+			entry("AgentBoardEventKind", AgentBoardData.BoardEventKind.class),
+			entry("AgentBoardPauseLevel", AgentBoardData.BoardPauseLevel.class),
+			entry("AgentBoardPriorityType", AgentBoardData.PriorityType.class),
+			entry("AgentBoardStatus", AgentBoardData.BoardStatus.class),
+			entry("AgentCommissionIntake", AgentTaskRoleConfigData.CommissionIntake.class),
+			entry("AgentDeliveryMode", AgentBoardData.DeliveryMode.class),
+			entry("AgentDeliveryOutcome", AgentTaskData.DeliveryOutcome.class),
+			entry("AgentHumanGate", AgentTaskRoleConfigData.HumanGate.class),
+			entry("AgentInputKind", AgentTaskInput.InputKind.class),
+			entry("AgentInputResolution", AgentTaskInput.InputResolution.class),
+			entry("AgentInputScope", AgentTaskInput.InputScope.class),
+			entry("AgentInvestigationReturnTo", AgentTaskData.ReturnTo.class),
+			entry("AgentMergeMethod", AgentBoardData.MergeMethod.class),
+			entry("AgentMergeOrder", AgentBoardData.MergeOrder.class),
+			entry("AgentRoleKind", AgentTaskRoleConfigData.RoleKind.class),
+			entry("AgentRoleNecessity", AgentTaskRoleConfigData.RoleNecessity.class),
+			entry("AgentSignOffOutcome", AgentTaskData.SignOffOutcome.class),
+			entry("AgentStatusTrigger", AgentTaskData.StatusTrigger.class),
+			entry("AgentTaskGroupStatus", AgentBoardData.GroupStatus.class),
+			entry("AgentTaskHoldKind", AgentTaskData.HoldKind.class),
+			entry("AgentTaskHoldLevel", AgentTaskData.HoldLevel.class),
+			entry("AgentTaskHoldStop", AgentTaskData.HoldStop.class),
+			entry("AgentTaskKind", AgentTaskData.TaskKind.class),
+			entry("AgentTaskReturnReason", AgentTaskData.TaskReturnReason.class),
+			entry("AgentTaskStatus", AgentTaskData.TaskStatus.class),
 			entry("ArtifactBelonging", DeliverableData.BelongsToOrganization.class),
 			entry("ArtifactStoredIn", ArtifactData.StoredIn.class),
 			entry("AttestationActorType", AttestationData.ActorType.class),
@@ -131,11 +167,13 @@ class GraphQlSchemaEnumSyncTest {
 			entry("AttestationSubjectType", AttestationData.SubjectType.class),
 			entry("AttestationType", AttestationData.Type.class),
 			entry("AttestationVerdict", AttestationData.Verdict.class),
+			entry("BoardAgentStateKind", BoardAgentsService.StateKind.class),
 			// Ambiguous: VulnerabilityRecordUpdatedPayload.ChangeType is a notification payload enum.
 			entry("ChangeType", ChangelogRecords.ChangeType.class),
 			entry("CliSessionStatus", CliSession.Status.class),
 			entry("CollectionUpdateReasonType", TeaCollectionUpdateReasonType.class),
 			entry("DeclarativeAction", DeclarativeConfigService.Action.class),
+			entry("ElementCheckOutcome", ElementCheckReport.Result.class),
 			entry("FederatedGrantType", FederatedGrant.GrantType.class),
 			entry("FederatedProvider", FederatedTrustRule.Provider.class),
 			entry("FederatedTrustRuleStatus", FederatedTrustRule.Status.class),
@@ -144,10 +182,15 @@ class GraphQlSchemaEnumSyncTest {
 			entry("LockScope", ComponentLock.Scope.class),
 			entry("LockStatus", ComponentLock.Status.class),
 			entry("LockSubjectType", ComponentLock.SubjectType.class),
+			entry("ModelHostingKind", ModelFacts.HostingKind.class),
+			entry("ModelRoleCategory", ModelOntologyData.RoleCategory.class),
 			entry("NotificationEmailDigestModeEnum", EmailDigestPolicy.EmailDigestMode.class),
 			entry("NotificationEvaluationModeEnum", EvaluationMode.class),
 			entry("OAuthType", CommonVariables.OauthType.class),
 			entry("RemvovableType", CommonVariables.Removable.class),
+			entry("SessionAuthMethod", AgentSessionData.AuthMethod.class),
+			entry("SessionOwnerSource", AgentSessionData.OwnerSource.class),
+			entry("SessionUsageCompleteness", AgentSessionData.UsageCompleteness.class),
 			entry("SpecificationType", RearmSpecificationType.class),
 			// Ambiguous: CliSession / ComponentLock / FederatedTrustRule each have a Status.
 			entry("Status", CommonVariables.StatusEnum.class),

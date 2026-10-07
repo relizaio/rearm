@@ -37,8 +37,8 @@ import java.util.Objects;
  *       off sale says nothing about whether it is still patched.</li>
  * </ul>
  *
- * <p>What remains derivable is {@link #SECURITY_ONLY}, {@link #END_OF_SUPPORT} and
- * {@link #UNKNOWN}.
+ * <p>What remains derivable is {@link #SECURITY_ONLY}, {@link #END_OF_SUPPORT},
+ * {@link #WITHIN_SUPPORT_WINDOW} and {@link #UNKNOWN}.
  */
 public enum SupportStatus {
 	/** @deprecated attested, not derived -- see {@link LevelOfSupport#ACTIVELY_MAINTAINED}. */
@@ -52,7 +52,19 @@ public enum SupportStatus {
 	/** @deprecated attested, not derived -- see {@link LevelOfSupport#ABANDONED}. */
 	@Deprecated
 	ABANDONED,
-	UNKNOWN;
+	/**
+	 * No end-of-support or end-of-guaranteed-support date is on record, so the dates entail
+	 * nothing. An end-of-life date alone also lands here: it means end of SALE (D5) and derives
+	 * no support state.
+	 */
+	UNKNOWN,
+	/**
+	 * Support dates are on record and none has passed yet. A statement about the
+	 * recorded dates only, NOT a claim that anyone is maintaining the component
+	 * today -- that is {@link LevelOfSupport}, attested by a human. Appended last so
+	 * the ordinals of the published values do not move.
+	 */
+	WITHIN_SUPPORT_WINDOW;
 
 	/**
 	 * Single source of truth for the derived status. Pure: identical inputs
@@ -73,8 +85,9 @@ public enum SupportStatus {
 	 * @param endOfSupportDate           when all support ceases (transfer of
 	 *                                   risk), or null
 	 * @param asOf                       the clock the status is read against
-	 * @return the derived status; UNKNOWN whenever no milestone has yet passed --
-	 *         including when future dates ARE on record. Never
+	 * @return the derived status; WITHIN_SUPPORT_WINDOW when an end-of-support or
+	 *         end-of-guaranteed-support date is on record and none has passed yet,
+	 *         UNKNOWN when neither is on record (an end-of-life date alone included). Never
 	 *         {@link #ACTIVELY_SUPPORTED} or {@link #ABANDONED}, which are
 	 *         attested-only.
 	 */
@@ -87,7 +100,7 @@ public enum SupportStatus {
 		// the milestone status). EOS outranks EOGS when both have passed; the coherence
 		// guard enforces EOGS <= EOS, so a later milestone cannot be past while an earlier
 		// one is still future. A milestone still in the future establishes nothing about
-		// today -- see the UNKNOWN return below.
+		// today beyond the window itself -- see the WITHIN_SUPPORT_WINDOW return below.
 		//
 		// END-OF-LIFE IS DELIBERATELY ABSENT (operator decision D5, 2026-09-03). CycloneDX
 		// defines it as END OF SALE, which routinely precedes end of support by years. A
@@ -98,7 +111,9 @@ public enum SupportStatus {
 		if (endOfGuaranteedSupportDate != null && !asOf.isBefore(endOfGuaranteedSupportDate)) {
 			return SECURITY_ONLY;
 		}
-		// NO PASSED MILESTONE MEANS UNKNOWN, NOT ACTIVELY_SUPPORTED. A declared future date
+		// NO PASSED MILESTONE MEANS WITHIN_SUPPORT_WINDOW (or UNKNOWN when no date is on
+		// record), NOT ACTIVELY_SUPPORTED. WITHIN_SUPPORT_WINDOW reports the recorded dates
+		// and nothing else: a declared future date
 		// says only that the maintainer published a horizon; it says nothing about whether
 		// anyone is maintaining the component TODAY. A library can carry "end of life 2030"
 		// and have been abandoned in practice two years ago. Returning ACTIVELY_SUPPORTED
@@ -110,6 +125,9 @@ public enum SupportStatus {
 		// third party is doing, so it can only be ATTESTED by a human -- see
 		// SupportData#levelOfSupport, typed LevelOfSupport. ABANDONED moved there too; the
 		// enrichment inference once reserved for it is withdrawn -- see the note on derive().
+		if (endOfGuaranteedSupportDate != null || endOfSupportDate != null) {
+			return WITHIN_SUPPORT_WINDOW;
+		}
 		return UNKNOWN;
 	}
 }

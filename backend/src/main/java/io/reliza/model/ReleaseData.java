@@ -14,6 +14,7 @@ import java.util.Iterator;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.io.Serializable;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -21,8 +22,10 @@ import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 
+import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables;
@@ -102,14 +105,53 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		CHANGED
 	}
 	
+	/**
+	 * Who ended a reservation unbuilt, recorded on the LIFECYCLE event that moved it from PENDING
+	 * to CANCELLED or REJECTED. A rule ending one records its output event as the event's object
+	 * instead; a failed build ({@code addrelease --lifecycle REJECTED}) records neither, which is
+	 * how the rule engine tells a reservation that never became a release from a build that failed.
+	 */
+	public enum ReservationEndedBy {
+		/**
+		 * A person cancelling or rejecting the reservation (the updateReleaseLifecycle mutation), or
+		 * a person moving an ended reservation between CANCELLED and REJECTED.
+		 */
+		PERSON,
+		/** The scheduler cancelling a reservation nobody completed within its cutoff. */
+		SCHEDULER
+	}
+
+	/** Does moving a release from {@code from} to {@code to} end a reservation unbuilt? */
+	public static boolean endsReservation(ReleaseLifecycle from, ReleaseLifecycle to) {
+		return from == ReleaseLifecycle.PENDING && ReleaseLifecycle.isEnded(to);
+	}
+
+	/**
+	 * @param reservationEndedBy set only on a LIFECYCLE event that ended a reservation unbuilt (see
+	 *        {@link ReservationEndedBy}), or that a person made between CANCELLED and REJECTED
+	 *        (whether or not the release was ever a reservation: the marker records who moved it;
+	 *        whether a hold applies is decided from the history). The scheduler never makes that
+	 *        move: it only cancels a release that is still PENDING. Null on every other event, and
+	 *        on events stored before it was recorded. A value this build does not know (written by
+	 *        a later build, then rolled back) reads as null.
+	 */
 	public record ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue,
-			String newValue, UUID objectId, String message, ZonedDateTime date, WhoUpdated wu) {
+			String newValue, UUID objectId, String message, ZonedDateTime date, WhoUpdated wu,
+			// absent rather than null on every other event: it is set on very few
+			@JsonInclude(JsonInclude.Include.NON_NULL)
+			@JsonFormat(with = JsonFormat.Feature.READ_UNKNOWN_ENUM_VALUES_AS_NULL)
+			ReservationEndedBy reservationEndedBy) {
+		// 8-arg ctor for the callsites that end no reservation: reservationEndedBy = null.
+		public ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue,
+				String newValue, UUID objectId, String message, ZonedDateTime date, WhoUpdated wu) {
+			this(rus, rua, oldValue, newValue, objectId, message, date, wu, null);
+		}
 		// 7-arg ctor for back-compat with the many existing callsites
 		// that don't carry a reason string. Delegates to the canonical
-		// 8-arg form with message = null.
+		// form with message = null.
 		public ReleaseUpdateEvent (ReleaseUpdateScope rus, ReleaseUpdateAction rua, String oldValue,
 				String newValue, UUID objectId, ZonedDateTime date, WhoUpdated wu) {
-			this(rus, rua, oldValue, newValue, objectId, null, date, wu);
+			this(rus, rua, oldValue, newValue, objectId, null, date, wu, null);
 		}
 	}
 	
@@ -241,6 +283,23 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		 */
 		public static boolean isFindingChangeEmitSuppressed(ReleaseLifecycle rl) {
 			return rl == CANCELLED || rl == REJECTED;
+		}
+
+		/**
+		 * Is {@code rl} a lifecycle a reservation can end in (CANCELLED or REJECTED)? The same set as
+		 * {@link #isFindingChangeEmitSuppressed} today, but a separate question.
+		 */
+		public static boolean isEnded(ReleaseLifecycle rl) {
+			return rl == CANCELLED || rl == REJECTED;
+		}
+
+		/** The lifecycle with this stored name; null for a null or unknown name. */
+		public static ReleaseLifecycle parse(String name) {
+			if (null == name) return null;
+			for (ReleaseLifecycle rl : values()) {
+				if (rl.name().equals(name)) return rl;
+			}
+			return null;
 		}
 
 		/**
@@ -626,6 +685,108 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	private List<ReleaseUpdateEvent> updateEvents = new LinkedList<>();
 
 	/**
+	 * Pointer to the bytes of a document, present only on releases of specification components.
+	 *
+	 * <p>A document version IS a release: the identity, the version, the lifecycle, the locks and
+	 * the required-input resolution all come for free, and the release's source code entry already
+	 * carries the repository and commit with signed-commit attribution. What was missing was the
+	 * pointer from that release to the file, and, for reviews and tests, an index of review items the
+	 * next hop can read as data rather than prose. That is all this field is.
+	 *
+	 * <p>The commit and repository are deliberately NOT repeated here — duplicating them would let
+	 * the two disagree, and the recognised-commit predicate and signature verification already
+	 * apply to a document exactly as they do to code.
+	 */
+	@JsonProperty
+	private DocumentRef document;
+
+	/**
+	 * @param specification copied from the component so a reader does not need the component row
+	 * @param path repo-relative path of the document at the release's commit
+	 * @param digest sha256 of that file
+	 * @param mediaType text/markdown for everything this brief covers
+	 * @param indexPath repo-relative path of the JSON index, when there is one
+	 * @param indexDigest sha256 of the index. On a file-backed round this is the digest of the
+	 *        index FILE. On an index-only round -- one the board or a human cut, where the items
+	 *        are the document and there is no file -- it is the round's recorded identity: the
+	 *        digest of the items as built, which is what makes cutting the same round twice
+	 *        return the first one. It is recorded rather than recomputed because a round's items
+	 *        may name the round itself, a value no later attempt could predict.
+	 * @param task the task this round belongs to, for TASK-scoped types; null otherwise
+	 * @param session the session that published it
+	 * @param round 1-based count of this task's releases of this type, for display and paths
+	 * @param reviewItems the parsed index for BOARD_REVIEW_ITEMS and BOARD_TEST_REPORT; absent otherwise
+	 */
+	public static record DocumentRef(RearmSpecificationType specification, String path, String digest,
+			String mediaType, String indexPath, String indexDigest, UUID task, UUID session,
+			Integer round, BoardReviewItemIndex reviewItems, ElementIndex elements, ElementCheckReport elementChecks,
+			Boolean advisory, String publishedByRole, UUID supersededBy) implements Serializable {
+
+		private static final long serialVersionUID = 20260929L;
+
+		/**
+		 * Without the superseding release: every round when it is published (task RD4-7). A hop that
+		 * publishes the same path again writes {@code supersededBy} onto the earlier version, and absent
+		 * reads as "not superseded", so rounds from before it need no migration.
+		 */
+		public DocumentRef(RearmSpecificationType specification, String path, String digest,
+				String mediaType, String indexPath, String indexDigest, UUID task, UUID session,
+				Integer round, BoardReviewItemIndex reviewItems, ElementIndex elements, ElementCheckReport elementChecks,
+				Boolean advisory, String publishedByRole) {
+			this(specification, path, digest, mediaType, indexPath, indexDigest, task, session, round, reviewItems,
+					elements, elementChecks, advisory, publishedByRole, null);
+		}
+
+		/** Whether a later version of the same round replaced this one (task RD4-7). */
+		public boolean superseded() {
+			return null != supersededBy;
+		}
+
+		/** This version, marked as replaced by {@code by}: everything else carried over. */
+		public DocumentRef withSupersededBy(UUID by) {
+			return new DocumentRef(specification, path, digest, mediaType, indexPath, indexDigest, task, session,
+					round, reviewItems, elements, elementChecks, advisory, publishedByRole, by);
+		}
+
+		/**
+		 * Without the author: every round but a task's publish. {@code advisory} marks a round a role
+		 * published on a task it did not hold (task e97fde56); {@code publishedByRole} is the role it
+		 * published as, null on rounds from before it was recorded.
+		 */
+		public DocumentRef(RearmSpecificationType specification, String path, String digest,
+				String mediaType, String indexPath, String indexDigest, UUID task, UUID session,
+				Integer round, BoardReviewItemIndex reviewItems, ElementIndex elements, ElementCheckReport elementChecks) {
+			this(specification, path, digest, mediaType, indexPath, indexDigest, task, session, round, reviewItems,
+					elements, elementChecks, null, null);
+		}
+
+		/** The same round with other review items: everything else, the author included, carried over. */
+		public DocumentRef withReviewItems(BoardReviewItemIndex other) {
+			return new DocumentRef(specification, path, digest, mediaType, indexPath, indexDigest, task, session,
+					round, other, elements, elementChecks, advisory, publishedByRole, supersededBy);
+		}
+
+		/** Whether a role published this round on a task it did not hold. */
+		public boolean advisoryRound() {
+			return Boolean.TRUE.equals(advisory);
+		}
+
+		/** Without elements: every index-only round, and every call site that predates them. */
+		public DocumentRef(RearmSpecificationType specification, String path, String digest,
+				String mediaType, String indexPath, String indexDigest, UUID task, UUID session,
+				Integer round, BoardReviewItemIndex reviewItems) {
+			this(specification, path, digest, mediaType, indexPath, indexDigest, task, session, round, reviewItems, null, null);
+		}
+
+		/** Without a check report: every document but a BOARD_ELEMENT_CHECK_REPORT round. */
+		public DocumentRef(RearmSpecificationType specification, String path, String digest,
+				String mediaType, String indexPath, String indexDigest, UUID task, UUID session,
+				Integer round, BoardReviewItemIndex reviewItems, ElementIndex elements) {
+			this(specification, path, digest, mediaType, indexPath, indexDigest, task, session, round, reviewItems, elements, null);
+		}
+	}
+
+	/**
 	 * An explicit "please approve this release" request. Unlike
 	 * {@link #approvalEvents} (dedicated column), these live in plain
 	 * record_data — low cardinality, read together with the release.
@@ -710,6 +871,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		}
 		if (null != releaseDto.getIdentifiers()) {
 			rd.setIdentifiers(releaseDto.getIdentifiers());
+		}
+		if (null != releaseDto.getDocument()) {
+			rd.setDocument(releaseDto.getDocument());
 		}
 		if (null != releaseDto.getGudidRecord()) {
 			rd.setGudidRecord(releaseDto.getGudidRecord());

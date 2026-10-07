@@ -127,9 +127,9 @@ class SupportBomInjectorTest {
 		assertFalse(p.containsKey("notes"));
 		assertFalse(p.values().stream().anyMatch(v -> v.contains("DO NOT LEAK")),
 				"internal notes must never reach the exported BOM");
-		// A future EOS derives UNKNOWN: a declared horizon is not evidence of current
-		// maintenance. ACTIVELY_SUPPORTED is now attested, never derived.
-		assertEquals("UNKNOWN", p.get(SupportBomInjector.PROP_STATUS));
+		// A future EOS derives WITHIN_SUPPORT_WINDOW: a declared horizon is not evidence of
+		// current maintenance. ACTIVELY_SUPPORTED is now attested, never derived.
+		assertEquals("WITHIN_SUPPORT_WINDOW", p.get(SupportBomInjector.PROP_STATUS));
 		assertEquals("MANUAL", p.get(SupportBomInjector.PROP_SOURCE_PREFIX + "endOfSupport"));
 	}
 
@@ -163,7 +163,7 @@ class SupportBomInjectorTest {
 		assertEquals("actively maintained", props.get(SupportBomInjector.PROP_LEVEL));
 		// Never bare: the claim carries its own date so a consumer can weigh its age.
 		assertEquals(ASSESSED_AT, props.get(SupportBomInjector.PROP_ASSESSED_AT));
-		// The DERIVED status still reports UNKNOWN, and the two are deliberately not
+		// The DERIVED status still reports UNKNOWN (no dates on record), and the two are deliberately not
 		// reconciled -- a reader sees the human's claim and what the dates support.
 		assertEquals("UNKNOWN", props.get(SupportBomInjector.PROP_STATUS));
 	}
@@ -267,7 +267,7 @@ class SupportBomInjectorTest {
 		assertEquals("cpe:2.3:a:vendor:thing:1.0:*:*:*:*:*:*:*", key);
 		SupportBomInjector.inject(bom, Map.of(key, manual(LocalDate.of(2030, 1, 1), null, null)), ASOF);
 		Map<String, String> p = propMap(bom.get("components").get(0));
-		assertEquals("UNKNOWN", p.get(SupportBomInjector.PROP_STATUS)); // future EOS derives nothing
+		assertEquals("WITHIN_SUPPORT_WINDOW", p.get(SupportBomInjector.PROP_STATUS)); // future EOS: inside the window
 	}
 
 	@Test

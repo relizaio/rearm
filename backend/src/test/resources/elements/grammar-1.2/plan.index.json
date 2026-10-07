@@ -1,0 +1,1 @@
+{"grammarVersion":"1.2","elements":[{"id":"T-1","family":"test","title":"The publish retries under the lock","traces":[{"verb":"verifies","target":"REQ-1"}],"assumes":[],"speculative":[],"terms":[],"contentDigest":"8ca5f1e5fc2a08e4f0bef304f5d19c1268d12b4fc9de3d1dcb0870e941e94ffc","line":3}],"references":[],"warnings":[]}

@@ -90,6 +90,9 @@ public class ReleaseFinalizerService {
         int releaseCount = 0;
         var allComponents = componentService.listAllComponentData();
         for (ComponentData cd : allComponents) {
+            // A document component's releases are never reconciled (task RD4-11): skip the
+            // component rather than ask requestReconcile to refuse each of its releases.
+            if (!ComponentKindPolicy.isScannable(cd)) continue;
             componentCount++;
             var branches = branchService.listBranchDataOfComponent(cd.getUuid(), null);
             for (BranchData bd : branches) {

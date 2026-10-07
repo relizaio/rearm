@@ -4,8 +4,10 @@
 package io.reliza.ws;
 
 import java.util.Collections;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -24,8 +26,11 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
+import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.UserData;
+import io.reliza.service.AgentSessionVisibilityService;
 import io.reliza.model.AgentData;
 import io.reliza.model.AgentData.AgentStatus;
 import io.reliza.model.AgentIdentityCredential;
@@ -45,14 +50,28 @@ import io.reliza.service.AgentIdentityService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AgentMonitoringService;
 import io.reliza.service.AgentService;
+import io.reliza.service.AgentSessionOriginService;
 import io.reliza.service.AgentSessionService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ModelOntologyService;
 import io.reliza.service.UserService;
+import java.time.ZonedDateTime;
+import java.util.LinkedList;
+import io.reliza.service.AgentSessionUsageService;
+import io.reliza.model.SessionUsageHosting;
+import io.reliza.model.SessionUsageSource;
+import io.reliza.model.PricingEntry;
+import io.reliza.model.PricingEntry.PricingSelector.ReasoningMatch;
+import io.reliza.model.PricingEntry.PricingSelector.ServiceTier;
+import io.reliza.model.PricingEntry.PricingUnit;
+import io.reliza.model.AgentBoardData;
+import io.reliza.service.AgentBoardService;
+import lombok.extern.slf4j.Slf4j;
 
 @DgsComponent
+@Slf4j
 public class AgentDataFetcher {
 
 	@Autowired
@@ -75,6 +94,17 @@ public class AgentDataFetcher {
 
 	@Autowired
 	private AgentSessionService agentSessionService;
+	@Autowired
+	private io.reliza.service.AgentSessionVisibilityService agentSessionVisibilityService;
+
+	@Autowired
+	private AgentSessionOriginService agentSessionOriginService;
+
+	@Autowired
+	private AgentSessionUsageService agentSessionUsageService;
+
+	@Autowired
+	private AgentBoardService agentBoardService;
 
 	@Autowired
 	private ModelOntologyService modelOntologyService;
@@ -126,6 +156,28 @@ public class AgentDataFetcher {
 		return agentService.listByRoot(rootAgentUuid);
 	}
 
+	/**
+	 * The sessions a person may read among these (board-permissions.md D15): one that worked boards
+	 * needs BOARD_READ on one of them, one that never did keeps the organization read the caller
+	 * passed already.
+	 */
+	private List<AgentSessionData> personReadable(UserData ud, UUID orgUuid, List<AgentSessionData> sessions) {
+		if (null == ud || sessions.isEmpty()) return sessions;
+		Map<UUID, Set<UUID>> worked = agentSessionVisibilityService.boardsWorked(orgUuid, sessions);
+		Map<UUID, Boolean> reads = new java.util.HashMap<>();
+		java.util.function.Predicate<UUID> readsBoard = board -> reads.computeIfAbsent(board,
+				b -> authorizationService.boardPermission(ud, orgUuid, b, PermissionFunction.BOARD_READ, CallType.READ));
+		return sessions.stream()
+				.filter(sd -> AgentSessionVisibilityService.personMayRead(worked.get(sd.getUuid()), readsBoard))
+				.toList();
+	}
+
+	/** As above for a field resolver: filtered for a signed-in person, as served otherwise. */
+	private List<AgentSessionData> readableBySignedInPerson(UUID orgUuid, List<AgentSessionData> sessions) {
+		if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken auth)) return sessions;
+		return personReadable(userService.getUserDataByAuth(auth).orElse(null), orgUuid, sessions);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "session")
 	public AgentSessionData getSession(@InputArgument("uuid") UUID uuid) throws RelizaException {
@@ -135,7 +187,9 @@ public class AgentDataFetcher {
 		RelizaObject ro = osd.isPresent() ? osd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
-		return osd.orElse(null);
+		// A session that worked boards reads with them (board-permissions.md D15); one the person may
+		// not read is answered as an unknown uuid.
+		return osd.filter(sd -> personReadable(oud.get(), sd.getOrg(), List.of(sd)).size() == 1).orElse(null);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -148,7 +202,20 @@ public class AgentDataFetcher {
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
-		return agentSessionService.listByOrg(orgUuid, statuses);
+		return personReadable(oud.get(), orgUuid, agentSessionService.listByOrg(orgUuid, statuses));
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "sessionsByProviderSession")
+	public List<AgentSessionData> sessionsByProviderSession(@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("providerSessionId") String providerSessionId) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, Collections.singletonList(ro), CallType.READ);
+		return personReadable(oud.get(), orgUuid, agentSessionService.listByProviderSession(orgUuid, providerSessionId));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -161,7 +228,7 @@ public class AgentDataFetcher {
 		RelizaObject ro = ad.isPresent() ? ad.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, ro != null ? ro.getOrg() : null, Collections.singletonList(ro), CallType.READ);
-		return agentSessionService.listByAgent(rootAgentUuid, statuses);
+		return null == ro ? List.of() : personReadable(oud.get(), ro.getOrg(), agentSessionService.listByAgent(rootAgentUuid, statuses));
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -219,14 +286,14 @@ public class AgentDataFetcher {
 	public List<AgentSessionData> agentOpenSessions(DgsDataFetchingEnvironment dfe) {
 		AgentData ad = dfe.getSource();
 		if (ad == null) return List.of();
-		return agentSessionService.listByAgent(ad.getUuid(), List.of("OPEN"));
+		return readableBySignedInPerson(ad.getOrg(), agentSessionService.listByAgent(ad.getUuid(), List.of("OPEN")));
 	}
 
 	@DgsData(parentType = "Agent", field = "closedSessions")
 	public List<AgentSessionData> agentClosedSessions(DgsDataFetchingEnvironment dfe) {
 		AgentData ad = dfe.getSource();
 		if (ad == null) return List.of();
-		return agentSessionService.listByAgent(ad.getUuid(), List.of("CLOSED"));
+		return readableBySignedInPerson(ad.getOrg(), agentSessionService.listByAgent(ad.getUuid(), List.of("CLOSED")));
 	}
 
 	/**
@@ -338,6 +405,72 @@ public class AgentDataFetcher {
 	}
 
 	/**
+	 * Field resolver: Session.boardsWorked (task RD2-5), the boards the session worked: recorded at
+	 * assignment, or for a session from before, read from the tasks that list it and written once.
+	 * The organization's derivation is made once per request, since a session list resolves this for
+	 * every row. No re-auth -- the parent query already authorized.
+	 */
+	@DgsData(parentType = "Session", field = "boardsWorked")
+	public List<UUID> sessionBoardsWorked(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		if (sd == null) return List.of();
+		Map<UUID, Map<UUID, Set<UUID>>> derived = dfe.getGraphQlContext()
+				.computeIfAbsent(SESSION_BOARDS_DERIVED, k -> new java.util.concurrent.ConcurrentHashMap<>());
+		return List.copyOf(agentSessionVisibilityService.boardsWorked(sd,
+				org -> derived.computeIfAbsent(org, agentSessionVisibilityService::boardsWorkedIn)));
+	}
+
+	private static final String SESSION_BOARDS_DERIVED = "rearm.sessionBoardsDerived";
+
+	/**
+	 * Field resolver: Session.tasksWorked (task RD2-11), for the session page: the tasks of its boards
+	 * that list it, each with the role it worked as. A signed-in person sees those on boards they may
+	 * read; the session itself they may read already (D15).
+	 */
+	/** When the idle sweep closes the session unless it calls again (task RD2-15); null once closed. */
+	@DgsData(parentType = "Session", field = "idleCloseAt")
+	public java.time.ZonedDateTime sessionIdleCloseAt(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		return agentSessionService.idleCloseAt(sd);
+	}
+
+	@DgsData(parentType = "Session", field = "tasksWorked")
+	public List<AgentSessionVisibilityService.TaskWorked> sessionTasksWorked(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		if (sd == null) return List.of();
+		// The reader's own board reads: a person's, or on the programmatic endpoint the key's -- a key
+		// working board A reads a session that also worked B, and must not read B's tasks through it.
+		java.util.function.Predicate<UUID> readsBoard = board -> false;
+		if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken auth) {
+			UserData ud = userService.getUserDataByAuth(auth).orElse(null);
+			if (null != ud) {
+				readsBoard = board -> authorizationService.boardPermission(ud, sd.getOrg(), board,
+						PermissionFunction.BOARD_READ, CallType.READ);
+			}
+		} else {
+			try {
+				DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+				var ahp = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(),
+						(ServletWebRequest) requestData.getWebRequest()).ahp();
+				if (null != ahp) {
+					readsBoard = board -> {
+						try {
+							return authorizationService.boardPermission(ahp, sd.getOrg(), board,
+									PermissionFunction.BOARD_READ, CallType.READ);
+						} catch (RelizaException e) {
+							log.error("Could not read the key's grant on board {} for Session.tasksWorked", board, e);
+							return false;
+						}
+					};
+				}
+			} catch (RuntimeException e) {
+				log.error("Could not read the caller's board grants for Session.tasksWorked; serving none", e);
+			}
+		}
+		return agentSessionVisibilityService.tasksWorked(sd, readsBoard);
+	}
+
+	/**
 	 * Field resolver: Session.primaryModel resolves the session's model
 	 * pointer to the full ModelOntology row. Null on legacy sessions
 	 * written before per-session model tracking (model pointer is null).
@@ -348,6 +481,59 @@ public class AgentDataFetcher {
 		AgentSessionData sd = dfe.getSource();
 		if (sd == null || sd.getModel() == null) return null;
 		return modelOntologyService.getModelOntologyData(sd.getModel()).orElse(null);
+	}
+
+	/**
+	 * Field resolver: Session.origin, with the personal fields -- hostnames, IP addresses, a
+	 * federated actor -- withheld unless the reader is an org admin, the session's owner, or the
+	 * key that opened it. The reader is worked out once per request, since a session list
+	 * resolves this for every row.
+	 */
+	@DgsData(parentType = "Session", field = "origin")
+	public AgentSessionOriginService.SessionOriginView sessionOrigin(DgsDataFetchingEnvironment dfe) {
+		AgentSessionData sd = dfe.getSource();
+		if (sd == null || sd.getOrigin() == null) return null;
+		AgentSessionOriginService.Viewer viewer = dfe.getGraphQlContext()
+				.computeIfAbsent(SESSION_ORIGIN_VIEWER, k -> originViewer(dfe));
+		return AgentSessionOriginService.view(sd.getOrigin(),
+				AgentSessionOriginService.canSeePersonal(viewer, sd.getOrg(), sd.getApiKey(), sd.getOrigin()));
+	}
+
+	private static final String SESSION_ORIGIN_VIEWER = "rearm.sessionOriginViewer";
+
+	/**
+	 * Who is reading, for Session.origin. Anything that cannot be established reads as nobody,
+	 * which sees the impersonal fields only -- the parent query has already decided the reader
+	 * may see the session at all.
+	 */
+	private AgentSessionOriginService.Viewer originViewer(DgsDataFetchingEnvironment dfe) {
+		try {
+			var auth = SecurityContextHolder.getContext().getAuthentication();
+			if (auth instanceof JwtAuthenticationToken jwt) {
+				return userService.getUserDataByAuth(jwt).map(AgentSessionOriginService.Viewer::ofUser)
+						.orElse(AgentSessionOriginService.Viewer.nobody());
+			}
+			DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+			var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+			ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(
+					requestData.getHeaders(), servletWebRequest);
+			var ahp = authCtx.ahp();
+			if (null == ahp) return AgentSessionOriginService.Viewer.nobody();
+			UUID key = ahp.getVerifiedKeyUuid();
+			if (null == key && null != authCtx.orgUuid()) {
+				// Basic auth carries no verified key uuid; the authorization check resolves it.
+				OrganizationData od = getOrganizationService.getOrganizationData(authCtx.orgUuid()).orElse(null);
+				if (null != od) {
+					key = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.AGENT,
+							PermissionScope.ORGANIZATION, authCtx.orgUuid(), List.of(od), CallType.ESSENTIAL_READ)
+							.apiKeyUuid();
+				}
+			}
+			return AgentSessionOriginService.Viewer.ofKey(key, ahp.getActorUser());
+		} catch (Exception e) {
+			log.error("Could not establish who is reading Session.origin; withholding personal fields", e);
+			return AgentSessionOriginService.Viewer.nobody();
+		}
 	}
 
 	/**
@@ -420,13 +606,22 @@ public class AgentDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, existing.getOrg(), List.of(existing), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		return modelOntologyService.updateModelOntology(
+		ModelOntologyService.IdentityUpdate identity = new ModelOntologyService.IdentityUpdate(
+				(String) input.get("name"), (String) input.get("version"),
+				(String) input.get("canonicalId"), input.containsKey("canonicalId"));
+		ModelOntologyData updated = modelOntologyService.updateModelOntology(
 				ontologyUuid,
 				(String) input.get("publisher"),
 				(String) input.get("description"),
 				(String) input.get("purl"),
 				(String) input.get("notes"),
+				strengthUpdateFromInput(input),
+				identity,
 				wu);
+		if (input.get("tier") instanceof String tier && StringUtils.isNotBlank(tier)) {
+			updated = modelOntologyService.setTier(ontologyUuid, ModelOntologyData.ModelTier.valueOf(tier), wu);
+		}
+		return updated;
 	}
 
 	@DgsData(parentType = "Mutation", field = "sessionInitializeProgrammatic")
@@ -443,14 +638,28 @@ public class AgentDataFetcher {
 			throw new RelizaException("agentModel is required on session initialize");
 		}
 
-		// Resolve / auto-register the model ontology first; the agent
-		// references it. Empty modelCard until the user attaches one.
-		ModelOntologyData ontology = modelOntologyService.findOrRegisterModel(
+		// Resolve / auto-register the model ontology first; the agent references it.
+		//
+		// Through resolve() rather than the older findOrRegisterModel: resolution normalises the
+		// declared string, matches it against the org's aliases and the bundled catalogue, and
+		// pre-fills facts and a canonical id when it recognises the model. Registering here
+		// instead created a bare row with no aliases and a null resolution -- which the catalogue
+		// UI shows as UNRESOLVED -- for models the bundle already knew, and left init and usage
+		// reporting able to mint two different rows for one declared string.
+		ModelOntologyData ontology = modelOntologyService.resolve(
 				ctx.orgUuid,
 				agentModel,
 				(String) input.get("agentModelVersion"),
-				(String) input.get("agentVendor"),
-				ctx.wu);
+				ctx.wu).model();
+
+		// Vendor is display-only and resolution does not take it, so it is applied after: a
+		// bundled row already knows its publisher, and an operator's edit outranks a client's
+		// declaration, so this only fills a blank.
+		String declaredVendor = (String) input.get("agentVendor");
+		if (StringUtils.isNotBlank(declaredVendor) && StringUtils.isBlank(ontology.getPublisher())) {
+			ontology = modelOntologyService.updateModelOntology(ontology.getUuid(), declaredVendor,
+					null, null, null, ctx.wu);
+		}
 
 		// Resolve the calling key to an AgentIdentity so the Agent row
 		// is scoped to (org, identity, name) — two different keys can
@@ -486,14 +695,148 @@ public class AgentDataFetcher {
 				(String) input.get("title"),
 				parentSessionUuid,
 				ontology.getUuid(),
+				providerSessionFromInput(input.get("providerSession")),
+				agentSessionOriginService.resolve(ctx.ahp, ctx.apiKeyUuid, ctx.clientIp,
+						deviceReportFromInput(input.get("device"))),
 				ctx.wu);
 	}
 
 	@DgsData(parentType = "Mutation", field = "sessionTouchProgrammatic")
+	@SuppressWarnings("unchecked")
 	public AgentSessionData sessionTouchProgrammatic(@InputArgument("sessionUuid") UUID sessionUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
 		WhoUpdated wu = authorizeProgrammaticAgentAccessOnSession(sessionUuid, dfe);
+		Map<String, Object> usage = dfe.getArgument("usage");
+		if (null != usage) {
+			// Same path, same validation: an agent that cannot install hooks is not reporting
+			// through a weaker contract, it is reporting on the back of its heartbeat.
+			AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
+					.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
+			agentSessionUsageService.report(sd, toReport(sessionUuid, usage), wu);
+		}
 		return agentSessionService.touch(sessionUuid, wu);
+	}
+
+	@DgsData(parentType = "Mutation", field = "sessionReportUsageProgrammatic")
+	public AgentSessionUsageService.UsageAck sessionReportUsageProgrammatic(
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		Map<String, Object> input = dfe.getArgument("input");
+		return reportUsage(input, dfe);
+	}
+
+	/**
+	 * Shared by the dedicated mutation and by the optional {@code usage} argument on touch: an
+	 * agent that heartbeats but cannot install hooks reports the same way, through the same
+	 * validation, rather than through a second-class path.
+	 */
+	private AgentSessionUsageService.UsageAck reportUsage(Map<String, Object> input,
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		if (null == input) throw new RelizaException("Usage report input is required");
+		UUID sessionUuid = resolveReportSession(input, dfe);
+		WhoUpdated wu = authorizeProgrammaticAgentAccessOnSession(sessionUuid, dfe);
+		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
+				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
+		return agentSessionUsageService.report(sd, toReport(sessionUuid, input), wu);
+	}
+
+	/**
+	 * {@code sessionUuid} wins when both are present. The client session id is the fallback so a
+	 * hook that only knows the id the client generated can still report without a lookup of its
+	 * own -- but it is resolved against the calling key's org, never across orgs.
+	 */
+	private UUID resolveReportSession(Map<String, Object> input, DgsDataFetchingEnvironment dfe)
+			throws RelizaException {
+		Object explicit = input.get("sessionUuid");
+		if (null != explicit) return UUID.fromString(String.valueOf(explicit));
+		String clientSessionId = (String) input.get("clientSessionId");
+		if (StringUtils.isBlank(clientSessionId)) {
+			throw new RelizaException("A usage report requires sessionUuid or clientSessionId");
+		}
+		// Resolved through the calling key's own agent, the same chain session init uses, rather
+		// than by (org, clientSessionId): the id is the agent's to choose, so two agents in one
+		// org may legitimately pick the same one, and the key says which agent is reporting.
+		ProgKeyContext ctx = authorizeProgrammaticOrgWrite(dfe);
+		AgentIdentityData identity = agentIdentityService.findOrRegisterByCredential(
+				ctx.orgUuid,
+				AgentIdentityCredential.IdentityType.REARM_API_KEY,
+				ctx.apiKeyUuid.toString(),
+				ctx.wu);
+		// Read-only on purpose: reporting usage must not mint an agent. A key with no registered
+		// root has no session to report against either, and says so.
+		List<AgentData> roots = agentService.listRootsByAgentIdentity(ctx.orgUuid, identity.getUuid());
+		return roots.stream()
+				.map(root -> agentSessionService.getByClientSessionId(
+						ctx.orgUuid, root.getUuid(), clientSessionId))
+				.filter(java.util.Optional::isPresent)
+				.map(found -> found.get().getUuid())
+				.findFirst()
+				.orElseThrow(() -> new RelizaException(
+						"No session with clientSessionId '" + clientSessionId + "' for this agent"));
+	}
+
+	@SuppressWarnings("unchecked")
+	private AgentSessionUsageService.UsageReport toReport(UUID sessionUuid, Map<String, Object> input)
+			throws RelizaException {
+		List<Map<String, Object>> lineInputs = (List<Map<String, Object>>) input.get("lines");
+		if (null == lineInputs || lineInputs.isEmpty()) {
+			throw new RelizaException("A usage report must carry at least one line");
+		}
+		List<AgentSessionUsageService.UsageLine> lines = new LinkedList<>();
+		for (Map<String, Object> l : lineInputs) {
+			lines.add(new AgentSessionUsageService.UsageLine(
+					(String) l.get("model"),
+					enumArg(SessionUsageHosting.class, l.get("hosting")),
+					nullableLong(l.get("contextBand")),
+					intArg(l.get("requests"), 0),
+					longArg(l.get("inputTokens"), 0L),
+					longArg(l.get("outputTokens"), 0L),
+					longArg(l.get("cacheReadTokens"), 0L),
+					longArg(l.get("cacheWriteTokens"), 0L),
+					nullableLong(l.get("reasoningTokens")),
+					nullableLong(l.get("maxRequestContextTokens")),
+					nullableLong(l.get("minRequestContextTokens")),
+					nullableLong(l.get("reportedCostMicros"))));
+		}
+		return new AgentSessionUsageService.UsageReport(
+				sessionUuid,
+				(String) input.get("clientSessionId"),
+				longArg(input.get("clientSeq"), 0L),
+				enumArg(SessionUsageSource.class, input.get("source")),
+				timeArg(input.get("windowStart")),
+				timeArg(input.get("windowEnd")),
+				nullableInt(input.get("turns")),
+				nullableInt(input.get("toolCalls")),
+				nullableInt(input.get("wallSeconds")),
+				(String) input.get("reasoningLevel"),
+				null != input.get("taskUuid") ? UUID.fromString(String.valueOf(input.get("taskUuid"))) : null,
+				(Map<String, Object>) input.get("raw"),
+				lines);
+	}
+
+	private static <E extends Enum<E>> E enumArg(Class<E> type, Object raw) {
+		return null == raw ? null : Enum.valueOf(type, String.valueOf(raw));
+	}
+
+	private static ZonedDateTime timeArg(Object raw) {
+		return null == raw ? null : ZonedDateTime.parse(String.valueOf(raw));
+	}
+
+	private static long longArg(Object raw, long fallback) {
+		return raw instanceof Number n ? n.longValue()
+				: (null == raw ? fallback : Long.parseLong(String.valueOf(raw)));
+	}
+
+	private static Long nullableLong(Object raw) {
+		return null == raw ? null : longArg(raw, 0L);
+	}
+
+	private static int intArg(Object raw, int fallback) {
+		return raw instanceof Number n ? n.intValue()
+				: (null == raw ? fallback : Integer.parseInt(String.valueOf(raw)));
+	}
+
+	private static Integer nullableInt(Object raw) {
+		return null == raw ? null : intArg(raw, 0);
 	}
 
 	@DgsData(parentType = "Mutation", field = "sessionCloseProgrammatic")
@@ -525,7 +868,51 @@ public class AgentDataFetcher {
 				sessionUuid,
 				(String) updateMeta.get("title"),
 				(String) updateMeta.get("clientSessionId"),
+				providerSessionFromInput(updateMeta.get("providerSession")),
 				wu);
+	}
+
+	/**
+	 * The strength part of a model edit. {@code strength} left out leaves it; sent as null unrates
+	 * the model. {@code strengthByRole} sent replaces the per-category list.
+	 */
+	private static ModelOntologyService.StrengthUpdate strengthUpdateFromInput(Map<String, Object> input)
+			throws RelizaException {
+		boolean hasStrength = input.containsKey("strength");
+		boolean hasByRole = input.containsKey("strengthByRole");
+		if (!hasStrength && !hasByRole) return null;
+		Object raw = input.get("strength");
+		Double strength = raw instanceof Number n ? n.doubleValue() : null;
+		List<ModelOntologyData.RoleStrength> byRole = null;
+		if (hasByRole) {
+			byRole = new ArrayList<>();
+			if (input.get("strengthByRole") instanceof List<?> l) {
+				for (Object e : l) {
+					if (!(e instanceof Map<?, ?> m)) throw new RelizaException("strengthByRole entries must be objects");
+					ModelOntologyData.RoleCategory category;
+					try {
+						category = ModelOntologyData.RoleCategory.valueOf(String.valueOf(m.get("category")));
+					} catch (IllegalArgumentException iae) {
+						throw new RelizaException("Unknown role category: " + m.get("category"));
+					}
+					byRole.add(new ModelOntologyData.RoleStrength(category,
+							m.get("strength") instanceof Number sn ? sn.doubleValue() : null));
+				}
+			}
+		}
+		return new ModelOntologyService.StrengthUpdate(strength, hasStrength && null == strength, byRole);
+	}
+
+	private static AgentSessionOriginService.DeviceReport deviceReportFromInput(Object raw) {
+		if (!(raw instanceof Map<?, ?> m)) return null;
+		return new AgentSessionOriginService.DeviceReport((String) m.get("hostname"), (String) m.get("os"),
+				(String) m.get("timeZone"), (String) m.get("client"));
+	}
+
+	private static AgentSessionService.ProviderSessionInput providerSessionFromInput(Object raw) {
+		if (!(raw instanceof Map<?, ?> m)) return null;
+		return new AgentSessionService.ProviderSessionInput((String) m.get("provider"),
+				(String) m.get("id"), (String) m.get("remoteId"));
 	}
 
 	@DgsData(parentType = "Mutation", field = "spawnSubAgentProgrammatic")
@@ -555,6 +942,141 @@ public class AgentDataFetcher {
 				ctx.wu);
 	}
 
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "agentBoardUsage")
+	public AgentSessionData.UsageTotals agentBoardUsage(@InputArgument("boardUuid") UUID boardUuid,
+			@InputArgument("from") ZonedDateTime from, @InputArgument("to") ZonedDateTime to) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		AgentBoardData board = agentBoardService.getBoardData(boardUuid)
+				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
+		// A board's spend reads with the board (task d8e7bd7e, T-1): BOARD_READ on it, as agentBoard,
+		// not an organization function -- a person refused the board is refused its spend, and one
+		// working it through a board grant reads it.
+		if (null == authorizationService.userOnBoard(oud.orElse(null), board.getOrg(), board.getUuid(),
+				List.of(PermissionFunction.BOARD_READ), CallType.READ)) {
+			throw new AccessDeniedException("Not authorized: this needs BOARD_READ on board " + board.getName());
+		}
+		// DateTime arguments bind as ZonedDateTime, as every other date argument does: bound as
+		// String, DGS refused the scalar's OffsetDateTime and every call failed (40f270be T-1).
+		return agentSessionUsageService.boardUsage(boardUuid, from, to);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "organizationAgentUsage")
+	public AgentSessionData.UsageTotals organizationAgentUsage(@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("from") ZonedDateTime from, @InputArgument("to") ZonedDateTime to) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("Org not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.AGENT,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(od), CallType.READ);
+		return agentSessionUsageService.orgUsage(orgUuid, from, to);
+	}
+
+	@DgsData(parentType = "ModelOntology", field = "usage")
+	public ModelOntologyService.ModelUsageCount modelUsage(DgsDataFetchingEnvironment dfe) {
+		ModelOntologyData mod = dfe.getSource();
+		Integer days = dfe.getArgument("days");
+		return modelOntologyService.usage(null == mod ? null : mod.getUuid(), null == days ? 30 : days);
+	}
+
+	@DgsData(parentType = "ModelOntology", field = "suggestedCanonicalId")
+	public String modelSuggestedCanonicalId(DgsDataFetchingEnvironment dfe) {
+		ModelOntologyData mod = dfe.getSource();
+		return null == mod ? null : modelOntologyService.suggestedCanonicalId(mod).orElse(null);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "modelCatalogueBundle")
+	public List<Map<String, Object>> modelCatalogueBundle() {
+		List<Map<String, Object>> out = new ArrayList<>();
+		for (var bm : modelOntologyService.bundledModels()) {
+			Map<String, Object> e = new java.util.LinkedHashMap<>();
+			e.put("canonicalId", bm.canonicalId());
+			e.put("name", bm.name());
+			e.put("version", bm.version());
+			e.put("publisher", bm.publisher());
+			out.add(e);
+		}
+		return out;
+	}
+
+	@DgsData(parentType = "ModelOntology", field = "mergeCandidates")
+	public List<ModelOntologyData> modelMergeCandidates(DgsDataFetchingEnvironment dfe) {
+		ModelOntologyData mod = dfe.getSource();
+		return null == mod ? List.of() : modelOntologyService.mergeCandidates(mod, 3);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "addModelPricing")
+	public ModelOntologyData addModelPricing(@InputArgument("modelOntologyUuid") UUID ontologyUuid,
+			@InputArgument("entry") Map<String, Object> entry) throws RelizaException {
+		WhoUpdated wu = authorizeCatalogueAdmin(ontologyUuid);
+		return modelOntologyService.addModelPricing(ontologyUuid, toPricingEntry(entry), wu);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "expireModelPricing")
+	public ModelOntologyData expireModelPricing(@InputArgument("modelOntologyUuid") UUID ontologyUuid,
+			@InputArgument("entryUuid") UUID entryUuid,
+			@InputArgument("effectiveTo") ZonedDateTime effectiveTo) throws RelizaException {
+		WhoUpdated wu = authorizeCatalogueAdmin(ontologyUuid);
+		return modelOntologyService.expireModelPricing(ontologyUuid, entryUuid, effectiveTo, wu);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "applyModelCataloguePreset")
+	public ModelOntologyData applyModelCataloguePreset(@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("canonicalId") String canonicalId) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("Org not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(od), CallType.ADMIN);
+		return modelOntologyService.applyModelCataloguePreset(orgUuid, canonicalId,
+				WhoUpdated.getWhoUpdated(oud.get()));
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "mergeModelOntology")
+	public ModelOntologyData mergeModelOntology(@InputArgument("from") UUID from,
+			@InputArgument("into") UUID into) throws RelizaException {
+		WhoUpdated wu = authorizeCatalogueAdmin(from);
+		return modelOntologyService.mergeModelOntology(from, into, wu);
+	}
+
+	/** Pricing and catalogue shape are org configuration, so ADMIN rather than WRITE. */
+	private WhoUpdated authorizeCatalogueAdmin(UUID ontologyUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		ModelOntologyData existing = modelOntologyService.getModelOntologyData(ontologyUuid)
+				.orElseThrow(() -> new RelizaException("ModelOntology not found: " + ontologyUuid));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, existing.getOrg(), List.of(existing), CallType.ADMIN);
+		return WhoUpdated.getWhoUpdated(oud.get());
+	}
+
+	@SuppressWarnings("unchecked")
+	private PricingEntry toPricingEntry(Map<String, Object> e) throws RelizaException {
+		if (null == e) throw new RelizaException("A pricing entry is required");
+		Map<String, Object> sel = (Map<String, Object>) e.get("appliesTo");
+		PricingEntry.PricingSelector selector = null == sel ? null : new PricingEntry.PricingSelector(
+				nullableLong(sel.get("contextAboveTokens")),
+				(String) sel.get("contextVariant"),
+				enumArg(ServiceTier.class, sel.get("serviceTier")),
+				enumArg(SessionUsageHosting.class, sel.get("hosting")),
+				enumArg(ReasoningMatch.class, sel.get("reasoning")));
+		return new PricingEntry(null, timeArg(e.get("effectiveFrom")), timeArg(e.get("effectiveTo")),
+				(String) e.get("currency"), enumArg(PricingUnit.class, e.get("unit")),
+				nullableLong(e.get("inputMicros")), nullableLong(e.get("outputMicros")),
+				nullableLong(e.get("cacheReadMicros")), nullableLong(e.get("cacheWriteMicros")),
+				nullableLong(e.get("reasoningMicros")), selector,
+				(String) e.get("source"), (String) e.get("note"), null, null);
+	}
+
 	@DgsData(parentType = "Mutation", field = "setModelOntologyModelCardProgrammatic")
 	public ModelOntologyData setModelOntologyModelCardProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		ProgKeyContext ctx = authorizeProgrammaticOrgWrite(dfe);
@@ -574,7 +1096,12 @@ public class AgentDataFetcher {
 	// ---------- Auth helpers ----------
 
 	/** Parsed programmatic auth context — org, calling key uuid, audit stamp. */
-	private record ProgKeyContext(UUID orgUuid, UUID apiKeyUuid, WhoUpdated wu) {}
+	/**
+	 * @param ahp the verified principal, for recording how a session was opened
+	 * @param clientIp the client address as this server saw it
+	 */
+	private record ProgKeyContext(UUID orgUuid, UUID apiKeyUuid, WhoUpdated wu, AuthHeaderParse ahp,
+			String clientIp) {}
 
 	private ProgKeyContext authorizeProgrammaticOrgWrite(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
@@ -594,17 +1121,14 @@ public class AgentDataFetcher {
 		FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 				ahp, PermissionFunction.AGENT, PermissionScope.ORGANIZATION, orgUuid,
 				List.of(od), CallType.ESSENTIAL_READ);
-		return new ProgKeyContext(orgUuid, fkv.apiKeyUuid(), fkv.whoUpdated());
+		return new ProgKeyContext(orgUuid, fkv.apiKeyUuid(), fkv.whoUpdated(), ahp,
+				DeviceAuthorizationController.clientIp(servletWebRequest.getRequest()));
 	}
 
 	@DgsData(parentType = "Query", field = "sessionProgrammatic")
 	public AgentSessionData sessionProgrammatic(@InputArgument("sessionUuid") UUID sessionUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
-		// Reuses the session-scoped write-auth helper which already
-		// verifies the calling FREEFORM key is authorized on the
-		// session's org. Read-only consumers fall through the same
-		// org/permissions check.
-		authorizeProgrammaticAgentAccessOnSession(sessionUuid, dfe);
+		authorizeProgrammaticSessionRead(sessionUuid, dfe);
 		return agentSessionService.getSessionData(sessionUuid).orElse(null);
 	}
 
@@ -621,9 +1145,7 @@ public class AgentDataFetcher {
 		java.util.Set<String> kindFilter = (kindsRaw == null || kindsRaw.isEmpty())
 				? null
 				: new java.util.HashSet<>(kindsRaw);
-		// Read-only auth path — uses ESSENTIAL_READ on the FREEFORM key
-		// scoped to the session's org. Same helper the write paths use.
-		authorizeProgrammaticAgentAccessOnSession(sessionUuid, dfe);
+		authorizeProgrammaticSessionRead(sessionUuid, dfe);
 
 		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
 				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
@@ -745,7 +1267,28 @@ public class AgentDataFetcher {
 		return "RELEASE_AUTO";
 	}
 
+	/**
+	 * A read of a session: the org check every session call makes, then the visibility rule (task
+	 * 0192a587) -- the session's own key, the org's ADMIN keys, and the key holding the seat of a
+	 * board the session worked on. Anyone else gets the answer an unknown uuid gets.
+	 */
+	private void authorizeProgrammaticSessionRead(UUID sessionUuid, DgsDataFetchingEnvironment dfe)
+			throws RelizaException {
+		authorizeVisibleSession(sessionUuid, dfe);
+	}
+
+	/**
+	 * A write on a session -- touch, update-meta, add-artifact, close, usage -- under the same rule
+	 * as the read. Each of them answers with the session, so a write open to every key in the org
+	 * would hand any of them the read the rule refuses, and let it rename or close another agent's
+	 * session besides (task 0192a587, round 2, T-1).
+	 */
 	private WhoUpdated authorizeProgrammaticAgentAccessOnSession(UUID sessionUuid, DgsDataFetchingEnvironment dfe)
+			throws RelizaException {
+		return authorizeVisibleSession(sessionUuid, dfe).whoUpdated();
+	}
+
+	private FreeformKeyVerification authorizeVisibleSession(UUID sessionUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
@@ -763,6 +1306,26 @@ public class AgentDataFetcher {
 		FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 				ahp, PermissionFunction.AGENT, PermissionScope.ORGANIZATION, sd.getOrg(),
 				List.of(od), CallType.ESSENTIAL_READ);
-		return fkv.whoUpdated();
+		boolean admin;
+		try {
+			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.AGENT,
+					PermissionScope.ORGANIZATION, sd.getOrg(), List.of(od), CallType.ADMIN);
+			admin = true;
+		} catch (AccessDeniedException notAdmin) {
+			admin = false;
+		}
+		// D15: BOARD_READ on a board the session worked is the third reader, in place of org ADMIN by name.
+		java.util.function.Predicate<UUID> readsBoard = board -> {
+			try {
+				return authorizationService.boardPermission(ahp, sd.getOrg(), board, PermissionFunction.BOARD_READ,
+						CallType.ESSENTIAL_READ);
+			} catch (RelizaException e) {
+				return false;
+			}
+		};
+		if (!agentSessionVisibilityService.mayRead(sd, fkv.apiKeyUuid(), admin, readsBoard)) {
+			throw new RelizaException("Session not found: " + sessionUuid);
+		}
+		return fkv;
 	}
 }

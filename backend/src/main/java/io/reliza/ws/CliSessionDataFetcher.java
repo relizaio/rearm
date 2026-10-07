@@ -67,11 +67,12 @@ public class CliSessionDataFetcher {
 	public CliSession approveCliLogin(@InputArgument("userCode") String userCode, @InputArgument("apiKeyUuid") String apiKeyUuidStr,
 			@InputArgument("createKeyOrgUuid") String createOrgStr, @InputArgument("createKeyNotes") String createNotes,
 			@InputArgument("permissionType") PermissionType permissionType,
-			@InputArgument("permissions") List<java.util.LinkedHashMap<String, Object>> permissions) throws RelizaException {
+			@InputArgument("permissions") List<java.util.LinkedHashMap<String, Object>> permissions,
+			@InputArgument("maxMinutes") Integer maxMinutes) throws RelizaException {
 		UserData ud = me();
 		authorizationService.validateSystemOperational(CallType.WRITE);
 		if (apiKeyUuidStr != null && !apiKeyUuidStr.isBlank()) {
-			return cliSessionService.approveWithKey(userCode, ud, UUID.fromString(apiKeyUuidStr));
+			return cliSessionService.approveWithKey(userCode, ud, UUID.fromString(apiKeyUuidStr), maxMinutes);
 		}
 		if (createOrgStr == null || createOrgStr.isBlank()) throw new RelizaException("Choose a key, or an organization to create a personal key in");
 		UUID orgUuid = UUID.fromString(createOrgStr);
@@ -86,13 +87,14 @@ public class CliSessionDataFetcher {
 		// follow share one transaction, so a rejected set never leaves an approved session with a useless key.
 		List<PermissionDto> requested = permissions == null ? List.of()
 				: permissions.stream().map(m -> Utils.OM.convertValue(m, PermissionDto.class)).toList();
+		authorizationService.assertGrantObjectsExist(orgUuid, requested);
 		for (PermissionDto pd : requested) {
 			if (pd.approvals() != null && !pd.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(pd.approvals(), od.get()))
 				throw new RelizaException("Invalid approvals sent");
 		}
 		AuthorizationService.ClampedPermissions clamped = authorizationService.clampToOwner(ud, orgUuid, permissionType, requested);
 		return cliSessionService.approveWithNewKey(userCode, ud, orgUuid, createNotes, clamped.orgType(), clamped.permissions(),
-				WhoUpdated.getWhoUpdated(ud));
+				maxMinutes, WhoUpdated.getWhoUpdated(ud));
 	}
 
 	@PreAuthorize("isAuthenticated()")

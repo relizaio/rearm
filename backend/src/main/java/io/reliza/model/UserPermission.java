@@ -29,6 +29,11 @@ public class UserPermission {
 		RELEASE,
 		BRANCH,
 		COMPONENT,
+		// A board is a leaf beside a component (board-permissions.md D1): a BOARD grant covers
+		// boards only, and component-side grants cover no board. Persisted by name, so inserting it
+		// here moved no stored grant; the order matters only to the coverage walk's ordinal gate,
+		// which keeps a COMPONENT, BRANCH or RELEASE grant off a board object.
+		BOARD,
 		PERSPECTIVE,
 		INSTANCE,
 		ORGANIZATION
@@ -153,10 +158,35 @@ public class UserPermission {
 		// FREEFORM keys, on top of the call-type tier. WRITE implies READ.
 		// Org admins pass implicitly.
 		CONFIGURATION_READ,
-		CONFIGURATION_WRITE
+		CONFIGURATION_WRITE,
+		// Agent task boards (board-permissions.md D2, D4), modelled on DEVOPS_READ / DEVOPS_WRITE and
+		// granted at BOARD, PERSPECTIVE or ORGANIZATION scope. BOARD_READ reads a board and its task
+		// records (READ_ONLY floor). BOARD_AGENT is an agent working it -- poll, assign, sign off,
+		// publish -- at READ_ONLY, the function being the gate as with VERSION_FEATURESET.
+		// BOARD_WRITE runs it -- register, authorize, seat, holds, decisions -- at READ_WRITE.
+		// BOARD_AGENT and BOARD_WRITE each imply BOARD_READ; neither implies the other.
+		BOARD_READ,
+		BOARD_AGENT,
+		BOARD_WRITE
 		;
 
 		private PermissionFunction () {}
+
+		/**
+		 * Whether a granted function satisfies a required one: itself always; {@code BOARD_READ} also
+		 * from {@code BOARD_AGENT} or {@code BOARD_WRITE}. Nothing else implies anything here -- the
+		 * {@code CONFIGURATION_WRITE} to {@code READ} convention stays with its callers.
+		 */
+		public static boolean satisfies(PermissionFunction granted, PermissionFunction required) {
+			if (null == granted || null == required) return false;
+			if (granted == required) return true;
+			return required == BOARD_READ && (granted == BOARD_AGENT || granted == BOARD_WRITE);
+		}
+
+		/** Whether any of the granted functions satisfies the required one. */
+		public static boolean anySatisfies(java.util.Collection<PermissionFunction> granted, PermissionFunction required) {
+			return null != granted && granted.stream().anyMatch(g -> satisfies(g, required));
+		}
 	}
 	
 	public record PermissionDto(UUID org, PermissionScope scope, UUID object, PermissionType type, Set<PermissionFunction> functions, Collection<String> approvals) {}

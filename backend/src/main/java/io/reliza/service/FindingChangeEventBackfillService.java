@@ -169,12 +169,12 @@ public class FindingChangeEventBackfillService {
 	 * uncertified in a shared database.
 	 */
 	V3BackfillResult drainV3Backfill(int batchPerTick, Predicate<UUID> orgFilter) {
-		log.info("finding_change_events v3 drain: starting (batchPerTick={})", batchPerTick);
+		log.debug("finding_change_events v3 drain: starting (batchPerTick={})", batchPerTick);
 		V3BackfillResult total = V3_EMPTY;
 		int budget = batchPerTick;
 		int orgsCertified = 0;
 		if (budget <= 0) {
-			log.info("finding_change_events v3 drain: batchPerTick <= 0, nothing to do");
+			log.debug("finding_change_events v3 drain: batchPerTick <= 0, nothing to do");
 			return total;
 		}
 		// The marker upsert is @Modifying, so it needs a transaction; the drain itself is not @Transactional
@@ -244,9 +244,19 @@ public class FindingChangeEventBackfillService {
 				}
 			}
 		}
-		log.info("finding_change_events v3 drain: finished tick -- {} branch(es), {} release(s), {} failed, "
-				+ "{} fact(s) inserted, {} org(s) certified, budget left {}", total.branchesProcessed(),
-				total.releasesProcessed(), total.releasesFailed(), total.factsInserted(), orgsCertified, budget);
+		// The drain ticks every minute and is idle once every org is certified: an idle tick logs at DEBUG,
+		// a tick that did work (or failed some) stays at INFO.
+		boolean idle = total.branchesProcessed() == 0 && total.releasesProcessed() == 0
+				&& total.releasesFailed() == 0 && orgsCertified == 0;
+		String summary = "finding_change_events v3 drain: finished tick -- {} branch(es), {} release(s), {} failed, "
+				+ "{} fact(s) inserted, {} org(s) certified, budget left {}";
+		Object[] args = { total.branchesProcessed(), total.releasesProcessed(), total.releasesFailed(),
+				total.factsInserted(), orgsCertified, budget };
+		if (idle) {
+			log.debug(summary, args);
+		} else {
+			log.info(summary, args);
+		}
 		return total;
 	}
 

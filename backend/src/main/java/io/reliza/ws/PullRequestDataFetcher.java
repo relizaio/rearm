@@ -36,6 +36,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.PullRequestData;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SourceCodeEntry;
+import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VcsRepository;
@@ -326,18 +327,17 @@ public class PullRequestDataFetcher {
 	 * PullRequest.commitDetails resolver — hydrates the commit UUID list
 	 * into SourceCodeEntryData rows so the UI can show actual git
 	 * commit SHAs instead of opaque UUIDs. Order preserved (head last);
-	 * missing SCEs filtered out.
+	 * missing SCEs and SCEs of another organization filtered out (one
+	 * org-scoped read): an SCE handed out here is the parent
+	 * SourceCodeEntry.releases resolves from, so it must be one the PR's
+	 * org may see.
 	 */
 	@DgsData(parentType = "PullRequest", field = "commitDetails")
 	public List<io.reliza.model.SourceCodeEntryData> commitDetails(
 			com.netflix.graphql.dgs.DgsDataFetchingEnvironment dfe) {
 		PullRequestData prd = dfe.getSource();
 		if (prd == null || prd.getCommits() == null) return List.of();
-		return prd.getCommits().stream()
-				.map(getSourceCodeEntryService::getSourceCodeEntryData)
-				.filter(java.util.Optional::isPresent)
-				.map(java.util.Optional::get)
-				.collect(java.util.stream.Collectors.toList());
+		return getSourceCodeEntryService.getReferenceableSceDataList(prd.getCommits(), prd.getOrg());
 	}
 
 	/**
@@ -355,11 +355,10 @@ public class PullRequestDataFetcher {
 		PullRequestData prd = dfe.getSource();
 		if (prd == null || prd.getCommits() == null) return List.of();
 		java.util.LinkedHashSet<UUID> rootUuids = new java.util.LinkedHashSet<>();
-		for (UUID sceUuid : prd.getCommits()) {
-			Optional<io.reliza.model.SourceCodeEntryData> osced =
-					getSourceCodeEntryService.getSourceCodeEntryData(sceUuid);
-			if (osced.isEmpty()) continue;
-			UUID leafAgentUuid = osced.get().getAgent();
+		// Only SCEs the PR's org may see, like commitDetails, so another org's agent is never followed.
+		for (SourceCodeEntryData sced
+				: getSourceCodeEntryService.getReferenceableSceDataList(prd.getCommits(), prd.getOrg())) {
+			UUID leafAgentUuid = sced.getAgent();
 			if (leafAgentUuid == null) continue;
 			Optional<io.reliza.model.AgentData> oad = agentService.getAgentData(leafAgentUuid);
 			if (oad.isEmpty()) continue;

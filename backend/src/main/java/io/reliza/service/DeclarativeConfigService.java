@@ -24,7 +24,10 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -73,7 +76,7 @@ import lombok.extern.slf4j.Slf4j;
 public class DeclarativeConfigService {
 
 	/** Ownership slice a spec describes; one kind per file. */
-	public enum DeclarativeKind { CATALOG, BRANCHES }
+	public enum DeclarativeKind { CATALOG, BRANCHES, BOARD, ROLE_PRESETS, API_KEYS }
 
 
 	@Autowired private ComponentService componentService;
@@ -82,6 +85,7 @@ public class DeclarativeConfigService {
 	@Autowired private VcsRepositoryService vcsRepositoryService;
 	@Autowired private SharedReleaseService sharedReleaseService;
 	@Autowired private GetOrganizationService getOrganizationService;
+	@Autowired private PlatformTransactionManager transactionManager;
 
 	// ------------------------------------------------------------------ spec DTOs
 
@@ -152,6 +156,8 @@ public class DeclarativeConfigService {
 		private Action action;
 		private List<String> fields = new LinkedList<>();
 		private String message;
+		/** What the change will leave behind that someone has to deal with; never a refusal. */
+		private List<String> warnings = new LinkedList<>();
 		static Change of(DeclarativeKind kind, String name, Action action, Collection<String> fields, String message) {
 			Change c = new Change(); c.kind = kind; c.name = name; c.action = action;
 			if (fields != null) c.fields = new LinkedList<>(fields); c.message = message; return c;
@@ -164,7 +170,7 @@ public class DeclarativeConfigService {
 		private String specHash;
 		private List<Change> changes = new LinkedList<>();
 		private int created; private int updated; private int unchanged; private int archived; private int errors;
-		void add(Change c) {
+		public void add(Change c) {
 			changes.add(c);
 			switch (c.action) {
 				case CREATE -> created++;
@@ -178,7 +184,7 @@ public class DeclarativeConfigService {
 
 	// ------------------------------------------------------------------ catalog
 
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public ApplyResult applyCatalog(UUID orgUuid, CatalogSpecDto spec, boolean dryRun, SourceDto source, WhoUpdated wu) throws RelizaException {
 		if (spec.getKind() != null && spec.getKind() != DeclarativeKind.CATALOG) {
 			throw new RelizaException("spec kind " + spec.getKind() + " cannot be applied as CATALOG");
@@ -195,11 +201,9 @@ public class DeclarativeConfigService {
 			if (!declared.add(c.getName())) { result.add(Change.of(DeclarativeKind.CATALOG, c.getName(), Action.ERROR, null, "declared more than once")); continue; }
 			try {
 				Optional<ComponentData> cur = existing.stream().filter(x -> c.getName().equals(x.getName())).findFirst();
-				if (cur.isEmpty()) {
-					result.add(createComponent(orgUuid, c, dryRun, prov, wu));
-				} else {
-					result.add(updateComponent(orgUuid, cur.get(), c, dryRun, prov, wu));
-				}
+				result.add(entry(dryRun, () -> cur.isEmpty()
+						? createComponent(orgUuid, c, dryRun, prov, wu)
+						: updateComponent(orgUuid, cur.get(), c, dryRun, prov, wu)));
 			} catch (RelizaException | RuntimeException e) {
 				log.error("Declarative catalog apply failed for component {}", c.getName(), e);
 				result.add(Change.of(DeclarativeKind.CATALOG, c.getName(), Action.ERROR, null, e.getMessage()));
@@ -228,7 +232,11 @@ public class DeclarativeConfigService {
 		CreateComponentDto.CreateComponentDtoBuilder b = CreateComponentDto.builder()
 				.name(c.getName()).organization(orgUuid).type(c.getType());
 		fields.add("name"); fields.add("type");
-		if (c.getKind() != null) { b.kind(c.getKind()); fields.add("kind"); }
+		if (c.getKind() != null) {
+			// Refused before a plan says CREATE: a dry run and the apply give the same answer (T-5).
+			ComponentService.refuseDocumentKind(c.getKind());
+			b.kind(c.getKind()); fields.add("kind");
+		}
 		if (c.getVersionSchema() != null) { b.versionSchema(c.getVersionSchema()); fields.add("versionSchema"); }
 		if (c.getMarketingVersionSchema() != null) { b.marketingVersionSchema(c.getMarketingVersionSchema()); fields.add("marketingVersionSchema"); }
 		if (c.getVersionType() != null) { b.versionType(c.getVersionType()); fields.add("versionType"); }
@@ -296,6 +304,47 @@ public class DeclarativeConfigService {
 		return Change.of(DeclarativeKind.CATALOG, c.getName(), Action.UPDATE, fields, null);
 	}
 
+	/** One entry's writes, which may refuse. */
+	@FunctionalInterface
+	interface EntryWrite {
+		Change run() throws RelizaException;
+	}
+
+	/** Carries an entry's refusal out of its transaction callback, which cannot throw it checked. */
+	private static final class EntryRefused extends RuntimeException {
+		private final RelizaException refusal;
+		EntryRefused(RelizaException refusal) { super(refusal); this.refusal = refusal; }
+	}
+
+	/**
+	 * Run one entry's writes in a transaction of their own (gaps §1.11), so the result's per-entry
+	 * contract holds: an entry that fails is one ERROR line and rolls back alone, the others land.
+	 *
+	 * <p>In the apply's own transaction that was not true. A RuntimeException from a callee bean
+	 * marks the shared transaction rollback-only; the loop caught it and carried on reporting
+	 * CREATE and UPDATE for entries that then never committed, and the caller got an
+	 * UnexpectedRollbackException instead of the result. A refusal outside the loop -- an unknown
+	 * org, a spec of the wrong kind, the prune after it -- rolls back the apply's own transaction,
+	 * while entries already committed stay, as their lines in the result say. A dry run writes
+	 * nothing and needs no transaction of its own.
+	 */
+	Change entry(boolean dryRun, EntryWrite write) throws RelizaException {
+		if (dryRun) return write.run();
+		TransactionTemplate tt = new TransactionTemplate(transactionManager);
+		tt.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		try {
+			return tt.execute(status -> {
+				try {
+					return write.run();
+				} catch (RelizaException e) {
+					throw new EntryRefused(e);
+				}
+			});
+		} catch (EntryRefused e) {
+			throw e.refusal;
+		}
+	}
+
 	public CatalogSpecDto exportCatalog(UUID orgUuid, List<String> names) {
 		CatalogSpecDto spec = new CatalogSpecDto();
 		spec.setAuthoritative(names == null || names.isEmpty());
@@ -323,7 +372,7 @@ public class DeclarativeConfigService {
 
 	// ------------------------------------------------------------------ branches
 
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public ApplyResult applyBranches(UUID orgUuid, BranchesSpecDto spec, boolean dryRun, SourceDto source, WhoUpdated wu) throws RelizaException {
 		if (spec.getKind() != null && spec.getKind() != DeclarativeKind.BRANCHES) {
 			throw new RelizaException("spec kind " + spec.getKind() + " cannot be applied as BRANCHES");
@@ -345,17 +394,15 @@ public class DeclarativeConfigService {
 			if (StringUtils.isBlank(bs.getName())) { result.add(Change.of(DeclarativeKind.BRANCHES, "", Action.ERROR, null, "branch name is required")); continue; }
 			if (!declared.add(bs.getName())) { result.add(Change.of(DeclarativeKind.BRANCHES, bs.getName(), Action.ERROR, null, "declared more than once")); continue; }
 			try {
-				Optional<Branch> ob = branchService.findBranchByName(cd.getUuid(), bs.getName());
-				if (ob.isEmpty()) {
-					result.add(createBranch(orgUuid, cd, bs, dryRun, prov, wu));
-				} else {
+				result.add(entry(dryRun, () -> {
+					Optional<Branch> ob = branchService.findBranchByName(cd.getUuid(), bs.getName());
+					if (ob.isEmpty()) return createBranch(orgUuid, cd, bs, dryRun, prov, wu);
 					BranchData bd = BranchData.branchDataFromDbRecord(ob.get());
 					if (bd.getStatus() == StatusEnum.ARCHIVED) {
-						result.add(Change.of(DeclarativeKind.BRANCHES, bs.getName(), Action.ERROR, null, "an archived branch with this name exists; unarchive it first"));
-					} else {
-						result.add(updateBranch(orgUuid, cd, bd, bs, dryRun, prov, wu));
+						return Change.of(DeclarativeKind.BRANCHES, bs.getName(), Action.ERROR, null, "an archived branch with this name exists; unarchive it first");
 					}
-				}
+					return updateBranch(orgUuid, cd, bd, bs, dryRun, prov, wu);
+				}));
 			} catch (RelizaException | RuntimeException e) {
 				log.error("Declarative branches apply failed for {} / {}", cd.getName(), bs.getName(), e);
 				result.add(Change.of(DeclarativeKind.BRANCHES, bs.getName(), Action.ERROR, null, e.getMessage()));
@@ -386,6 +433,8 @@ public class DeclarativeConfigService {
 		List<ChildComponent> deps = bs.getDependencies() == null ? null : resolveDependencies(orgUuid, bs.getDependencies());
 		if (deps != null) fields.add("dependencies");
 		if (bs.getDependencyPatterns() != null) fields.add("dependencyPatterns");
+		// Before the dry-run return, so a plan reports the refusal the apply would hit.
+		DependencyPatternService.validatePatterns(bs.getDependencyPatterns(), null);
 		if (dryRun) return Change.of(DeclarativeKind.BRANCHES, bs.getName(), Action.CREATE, fields, null);
 		Branch b = branchService.createBranch(bs.getName(), cd, bs.getType(), null, bs.getVcsBranch(), bs.getVersionSchema(), bs.getMarketingVersionSchema(), wu);
 		BranchDto.BranchDtoBuilder upd = BranchDto.builder().uuid(b.getUuid());
@@ -418,6 +467,7 @@ public class DeclarativeConfigService {
 			if (!sameDependencies(deps, cur.getDependencies())) { b.dependencies(deps); fields.add("dependencies"); }
 		}
 		if (bs.getDependencyPatterns() != null && (!samePatterns(bs.getDependencyPatterns(), cur.getDependencyPatterns()) || hasUnsetDefaults(cur.getDependencyPatterns()))) {
+			DependencyPatternService.validatePatterns(bs.getDependencyPatterns(), cur.getDependencyPatterns());
 			b.dependencyPatterns(withPatternUuids(bs.getDependencyPatterns(), cur.getDependencyPatterns())); fields.add("dependencyPatterns");
 		}
 		boolean provenanceStale = cur.getDeclarative() == null || !Objects.equals(cur.getDeclarative().getSpecHash(), prov.getSpecHash());
@@ -473,6 +523,15 @@ public class DeclarativeConfigService {
 		return componentService.listComponentDataByOrganization(orgUuid, ComponentType.COMPONENT, ComponentType.PRODUCT).stream()
 				.filter(cd -> cd.getStatus() == null || cd.getStatus() == StatusEnum.ACTIVE)
 				.collect(Collectors.toList());
+	}
+
+	/**
+	 * Every active component or product of the org carrying exactly this name. A list, so a caller
+	 * that must not guess -- a board naming its target -- can refuse a name that matches two.
+	 */
+	List<ComponentData> activeComponentsNamed(UUID orgUuid, String name) {
+		if (StringUtils.isBlank(name)) return List.of();
+		return activeComponents(orgUuid).stream().filter(cd -> name.equals(cd.getName())).toList();
 	}
 
 	private Optional<ComponentData> componentByName(UUID orgUuid, String name) {
@@ -575,7 +634,7 @@ public class DeclarativeConfigService {
 				.orElse(DeclarativePruneMode.LEAVE);
 	}
 
-	private static DeclarativeProvenance provenance(String specHash, SourceDto source) {
+	static DeclarativeProvenance provenance(String specHash, SourceDto source) {
 		DeclarativeProvenance.Source src = source == null ? null : new DeclarativeProvenance.Source(source.getRepo(), source.getPath(), source.getCommit());
 		return new DeclarativeProvenance(specHash, ZonedDateTime.now(), src);
 	}

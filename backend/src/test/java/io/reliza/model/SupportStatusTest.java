@@ -28,15 +28,15 @@ class SupportStatusTest {
 	}
 
 	/**
-	 * A FUTURE end-of-support derives UNKNOWN, not ACTIVELY_SUPPORTED. This is the defect
+	 * A FUTURE end-of-support derives WITHIN_SUPPORT_WINDOW, not ACTIVELY_SUPPORTED. This is the defect
 	 * this test previously pinned in place. A published horizon says only that the maintainer
 	 * declared one; it establishes nothing about whether anyone is maintaining the component
 	 * today, and asserting otherwise put a claim about a third party in ReARM's mouth.
 	 * ACTIVELY_SUPPORTED is now attested by a human (SupportData#levelOfSupport), never derived.
 	 */
 	@Test
-	void unknownWhenEosIsStillInFuture() {
-		assertEquals(SupportStatus.UNKNOWN,
+	void withinWindowWhenEosIsStillInFuture() {
+		assertEquals(SupportStatus.WITHIN_SUPPORT_WINDOW,
 				SupportStatus.derive(null, TODAY.plusYears(1), TODAY));
 	}
 
@@ -72,8 +72,8 @@ class SupportStatusTest {
 	}
 
 	@Test
-	void unknownWhenOnlyEogsDeclaredAndFuture() {
-		assertEquals(SupportStatus.UNKNOWN,
+	void withinWindowWhenOnlyEogsDeclaredAndFuture() {
+		assertEquals(SupportStatus.WITHIN_SUPPORT_WINDOW,
 				SupportStatus.derive(TODAY.plusYears(1), null, TODAY));
 	}
 

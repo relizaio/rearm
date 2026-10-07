@@ -33,6 +33,12 @@ public interface VcsRepositoryRepository extends CrudRepository<VcsRepository, U
 			value = VariableQueries.FIND_VCS_REPO_BY_ORG_AND_URI,
 			nativeQuery = true)
 	Optional<VcsRepository> findByOrgAndUri(String orgUuidAsString, String uri);
+
+	/** Oldest first; a List because two rows may differ only by case (see the query's docs). */
+	@Query(
+			value = VariableQueries.FIND_VCS_REPOS_BY_ORG_AND_URI_FOLDED,
+			nativeQuery = true)
+	List<VcsRepository> findByOrgAndUriFoldingCase(String orgUuidAsString, String uri);
 	
 	@Query(
 			value = VariableQueries.FIND_VCS_REPO_BY_ORG_AND_URI_INCLUDING_ARCHIVED,

@@ -109,6 +109,34 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private boolean adminDisabled;
 
+	/**
+	 * Bounds device-login sessions approved on this key: a session ends this many minutes after its
+	 * approval, refreshes included. Null means no bound but the 90-day cap. Direct use of the key's
+	 * secret is bounded by the secret's expiry instead, and a change applies to sessions approved
+	 * afterwards, not to open ones.
+	 */
+	@JsonProperty
+	private Integer sessionMaxMinutes;
+
+	/**
+	 * The name a declarative API_KEYS file knows this key by (task RD3-11): unique among the organization's live
+	 * keys. Null for a key made by hand that nobody has declared as a name.
+	 */
+	@JsonProperty
+	private String declaredName;
+
+	/** Provenance of the last declarative apply that wrote this key (task RD3-11); null when none has. */
+	@JsonProperty
+	private DeclarativeProvenance declarative;
+
+	/**
+	 * How long a secret minted for this key through the declarative mint lives, in days (task RD3-11): its
+	 * expiry is set that far ahead when it is minted. Null mints secrets that do not expire. Secrets minted
+	 * by hand take the expiry the person gives.
+	 */
+	@JsonProperty
+	private Integer secretExpiresDays;
+
 	/** FEDERATED rows only: the external repository this identity stands for, with its pinned ids. */
 	@JsonProperty
 	private FederatedIdentity federation;
