@@ -198,13 +198,15 @@
                          do not move.
 
                          HOW MANY SWITCHES SHOW IS NOT FIXED. Support is offered only when the
-                         organization publishes attestations, so this form shows one control or
-                         two and nothing below it may say "these two". -->
-                    <!-- ABSENT, not disabled, when the organization does not publish support
-                         attestations. A switch that cannot be moved is a question the operator
-                         has no way to answer; the organization setting is where that decision
-                         is made, and it is not made here. Operator decision 2026-09-22. -->
-                    <n-form-item v-if="orgSupportInjectionEnabled">
+                         server offers the option, so this form shows one control or two and
+                         nothing below it may say "these two". -->
+                    <!-- DISABLED WITH A HINT, not absent, when the organization does not publish
+                         support attestations: the reader sees that the option exists and where
+                         it is turned on. A disabled switch still sends null (the organization
+                         default), so the server refusal of an explicit true stays unreachable
+                         from here. Supersedes the 2026-09-22 "absent, not disabled" decision:
+                         SCORE-12 round 1 D-2 / round 2 ADR-2, operator input of 2026-10-07. -->
+                    <n-form-item v-if="orgSupportInjectionSupported">
                         <span style="display: inline-flex; align-items: center;">
                             Include support metadata:
                             <n-tooltip trigger="hover" style="max-width: 380px;">
@@ -216,16 +218,17 @@
                                 Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
                             </n-tooltip>
                         </span>
-                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"
+                            :disabled="!orgSupportInjectionEnabled" data-testid="export-include-support-metadata"/>
                     </n-form-item>
-                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one. The operator
-                         ruled that an organization which does not publish attestations gets no
-                         switch and no explanation -- the settings screen is where that is
-                         decided, and it is reachable. A backend that does not declare the
-                         setting at all is different: there is nothing the operator can go and
-                         change, so an unexplained missing control is just a missing control.
-                         This is the hint the "absent, not disabled" change removed without
-                         meaning to. -->
+                    <div v-if="orgSupportInjectionSupported && !orgSupportInjectionEnabled"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        Support disclosure is off for this organization. An organization admin turns it on in Organization Settings → Support disclosure export.
+                    </div>
+                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one above: a backend
+                         that does not declare the setting at all has nothing the operator can go
+                         and change, so the switch is absent and this says why. The two hints
+                         never show together. -->
                     <div v-if="!orgSupportInjectionSupported"
                         style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
                         This server does not offer the support-metadata disclosure yet, so that
@@ -5988,10 +5991,11 @@ async function exportSupportDocument () {
 }
 
 /**
- * SBOM readiness score of the export (SCORE-6). The variables are the export's own, mapped by
- * buildReleaseScoreVariables exactly as exportReleaseSbom maps them, so the score is of the
- * document Export gives. Each click mounts a fresh SbomScorePanel (sbomScoreRun is its key),
- * which runs the query, owns the 185 s abort and shows the report or the error in this dialog.
+ * SBOM readiness score of the export (SCORE-6). The content options are the export's own, mapped
+ * by buildReleaseScoreVariables exactly as exportReleaseSbom maps them; the two metadata switches
+ * are not sent, so the score follows the organization setting (SCORE-12 ADR-3). Each click
+ * mounts a fresh SbomScorePanel (sbomScoreRun is its key), which runs the query, owns the 185 s
+ * abort and shows the report or the error in this dialog.
  * The snapshot, the options-changed line and the disabled state live in useReleaseSbomScore.
  */
 const releaseSbomScoreDisabled: ComputedRef<boolean> = computed((): boolean =>
@@ -6005,9 +6009,6 @@ function currentReleaseScoreVariables (): Record<string, any> {
         selectedBomStructureType: selectedBomStructureType.value,
         selectedRebomType: selectedRebomType.value,
         computedExcludeCoverageTypes: computedExcludeCoverageTypes.value,
-        includeSupportMetadata: includeSupportMetadata.value,
-        includeInternalMetadata: includeInternalMetadata.value,
-        orgSupportInjectionEnabled: orgSupportInjectionEnabled.value,
         exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value,
         excludeFileComponents: excludeFileComponentsRequested.value
     })

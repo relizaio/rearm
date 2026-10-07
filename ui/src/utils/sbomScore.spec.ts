@@ -134,9 +134,6 @@ describe('buildReleaseScoreVariables', () => {
         selectedBomStructureType: 'FLAT',
         selectedRebomType: '',
         computedExcludeCoverageTypes: [],
-        includeSupportMetadata: false,
-        includeInternalMetadata: false,
-        orgSupportInjectionEnabled: false,
         exportMetadataArgsUnsupported: true,
         excludeFileComponents: false,
     }
@@ -157,7 +154,7 @@ describe('buildReleaseScoreVariables', () => {
         expect('mediaType' in v).toBe(false)
     })
 
-    it('maps a full form, metadata flags included when the server takes them', () => {
+    it('maps a full form, the two metadata flags null when the server takes them', () => {
         const v = buildReleaseScoreVariables({
             ...defaults,
             tldOnly: false,
@@ -165,10 +162,8 @@ describe('buildReleaseScoreVariables', () => {
             selectedBomStructureType: 'HIERARCHICAL',
             selectedRebomType: 'DELIVERABLE',
             computedExcludeCoverageTypes: ['DEV', 'TEST'],
-            includeSupportMetadata: true,
-            includeInternalMetadata: true,
-            orgSupportInjectionEnabled: true,
             exportMetadataArgsUnsupported: false,
+            excludeFileComponents: true,
         })
         expect(v).toEqual({
             release: 'r-1',
@@ -177,18 +172,41 @@ describe('buildReleaseScoreVariables', () => {
             structure: 'HIERARCHICAL',
             belongsTo: 'DELIVERABLE',
             excludeCoverageTypes: ['DEV', 'TEST'],
-            includeSupportMetadata: true,
-            includeInternalMetadata: true,
-            excludeFileComponents: null,
+            includeSupportMetadata: null,
+            includeInternalMetadata: null,
+            excludeFileComponents: true,
             profiles: ['cisa-2026', 'fda'],
         })
         expect('mediaType' in v).toBe(false)
     })
 
-    it('sends the support flag as null when the org does not offer it, as the export does', () => {
-        const v = buildReleaseScoreVariables({ ...defaults, exportMetadataArgsUnsupported: false, includeSupportMetadata: true })
-        expect(v.includeSupportMetadata).toBeNull()
-        expect(v.includeInternalMetadata).toBe(false)
+    // T-14 (SCORE-21, SCORE-12 ADR-3): the score has no metadata switches and follows the
+    // organization setting, so the modal's switches never reach it, whatever they and the org say.
+    it('sends both metadata flags as null for every org setting and switch value, file flag or not', () => {
+        for (const orgSupportInjectionEnabled of [false, true]) {
+            for (const includeSupportMetadata of [false, true]) {
+                for (const excludeFileComponents of [false, true]) {
+                    const form = { ...defaults, exportMetadataArgsUnsupported: false, excludeFileComponents,
+                        orgSupportInjectionEnabled, includeSupportMetadata, includeInternalMetadata: includeSupportMetadata }
+                    const v = buildReleaseScoreVariables(form as ReleaseScoreForm)
+                    const label = JSON.stringify(form)
+                    expect('includeSupportMetadata' in v, label).toBe(true)
+                    expect(v.includeSupportMetadata, label).toBeNull()
+                    expect('includeInternalMetadata' in v, label).toBe(true)
+                    expect(v.includeInternalMetadata, label).toBeNull()
+                    expect(v.excludeFileComponents, label).toBe(excludeFileComponents ? true : null)
+                }
+            }
+        }
+    })
+
+    it('sends neither metadata key when the server rejects the metadata arguments', () => {
+        for (const includeSupportMetadata of [false, true]) {
+            const form = { ...defaults, exportMetadataArgsUnsupported: true, orgSupportInjectionEnabled: true, includeSupportMetadata }
+            const v = buildReleaseScoreVariables(form as ReleaseScoreForm)
+            expect('includeSupportMetadata' in v).toBe(false)
+            expect('includeInternalMetadata' in v).toBe(false)
+        }
     })
 
     it('returns a fresh profiles array each time', () => {
