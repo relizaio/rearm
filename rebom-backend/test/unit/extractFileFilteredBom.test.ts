@@ -255,6 +255,89 @@ describe('extractFileFilteredBom', () => {
         });
     });
 
+    describe('what is kept keeps its order (ADR-4, T-8)', () => {
+        const lib = (ref: string, components?: any[]): any =>
+            components ? { type: 'library', name: ref, 'bom-ref': ref, components } : { type: 'library', name: ref, 'bom-ref': ref };
+        const file = (ref: string, components?: any[]): any =>
+            components ? { type: 'file', name: ref, 'bom-ref': ref, components } : { type: 'file', name: ref, 'bom-ref': ref };
+        // The component tree as refs: a leaf is its ref, a parent is [ref, children].
+        const shape = (components: any[]): any[] =>
+            components.map((c: any) => Array.isArray(c.components) ? [c['bom-ref'], shape(c.components)] : c['bom-ref']);
+
+        it('lifts several components out of one file, and out of files nested in it, in their own order', () => {
+            const input = graphBom();
+            input.components = [
+                lib('A'),
+                // one dropped file holding a run of components, a nested dropped file, and
+                // a kept parent whose own children include another dropped file
+                file('F1', [
+                    lib('X1'),
+                    lib('X2'),
+                    file('G1', [lib('Y1'), lib('Y2'), lib('Y3')]),
+                    lib('X3'),
+                    lib('K', [lib('K1'), file('G2', [lib('Z1'), lib('Z2')]), lib('K2')]),
+                    file('G3')
+                ]),
+                lib('B'),
+                // two dropped files in a row, then an empty one
+                file('F2', [lib('U1'), lib('U2')]),
+                file('F3', [lib('V1'), lib('V2')]),
+                file('F4', []),
+                lib('C')
+            ];
+            const { bom, excludedCount } = extractFileFilteredBom(input);
+
+            expect(excludedCount).toBe(7);
+            expect(shape(bom.components)).toStrictEqual([
+                'A',
+                'X1', 'X2', 'Y1', 'Y2', 'Y3', 'X3',
+                ['K', ['K1', 'Z1', 'Z2', 'K2']],
+                'B',
+                'U1', 'U2', 'V1', 'V2',
+                'C'
+            ]);
+        });
+
+        it('keeps the order of every list it repairs, and splices in place, depth first', () => {
+            const input = graphBom();
+            // F1 stands for F2's targets, then B; X splices F1 between N and P.
+            depOf(input, 'F1').dependsOn = ['F2', 'B'];
+            depOf(input, 'F2').dependsOn = ['C', 'D'];
+            input.dependencies.push({ ref: 'X', dependsOn: ['N', 'F1', 'P'], provides: ['C', 'F1', 'B', 'A'] });
+            input.compositions = [
+                { aggregate: 'complete', assemblies: ['C', 'F1', 'A', 'B'], dependencies: ['P', 'F2', ROOT, 'A'] },
+                { aggregate: 'incomplete', assemblies: ['B', 'A'] }
+            ];
+            input.vulnerabilities = [
+                { id: 'V-2', affects: [{ ref: 'C' }, { ref: 'F3' }, { ref: 'A' }, { ref: 'B' }] },
+                { id: 'V-1', affects: [{ ref: 'F1' }] },
+                { id: 'V-3', affects: [{ ref: 'B' }, { ref: 'A' }] }
+            ];
+            const note = (text: string, subjects: string[]): any =>
+                ({ subjects, annotator: { organization: { name: 'x' } }, timestamp: '2026-10-07T00:00:00Z', text });
+            input.annotations = [note('two', ['C', 'F2', 'A']), note('gone', ['F1']), note('one', ['B', 'A'])];
+            const { bom } = extractFileFilteredBom(input);
+
+            expect(bom.dependencies).toStrictEqual([
+                { ref: ROOT, dependsOn: ['A', 'C', 'D', 'P'] },
+                { ref: 'A', dependsOn: ['C', 'D', 'B'] },
+                { ref: 'B', dependsOn: [] },
+                { ref: 'C', dependsOn: ['D'] },
+                { ref: 'P', dependsOn: ['N'] },
+                { ref: 'X', dependsOn: ['N', 'C', 'D', 'B', 'P'], provides: ['C', 'B', 'A'] }
+            ]);
+            expect(bom.compositions).toStrictEqual([
+                { aggregate: 'complete', assemblies: ['C', 'A', 'B'], dependencies: ['P', ROOT, 'A'] },
+                { aggregate: 'incomplete', assemblies: ['B', 'A'] }
+            ]);
+            expect(bom.vulnerabilities).toStrictEqual([
+                { id: 'V-2', affects: [{ ref: 'C' }, { ref: 'A' }, { ref: 'B' }] },
+                { id: 'V-3', affects: [{ ref: 'B' }, { ref: 'A' }] }
+            ]);
+            expect(bom.annotations).toStrictEqual([note('two', ['C', 'A']), note('one', ['B', 'A'])]);
+        });
+    });
+
     describe('compositions, vulnerabilities and annotations (T-2)', () => {
         function withRefs(): any {
             const bom = graphBom();
