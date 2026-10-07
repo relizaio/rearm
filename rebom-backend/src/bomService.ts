@@ -49,6 +49,7 @@ export {
   overrideRootComponent, // @deprecated - use augmentBomWithComponentContext
   extractTldFromBom,
   extractDevFilteredBom,
+  extractFileFilteredBom,
   establishPurl,
   computeRootDepIndex,
   createRebomToolObject,

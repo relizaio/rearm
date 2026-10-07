@@ -163,6 +163,194 @@ export function extractDevFilteredBom(bom: any): any {
   };
 }
 
+/**
+ * Metadata property a file-filtered merged BOM carries: how many components of type
+ * `file` were left out of it. Absent means the document was not filtered; "0" means it
+ * was filtered and nothing matched. Kept outside the reliza:support:* namespace, which
+ * ReARM strips from every export.
+ */
+export const FILE_COMPONENTS_EXCLUDED_PROPERTY = 'reliza:export:fileComponentsExcluded'
+
+/** The CycloneDX component type the file filter leaves out (SCORE-10 3.2's definition, exactly). */
+export const CDX_COMPONENT_TYPE_FILE = 'file'
+
+export type FileFilterResult = {
+  bom: any,
+  excludedCount: number
+}
+
+function isFileComponent(component: any): boolean {
+  return component?.type === CDX_COMPONENT_TYPE_FILE
+}
+
+/**
+ * Drops the file components of a list, walking nested components. A non-file component
+ * nested under a dropped file takes the file's place in the parent list, so filtering
+ * never removes anything but files. Collects the dropped bom-refs into `dropped`.
+ */
+function dropFileComponents(components: any[], dropped: Set<string>, rootRef: string | undefined): { kept: any[], count: number } {
+  const kept: any[] = []
+  let count = 0
+  for (const component of components) {
+    const ref = component?.['bom-ref']
+    const nested = Array.isArray(component?.components) ? dropFileComponents(component.components, dropped, rootRef) : null
+    if (nested) count += nested.count
+    if (isFileComponent(component) && ref !== rootRef) {
+      count++
+      if (ref) dropped.add(ref)
+      if (nested) kept.push(...nested.kept)
+    } else if (nested) {
+      kept.push({ ...component, components: nested.kept })
+    } else {
+      kept.push(component)
+    }
+  }
+  return { kept, count }
+}
+
+/**
+ * The non-dropped refs a dropped ref stood for in the graph: what its own entry depended
+ * on, following further dropped refs transitively, first-seen order. A cycle through
+ * dropped refs terminates on the visited set. Only complete answers are memoised (one per
+ * top-level call), so a partial result from inside a cycle is never reused.
+ */
+function spliceTargets(ref: string, dropped: Set<string>, edges: Map<string, string[]>, memo: Map<string, string[]>): string[] {
+  const known = memo.get(ref)
+  if (known) return known
+  const out: string[] = []
+  const visited = new Set<string>([ref])
+  const walk = (from: string) => {
+    for (const next of edges.get(from) || []) {
+      if (!dropped.has(next)) {
+        out.push(next)
+      } else if (memo.has(next)) {
+        out.push(...memo.get(next)!)
+      } else if (!visited.has(next)) {
+        visited.add(next)
+        walk(next)
+      }
+    }
+  }
+  walk(ref)
+  const unique = Array.from(new Set(out))
+  memo.set(ref, unique)
+  return unique
+}
+
+function withoutDropped(refs: any, dropped: Set<string>): any {
+  return Array.isArray(refs) ? refs.filter((r: any) => !dropped.has(r)) : refs
+}
+
+function hadRefs(refs: any): boolean {
+  return Array.isArray(refs) && refs.length > 0
+}
+
+function isEmptyList(refs: any): boolean {
+  return !Array.isArray(refs) || refs.length === 0
+}
+
+/**
+ * Leaves the CycloneDX components of type `file` out of a BOM (SCORE-11), repairing every
+ * reference to them so the document stays consistent:
+ * - dependencies: a dropped component's own entry goes; in every other entry a dropped
+ *   ref is replaced by the non-file refs it depended on (transitively), so code reached
+ *   only through a file stays reachable from what depended on the file; `provides` is
+ *   filtered without splicing;
+ * - compositions: dropped refs leave `assemblies` and `dependencies`; an entry the filter
+ *   emptied (and that names no vulnerabilities) goes; `aggregate` is unchanged;
+ * - vulnerabilities[].affects and annotations[].subjects: dropped refs go, and an entry
+ *   the filter emptied goes.
+ * `metadata.component` is never dropped, kept components are neither changed nor
+ * re-ordered. Writes FILE_COMPONENTS_EXCLUDED_PROPERTY into metadata.properties: the
+ * number left out here plus `inheritedCount` (what the inputs of a merge had already
+ * left out), replacing a value already present so the document carries exactly one.
+ */
+export function extractFileFilteredBom(bom: any, inheritedCount: number = 0): FileFilterResult {
+  const rootRef: string | undefined = bom?.metadata?.component?.['bom-ref']
+  const dropped = new Set<string>()
+  const { kept, count } = Array.isArray(bom?.components)
+    ? dropFileComponents(bom.components, dropped, rootRef)
+    : { kept: bom?.components, count: 0 }
+  logger.info(`File filter: ${count} file components left out, ${Array.isArray(kept) ? kept.length : 0} kept`)
+
+  const out: any = { ...bom }
+  if (bom?.components !== undefined) out.components = kept
+
+  if (Array.isArray(bom?.dependencies)) {
+    const edges = new Map<string, string[]>()
+    for (const dep of bom.dependencies) {
+      if (dep?.ref && Array.isArray(dep.dependsOn)) edges.set(dep.ref, dep.dependsOn)
+    }
+    const memo = new Map<string, string[]>()
+    out.dependencies = bom.dependencies
+      .filter((dep: any) => !dropped.has(dep?.ref))
+      .map((dep: any) => {
+        if (!dropped.size) return dep
+        const repaired: any = { ...dep }
+        if (Array.isArray(dep.dependsOn)) {
+          const refs: string[] = []
+          for (const r of dep.dependsOn) {
+            if (dropped.has(r)) refs.push(...spliceTargets(r, dropped, edges, memo))
+            else refs.push(r)
+          }
+          repaired.dependsOn = Array.from(new Set(refs)).filter(r => r !== dep.ref)
+        }
+        if (Array.isArray(dep.provides)) repaired.provides = withoutDropped(dep.provides, dropped)
+        return repaired
+      })
+  }
+
+  if (Array.isArray(bom?.compositions) && dropped.size) {
+    out.compositions = bom.compositions
+      .map((c: any) => {
+        const next = { ...c }
+        if (Array.isArray(c.assemblies)) next.assemblies = withoutDropped(c.assemblies, dropped)
+        if (Array.isArray(c.dependencies)) next.dependencies = withoutDropped(c.dependencies, dropped)
+        return next
+      })
+      .filter((c: any, i: number) => {
+        const before = bom.compositions[i]
+        const emptiedByFilter = (hadRefs(before.assemblies) || hadRefs(before.dependencies))
+          && isEmptyList(c.assemblies) && isEmptyList(c.dependencies)
+        return !(emptiedByFilter && isEmptyList(c.vulnerabilities))
+      })
+  }
+
+  if (Array.isArray(bom?.vulnerabilities) && dropped.size) {
+    out.vulnerabilities = bom.vulnerabilities
+      .map((v: any) => Array.isArray(v.affects)
+        ? { ...v, affects: v.affects.filter((a: any) => !dropped.has(a?.ref)) }
+        : v)
+      .filter((v: any, i: number) => !(hadRefs(bom.vulnerabilities[i].affects) && isEmptyList(v.affects)))
+  }
+
+  if (Array.isArray(bom?.annotations) && dropped.size) {
+    out.annotations = bom.annotations
+      .map((a: any) => Array.isArray(a.subjects) ? { ...a, subjects: withoutDropped(a.subjects, dropped) } : a)
+      .filter((a: any, i: number) => !(hadRefs(bom.annotations[i].subjects) && isEmptyList(a.subjects)))
+  }
+
+  const excludedCount = count + inheritedCount
+  const metadata = { ...(bom?.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== FILE_COMPONENTS_EXCLUDED_PROPERTY)
+    : []
+  properties.push({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: String(excludedCount) })
+  metadata.properties = properties
+  out.metadata = metadata
+
+  return { bom: out, excludedCount }
+}
+
+/** The file-component count a BOM says was already left out of it, 0 when it says nothing. */
+export function fileComponentsExcludedOf(bom: any): number {
+  const props = bom?.metadata?.properties
+  if (!Array.isArray(props)) return 0
+  const prop = props.find((p: any) => p?.name === FILE_COMPONENTS_EXCLUDED_PROPERTY)
+  const n = prop ? parseInt(prop.value, 10) : 0
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {
   let purlStr = rebomOverride.purl
   if (!purlStr) {
