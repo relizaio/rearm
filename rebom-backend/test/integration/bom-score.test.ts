@@ -134,6 +134,31 @@ describe.skipIf(process.arch !== 'x64')('scoreBomProbe with the real rearm CLI',
         expect(second === first).toBe(true);
     });
 
+    // T-3 and T-4 (SCORE-22 design 4): fixtures whose result differs between the
+    // engine before SCORE-10/SCORE-20 and the pinned one, so an old pin fails here.
+    it('T-3 fda support checks skip the non-package component types', async () => {
+        const report = JSON.parse(await scored(fixture('full.types.cdx.json'), ['fda']));
+        expect(report.engine.version.startsWith('2026-10-sbom-score.')).toBe(true);
+        expect(report.input.components).toBe(6);
+        expect(report.input.componentsSkipped).toBe(0);
+        expect(report.profiles[0].key).toBe('fda');
+        const checks = report.profiles[0].checks;
+        for (const id of ['fda.component.support-level', 'fda.component.end-of-support']) {
+            const check = checks.find((c: any) => c.id === id);
+            expect(check, id).toBeDefined();
+            expect(check.componentsSkipped).toBe(2);
+            expect(check.skippedTypes).toEqual(['cryptographic-asset', 'file']);
+        }
+    });
+
+    it('T-4 dependency checks fail when the root declares no direct dependency', async () => {
+        const report = JSON.parse(await scored(fixture('root-no-deps.cdx.json'), ['cisa-2026', 'ntia-2021']));
+        const status = (profile: string, id: string) =>
+            report.profiles.find((p: any) => p.key === profile).checks.find((c: any) => c.id === id).status;
+        expect(status('cisa-2026', 'cisa-2026.component-dependency-relationship')).toBe('FAIL');
+        expect(status('ntia-2021', 'ntia-2021.dependency-relationship')).toBe('FAIL');
+    });
+
     it('I-7 answers CLI_UNAVAILABLE when no rearm is on PATH', async () => {
         const emptyDir = await fs.promises.mkdtemp(path.join(os.tmpdir(), 'rebom-score-nopath-'));
         const savedPath = process.env.PATH;
