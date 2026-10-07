@@ -71,6 +71,8 @@ import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.ComponentLockService;
+import io.reliza.service.ComponentLockService.LockedOperation;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
@@ -119,6 +121,9 @@ public class OssReleaseService {
 	
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private ComponentLockService componentLockService;
 
 	@Autowired
 	private GetOrganizationService getOrganizationService;
@@ -604,6 +609,14 @@ public class OssReleaseService {
 	 */
 	@Transactional
 	public Release updateRelease (ReleaseDto releaseDto, UpdateReleaseStrength strength, WhoUpdated wu) throws RelizaException {
+		// Content changes are refused while locked; the lifecycle is not, deliberately. A locked
+		// release can still be rejected or cancelled -- a lock stops work being built on an
+		// unresolved problem, it does not trap a release in place.
+		if (null != releaseDto.getUuid()) {
+			sharedReleaseService.getReleaseData(releaseDto.getUuid()).ifPresent(existing ->
+				componentLockService.assertUnlocked(existing.getComponent(), existing.getBranch(),
+						LockedOperation.RELEASE_CONTENT));
+		}
 		Release r = null;
 		// locate and lock release in db
 		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseDto.getUuid());
@@ -940,14 +953,20 @@ public class OssReleaseService {
 	
 	@Transactional
 	private void processReleaseLifecycleEvents (ReleaseData rData, ReleaseLifecycle curLifecycle, ReleaseLifecycle oldLifecycle) {
-		if (curLifecycle == ReleaseLifecycle.DRAFT && oldLifecycle != ReleaseLifecycle.DRAFT) {
+		// Notify on EVERY real transition. The previous chain notified only on DRAFT / ASSEMBLED /
+		// CANCELLED / REJECTED, so a subscription to RELEASE_LIFECYCLE_CHANGED validated, saved, and
+		// then never fired for READY_TO_SHIP, GENERAL_AVAILABILITY and every end-of-life stage.
+		//
+		// The old != cur guard is deliberate: the previous chain carried it only on the DRAFT arm,
+		// so re-saving an already-CANCELLED (or REJECTED, or ASSEMBLED) release re-announced a
+		// transition that had not happened.
+		if (oldLifecycle != curLifecycle) {
 			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.CANCELLED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.REJECTED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
-		} else if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
-			notifyLifecycleChanged(rData, oldLifecycle, curLifecycle);
+		}
+		// ASSEMBLED alone drives product auto-integration. Deliberately NOT folded into the notify
+		// branch above: it is state machinery, not notification, and must keep firing on exactly
+		// the condition it always did -- including a re-save of an already ASSEMBLED release.
+		if (curLifecycle == ReleaseLifecycle.ASSEMBLED) {
 			autoIntegrateProducts(rData);
 		}
 	}
@@ -1793,6 +1812,10 @@ public class OssReleaseService {
 			}
 		}
 		if (null == releaseDto.getComponent()) throw new IllegalStateException("Component or Product is required on release creation");
+		// A locked component or branch takes no new releases. Checked here rather than in the
+		// fetchers because four of them create releases and a lock one path forgets is not a lock.
+		componentLockService.assertUnlocked(releaseDto.getComponent(), releaseDto.getBranch(),
+				LockedOperation.RELEASE_CREATION);
 		// Whether this create makes a NEW release or completes an existing one (rebuild / PENDING)
 		// decides how the references are checked.
 		Optional<VersionAssignment> ova = versionAssignmentService.getVersionAssignment(
