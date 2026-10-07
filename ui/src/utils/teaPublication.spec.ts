@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import {
     teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
+    teaActErrorText, TEA_ACT_GATEWAY_TEXT,
 } from './teaPublication'
 
 // TEA publications (task TEA-5, design 4.10 tests 54 to 57): the release page's pure helpers.
@@ -261,5 +262,30 @@ describe('editionPermissionFunctions (PUBLISH_EXTERNALLY only where TEA is serve
         const all = ['RESOURCE', 'ARTIFACT_DOWNLOAD', 'PUBLISH_EXTERNALLY', 'AGENT']
         expect(editionPermissionFunctions(all, 'SAAS')).toEqual(all)
         expect(editionPermissionFunctions(all, 'OSS')).toEqual(['RESOURCE', 'ARTIFACT_DOWNLOAD', 'AGENT'])
+    })
+})
+
+describe('teaActErrorText (round 4, 95)', () => {
+    const IN_PROGRESS = 'Release shop-api 1.4.0 (r-1): another publish or hide of this release is in progress on this '
+        + 'or another ReARM instance; it did not finish within 30 seconds; repeat the act once it has finished'
+
+    it('a proxy that gave up answers the gateway text', () => {
+        for (const statusCode of [502, 503, 504]) {
+            expect(teaActErrorText({ message: 'whatever', networkError: { statusCode } }), String(statusCode))
+                .toBe(TEA_ACT_GATEWAY_TEXT)
+        }
+        expect(teaActErrorText({ message: 'Response not successful: Received status code 504' })).toBe(TEA_ACT_GATEWAY_TEXT)
+        expect(teaActErrorText({ message: 'Response not successful: Received status code 502' })).toBe(TEA_ACT_GATEWAY_TEXT)
+        expect(teaActErrorText({ message: 'Failed to fetch' })).toBe(TEA_ACT_GATEWAY_TEXT)
+        expect(TEA_ACT_GATEWAY_TEXT).toContain('Reload the release page in a minute to see the result; repeating the act is safe.')
+    })
+
+    it('a GraphQL error keeps the server message: PUBLISH_IN_PROGRESS unchanged, a known prefix stripped', () => {
+        expect(teaActErrorText({ message: IN_PROGRESS, graphQLErrors: [{ message: IN_PROGRESS }] })).toBe(IN_PROGRESS)
+        expect(teaActErrorText({ message: 'Rebom error: merge failed' })).toBe('merge failed')
+        expect(teaActErrorText({ message: 'Response not successful: Received status code 500' }))
+            .toBe('Response not successful: Received status code 500')
+        expect(teaActErrorText({ message: 'x', networkError: { statusCode: 400 } })).toBe('x')
+        expect(teaActErrorText({ message: 'server error', networkError: { statusCode: 500 } })).toBe('server error')
     })
 })

@@ -1,6 +1,7 @@
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
+import { parseGraphQLError } from './graphqlErrorText'
 
 function translatePermissionName(type: string): string {
     switch (type) {
@@ -131,16 +132,6 @@ function isAdmin (org : string, myUser : any ) : boolean {
 }
 
 
-function parseGraphQLError (err: string): string {
-    const knownPrefixes = ['BOM processing failed: ', 'BOM validation failed: ', 'Rebom error: ']
-    let cleaned = err
-    for (const prefix of knownPrefixes) {
-        if (cleaned.startsWith(prefix)) {
-            cleaned = cleaned.substring(prefix.length)
-        }
-    }
-    return cleaned
-}
 
 function extractGraphQLErrorMessage (error: any): string {
     if (!error) return 'Unknown error'

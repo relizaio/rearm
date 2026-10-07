@@ -102,7 +102,7 @@ A publish is refused, with the reason, when:
 - the component resolves to no single profile (a conflict between perspectives), or its profile has publishing DISABLED;
 - the release or its component is archived, or the release has no SBOM to aggregate;
 - the caller lacks the Publish Externally (TEA) permission on the release's component. Users and RBAC (FREEFORM or USER) API keys can hold it; organization admins have it implicitly;
-- another publish or hide of the same release is still running on another ReARM instance after five minutes of waiting; the act can simply be repeated.
+- another publish or hide of the same release is still running, on this or another ReARM instance, after 30 seconds of waiting (five minutes for automatic publication); the act can simply be repeated once it has finished.
 
 ### Re-publish and hide
 
@@ -111,6 +111,8 @@ Re-publish regenerates the aggregated SBOM and writes a new collection version o
 Visibility is live, content is frozen: the profile's visibility (PRIVATE or PUBLIC) and publishing setting are applied when TEA is read, so changing them changes who can read what is already published, while the content of each collection version stays as it was published.
 
 A published release whose lifecycle falls below ASSEMBLED (cancelled, rejected, pending, draft) is concealed on TEA while it stays there, without a hide; it is served again once it is back at ASSEMBLED or beyond.
+
+A publish of a large product can outlast the web proxy's limit; the page then reports a gateway error while the act completes on the server. Reload the release page to see the result; repeating the act is safe, because a publish of what is already published answers that it is already published or unchanged, and a hide of a hidden release changes nothing.
 
 ### Products
 

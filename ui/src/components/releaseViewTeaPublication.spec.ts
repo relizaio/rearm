@@ -24,7 +24,8 @@ const template = code.slice(0, code.indexOf('<script'))
 describe('ReleaseView TEA publication', () => {
     it('imports the helpers', () => {
         const helpers = ['teaPublishConfirm', 'teaHideConfirm', 'teaPublicUrlText', 'teaPublishSummary', 'teaCollectionRows',
-            'teaEntryRows', 'teaPublicationBanner', 'teaPublicationHistoryText', 'teaConcealedText', 'teaPublishedWithText']
+            'teaEntryRows', 'teaPublicationBanner', 'teaPublicationHistoryText', 'teaConcealedText', 'teaPublishedWithText',
+            'teaActErrorText']
         const imp = source.match(/import\s+\{([^}]*)\}\s+from\s+'@\/utils\/teaPublication'/)
         expect(imp).not.toBeNull()
         for (const h of helpers) expect(imp![1], h).toMatch(new RegExp('\\b' + h + '\\b'))
@@ -71,6 +72,16 @@ describe('ReleaseView TEA publication', () => {
         const block = fields.slice(0, fields.indexOf('`', fields.indexOf('`') + 1))
         expect(block).toContain('concealedBecause')
         expect(block).toContain('cascadeOfLabel')
+    })
+
+    it('the publish and hide catch blocks say what teaActErrorText says, then reload the section (round 4, 95)', () => {
+        for (const fn of ['async function runTeaPublish', 'async function hideOnTea']) {
+            const start = code.indexOf(fn)
+            expect(start, fn).toBeGreaterThan(0)
+            const body = code.slice(start, code.indexOf('\n}\n', start))
+            expect(body, fn).toMatch(/catch \(err: any\) \{\s*Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\}\s*await loadTeaPublication\(\)/)
+            expect(body, fn).not.toContain('parseGraphQLError')
+        }
     })
 
     it('has a TEA_PUBLICATION branch in the History renderer', () => {

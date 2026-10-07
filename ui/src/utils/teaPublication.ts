@@ -3,6 +3,7 @@
 // the collection and entry rows, the History text of a TEA_PUBLICATION event. Kept out of
 // ReleaseView.vue, with no Vue import, so teaPublication.spec.ts runs it.
 
+import { parseGraphQLError } from './graphqlErrorText'
 import { teaSourceLabel } from './teaProfile'
 
 /** What the confirmation names: the release, and the perspective names a profile source may point at. */
@@ -298,4 +299,23 @@ export function teaPublicationHistoryText (row: any, view?: any): string {
     case 'REMOVED': return 'Hidden from TEA'
     default: return [row?.rua, row?.newValue].filter(Boolean).join(' ')
     }
+}
+
+/** What the error dialog says when a TEA act's answer never arrived (round 4, T-9 point 6). */
+export const TEA_ACT_GATEWAY_TEXT = 'The server is still working on this act and will finish it on its own. '
+    + 'Reload the release page in a minute to see the result; repeating the act is safe.'
+
+/**
+ * The error dialog's text for a failed publish, re-publish or hide. A proxy that gave up (502,
+ * 503 or 504) or a fetch that failed outright carries no GraphQL error: the act may still be
+ * running on the server, so the text says so and that repeating it is safe. Anything else is
+ * the server's message (PUBLISH_IN_PROGRESS among them), cleaned as every other dialog cleans it.
+ * Part 6's UI (TEA-13) reuses this rather than a second string.
+ */
+export function teaActErrorText (err: any): string {
+    const status = err?.networkError?.statusCode ?? err?.networkError?.status
+    if (status === 502 || status === 503 || status === 504) return TEA_ACT_GATEWAY_TEXT
+    const message = String(err?.message ?? '')
+    if (/status code 50[234]\b/.test(message) || /Failed to fetch/.test(message)) return TEA_ACT_GATEWAY_TEXT
+    return parseGraphQLError(message)
 }

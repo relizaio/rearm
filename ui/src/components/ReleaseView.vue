@@ -2174,7 +2174,7 @@ import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
-    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText } from '@/utils/teaPublication'
+    teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
@@ -4081,7 +4081,7 @@ async function runTeaPublish (mutation: any, field: string) {
         })
         await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire('Error!', teaActErrorText(err), 'error')
     }
     await loadTeaPublication()
 }
@@ -4102,7 +4102,7 @@ async function hideOnTea () {
         })
         await Swal.fire({ title: 'TEA', text: 'Hidden from TEA.', icon: 'success' })
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire('Error!', teaActErrorText(err), 'error')
     }
     await loadTeaPublication()
 }
