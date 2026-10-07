@@ -141,8 +141,7 @@ public class FindingChangeEventEmitIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID releaseUuid = createRelease(org, component, branch, ReleaseLifecycle.ASSEMBLED, "1.0.0");
 
 		// rev0: first scan -- live metrics column is null, so NO audit row and NO events.
@@ -177,8 +176,7 @@ public class FindingChangeEventEmitIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID releaseUuid = createRelease(org, component, branch, ReleaseLifecycle.CANCELLED, "9.9.9");
 
 		// Establish a non-null baseline, then a re-scan that WOULD emit APPEARED on a live release.
@@ -201,8 +199,7 @@ public class FindingChangeEventEmitIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID releaseUuid = createRelease(org, component, branch, ReleaseLifecycle.ASSEMBLED, "1.0.0");
 
 		// rev0 baseline (null live metrics -> no audit, no emit).
@@ -257,8 +254,7 @@ public class FindingChangeEventEmitIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID releaseUuid = createRelease(org, component, branch, ReleaseLifecycle.ASSEMBLED, "1.0.0");
 
 		// rev0 baseline committed normally so the next save would WANT to emit APPEARED.

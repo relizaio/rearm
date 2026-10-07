@@ -14,6 +14,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -542,6 +543,26 @@ public class ApiKeyService {
 			throw new RelizaException("This key already has " + ApiKeyData.MAX_SECRETS + " secrets; regenerate or retire one instead of adding");
 		}
 		int slot = list.stream().anyMatch(x -> x.getSlot() == 1) ? 2 : 1;
+		return addSecret(ak, akd, list, slot, expiresDate, wu);
+	}
+
+	/**
+	 * Add a secret in the slot the caller names (task RD3-11): a declarative mint of slot 2 on a key with no
+	 * secret yet must not land in slot 1. Returns the cleartext once; refused when the slot is taken.
+	 */
+	public String addApiKeySecret(UUID keyUuid, int slot, ZonedDateTime expiresDate, WhoUpdated wu) throws RelizaException {
+		if (slot < 1 || slot > ApiKeyData.MAX_SECRETS) throw new RelizaException("A key's secret slot is 1 or " + ApiKeyData.MAX_SECRETS);
+		ApiKey ak = getApiKey(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		List<ApiKeySecret> list = new LinkedList<>(akd.effectiveSecrets(ak.getApiKey()));
+		if (list.stream().anyMatch(x -> x.getSlot() == slot)) {
+			throw new RelizaException("This key already has a secret in slot " + slot + "; regenerate it instead");
+		}
+		return addSecret(ak, akd, list, slot, expiresDate, wu);
+	}
+
+	private String addSecret(ApiKey ak, ApiKeyData akd, List<ApiKeySecret> list, int slot, ZonedDateTime expiresDate,
+			WhoUpdated wu) {
 		String cleartext = newSecretString();
 		list.add(new ApiKeySecret(slot, hashSecret(cleartext), true, ZonedDateTime.now(), null, expiresDate));
 		list.sort((a, b) -> Integer.compare(a.getSlot(), b.getSlot()));
@@ -549,7 +570,7 @@ public class ApiKeyService {
 		akd.setVersion(akd.getVersion() + 1);
 		mirrorPrimary(ak, akd);
 		saveApiKey(ak, Utils.dataToRecord(akd), wu);
-		invalidateVerificationCacheForKey(keyUuid);
+		invalidateVerificationCacheForKey(ak.getUuid());
 		return cleartext;
 	}
 
@@ -696,6 +717,25 @@ public class ApiKeyService {
 	}
 
 	/**
+	 * The device-login session bound of a key (task RD3-7): 1 to 129600 minutes, or null for none.
+	 * Only keys that can back a device login take it. The caller is gated in the ws layer like notes.
+	 */
+	@Transactional
+	public ApiKeyDto setSessionMaxMinutesOnApiKey(UUID keyUuid, Integer sessionMaxMinutes, WhoUpdated wu) throws RelizaException {
+		ApiKey ak = getApiKey(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.USER && ak.getObjectType() != ApiTypeEnum.FREEFORM) {
+			throw new RelizaException("Only personal and Free Form keys back device-login sessions");
+		}
+		if (!io.reliza.common.CliSessionCodes.isValidSessionMinutes(sessionMaxMinutes)) {
+			throw new RelizaException("sessionMaxMinutes is 1 to " + io.reliza.common.CliSessionCodes.MAX_SESSION_MINUTES
+					+ " minutes, or empty for no bound");
+		}
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.setSessionMaxMinutes(sessionMaxMinutes);
+		return ApiKeyDto.fromApiKey(saveApiKey(ak, Utils.dataToRecord(akd), wu));
+	}
+
+	/**
 	 * Edit just the {@code notes} field on an API key — independent of
 	 * the permissions edit path so a notes-only update doesn't have to
 	 * round-trip the full permissions list. Caller is expected to be an
@@ -713,6 +753,63 @@ public class ApiKeyService {
 		Map<String, Object> recordData = Utils.dataToRecord(akd);
 		ak = saveApiKey(ak, recordData, wu);
 		return ApiKeyDto.fromApiKey(ak);
+	}
+
+	/**
+	 * What a declarative apply writes on a key (task RD3-11), in one save. A setting is written only when
+	 * {@code declared} names it, so a file that leaves one out leaves it alone; the name and the provenance are
+	 * always written. The declarative service has checked every value and the caller's right to write it.
+	 */
+	public record DeclaredSettings(String declaredName, io.reliza.model.DeclarativeProvenance provenance,
+			Set<String> declared, String notes, ApiKeyStatus status, List<PermissionDto> permissions,
+			Integer secretExpiresDays, Integer sessionMaxMinutes) {}
+
+	@Transactional
+	public ApiKey writeDeclaredSettings(UUID keyUuid, DeclaredSettings d, WhoUpdated wu) throws RelizaException {
+		ApiKey ak = getApiKey(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.setDeclaredName(d.declaredName());
+		akd.setDeclarative(d.provenance());
+		if (d.declared().contains("notes")) akd.setNotes(StringUtils.isBlank(d.notes()) ? null : d.notes());
+		if (d.declared().contains("status") && null != d.status()) {
+			akd.setStatus(d.status());
+			if (d.status() == ApiKeyStatus.ACTIVE) akd.setAdminDisabled(false);
+		}
+		if (d.declared().contains("permissions")) {
+			akd.revokeAllOrgPermissions(ak.getOrg());
+			for (PermissionDto p : d.permissions() == null ? List.<PermissionDto>of() : d.permissions()) {
+				akd.setPermission(ak.getOrg(), p.scope(), p.object(), p.type(),
+						p.functions() != null ? p.functions() : List.of(), p.approvals() != null ? p.approvals() : List.of());
+			}
+		}
+		if (d.declared().contains("secretExpiresDays")) akd.setSecretExpiresDays(d.secretExpiresDays());
+		if (d.declared().contains("sessionMaxMinutes")) akd.setSessionMaxMinutes(d.sessionMaxMinutes());
+		ak = saveApiKey(ak, Utils.dataToRecord(akd), wu);
+		invalidateVerificationCacheForKey(keyUuid);
+		return ak;
+	}
+
+	/** The organization's live key (not REVOKED) declared under this name (task RD3-11), if any. */
+	public Optional<ApiKey> findByDeclaredName(UUID orgUuid, String declaredName) {
+		if (StringUtils.isBlank(declaredName)) return Optional.empty();
+		return listApiKeyByOrg(orgUuid).stream().filter(ak -> {
+			ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+			return akd.getStatus() != ApiKeyStatus.REVOKED && declaredName.equals(akd.getDeclaredName());
+		}).findFirst();
+	}
+
+	/**
+	 * Declare a key under a name, or release its name with null (task RD3-11): what a person does to put a key
+	 * made by hand under a file. The checks -- which keys may be declared, a name no other live key carries --
+	 * are the declarative service's.
+	 */
+	@Transactional
+	public ApiKey setDeclaredName(UUID keyUuid, String declaredName, WhoUpdated wu) throws RelizaException {
+		ApiKey ak = getApiKey(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.setDeclaredName(declaredName);
+		if (null == declaredName) akd.setDeclarative(null);
+		return saveApiKey(ak, Utils.dataToRecord(akd), wu);
 	}
 
 	@Transactional

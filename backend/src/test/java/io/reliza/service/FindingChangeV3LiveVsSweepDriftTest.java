@@ -121,8 +121,7 @@ public class FindingChangeV3LiveVsSweepDriftTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		// The predecessor acquires the finding. Its own APPEARED is recorded (nothing to inherit from).
 		UUID pred = createRelease(org, component, branch, "1.0.0");
@@ -170,8 +169,7 @@ public class FindingChangeV3LiveVsSweepDriftTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		// Predecessor starts clean.
 		UUID pred = createRelease(org, component, branch, "2.0.0");

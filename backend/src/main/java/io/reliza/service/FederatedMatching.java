@@ -7,7 +7,6 @@ package io.reliza.service;
 
 import java.util.List;
 import java.util.Map;
-import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -134,17 +133,79 @@ public final class FederatedMatching {
 		return false;
 	}
 
-	/** Case-insensitive glob: {@code *} is any run of characters, {@code ?} one character. */
+	/**
+	 * Longest glob a matcher list entry may hold. The longest claim a glob is written against is
+	 * {@code sub}: {@code repo:} + a 39-character owner + {@code /} + a 100-character repository +
+	 * {@code :ref:refs/heads/} + a branch name, a little over 400 characters even with a long branch,
+	 * so an exact-value glob of any real claim fits.
+	 */
+	public static final int MAX_GLOB_LENGTH = 512;
+
+	/**
+	 * Most entries one matcher list may hold. Matching runs during the unauthenticated token
+	 * exchange, for every rule naming the token's issuer whose owner matches, and costs up to
+	 * entries x glob length x claim length; real lists name a handful of repositories or refs.
+	 */
+	public static final int MAX_LIST_ENTRIES = 64;
+
+	/** Marks a {@code *} or {@code ?} in a compiled glob; real chars are never negative. */
+	private static final int ANY_RUN = -1;
+	private static final int ANY_ONE = -2;
+
+	/**
+	 * Case-insensitive glob: {@code *} is any run of characters, {@code ?} one character.
+	 *
+	 * <p>Exactly what the regex it replaces did ({@code *} -> {@code .*}, {@code ?} -> {@code .},
+	 * every other character quoted, the pattern trimmed, matched whole with
+	 * {@code Pattern.CASE_INSENSITIVE}): the whole value must match; case folds for ASCII letters
+	 * only; {@code *} and {@code ?} never match a line terminator; {@code ?} is one code point of
+	 * the value, so one supplementary character, while a supplementary character written in the
+	 * pattern was quoted one half at a time and so never matches; there is no escape, so {@code *}
+	 * and {@code ?} are always wildcards.
+	 *
+	 * <p>Not a regex because the glob is admin input and the value is a claim of a token anyone
+	 * with a repository can mint: {@code *a*a*a...} backtracked exponentially. Here it is one pass
+	 * over the value carrying a row of pattern positions, value length x pattern length steps at
+	 * most.
+	 */
 	static boolean glob(String pattern, String value) {
 		if (pattern == null || value == null) return false;
-		StringBuilder re = new StringBuilder();
-		for (char ch : pattern.trim().toCharArray()) {
-			switch (ch) {
-				case '*' -> re.append(".*");
-				case '?' -> re.append('.');
-				default -> re.append(Pattern.quote(String.valueOf(ch)));
+		// The pattern by char and the value by code point, as the regex read them: see above.
+		int[] p = pattern.trim().chars().map(ch -> ch == '*' ? ANY_RUN : ch == '?' ? ANY_ONE : ch).toArray();
+		// at[j]: the first j glob tokens match the value read so far.
+		boolean[] at = new boolean[p.length + 1];
+		boolean[] next = new boolean[p.length + 1];
+		at[0] = true;
+		for (int j = 1; j <= p.length && p[j - 1] == ANY_RUN; j++) at[j] = true;
+		for (int i = 0; i < value.length(); ) {
+			int c = value.codePointAt(i);
+			i += Character.charCount(c);
+			boolean any = false;
+			next[0] = false;
+			for (int j = 1; j <= p.length; j++) {
+				int t = p[j - 1];
+				boolean m;
+				if (t == ANY_RUN) m = next[j - 1] || (at[j] && !isLineTerminator(c));
+				else if (t == ANY_ONE) m = at[j - 1] && !isLineTerminator(c);
+				else m = at[j - 1] && sameIgnoringAsciiCase(t, c);
+				next[j] = m;
+				any |= m;
 			}
+			if (!any) return false;
+			boolean[] swap = at;
+			at = next;
+			next = swap;
 		}
-		return Pattern.compile(re.toString(), Pattern.CASE_INSENSITIVE).matcher(value).matches();
+		return at[p.length];
+	}
+
+	/** What {@code .} does not match without DOTALL or UNIX_LINES. */
+	private static boolean isLineTerminator(int c) {
+		return c == '\n' || c == '\r' || c == 0x85 || c == 0x2028 || c == 0x2029;
+	}
+
+	/** CASE_INSENSITIVE without UNICODE_CASE: only A-Z and a-z fold. */
+	private static boolean sameIgnoringAsciiCase(int a, int b) {
+		return a == b || (a < 128 && b < 128 && Character.toLowerCase(a) == Character.toLowerCase(b));
 	}
 }

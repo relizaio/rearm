@@ -161,6 +161,43 @@ public class SystemInfoService {
 	}
 	
 
+	/**
+	 * Claim the one-time model-catalogue sweep, or report that somebody already ran it.
+	 *
+	 * <p>Conditional write inside one transaction, the same shape as the token pepper: two pods
+	 * starting together must not both fold the same rows, because the second would be folding
+	 * rows the first had already re-pointed.
+	 *
+	 * @return true when this caller claimed the sweep and must run it
+	 */
+	@Transactional
+	public boolean claimModelCatalogueSweep() {
+		SystemInfo sysInfo = this.repository.findSystemInfoWriteLocked();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		if (null != sd.getModelCatalogueSweepAt()) return false;
+		sd.setModelCatalogueSweepAt(ZonedDateTime.now());
+		saveSystemInfo(sysInfo, sd);
+		return true;
+	}
+
+	/**
+	 * Give the claim back after a failed sweep so a later start retries it.
+	 *
+	 * <p>The flag is taken BEFORE the sweep runs, and it has to be: it is the lock that stops two
+	 * instances sweeping the same rows concurrently. But taken and never released, a sweep that
+	 * died halfway would be marked done forever, leaving duplicate rows nobody would ever fold.
+	 * Releasing on failure is safe because the sweep is idempotent -- the fold finds nothing left
+	 * to fold and the converter skips rows already marked -- so a retry re-does only the part that
+	 * did not finish.
+	 */
+	@Transactional
+	public void releaseModelCatalogueSweep() {
+		SystemInfo sysInfo = this.repository.findSystemInfoWriteLocked();
+		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
+		sd.setModelCatalogueSweepAt(null);
+		saveSystemInfo(sysInfo, sd);
+	}
+
 	@Transactional
 	private SystemInfo saveSystemInfo(SystemInfo s, SystemInfoData data){
 		Map<String,Object> recordData = Utils.dataToRecord(data);

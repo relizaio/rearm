@@ -24,6 +24,13 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 	List<Component> findAll();
 
 	/**
+	 * The component's kind as stored (task RD4-11): empty for a missing row, a null element for a
+	 * row that never recorded one, which reads as GENERIC.
+	 */
+	@Query(value = "SELECT record_data->>'kind' FROM rearm.components WHERE uuid = :uuid", nativeQuery = true)
+	List<String> findKindOf(@Param("uuid") UUID uuid);
+
+	/**
 	 * Row-locked read, for the read-modify-write paths on the component's JSONB lists.
 	 *
 	 * <p>Added for locks: two concurrent releases of the same lock would otherwise both pass the

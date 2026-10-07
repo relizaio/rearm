@@ -11,6 +11,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.time.LocalDate;
+import java.util.Collection;
 import java.util.UUID;
 import java.util.stream.Collectors;
 
@@ -94,9 +95,31 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		ANY;
 	}
 	
+	/**
+	 * The components of these kinds (board-documents.md §5, task 36d0549e): every one when no kinds are
+	 * named, so a caller that does not ask sees what it always saw. A component without a kind is GENERIC.
+	 */
+	public static <C extends Collection<ComponentData>> List<ComponentData> ofKinds(C components,
+			Collection<ComponentKind> kinds) {
+		if (null == kinds || kinds.isEmpty()) return new java.util.ArrayList<>(components);
+		return components.stream().filter(c -> isOfKinds(c, kinds)).toList();
+	}
+
+	/** One component against the same rule as {@link #ofKinds}: no kinds named matches every component. */
+	public static boolean isOfKinds(ComponentData component, Collection<ComponentKind> kinds) {
+		if (null == kinds || kinds.isEmpty()) return true;
+		return kinds.contains(null == component.getKind() ? ComponentKind.GENERIC : component.getKind());
+	}
+
 	public enum ComponentKind {
 		HELM,
-		GENERIC;
+		GENERIC,
+		/**
+		 * A board's document series (board-documents.md D1). Set only by the board that creates it;
+		 * the component update path refuses changing a kind to or from it. Otherwise a component like
+		 * any other: permissions, releases, lifecycle and the Helm checks, which it falls through.
+		 */
+		BOARD_DOCUMENT;
 	}
 
 	/**

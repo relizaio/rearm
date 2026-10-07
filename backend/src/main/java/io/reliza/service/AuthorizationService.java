@@ -5,10 +5,11 @@ package io.reliza.service;
 
 import java.io.IOException;
 import java.util.Collection;
-import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -36,6 +37,7 @@ import io.reliza.model.AgentData.AgentType;
 import io.reliza.model.AgentIdentityCredential;
 import io.reliza.model.AgentIdentityData;
 import io.reliza.model.AgentSessionData;
+import io.reliza.model.ApiKey;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ApiKeyData;
@@ -43,6 +45,7 @@ import io.reliza.model.AuthPrincipal;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.AgentBoardData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.Permissions;
 import io.reliza.common.CommonVariables.UserStatus;
@@ -91,6 +94,9 @@ public class AuthorizationService {
 	
 	@Autowired
 	private OssPerspectiveService ossPerspectiveService;
+
+	@Autowired
+	private io.reliza.repositories.AgentBoardRepository agentBoardRepository;
 	
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
@@ -179,17 +185,22 @@ public class AuthorizationService {
 	
 	public AuthorizationResponse doUsersBelongToOrg (Collection<UUID> users, final UUID org) {
 		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.ALLOW);
-		if (null != users && !users.isEmpty()) {
-			Set<UUID> cleanedUsers = new HashSet<>(users);
-			Iterator<UUID> cuIter = cleanedUsers.iterator();
-			while (AuthorizationResponse.isAllowed(ar) && cuIter.hasNext()) {
-				UUID uid = cuIter.next();
-				var ud = userService.getUserDataWithOrg(uid, org);
-				if (ud.isEmpty()) AuthorizationResponse.forbid(ar, "wrong users");
-			}
-		}
+		if (findUserNotInOrg(users, org).isPresent()) AuthorizationResponse.forbid(ar, "wrong users");
 		gqlValidateAuthorizationResponse(ar);
 		return ar;
+	}
+
+	/**
+	 * Non-throwing counterpart of {@link #doUsersBelongToOrg}: the first of the
+	 * given users that is not an active member of the org, if any. For callers
+	 * that need to name the offending user in a validation error instead of
+	 * refusing with a bare "Not authorized".
+	 */
+	public Optional<UUID> findUserNotInOrg (Collection<UUID> users, final UUID org) {
+		if (null == users) return Optional.empty();
+		return new LinkedHashSet<>(users).stream()
+				.filter(uid -> userService.getUserDataWithOrg(uid, org).isEmpty())
+				.findFirst();
 	}
 	
 	public AuthorizationResponse isUserAuthorizedOrgWideGraphQLWithObjects(UserData ud, Collection<RelizaObject> ros, CallType ct) throws RelizaException {
@@ -309,7 +320,9 @@ public class AuthorizationService {
 			return true;
 		}
 
-		if (function != PermissionFunction.RESOURCE && (null == permission.getFunctions() || !permission.getFunctions().contains(function))) {
+		// Through the implication rule, so a BOARD_AGENT or BOARD_WRITE grant clears a BOARD_READ call
+		// everywhere this walk is used (board-permissions.md D2).
+		if (function != PermissionFunction.RESOURCE && !PermissionFunction.anySatisfies(permission.getFunctions(), function)) {
 			return false;
 		}
 
@@ -321,7 +334,7 @@ public class AuthorizationService {
 		return permission.getType().ordinal() >= resolvedPt.ordinal();
 	}
 
-	private boolean doesPermissionAuthorize(UserPermission permission, UUID org, @NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid, CallType ct) {
+	boolean doesPermissionAuthorize(UserPermission permission, UUID org, @NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid, CallType ct) {
 		if (null == objectUuid) {
 			return false;
 		}
@@ -391,7 +404,351 @@ public class AuthorizationService {
 	 * read-equivalent and gets the full cascade.
 	 */
 	private boolean doesPermissionScopeContainObject (UserPermission permission, UUID org, PermissionScope objectType, UUID objectUuid, PermissionType resolvedPt) {
+		// Boards and components are sibling leaves (board-permissions.md D1): a board is asked of the
+		// board expansion and nothing else. The ordinal gate lets a BOARD grant through for a
+		// component, and an INSTANCE or PERSPECTIVE grant through for a board; this dispatch is what
+		// decides those, and componentsInScope expands a BOARD grant to no component.
+		if (PermissionScope.BOARD == objectType) {
+			return boardsInScope(permission, org).covers(objectUuid);
+		}
 		return doComponentsContainObject(componentsInScope(permission, org, resolvedPt), org, objectType, objectUuid);
+	}
+
+	/**
+	 * The boards one permission covers: every board of the org, or a set.
+	 *
+	 * @param all true for an ORGANIZATION grant, which covers every board of the org without the
+	 *        boards being listed
+	 */
+	public record BoardCoverage(boolean all, Set<UUID> boards) {
+		static final BoardCoverage NONE = new BoardCoverage(false, Set.of());
+		public boolean covers(UUID board) {
+			return all || (null != board && boards.contains(board));
+		}
+	}
+
+	/**
+	 * The boards a permission covers (board-permissions.md §2.1): ORGANIZATION, all of the org's;
+	 * PERSPECTIVE, the boards whose perspectives contain its object; BOARD, its object when that is
+	 * a board of the org; RELEASE, BRANCH, COMPONENT and INSTANCE, none.
+	 */
+	BoardCoverage boardsInScope(UserPermission permission, UUID org) {
+		if (null == permission || null == org || !org.equals(permission.getOrg())) return BoardCoverage.NONE;
+		switch (permission.getScope()) {
+		case ORGANIZATION:
+			return new BoardCoverage(true, Set.of());
+		case BOARD: {
+			Optional<AgentBoardData> board = agentBoardRepository.findById(permission.getObject())
+					.map(AgentBoardData::dataFromRecord);
+			return board.isPresent() && org.equals(board.get().getOrg())
+					? new BoardCoverage(false, Set.of(permission.getObject())) : BoardCoverage.NONE;
+		}
+		case PERSPECTIVE: {
+			Set<UUID> out = new java.util.HashSet<>();
+			for (var row : agentBoardRepository.findByOrg(org.toString())) {
+				AgentBoardData bd = AgentBoardData.dataFromRecord(row);
+				if (null != bd.getPerspectives() && bd.getPerspectives().contains(permission.getObject())) {
+					out.add(bd.getUuid());
+				}
+			}
+			return new BoardCoverage(false, out);
+		}
+		default:
+			return BoardCoverage.NONE;
+		}
+	}
+
+	/**
+	 * Whether a user holds a board function on a board (board-permissions.md §2.3): the user's own
+	 * grants and those of every team the user is in. Org ADMIN passes, as everywhere. A pure read.
+	 */
+	public boolean boardPermission(UserData ud, UUID org, UUID board, @NonNull PermissionFunction function, CallType ct) {
+		if (null == ud || null == org || null == board) return false;
+		if (ud.isGlobalAdmin()) return true;
+		return boardPermission(organizationService.obtainCombinedUserOrgPermissions(ud, org).getOrgPermissionsAsSet(org),
+				org, board, function, ct);
+	}
+
+	/**
+	 * Whether an API key holds a board function on a board: a FREEFORM key's own grants; a USER key's
+	 * grants intersected with its owner's current ones, as every key check does.
+	 */
+	public boolean boardPermission(AuthHeaderParse ahp, UUID org, UUID board, @NonNull PermissionFunction function, CallType ct)
+			throws RelizaException {
+		if (null == org || null == board) return false;
+		RbacKey key = resolveRbacKey(ahp);
+		if (!org.equals(key.orgUuid())) return false;
+		return bothAuthorize(key, ownerSide(key), org, function, PermissionScope.BOARD, board, ct);
+	}
+
+	/**
+	 * Whether a stored API key would hold a board function on a board when it calls (task 5c70990d,
+	 * the missing-coverage check): judged as {@link #resolveRbacKey} and {@link #bothAuthorize} judge
+	 * the key on a call -- a FREEFORM key's grants; a USER key's intersected with its owner's current
+	 * ones, and nothing once the owner is not an active member. A key that cannot authenticate holds
+	 * nothing: not ACTIVE, or neither a usable secret nor a usable trust rule bound to it (a key an
+	 * identity token exchanges for). FEDERATED identity rows hold nothing here: their functions come
+	 * from the trust rules on each call -- see {@link #federatedRulesCoverBoard}.
+	 */
+	public boolean boardPermission(io.reliza.model.ApiKey key, UUID org, UUID board, @NonNull PermissionFunction function,
+			CallType ct) {
+		if (null == key || null == org || null == board) return false;
+		ApiTypeEnum type = key.getObjectType();
+		if (ApiTypeEnum.FREEFORM != type && ApiTypeEnum.USER != type) return false;
+		ApiKeyData akd = ApiKeyData.dataFromRecord(key);
+		if (!org.equals(akd.getOrg()) || ApiKeyData.ApiKeyStatus.ACTIVE != akd.getStatus()) return false;
+		boolean secret = akd.effectiveSecrets(key.getApiKey()).stream().anyMatch(s -> s.isUsable() && null != s.getHash());
+		if (!secret && federatedTrustRuleService.listBoundToKey(org, key.getUuid()).stream()
+				.noneMatch(io.reliza.model.FederatedTrustRule::isUsable)) {
+			return false;
+		}
+		UserData owner = null;
+		if (ApiTypeEnum.USER == type) {
+			owner = null == key.getObjectUuid() ? null : userService.getUserData(key.getObjectUuid()).orElse(null);
+			boolean member = null != owner && owner.getStatus() == UserStatus.ACTIVE
+					&& (owner.isGlobalAdmin() || owner.getOrganizations().contains(org));
+			if (!member) return false;
+		}
+		RbacKey rk = new RbacKey(key.getUuid(), akd, org, owner, type, null);
+		return bothAuthorize(rk, ownerSide(rk), org, function, PermissionScope.BOARD, board, ct);
+	}
+
+	/**
+	 * Whether a usable TEMPLATE trust rule of the org would give a federated identity a board function
+	 * on a board (task 5c70990d): its organization level and its static permissions, which need no
+	 * calling repository to read. Its per-repository component grants are left out -- a component
+	 * grant does not cover a board -- so this is what any identity the rule admits would hold.
+	 */
+	public boolean federatedRulesCoverBoard(UUID org, UUID board, @NonNull PermissionFunction function, CallType ct) {
+		if (null == org || null == board) return false;
+		for (io.reliza.model.FederatedTrustRule rule : federatedTrustRuleService.listByOrg(org)) {
+			if (!rule.isUsable() || !org.equals(rule.getOrg())) continue;
+			io.reliza.model.FederatedGrant g = rule.grantOf();
+			if (g.getType() != io.reliza.model.FederatedGrant.GrantType.TEMPLATE) continue;
+			Set<UserPermission> perms = new java.util.LinkedHashSet<>();
+			Set<PermissionFunction> fns = new java.util.LinkedHashSet<>(g.getFunctions());
+			fns.add(PermissionFunction.RESOURCE);
+			if (g.getOrgPermission() != PermissionType.NONE) {
+				perms.add(UserPermission.permissionFactory(org, PermissionScope.ORGANIZATION, org, g.getOrgPermission(), fns, null));
+			}
+			for (io.reliza.model.FederatedGrant.StaticPermission sp : g.getPermissions()) {
+				Set<PermissionFunction> f = new java.util.LinkedHashSet<>(sp.getFunctions());
+				f.add(PermissionFunction.RESOURCE);
+				perms.add(UserPermission.permissionFactory(org, sp.getScope(), sp.getObject(), sp.getType(), f, null));
+			}
+			if (boardPermission(perms, org, board, function, ct)) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * A key's board operation (board-permissions.md §4): every function held on the board at the
+	 * call type -- a FREEFORM key's grants, a USER key's intersected with its owner's -- with no
+	 * organization tier in between, then the write record an organization check would give. Null
+	 * when a function is missing; the caller names the refusal.
+	 */
+	public WhoUpdated keyOnBoard(AuthHeaderParse ahp, UUID org, UUID board, Collection<PermissionFunction> functions,
+			CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
+		RbacKey key = resolveRbacKey(ahp);
+		if (!org.equals(key.orgUuid())) return null;
+		Optional<Permissions> owner = ownerSide(key);
+		for (PermissionFunction fn : functions) {
+			if (!orWrite(fn, f -> bothAuthorize(key, owner, org, f, PermissionScope.BOARD, board,
+					f == fn ? ct : CallType.WRITE))) return null;
+		}
+		// On record as what carried the call, as every key check that passes does.
+		apiKeyAccessService.recordApiKeyAccess(key.keyUuid(), ahp.getRemoteIp(), org, ahp.getApiKeyId());
+		return whoUpdatedFor(key, ahp.getRemoteIp(), ahp.getActorUser());
+	}
+
+	/**
+	 * A key's board access for the declarative surface: its board functions per board, and at the
+	 * organization. A key that is not an RBAC key (an organization read-write key) has no functions
+	 * to narrow; it passed its organization-wide gate already and keeps what that gives it.
+	 */
+	public BoardAccess boardAccess(AuthHeaderParse ahp, UUID org) {
+		if (null == ahp || !ahp.isRbacKey()) return BoardAccess.ALL;
+		RbacKey key = resolveRbacKey(ahp);
+		if (!org.equals(key.orgUuid())) {
+			return new BoardAccess() {
+				@Override public boolean onBoard(UUID board, PermissionFunction fn, CallType ct) { return false; }
+				@Override public boolean atOrganization(PermissionFunction fn, CallType ct) { return false; }
+			};
+		}
+		Optional<Permissions> owner = ownerSide(key);
+		return new BoardAccess() {
+			@Override public boolean onBoard(UUID board, PermissionFunction fn, CallType ct) {
+				return orWrite(fn, f -> bothAuthorize(key, owner, org, f, PermissionScope.BOARD, board,
+						f == fn ? ct : CallType.WRITE));
+			}
+			@Override public boolean atOrganization(PermissionFunction fn, CallType ct) {
+				return bothAuthorize(key, owner, org, fn, PermissionScope.ORGANIZATION, org, ct);
+			}
+		};
+	}
+
+	/** A user's board access, as above: their grants and their teams'; the global admin passes. */
+	public BoardAccess boardAccess(UserData ud, UUID org) {
+		if (null == ud) return new BoardAccess() {
+			@Override public boolean onBoard(UUID board, PermissionFunction fn, CallType ct) { return false; }
+			@Override public boolean atOrganization(PermissionFunction fn, CallType ct) { return false; }
+		};
+		if (ud.isGlobalAdmin()) return BoardAccess.ALL;
+		Set<UserPermission> grants = organizationService.obtainCombinedUserOrgPermissions(ud, org).getOrgPermissionsAsSet(org);
+		return new BoardAccess() {
+			@Override public boolean onBoard(UUID board, PermissionFunction fn, CallType ct) {
+				return orWrite(fn, f -> boardPermission(grants, org, board, f, f == fn ? ct : CallType.WRITE));
+			}
+			@Override public boolean atOrganization(PermissionFunction fn, CallType ct) {
+				return grants.stream().anyMatch(x -> doesPermissionAuthorize(x, org, fn, PermissionScope.ORGANIZATION, org, ct));
+			}
+		};
+	}
+
+	/**
+	 * A check of {@code fn}, where CONFIGURATION_WRITE also stands for CONFIGURATION_READ -- as the
+	 * declarative read gate and {@link #boardFunctions} treat it; the resolver itself does not.
+	 */
+	private static boolean orWrite(PermissionFunction fn, java.util.function.Predicate<PermissionFunction> check) {
+		return check.test(fn) || (PermissionFunction.CONFIGURATION_READ == fn && check.test(PermissionFunction.CONFIGURATION_WRITE));
+	}
+
+	/** As above for a signed-in user: the user's own grants and their teams'; org admin passes. */
+	public WhoUpdated userOnBoard(UserData ud, UUID org, UUID board, Collection<PermissionFunction> functions,
+			CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
+		for (PermissionFunction fn : functions) {
+			if (!orWrite(fn, f -> boardPermission(ud, org, board, f, f == fn ? ct : CallType.WRITE))) return null;
+		}
+		return WhoUpdated.getWhoUpdated(ud);
+	}
+
+	/** The resolver over a set of grants, for callers and tests that already hold them. */
+	boolean boardPermission(Collection<UserPermission> permissions, UUID org, UUID board,
+			@NonNull PermissionFunction function, CallType ct) {
+		return null != permissions && permissions.stream()
+				.anyMatch(x -> doesPermissionAuthorize(x, org, function, PermissionScope.BOARD, board, ct));
+	}
+
+	/**
+	 * A user's consent to add or remove a board perspective (board-permissions.md D9): BOARD_WRITE and
+	 * CONFIGURATION_WRITE at WRITE covering the PERSPECTIVE object -- a grant on it, or organization
+	 * coverage; the org's admin passes, as everywhere.
+	 */
+	public io.reliza.service.BoardPerspectiveService.PerspectiveConsent perspectiveConsent(UserData ud, UUID org) {
+		if (null == ud) return io.reliza.service.BoardPerspectiveService.PerspectiveConsent.NONE;
+		if (ud.isGlobalAdmin()) return p -> true;
+		Set<UserPermission> grants = organizationService.obtainCombinedUserOrgPermissions(ud, org).getOrgPermissionsAsSet(org);
+		return consentOf((fn, p) -> grants.stream().anyMatch(x -> doesPermissionAuthorize(x, org, fn,
+				PermissionScope.PERSPECTIVE, p, CallType.WRITE)));
+	}
+
+	/**
+	 * An API key's consent, as above: a FREEFORM key's grants, a USER key's intersected with its
+	 * owner's. A key that is not an RBAC key carries no functions and consents to nothing.
+	 */
+	public io.reliza.service.BoardPerspectiveService.PerspectiveConsent perspectiveConsent(AuthHeaderParse ahp, UUID org)
+			throws RelizaException {
+		if (null == ahp || !ahp.isRbacKey()) return io.reliza.service.BoardPerspectiveService.PerspectiveConsent.NONE;
+		RbacKey key = resolveRbacKey(ahp);
+		if (!org.equals(key.orgUuid())) return io.reliza.service.BoardPerspectiveService.PerspectiveConsent.NONE;
+		Optional<Permissions> owner = ownerSide(key);
+		return consentOf((fn, p) -> bothAuthorize(key, owner, org, fn, PermissionScope.PERSPECTIVE, p, CallType.WRITE));
+	}
+
+	/**
+	 * Rule 3 over one check per function: every consent function held at WRITE covering the
+	 * perspective, and, for a refusal to name, the ones that are not.
+	 */
+	private static io.reliza.service.BoardPerspectiveService.PerspectiveConsent consentOf(
+			java.util.function.BiPredicate<PermissionFunction, UUID> holds) {
+		return new io.reliza.service.BoardPerspectiveService.PerspectiveConsent() {
+			@Override public boolean allows(UUID perspective) {
+				return lacking(perspective).isEmpty();
+			}
+			@Override public List<PermissionFunction> lacking(UUID perspective) {
+				return io.reliza.service.BoardPerspectiveService.CONSENT_FUNCTIONS.stream()
+						.filter(fn -> !holds.test(fn, perspective)).toList();
+			}
+		};
+	}
+
+	/** The board functions and the call type each is checked at: its tier floor (board-permissions.md D4). */
+	static final Map<PermissionFunction, CallType> BOARD_FUNCTION_FLOORS = Map.of(
+			PermissionFunction.BOARD_READ, CallType.READ,
+			PermissionFunction.BOARD_AGENT, CallType.READ,
+			PermissionFunction.BOARD_WRITE, CallType.WRITE);
+
+	/**
+	 * What a user may do on a board: the board functions held at their floors, and the configuration
+	 * functions when a grant carrying them covers the board -- CONFIGURATION_WRITE implying
+	 * CONFIGURATION_READ, as its callers treat it. For a caller's own view of a board.
+	 */
+	public Set<PermissionFunction> boardFunctions(UserData ud, UUID org, UUID board) {
+		if (null == ud || null == org || null == board) return Set.of();
+		if (ud.isGlobalAdmin()) return allBoardFunctions();
+		return boardFunctions(organizationService.obtainCombinedUserOrgPermissions(ud, org).getOrgPermissionsAsSet(org),
+				org, board);
+	}
+
+	Set<PermissionFunction> boardFunctions(Collection<UserPermission> permissions, UUID org, UUID board) {
+		Set<PermissionFunction> out = java.util.EnumSet.noneOf(PermissionFunction.class);
+		BOARD_FUNCTION_FLOORS.forEach((fn, ct) -> {
+			if (boardPermission(permissions, org, board, fn, ct)) out.add(fn);
+		});
+		if (boardPermission(permissions, org, board, PermissionFunction.CONFIGURATION_WRITE, CallType.WRITE)) {
+			out.add(PermissionFunction.CONFIGURATION_WRITE);
+			out.add(PermissionFunction.CONFIGURATION_READ);
+		} else if (boardPermission(permissions, org, board, PermissionFunction.CONFIGURATION_READ, CallType.READ)) {
+			out.add(PermissionFunction.CONFIGURATION_READ);
+		}
+		return out;
+	}
+
+	/** As {@link #boardFunctions(UserData, UUID, UUID)} for an API key: a USER key's grants intersected with its owner's. */
+	public Set<PermissionFunction> boardFunctions(AuthHeaderParse ahp, UUID org, UUID board) {
+		if (null == ahp || !ahp.isRbacKey() || null == org || null == board) return Set.of();
+		RbacKey key = resolveRbacKey(ahp);
+		if (!org.equals(key.orgUuid())) return Set.of();
+		Optional<Permissions> owner = ownerSide(key);
+		Set<PermissionFunction> out = java.util.EnumSet.noneOf(PermissionFunction.class);
+		BOARD_FUNCTION_FLOORS.forEach((fn, ct) -> {
+			if (bothAuthorize(key, owner, org, fn, PermissionScope.BOARD, board, ct)) out.add(fn);
+		});
+		if (bothAuthorize(key, owner, org, PermissionFunction.CONFIGURATION_WRITE, PermissionScope.BOARD, board, CallType.WRITE)) {
+			out.add(PermissionFunction.CONFIGURATION_WRITE);
+			out.add(PermissionFunction.CONFIGURATION_READ);
+		} else if (bothAuthorize(key, owner, org, PermissionFunction.CONFIGURATION_READ, PermissionScope.BOARD, board, CallType.READ)) {
+			out.add(PermissionFunction.CONFIGURATION_READ);
+		}
+		return out;
+	}
+
+	private static Set<PermissionFunction> allBoardFunctions() {
+		return java.util.EnumSet.of(PermissionFunction.BOARD_READ, PermissionFunction.BOARD_AGENT,
+				PermissionFunction.BOARD_WRITE, PermissionFunction.CONFIGURATION_READ, PermissionFunction.CONFIGURATION_WRITE);
+	}
+
+	/**
+	 * Refuse a grant naming a BOARD object that is not a board of the organization. The user, team
+	 * and API key permission inputs call this before storing; a grant on a board nobody can resolve
+	 * would sit in the permission JSON covering nothing.
+	 */
+	public void assertGrantObjectExists(UUID org, PermissionScope scope, UUID object) throws RelizaException {
+		if (PermissionScope.BOARD != scope) return;
+		boolean ours = null != object && null != org && agentBoardRepository.findById(object)
+				.map(AgentBoardData::dataFromRecord)
+				.filter(bd -> org.equals(bd.getOrg())).isPresent();
+		if (!ours) throw new RelizaException("A BOARD grant names " + object + ", which is not a board of this organization");
+	}
+
+	/** {@link #assertGrantObjectExists} over the user and API key permission inputs. */
+	public void assertGrantObjectsExist(UUID org, Collection<PermissionDto> permissions) throws RelizaException {
+		if (null == permissions) return;
+		for (PermissionDto p : permissions) {
+			if (null != p) assertGrantObjectExists(org, p.scope(), p.object());
+		}
 	}
 
 	/**
@@ -399,6 +756,8 @@ public class AuthorizationService {
 	 * the per-object check and by {@link #readableComponentUuids} so both expand a grant the same way.
 	 */
 	private List<ComponentData> componentsInScope (UserPermission permission, UUID org, PermissionType resolvedPt) {
+		// A BOARD grant, like RELEASE, BRANCH and INSTANCE ones, expands to no component: a board
+		// grant reaches no component, branch or release (board-permissions.md D1).
 		List<ComponentData> authorizedComponents = new LinkedList<>();
 		if (permission.getScope() == PermissionScope.PERSPECTIVE) {
 			var opd = ossPerspectiveService.getPerspectiveData(permission.getObject());
@@ -704,6 +1063,39 @@ public class AuthorizationService {
 		return matchingKeyId;
 	}
 	
+	/**
+	 * A programmatic principal whose key has been verified, with the key's organization. The
+	 * principal carries the verification (a bearer principal as it came; a Basic one re-issued as
+	 * a verified-key principal), so the authorization that follows does not verify the secret again
+	 * and records the key access once.
+	 */
+	public record VerifiedProgrammaticKey(AuthHeaderParse principal, UUID org) {}
+
+	/**
+	 * Verify the calling programmatic key before the object it is authorized against is known: a
+	 * write addressed by a bare release uuid, whose component is read off the release, scopes that
+	 * lookup to {@link VerifiedProgrammaticKey#org()} so another organization's object reads "not
+	 * found" exactly like a missing one. It authorizes nothing by itself: the caller still runs the
+	 * object authorization, with {@link VerifiedProgrammaticKey#principal()}, before writing.
+	 *
+	 * @throws AccessDeniedException when the key does not verify or is refused at key level (before
+	 *         any lookup, so the refusal says nothing about the uuids in the request)
+	 */
+	public VerifiedProgrammaticKey verifyProgrammaticKey(AuthHeaderParse ahp) {
+		if (null == ahp || (StringUtils.isEmpty(ahp.getApiKey()) && null == ahp.getVerifiedKeyUuid())) {
+			throw new AccessDeniedException("Key unauthorized");
+		}
+		// Key-level refusals happen here, before any lookup, so a caller never sees them as an
+		// object "not found": for RBAC keys that is resolveRbacKey (a USER key whose owner is not
+		// an active member of the org, a FEDERATED identity presented without its exchange).
+		UUID keyUuid = ahp.isRbacKey() ? resolveRbacKey(ahp).keyUuid() : apiKeyService.isMatchingApiKey(ahp);
+		Optional<ApiKey> oak = (null == keyUuid) ? Optional.empty() : apiKeyService.getApiKey(keyUuid);
+		if (oak.isEmpty()) throw new AccessDeniedException("Key unauthorized");
+		AuthHeaderParse principal = (null != ahp.getVerifiedKeyUuid()) ? ahp
+				: AuthHeaderParse.fromVerifiedKey(oak.get(), ahp.getMatchedSecretSlot(), ahp.getRemoteIp());
+		return new VerifiedProgrammaticKey(principal, oak.get().getOrg());
+	}
+
 	public record FreeformKeyVerification(WhoUpdated whoUpdated, UUID orgUuid, UUID apiKeyUuid) {}
 
 	/**
@@ -781,8 +1173,90 @@ public class AuthorizationService {
 			if (!allowed.equals(wanted)) reductions.add(p.scope() + " " + p.object() + " functions reduced to " + allowed);
 			out.add(new PermissionDto(org, p.scope(), p.object(), granted, allowed, p.approvals()));
 		}
-		if (!reductions.isEmpty()) log.info("personal key permissions clamped to owner {} in org {}: {}", ownerUuid, org, reductions);
+		// No owner: a declarative caller's ceiling check (task RD3-11), which refuses rather than clamps.
+		if (!reductions.isEmpty() && null != ownerUuid) log.info("personal key permissions clamped to owner {} in org {}: {}", ownerUuid, org, reductions);
 		return new ClampedPermissions(orgType, out, reductions);
+	}
+
+	/**
+	 * The caller of a declarative key write, archive or mint (task RD3-11), as what it may give a key: a FREEFORM
+	 * key's own grants, a USER key's with its owner's beside them, a legacy ORGANIZATION_RW key's
+	 * organization-wide read-write. A key fits under the caller when the clamp a personal key goes through would
+	 * take nothing from it, and the caller holds every approval role it gives.
+	 */
+	public ApiKeyDeclarativeService.Caller declaringCaller(AuthHeaderParse ahp, UUID org) {
+		if (null != ahp && ahp.isRbacKey()) {
+			RbacKey key = resolveRbacKey(ahp);
+			Set<UserPermission> ownerSet = ownerSide(key).map(p -> p.getOrgPermissionsAsSet(org)).orElse(null);
+			return callerOver(org, keyPermissions(key), ownerSet);
+		}
+		Permissions legacy = new Permissions();
+		legacy.setPermission(org, PermissionScope.ORGANIZATION, org, PermissionType.READ_WRITE, List.of(), List.of());
+		return callerOver(org, legacy.getOrgPermissionsAsSet(org), null);
+	}
+
+	/** A caller holding this set, and for a personal key its owner's set too (null for none). Package-private for tests. */
+	ApiKeyDeclarativeService.Caller callerOver(UUID org, Set<UserPermission> keySet, Set<UserPermission> ownerSet) {
+		return new ApiKeyDeclarativeService.Caller() {
+			@Override
+			public List<String> excess(List<PermissionDto> demand) {
+				List<String> out = new java.util.ArrayList<>(excessOver(org, keySet, demand));
+				if (null != ownerSet) {
+					for (String r : excessOver(org, ownerSet, demand)) out.add("its owner: " + r);
+				}
+				return out;
+			}
+
+			@Override
+			public boolean orgAdmin() {
+				return administers(org, keySet) && (null == ownerSet || administers(org, ownerSet));
+			}
+		};
+	}
+
+	private List<String> excessOver(UUID org, Set<UserPermission> rawHeld, List<PermissionDto> demand) {
+		Set<UserPermission> held = withImpliedFunctions(rawHeld);
+		PermissionType orgType = demand.stream().filter(d -> d.scope() == PermissionScope.ORGANIZATION && org.equals(d.object()))
+				.map(PermissionDto::type).findFirst().orElse(null);
+		List<String> out = new java.util.ArrayList<>(clamp(held, false, null, org, orgType, demand).reductions());
+		if (administers(org, held)) return out;
+		for (PermissionDto d : demand) {
+			if (null == d.approvals() || d.approvals().isEmpty()) continue;
+			Set<String> heldApprovals = new java.util.HashSet<>();
+			for (UserPermission h : held) {
+				boolean orgWide = h.getScope() == PermissionScope.ORGANIZATION && org.equals(h.getObject());
+				boolean same = h.getScope() == d.scope() && java.util.Objects.equals(h.getObject(), d.object());
+				if ((orgWide || same) && null != h.getApprovals()) heldApprovals.addAll(h.getApprovals());
+			}
+			Set<String> missing = new java.util.TreeSet<>(d.approvals());
+			missing.removeAll(heldApprovals);
+			if (!missing.isEmpty()) out.add(d.scope() + " " + d.object() + " approvals " + missing + " not held");
+		}
+		return out;
+	}
+
+	/**
+	 * The caller's grants with the functions the gates read into them (RD3-11 T-2): BOARD_AGENT and BOARD_WRITE
+	 * imply BOARD_READ ({@link PermissionFunction#satisfies}), and CONFIGURATION_WRITE stands for
+	 * CONFIGURATION_READ as the declarative read gate treats it. So a writer can declare the read-only key a
+	 * pipeline needs; a function no grant implies stays missing.
+	 */
+	static Set<UserPermission> withImpliedFunctions(Set<UserPermission> held) {
+		Set<UserPermission> out = new java.util.LinkedHashSet<>();
+		for (UserPermission p : held) {
+			Set<PermissionFunction> fns = new java.util.LinkedHashSet<>(null == p.getFunctions() ? Set.of() : p.getFunctions());
+			for (PermissionFunction f : PermissionFunction.values()) {
+				if (PermissionFunction.anySatisfies(p.getFunctions(), f)) fns.add(f);
+			}
+			if (fns.contains(PermissionFunction.CONFIGURATION_WRITE)) fns.add(PermissionFunction.CONFIGURATION_READ);
+			out.add(UserPermission.permissionFactory(p.getOrg(), p.getScope(), p.getObject(), p.getType(), fns, p.getApprovals()));
+		}
+		return out;
+	}
+
+	private static boolean administers(UUID org, Set<UserPermission> held) {
+		return held.stream().anyMatch(p -> p.getScope() == PermissionScope.ORGANIZATION && org.equals(p.getObject())
+				&& p.getType() == PermissionType.ADMIN);
 	}
 
 	private static Set<PermissionFunction> intersect(Set<PermissionFunction> a, Set<PermissionFunction> b) {
@@ -999,6 +1473,61 @@ public class AuthorizationService {
 	 * but for FREEFORM API keys. Org is derived from {@code ros} via {@link #getMatchingOrg(Collection)},
 	 * which also enforces that all supplied RelizaObjects belong to the same org as the key.
 	 */
+	/** The scopes whose grants can cover a board (board-permissions.md §2.1): every other scope covers none. */
+	private static final Set<PermissionScope> BOARD_COVERING_SCOPES = java.util.EnumSet.of(PermissionScope.ORGANIZATION,
+			PermissionScope.PERSPECTIVE, PermissionScope.BOARD);
+
+	/**
+	 * The calling RBAC key as the organization's, for a declarative board operation -- apply,
+	 * archive, export (operator report 2026-10-02). No function is asked at organization scope: the
+	 * operation judges the board it resolves, or each perspective a new board names, itself
+	 * ({@link AgentBoardService}). What is asked here is that the key holds one of {@code functions}
+	 * at the call type in a grant that can cover a board -- the organization, a perspective or a
+	 * board -- and, for a USER key, that its owner does too, so a key with no board configuration
+	 * anywhere (a CI key, say) cannot probe board files for the names a refusal would confirm.
+	 * Refused as an access refusal, the form the organization gate it replaces gave (review S-4 on
+	 * rearm-saas#765): the caller reads Not authorized, and the server log the function missing.
+	 * What the board operation refuses past this point keeps the form it always had.
+	 */
+	public FreeformKeyVerification rbacKeyForBoardConfiguration(AuthHeaderParse ahp, UUID orgUuid, CallType ct,
+			List<PermissionFunction> functions) throws RelizaException {
+		validateSystemOperational(ct);
+		RbacKey key = resolveRbacKey(ahp);
+		if (null == orgUuid || !orgUuid.equals(key.orgUuid())) {
+			throw new AccessDeniedException("FreeForm key not authorized for this resource");
+		}
+		Optional<Permissions> owner = ownerSide(key);
+		boolean holds = functions.stream().anyMatch(fn -> holdsCoveringBoards(keyPermissions(key), orgUuid, fn, ct)
+				&& ownerAlsoAuthorizes(owner, p -> holdsCoveringBoards(p.getOrgPermissionsAsSet(orgUuid), orgUuid, fn, ct)));
+		if (!holds) {
+			throw new AccessDeniedException("Not authorized: this needs " + functions.stream().map(Enum::name)
+					.collect(java.util.stream.Collectors.joining(" or ")) + " on a board, a perspective or the organization");
+		}
+		apiKeyAccessService.recordApiKeyAccess(key.keyUuid(), ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
+		return new FreeformKeyVerification(whoUpdatedFor(key, ahp.getRemoteIp(), ahp.getActorUser()), orgUuid, key.keyUuid());
+	}
+
+	private boolean holdsCoveringBoards(Collection<UserPermission> grants, UUID org, PermissionFunction fn, CallType ct) {
+		return null != grants && grants.stream().anyMatch(x -> BOARD_COVERING_SCOPES.contains(x.getScope())
+				&& permissionClearsCall(x, org, fn, ct));
+	}
+
+	/**
+	 * The calling RBAC key, as the organization's, with no function checked here (task RD3-3): for a
+	 * programmatic board read, whose gate checks BOARD_READ on each board it reads -- which BOARD_WRITE
+	 * and BOARD_AGENT satisfy ({@link PermissionFunction#satisfies}). A key that writes a board, as
+	 * Terraform's does, reads it without also holding AGENT. Refused when the key is another org's.
+	 */
+	public FreeformKeyVerification rbacKeyOfOrg(AuthHeaderParse ahp, UUID orgUuid, CallType ct) throws RelizaException {
+		validateSystemOperational(ct);
+		RbacKey key = resolveRbacKey(ahp);
+		if (null == orgUuid || !orgUuid.equals(key.orgUuid())) {
+			throw new AccessDeniedException("FreeForm key not authorized for this resource");
+		}
+		return new FreeformKeyVerification(whoUpdatedFor(key, ahp.getRemoteIp(), ahp.getActorUser()), key.orgUuid(),
+				key.keyUuid());
+	}
+
 	public FreeformKeyVerification isFreeformKeyAuthorizedForObjectGraphQL(AuthHeaderParse ahp,
 			@NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid,
 			Collection<RelizaObject> ros, CallType ct) throws RelizaException {

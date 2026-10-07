@@ -24,6 +24,17 @@ public interface CommitterRepository extends CrudRepository<Committer, UUID> {
 	Optional<Committer> findByIdWriteLocked(UUID uuid);
 
 	/**
+	 * Org-scoped {@link #findByIdWriteLocked} for upsert-by-uuid: a row of another org is
+	 * absent (never locked, never overwritten), like a uuid that does not exist.
+	 */
+	@Transactional
+	@Query(value = "SELECT * FROM rearm.committers c "
+			+ "WHERE c.uuid = :uuid AND c.record_data->>'org' = :orgUuidAsString FOR UPDATE",
+			nativeQuery = true)
+	Optional<Committer> findByIdAndOrgWriteLocked(@Param("uuid") UUID uuid,
+			@Param("orgUuidAsString") String orgUuidAsString);
+
+	/**
 	 * Primary lookup: (org, lower(email)). Used by the verifier to
 	 * resolve a commit author header to a committer row, and by the
 	 * upsert mutation.

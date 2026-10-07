@@ -61,7 +61,8 @@ import tools.jackson.databind.JsonNode;
  * <p>These flags exist because an FDA premarket submission and an ordinary customer-facing SBOM
  * are two different documents assembled from the same release. One wants the support
  * attestations and does not mind the tooling provenance; the other is meant to read as the
- * manufacturer's own content, with nothing of ReARM's in it. Before this, both were the same
+ * manufacturer's own content, with none of ReARM's markers in it. Both name ReARM under
+ * {@code metadata.tools}: it generated the document (operator decision 2026-10-02). Before this, both were the same
  * bytes and the only lever was an organization-wide setting.
  *
  * <p>THE CONTRACT THESE TESTS EXIST TO PIN, in order of how expensive it would be to break:
@@ -103,8 +104,9 @@ class ExportMetadataFlagsTest {
 	 * <p>The three ReARM-internal markers are the three that exist in the codebase today
 	 * ({@code reliza:containerSafeVersion} from the OBOM assembler,
 	 * {@code reliza:devops:integrationType} from CommonVariables, {@code reliza:rearmImport:*}
-	 * from CdxImportService). {@code trivy} under {@code metadata.tools} is the control: it is
-	 * the manufacturer's own toolchain and must survive a strip that removes ours.
+	 * from CdxImportService). Both entries under {@code metadata.tools} -- ours and
+	 * {@code trivy} -- must survive every strip: the tools that produced a document are not
+	 * markers.
 	 *
 	 * <p>THE TOOL ENTRY IS SPELLED THE WAY REBOM SPELLS IT -- {@code "rearm"}, lowercase --
 	 * because rebom wrote every document that reaches this seam. An earlier version of this
@@ -137,8 +139,17 @@ class ExportMetadataFlagsTest {
 			      "properties": [
 			        {"name": "reliza:containerSafeVersion", "value": "1.0.0"},
 			        {"name": "reliza:rearmImport:source", "value": "cdx"},
+			        {"name": "internal:SrcFile", "value": "/home/runner/work/app/pom.xml"},
 			        {"name": "some:other:property", "value": "kept"}
-			      ]
+			      ],
+			      "evidence": {
+			        "identity": [
+			          {"field": "purl", "confidence": 0.8, "concludedValue": "/home/runner/work/app/pom.xml",
+			           "methods": [{"technique": "manifest-analysis", "confidence": 0.8, "value": "/home/runner/work/app/pom.xml"}]},
+			          {"field": "name", "confidence": 1,
+			           "methods": [{"technique": "source-code-analysis", "confidence": 1, "value": "libattested"}]}
+			        ]
+			      }
 			    }
 			  ]
 			}""";
@@ -221,11 +232,8 @@ class ExportMetadataFlagsTest {
 	 * Whether a served document still carries a ReARM tool entry, under ANY of the names this
 	 * organisation has shipped.
 	 *
-	 * <p>LITERALS, NOT {@code Utils.REARM_TOOL_NAMES}. Reading the production constant would
-	 * make this helper blind to exactly the defect it exists to catch: drop a name from the
-	 * constant and both the matcher and the assertion stop looking for it, and the suite goes
-	 * green on a document that still carries the entry. That is the same mistake in a second
-	 * costume -- the first was a fixture copied from the writer we were not exercising.
+	 * <p>Literals: every name an {@code io.reliza} tool entry has been written under, so a test
+	 * that expects the entry to stay notices it under any of them.
 	 */
 	private static final List<String> REARM_TOOL_NAMES_IN_CIRCULATION =
 			List.of("ReARM", "rearm", "rebom");
@@ -233,21 +241,6 @@ class ExportMetadataFlagsTest {
 	private static boolean hasRearmTool(String served) {
 		return REARM_TOOL_NAMES_IN_CIRCULATION.stream()
 				.anyMatch(n -> served.contains("\"name\":\"" + n + "\""));
-	}
-
-	/**
-	 * The production constant must cover every name this test knows to be in circulation.
-	 *
-	 * <p>The pair above is deliberately independent, so this is the one place they are made to
-	 * meet -- and it fails on the REMOVAL of a name rather than only on its presence.
-	 */
-	@Test
-	void everyToolNameInCirculationIsOneTheMatcherKnows() {
-		for (String name : REARM_TOOL_NAMES_IN_CIRCULATION) {
-			assertTrue(Utils.REARM_TOOL_NAMES.contains(name),
-					"Utils.REARM_TOOL_NAMES does not cover " + name
-							+ ", so an export cannot remove a tool entry carrying it");
-		}
 	}
 
 	private static ExportMetadataOptions silent() {
@@ -327,6 +320,10 @@ class ExportMetadataFlagsTest {
 
 		assertTrue(served.contains("reliza:containerSafeVersion"),
 				"an omitted includeInternalMetadata must not strip anything: " + served);
+		assertTrue(served.contains("internal:SrcFile"),
+				"an omitted includeInternalMetadata must leave the generator's internal: properties: " + served);
+		assertTrue(served.contains("\"concludedValue\":\"/home/runner/work/app/pom.xml\""),
+				"an omitted includeInternalMetadata must leave the evidence as uploaded: " + served);
 		assertTrue(hasRearmTool(served),
 				"an omitted includeInternalMetadata must leave the ReARM tool entry: " + served);
 		assertTrue(served.contains(ATTESTED_LEVEL_IN_DOCUMENT),
@@ -344,8 +341,14 @@ class ExportMetadataFlagsTest {
 				"reliza:rearmImport:* is ReARM's own marker and must go: " + served);
 		assertFalse(served.contains("reliza:devops:integrationType"),
 				"reliza:devops:integrationType is ReARM's own marker and must go: " + served);
-		assertFalse(hasRearmTool(served),
-				"the io.reliza ReARM entry must leave metadata.tools: " + served);
+		// The generator's content is the producer's and is served as uploaded: removing it by
+		// name or by traced value was tried and withdrawn (it deleted legitimate data).
+		assertTrue(served.contains("internal:SrcFile"),
+				"a generator's internal: properties are the producer's content and stay: " + served);
+		assertTrue(served.contains("\"concludedValue\":\"/home/runner/work/app/pom.xml\""),
+				"component evidence stays as uploaded: " + served);
+		assertTrue(hasRearmTool(served),
+				"ReARM's tool entry is not a marker and must stay in metadata.tools: " + served);
 		assertTrue(served.contains("trivy"),
 				"another producer's tool entry is the manufacturer's own content and must stay: " + served);
 		assertTrue(served.contains("some:other:property"),
@@ -416,8 +419,9 @@ class ExportMetadataFlagsTest {
 		assertFalse(served.contains("reliza:"),
 				"both flags off must leave NO reliza-namespaced content at all: " + served);
 		assertFalse(served.contains(ATTESTED_LEVEL_IN_DOCUMENT), served);
-		assertFalse(hasRearmTool(served), served);
+		assertTrue(hasRearmTool(served), "ReARM stays among the tools with both flags off: " + served);
 		assertFalse(served.contains("\"declarations\""), served);
+		assertTrue(served.contains("internal:SrcFile"), served);
 		// The uploader's own content, untouched.
 		assertTrue(served.contains("some:other:property"), served);
 		assertTrue(served.contains("trivy"), served);
@@ -451,38 +455,33 @@ class ExportMetadataFlagsTest {
 	}
 
 	/**
-	 * The legacy 1.4 {@code metadata.tools} array shape. Documents in that shape are the ones
-	 * least likely to be re-examined, so a strip that only understood the modern shape would
-	 * leave our entry exactly where nobody would look for it.
+	 * The legacy 1.4 {@code metadata.tools} array shape: the strip leaves the tool list alone
+	 * in that shape too.
 	 */
 	@Test
-	void theRearmToolEntryIsRemovedFromTheLegacyToolsArrayToo() throws Exception {
+	void theRearmToolEntryIsKeptInTheLegacyToolsArrayToo() throws Exception {
 		String served = exportMerged(BOM_WITH_LEGACY_TOOLS_ARRAY, SupportInjectionSetting.DISABLED,
 				options(ExportMetadataChoice.DEFAULT, ExportMetadataChoice.EXCLUDE));
 
-		assertFalse(hasRearmTool(served),
-				"the legacy tool entry must be removed too: " + served);
+		assertTrue(hasRearmTool(served),
+				"the legacy tool entry must stay too: " + served);
 		assertTrue(served.contains("trivy"), served);
 	}
 
 	/**
-	 * EVERY SPELLING IN CIRCULATION, because there are two writers and three names and the
-	 * matcher originally knew one of each.
-	 *
-	 * <p>{@code vendor} rather than {@code group}, and {@code "rebom"} rather than
-	 * {@code "rearm"} -- the name that writer used before its rename, still carried by every
-	 * document stored before then and still served today. A flag that promises "only the
-	 * manufacturer's own content" cannot answer differently depending on when a BOM was
+	 * The historic spelling -- {@code vendor} rather than {@code group}, {@code "rebom"} rather
+	 * than {@code "rearm"}, still carried by documents stored before rebom's rename -- is kept
+	 * like the current one: the flag does not answer differently depending on when a BOM was
 	 * uploaded.
 	 */
 	@Test
-	void theHistoricNameAndTheVendorFieldAreRemovedToo() throws Exception {
+	void theHistoricNameAndTheVendorFieldAreKeptToo() throws Exception {
 		String served = exportMerged(BOM_WITH_LEGACY_VENDOR_AND_OLD_NAME,
 				SupportInjectionSetting.DISABLED,
 				options(ExportMetadataChoice.DEFAULT, ExportMetadataChoice.EXCLUDE));
 
-		assertFalse(hasRearmTool(served),
-				"a vendor-keyed entry under the historic name must go too: " + served);
+		assertTrue(hasRearmTool(served),
+				"a vendor-keyed entry under the historic name must stay too: " + served);
 		assertTrue(served.contains("trivy"),
 				"the other producer's entry must survive: " + served);
 	}
@@ -574,11 +573,13 @@ class ExportMetadataFlagsTest {
 			assertTrue(counts.get(on).containsKey("reliza:containerSafeVersion"),
 					"internal on must keep the tooling marker: " + on);
 			assertTrue(hasRearmTool(docs.get(on)), "internal on must keep the tool entry: " + on);
+			assertTrue(docs.get(on).contains("internal:SrcFile"), "internal on must keep the generator's internal: properties: " + on);
 		}
 		for (String off : List.of("support=on  internal=off", "support=off internal=off")) {
 			assertFalse(counts.get(off).containsKey("reliza:containerSafeVersion"),
 					"internal off must drop the tooling marker: " + off);
-			assertFalse(hasRearmTool(docs.get(off)), "internal off must drop the tool entry: " + off);
+			assertTrue(hasRearmTool(docs.get(off)), "internal off must keep the tool entry: " + off);
+			assertTrue(docs.get(off).contains("internal:SrcFile"), "internal off must keep the generator's internal: properties: " + off);
 		}
 
 		// The marker now tracks the SUPPORT column like everything else in it -- present where
@@ -662,7 +663,8 @@ class ExportMetadataFlagsTest {
 		String internalOff = downloaded(BomFormat.CYCLONEDX, SupportInjectionSetting.ENABLED,
 				options(ExportMetadataChoice.DEFAULT, ExportMetadataChoice.EXCLUDE));
 		assertFalse(internalOff.contains("reliza:containerSafeVersion"), internalOff);
-		assertFalse(hasRearmTool(internalOff), internalOff);
+		assertTrue(hasRearmTool(internalOff), internalOff);
+		assertTrue(internalOff.contains("internal:SrcFile"), internalOff);
 		assertTrue(internalOff.contains(ATTESTED_LEVEL_IN_DOCUMENT), internalOff);
 
 		String supportOff = downloaded(BomFormat.CYCLONEDX, SupportInjectionSetting.ENABLED,
@@ -696,7 +698,7 @@ class ExportMetadataFlagsTest {
 		String internalOff = downloaded(BomFormat.SPDX, SupportInjectionSetting.ENABLED,
 				options(ExportMetadataChoice.DEFAULT, ExportMetadataChoice.EXCLUDE));
 		assertFalse(internalOff.contains("reliza:containerSafeVersion"), internalOff);
-		assertFalse(hasRearmTool(internalOff), internalOff);
+		assertTrue(hasRearmTool(internalOff), internalOff);
 		assertTrue(internalOff.contains(ATTESTED_LEVEL_IN_DOCUMENT), internalOff);
 
 		String supportOff = downloaded(BomFormat.SPDX, SupportInjectionSetting.ENABLED,
@@ -753,7 +755,7 @@ class ExportMetadataFlagsTest {
 		assertFalse(served.contains("reliza:containerSafeVersion"),
 				"a resolution failure must not resurrect ReARM's internal markers in a document"
 						+ " the caller asked to have them removed from: " + served);
-		assertFalse(hasRearmTool(served), served);
+		assertTrue(hasRearmTool(served), "the fallback keeps the tool list like every other path: " + served);
 		assertTrue(served.contains("provenance-stripped-no-disclosure"),
 				"the fallback must still MARK the document: " + served);
 		assertTrue(served.contains("some:other:property"),

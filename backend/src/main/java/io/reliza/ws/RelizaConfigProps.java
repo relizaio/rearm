@@ -18,6 +18,14 @@ public class RelizaConfigProps {
 	private String rejectPendingReleasesRate;
 	
 	private String installationType;
-	
+
 	private String enableBetaTea;
+
+	/**
+	 * Deployment-wide default for the UI home dashboard: APP (the
+	 * classic metrics/search dashboard) or BOARDS (agent task boards).
+	 * A user's own choice (persisted in browser localStorage) always
+	 * wins over this default. Unset/unrecognized resolves to APP.
+	 */
+	private String defaultDashboard;
 }

@@ -29,9 +29,9 @@ import tools.jackson.databind.JsonNode;
 class ReleaseServiceVdrAffectedVersionsTest {
 
 	private static final String DT4_SHAPES = "/dtrack/affected-components-live-shapes.json";
-	private static final String DT5_SHAPES = "/dtrack/affected-components-live-shapes-dt5.json";
+	static final String DT5_SHAPES = "/dtrack/affected-components-live-shapes-dt5.json";
 
-	private static List<AffectedRange> rangesOf(String resource, String key) throws Exception {
+	static List<AffectedRange> rangesOf(String resource, String key) throws Exception {
 		JsonNode vuln;
 		try (InputStream in = ReleaseServiceVdrAffectedVersionsTest.class.getResourceAsStream(resource)) {
 			vuln = Utils.OM.readTree(in).get(key);

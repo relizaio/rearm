@@ -54,6 +54,9 @@ public class SchedulingService {
     private static final int METRICS_COMPUTE_BATCH_LIMIT = 102;
 
     @Autowired
+    private ModelCatalogueSweepService modelCatalogueSweepService;
+
+    @Autowired
     private DataSource dataSource;
 
     private final ConcurrentHashMap<AdvisoryLockKey, Connection> lockConnections = new ConcurrentHashMap<>();
@@ -69,6 +72,18 @@ public class SchedulingService {
 
     @Autowired
     CliSessionService cliSessionService;
+
+    @Autowired
+    AgentDeliveryService agentDeliveryService;
+
+    @Autowired
+    BoardQueueAgeService boardQueueAgeService;
+
+    @Autowired
+    BoardStalenessService boardStalenessService;
+
+    @Autowired
+    AgentBoardService agentBoardService;
     
     @Autowired
     AnalyticsMetricsService analyticsMetricsService;
@@ -389,6 +404,24 @@ public class SchedulingService {
         }
     }
 
+    /**
+     * The model catalogue's re-resolve and fold by canonical id (task RD2-26): a couple of minutes after
+     * start, then daily. One replica at a time under its advisory lock.
+     */
+    @Scheduled(initialDelayString = "PT2M", fixedDelayString = "PT24H")
+    public void dedupModelCatalogue () {
+        SchedulerGuard.runIsolated("dedupModelCatalogue", () -> {
+            Boolean lock = getLock(AdvisoryLockKey.MODEL_CATALOGUE_DEDUP);
+            if (lock) {
+                try {
+                    modelCatalogueSweepService.dedupAllOrgs();
+                } finally {
+                    releaseLock(AdvisoryLockKey.MODEL_CATALOGUE_DEDUP);
+                }
+            }
+        });
+    }
+
     @Scheduled(cron="1 0 0 * * *") // once daily at 00:00:01 (1 second past midnight)
     public void computeAnalyticsMetrics () {
         // Throwable, via SchedulerGuard: an Error escaping here reached Spring, which reports it
@@ -568,6 +601,98 @@ public class SchedulingService {
         }
     }
 
+    /**
+     * Agent tasks waiting in DELIVERING whose PR merged or closed without the upsert event reaching
+     * the board (task 9af9d722). The event path does this at once; this catches what it missed.
+     */
+    @Scheduled(fixedRateString = "PT5M")
+    public void scheduleAgentTaskDeliveryCheck() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.AGENT_TASK_DELIVERY);
+            if (lock) {
+                try {
+                    int n = agentDeliveryService.sweep(io.reliza.model.WhoUpdated.getAutoWhoUpdated());
+                    if (n > 0) log.info("delivery sweep moved {} agent task(s) out of DELIVERING", n);
+                } catch (Exception e) {
+                    log.error("Agent task delivery sweep failed", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.AGENT_TASK_DELIVERY);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Agent task delivery sweep failed with an error", e);
+        }
+    }
+
+    /**
+     * Tasks that have waited on a person longer than their board allows (task 82880ea6): one
+     * AGENT_TASK_QUEUE_AGE per hold, however many ticks see it. Boards with no threshold are not
+     * read at all.
+     */
+    @Scheduled(fixedRateString = "PT1M")
+    public void scheduleBoardQueueAge() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.AGENT_TASK_QUEUE_AGE);
+            if (lock) {
+                try {
+                    int n = boardQueueAgeService.sweep(java.time.ZonedDateTime.now());
+                    if (n > 0) log.debug("queue-age sweep offered {} notification(s)", n);
+                } catch (Exception e) {
+                    log.error("Board queue-age sweep failed", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.AGENT_TASK_QUEUE_AGE);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Board queue-age sweep failed with an error", e);
+        }
+    }
+
+    /**
+     * Stale work on the boards that set a staleness block (task RD3-4): one ALERT per breach, again
+     * only after the board's repeatMinutes. Boards without the block are not read.
+     */
+    @Scheduled(fixedRateString = "PT1M")
+    public void scheduleBoardStaleness() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.AGENT_BOARD_STALENESS);
+            if (lock) {
+                try {
+                    int n = boardStalenessService.sweep(java.time.ZonedDateTime.now());
+                    if (n > 0) log.debug("staleness sweep posted {} alert(s)", n);
+                } catch (Exception e) {
+                    log.error("Board staleness sweep failed", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.AGENT_BOARD_STALENESS);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Board staleness sweep failed with an error", e);
+        }
+    }
+
+    /**
+     * Board event logs past each board's eventRetentionDays (task 04dedcc5), so the log cannot hog
+     * the database. Its own slot among the daily crons.
+     */
+    @Scheduled(cron="0 50 3 * * *")
+    public void scheduleBoardEventRetention() {
+        try {
+            Boolean lock = getLock(AdvisoryLockKey.AGENT_BOARD_EVENT_RETENTION);
+            if (lock) {
+                try {
+                    agentBoardService.sweepEventLog(java.time.ZonedDateTime.now());
+                } catch (Exception e) {
+                    log.error("Board event retention sweep failed", e);
+                } finally {
+                    releaseLock(AdvisoryLockKey.AGENT_BOARD_EVENT_RETENTION);
+                }
+            }
+        } catch (Exception e) {
+            log.error("Board event retention sweep failed with an error", e);
+        }
+    }
+
     /** Expired pending CLI logins, and ended sessions past their retention (see CliSessionCodes). */
     @Scheduled(cron="0 40 4 * * *")
     public void purgeCliSessions() {
@@ -608,11 +733,10 @@ public class SchedulingService {
     }
 
     /**
-     * Autoclose OPEN agent sessions with no activity in the last 24h.
-     * Sessions are heart-beated via the {@code sessionTouchProgrammatic}
-     * mutation; the orientation contract instructs agents to touch every
-     * 30-60s while polling. An OPEN session whose {@code lastActivityAt}
-     * is older than the cutoff is either crashed, stalled, or abandoned —
+     * Autoclose OPEN agent sessions idle past their org's window (task 6e7fe6fe: 24 h by default,
+     * twice that while a session holds a task or a seat), warning them first. Any programmatic call
+     * made with a session's id counts as activity, so a polling agent stays open without touching.
+     * An OPEN session whose {@code lastActivityAt} is past the window is crashed, stalled, or abandoned —
      * leaving it OPEN distorts the dashboard's per-agent open-session
      * count and lets CEL gates that key on {@code session.status == "OPEN"}
      * keep firing against an agent that's no longer working.
@@ -630,11 +754,12 @@ public class SchedulingService {
             log.debug("autoclose idle agent sessions lock acquired {}", lock);
             if (lock) {
                 try {
-                    java.time.ZonedDateTime cutoff = java.time.ZonedDateTime.now().minusHours(24);
-                    int closed = agentSessionService.autoCloseIdleSessions(
-                            cutoff, io.reliza.model.WhoUpdated.getAutoWhoUpdated());
-                    if (closed > 0) {
-                        log.info("Autoclosed {} idle agent session(s) (cutoff={})", closed, cutoff);
+                    // Each session is judged by its org's window (task 6e7fe6fe); the sweep also
+                    // sends the warning that comes before the close.
+                    AgentSessionService.IdleSweep swept = agentSessionService.idleSweep(
+                            java.time.ZonedDateTime.now(), io.reliza.model.WhoUpdated.getAutoWhoUpdated());
+                    if (swept.closed() > 0 || swept.warned() > 0) {
+                        log.info("Agent-session idle sweep: {} closed, {} warned", swept.closed(), swept.warned());
                     }
                 } catch (Exception e) {
                     log.error("Exception in agent-session autoclose sweep", e);

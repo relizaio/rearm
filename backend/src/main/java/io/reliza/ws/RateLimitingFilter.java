@@ -39,7 +39,10 @@ import io.reliza.service.UserService;
  *  - Authenticated users: JWT subject
  *  - Programmatic Basic auth: username (API key id)
  *  - Otherwise: client IP (X-Forwarded-For -> RemoteAddr)
- * Policy: capacity 50, refill 50 tokens every 30 seconds.
+ * Policy: capacity REQUESTS_PER_WINDOW (100), refilled every WINDOW_SECONDS (30). Agents are told this
+ * in orientation.md section 1.1, counted in CLI commands too: a command with an API key exchanges it
+ * for a token and then calls, two requests from the same bucket. OrientationContractTest and
+ * CoordinatorTemplatesContractTest keep the numbers the same.
  * Buckets are evicted after 1 hour of inactivity; map is capped at 50,000 keys.
  */
 @Component
@@ -53,6 +56,9 @@ public class RateLimitingFilter extends OncePerRequestFilter {
 
     private static final Logger log = LoggerFactory.getLogger(RateLimitingFilter.class);
     static final int DEVICE_CODE_STARTS_PER_MINUTE = 10;
+    /** Requests each caller may make per window; orientation section 1.1 states it to agents. */
+    public static final int REQUESTS_PER_WINDOW = 100;
+    public static final int WINDOW_SECONDS = 30;
 
     private final Cache<String, Bucket> buckets = Caffeine.newBuilder()
             .maximumSize(50_000)
@@ -81,8 +87,8 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         Bucket bucket = buckets.get(key, k ->
                 Bucket.builder()
                         .addLimit(limit -> limit
-                                .capacity(100)
-                                .refillGreedy(100, Duration.ofSeconds(30))
+                                .capacity(REQUESTS_PER_WINDOW)
+                                .refillGreedy(REQUESTS_PER_WINDOW, Duration.ofSeconds(WINDOW_SECONDS))
                         )
                         .build()
         );

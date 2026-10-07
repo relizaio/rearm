@@ -39,6 +39,12 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 	
 	private static final String DEMO_COMMIT_EMAIL = "info@reliza.io";
 
+	/**
+	 * Uuid of the synthetic "details unavailable" entry {@link #obtainNullSceData()} builds for a
+	 * release with no source code entry. A read-side placeholder only -- never a stored row.
+	 */
+	public static final UUID NULL_SCE_UUID = new UUID(0,0);
+
 	@Setter(AccessLevel.PRIVATE)
 	private UUID uuid;
 	
@@ -196,7 +202,7 @@ public class SourceCodeEntryData extends RelizaDataParent implements RelizaObjec
 	
 	public static SourceCodeEntryData obtainNullSceData() {
 		SourceCodeEntryData sced = new SourceCodeEntryData();
-		sced.uuid = new UUID(0,0);
+		sced.uuid = NULL_SCE_UUID;
 		sced.setCommitMessage(CommonVariables.DETAILS_UNAVAILABLE_MESSAGE);
 		return sced;
 	}

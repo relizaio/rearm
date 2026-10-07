@@ -1,0 +1,115 @@
+[
+  {
+    "name": "a note with a T heading defines nothing and references it",
+    "file": "note-t-heading.md",
+    "specification": "DETAILED_DESIGN",
+    "index": "note-t-heading.index.json",
+    "checks": {
+      "ids.family": "PASS",
+      "ids.unique": "PASS",
+      "tests.no_orphans": "PASS"
+    }
+  },
+  {
+    "name": "the same heading in a test report defines",
+    "file": "report-t-heading.md",
+    "specification": "BOARD_TEST_REPORT",
+    "index": "report-t-heading.index.json",
+    "checks": {
+      "ids.family": "PASS",
+      "tests.no_orphans": "FAIL"
+    }
+  },
+  {
+    "name": "a test plan defines its tests",
+    "file": "plan.md",
+    "specification": "TEST_PLAN",
+    "index": "plan.index.json",
+    "checks": {
+      "ids.family": "PASS"
+    }
+  },
+  {
+    "name": "an architecture round answering a question passes ids.family",
+    "file": "architecture-q-heading.md",
+    "specification": "ARCHITECTURE",
+    "index": "architecture-q-heading.index.json",
+    "checks": {
+      "ids.family": "PASS"
+    }
+  },
+  {
+    "name": "a questions document defines Q",
+    "file": "questions-q-heading.md",
+    "specification": "BOARD_QUESTIONS",
+    "index": "questions-q-heading.index.json",
+    "checks": {
+      "ids.family": "PASS"
+    }
+  },
+  {
+    "name": "lead-in bold is emphasis, not a term",
+    "file": "note-lead-in.md",
+    "specification": "DETAILED_DESIGN",
+    "index": "note-lead-in.index.json",
+    "checks": {
+      "glossary.terms_defined": "FAIL"
+    },
+    "offences": {
+      "glossary.terms_defined": 1
+    }
+  },
+  {
+    "name": "review items define F",
+    "file": "review-f-heading.md",
+    "specification": "BOARD_REVIEW_ITEMS",
+    "index": "review-f-heading.index.json",
+    "checks": {
+      "ids.family": "PASS"
+    }
+  },
+  {
+    "name": "an unknown prefix in a defining position fails ids.family",
+    "file": "unknown-prefix.md",
+    "specification": "ARCHITECTURE",
+    "index": "unknown-prefix-architecture.index.json",
+    "checks": {
+      "ids.family": "FAIL"
+    }
+  },
+  {
+    "name": "a board override with an empty list makes test ids references only",
+    "file": "report-t-heading.md",
+    "specification": "BOARD_TEST_REPORT",
+    "index": "override-empty.index.json",
+    "elementFamilies": {
+      "T": {
+        "definedIn": []
+      },
+      "TEST": {
+        "definedIn": []
+      }
+    },
+    "checks": {
+      "ids.family": "PASS",
+      "tests.no_orphans": "PASS"
+    }
+  },
+  {
+    "name": "an unknown prefix where nothing is defined is a reference and passes ids.family",
+    "file": "unknown-prefix.md",
+    "specification": "BOARD_TEST_REPORT",
+    "index": "unknown-prefix-elsewhere.index.json",
+    "elementFamilies": {
+      "T": {
+        "definedIn": []
+      },
+      "TEST": {
+        "definedIn": []
+      }
+    },
+    "checks": {
+      "ids.family": "PASS"
+    }
+  }
+]

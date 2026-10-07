@@ -107,6 +107,13 @@ public class ComponentDataFetcher {
 
 	@Autowired
 	private BranchService branchService;
+
+	@Autowired
+	private io.reliza.service.AgentBoardService agentBoardService;
+
+	/** The board a document component belongs to, as its page names it: a pointer, not the board's data. */
+	/** {@code readable}: whether the caller may open the board (RD2-9); null when the caller is not a person. */
+	public record AgentBoardRef(UUID uuid, String name, String taskPrefix, Boolean readable) {}
 	
 	@Autowired
 	private AuthorizationService authorizationService;
@@ -161,7 +168,8 @@ public class ComponentDataFetcher {
 	public Collection<ComponentData> getComponentsOfType(
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("componentType") ComponentType componentType,
-			@InputArgument("perspective") UUID perspectiveUuid) throws RelizaException {
+			@InputArgument("perspective") UUID perspectiveUuid,
+			@InputArgument("kinds") List<ComponentData.ComponentKind> kinds) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
@@ -171,12 +179,15 @@ public class ComponentDataFetcher {
 		if (null != perspectiveUuid) {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
 			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
-			Collection<ComponentData> perspectiveComponents = componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType);
+			Collection<ComponentData> perspectiveComponents = ComponentData.ofKinds(
+					componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType), kinds);
 			componentService.populateEffectiveLifecycle(perspectiveComponents);
 			return perspectiveComponents;
 		}
 
-		Collection<ComponentData> resolvedComponents = componentService.listComponentDataByOrganization(orgUuid, componentType);
+		// Only the kinds asked for (task 36d0549e): the UI lists software, not a board's document series.
+		Collection<ComponentData> resolvedComponents = ComponentData.ofKinds(
+				componentService.listComponentDataByOrganization(orgUuid, componentType), kinds);
 		// the same cascade the runtime check applies: component grants, granted perspectives, read-level products
 		Set<UUID> readable = authorizationService.readableComponentUuids(oud.get(), orgUuid);
 		if (readable != null) {
@@ -600,6 +611,33 @@ public class ComponentDataFetcher {
 
 /* Sub-fields */
 	
+	/**
+	 * The board a BOARD_DOCUMENT component belongs to (board-documents.md §5, task 36d0549e): the board whose
+	 * document component map holds it; null for every other kind and for a document nobody owns. Read
+	 * under the component's own permission (board-permissions.md D18); the board page it points to
+	 * checks the board's.
+	 */
+	@DgsData(parentType = "Component", field = "agentBoard")
+	public AgentBoardRef componentAgentBoard(DgsDataFetchingEnvironment dfe) {
+		ComponentData cd = dfe.getSource();
+		if (null == cd || ComponentData.ComponentKind.BOARD_DOCUMENT != cd.getKind()) return null;
+		return agentBoardService.boardOfDocumentComponent(cd.getOrg(), cd.getUuid())
+				.map(bd -> new AgentBoardRef(bd.getUuid(), bd.getName(), bd.getTaskPrefix(), readableBy(bd))).orElse(null);
+	}
+
+	/**
+	 * Whether the signed-in person holds BOARD_READ on the board (RD2-9), so the component page links
+	 * to it only when the link opens -- the component is read under its own permission, the board under
+	 * the board's. Null for a caller that is not a person, where there is no page to link from.
+	 */
+	private Boolean readableBy(io.reliza.model.AgentBoardData bd) {
+		if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken auth)) return null;
+		var oud = userService.getUserDataByAuth(auth);
+		if (oud.isEmpty()) return null;
+		return authorizationService.boardPermission(oud.get(), bd.getOrg(), bd.getUuid(),
+				io.reliza.model.UserPermission.PermissionFunction.BOARD_READ, CallType.READ);
+	}
+
 	@DgsData(parentType = "Component", field = "effectiveLifecycle")
 	public ReleaseLifecycle effectiveLifecycle(DgsDataFetchingEnvironment dfe) {
 		// Synthetic — derived from the component's releases at read time.

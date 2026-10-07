@@ -63,6 +63,9 @@ public class BranchService {
     private AuditService auditService;
 
 	@Autowired
+	private VcsRepositoryService vcsRepositoryService;
+
+	@Autowired
 	@Lazy
 	private DependencyPatternService dependencyPatternService;
 
@@ -225,7 +228,7 @@ public class BranchService {
 			ComponentData cd = ocd.get();
 			BranchType bt = BranchData.resolveBranchTypeByName(cleanedName);
 			ob = Optional.of(
-					createBranch(cleanedName, component, bt, cd.getVcs(), cleanedName, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)
+					createBranch(cleanedName, component, bt, null, cleanedName, cd.getFeatureBranchVersioning(), cd.getMarketingVersionSchema(), wu)
 			);
 		}
 
@@ -332,6 +335,22 @@ public class BranchService {
 		if (StringUtils.isBlank(name)) {
 			throw new RelizaException("Branch name cannot be empty");
 		}
+
+		// One base branch per component. updateBranch enforces this by demoting the incumbent
+		// when a branch is promoted; creation refuses instead, because a create call has no
+		// business quietly reconfiguring an existing branch. Without the guard a second base
+		// could be created and every later getBaseBranchOfComponent would fail with an
+		// ambiguous-result error far from the call that caused it.
+		if (BranchType.BASE == type && getBaseBranchOfComponent(cd.getUuid()).isPresent()) {
+			throw new RelizaException("Component " + cd.getName() + " already has a base "
+					+ (cd.getType() == ComponentData.ComponentType.PRODUCT ? "feature set" : "branch")
+					+ "; promote the intended one with updateBranch instead of creating another");
+		}
+
+		// A caller-supplied repository must be the component's org's own.
+		if (null != vcsRepoUuid) {
+			requireVcsOfOrg(vcsRepoUuid, cd.getOrg(), "new branch of component " + cd.getUuid());
+		}
 		
 		// if no vcs data or version data provided, use parent project settings
 		if (null == vcsRepoUuid || StringUtils.isEmpty(vcsBranch) || StringUtils.isEmpty(versionPin)) {
@@ -352,7 +371,7 @@ public class BranchService {
 				}
 			}
 			if (null == vcsRepoUuid && cd.getType() == ComponentType.COMPONENT) {
-				vcsRepoUuid = cd.getVcs();
+				vcsRepoUuid = ownOrgVcsOrNull(cd.getVcs(), cd.getOrg(), "component " + cd.getUuid());
 			}
 			if (null == vcsBranch && cd.getType() == ComponentType.COMPONENT) {
 				vcsBranch = name;
@@ -434,6 +453,35 @@ public class BranchService {
 		saveBranch(b, Utils.dataToRecord(bd), wu);
 	}
 
+	/**
+	 * Refuses a VCS repository that is missing or belongs to another organization than the
+	 * branch, with one message for both so the refusal is not an existence oracle. Applies to
+	 * global admins too: a branch has no legitimate reason to point at another org's repository.
+	 *
+	 * @param subject what the vcs was submitted for, for the log only
+	 */
+	private void requireVcsOfOrg(UUID vcsUuid, UUID branchOrg, String subject) throws RelizaException {
+		if (vcsRepositoryService.getVcsRepositoryData(vcsUuid, branchOrg).isEmpty()) {
+			log.error("SECURITY: submitted wrong vcs id = {} for {} in org = {}", vcsUuid, subject, branchOrg);
+			throw new RelizaException(CommonVariables.VCS_REPOSITORY_NOT_FOUND_MESSAGE);
+		}
+	}
+
+	/**
+	 * A vcs inherited from stored data (the component's default, a cloned branch's) is kept
+	 * only if it is the org's own. A missing or foreign one, written before the reference was
+	 * checked, is dropped rather than propagated or turned into a failure.
+	 *
+	 * @param source where the vcs was inherited from, for the log only
+	 */
+	private UUID ownOrgVcsOrNull(UUID vcsUuid, UUID org, String source) {
+		if (null == vcsUuid) return null;
+		if (vcsRepositoryService.getVcsRepositoryData(vcsUuid, org).isPresent()) return vcsUuid;
+		log.warn("LEGACY-REF: {} in org {} links vcs {} that is missing or outside the org; new branch does not inherit it",
+				source, org, vcsUuid);
+		return null;
+	}
+
 	@Transactional
 	public BranchData updateBranch (BranchDto branchDto, WhoUpdated wu) throws RelizaException {
 		BranchData retBd = null;
@@ -445,6 +493,12 @@ public class BranchService {
 				bd.setName(branchDto.getName());
 			}
 			if (null != branchDto.getVcs()) {
+				// Only a changed value is checked: the UI resends the stored vcs on every
+				// edit, and re-saving an existing reference introduces nothing new. A stored
+				// legacy reference is neutralised by the readers and the SCE path instead.
+				if (!branchDto.getVcs().equals(bd.getVcs())) {
+					requireVcsOfOrg(branchDto.getVcs(), bd.getOrg(), "branch " + bd.getUuid());
+				}
 				bd.setVcs(branchDto.getVcs());
 			}
 			if (null != branchDto.getVcsBranch()) {
@@ -484,15 +538,8 @@ public class BranchService {
 			}
 			if (null != branchDto.getDependencyPatterns()) {
 				// Validate regex patterns and assign UUIDs to newly-inserted patterns
+				DependencyPatternService.validatePatterns(branchDto.getDependencyPatterns(), bd.getDependencyPatterns());
 				for (BranchData.DependencyPattern pattern : branchDto.getDependencyPatterns()) {
-					if (StringUtils.isNotEmpty(pattern.getPattern())) {
-						try {
-							java.util.regex.Pattern.compile(pattern.getPattern());
-						} catch (Exception e) {
-							log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
-							throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
-						}
-					}
 					if (pattern.getUuid() == null) {
 						pattern.setUuid(UUID.randomUUID());
 					}
@@ -684,7 +731,8 @@ public class BranchService {
 			}
 		}
 		BranchData bd = BranchData.branchDataFactory(name, originalBranch.getComponent(), 
-				originalBranch.getOrg(), StatusEnum.ACTIVE, bt, originalBranch.getVcs(), 
+				originalBranch.getOrg(), StatusEnum.ACTIVE, bt,
+				ownOrgVcsOrNull(originalBranch.getVcs(), originalBranch.getOrg(), "branch " + originalBranch.getUuid()),
 				null, null, null);
 		bd.setAutoIntegrate(originalBranch.getAutoIntegrate());
 		bd.setCreatedType(wu.getCreatedType());

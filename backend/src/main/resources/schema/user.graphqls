@@ -14,6 +14,12 @@
 # ---------------------------------------------------------------------------
 
 type Query {
+
+	"""Usage across a board for a period, grouped by model, role and agent."""
+	agentBoardUsage(boardUuid: ID!, from: DateTime!, to: DateTime!): UsageTotals
+
+	"""Usage across an organization for a period."""
+	organizationAgentUsage(orgUuid: ID!, from: DateTime!, to: DateTime!): UsageTotals
 	user: User
 	"""Every lock in the organization, active and recently released."""
 	locks(orgUuid: ID!): [Lock!]
@@ -47,7 +53,11 @@ type Query {
 
 	releaseTagKeys(orgUuid: ID!): [String]
 	component(componentUuid:ID!): Component
-	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID): [Component]
+	"""
+	The organization's components of a type. kinds narrows them to those kinds; absent, every kind is
+	returned. The UI asks for GENERIC and HELM: a board's BOARD_DOCUMENT components are shown inside the board.
+	"""
+	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID, kinds: [ComponentKind]): [Component]
 	"""
 	Durable-ownership report (RFC Phase 4c): every NON-OWNED component in the org
 	with its computed ownership status/suggestion. Org-admin only; read-only
@@ -234,7 +244,8 @@ type Query {
 
 	# Perspectives
 	perspectives(org: ID!): [Perspective]
-	componentsOfPerspective(perspectiveUuid: ID!): [Component]
+	"""A perspective's components; kinds narrows them as for components."""
+	componentsOfPerspective(perspectiveUuid: ID!, kinds: [ComponentKind]): [Component]
 
 	# Download Logs
 	listDownloadLogs(org: ID!, fromDate: DateTime, toDate: DateTime, perspective: ID): [DownloadLog]
@@ -250,7 +261,7 @@ type Query {
 	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	searchReleasesByTimeFrameAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
 	# Date Range Queries - return flat [Release] list
-	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
+	releasesByDateRange(org: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType, componentKinds: [ComponentKind]): [Release]
 	releasesByDateRangeAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
 	"""
 	The limit most recent releases of the component across all its branches, newest first
@@ -258,7 +269,7 @@ type Query {
 	"""
 	latestReleasesOfComponent(componentUuid: ID!, limit: Int): [Release]
 	releasesByDateRangeAndBranch(branchUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int): [Release]
-	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType): [Release]
+	releasesByDateRangeAndPerspective(perspectiveUuid: ID!, startDate: DateTime!, endDate: DateTime!, limit: Int, componentType: ComponentType, componentKinds: [ComponentKind]): [Release]
 	# Pattern Preview
 	previewPattern(orgUuid: ID!, pattern: String!, targetBranchName: String, defaultStatus: Status, fallbackToBase: FallbackToBase): [EffectiveDependency]
 
@@ -317,14 +328,43 @@ type Query {
 	session(uuid: ID!): Session
 	sessionsOfOrg(orgUuid: ID!, statuses: [SessionStatus]): [Session]
 	sessionsOfAgent(rootAgentUuid: ID!, statuses: [SessionStatus]): [Session]
+	"""
+	Sessions in an org that ran in the given agent-tool session, matched on either its local or
+	its remote id (see Session.providerSessions). Newest first.
+	"""
+	sessionsByProviderSession(orgUuid: ID!, providerSessionId: String!): [Session]
 	modelOntology(uuid: ID!): ModelOntology
 	modelOntologiesOfOrg(orgUuid: ID!): [ModelOntology]
+	"""The bundled model catalogue's entries (task RD2-27): what a row's canonical id may link to."""
+	modelCatalogueBundle: [ModelBundleEntry]
 	"""
 	Cross-cutting KPIs for the AI Agents dashboard header -- active
 	sessions, closed-in-last-30d, artifacts produced in last 7d, and
 	registered-agent count.
 	"""
 	agentDashboardKpis(orgUuid: ID!): AgentDashboardKpis
+
+	# --- Agent task boards (hub-and-spoke; see ai-plans/agentic/task-boards.md) ---
+	"""JWT dashboard read: one task, for the task page; its board's org gates it as agentBoard does."""
+	agentTask(uuid: ID!): AgentTask
+	"""
+	A task's earlier revisions, newest first (22ddc644): the task as it was before each save,
+	served through the same fields as the live task. The live task is the newest revision and is
+	not repeated. Org ADMIN. limit defaults to 50 and is capped at 200.
+	"""
+	agentTaskHistory(taskUuid: ID!, limit: Int = 50, offset: Int = 0): [AgentTaskRevision]
+	"""A board's earlier revisions, newest first, as agentTaskHistory. Org ADMIN."""
+	agentBoardHistory(boardUuid: ID!, limit: Int = 50, offset: Int = 0): [AgentBoardRevision]
+	"""A role config's or preset's earlier revisions, newest first, as agentTaskHistory. Org ADMIN."""
+	agentRoleConfigHistory(roleConfigUuid: ID!, limit: Int = 50, offset: Int = 0): [AgentRoleConfigRevision]
+	"""The newest BOARD_ELEMENT_CHECK_REPORT round about a document (elements.md §7); null when it has none."""
+	elementCheckReport(releaseUuid: ID!): Release
+	"""JWT dashboard read: the org's role presets."""
+	agentTaskRolePresetsOfOrg(orgUuid: ID!): [AgentTaskRoleConfig]
+	"""The board as a declarative spec: configuration only, roles in order, prompts included."""
+	agentBoardSpec(boardUuid: ID!): BoardSpec
+	"""The organization's role presets as a presets file."""
+	agentRolePresetsSpec(orgUuid: ID!): RolePresetsSpec
 
 	# AI-Agent policies (SAAS-only).
 	agentPolicy(uuid: ID!): AgentPolicy
@@ -571,6 +611,29 @@ type Query {
 }
 
 type Mutation {
+
+	"""
+	Add a dated rate to a model. Entries are never edited in place: a correction
+	is a new entry plus an expiry on the old one, so a price version recorded on
+	a rollup always means the same numbers. Org ADMIN.
+	"""
+	addModelPricing(modelOntologyUuid: ID!, entry: PricingEntryInput!): ModelOntology
+
+	"""Close an open rate at a point in time. Org ADMIN."""
+	expireModelPricing(modelOntologyUuid: ID!, entryUuid: ID!, effectiveTo: DateTime!): ModelOntology
+
+	"""
+	Create or refresh an org's row from the bundled catalogue, leaving pricing and
+	every admin-set field untouched. Org ADMIN.
+	"""
+	applyModelCataloguePreset(orgUuid: ID!, canonicalId: String!): ModelOntology
+
+	"""
+	Fold an unresolved row into a known one: its name and aliases become aliases of
+	the target, agents, sessions and usage rows are re-pointed, and the row is
+	removed. Org ADMIN.
+	"""
+	mergeModelOntology(from: ID!, into: ID!): ModelOntology
 	# user management
 	acceptUserPolicies(tosAccepted: Boolean!, marketingAccepted: Boolean!, email: String): User
 	verifyEmail(secret: String!): User
@@ -755,8 +818,8 @@ type Mutation {
 	createOrgApiKey(orgUuid: ID!, apiType: ApiTypeEnum!, notes: String): ApiKey
 	"Personal USER key for the calling user in this org: created without a secret and with an empty permission ceiling"
 	createUserApiKey(orgUuid: ID!, notes: String): ApiKey
-	"CLI browser login: approve the pending request with an existing key of mine (apiKeyUuid), or with a personal key created for this session in createKeyOrgUuid"
-	approveCliLogin(userCode: String!, apiKeyUuid: ID, createKeyOrgUuid: ID, createKeyNotes: String, permissionType: PermissionType, permissions: [PermissionInput]): CliSession
+	"CLI browser login: approve the pending request with an existing key of mine (apiKeyUuid), or with a personal key created for this session in createKeyOrgUuid. maxMinutes: a session shorter than the key's sessionMaxMinutes allows, never longer (1 to 129600)"
+	approveCliLogin(userCode: String!, apiKeyUuid: ID, createKeyOrgUuid: ID, createKeyNotes: String, permissionType: PermissionType, permissions: [PermissionInput], maxMinutes: Int): CliSession
 	denyCliLogin(userCode: String!): Boolean
 	"Revoke one of my CLI sessions, or (org admin) any session in my org; a key created for that session is deleted with it"
 	revokeCliSession(uuid: ID!): Boolean
@@ -924,6 +987,13 @@ type Mutation {
 	any key type (FREEFORM is the primary consumer today).
 	"""
 	setNotesOnApiKey(apiKeyUuid: ID!, notes: String): ApiKey
+	"Bound the device-login sessions of a personal or Free Form key (1 to 129600 minutes), or null to lift the bound. The key's owner or holder, or an org admin."
+	setApiKeySessionMaxMinutes(apiKeyUuid: ID!, sessionMaxMinutes: Int): ApiKey
+	"""
+	Declare a key made by hand under a name for API_KEYS files, or release its name with null (task RD3-11):
+	the next apply naming it updates this key. FREEFORM keys only; an organization administrator's.
+	"""
+	declareApiKey(apiKeyUuid: ID!, name: String): ApiKey
 	"""
 	Revoke an API key. apiKeyUuid is the key's uuid (apiKeys { uuid }) or the key id it was
 	issued with (TYPE__objectUuid or TYPE__objectUuid__ord__keyOrder); anything else is refused
@@ -1314,6 +1384,42 @@ type Mutation {
 	# is refused outright rather than truncated, because a silently truncated sweep reports
 	# success over components it never wrote. Split and reuse the batchId.
 	bulkSetSbomComponentSupport(sbomComponentUuids: [ID!]!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, reason: String, batchId: ID): SbomComponentSupportBulkResponse!
+
+	# --- Agent task boards (hub-and-spoke; see ai-plans/agentic/task-boards.md) ---
+	# Operator (JWT org-admin) board lifecycle. Boards are governance:
+	# creation, sources, prompts and WIP limits are operator acts.
+	agentBoardCreate(orgUuid: ID!, input: AgentBoardInput!): AgentBoard
+	agentBoardUpdate(boardUuid: ID!, input: AgentBoardInput!): AgentBoard
+	# Operator force-close of a dead agent session: its assignments go back
+	# to QUEUED for their roles (a SESSION_CLOSED return keeps the usage) and
+	# any coordinator seat is released with an ALERT. The reason is recorded
+	# as the session's closeReason (task 6e7fe6fe). Unrelated to locking --
+	# this reclaims work from a dead agent.
+	agentSessionForceClose(sessionUuid: ID!, reason: String): Session
+	# Role config upsert -- operator path (JWT org-admin). Role
+	# creation and prompt/capability changes are operator-ONLY (v1.1
+	# prompt governance); the coordinator seat path can only tune
+	# order / wipLimit / distinct-agent / active on existing roles.
+	agentTaskRoleConfigSet(boardUuid: ID!, input: AgentTaskRoleConfigInput!): AgentTaskRoleConfig
+	# v1.1: org-level role preset upsert (operator-only library new
+	# boards seed from; a preset named coordinator seeds the board's
+	# coordinatorPrompt).
+	agentTaskRolePresetSet(orgUuid: ID!, input: AgentTaskRoleConfigInput!): AgentTaskRoleConfig
+	"""
+	Send a COMPLETED task back to an active role, with a reason -- its delivery cannot land, e.g. its
+	PR no longer merges. The role's earlier passes stop counting; whoever read its part re-runs when
+	the redone hop republishes. A cancel stays final. Org admin.
+	"""
+	agentTaskReopen(taskUuid: ID!, role: String!, reason: String!): AgentTask
+	"""Re-run the element checks of a document in its current scope (organization write access); cuts a new BOARD_ELEMENT_CHECK_REPORT round when anything changed."""
+	agentElementCheckRun(releaseUuid: ID!): Release
+	"""
+	Copy a named org preset's prompt onto a board's coordinator prompt. Boards seed at creation
+	from coordinator-tracker or coordinator-board-truth by whether sources are wired; this is how
+	an existing board moves between them.
+	"""
+	agentBoardReseedCoordinatorPrompt(boardUuid: ID!, presetName: String!): AgentBoard
+
 }
 
 
@@ -1376,6 +1482,30 @@ type AdminOrganization {
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
 	createdDate: DateTime
+}
+
+"""
+One earlier revision of a task: the audit row written when the task was next saved. at is when
+this revision was saved. task is null when the snapshot no longer parses.
+"""
+type AgentTaskRevision {
+	revision: Int!
+	at: DateTime
+	task: AgentTask
+}
+
+"""One earlier revision of a board; see AgentTaskRevision."""
+type AgentBoardRevision {
+	revision: Int!
+	at: DateTime
+	board: AgentBoard
+}
+
+"""One earlier revision of a role config or preset; see AgentTaskRevision."""
+type AgentRoleConfigRevision {
+	revision: Int!
+	at: DateTime
+	roleConfig: AgentTaskRoleConfig
 }
 
 """
@@ -1688,8 +1818,10 @@ type CliSession {
 	deviceInfo: CliDeviceInfo
 	createdDate: DateTime
 	approvedDate: DateTime
-	"Sliding: each refresh moves it 30 days out, never past 90 days after approval"
+	"Sliding: each refresh moves it 30 days out, never past 90 days after approval nor past hardExpiresDate"
 	expiresDate: DateTime
+	"The session's hard end, fixed at approval from the key's sessionMaxMinutes or the approver's shorter choice; null when nothing but the 90-day cap bounds it"
+	hardExpiresDate: DateTime
 	lastUsedDate: DateTime
 	revokedDate: DateTime
 }
@@ -2463,8 +2595,11 @@ type HbomComponent {
 }
 
 input IgnoreViolationInput {
+	"""Regex patterns for license violations to ignore. Null leaves unchanged; empty list clears."""
 	licenseViolationRegexIgnore: [String]
+	"""Regex patterns for security violations to ignore. Null leaves unchanged; empty list clears."""
 	securityViolationRegexIgnore: [String]
+	"""Regex patterns for operational violations to ignore. Null leaves unchanged; empty list clears."""
 	operationalViolationRegexIgnore: [String]
 }
 
@@ -2926,10 +3061,37 @@ type MitigationAttestationWebDto {
 
 input ModelOntologyUpdateInput {
 	uuid: ID!
+	"""
+	What the row is (task RD2-27): name and version, each left out unchanged. A name and version another
+	row of the organization has is refused -- that is a merge.
+	"""
+	name: String
+	version: String
+	"""
+	The provider's model id. A bundled id links the row to that entry; any other is kept as typed and
+	confirms the row, though the bundle prices only what it knows. Sent as null or empty, the row
+	resolves from its name again. One another row carries is refused -- that is a merge.
+	"""
+	canonicalId: String
+	"""Where the model comes from; left out, unchanged."""
+	tier: ModelTier
 	publisher: String
 	description: String
 	purl: String
 	notes: String
+	"""
+	The model's base strength, at most two decimal places. Left out, unchanged; sent as null, the
+	model becomes unrated.
+	"""
+	strength: Float
+	"""Replaces the per-category strengths; an empty list clears them."""
+	strengthByRole: [ModelRoleStrengthInput!]
+}
+
+"""A model's strength for one kind of work."""
+input ModelRoleStrengthInput {
+	category: ModelRoleCategory!
+	strength: Float!
 }
 
 type MostVulnerableComponent {
@@ -3235,6 +3397,16 @@ enum NotificationEventTypeEnum {
 	APPROVAL_RESOLVED
 	INSTANCE_DEPLOYMENT_CHANGED
 	INSTANCE_DEPLOYMENT_FAILED
+	# An agent board posted an ALERT or was locked.
+	AGENT_BOARD_ALERT
+	# A board task was held for a person: a human gate, an operator hold, or a question nobody can answer.
+	AGENT_TASK_NEEDS_PERSON
+	# A hop returned its task, for any reason but its session closing.
+	AGENT_TASK_RETURNED
+	# A task has waited on a person longer than its board's humanQueueAgeMinutes.
+	AGENT_TASK_QUEUE_AGE
+	# An agent session is about to be closed by the idle sweep (task 6e7fe6fe).
+	AGENT_SESSION_IDLE_WARNING
 }
 
 input NotificationFilterInput {
@@ -4100,6 +4272,13 @@ input SecretUpdateInput {
 input SettingsInput {
 	"""Org-wide prune mode for declarative applies. Partial-patch idiom: null leaves the existing value unchanged."""
 	declarativePrune: DeclarativePruneMode
+	"""
+	How many priority levels a review item index may use, 1 highest. Default 3, at most 10.
+	Validated at publish only: lowering it leaves historical indexes carrying
+	higher priorities, which readers show rather than refuse. Partial-patch
+	idiom: null leaves the existing value unchanged.
+	"""
+	reviewItemPriorityLevels: Int
 	justificationMandatory: Boolean
 	branchSuffixMode: BranchSuffixMode
 	vexComplianceFramework: VexComplianceFramework
@@ -4130,6 +4309,8 @@ input SettingsInput {
 	value unchanged (90-day default applies when never set).
 	"""
 	notificationRetentionDays: Int
+	"""Hours an agent session may go without a call before it is closed, 1 to 720. Null leaves the existing value unchanged."""
+	agentSessionIdleCloseHours: Int
 	"""
 	The submission-level justification: what FDA L1021-1022 asks for literally, the reason
 	per-component support information cannot be included. At the measured 2.3% upstream
@@ -4483,6 +4664,10 @@ enum SupportState {
 # reconciled: a maintainer can publish a far-future end-of-support and have abandoned the
 # library in practice, and a reviewer needs to see both.
 #
+# WITHIN_SUPPORT_WINDOW: an end-of-support or end-of-guaranteed-support date is on record and
+# none has passed yet. It says nothing about current maintenance. UNKNOWN: neither date is on
+# record; an end-of-life date alone (end of sale) derives nothing and also reads UNKNOWN.
+#
 # ACTIVELY_SUPPORTED, ABANDONED and END_OF_LIFE are retained but NEVER returned. The first two
 # moved to LevelOfSupport as attested claims; END_OF_LIFE was retired because it means END OF
 # SALE, which is not a support state. They stay because this enum is published in the CE
@@ -4494,6 +4679,7 @@ enum SupportStatus {
 	END_OF_LIFE
 	ABANDONED
 	UNKNOWN
+	WITHIN_SUPPORT_WINDOW
 }
 
 # Curated synthetic event templates surfaced through the
@@ -4616,6 +4802,7 @@ input UpdateComponentInput {
 	"""
 	clearApprovalPolicy: Boolean
 	releaseInputTriggers: [ReleaseInputEventInput]
+	"""Component actions (the full list). Null leaves unchanged; empty list clears."""
 	outputTriggers: [ReleaseOutputEventInput]
 	globalInputEventRefs: [GlobalInputEventRefInput]
 	identifiers: [IdentifierInput]
@@ -4725,6 +4912,8 @@ type User {
 	publicSshKeys: [SshKey]
 	systemSealed: Boolean
 	installationType: String
+	"""Deployment-wide default for the UI home dashboard: APP or BOARDS (relizaprops.default-dashboard). The user's own choice, stored in browser localStorage, overrides it."""
+	defaultDashboard: String
 	isGlobalAdmin: Boolean
 	isLicenseValid: Boolean
 	status: UserStatus

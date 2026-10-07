@@ -127,7 +127,8 @@ public class ProgrammaticAuthenticationFilter extends OncePerRequestFilter {
 				principal = AuthHeaderParse.fromVerifiedFederation(oak.get(),
 						FederatedTrustRuleService.contextOf(claims.get().ruleUuids(), claims.get().federation()), request.getRemoteAddr());
 			} else if (claims.get().sessionUuid() != null) {
-				principal = AuthHeaderParse.fromVerifiedSession(oak.get(), claims.get().actorUser(), request.getRemoteAddr());
+				principal = AuthHeaderParse.fromVerifiedSession(oak.get(), claims.get().actorUser(),
+						claims.get().sessionUuid(), request.getRemoteAddr());
 			} else {
 				principal = AuthHeaderParse.fromVerifiedKey(oak.get(), claims.get().slot(), request.getRemoteAddr());
 			}

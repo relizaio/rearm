@@ -4,6 +4,8 @@
 package io.reliza.service;
 
 import java.io.IOException;
+import java.net.URI;
+import java.net.URISyntaxException;
 import java.time.LocalDateTime;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
@@ -51,6 +53,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
+import org.springframework.web.multipart.MultipartFile;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -112,6 +115,7 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseData.ReservationEndedBy;
 import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
@@ -119,6 +123,7 @@ import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.SignatureArtifactTags;
 import io.reliza.model.SignatureArtifactTags.SignatureSubject;
 import io.reliza.model.SignatureVerificationData.SignatureSubjectType;
+import io.reliza.model.VariantData;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
@@ -404,6 +409,12 @@ public class ReleaseService {
 		OrganizationData od = null;
 
 		if (sourceCodeEntry != null || commitList != null) {
+			// Refuse the whole build before any commit is recorded: each one below is written on
+			// its own, so a refusal found at a later commit would leave the earlier ones behind.
+			List<SceDto> toRecord = new LinkedList<>();
+			if (null != commitList) toRecord.addAll(commitList);
+			toRecord.add(sourceCodeEntry);
+			sourceCodeEntryService.requireBuildRecordable(bd, toRecord);
 			// parse list of associated commits obtained via git log with previous CI build if any (note this may include osce)
 			if (commitList != null) {
 				for (var com : commitList) {
@@ -1345,7 +1356,8 @@ public class ReleaseService {
 			try {
 				// No rules: an abandoned reservation never became a release, so nothing may fire for
 				// it -- a rule held back while it was PENDING would otherwise fire on the cancel.
-				ossReleaseService.updateReleaseLifecycle(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated(), false);
+				ossReleaseService.endReservation(rd.getUuid(), ReleaseLifecycle.CANCELLED, WhoUpdated.getAutoWhoUpdated(),
+						ReservationEndedBy.SCHEDULER);
 			} catch (Exception e) {
 				// Per-release isolation (same contract as computeMetricsForReleaseList):
 				// without it one failure aborts every release left in the batch, which
@@ -1537,41 +1549,32 @@ public class ReleaseService {
 	 * Capture the raw bytes and input DTO of every VEX artifact in an upload batch
 	 * <em>before</em> {@link ArtifactService#uploadListOfArtifacts} consumes the
 	 * {@code MultipartFile} entries, and verify the VEX-import precondition once if the
-	 * batch contains any VEX.
+	 * batch contains any VEX. addArtifactProgrammatic checks the same precondition for the
+	 * whole input up front in {@link #resolveProgrammaticArtifactTargets}, before any part is
+	 * uploaded; this guard keeps the public {@code process*Artifacts} methods from storing a VEX
+	 * the import will never run on when a caller skips that check.
 	 *
 	 * <p>The returned list is index-aligned with {@code artifactsList} — {@code null}
 	 * for non-VEX entries — and is meant to be handed to {@link #dispatchVexArtifacts}
 	 * after the upload completes.
 	 */
 	private List<VexUpload> captureVexUploads(List<Map<String, Object>> artifactsList, ReleaseData rd) throws RelizaException {
-		List<VexUpload> vexByIndex = new java.util.ArrayList<>(artifactsList.size());
+		List<VexUpload> vexByIndex = new ArrayList<>(artifactsList.size());
 		for (Map<String, Object> a : artifactsList) {
 			VexUpload vu = null;
-			if (ArtifactType.VEX == parseArtifactType(a.get("type"))) {
+			if (isVexUpload(a)) {
 				byte[] bytes = null;
-				Object fileObj = a.get("file");
-				if (fileObj instanceof org.springframework.web.multipart.MultipartFile mf) {
-					try { bytes = mf.getBytes(); }
-					catch (java.io.IOException e) {
-						log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
-					}
+				try { bytes = ((MultipartFile) a.get("file")).getBytes(); }
+				catch (IOException e) {
+					log.warn("Failed to capture VEX bytes for downstream dispatch: {}", e.getMessage());
 				}
-				// Parse the input map into an ArtifactDto for the VEX control fields —
-				// mirrors uploadSingleArtifactWithFileFromList's conversion. file /
-				// artifacts are dropped first as they don't round-trip onto the DTO.
-				Map<String, Object> dtoMap = new java.util.HashMap<>(a);
-				dtoMap.remove("file");
-				dtoMap.remove("artifacts");
-				ArtifactDto inputDto = io.reliza.common.Utils.OM.convertValue(dtoMap, ArtifactDto.class);
+				// The same DTO the upload makes of this entry, for the VEX control fields.
+				ArtifactDto inputDto = ArtifactService.uploadDtoOf(a);
 				vu = new VexUpload(bytes, inputDto);
 			}
 			vexByIndex.add(vu);
 		}
-
-		// VexImportService precondition: release must have SBOM inventory before any
-		// VEX uploads in this batch. Run once if any of the artifacts is a VEX so we
-		// fail loud at the GraphQL boundary rather than silently dropping the file.
-		if (vexByIndex.stream().anyMatch(v -> v != null && v.content() != null)) {
+		if (vexByIndex.stream().anyMatch(Objects::nonNull)) {
 			vexImportService.verifyDispatchPreconditions(rd);
 		}
 		return vexByIndex;
@@ -1657,6 +1660,121 @@ public class ReleaseService {
 		dispatchVexArtifacts(vexUploads, artIds, rd, ArtifactBelongsTo.RELEASE, wu);
 	}
 	
+	/** One {@code deliverableArtifacts} entry, its deliverable resolved in the release's organization. */
+	public record DeliverableArtifacts(DeliverableData deliverable, List<Map<String, Object>> artifacts) {}
+
+	/** One {@code sceArtifacts} entry, its source code entry resolved in the release's organization. */
+	public record SceArtifacts(SourceCodeEntryData sce, List<Map<String, Object>> artifacts) {}
+
+	/** An addArtifactProgrammatic input checked whole against its release; empty parts are empty lists. */
+	public record ProgrammaticArtifactTargets(List<Map<String, Object>> releaseArtifacts,
+			List<DeliverableArtifacts> deliverableArtifacts, List<SceArtifacts> sceArtifacts) {}
+
+	/**
+	 * Check a whole addArtifactProgrammatic input against the release it targets before any part of
+	 * it is uploaded or attached: each part is written on its own, so a refusal found later would
+	 * leave the earlier parts behind. Refuses, in this order:
+	 * <ul>
+	 * <li>an input with no part, an entry without a target or without artifacts;</li>
+	 * <li>a deliverable that is not one of {@code rd}'s (inbound, or outbound on one of its
+	 * variants), in {@code rd}'s organization and built on a branch of {@code rd}'s component (a
+	 * deliverable listed on the release can be another component's: an inbound one recorded from
+	 * elsewhere, or one reused by digest), and a source code entry
+	 * that is not {@code rd}'s own or one of its commits and owned by that organization
+	 * ({@link GetSourceCodeEntryService#getOwnedSceData}; an entry of the shared external org that
+	 * the release references is not writable) -- a missing, malformed, foreign or unrelated uuid
+	 * all read "not found in this organization";</li>
+	 * <li>release artifacts on a release whose component or branch is locked (where the lock
+	 * applied before; deliverable and SCE artifacts are not lock-gated here);</li>
+	 * <li>any artifact the upload itself would refuse ({@link ArtifactService#validateUploadInput});</li>
+	 * <li>when any part carries a VEX upload, a release the VEX import cannot run against.</li>
+	 * </ul>
+	 */
+	public ProgrammaticArtifactTargets resolveProgrammaticArtifactTargets(Map<String, Object> artifactInput,
+			ReleaseData rd) throws RelizaException {
+		if (!artifactInput.containsKey("releaseArtifacts") && !artifactInput.containsKey("deliverableArtifacts")
+				&& !artifactInput.containsKey("sceArtifacts")) {
+			throw new RelizaException("At least one of 'releaseArtifacts', 'deliverableArtifacts', or 'sceArtifacts' must be provided");
+		}
+		List<Map<String, Object>> releaseArtifacts = inputList(artifactInput.get("releaseArtifacts"));
+
+		List<Map<String, Object>> deliverableInput = inputList(artifactInput.get("deliverableArtifacts"));
+		Set<UUID> releaseDeliverables = new LinkedHashSet<>();
+		if (!deliverableInput.isEmpty()) {
+			releaseDeliverables.addAll(rd.getInboundDeliverables());
+			for (VariantData vd : variantService.getVariantsOfRelease(rd.getUuid())) {
+				if (null != vd.getOutboundDeliverables()) releaseDeliverables.addAll(vd.getOutboundDeliverables());
+			}
+		}
+		List<DeliverableArtifacts> deliverableArtifacts = new LinkedList<>();
+		for (Map<String, Object> delArts : deliverableInput) {
+			String deliverableIdStr = (String) delArts.get("deliverable");
+			if (StringUtils.isEmpty(deliverableIdStr)) {
+				throw new RelizaException("'deliverable' field is required in deliverableArtifacts");
+			}
+			DeliverableData dd = Utils.parseUuid(deliverableIdStr)
+				.filter(releaseDeliverables::contains)
+				.flatMap(u -> getDeliverableService.getDeliverableData(u, rd.getOrg()))
+				.filter(d -> null != d.getBranch() && branchService.getBranchData(d.getBranch())
+						.map(bd -> rd.getComponent().equals(bd.getComponent())).orElse(false))
+				.orElseThrow(() -> new RelizaException("Deliverable not found in this organization: " + deliverableIdStr));
+			List<Map<String, Object>> artifactsList = inputList(delArts.get("artifacts"));
+			if (artifactsList.isEmpty()) {
+				throw new RelizaException("'artifacts' list cannot be empty in deliverableArtifacts");
+			}
+			deliverableArtifacts.add(new DeliverableArtifacts(dd, artifactsList));
+		}
+
+		Set<UUID> releaseSces = rd.getAllCommits();
+		List<SceArtifacts> sceArtifacts = new LinkedList<>();
+		for (Map<String, Object> sceArts : inputList(artifactInput.get("sceArtifacts"))) {
+			String sceIdStr = (String) sceArts.get("sce");
+			if (StringUtils.isEmpty(sceIdStr)) {
+				throw new RelizaException("'sce' field is required in sceArtifacts");
+			}
+			SourceCodeEntryData sced = Utils.parseUuid(sceIdStr)
+				.filter(releaseSces::contains)
+				.flatMap(u -> getSourceCodeEntryService.getOwnedSceData(u, rd.getOrg()))
+				.orElseThrow(() -> new RelizaException("Source code entry not found in this organization: " + sceIdStr));
+			List<Map<String, Object>> artifactsList = inputList(sceArts.get("artifacts"));
+			if (artifactsList.isEmpty()) {
+				throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
+			}
+			sceArtifacts.add(new SceArtifacts(sced, artifactsList));
+		}
+
+		List<Map<String, Object>> allArtifacts = new LinkedList<>(releaseArtifacts);
+		deliverableArtifacts.forEach(da -> allArtifacts.addAll(da.artifacts()));
+		sceArtifacts.forEach(sa -> allArtifacts.addAll(sa.artifacts()));
+		if (!releaseArtifacts.isEmpty()) {
+			// the lock attaching release artifacts meets anyway (addArtifact), checked before any part is written
+			componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(), LockedOperation.RELEASE_CONTENT);
+		}
+		for (Map<String, Object> artifact : allArtifacts) {
+			artifactService.validateUploadInput(artifact);
+		}
+		if (allArtifacts.stream().anyMatch(ReleaseService::isVexUpload)) {
+			vexImportService.verifyDispatchPreconditions(rd);
+		}
+		return new ProgrammaticArtifactTargets(releaseArtifacts, deliverableArtifacts, sceArtifacts);
+	}
+
+	/** A GraphQL input list of objects; empty when absent. */
+	@SuppressWarnings("unchecked")
+	private static List<Map<String, Object>> inputList(Object raw) {
+		return (raw instanceof List<?> l) ? (List<Map<String, Object>>) l : List.of();
+	}
+
+	/**
+	 * An entry {@link #captureVexUploads} hands to the VEX import: a VEX artifact with a file. The
+	 * same predicate decides whether {@link #resolveProgrammaticArtifactTargets} checks the VEX
+	 * precondition.
+	 */
+	private static boolean isVexUpload(Map<String, Object> artifact) {
+		return ArtifactType.VEX == parseArtifactType(artifact.get("type"))
+				&& artifact.get("file") instanceof MultipartFile;
+	}
+
 	/**
 	 * Process and upload deliverable artifacts, then attach them to the deliverable.
 	 *
@@ -1667,27 +1785,16 @@ public class ReleaseService {
 	 * same {@code rd} the multipart manual path passes for DELIVERABLE bindings.
 	 */
 	@Transactional
-	public void processDeliverableArtifacts(List<Map<String, Object>> delArtsList, ReleaseData rd, ComponentData cd,
+	public void processDeliverableArtifacts(List<DeliverableArtifacts> delArtsList, ReleaseData rd, ComponentData cd,
 			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
 		if (null == delArtsList || delArtsList.isEmpty()) {
 			return;
 		}
 		
-		for (Map<String, Object> delArts : delArtsList) {
-			String deliverableIdStr = (String) delArts.get("deliverable");
-			if (StringUtils.isEmpty(deliverableIdStr)) {
-				throw new RelizaException("'deliverable' field is required in deliverableArtifacts");
-			}
-			
-			UUID deliverableId = UUID.fromString(deliverableIdStr);
-			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId)
-				.orElseThrow(() -> new RelizaException("Deliverable not found: " + deliverableId));
-			
-			@SuppressWarnings("unchecked")
-			List<Map<String, Object>> artifactsList = (List<Map<String, Object>>) delArts.get("artifacts");
-			if (null == artifactsList || artifactsList.isEmpty()) {
-				throw new RelizaException("'artifacts' list cannot be empty in deliverableArtifacts");
-			}
+		for (DeliverableArtifacts delArts : delArtsList) {
+			DeliverableData dd = delArts.deliverable();
+			UUID deliverableId = dd.getUuid();
+			List<Map<String, Object>> artifactsList = delArts.artifacts();
 			
 			String purl = SidPurlUtils.pickPreferredPurl(dd.getIdentifiers())
 					.map(RearmIdentifier::getIdValue).orElse(null);
@@ -1733,27 +1840,16 @@ public class ReleaseService {
 	 * {@code rd} the multipart manual path passes for SCE bindings.
 	 */
 	@Transactional
-	public void processSceArtifacts(List<Map<String, Object>> sceArtsList, ReleaseData rd, ComponentData cd,
+	public void processSceArtifacts(List<SceArtifacts> sceArtsList, ReleaseData rd, ComponentData cd,
 			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
 		if (null == sceArtsList || sceArtsList.isEmpty()) {
 			return;
 		}
 		
-		for (Map<String, Object> sceArts : sceArtsList) {
-			String sceIdStr = (String) sceArts.get("sce");
-			if (StringUtils.isEmpty(sceIdStr)) {
-				throw new RelizaException("'sce' field is required in sceArtifacts");
-			}
-			
-			UUID sceUuid = UUID.fromString(sceIdStr);
-			SourceCodeEntryData sced = getSourceCodeEntryService.getSourceCodeEntryData(sceUuid)
-				.orElseThrow(() -> new RelizaException("Source Code Entry not found: " + sceUuid));
-			
-			@SuppressWarnings("unchecked")
-			List<Map<String, Object>> artifactsList = (List<Map<String, Object>>) sceArts.get("artifacts");
-			if (null == artifactsList || artifactsList.isEmpty()) {
-				throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
-			}
+		for (SceArtifacts sceArts : sceArtsList) {
+			SourceCodeEntryData sced = sceArts.sce();
+			UUID sceUuid = sced.getUuid();
+			List<Map<String, Object>> artifactsList = sceArts.artifacts();
 			
 			// Capture VEX uploads before uploadListOfArtifacts consumes the MultipartFile entries.
 			List<VexUpload> vexUploads = captureVexUploads(artifactsList, rd);
@@ -1993,6 +2089,11 @@ public class ReleaseService {
 	/** Drive product auto-integration for one queued release (off-request worker). */
 	public void processAutoIntegrateForRelease (UUID releaseUuid) {
 		ossReleaseService.processAutoIntegrateForRelease(releaseUuid);
+	}
+
+	/** Drive product auto-integration for a batch's queued releases (off-request worker). */
+	public void processAutoIntegrateForBatch (List<UUID> releaseUuids) {
+		ossReleaseService.processAutoIntegrateForBatch(releaseUuids);
 	}
 
 	@Transactional
@@ -2714,19 +2815,7 @@ public class ReleaseService {
 	 * {@link #appendHistoricallyResolvedToBom}.
 	 */
 	static void setVulnerabilityCommonFields(Vulnerability vuln, VulnerabilityDto vulnDto) {
-		Source source = new Source();
-		if (vulnDto.vulnId() != null) {
-			if (vulnDto.vulnId().startsWith("CVE-")) {
-				source.setName("NVD");
-				source.setUrl("https://nvd.nist.gov/vuln/detail/" + vulnDto.vulnId());
-			} else if (vulnDto.vulnId().startsWith("GHSA-")) {
-				source.setName("GitHub Advisory");
-				source.setUrl("https://github.com/advisories/" + vulnDto.vulnId());
-			} else {
-				source.setName("Other");
-			}
-		}
-		vuln.setSource(source);
+		vuln.setSource(vulnerabilitySourceOf(vulnDto.vulnId()));
 
 		if (vulnDto.severity() != null) {
 			Rating rating = new Rating();
@@ -2736,8 +2825,30 @@ public class ReleaseService {
 	}
 
 	/**
+	 * The source that publishes a vulnerability id, by its type: NVD for a CVE,
+	 * GitHub for a GHSA, otherwise named "Other" with no URL. Empty for a null id.
+	 */
+	static Source vulnerabilitySourceOf(String vulnId) {
+		Source source = new Source();
+		if (vulnId != null) {
+			switch (ReleaseMetricsDto.detectAliasType(vulnId)) {
+				case CVE -> {
+					source.setName("NVD");
+					source.setUrl("https://nvd.nist.gov/vuln/detail/" + vulnId);
+				}
+				case GHSA -> {
+					source.setName("GitHub Advisory");
+					source.setUrl("https://github.com/advisories/" + vulnId);
+				}
+				default -> source.setName("Other");
+			}
+		}
+		return source;
+	}
+
+	/**
 	 * Apply the multi-source enrichment fields (description, cwes,
-	 * references, published / updated) from the canonical
+	 * advisories, alias references, published / updated) from the canonical
 	 * {@link VulnerabilityRecordData} onto a CycloneDX {@link Vulnerability}.
 	 *
 	 * <p>No-op when {@code vrd} is null — releases that haven't been
@@ -2753,7 +2864,9 @@ public class ReleaseService {
 		}
 		List<Integer> cweInts = parseCwesToCdxIntegers(vrd.getCwes());
 		if (!cweInts.isEmpty()) vuln.setCwes(cweInts);
-		List<Vulnerability.Reference> refs = parseReferencesMarkdown(vrd.getReferences());
+		List<Vulnerability.Advisory> advisories = advisoriesOf(vrd.getReferences());
+		if (!advisories.isEmpty()) vuln.setAdvisories(advisories);
+		List<Vulnerability.Reference> refs = aliasReferences(vuln.getId(), vrd);
 		if (!refs.isEmpty()) vuln.setReferences(refs);
 		if (vrd.getPublished() != null) {
 			vuln.setPublished(Date.from(vrd.getPublished().toInstant()));
@@ -2820,14 +2933,51 @@ public class ReleaseService {
 	}
 
 	/**
-	 * DTrack's markdown-bullet references blob as CycloneDX references whose
-	 * id is the URL (see {@link VulnerabilityReferenceParser}).
+	 * DTrack's markdown-bullet references blob (see {@link VulnerabilityReferenceParser})
+	 * as CycloneDX advisories: a URL where the vulnerability is described, titled with
+	 * the link text when that is more than the URL itself. Not references: in CycloneDX
+	 * a reference is the same vulnerability under another id, and needs a source.
 	 */
-	private static List<Vulnerability.Reference> parseReferencesMarkdown(String markdown) {
-		List<Vulnerability.Reference> refs = new ArrayList<>();
+	static List<Vulnerability.Advisory> advisoriesOf(String markdown) {
+		List<Vulnerability.Advisory> advisories = new ArrayList<>();
 		for (VulnerabilityReferenceParser.Reference parsed : VulnerabilityReferenceParser.parse(markdown)) {
+			if (!isUri(parsed.url())) {
+				// advisories[].url is an iri-reference: one malformed link would make the whole document invalid
+				log.debug("VDR: leaving out advisory url that is not a URI: {}", parsed.url());
+				continue;
+			}
+			Vulnerability.Advisory advisory = new Vulnerability.Advisory();
+			advisory.setUrl(parsed.url());
+			if (null != parsed.label() && !parsed.label().equals(parsed.url())) advisory.setTitle(parsed.label());
+			advisories.add(advisory);
+		}
+		return advisories;
+	}
+
+	private static boolean isUri(String url) {
+		try {
+			new URI(url);
+			return true;
+		} catch (URISyntaxException e) {
+			return false;
+		}
+	}
+
+	/**
+	 * The record's other ids for this vulnerability (a GHSA for a CVE, and so on) as
+	 * CycloneDX references, each with the source that publishes it. The entry's own
+	 * id is left out.
+	 */
+	static List<Vulnerability.Reference> aliasReferences(String vulnId, VulnerabilityRecordData vrd) {
+		Set<String> ids = new LinkedHashSet<>();
+		if (null != vrd.getPrimaryVulnId()) ids.add(vrd.getPrimaryVulnId());
+		if (null != vrd.getAliases()) ids.addAll(vrd.getAliases());
+		List<Vulnerability.Reference> refs = new ArrayList<>();
+		for (String id : ids) {
+			if (StringUtils.isBlank(id) || id.equalsIgnoreCase(vulnId)) continue;
 			Vulnerability.Reference ref = new Vulnerability.Reference();
-			ref.setId(parsed.url());
+			ref.setId(id);
+			ref.setSource(vulnerabilitySourceOf(id));
 			refs.add(ref);
 		}
 		return refs;
@@ -3454,7 +3604,7 @@ public class ReleaseService {
 
 		// Source + per-finding rating from the source DTO.
 		setVulnerabilityCommonFields(vuln, vulnDto);
-		// Description / cwes / references / published / updated come from the
+		// Description / cwes / advisories / alias references / published / updated come from the
 		// canonical vulnerability_records row pre-resolved on vdrContext.
 		VulnerabilityRecordData record = resolveEnrichment(vdrContext.enrichmentByPrimaryId(), vulnDto.vulnId(),
 				vulnDto.aliases());

@@ -12,7 +12,10 @@ import java.util.UUID;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
@@ -44,6 +47,9 @@ public class AgentIdentityService {
 
 	@Autowired
 	private AuditService auditService;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	private final AgentIdentityRepository identityRepo;
 	private final AgentIdentityCredentialRepository credRepo;
@@ -98,7 +104,7 @@ public class AgentIdentityService {
 	 * @param identityType  e.g. {@code REARM_API_KEY}
 	 * @param identityValue the credential value (key uuid, OIDC subject)
 	 */
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentIdentityData findOrRegisterByCredential(UUID orgUuid,
 			AgentIdentityCredential.IdentityType identityType,
 			String identityValue, WhoUpdated wu) throws RelizaException {
@@ -122,16 +128,23 @@ public class AgentIdentityService {
 		seed.setOrg(orgUuid);
 		seed.setName("Identity for " + identityType.name() + " " + identityValue);
 		seed.setCreatedType(io.reliza.common.CommonVariables.ProgrammaticType.AUTO);
-		AgentIdentity row = new AgentIdentity();
 		Map<String, Object> recordData = Utils.dataToRecord(seed);
-		AgentIdentity savedIdentity = saveIdentity(row, recordData, wu);
-
-		AgentIdentityCredential cred = new AgentIdentityCredential();
-		cred.setAgentIdentityUuid(savedIdentity.getUuid());
-		cred.setIdentityType(identityType.name());
-		cred.setIdentityValue(identityValue);
 		try {
-			credRepo.save(cred);
+			// The identity and its credential in a transaction of their own, so a lost race fails at
+			// that transaction's commit and takes the speculative identity with it. In the caller's
+			// transaction the violation surfaced at the caller's commit, after this catch, and the
+			// loser failed instead of returning the winner (gaps §1.11).
+			TransactionTemplate tt = new TransactionTemplate(transactionManager);
+			tt.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+			AgentIdentity savedIdentity = tt.execute(status -> {
+				AgentIdentity saved = saveIdentity(new AgentIdentity(), recordData, wu);
+				AgentIdentityCredential cred = new AgentIdentityCredential();
+				cred.setAgentIdentityUuid(saved.getUuid());
+				cred.setIdentityType(identityType.name());
+				cred.setIdentityValue(identityValue);
+				credRepo.save(cred);
+				return saved;
+			});
 			log.info("Registered AgentIdentity uuid={} for credential ({},{})",
 					savedIdentity.getUuid(), identityType, identityValue);
 			return AgentIdentityData.dataFromRecord(savedIdentity);
@@ -142,9 +155,6 @@ public class AgentIdentityService {
 					identityType.name(), identityValue)
 					.orElseThrow(() -> new RelizaException(
 							"Credential race detected but no winning row found"));
-			// Orphan the speculative identity row we wrote — it has no
-			// credentials pointing at it and would otherwise leak.
-			identityRepo.deleteById(savedIdentity.getUuid());
 			return identityRepo.findById(winner.getAgentIdentityUuid())
 					.map(AgentIdentityData::dataFromRecord)
 					.orElseThrow(() -> new RelizaException(

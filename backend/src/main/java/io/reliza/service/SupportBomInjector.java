@@ -958,9 +958,6 @@ public final class SupportBomInjector {
 	 *       {@code reliza:} and is not in {@link #DISCLOSURE_PREFIXES} -- today that is
 	 *       {@code reliza:containerSafeVersion}, {@code reliza:devops:integrationType} and
 	 *       {@code reliza:rearmImport:*}, and by construction anything added later;</li>
-	 *   <li>the {@code io.reliza}/{@code ReARM} entry under {@code metadata.tools}, in both the
-	 *       1.5+ {@code tools.components} shape this server writes and the legacy 1.4 array
-	 *       shape an older producer may have uploaded.</li>
 	 * </ul>
 	 *
 	 * <p>WHAT STAYS, and why each one is not an oversight:
@@ -975,9 +972,19 @@ public final class SupportBomInjector {
 	 *       flag setting asks for. When support metadata is EXCLUDED they are already gone --
 	 *       {@link #stripOnly} drops the declarations block and the assigned refs -- so there is
 	 *       no combination in which they outlive their purpose.</li>
-	 *   <li><b>Other tools under {@code metadata.tools}</b> -- a scanner, a build system,
-	 *       rearm-cli. Those are the manufacturer's own toolchain and are exactly what a reader
-	 *       of a tools-only document wants.</li>
+	 *   <li><b>Every entry under {@code metadata.tools}, ReARM's own included</b> -- a scanner, a
+	 *       build system, rearm-cli are the manufacturer's own toolchain, and ReARM's entry names
+	 *       the tool that generated the served document (the merge, the support disclosure) and
+	 *       its version. Which tools produced an SBOM is part of what a reader is owed; it was
+	 *       removed here once, which left exported documents naming no producer at all
+	 *       (operator decision 2026-10-02).</li>
+	 *   <li><b>Everything the SBOM generator wrote</b> -- cdxgen's {@code internal:*} properties,
+	 *       component evidence, npm registry analysis, annotations, formulation. Those are the
+	 *       producer's content and are served as uploaded. Removing them was tried (2026-10) and
+	 *       withdrawn: the generator's working data has no reliable marker ({@code SrcFile} and
+	 *       friends are unprefixed before cdxgen 13), and removing it by tracing values deleted
+	 *       legitimate properties that happened to share a value and mangled free text. A producer
+	 *       who must not disclose build paths has to remove them before upload.</li>
 	 * </ul>
 	 *
 	 * <p>CSV and EXCEL exports do not reach this method and do not need to: rebom renders them
@@ -990,7 +997,6 @@ public final class SupportBomInjector {
 			return bom;
 		}
 		stripPropertiesEverywhere(bom, SupportBomInjector::isInternalMarker);
-		removeRearmToolEntry((ObjectNode) bom);
 		return bom;
 	}
 
@@ -1000,75 +1006,6 @@ public final class SupportBomInjector {
 			return false;
 		}
 		return DISCLOSURE_PREFIXES.stream().noneMatch(propertyName::startsWith);
-	}
-
-	/**
-	 * Drop ReARM's own entry from {@code metadata.tools}, and drop the containers it emptied.
-	 *
-	 * <p>BOTH CYCLONEDX SHAPES, AND BOTH WRITERS' SPELLINGS. 1.5+ carries
-	 * {@code tools: {components: [...]}} and 1.4 carries {@code tools: [ ... ]}; rebom -- which
-	 * wrote every document that reaches this method -- pushes the SAME object into both, so the
-	 * namespace is under {@code group} in each. {@code vendor} is checked as well because the
-	 * CycloneDX 1.4 tool schema defines the field that way and a document from another producer
-	 * may use it; a shape that only looked at {@code vendor} on the legacy branch found nothing
-	 * at all.
-	 *
-	 * <p>The match is on the namespace AND the name together, against
-	 * {@link Utils#REARM_TOOL_NAMES}. The group alone would claim any {@code io.reliza} tool; a
-	 * single name would miss two of the three spellings in circulation. Removing someone else's
-	 * tool entry from their BOM is a strictly worse error than leaving ours in, which is why
-	 * neither half is dropped.
-	 */
-	private static void removeRearmToolEntry(ObjectNode bom) {
-		JsonNode metadata = bom.get("metadata");
-		if (metadata == null || !metadata.isObject()) {
-			return;
-		}
-		ObjectNode metaObj = (ObjectNode) metadata;
-		JsonNode tools = metaObj.get("tools");
-		if (tools == null) {
-			return;
-		}
-		if (tools.isArray()) {
-			removeRearmFrom((ArrayNode) tools);
-			if (tools.isEmpty()) metaObj.remove("tools");
-			return;
-		}
-		if (!tools.isObject()) {
-			return;
-		}
-		ObjectNode toolsObj = (ObjectNode) tools;
-		JsonNode components = toolsObj.get("components");
-		if (components != null && components.isArray()) {
-			removeRearmFrom((ArrayNode) components);
-			if (components.isEmpty()) toolsObj.remove("components");
-		}
-		if (toolsObj.isEmpty()) metaObj.remove("tools");
-	}
-
-	/** Remove our entries from one tool list, whichever field carries the namespace. */
-	private static void removeRearmFrom(ArrayNode entries) {
-		for (int i = entries.size() - 1; i >= 0; i--) {
-			JsonNode entry = entries.get(i);
-			if (entry.isObject() && isRearmToolEntry((ObjectNode) entry)) {
-				entries.remove(i);
-			}
-		}
-	}
-
-	/** Written by us: the io.reliza namespace, under any name we have shipped. */
-	private static boolean isRearmToolEntry(ObjectNode entry) {
-		JsonNode name = entry.get("name");
-		if (name == null || !name.isTextual() || !Utils.REARM_TOOL_NAMES.contains(name.asText())) {
-			return false;
-		}
-		return Utils.REARM_TOOL_GROUP.equals(textOrNull(entry, "group"))
-				|| Utils.REARM_TOOL_GROUP.equals(textOrNull(entry, "vendor"));
-	}
-
-	private static String textOrNull(ObjectNode node, String field) {
-		JsonNode v = node.get(field);
-		return (v != null && v.isTextual()) ? v.asText() : null;
 	}
 
 	private static void injectInto(JsonNode components, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,

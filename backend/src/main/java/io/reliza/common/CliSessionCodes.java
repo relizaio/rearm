@@ -74,8 +74,61 @@ public final class CliSessionCodes {
 
 	/** The next expiry after a refresh: slide by {@link #REFRESH_SLIDE}, capped at {@link #HARD_CAP} from approval. */
 	public static ZonedDateTime slidExpiry(ZonedDateTime approvedDate, ZonedDateTime now) {
+		return slidExpiry(approvedDate, now, null);
+	}
+
+	/** The same, and never past the session's hard end when it has one (task RD3-7). */
+	public static ZonedDateTime slidExpiry(ZonedDateTime approvedDate, ZonedDateTime now, ZonedDateTime hardEnd) {
 		ZonedDateTime slid = now.plus(REFRESH_SLIDE);
 		ZonedDateTime cap = approvedDate.plus(HARD_CAP);
+		if (hardEnd != null && hardEnd.isBefore(cap)) cap = hardEnd;
 		return slid.isBefore(cap) ? slid : cap;
+	}
+
+	/** The longest a key may bound its sessions to: the 90-day cap, 129600 minutes. */
+	public static final int MAX_SESSION_MINUTES = (int) HARD_CAP.toMinutes();
+	/** An access token's lifetime at most; the same hour as ApiTokenService.TTL_SECONDS. */
+	public static final Duration ACCESS_TOKEN_TTL = Duration.ofHours(1);
+
+	/** A key's sessionMaxMinutes: null (no bound) or 1 to {@link #MAX_SESSION_MINUTES}. */
+	public static boolean isValidSessionMinutes(Integer minutes) {
+		return minutes == null || (minutes >= 1 && minutes <= MAX_SESSION_MINUTES);
+	}
+
+	/**
+	 * The minutes a session is approved for: the approver's choice when given, which may shorten the
+	 * key's bound but never lengthen it; the key's bound otherwise (null for none). Throws
+	 * IllegalArgumentException with the words to show the approver.
+	 */
+	public static Integer sessionMinutes(Integer keyBound, Integer approverChoice) {
+		if (approverChoice == null) return keyBound;
+		if (!isValidSessionMinutes(approverChoice)) {
+			throw new IllegalArgumentException("A session lasts 1 to " + MAX_SESSION_MINUTES + " minutes");
+		}
+		if (keyBound != null && approverChoice > keyBound) {
+			throw new IllegalArgumentException("This key bounds its sessions to " + keyBound + " minutes; choose " + keyBound + " or fewer");
+		}
+		return approverChoice;
+	}
+
+	/** The session's hard end: approval plus the minutes, or null when nothing bounds it. */
+	public static ZonedDateTime hardEnd(ZonedDateTime approvedDate, Integer minutes) {
+		return minutes == null ? null : approvedDate.plusMinutes(minutes);
+	}
+
+	/** When an access token minted now ends: an hour out, or the session's expiry when that comes first. */
+	public static ZonedDateTime accessTokenExpiry(ZonedDateTime now, ZonedDateTime sessionExpiry) {
+		ZonedDateTime hour = now.plus(ACCESS_TOKEN_TTL);
+		return sessionExpiry != null && sessionExpiry.isBefore(hour) ? sessionExpiry : hour;
+	}
+
+	/** Whole seconds from now to the token's end, for the token response's expires_in. */
+	public static long expiresInSeconds(ZonedDateTime now, ZonedDateTime sessionExpiry) {
+		return Math.max(0, Duration.between(now, accessTokenExpiry(now, sessionExpiry)).getSeconds());
+	}
+
+	/** Whether a refresh token can matter: only when the session outlives the access token minted now. */
+	public static boolean refreshTokenUseful(ZonedDateTime now, ZonedDateTime hardEnd) {
+		return hardEnd == null || hardEnd.isAfter(now.plus(ACCESS_TOKEN_TTL));
 	}
 }

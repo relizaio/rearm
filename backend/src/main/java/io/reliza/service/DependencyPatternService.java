@@ -9,14 +9,15 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.regex.Pattern;
-import java.util.regex.PatternSyntaxException;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import io.reliza.common.CommonVariables.StatusEnum;
+import io.reliza.common.EditedListValidation;
+import io.reliza.common.SafeRegex;
+import io.reliza.common.SafeRegex.MatchResult;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.ChildComponent;
@@ -98,6 +99,29 @@ public class DependencyPatternService {
 		return new ArrayList<>(effectiveDeps.values());
 	}
 	
+	/** How a sweep of an org's components with one pattern ended. */
+	public enum PatternSweepOutcome {
+		COMPLETED,
+		/** The pattern does not compile; nothing matched. */
+		INVALID_PATTERN,
+		/**
+		 * The pattern ran out of match budget on at most {@link SafeRegex#MAX_TRIPS_PER_SWEEP}
+		 * component names; those components were left out, every other one was matched.
+		 */
+		SKIPPED_SOME,
+		/**
+		 * The pattern ran out of match budget on more than {@link SafeRegex#MAX_TRIPS_PER_SWEEP}
+		 * component names and was abandoned: it contributes no components at all.
+		 */
+		ABANDONED
+	}
+
+	/** Why a name was not matched at all; a report key apart from the match results. */
+	private enum UnmatchedInput { TOO_LONG }
+
+	/** The active components a pattern matched, and how the sweep that found them ended. */
+	public record PatternSweep(List<ComponentData> matched, PatternSweepOutcome outcome) {}
+
 	/**
 	 * Find all active components in an organization that match a regex pattern.
 	 * 
@@ -106,18 +130,111 @@ public class DependencyPatternService {
 	 * @return list of matching ComponentData
 	 */
 	public List<ComponentData> findComponentsByPattern(UUID orgUuid, String regexPattern) {
+		return sweepComponentsByPattern(orgUuid, regexPattern).matched();
+	}
+
+	/**
+	 * {@link #findComponentsByPattern}, telling the caller how the sweep ended. Matched under the
+	 * step budget (see {@link SafeRegex}). A component whose name the pattern runs out of budget on
+	 * is no match, the same verdict the per-component lookups give, and the sweep goes on; after
+	 * more than {@link SafeRegex#MAX_TRIPS_PER_SWEEP} such trips the pattern is abandoned and
+	 * contributes nothing. Either way the result does not depend on the order the components come
+	 * back in, and a broken pattern costs a few budgets, not one per component of the org. A name
+	 * over {@link SafeRegex#MAX_INPUT_LENGTH} trips any pattern on its own; it is no match and
+	 * does not count as a trip.
+	 */
+	public PatternSweep sweepComponentsByPattern(UUID orgUuid, String regexPattern) {
 		List<ComponentData> allComponents = componentService.listComponentDataByOrganization(orgUuid, ComponentType.COMPONENT);
 		List<ComponentData> matchedComponents = new ArrayList<>();
-		try {
-			Pattern pattern = Pattern.compile(regexPattern);
-			matchedComponents = allComponents.stream()
-				.filter(c -> c.getStatus() != StatusEnum.ARCHIVED)
-				.filter(c -> pattern.matcher(c.getName()).matches())
-				.collect(Collectors.toList());
-		} catch (PatternSyntaxException e) {
-			log.error("Invalid regex pattern: {}", regexPattern, e);
+		if (regexPattern == null) return new PatternSweep(matchedComponents, PatternSweepOutcome.INVALID_PATTERN);
+		String where = "org " + orgUuid;
+		int trips = 0;
+		for (ComponentData c : allComponents) {
+			if (c.getStatus() == StatusEnum.ARCHIVED) continue;
+			String name = c.getName() == null ? "" : c.getName();
+			MatchResult result = match(regexPattern, name, where);
+			if (result == MatchResult.MATCH) {
+				matchedComponents.add(c);
+			} else if (result == MatchResult.INVALID_PATTERN) {
+				return new PatternSweep(new ArrayList<>(), PatternSweepOutcome.INVALID_PATTERN);
+			} else if (result == MatchResult.BUDGET_EXCEEDED && name.length() <= SafeRegex.MAX_INPUT_LENGTH
+					&& ++trips > SafeRegex.MAX_TRIPS_PER_SWEEP) {
+				if (SafeRegex.shouldReport(DependencyPatternService.class, PatternSweepOutcome.ABANDONED, where,
+						regexPattern)) {
+					log.error("Dependency pattern ({}) exceeded the match budget on more than {} component names"
+							+ " -- abandoned, it pulls in no components; simplify the pattern (logged once an hour"
+							+ " per pattern)", where, SafeRegex.MAX_TRIPS_PER_SWEEP);
+				}
+				return new PatternSweep(new ArrayList<>(), PatternSweepOutcome.ABANDONED);
+			}
 		}
-		return matchedComponents;
+		return new PatternSweep(matchedComponents,
+				trips == 0 ? PatternSweepOutcome.COMPLETED : PatternSweepOutcome.SKIPPED_SOME);
+	}
+
+	/**
+	 * Match one dependency pattern against a component name under the step budget (see
+	 * {@link SafeRegex}). Patterns are written by anyone who can edit a feature set and run on the
+	 * release path and across every component of the org, so an unbounded {@code (.*a){20}} would
+	 * hold those threads for minutes per name. Anything but {@link MatchResult#MATCH} is no match;
+	 * a runaway pattern is logged at ERROR, once an hour per pattern, because the feature set then
+	 * quietly misses the components it was configured to pull in.
+	 *
+	 * @param where what the pattern belongs to, for the log line
+	 */
+	private static MatchResult match(String pattern, String componentName, String where) {
+		if (componentName.length() > SafeRegex.MAX_INPUT_LENGTH) {
+			// The name, not the pattern: no pattern is matched against input this long.
+			if (SafeRegex.shouldReport(DependencyPatternService.class, UnmatchedInput.TOO_LONG, where, pattern)) {
+				log.error("Dependency pattern ({}) not matched against a component name of {} -- names over {}"
+						+ " characters match no pattern, so the component is not pulled in (logged once an hour"
+						+ " per pattern)", where, SafeRegex.describeInput(componentName), SafeRegex.MAX_INPUT_LENGTH);
+			}
+			return MatchResult.BUDGET_EXCEEDED;
+		}
+		MatchResult result = SafeRegex.matches(pattern, componentName);
+		if (result == MatchResult.INVALID_PATTERN) {
+			// Writes validate the regex; bad data on read must not break the caller. ERROR: the
+			// feature set misses every component the pattern was meant to pull in.
+			if (SafeRegex.shouldReport(DependencyPatternService.class, result, where, pattern)) {
+				log.error("Dependency pattern {} ({}) does not compile -- it pulls in no components; fix the"
+						+ " pattern (logged once an hour per pattern)", SafeRegex.describeInput(pattern), where);
+			}
+		} else if (result == MatchResult.BUDGET_EXCEEDED) {
+			if (SafeRegex.shouldReport(DependencyPatternService.class, result, where, pattern)) {
+				log.error("Dependency pattern ({}) exceeded the match budget on component name of {} -- treated as"
+						+ " no match, so the component is not pulled in; simplify the pattern (logged once an hour"
+						+ " per pattern)", where, SafeRegex.describeInput(componentName));
+			}
+		}
+		return result;
+	}
+
+	/**
+	 * Write-time check of a feature set's dependency patterns, shared by every path that stores
+	 * them: each new pattern must pass {@link SafeRegex#validate}. Only patterns whose text is not
+	 * among the {@code stored} ones count as new (see {@link EditedListValidation}): the branch
+	 * form always sends the whole list, so a legacy pattern that predates the checks must not
+	 * block an unrelated edit of the feature set. A blank pattern is accepted, as it always was,
+	 * and matches only an empty name.
+	 *
+	 * @param stored the feature set's current patterns; null when there are none yet
+	 */
+	public static void validatePatterns(List<DependencyPattern> patterns, List<DependencyPattern> stored)
+			throws RelizaException {
+		if (patterns == null) return;
+		for (int i = 0; i < patterns.size(); i++) {
+			if (patterns.get(i) == null) throw new RelizaException("Dependency pattern [" + i + "] is null");
+		}
+		EditedListValidation.validateNewEntries(patternTexts(patterns), patternTexts(stored), "Dependency patterns",
+				EditedListValidation.NO_CAP, (pattern, i) -> SafeRegex.validate(pattern, "Dependency pattern [" + i + "]"));
+	}
+
+	private static List<String> patternTexts(List<DependencyPattern> patterns) {
+		if (null == patterns) return null;
+		List<String> texts = new ArrayList<>();
+		for (DependencyPattern dp : patterns) texts.add(null == dp ? null : dp.getPattern());
+		return texts;
 	}
 	
 	/**
@@ -193,12 +310,7 @@ public class DependencyPatternService {
 			boolean hit = false;
 			for (DependencyPattern dp : fs.getDependencyPatterns()) {
 				if (dp.getPattern() == null) continue;
-				try {
-					if (!Pattern.compile(dp.getPattern()).matcher(componentName).matches()) continue;
-				} catch (PatternSyntaxException e) {
-					log.warn("Invalid pattern in feature set {}: {}", fs.getUuid(), dp.getPattern());
-					continue;
-				}
+				if (match(dp.getPattern(), componentName, "feature set " + fs.getUuid()) != MatchResult.MATCH) continue;
 				UUID resolvedBranch = findTargetBranch(componentUuid, dp);
 				if (branchUuid.equals(resolvedBranch)) {
 					hit = true;
@@ -223,12 +335,9 @@ public class DependencyPatternService {
 		}
 		
 		for (DependencyPattern pattern : patterns) {
-			try {
-				if (Pattern.compile(pattern.getPattern()).matcher(componentName).matches()) {
-					return true;
-				}
-			} catch (PatternSyntaxException e) {
-				log.warn("Invalid pattern: {}", pattern.getPattern());
+			if (pattern == null || pattern.getPattern() == null) continue;
+			if (match(pattern.getPattern(), componentName, "pattern " + pattern.getUuid()) == MatchResult.MATCH) {
+				return true;
 			}
 		}
 		return false;

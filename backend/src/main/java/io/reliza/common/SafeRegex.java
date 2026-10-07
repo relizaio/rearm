@@ -9,8 +9,12 @@ import java.util.List;
 import java.util.regex.Pattern;
 import java.util.regex.PatternSyntaxException;
 
+import org.apache.commons.lang3.StringUtils;
+
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
+
+import io.reliza.exceptions.RelizaException;
 
 /**
  * Match a stored, user-authored regex without letting it run away.
@@ -31,6 +35,13 @@ import com.github.benmanes.caffeine.cache.Caffeine;
  * {@link #MAX_INPUT_LENGTH}; a longer one is {@link MatchResult#BUDGET_EXCEEDED} wherever it is
  * matched. A stack overflow below the cap is caught and reported the same way, as a backstop.
  *
+ * <p>One thing still depends on the thread: compiling. The JDK compiles nested groups
+ * recursively and reports a stack overflow while compiling as a syntax error, so a deeply nested
+ * pattern within {@link #MAX_PATTERN_LENGTH} (around 255 groups) can compile on a 1 MB stack,
+ * pass {@link #validate} on a request thread, and come back {@link MatchResult#INVALID_PATTERN}
+ * on a thread with a much smaller stack. Callers already treat that result per site -- no
+ * match, or fail closed -- so it degrades the same way bad stored data does.
+ *
  * <p>Compiled patterns are cached by their text, at most {@link #MAX_CACHED_PATTERNS} of them.
  */
 public final class SafeRegex {
@@ -46,12 +57,12 @@ public final class SafeRegex {
 	public static final int MAX_PATTERN_LENGTH = 512;
 
 	/**
-	 * Cache bound. The live set is every distinct rule pattern on the instance -- team-assignment
-	 * and approval-policy rules across all orgs, a few per org -- so a few thousand covers any real
-	 * instance with room to spare. Without a bound, an org admin re-saving rules with fresh patterns
-	 * grows the heap of the whole instance; at the cap the cache holds about 28 MB even if every
-	 * pattern is the longest allowed (measured ~6.9 KB per 500-character pattern), and an evicted
-	 * pattern only costs a recompile.
+	 * Cache bound. The live set is every distinct stored pattern on the instance -- rule, guard,
+	 * dependency and ignore-violation patterns across all orgs, a handful per org -- so a few
+	 * thousand covers any real instance with room to spare. Without a bound, an org admin
+	 * re-saving rules with fresh patterns grows the heap of the whole instance; at the cap the
+	 * cache holds about 28 MB even if every pattern is the longest allowed (measured ~6.9 KB per
+	 * 500-character pattern), and an evicted pattern only costs a recompile.
 	 */
 	static final int MAX_CACHED_PATTERNS = 4_096;
 
@@ -61,6 +72,14 @@ public final class SafeRegex {
 	 * thread asks.
 	 */
 	public static final int MAX_INPUT_LENGTH = 1_024;
+
+	/**
+	 * How many budget trips one pattern may take in a single sweep over many inputs (the
+	 * components of an org, the violations of a sync) before the sweep gives up on it. One trip
+	 * can be an unlucky input; a pattern that keeps tripping is broken, and paying the budget for
+	 * every remaining input would cost the sweep what the budget exists to prevent.
+	 */
+	public static final int MAX_TRIPS_PER_SWEEP = 3;
 
 	/** How much of a matched input a log line may show: enough to find the record, never all of it. */
 	static final int LOGGED_INPUT_PREFIX = 64;
@@ -83,7 +102,10 @@ public final class SafeRegex {
 	public enum MatchResult {
 		MATCH,
 		NO_MATCH,
-		/** The pattern does not compile. Writes validate it, so this is bad stored data. */
+		/**
+		 * The pattern does not compile. Writes validate it, so this is bad stored data -- or a
+		 * deeply nested pattern compiled on a thread with too small a stack; see the class doc.
+		 */
 		INVALID_PATTERN,
 		/** The match ran out of steps: the pattern backtracks catastrophically on this input. */
 		BUDGET_EXCEEDED
@@ -106,6 +128,26 @@ public final class SafeRegex {
 		} catch (MatchBudgetExceededException | StackOverflowError e) {
 			// The stack overflow unwinds to here; the matcher is discarded with it.
 			return MatchResult.BUDGET_EXCEEDED;
+		}
+	}
+
+	/**
+	 * Refuse a pattern a rule is about to store: blank, longer than {@link #MAX_PATTERN_LENGTH}, or
+	 * not compiling. The one write-time check every stored user regex goes through, so the cap and
+	 * the wording are the same on every form. Lists that have always accepted blank entries (the
+	 * UI saves empty rows) skip those entries rather than calling this.
+	 *
+	 * @param what how the message names the pattern, e.g. {@code "Rule 'web' uriPattern"}
+	 */
+	public static void validate(String pattern, String what) throws RelizaException {
+		if (StringUtils.isBlank(pattern)) throw new RelizaException(what + " is blank");
+		if (pattern.length() > MAX_PATTERN_LENGTH) {
+			throw new RelizaException(what + " exceeds " + MAX_PATTERN_LENGTH + " characters");
+		}
+		try {
+			Pattern.compile(pattern);
+		} catch (PatternSyntaxException e) {
+			throw new RelizaException(what + " is not a valid regex: " + e.getMessage());
 		}
 	}
 

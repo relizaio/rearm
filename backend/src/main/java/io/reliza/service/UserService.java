@@ -12,7 +12,6 @@ import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -674,6 +673,23 @@ public class UserService {
 			
 			// save user
 			User saved = saveUser(ou.get(), Utils.dataToRecord(ud), wu);
+			// An inactive user is no longer an org member for the actions
+			// users-in-org check, so scrub them from component actions the same
+			// way removeUserFromOrg does, in every org they belong to. Best effort,
+			// after the deactivation is saved: a failed component save must never
+			// undo or fail the deactivation, so each org's scrub runs and commits in
+			// a transaction of its own (the caller, inactivateUser, holds one; a
+			// failure inside it would mark it rollback-only). If the caller's
+			// transaction rolls back after this, the user stays ACTIVE but scrubbed:
+			// they get no more action emails until re-added. reactivateUser does not
+			// restore it.
+			for (UUID orgUuid : ud.getOrganizations()) {
+				try {
+					componentService.handleRemoveUserFromTriggersInNewTransaction(orgUuid, userUuid, wu);
+				} catch (Exception e) {
+					log.error("Error removing deactivated user = " + userUuid + " from component actions in org = " + orgUuid, e);
+				}
+			}
 			return UserData.dataFromRecord(saved);
 		}
 		return null;
@@ -1000,15 +1016,38 @@ public class UserService {
 		}
 		return it;
 	}
-	
+
+	/** Deployment-wide UI home dashboard default (relizaprops.default-dashboard): BOARDS or APP; anything else resolves to APP. */
+	public String getDefaultDashboard() {
+		return "BOARDS".equalsIgnoreCase(relizaConfigProps.getDefaultDashboard()) ? "BOARDS" : "APP";
+	}
+
 	public boolean sendEmailToUsers(UUID org, Collection<UUID> users,
 			String subject, String contentType, String contentStr) {
-		Set<UUID> distinctUserUuids = new HashSet<>(users);
-		Set<String> emails = distinctUserUuids
-			.stream()
-			.map(du -> getUserDataWithOrg(du, org).get().getEmail(org))
-			.collect(Collectors.toSet());
+		Set<String> emails = activeRecipientEmails(org, users);
+		if (emails.isEmpty()) {
+			log.debug("No active recipients in org = {}, not sending '{}'", org, subject);
+			return true;
+		}
 		return emailService.sendEmail(emails, subject, contentType, contentStr);
+	}
+
+	/**
+	 * The org emails of those {@code users} who are active members of {@code org}. Others are
+	 * skipped, not an error: an action may still hold a user deactivated or removed before
+	 * deactivation scrubbed actions, and one such user must not stop the email to the rest.
+	 */
+	public Set<String> activeRecipientEmails(UUID org, Collection<UUID> users) {
+		Set<String> emails = new LinkedHashSet<>();
+		for (UUID user : new LinkedHashSet<>(users)) {
+			Optional<UserData> member = getUserDataWithOrg(user, org);
+			if (member.isPresent()) {
+				emails.add(member.get().getEmail(org));
+			} else {
+				log.debug("Skipping action email recipient = {}: not an active member of org = {}", user, org);
+			}
+		}
+		return emails;
 	}
 
 	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, UUID userUuid, PermissionType permissionType) {

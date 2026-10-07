@@ -28,6 +28,7 @@ import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.dto.ArtifactWebDto;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.GetSourceCodeEntryService;
 
 /**
  * BUG 6 regression guard for {@link
@@ -40,7 +41,10 @@ import io.reliza.service.ArtifactService;
  */
 class SourceCodeEntryDataFetcherDanglingRefTest {
 
+	private static final UUID ORG = UUID.randomUUID();
+
 	private ArtifactService artifactService;
+	private GetSourceCodeEntryService getSourceCodeEntryService;
 	private SourceCodeEntryDataFetcher fetcher;
 
 	@BeforeEach
@@ -48,6 +52,12 @@ class SourceCodeEntryDataFetcherDanglingRefTest {
 		artifactService = mock(ArtifactService.class);
 		fetcher = new SourceCodeEntryDataFetcher();
 		inject("artifactService", artifactService);
+		// Ownership as GetSourceCodeEntryService decides it for an entry that carries its org
+		// (no branch fallback needed here): the entry's own org, or null when it has none.
+		getSourceCodeEntryService = mock(GetSourceCodeEntryService.class);
+		when(getSourceCodeEntryService.ownerOrg(any()))
+				.thenAnswer(inv -> ((SourceCodeEntryData) inv.getArgument(0)).getOrg());
+		inject("getSourceCodeEntryService", getSourceCodeEntryService);
 	}
 
 	private void inject(String field, Object value) throws Exception {
@@ -69,6 +79,7 @@ class SourceCodeEntryDataFetcherDanglingRefTest {
 		ctor.setAccessible(true);
 		SourceCodeEntryData sced = ctor.newInstance();
 		ReflectionTestUtils.setField(sced, "uuid", uuid);
+		ReflectionTestUtils.setField(sced, "org", ORG);
 		if (artifacts != null) {
 			ReflectionTestUtils.setField(sced, "artifacts", artifacts);
 		}
@@ -76,10 +87,15 @@ class SourceCodeEntryDataFetcherDanglingRefTest {
 	}
 
 	private static ArtifactData artifactData(UUID uuid) {
+		return artifactData(uuid, ORG);
+	}
+
+	private static ArtifactData artifactData(UUID uuid, UUID org) {
 		// A fresh ArtifactData default-initializes the collections that
 		// ArtifactWebDto.fromData copies, so it maps cleanly.
 		ArtifactData ad = new ArtifactData();
 		ReflectionTestUtils.setField(ad, "uuid", uuid);
+		ReflectionTestUtils.setField(ad, "org", org);
 		return ad;
 	}
 
@@ -110,5 +126,38 @@ class SourceCodeEntryDataFetcherDanglingRefTest {
 		assertEquals(1, holder[0].size(), "Only the resolvable artifact should be returned");
 		assertEquals(presentUuid, holder[0].get(0).getUuid(),
 				"The surviving ArtifactWebDto must be the resolvable artifact");
+	}
+
+	@Test
+	void artifactsOmitsArtifactOfAnotherOrg() throws Exception {
+		// An artifact merged into this entry from another org (before the SCE merge
+		// checked ownership) is not this entry's to show; its own org's artifact is.
+		UUID ownUuid = UUID.randomUUID();
+		UUID foreignUuid = UUID.randomUUID();
+		UUID componentUuid = UUID.randomUUID();
+		SourceCodeEntryData sced = sced(UUID.randomUUID(), List.of(
+				new SCEArtifact(ownUuid, componentUuid),
+				new SCEArtifact(foreignUuid, componentUuid)));
+		when(artifactService.getArtifactData(ownUuid)).thenReturn(Optional.of(artifactData(ownUuid)));
+		when(artifactService.getArtifactData(foreignUuid))
+				.thenReturn(Optional.of(artifactData(foreignUuid, UUID.randomUUID())));
+
+		List<ArtifactWebDto> arts = fetcher.artifactsOfSourceCodeEntryWithDep(dfeFor(sced));
+		assertEquals(1, arts.size(), "Only the entry's own org's artifact should be returned");
+		assertEquals(ownUuid, arts.get(0).getUuid());
+	}
+
+	@Test
+	void noArtifactsWhenOwnerCannotBeTold() throws Exception {
+		// An entry with no org and no branch belongs to no org (GetSourceCodeEntryService.ownerOrg
+		// is null), so, like SourceCodeEntry.releases, it shows none of its artifacts.
+		UUID artUuid = UUID.randomUUID();
+		UUID componentUuid = UUID.randomUUID();
+		SourceCodeEntryData sced = sced(UUID.randomUUID(), List.of(new SCEArtifact(artUuid, componentUuid)));
+		ReflectionTestUtils.setField(sced, "org", null);
+		when(artifactService.getArtifactData(artUuid))
+				.thenReturn(Optional.of(artifactData(artUuid, UUID.randomUUID())));
+
+		assertTrue(fetcher.artifactsOfSourceCodeEntryWithDep(dfeFor(sced)).isEmpty());
 	}
 }

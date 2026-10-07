@@ -76,6 +76,19 @@ import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
 public class Utils {
+
+	/**
+	 * A name as a path segment: accents dropped, lower case, every run of anything else than a
+	 * letter or digit one hyphen, no hyphen at either end. "Platform API v2" becomes
+	 * platform-api-v2. Empty when nothing usable is left.
+	 */
+	public static String slug(String name) {
+		if (null == name) return "";
+		String ascii = java.text.Normalizer.normalize(name, java.text.Normalizer.Form.NFD)
+				.replaceAll("\\p{M}+", "");
+		return ascii.toLowerCase(java.util.Locale.ROOT).replaceAll("[^a-z0-9]+", "-")
+				.replaceAll("^-+|-+$", "");
+	}
 	private Utils() {} // non-initializable class
 	
 	// Jackson 3: ObjectMapper is immutable — modules are registered at
@@ -624,6 +637,93 @@ public class Utils {
 		return branch;
 	}
 	
+	/**
+	 * Tracker shorthands a board source may be written in, mapped to the git host they mean.
+	 *
+	 * <p>This table exists to ACCEPT existing boards, not to restrict new ones. A board source is a
+	 * tracker reference -- where issues and pull requests live -- and is conventionally written
+	 * {@code github:owner/repo}. A git repository is a different thing: it has a URI, on any host,
+	 * and a documents repository on self-hosted Gitea or GitLab has no tracker shorthand at all.
+	 * So a documents repo is always a plain git URI, and this table is consulted only when
+	 * checking whether such a URI corresponds to one of the board's sources.
+	 *
+	 * <p>Nothing here restricts the hosts ReARM works with. An unknown prefix is simply not a
+	 * shorthand, and the string is canonicalised as the URI it appears to be.
+	 */
+	/**
+	 * Hosted defaults live in {@link io.reliza.model.tracker.TrackerProvider}, which is the one
+	 * table: a second copy here is how a provider added in one place goes missing in the other.
+	 * This expansion keeps its own behaviour for every non-board caller of
+	 * {@link #canonicalVcsUri} -- general VCS canonicalisation does not route through the tracker
+	 * parser, which enforces a grammar this path must not.
+	 */
+	private static String trackerShorthandHost(String prefix) {
+		return io.reliza.model.tracker.TrackerProvider.byName(prefix)
+				.map(io.reliza.model.tracker.TrackerProvider::defaultHost)
+				.orElse(null);
+	}
+
+	/**
+	 * The comparable form of a VCS URI: scheme, credentials and {@code .git} removed, the
+	 * {@code git@host:path} colon turned into a slash, and a tracker shorthand expanded to its host.
+	 *
+	 * <p>Every form of one repository has to reduce to one string, or two references to the same
+	 * repository compare unequal and the caller quietly does the wrong thing. That is not
+	 * hypothetical: comparing a board's {@code github:acme/docs} against a stored
+	 * {@code github.com/acme/docs} silently never matched, so the sign-off lock check found no
+	 * components and never fired.
+	 *
+	 * <pre>
+	 *   https://github.com/acme/docs      -> github.com/acme/docs
+	 *   git@github.com:acme/docs.git      -> github.com/acme/docs
+	 *   github:acme/docs                  -> github.com/acme/docs   (tracker shorthand)
+	 *   https://git.example.com/team/docs -> git.example.com/team/docs
+	 *   git@git.example.com:team/docs.git -> git.example.com/team/docs
+	 * </pre>
+	 */
+	public static String canonicalVcsUri (String uri) {
+		if (StringUtils.isBlank(uri)) return uri;
+		return cleanVcsUri(normalizeVcsUri(stripGitSchemes(expandTrackerShorthand(uri.trim()))));
+	}
+
+	/**
+	 * Strip {@code ssh://} and {@code git://}, which {@link #normalizeVcsUri} does not.
+	 *
+	 * <p>Handled here rather than there because normalizeVcsUri is shared with paths that have
+	 * their own expectations about what they are given; this function owns the comparable form.
+	 * Without it an {@code ssh://} remote -- the common shape on self-hosted git -- canonicalised
+	 * to {@code ssh///git@host/path} and matched nothing, so a board configured with one failed
+	 * both the sources check and the publish equality check.
+	 */
+	private static String stripGitSchemes (String uri) {
+		String s = uri;
+		for (String scheme : new String[] {"ssh://", "git://", "git+ssh://"}) {
+			if (StringUtils.startsWithIgnoreCase(s, scheme)) {
+				s = s.substring(scheme.length());
+				break;
+			}
+		}
+		return s;
+	}
+
+	/**
+	 * Expand {@code <tracker>:owner/repo} to {@code <host>/owner/repo}, or return the input.
+	 *
+	 * <p>Only fires when the part before the colon is a KNOWN tracker prefix and contains no dot.
+	 * The dot test is what keeps {@code git@github.com:acme/docs} out of here -- that colon is the
+	 * scp-style separator and belongs to cleanVcsUri, not to shorthand expansion.
+	 */
+	private static String expandTrackerShorthand (String uri) {
+		int colon = uri.indexOf(':');
+		if (colon <= 0) return uri;
+		String prefix = uri.substring(0, colon);
+		if (prefix.indexOf('.') >= 0 || prefix.indexOf('/') >= 0) return uri;
+		String host = trackerShorthandHost(prefix);
+		if (null == host) return uri;
+		String path = uri.substring(colon + 1);
+		return host + "/" + StringUtils.removeStart(path, "/");
+	}
+
 	public static String cleanVcsUri (String vcsUri) {				
 		vcsUri = RegExUtils.replaceFirst(vcsUri, "^git@", "");
 		vcsUri = RegExUtils.replaceFirst(vcsUri, "\\.git$", "");
@@ -707,37 +807,91 @@ public class Utils {
 	}
 	
 
+	/**
+	 * A web link to {@code commit} in the repository at {@code uri}, never carrying the URI's
+	 * credentials -- or null when no safe link can be made; callers then show the bare commit
+	 * hash (Slack falls back to plain text, Sentinel leaves CommitUri out).
+	 *
+	 * <p>The rule, on the part after a valid scheme (the whole string if there is none): the
+	 * authority ends at the first '/', '?', '#', '\' or whitespace -- where a browser ends it
+	 * (WHATWG, RFC 3986). If an '@' comes after that, the URI is ambiguous and there is no link;
+	 * otherwise everything up to the last '@' -- which is then inside the authority -- is
+	 * credentials and goes. There is no safe way to split the ambiguous shapes. URIs are stored
+	 * through {@link #cleanVcsUri}, which turns {@code https://user:token@host/path} into
+	 * {@code user/token@host/path}, so a '/' can sit inside the credentials; a password can hold
+	 * '/', '@' or "://" of its own; and without credentials an '@' may simply be in the path or
+	 * the query. {@code jane@corp.com/glpat-SECRET@git.corp/team/repo} cut at any '@' but the
+	 * right one leaks the token, and {@code https://git.corp/grp/x@evil.example} or
+	 * {@code https://git.corp?x@evil.example} cut at their '@' point the link at another host. A
+	 * missing link costs a click; a wrong one leaks a credential or phishes the reader.
+	 *
+	 * <p>github.com, gitlab.com and bitbucket.org get their own commit-page shapes only when the
+	 * host is exactly one of them (or its www. form) and a repository path follows; anything else
+	 * -- {@code evilgithub.com}, a mirror path containing {@code github.com/} -- is linked as a
+	 * self-hosted repository.
+	 */
 	public static String linkifyCommit(String uri, String commit){
+		if (null == uri) return null;
+		String protocol = "https";
+		String rest = uri;
+		// Plain index arithmetic, not replaceFirst: the stored URI is user input, and as a regex it
+		// both misfired (git+ssh:// never matched itself, so the scheme was doubled) and could
+		// backtrack without bound.
+		int schemeEnd = uri.indexOf("://");
+		if (schemeEnd > 0 && isUriScheme(uri.substring(0, schemeEnd))) {
+			protocol = uri.substring(0, schemeEnd);
+			rest = uri.substring(schemeEnd + 3);
+		}
+		if (rest.indexOf('@', authorityEnd(rest)) >= 0) return null;
+		rest = rest.substring(rest.lastIndexOf('@') + 1);
+		int hostEnd = authorityEnd(rest);
+		if (hostEnd < rest.length() && rest.charAt(hostEnd) == '/') {
+			String host = StringUtils.removeStart(rest.substring(0, hostEnd).toLowerCase(), "www.");
+			String repoPart = rest.substring(hostEnd + 1).toLowerCase();
+			String hostedPage = switch (host) {
+				case "bitbucket.org" -> "https://bitbucket.org/" + repoPart + "/commits/";
+				case "github.com" -> "https://github.com/" + repoPart + "/commit/";
+				case "gitlab.com" -> "https://gitlab.com/" + repoPart + "/-/commit/";
+				default -> null;
+			};
+			if (null != hostedPage) return repoPart.isEmpty() ? null : hostedPage + commit;
+		}
 		String linkifiedCommit = commit;
-		String repoPart = "";
-        if (uri.toLowerCase().contains("bitbucket.org/")) {
-            repoPart = uri.toLowerCase().split("bitbucket.org/")[1];
-            linkifiedCommit = "https://bitbucket.org/" + repoPart + "/commits/" + commit;
-        } else if (uri.toLowerCase().contains("github.com/")) {
-            repoPart = uri.toLowerCase().split("github.com/")[1];
-            linkifiedCommit = "https://github.com/" + repoPart + "/commit/" + commit;
-        } else if (uri.toLowerCase().contains("gitlab.com/")) {
-            repoPart = uri.toLowerCase().split("gitlab.com/")[1];
-            linkifiedCommit = "https://gitlab.com/" + repoPart + "/-/commit/" + commit;
-        } else if (StringUtils.isNotEmpty(uri)) {
-        	if (!uri.endsWith("/")) uri += "/";
-        	String protocol = "https";
-        	String[] protocolArr = uri.split("://");
-        	if (protocolArr.length > 1) {
-        		protocol = protocolArr[0];
-        		uri = uri.replaceFirst(protocolArr[0] + "://", "");
-        	}
-        	String[] credArr = uri.split("@");
-        	if (credArr.length > 1) {
-        		uri = uri.replaceFirst(credArr[0] + "@", "");
-        	}
-        	if (uri.toLowerCase().contains("azure.com")) {
-        		linkifiedCommit = protocol + "://" + uri + "commit/" + commit;
+        if (StringUtils.isNotEmpty(uri)) {
+        	if (!rest.endsWith("/")) rest += "/";
+        	if (rest.toLowerCase().contains("azure.com")) {
+        		linkifiedCommit = protocol + "://" + rest + "commit/" + commit;
         	} else {
-        		linkifiedCommit = protocol + "://" + uri + commit;
+        		linkifiedCommit = protocol + "://" + rest + commit;
         	}
         }
         return linkifiedCommit;
+	}
+
+	/**
+	 * Where the authority of {@code s} (a URI without its scheme) ends: at the first '/', '?',
+	 * '#', '\' or whitespace, or at the end.
+	 */
+	private static int authorityEnd(String s) {
+		for (int i = 0; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (c == '/' || c == '?' || c == '#' || c == '\\' || Character.isWhitespace(c)) return i;
+		}
+		return s.length();
+	}
+	
+	/** An RFC 3986 scheme: a letter, then letters, digits, '+', '-' or '.'. */
+	private static boolean isUriScheme(String s) {
+		if (s.isEmpty() || !isAsciiLetter(s.charAt(0))) return false;
+		for (int i = 1; i < s.length(); i++) {
+			char c = s.charAt(i);
+			if (!isAsciiLetter(c) && !(c >= '0' && c <= '9') && c != '+' && c != '-' && c != '.') return false;
+		}
+		return true;
+	}
+
+	private static boolean isAsciiLetter(char c) {
+		return (c >= 'a' && c <= 'z') || (c >= 'A' && c <= 'Z');
 	}
 	
 	public static void augmentRootBomComponent (String orgName, org.cyclonedx.model.Component bomComponent) {
@@ -748,41 +902,34 @@ public class Utils {
 	
 	/**
 	 * The group every ReARM entry under {@code metadata.tools} carries, whichever component
-	 * wrote it.
-	 *
-	 * <p>Public because the WRITER is no longer the only interested party: the per-export
-	 * "include internal metadata" flag has to take these entries back out again
-	 * (SupportBomInjector.stripInternalMarkers), and a remover matching on its own copy of the
-	 * strings is a rename away from silently leaving the entry in a document that promised to
-	 * carry only the manufacturer's own content.
+	 * wrote it. Exports keep the entry with every metadata flag: ReARM generated the served
+	 * document, so it is one of the tools a reader is owed.
 	 */
 	public static final String REARM_TOOL_GROUP = "io.reliza";
 
 	/** The name {@link #setRearmBomMetadata} writes, on the documents THIS service generates. */
 	public static final String REARM_TOOL_NAME = "ReARM";
 
+	
 	/**
-	 * EVERY name an {@code io.reliza} tool entry has been written under, because a remover that
-	 * knows only this class's spelling removes nothing from the documents that actually matter.
-	 *
-	 * <p>There are two writers and they do not agree. This class writes {@code "ReARM"} onto the
-	 * documents the backend GENERATES -- the OBOM, the VDR, the VEX -- none of which pass
-	 * through the export seam. Every document that does pass through it comes from rebom, which
-	 * stamps {@code {"group":"io.reliza","name":"rearm"}} (lowercase) in
-	 * {@code attachRebomToolToBom}, in {@code metadata.tools.components} on CycloneDX 1.5+ and
-	 * in the {@code metadata.tools} ARRAY on 1.4 -- carrying {@code group} in both shapes, never
-	 * {@code vendor}. So a matcher built from {@link #REARM_TOOL_NAME} alone, against a
-	 * {@code vendor} field on the legacy branch, matched nothing in production while its unit
-	 * fixture -- written from this class rather than from a served document -- passed.
-	 *
-	 * <p>{@code "rebom"} is the name that writer used before commit {@code f03c62eb} renamed it,
-	 * so documents stored before then still carry it and are still served today.
-	 *
-	 * <p>Membership is EXPLICIT rather than case-insensitive: {@code rearm} and {@code rebom}
-	 * are different words, not different casings, and a case fold would also quietly claim a
-	 * third-party {@code io.reliza} tool nobody here wrote.
+	 * The ReARM version named on ReARM's tool entry when the deployment does not pass one (a local
+	 * run, a compose file without REARM_PRODUCT_VERSION). Must match rebom's fallback.
 	 */
-	public static final Set<String> REARM_TOOL_NAMES = Set.of(REARM_TOOL_NAME, "rearm", "rebom");
+	public static final String REARM_PRODUCT_VERSION_FALLBACK = "26.08.95";
+
+	/**
+	 * The ReARM product version this server belongs to: REARM_PRODUCT_VERSION, which the chart sets
+	 * to its appVersion -- the value the UI shows as the ReARM version, and the one rebom writes on
+	 * its tool entry. {@link #REARM_PRODUCT_VERSION_FALLBACK} when the deployment does not pass it.
+	 */
+	public static String rearmProductVersion() {
+		return rearmProductVersion(System.getenv("REARM_PRODUCT_VERSION"));
+	}
+
+	static String rearmProductVersion(String fromEnvironment) {
+		return (null == fromEnvironment || fromEnvironment.isBlank())
+				? REARM_PRODUCT_VERSION_FALLBACK : fromEnvironment.trim();
+	}
 
 	public static void setRearmBomMetadata (Bom bom, org.cyclonedx.model.Component bomComponent) {
 		Metadata bomMeta = new Metadata();
@@ -811,8 +958,8 @@ public class Utils {
 		erRelizaDocs.setType(org.cyclonedx.model.ExternalReference.Type.DOCUMENTATION);
 		erRelizaDocs.setUrl("https://docs.rearmhq.com");
 		rearmComponent.setExternalReferences(List.of(erRelizaUrl, erRelizaVcs, erRelizaDocs));
+		rearmComponent.setVersion(rearmProductVersion());
 		rearmTool.setComponents(List.of(rearmComponent));
-		// TODO set ReARM version
 		ZonedDateTime zdt = ZonedDateTime.now();
 		bomMeta.setTimestamp(Date.from(zdt.toInstant()));
 		if (null != bomComponent) bomMeta.setComponent(bomComponent);
@@ -950,13 +1097,34 @@ public class Utils {
         }
     }
 
+	/** The uuid a client-supplied string names; empty when it is blank or not a uuid. */
+	public static Optional<UUID> parseUuid (final String uuidStr) {
+		Optional<UUID> ou = Optional.empty();
+		if (StringUtils.isNotBlank(uuidStr)) {
+			try {
+				ou = Optional.of(UUID.fromString(uuidStr.trim()));
+			} catch (IllegalArgumentException e) {
+				// not a uuid: the caller answers it like a uuid that names nothing
+			}
+		}
+		return ou;
+	}
+
 	public static UUID resolveProgrammaticComponentId (final String suppliedComponentIdStr, final AuthHeaderParse ahp) {
-		UUID componentId = null;
 		UUID suppliedComponentId = null;
 		if (StringUtils.isNotEmpty(suppliedComponentIdStr)) {
 			suppliedComponentId = UUID.fromString(suppliedComponentIdStr);
 		}
-		
+		return bindProgrammaticComponentId(suppliedComponentId, ahp);
+	}
+
+	/**
+	 * The one component-key binding rule for programmatic calls: a component key writes its own
+	 * component (naming another is refused); an org-wide or RBAC key writes the one it names, null
+	 * when it names none; other key types bind no component.
+	 */
+	public static UUID bindProgrammaticComponentId (final UUID suppliedComponentId, final AuthHeaderParse ahp) {
+		UUID componentId = null;
 		if (ApiTypeEnum.COMPONENT == ahp.getType()) {
 			componentId = ahp.getObjUuid();
 			if (null != suppliedComponentId && !componentId.equals(suppliedComponentId)) {
@@ -985,12 +1153,16 @@ public class Utils {
 	
 	public record UuidDiff (UUID object, ReleaseUpdateAction diffAction) {}
 	
+	/**
+	 * REMOVED entries in the original list's order, then ADDED entries in the updated list's order
+	 * (linked sets), so the diff is deterministic and ADDED follows the order the caller sent.
+	 */
 	public static List<UuidDiff> diffUuidLists (Collection<UUID> originalList, Collection<UUID> updatedList) {
 		List<UuidDiff> diffResults = new LinkedList<>();
 		if (null != updatedList) {
-			Set<UUID> originalSet = new HashSet<>();
+			Set<UUID> originalSet = new LinkedHashSet<>();
 			if (null != originalList && !originalList.isEmpty()) originalSet.addAll(originalList);
-			Set<UUID> updatedSet = new HashSet<>(updatedList);
+			Set<UUID> updatedSet = new LinkedHashSet<>(updatedList);
 			
 			originalSet.forEach(o -> {
 				if (!updatedSet.contains(o)) diffResults.add(new UuidDiff(o, ReleaseUpdateAction.REMOVED));

@@ -5,6 +5,7 @@ package io.reliza.ws;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.convert.ConversionFailedException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -15,6 +16,7 @@ import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandle
 import graphql.ErrorClassification;
 import graphql.GraphqlErrorBuilder;
 import graphql.GraphQLError;
+import graphql.schema.DataFetchingEnvironment;
 
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
@@ -100,6 +102,61 @@ public class GraphQLExceptionHandlers {
     public GraphQLError handlePessimistic(PessimisticLockException ex) {
         log.warn("Pessimistic lock acquisition failed", ex);
         return safeError("Resource is busy, please retry");
+    }
+
+    /**
+     * An argument that is not a uuid where one goes -- a board's name given to board show, say (task
+     * RD3-3). DGS converts an ID argument declared as UUID with Spring's converter, which throws this
+     * before the fetcher runs; it used to surface as "Internal server error". Now it names the
+     * argument: "boardUuid: not a uuid". Any other failed conversion stays a server error.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleConversion(ConversionFailedException ex, DataFetchingEnvironment env) {
+        if (null != ex.getTargetType() && java.util.UUID.class.equals(ex.getTargetType().getType())) {
+            return notAUuid(env, ex.getValue());
+        }
+        log.error("Unhandled server error", ex);
+        return safeError("Internal server error");
+    }
+
+    /**
+     * The same refusal when a fetcher takes the uuid as a string and parses it itself: UUID.fromString's
+     * IllegalArgumentException. Any other IllegalArgumentException stays a server error.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleIllegalArgument(IllegalArgumentException ex, DataFetchingEnvironment env) {
+        String m = ex.getMessage();
+        if (null != m && (m.startsWith(INVALID_UUID) || m.startsWith("UUID string too large"))) {
+            return notAUuid(env, m.startsWith(INVALID_UUID) ? m.substring(INVALID_UUID.length()) : null);
+        }
+        log.error("Unhandled server error", ex);
+        return safeError("Internal server error");
+    }
+
+    private static final String INVALID_UUID = "Invalid UUID string: ";
+
+    /** "boardUuid: not a uuid", the argument found by its value; "input.board: …" inside an input object. */
+    private GraphQLError notAUuid(DataFetchingEnvironment env, Object value) {
+        String where = null == env || null == value ? null : argumentHolding(env.getArguments(), value, "");
+        return GraphqlErrorBuilder.newError()
+                .message((null == where ? "an argument" : where) + ": not a uuid")
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    private static String argumentHolding(java.util.Map<String, Object> args, Object value, String prefix) {
+        if (null == args) return null;
+        for (java.util.Map.Entry<String, Object> e : args.entrySet()) {
+            Object v = e.getValue();
+            if (value.equals(v)) return prefix + e.getKey();
+            if (v instanceof java.util.Collection<?> c && c.contains(value)) return prefix + e.getKey();
+            if (v instanceof java.util.Map<?, ?> m) {
+                @SuppressWarnings("unchecked")
+                String inner = argumentHolding((java.util.Map<String, Object>) m, value, prefix + e.getKey() + ".");
+                if (null != inner) return inner;
+            }
+        }
+        return null;
     }
 
     @GraphQlExceptionHandler

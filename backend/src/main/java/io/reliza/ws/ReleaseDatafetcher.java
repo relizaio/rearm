@@ -77,8 +77,10 @@ import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.PullRequestData;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData.ReservationEndedBy;
 import io.reliza.model.RelizaObject;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.model.SourceCodeEntryData;
@@ -107,6 +109,10 @@ import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.ProgrammaticReleaseTargetService;
+import io.reliza.service.ProgrammaticReleaseTargetService.ProgrammaticReleaseTarget;
+import io.reliza.service.ProgrammaticReleaseTargetService.RbacKeyPolicy;
+import io.reliza.service.ReleaseService.ProgrammaticArtifactTargets;
 import io.reliza.service.BranchService;
 import io.reliza.dto.ChangelogFindingKind;
 import io.reliza.dto.ChangelogRecords.ComponentChangelog;
@@ -127,6 +133,7 @@ import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
 import io.reliza.service.OpenVexService;
 import io.reliza.service.ReleaseService;
 import io.reliza.service.SharedArtifactService;
+import io.reliza.service.ComponentKindPolicy;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.SupportInjectionService;
 import io.reliza.service.SourceCodeEntryService;
@@ -148,6 +155,9 @@ public class ReleaseDatafetcher {
 	
 	@Autowired
 	private ReleaseService releaseService;
+
+	@Autowired
+	private ProgrammaticReleaseTargetService programmaticReleaseTargetService;
 
 	@Autowired
 	private OpenVexService openVexService;
@@ -797,9 +807,16 @@ public class ReleaseDatafetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		// Cancelling or rejecting a reservation ends it unbuilt, so no rule may fire for it: an
 		// action held back while it was PENDING would otherwise fire now, on the cancelled release.
-		boolean endsReservation = ord.get().getLifecycle() == ReleaseLifecycle.PENDING
-				&& (newLifecycle == ReleaseLifecycle.CANCELLED || newLifecycle == ReleaseLifecycle.REJECTED);
-		var r = ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu, !endsReservation);
+		// Ending a PENDING reservation, or moving an ended one between CANCELLED and REJECTED, goes
+		// through endReservation, which decides on the locked row: a reservation ended unbuilt runs no
+		// rules and records the person; a move between ended lifecycles keeps a hold. Any other move
+		// is an ordinary change with its rules, and takes no row lock up front.
+		ReleaseLifecycle current = ord.get().getLifecycle();
+		boolean reservationMove = ReleaseLifecycle.isEnded(newLifecycle)
+				&& (current == ReleaseLifecycle.PENDING || ReleaseLifecycle.isEnded(current));
+		var r = reservationMove
+				? ossReleaseService.endReservation(releaseId, newLifecycle, wu, ReservationEndedBy.PERSON)
+				: ossReleaseService.updateReleaseLifecycle(releaseId, newLifecycle, wu, true);
 		return ReleaseData.dataFromRecord(r);
 	}
 
@@ -1047,6 +1064,30 @@ public class ReleaseDatafetcher {
 	}
 
 
+	/**
+	 * An addRelease input's commits, then its source code entry, in the order they are recorded,
+	 * as the dtos they become (artifacts left out); the input is not modified.
+	 */
+	@SuppressWarnings("unchecked")
+	private static List<SceDto> sceDtosToRecord(Map<String, Object> progReleaseInput) {
+		List<Map<String, Object>> sceMaps = new LinkedList<>();
+		if (progReleaseInput.get(CommonVariables.COMMITS_FIELD) instanceof List<?> commitList) {
+			commitList.forEach(com -> {
+				if (com instanceof Map<?, ?> comMap) sceMaps.add((Map<String, Object>) comMap);
+			});
+		}
+		if (progReleaseInput.get(CommonVariables.SOURCE_CODE_ENTRY_FIELD) instanceof Map<?, ?> sceMap) {
+			sceMaps.add((Map<String, Object>) sceMap);
+		}
+		List<SceDto> sceDtos = new LinkedList<>();
+		for (Map<String, Object> sceMap : sceMaps) {
+			Map<String, Object> withoutArtifacts = new HashMap<>(sceMap);
+			withoutArtifacts.remove(CommonVariables.ARTIFACTS_FIELD);
+			sceDtos.add(Utils.OM.convertValue(withoutArtifacts, SceDto.class));
+		}
+		return sceDtos;
+	}
+
 	@DgsData(parentType = "Mutation", field = "addReleaseProgrammatic")
 	@Transactional
 	public ReleaseData addReleaseProgrammatic(DgsDataFetchingEnvironment dfe) throws IOException, RelizaException, Exception {
@@ -1062,7 +1103,8 @@ public class ReleaseDatafetcher {
 	 * Batch release create. Authenticates once, then creates every supplied
 	 * release in this single @Transactional unit (all-or-nothing — any failure
 	 * rolls the whole batch back). Per-release product auto-integration is
-	 * deferred during creation and fired once afterwards, deduped per affected
+	 * deferred during creation and fired once afterwards (after commit, off-thread;
+	 * the queue markers commit with the releases), deduped per affected
 	 * feature set across the whole batch, so a multi-component CI build yields a
 	 * single product auto-integrate rather than one per component version.
 	 */
@@ -1081,10 +1123,11 @@ public class ReleaseDatafetcher {
 		for (Map<String, Object> progReleaseInput : releaseInputs) {
 			created.add(createReleaseFromProgrammaticInput(progReleaseInput, authCtx, true));
 		}
-		// Auto-integrate was deferred above; fire once per affected feature set,
-		// deduped across the whole batch (autoIntegrateFeatureSetProduct resolves
-		// the latest release of each dependency, so one pass picks up every
-		// release in the batch that maps to a given feature set).
+		// Auto-integrate was deferred above; queue it now and fire it after commit,
+		// off-thread, once per affected feature set, deduped across the whole batch
+		// (autoIntegrateFeatureSetProduct resolves the latest release of each
+		// dependency, so one pass picks up every release in the batch that maps to a
+		// given feature set).
 		ossReleaseService.autoIntegrateProductsForBatch(created);
 		return created;
 	}
@@ -1247,6 +1290,11 @@ public class ReleaseDatafetcher {
 		Optional<SourceCodeEntryData> osced = Optional.empty();
 		String version = (String) progReleaseInput.get(CommonVariables.VERSION_FIELD);
 		List<UUID> commits = new LinkedList<>();
+
+		// Refuse the whole build before anything is written: deliverables, artifacts and each
+		// commit below are recorded on their own, so a refusal found at a later commit would
+		// leave the earlier parts behind.
+		sourceCodeEntryService.requireBuildRecordable(bd, sceDtosToRecord(progReleaseInput));
 		
 		var releaseDtoBuilder = ReleaseDto.builder()
 										 .branch(bd.getUuid())
@@ -1625,88 +1673,41 @@ public class ReleaseDatafetcher {
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
 		
 		Map<String, Object> addArtifactInput = dfe.getArgument("artifactInput");
-		UUID componentId = Utils.resolveProgrammaticComponentId((String) addArtifactInput.get(CommonVariables.COMPONENT_FIELD), ahp);
 		String version = (String) addArtifactInput.get(CommonVariables.VERSION_FIELD);
 		
-		// Resolve release by UUID or component+version
-		Optional<ReleaseData> ord = Optional.empty();
-		String releaseUuidStr = (String) addArtifactInput.get(CommonVariables.RELEASE_FIELD);
-		if (StringUtils.isNotEmpty(releaseUuidStr)) {
-			ord = sharedReleaseService.getReleaseData(UUID.fromString(releaseUuidStr));
-		}
-		if (ord.isEmpty() && StringUtils.isNotEmpty(version) && null != componentId) {
-			ord = releaseService.getReleaseDataByComponentAndVersion(componentId, version);
-		}
-		if (ord.isEmpty()) {
-			throw new RelizaException("Release not found. Provide either 'release' UUID or 'component' + 'version'.");
-		}
+		// Resolve and authorize the target release (by UUID or component+version): only a release
+		// of the authorized component, in the key's org; anything else reads "not found".
+		ProgrammaticReleaseTarget target = programmaticReleaseTargetService.resolveProgrammaticReleaseTarget(ahp,
+				(String) addArtifactInput.get(CommonVariables.COMPONENT_FIELD),
+				(String) addArtifactInput.get(CommonVariables.RELEASE_FIELD), version, null, RbacKeyPolicy.ACCEPTED);
+		ReleaseData rd = target.release();
+		ComponentData cd = target.component();
+		WhoUpdated wu = target.whoUpdated();
 
 		// When the caller resolved the release by UUID alone, no version was
 		// supplied in the input map. Fall back to the resolved release's
 		// version so it flows through to RebomOptions -- rebom rejects a null
 		// version during PURL generation otherwise.
 		if (StringUtils.isEmpty(version)) {
-			version = ord.get().getVersion();
+			version = rd.getVersion();
 		}
 
-		// Authorization
-		if (null == componentId) componentId = ord.get().getComponent();
-		Optional<ComponentData> ocd = (componentId != null) ? getComponentService.getComponentData(componentId) : Optional.empty();
-		RelizaObject ro = ocd.isPresent() ? ocd.get() : null;
-		AuthorizationResponse ar = AuthorizationResponse.initialize(InitType.FORBID);
-		if (null != ro && ahp.isRbacKey()) {
-			// FREEFORM keys carry scope/function permission tuples; authorize a
-			// WRITE on the resolved component the same way PR upsert does --
-			// COMPONENT-scoped READ_WRITE on this component, a PERSPECTIVE
-			// permission containing it, or org-wide READ_WRITE all match.
-			FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp,
-					PermissionFunction.RESOURCE, PermissionScope.COMPONENT, ro.getUuid(),
-					List.of(ro), CallType.WRITE);
-			ar = AuthorizationResponse.initialize(InitType.ALLOW);
-			ar.setWhoUpdated(fkv.whoUpdated());
-		} else if (null != ro) {
-			List<ApiTypeEnum> supportedApiTypes = Arrays.asList(ApiTypeEnum.COMPONENT, ApiTypeEnum.ORGANIZATION_RW);
-			ar = authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, ro.getOrg(), CallType.WRITE, ro);
-		} else {
-			authorizationService.gqlValidateAuthorizationResponse(ar);
-		}
-		
-		ComponentData cd = ocd.orElseThrow(() -> new RelizaException("Component not found"));
 		OrganizationData od = getOrganizationService.getOrganizationData(cd.getOrg()).orElseThrow();
-		WhoUpdated wu = ar.getWhoUpdated();
 		
-		// Validate that at least one artifact type is provided
-		boolean hasArtifacts = addArtifactInput.containsKey("releaseArtifacts") || 
-							   addArtifactInput.containsKey("deliverableArtifacts") || 
-							   addArtifactInput.containsKey("sceArtifacts");
-		if (!hasArtifacts) {
-			throw new RelizaException("At least one of 'releaseArtifacts', 'deliverableArtifacts', or 'sceArtifacts' must be provided");
-		}
-		
-		// Delegate artifact processing to service layer
-		if (addArtifactInput.containsKey("releaseArtifacts")) {
-			@SuppressWarnings("unchecked")
-			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) addArtifactInput.get("releaseArtifacts");
-			releaseService.processReleaseArtifacts(artifactsList, ord.get(), cd, od, version, wu);
-		}
-		
-		if (addArtifactInput.containsKey("deliverableArtifacts")) {
-			@SuppressWarnings("unchecked")
-			List<Map<String,Object>> delArtsList = (List<Map<String,Object>>) addArtifactInput.get("deliverableArtifacts");
-			releaseService.processDeliverableArtifacts(delArtsList, ord.get(), cd, od, version, wu);
-		}
+		// Check the whole input before the first upload: each part below writes on its own, so a
+		// refusal found later would leave the earlier parts behind.
+		ProgrammaticArtifactTargets targets = releaseService.resolveProgrammaticArtifactTargets(addArtifactInput, rd);
 
-		if (addArtifactInput.containsKey("sceArtifacts")) {
-			@SuppressWarnings("unchecked")
-			List<Map<String,Object>> sceArtsList = (List<Map<String,Object>>) addArtifactInput.get("sceArtifacts");
-			releaseService.processSceArtifacts(sceArtsList, ord.get(), cd, od, version, wu);
-		}
+		// Delegate artifact processing to service layer
+		releaseService.processReleaseArtifacts(targets.releaseArtifacts(), rd, cd, od, version, wu);
+		releaseService.processDeliverableArtifacts(targets.deliverableArtifacts(), rd, cd, od, version, wu);
+		releaseService.processSceArtifacts(targets.sceArtifacts(), rd, cd, od, version, wu);
 		
 		// Reconcile merged SBOM
-		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);
+		releaseService.reconcileMergedSbomRoutine(rd, wu);
 		
 		// Return updated release
-		return sharedReleaseService.getReleaseData(ord.get().getUuid()).get();
+		return sharedReleaseService.getReleaseData(rd.getUuid()).get();
 	}
 
 	@DgsData(parentType = "Mutation", field = "releasecompletionfinalizerProgrammatic")
@@ -2086,6 +2087,39 @@ public class ReleaseDatafetcher {
 		return null == nextUuid ? null : sharedReleaseService.getReleaseData(nextUuid).orElse(null);
 	}
 	
+	/**
+	 * The release's metrics as stored, except for a release that is not scanned (task RD4-11): a
+	 * board's document round answers NOT_APPLICABLE with zero counts and no scan dates, so a list
+	 * hides its scan state instead of showing it pending. The component read goes through the
+	 * same batched loader as componentDetails, so a list pays one component query, not one per row.
+	 */
+	@DgsData(parentType = "Release", field = "metrics")
+	public CompletionStage<DataFetcherResult<ReleaseMetricsDto>> metricsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		if (rd == null) return CompletableFuture.completedFuture(DataFetcherResult.<ReleaseMetricsDto>newResult().build());
+		if (null != rd.getDocument()) {
+			return CompletableFuture.completedFuture(withMetricsContext(rd, ComponentKindPolicy.notApplicableMetrics()));
+		}
+		if (null == rd.getComponent()) return CompletableFuture.completedFuture(withMetricsContext(rd, rd.getMetrics()));
+		DataLoader<ComponentKey, Optional<ComponentData>> dataLoader = dfe.getDataLoader("componentDetailsLoader");
+		return dataLoader.load(new ComponentKey(rd.getComponent())).thenApply(ocd -> withMetricsContext(rd,
+				ocd.isPresent() && !ComponentKindPolicy.isScannable(ocd.get())
+						? ComponentKindPolicy.notApplicableMetrics() : rd.getMetrics()));
+	}
+
+	/**
+	 * The metrics with the release's org and uuid attached as local context: {@code ReleaseMetricsDto}
+	 * carries neither, the score fields below it read the org's vulnerability records (see
+	 * {@link VulnerabilityScoreDataFetcher}), and {@code Vulnerability.sbomMatch} reads the release's
+	 * SBOM components.
+	 */
+	private static DataFetcherResult<ReleaseMetricsDto> withMetricsContext(ReleaseData rd, ReleaseMetricsDto metrics) {
+		return DataFetcherResult.<ReleaseMetricsDto>newResult()
+				.data(metrics)
+				.localContext(MetricsContext.ofRelease(rd.getOrg(), rd.getUuid()))
+				.build();
+	}
+
 	@DgsData(parentType = "Release", field = "componentDetails")
 	public CompletionStage<Optional<ComponentData>> projectOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
@@ -2106,11 +2140,14 @@ public class ReleaseDatafetcher {
 		}
 		// Degrade a dangling source-code-entry reference to null rather than
 		// throwing: a missing SCE row previously .get()-threw here and surfaced
-		// as a SERVICE_ERROR that failed the WHOLE release query.
-		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(rd.getSourceCodeEntry());
+		// as a SERVICE_ERROR that failed the WHOLE release query. Read org-scoped,
+		// so another organization's entry (stored before updateRelease checked the
+		// org) degrades the same way instead of being shown.
+		Optional<SourceCodeEntryData> osced = getSourceCodeEntryService
+				.getReferenceableSceData(rd.getSourceCodeEntry(), rd.getOrg());
 		if (osced.isEmpty()) {
-			log.warn("Release {} references a missing source code entry {}; degrading sourceCodeEntryDetails to null",
-					rd.getUuid(), rd.getSourceCodeEntry());
+			log.warn("Release {} references a source code entry {} that is missing or of another organization; "
+					+ "degrading sourceCodeEntryDetails to null", rd.getUuid(), rd.getSourceCodeEntry());
 			return null;
 		}
 		return osced.get();
@@ -2123,20 +2160,15 @@ public class ReleaseDatafetcher {
 			return new LinkedList<>();
 		}
 		// Skip dangling commit references rather than .get()-throwing on the
-		// first missing SCE, which failed the whole release query.
-		List<SourceCodeEntryData> out = new LinkedList<>();
-		int missing = 0;
-		for (UUID c : rd.getCommits()) {
-			Optional<SourceCodeEntryData> osced = getSourceCodeEntryService.getSourceCodeEntryData(c);
-			if (osced.isPresent()) {
-				out.add(osced.get());
-			} else {
-				missing++;
-			}
-		}
-		if (missing > 0) {
-			log.warn("Release {} references {} missing commit source-code reference(s); omitted from commitsDetails",
-					rd.getUuid(), missing);
+		// first missing SCE, which failed the whole release query. One org-scoped
+		// read, so another organization's entry (stored before updateRelease
+		// checked the org) is skipped the same way.
+		List<SourceCodeEntryData> out = getSourceCodeEntryService
+				.getReferenceableSceDataList(rd.getCommits(), rd.getOrg());
+		int dropped = rd.getCommits().size() - out.size();
+		if (dropped > 0) {
+			log.warn("Release {} references {} commit source-code reference(s) that are missing or of another "
+					+ "organization; omitted from commitsDetails", rd.getUuid(), dropped);
 		}
 		return out;
 	}
@@ -2156,12 +2188,11 @@ public class ReleaseDatafetcher {
 			return new LinkedList<>();
 		}
 		java.util.LinkedHashSet<UUID> sessionUuids = new java.util.LinkedHashSet<>();
-		for (UUID sceUuid : rd.getCommits()) {
-			getSourceCodeEntryService.getSourceCodeEntryData(sceUuid).ifPresent(sced -> {
-				if (sced.getAgentSession() != null) {
-					sessionUuids.add(sced.getAgentSession());
-				}
-			});
+		// Only entries the release's org may show, like commitsDetails.
+		for (SourceCodeEntryData sced : getSourceCodeEntryService.getReferenceableSceDataList(rd.getCommits(), rd.getOrg())) {
+			if (sced.getAgentSession() != null) {
+				sessionUuids.add(sced.getAgentSession());
+			}
 		}
 		List<io.reliza.model.AgentSessionData> result = new LinkedList<>();
 		for (UUID sUuid : sessionUuids) {
@@ -2207,23 +2238,6 @@ public class ReleaseDatafetcher {
 
 	static boolean selectsAny(DataFetchingFieldSelectionSet selection, List<String> globs) {
 		return globs.stream().anyMatch(selection::contains);
-	}
-
-	/**
-	 * The stored metrics as they are, with the release's org and uuid attached
-	 * as local context: {@code ReleaseMetricsDto} carries neither, the score
-	 * fields below it read the org's vulnerability records (see
-	 * {@link VulnerabilityScoreDataFetcher}), and {@code Vulnerability.sbomMatch}
-	 * reads the release's SBOM components. Loads nothing itself.
-	 */
-	@DgsData(parentType = "Release", field = "metrics")
-	public DataFetcherResult<ReleaseMetricsDto> metricsOfRelease(DgsDataFetchingEnvironment dfe) {
-		ReleaseData rd = dfe.getSource();
-		if (rd == null) return DataFetcherResult.<ReleaseMetricsDto>newResult().build();
-		return DataFetcherResult.<ReleaseMetricsDto>newResult()
-				.data(rd.getMetrics())
-				.localContext(MetricsContext.ofRelease(rd.getOrg(), rd.getUuid()))
-				.build();
 	}
 
 	@DgsData(parentType = "Release", field = "artifactDetails")
@@ -2313,8 +2327,9 @@ public class ReleaseDatafetcher {
 	public List<IntermediateFailedReleaseDto> intermediateFailedReleasesOfRelease(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
 		List<ReleaseData> failedReleases = sharedReleaseService.findIntermediateFailedReleases(rd);
-		
-		return failedReleases.stream().map(fr -> {
+		// Each failed release's source code entry first, then its commits, de-duplicated per release.
+		Map<UUID, Set<UUID>> commitUuidsOf = new LinkedHashMap<>();
+		for (ReleaseData fr : failedReleases) {
 			Set<UUID> allCommitUuids = new LinkedHashSet<>();
 			if (fr.getSourceCodeEntry() != null) {
 				allCommitUuids.add(fr.getSourceCodeEntry());
@@ -2322,10 +2337,19 @@ public class ReleaseDatafetcher {
 			if (fr.getCommits() != null && !fr.getCommits().isEmpty()) {
 				allCommitUuids.addAll(fr.getCommits());
 			}
-			List<SourceCodeEntryData> commits = allCommitUuids.stream()
-				.map(c -> getSourceCodeEntryService.getSourceCodeEntryData(c).orElse(null))
-				.filter(Objects::nonNull)
-				.collect(Collectors.toList());
+			commitUuidsOf.put(fr.getUuid(), allCommitUuids);
+		}
+		// One org-scoped read for all of them, scoped to the org of the release being viewed like
+		// commitsDetails, then split back per release.
+		Set<UUID> everyCommit = commitUuidsOf.values().stream().flatMap(Set::stream)
+				.collect(Collectors.toCollection(LinkedHashSet::new));
+		Map<UUID, SourceCodeEntryData> visible = getSourceCodeEntryService
+				.getReferenceableSceDataList(everyCommit, rd.getOrg()).stream()
+				.collect(Collectors.toMap(SourceCodeEntryData::getUuid, sced -> sced, (x, y) -> x));
+		
+		return failedReleases.stream().map(fr -> {
+			List<SourceCodeEntryData> commits = commitUuidsOf.get(fr.getUuid()).stream()
+				.filter(visible::containsKey).map(visible::get).collect(Collectors.toList());
 			return new IntermediateFailedReleaseDto(
 				fr.getUuid(),
 				fr.getVersion(),
@@ -2570,13 +2594,14 @@ public class ReleaseDatafetcher {
 			@InputArgument("startDate") ZonedDateTime startDate,
 			@InputArgument("endDate") ZonedDateTime endDate,
 			@InputArgument("limit") Integer limit,
-			@InputArgument("componentType") io.reliza.model.ComponentData.ComponentType componentType) throws RelizaException {
+			@InputArgument("componentType") io.reliza.model.ComponentData.ComponentType componentType,
+			@InputArgument("componentKinds") List<io.reliza.model.ComponentData.ComponentKind> componentKinds) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
-		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, componentType);
+		return sharedReleaseService.listReleaseDataOfOrgBetweenDates(orgUuid, startDate, endDate, limit, componentType, componentKinds);
 	}
 
 	@PreAuthorize("isAuthenticated()")

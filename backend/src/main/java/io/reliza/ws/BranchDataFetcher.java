@@ -10,7 +10,6 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
-import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -31,6 +30,7 @@ import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.CommonVariables;
+import io.reliza.common.SafeRegex;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
@@ -56,6 +56,8 @@ import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DependencyPatternService;
+import io.reliza.service.DependencyPatternService.PatternSweep;
+import io.reliza.service.DependencyPatternService.PatternSweepOutcome;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.PullRequestService;
@@ -213,18 +215,11 @@ public class BranchDataFetcher {
 		Map<String, Object> updateBranchInputMap = dfe.getArgument("branch");
 		BranchDto updateBranchInput = Utils.OM.convertValue(updateBranchInputMap, BranchDto.class);
 		
-		// Validate dependency patterns
+		// Validate dependency patterns; this form has always refused an empty one
 		if (updateBranchInput.getDependencyPatterns() != null) {
 			for (BranchData.DependencyPattern pattern : updateBranchInput.getDependencyPatterns()) {
-				if (pattern.getPattern() == null || pattern.getPattern().trim().isEmpty()) {
+				if (pattern != null && StringUtils.isBlank(pattern.getPattern())) {
 					throw new RelizaException("Pattern cannot be empty");
-				}
-				// Validate regex pattern
-				try {
-					Pattern.compile(pattern.getPattern());
-				} catch (Exception e) {
-					log.error("Invalid regex pattern: {} - {}", pattern.getPattern(), e.getMessage());
-					throw new RelizaException("Invalid regex pattern: " + pattern.getPattern());
 				}
 			}
 		}
@@ -252,6 +247,10 @@ public class BranchDataFetcher {
 		}
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, updateBranchInput.getUuid(), roList, CallType.WRITE);
+		// Against the stored patterns, so only new ones are checked; after authorization, so the
+		// stored list is never compared for a caller who may not see it.
+		DependencyPatternService.validatePatterns(updateBranchInput.getDependencyPatterns(),
+				obd.map(BranchData::getDependencyPatterns).orElse(null));
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 
 		
@@ -420,11 +419,12 @@ public class BranchDataFetcher {
 	@DgsData(parentType = "Branch", field = "vcsRepositoryDetails")
 	public Optional<VcsRepositoryData> vcsRepoOfProject (DgsDataFetchingEnvironment dfe) {
 		Optional<VcsRepositoryData> vrdo = Optional.empty();
-		// TODO check on org for vcs repo
 		BranchData bd = dfe.getSource();
 		UUID vcsRepoUuid = bd.getVcs();
 		if (null != vcsRepoUuid) {
-			vrdo = vcsRepositoryService.getVcsRepositoryData(vcsRepoUuid);
+			// Scoped to the branch's org: a stored reference to another org's repository
+			// (written before updateBranch checked it) resolves to null.
+			vrdo = vcsRepositoryService.getVcsRepositoryData(vcsRepoUuid, bd.getOrg());
 		}
 		return vrdo;
 	}
@@ -533,8 +533,20 @@ public class BranchDataFetcher {
 			.fallbackToBase(fallbackToBase)
 			.build();
 		
-		// Get components matching the pattern
-		List<ComponentData> matchedComponents = dependencyPatternService.findComponentsByPattern(orgUuid, pattern);
+		// The pattern comes straight from the request (org READ suffices), so it is held to the
+		// same checks as a stored one, and a runaway is an error rather than an empty preview.
+		SafeRegex.validate(pattern, "Pattern");
+		PatternSweep sweep = dependencyPatternService.sweepComponentsByPattern(orgUuid, pattern);
+		if (sweep.outcome() == PatternSweepOutcome.ABANDONED) {
+			throw new RelizaException("Pattern ran out of match budget on more than " + SafeRegex.MAX_TRIPS_PER_SWEEP
+					+ " component names, so it would pull in no components -- it backtracks catastrophically;"
+					+ " simplify it");
+		}
+		if (sweep.outcome() == PatternSweepOutcome.SKIPPED_SOME) {
+			throw new RelizaException("Pattern ran out of match budget on some component names, which it would"
+					+ " leave out -- it backtracks catastrophically; simplify it");
+		}
+		List<ComponentData> matchedComponents = sweep.matched();
 		
 		List<Map<String, Object>> result = new LinkedList<>();
 		for (ComponentData comp : matchedComponents) {

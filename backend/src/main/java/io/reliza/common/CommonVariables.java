@@ -298,10 +298,28 @@ public class CommonVariables {
 	public static final String SPAWNED_INSTANCE_AUTH_CLASS = "spawnedInstance";
 	
 	public static final String DETAILS_UNAVAILABLE_MESSAGE = "Change details unavailable";
+
+	/** The one answer of a programmatic write for a release it cannot target, missing or not the caller's. */
+	public static final String PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE =
+			"Release not found. Provide either 'release' UUID or 'component' + 'version'.";
+	/** As {@link #PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE}, for a variant. */
+	public static final String PROGRAMMATIC_VARIANT_NOT_FOUND_MESSAGE = "Variant not found in this organization";
+	/** As {@link #PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE}, for a named component. */
+	public static final String PROGRAMMATIC_COMPONENT_NOT_FOUND_MESSAGE = "Component not found in this organization";
 	
 	public static final String ADDED_ON_COMPLETE = "addedOnComplete";
 	
 	public static final String BASE_INTEGRATION_IDENTIFIER = "base";
+
+	/** The one refusal for a VCS repository a branch cannot link: missing or another organization's. */
+	public static final String VCS_REPOSITORY_NOT_FOUND_MESSAGE = "VCS repository not found in this organization";
+	/** A build on a branch whose linked VCS repository is unusable, with no VCS uri and type to relink it. */
+	public static final String BRANCH_VCS_UNUSABLE_MESSAGE = VCS_REPOSITORY_NOT_FOUND_MESSAGE
+			+ ": the branch's linked VCS repository is not available; supply the VCS uri and VCS type (vcstype)"
+			+ " so the build can relink the branch to this organization's repository";
+	/** The one refusal for a source code entry a build cannot record for its organization, whatever the cause. */
+	public static final String SCE_NOT_RESOLVABLE_MESSAGE =
+			"Source code entry not found in this organization: this commit cannot be recorded";
 	
 	public record ApprovalRole (String id, String displayView) {}
 	public static final Set<ApprovalRole> DEFAULT_APPROVAL_ROLES = Set.of(
@@ -467,6 +485,9 @@ public class CommonVariables {
 		AGENT_IDENTITIES("agent_identities"),
 		AGENT_IDENTITY_CREDENTIALS("agent_identity_credentials"),
 		AGENT_SESSIONS("agent_sessions"),
+		AGENT_BOARDS("agent_boards"),
+		AGENT_TASKS("agent_tasks"),
+		AGENT_TASK_ROLE_CONFIGS("agent_task_role_configs"),
 		API_KEYS("api_keys"),
 		API_KEY_ACCESS("api_key_access"),
 		APP_SERVICES("app_service"),
@@ -624,6 +645,8 @@ public class CommonVariables {
 		@Setter(AccessLevel.PRIVATE) private UUID verifiedKeyUuid;
 		/** CLI browser login: the user who approved the session this token came from */
 		@Setter(AccessLevel.PRIVATE) private UUID actorUser;
+		/** CLI browser login: the login session the token was minted for, so what it recorded about the device can be found */
+		@Setter(AccessLevel.PRIVATE) private UUID cliSession;
 		/** Federated identity exchange: the rules that admitted the token and the external identity behind it */
 		@Setter(AccessLevel.PRIVATE) private FederatedContext federation;
 		/** Slot of the secret that matched (Basic) or that the access token was exchanged with (Bearer). */
@@ -645,8 +668,15 @@ public class CommonVariables {
 
 		/** Principal for a CLI-session access token: the key, plus the user who logged in as the actor. */
 		public static AuthHeaderParse fromVerifiedSession(io.reliza.model.ApiKey ak, UUID actorUser, String ipAddr) {
+			return fromVerifiedSession(ak, actorUser, null, ipAddr);
+		}
+
+		/** As above, naming the CLI login session the token belongs to. */
+		public static AuthHeaderParse fromVerifiedSession(io.reliza.model.ApiKey ak, UUID actorUser, UUID cliSession,
+				String ipAddr) {
 			AuthHeaderParse p = fromVerifiedKey(ak, null, ipAddr);
 			p.setActorUser(actorUser);
+			p.setCliSession(cliSession);
 			return p;
 		}
 

@@ -1810,9 +1810,9 @@ public class IntegrationService {
 		if (orgOpt.isPresent()) {
 			ignoreViolation = orgOpt.get().getIgnoreViolation();
 		}
-		final OrganizationData.IgnoreViolation finalIgnoreViolation = ignoreViolation;
+		final ViolationIgnoreSweep<ViolationWithCpe> ignoreSweep = new ViolationIgnoreSweep<>(ignoreViolation, orgUuid);
 
-		return executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "",
+		List<ViolationWithCpe> violations = executeDtrackPaginatedCallWithTransform(baseUri, apiToken, "",
 				CommonVariables.DTRACK_VIOLATIONS_PAGE_SIZE, rawPage -> {
 			List<ViolationWithCpe> pageResults = new ArrayList<>();
 			for (Object vd : rawPage) {
@@ -1820,12 +1820,6 @@ public class IntegrationService {
 				// Decode URL-encoded @ symbol in purl from DTrack
 				String purl = dvr.component().purl() != null ? dvr.component().purl().replace("%40", "@") : null;
 				ViolationType violationType = dvr.type();
-
-				// Check if this violation should be ignored based on purl regex patterns
-				if (shouldIgnoreViolation(purl, violationType, finalIgnoreViolation)) {
-					log.debug("Ignoring violation for purl {} of type {} based on org ignore patterns", purl, violationType);
-					continue;
-				}
 
 				String licenseId;
 				if (null != dvr.component().resolvedLicense()) {
@@ -1837,40 +1831,21 @@ public class IntegrationService {
 				}
 				ViolationDto vdto = new ViolationDto(purl, violationType,
 						licenseId, null, sources, null, null, lastScanned != null ? lastScanned : ZonedDateTime.now());
-				pageResults.add(new ViolationWithCpe(vdto, dvr.component().cpe()));
+				ViolationWithCpe violation = new ViolationWithCpe(vdto, dvr.component().cpe());
+
+				// Check if this violation should be ignored based on purl regex patterns
+				if (ignoreSweep.ignore(purl, violationType, violation)) {
+					log.debug("Holding violation for purl {} of type {} as ignored by an org ignore pattern for now"
+							+ " -- it is reported after all if that pattern gives out later in this fetch", purl, violationType);
+					continue;
+				}
+				pageResults.add(violation);
 			}
 			return pageResults;
 		});
-	}
-	
-	private boolean shouldIgnoreViolation(String purl, ViolationType violationType, OrganizationData.IgnoreViolation ignoreViolation) {
-		if (ignoreViolation == null || purl == null) {
-			return false;
-		}
-		
-		List<String> patterns = null;
-		if (violationType == ViolationType.LICENSE) {
-			patterns = ignoreViolation.getLicenseViolationRegexIgnore();
-		} else if (violationType == ViolationType.SECURITY) {
-			patterns = ignoreViolation.getSecurityViolationRegexIgnore();
-		} else if (violationType == ViolationType.OPERATIONAL) {
-			patterns = ignoreViolation.getOperationalViolationRegexIgnore();
-		}
-		
-		if (patterns == null || patterns.isEmpty()) {
-			return false;
-		}
-		
-		for (String pattern : patterns) {
-			try {
-				if (java.util.regex.Pattern.compile(pattern).matcher(purl).matches()) {
-					return true;
-				}
-			} catch (java.util.regex.PatternSyntaxException e) {
-				log.warn("Invalid regex pattern in ignoreViolation: {}", pattern);
-			}
-		}
-		return false;
+		// Whatever a pattern ignored before it gave out is reported after all; see ViolationIgnoreSweep.
+		violations.addAll(ignoreSweep.releaseRetired());
+		return violations;
 	}
 	
 	public record ComponentPurlToDtrackProject (String purl, List<UUID> projects) {}

@@ -3,6 +3,7 @@ package io.reliza.model.tea;
 import java.net.URI;
 import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonFormat;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -33,6 +34,10 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "cle-event", description = "A discrete lifecycle event from the CLE specification")
 @JsonTypeName("cle-event")
+// an absent optional field is left out, not written as null: the cle-event schema types
+// them string/integer, not nullable. Re-apply after any TEA bump; TeaCleDocumentSchemaTest
+// is the tripwire.
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCleEvent {
 

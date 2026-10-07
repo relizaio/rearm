@@ -18,6 +18,31 @@ extend type Query {
 	exportCatalogProgrammatic(components: [String!]): CatalogSpec
 	"""Export the Branches slice of one component / product as a spec (CONFIGURATION_READ)."""
 	exportBranchesProgrammatic(component: String!): BranchesSpec
+	"""
+	Export one board of the key's organization as a board file, by name or uuid: BOARD_READ and
+	CONFIGURATION_READ on the board, from a grant on it, on a perspective it is in, or at the
+	organization. A board the key holds nothing on is not found.
+	"""
+	exportBoardProgrammatic(board: String!): BoardSpec
+	"""
+	One board's perspectives as the server holds them, by name or uuid (as its export): uuid, name
+	and product, in the board's order. The export writes a name several
+	perspectives share as the uuid; a client keeping a configured form maps it through these.
+	"""
+	exportBoardPerspectivesProgrammatic(board: String!): [BoardPerspectiveRef!]
+	"""Export the key's organization's role presets as a presets file (CONFIGURATION_READ)."""
+	agentRolePresetsSpecProgrammatic: RolePresetsSpec
+	"""
+	Export the organization's declared API keys as an API_KEYS file (CONFIGURATION_WRITE); with keys, only
+	those names, and the file is not authoritative. No secret and no secret metadata is in it.
+	"""
+	exportApiKeysProgrammatic(keys: [String!]): ApiKeysSpec
+	"""
+	The organization's API keys as the provider and `rearm apikey list` read them (CONFIGURATION_WRITE): with
+	keys, the ones declared under those names; without, every live key, declared or not. Each with its key id
+	and its secrets' metadata -- never a value.
+	"""
+	apiKeysProgrammatic(keys: [String!]): [DeclaredApiKey!]
 	release(releaseUuid: ID!, orgUuid: ID): Release
 	
 	# Programmatic
@@ -81,6 +106,102 @@ extend type Query {
 	the release.
 	"""
 	agenticReleaseProgrammatic(releaseUuid: ID!, sessionUuid: ID, clientSessionId: String): Release
+
+	"""Agent-key auth (FREEFORM, personal USER or FEDERATED): the org's boards (coordinator/worker discovery)."""
+	agentBoardsProgrammatic: [AgentBoard]
+	"""
+	Every task on one board with who holds it, what it waits on, its current documents and the
+	question it is waiting on. One call, so an agent can see what the others are doing without
+	N round trips -- an agent that has to ask N questions will not ask them.
+	"""
+	agentBoardSnapshotProgrammatic(boardUuid: ID!): AgentBoardSnapshot
+	"""Agent-key auth: one board (includes coordinatorPrompt and pause state)."""
+	agentBoardProgrammatic(boardUuid: ID!): AgentBoard
+	"""
+	Agent-key auth: a board's events since a point, oldest first (task 1c5442d2). The board's events
+	field holds only the newest 50; this is the whole log. after is exclusive (a seq), since is
+	inclusive (an eventAt); both may be given. limit defaults to 200 and is capped at 1000. Follow the
+	feed by passing the page's nextAfter as the next after; never count the board's events list.
+	"""
+	agentBoardEventsProgrammatic(boardUuid: ID!, after: Long, since: DateTime, limit: Int = 200): AgentBoardEventPage
+	"""
+	Worker poll: the lowest-ordered QUEUED task across the org's
+	unpaused boards (or one board) whose constraints admit the calling
+	session's agent (WIP limits, distinct-agent, seat exclusion).
+	Returns the role to assume and its served prompt; the agent follows
+	up with agentTaskAssignProgrammatic. Null = no work.
+
+	roles: the roles this agent can take, each a role name on the board
+	(case-insensitive) or a role config uuid. Omitted or empty, every
+	role is considered. Given, only tasks for those roles are offered;
+	when none match, or nothing is open for them, the answer is null.
+	Pass the same roles to agentTaskAssignProgrammatic.
+	"""
+	agentTaskNextProgrammatic(sessionUuid: ID!, boardUuid: ID, roles: [String!]): AgentTaskAssignment
+	"""Agent-key auth: read one task."""
+	agentTaskProgrammatic(taskUuid: ID!): AgentTask
+	"""
+	One task by its key, e.g. RD-42 (board-documents.md §4.3), in the calling key's organization: the
+	prefix names its board through the organization's registry, so a key from before a prefix rename
+	still resolves. Null when no task has the key.
+	"""
+	agentTaskByKeyProgrammatic(key: String!): AgentTask
+	"""
+	Agent-key auth: tasks of a board, optionally by status. With changedSince, only the tasks that
+	changed at or after it (updatedAt), oldest change first: take the last one's updatedAt as the next
+	changedSince. The board's events carry what needs a person; this is how a follower sees every
+	other movement -- forward hand-overs, authorizes and assignments post no event (task 9540d3b6).
+	"""
+	agentTasksProgrammatic(boardUuid: ID!, status: AgentTaskStatus, changedSince: DateTime, group: String, tag: [String]): [AgentTask]
+	"""
+	Agent-key auth: a named set of tasks in one read, in the order given (task cc14f4cb). At most 100;
+	an unknown uuid, or one of another organization, is absent. For a board's tasks by status, read
+	agentTasksProgrammatic instead: one request, not one per task.
+	"""
+	agentTasksByUuidProgrammatic(taskUuids: [ID!]!): [AgentTask]
+	"""Agent-key auth: a board's role configuration in order."""
+	agentTaskRoleConfigsProgrammatic(boardUuid: ID!): [AgentTaskRoleConfig]
+	"""Agent-key auth: the board as a declarative spec."""
+	agentBoardSpecProgrammatic(boardUuid: ID!): BoardSpec
+	"""
+	The newest BOARD_ELEMENT_CHECK_REPORT round about a document (elements.md §7): the release, whose
+	document.elementChecks is the report. Null when the document has none.
+	"""
+	agentElementCheckReportProgrammatic(releaseUuid: ID!): Release
+	"""
+	The element checks a publish of this index would run on the task, in its current scope, with nothing created
+	(task RD4-6): what `rearm agent doc publish --check` prints. elements is the index JSON exactly as doc publish
+	would send it; elementsDigest, when given, must match it. The report's checked release is the nil uuid.
+	"""
+	agentElementCheckPreviewProgrammatic(sessionUuid: ID!, taskUuid: ID!, specification: SpecificationType!, elements: String!,
+		elementsDigest: String): ElementCheckReport
+	"""
+	The element check catalogue (elements.md §7): every fixed check with what it means and when it
+	skips, and the coverage.<gate> pattern the board's gates are named by. Served on both endpoints.
+	"""
+	elementCheckCatalogue: [ElementCheckCatalogueEntry]
+
+	# --- A person's board verbs and reads, served on /graphql to a browser session and here to a
+	# personal key or a CLI login (task b6d7c308). The same resolvers as the browser: an org
+	# admin acting as themself. Organization-wide (FREEFORM) and federated keys are refused. ---
+	"""A person's read: the org's boards."""
+	agentBoardsOfOrg(orgUuid: ID!): [AgentBoard]
+	"""A person's read: one board."""
+	agentBoard(uuid: ID!): AgentBoard
+	"""A person's read: a board's events since a point, as agentBoardEventsProgrammatic (task 1c5442d2)."""
+	agentBoardEvents(boardUuid: ID!, after: Long, since: DateTime, limit: Int = 200): AgentBoardEventPage
+	"""A person's read: one task by its key, e.g. RD-42, in an organization, as agentTaskByKeyProgrammatic."""
+	agentTaskByKey(orgUuid: ID!, key: String!): AgentTask
+	"""A person's read: tasks of a board, optionally by status and changedSince, as agentTasksProgrammatic."""
+	agentTasksOfBoard(boardUuid: ID!, status: AgentTaskStatus, changedSince: DateTime, group: String, tag: [String]): [AgentTask]
+	"""
+	A person's read: a named set of tasks in one read, as agentTasksByUuidProgrammatic (task cc14f4cb).
+	A task of an organization the person cannot read is absent.
+	"""
+	agentTasksByUuid(taskUuids: [ID!]!): [AgentTask]
+	"""A person's read: a board's role configuration in order."""
+	agentTaskRoleConfigsOfBoard(boardUuid: ID!): [AgentTaskRoleConfig]
+
 }
 
 extend type Mutation {
@@ -94,6 +215,41 @@ extend type Mutation {
 	org). Idempotent, keyed by branch name. Branches absent from the spec follow Settings.declarativePrune.
 	"""
 	applyBranchesProgrammatic(spec: BranchesSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""
+	Apply one board file. Updating a board needs BOARD_WRITE and CONFIGURATION_WRITE on it; each
+	perspective the file adds or removes needs both covering that perspective; a new board in no
+	perspective needs both at the organization. One transaction: any problem refuses the whole
+	file, and the result lists every problem found. A dry run returns the change set the apply
+	would and writes nothing.
+	"""
+	applyBoardProgrammatic(spec: BoardSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""Apply the organization's presets file (CONFIGURATION_WRITE); the board's rules, per preset."""
+	applyRolePresetsProgrammatic(spec: RolePresetsSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""
+	Archive a board by name (BOARD_WRITE and CONFIGURATION_WRITE on it): what deleting a Terraform
+	board does. Tasks, roles and history stay; the board takes no new work. Archiving an archived
+	board changes nothing.
+	"""
+	archiveBoardProgrammatic(name: String!): AgentBoard
+	"""
+	Apply an API_KEYS file (CONFIGURATION_WRITE), keyed by each key's declared name: identity and settings
+	only, never a secret; a key it creates has none. A caller declares only keys no stronger than itself.
+	Per key: one that fails is one ERROR line, the others land. dryRun writes nothing.
+	"""
+	applyApiKeysProgrammatic(spec: ApiKeysSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""
+	Deactivate a declared key by name (CONFIGURATION_WRITE): what deleting it from Terraform does. The row, its
+	name and its secrets stay; declaring the name again takes the key back.
+	"""
+	archiveApiKeyProgrammatic(name: String!): DeclaredApiKey
+	"""
+	Mint a secret in slot 1 or 2 of a FREEFORM key (CONFIGURATION_WRITE), named by its declared name, key id or uuid:
+	an empty slot is minted; a slot that holds a secret is left alone (minted false, no value), or regenerated
+	with rotate. The value is returned once here and stored hashed; its expiry follows the key's
+	secretExpiresDays. Only for a declared key (a hand-made one once an org admin declares it), no stronger than
+	the caller, and not one a person holds.
+	"""
+	mintApiKeySecretProgrammatic(key: String!, slot: Int!, rotate: Boolean): MintedApiKeySecret
 	"""
 	Programmatic (API-key) upsert of a PullRequest. CI registers the PR
 	row independently of release creation so the registration survives
@@ -208,7 +364,29 @@ extend type Mutation {
 	sessionInitializeProgrammatic(sessionInit: SessionInitializeInput!): Session
 
 	# Heartbeat -- bumps lastActivityAt. No-op on a CLOSED session.
-	sessionTouchProgrammatic(sessionUuid: ID!): Session
+	# The optional usage argument runs the same path as
+	# sessionReportUsageProgrammatic, for agents that heartbeat but
+	# cannot install hooks.
+	sessionTouchProgrammatic(sessionUuid: ID!, usage: SessionUsageReportInput): Session
+
+	# Report what the session consumed since its last report.
+	#
+	# One report carries several lines: a delta may span models and may
+	# cross a pricing threshold, and each line becomes one row that
+	# prices under exactly one entry. All lines share the report's
+	# clientSeq, which is why the row key carries model, hosting and
+	# band as well.
+	#
+	# Idempotent: a retried delta re-sends the same lines and inserts
+	# nothing, reporting them as duplicates. A clientSeq below the
+	# session's high-water mark is refused -- that is a replayed
+	# backfill, and filing it would double-count windows already
+	# counted.
+	#
+	# Accepted on an OPEN session, and on a CLOSED one within
+	# relizaprops.agentUsageCloseGraceSeconds, so a SessionEnd hook
+	# that fires after an explicit close still lands.
+	sessionReportUsageProgrammatic(input: SessionUsageReportInput!): SessionUsageAck
 
 	# Close the session. Terminal -- a closed session cannot be
 	# re-opened. Idempotent on already-closed sessions.
@@ -251,6 +429,335 @@ extend type Mutation {
 	# bootstrap its own signing key on first run without needing the
 	# operator to do it ahead of time.
 	enrollSigningKeyProgrammatic(signingKey: AgentSigningKeyInput!): SigningKey
+
+
+	# Claim the board's singleton coordinator seat for the calling
+	# session. Held until the session closes; the seat session takes no
+	# task assignments. Returns the board incl. coordinatorPrompt.
+	agentBoardCoordinateProgrammatic(boardUuid: ID!, sessionUuid: ID!): AgentBoard
+	# Coordinator pause/resume (seat holder). Cannot touch an OPERATOR pause. pause false resumes.
+	agentBoardCoordinatorPauseProgrammatic(boardUuid: ID!, sessionUuid: ID!, pause: Boolean!, reason: String): AgentBoard
+	# Role config upsert -- coordinator path (seat holder).
+	agentTaskRoleConfigSetProgrammatic(boardUuid: ID!, sessionUuid: ID!, input: AgentTaskRoleConfigInput!): AgentTaskRoleConfig
+	# Register a tracker item as a PENDING_INTAKE task. Open to any org
+	# agent; idempotent on (org, externalRef); validated against the
+	# board's wired sources. Authorization is the coordinator's call.
+	agentTaskRegisterProgrammatic(input: AgentTaskRegisterInput!): AgentTask
+	"""
+	Commission an investigation (task RD4-12): a new INVESTIGATION task for a role that produces
+	BOARD_INVESTIGATION_REPORT. With sessionUuid, the session commissions from the task it holds (fromTask), in that
+	task's role, a role its commissions name (BOARD_AGENT on the board). Without one, the key commissions as a
+	person would (BOARD_WRITE on the board). Its report comes back pinned on fromTask.
+	"""
+	agentTaskCommissionProgrammatic(input: AgentTaskCommissionInput!): AgentTask
+	# Coordinator hub operations (seat holder): authorize a task for a
+	# role with an order (PENDING_INTAKE/AWAITING_COORDINATOR ->
+	# QUEUED), re-order, split into PENDING_INTAKE children, complete,
+	# cancel.
+	"""
+	requiredStrength: raise the model strength this task needs above what its role usually asks,
+	for work harder than the role usually is. Raise only: at least the task's current requirement
+	(its override, else the role's floor); lower values and null are refused -- people lower it
+	through agentTaskSetStrength. At most two decimal places. Left out, unchanged.
+	"""
+	agentTaskAuthorizeProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String!, orderIndex: Int, dependsOn: [ID!], producesComponent: ID, workLevel: Int, requiredInputs: [AgentTaskPrerequisiteInput], requiredStrength: Float, budgetMicros: Long): AgentTask
+	"""
+	Put a task on hold pending human input (excluded from polls, no effect on other tasks). Two callers:
+
+	- the coordinator seat, at COORDINATOR level (the default), on a task nobody is working; its release
+	  returns the task to the loop;
+	- the session holding the task's current assignment, at OPERATOR level only (task RD4-5), with the question
+	  for the person as the reason: the task shows "awaiting the operator: <question>", the board's writers are
+	  told, and the hop stays assigned to the session. A person lifts the hold with the answer as the note, which
+	  is recorded on the task, and the hop resumes with its holder.
+	- the coordinator seat, at OPERATOR level with the question as the reason (task RD4-17), on a task in
+	  PENDING_INTAKE, QUEUED, AWAITING_COORDINATOR or DELIVERING: the same record and notification. A person's
+	  release with the answer as the note, or anything else a person does on the task (answering its questions,
+	  a delivery declaration, a supersede, a complete, a reopen, a cancel, a new order or work level), answers it: the answer is
+	  recorded, the task returns to the status it was parked from, and the action then runs. Until then every task
+	  verb is refused for every session, except agentTaskLinkPrProgrammatic (`task linkpr`), which is accepted,
+	  recorded on the decision (hold.linked) and posted as an INFO; it does not answer the question (task RD4-19).
+	  The delivery sweep leaves the task alone. A DELIVERING task is parked only this way.
+	"""
+	agentTaskHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: String!, level: AgentTaskHoldLevel): AgentTask
+	"""
+	Lift a COORDINATOR-level hold. role, optionally: an active role on the board to route to
+	instead of the one routing would pick (task 4c566d0d). note, optionally: why, posted to the board
+	feed with the lift. A no-progress or cycle-cap stop parks here first when the board allows it
+	(coordinatorStopLift): lifting it routes past the stop once, and the next stop of that kind on
+	the task is the operator's (task c0a2134c).
+	"""
+	agentTaskLiftHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String, note: String): AgentTask
+	"""
+	Declare that a delivery unit of a task landed, or never will (task 18c5c293): unit is a linked PR's
+	URL, or on a board delivering without PRs a branch or release; commit is the merged or pushed sha
+	(required for DELIVERED). The coordinator seat, or a session that worked this task in a role that
+	merges (PR_MERGE). A DELIVERING task then settles: completed once every unit is delivered, to the
+	coordinator when one is abandoned.
+	"""
+	agentTaskDeclareDeliveryProgrammatic(taskUuid: ID!, sessionUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
+	"""
+	Declare a linked PR superseded by its replacement (task RD3-13): oldUrl closed without merging, byUrl linked
+	to the task and on the same repository. Recorded as a SUPERSEDED declaration of oldUrl naming byUrl; delivery
+	then counts byUrl and treats oldUrl as absent. The session holding the task in a role with CODE_PUSH, the
+	board's coordinator seat, or a key holding BOARD_WRITE on the board (task RD3-18).
+	"""
+	agentTaskSupersedePullRequestProgrammatic(taskUuid: ID!, sessionUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""
+	Hand a COORDINATOR-level hold to the operator (task c0a2134c): the level becomes OPERATOR, the
+	reason keeps what the hold said with yours after it, and the board ALERTs. For a judgement call
+	-- two roles disagree, an item needs accepting. Refused on any other hold.
+	"""
+	agentTaskEscalateHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: String!): AgentTask
+	"""Coordinator sets the per-task human-review flag (add-only: the coordinator can add review, never remove it)."""
+	agentTaskRequireHumanReviewProgrammatic(taskUuid: ID!, sessionUuid: ID!): AgentTask
+	# v1.1: coordinator-posted board notice (ALERT / INFO).
+	agentBoardPostEventProgrammatic(boardUuid: ID!, sessionUuid: ID!, kind: AgentBoardEventKind!, message: String!): AgentBoard
+	agentTaskOrderProgrammatic(taskUuid: ID!, sessionUuid: ID!, orderIndex: Int!): AgentTask
+	"""The coordinator seat sets a task's work level, 0 to 9, or clears it (null) to the board's default (RD2-1)."""
+	agentTaskSetWorkLevelProgrammatic(taskUuid: ID!, sessionUuid: ID!, workLevel: Int): AgentTask
+	"""The coordinator seat unassigns an ASSIGNED task, back to QUEUED for the same role, with a reason (task RD3-4)."""
+	agentTaskUnassignProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: String!): AgentTask
+	"""The coordinator seat creates or edits a group of its board, by key (task RD2-29)."""
+	agentBoardGroupSetProgrammatic(boardUuid: ID!, sessionUuid: ID!, group: TaskGroupInput!): TaskGroup
+	"""The coordinator seat moves a task into a group by key, or out of every group with null (task RD2-29)."""
+	agentTaskSetGroupProgrammatic(taskUuid: ID!, sessionUuid: ID!, group: String): AgentTask
+	"""The coordinator seat replaces a task's tags (task RD2-29)."""
+	agentTaskSetTagsProgrammatic(taskUuid: ID!, sessionUuid: ID!, tags: [TagRecordInput!]!): AgentTask
+	agentTaskSplitProgrammatic(taskUuid: ID!, sessionUuid: ID!, children: [AgentTaskSplitChildInput!]!): [AgentTask]
+	agentTaskCompleteProgrammatic(taskUuid: ID!, sessionUuid: ID!, note: String): AgentTask
+	"""
+	Cancel a task: the coordinator seat, in any state but completed. Or withdraw one (task RD4-5): the session that
+	registered it, while it is PENDING_INTAKE, with the reason as the note (required); refused once the coordinator
+	has authorised it.
+	"""
+	agentTaskCancelProgrammatic(taskUuid: ID!, sessionUuid: ID!, note: String): AgentTask
+	"""
+	Coordinator: send a COMPLETED task back to an active role, with a reason -- its delivery cannot
+	land, e.g. its PR no longer merges. The role's earlier passes stop counting; whoever read its
+	part re-runs when the redone hop republishes. Refused on a cancelled task (register a new one)
+	and on a paused board; a round the budget does not cover holds for an operator.
+	"""
+	agentTaskReopenProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String!, reason: String!): AgentTask
+	# Worker operations: bind the task to the calling session
+	# (QUEUED -> ASSIGNED; all constraints re-checked atomically),
+	# sign off the hop (-> AWAITING_COORDINATOR), or return the task
+	# to the coordinator with a reason.
+	"""
+	roles: the roles this agent declared on agentTaskNextProgrammatic, if any. A task for any
+	other role is refused, and on a STRICT board priority is enforced among these roles only.
+	"""
+	agentTaskAssignProgrammatic(taskUuid: ID!, sessionUuid: ID!, roles: [String!]): AgentTaskAssignment
+	# outputs: document releases produced during this hop, published with
+	# agentDocumentPublishProgrammatic. A role that declares an output as
+	# required cannot sign off without it -- the refusal lands on the hop
+	# that can still fix it, since the task stays assigned.
+	"""
+	seenInputs (task RD2-34): the task's documents the hop read. When given, every document published on the
+	task since the assignment by anyone but this hop must be in it, or the sign-off is refused naming them; null
+	skips the check.
+	noChange (task RD4-13): on a PASSED that answers a review item about the signing role's own document, the new
+	round changes nothing to build, so the task goes back to the filer rather than to the role that builds
+	from the round. Recorded on the sign-off; refused on REJECTED.
+	noCode (task RD4-2): the round changed no code (a note-only round). A PASSED sign-off by a role holding
+	CODE_PUSH is refused when no linked PR in play moved since the assignment ("no linked PR moved since your
+	assignment"); noCode passes it and is recorded on the sign-off. Refused on REJECTED.
+	"""
+	agentTaskSignOffProgrammatic(taskUuid: ID!, sessionUuid: ID!, outcome: AgentSignOffOutcome!, note: String, outputs: [ID!], seenInputs: [ID!], noChange: Boolean, noCode: Boolean): AgentTask
+
+	# A return may carry outputs too, and nothing is required: an agent that
+	# returns because the task was unclear has nothing to publish, and
+	# demanding a document would leave it able neither to finish nor to hand
+	# back. Partial review items from an aborted review are still worth having.
+	agentTaskReturnProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: AgentTaskReturnReason!, description: String, outputs: [ID!]): AgentTask
+
+	# Publish a document version: a release of a specification component
+	# pointing at bytes already committed in the board's documents
+	# repository. Idempotent on (task or component, specification, commit,
+	# digest) -- a retry after a timeout returns the original release rather
+	# than minting a round the repository has no file for.
+	agentDocumentPublishProgrammatic(input: AgentDocumentPublishInput!): Release
+	# Bind a draft split child's tracker ref once its issue exists.
+	agentTaskBindExternalRefProgrammatic(taskUuid: ID!, externalRef: String!, sourceUrl: String): AgentTask
+	"""
+	Attach a delivering pull-request URL. On a task the coordinator seat parked for the operator it is accepted too,
+	recorded on the decision (hold.linked: the PR, the key's agent, the time) and posted as an INFO; it does not answer
+	the question or lift the hold (task RD4-19).
+	"""
+	agentTaskLinkPrProgrammatic(taskUuid: ID!, prUrl: String!): AgentTask
+	"""Attach a release this task produced -- the release counterpart of linkPr, and what a downstream role waits on when it requires this task's output."""
+	agentTaskLinkReleaseProgrammatic(taskUuid: ID!, releaseUuid: ID!): AgentTask
+	"""
+	Re-run the element checks of a document of the session's task in its current scope, and cut a
+	new BOARD_ELEMENT_CHECK_REPORT round when anything changed (the newest one otherwise). The session must hold
+	the task.
+	"""
+	agentElementCheckRunProgrammatic(sessionUuid: ID!, releaseUuid: ID!): Release
+
+	# --- A person's board verbs, on both endpoints like the reads above (task b6d7c308). ---
+	# Operator pause/resume. An OPERATOR pause cannot be lifted or
+	# overridden by the coordinator. A pause stops NEW assignments only; pause false resumes.
+	agentBoardOperatorPause(boardUuid: ID!, pause: Boolean!, reason: String): AgentBoard
+	"""
+	Require a model of at least this strength for one task, overriding what its role asks for.
+	Recorded with who set it and when, on the task rather than in the status history: the status
+	did not change, and a same-status row would split one queue wait into two in the cycle-time view.
+	"""
+	agentTaskSetStrength(taskUuid: ID!, requiredStrength: Float): AgentTask
+	"""
+	Operator verdict on a HUMAN_GATE hold: records a human sign-off for the gated role and lets the
+	board route what follows. Acceptance hands the gated hop's documents over (DRAFT to ASSEMBLED).
+	Either verdict may carry review item decisions: they are cut as a round first and become the
+	verdict's output, so a rejection routes like a reviewer's would. An acceptance may carry review items
+	too: they are filed as corrections, open work that does not block the acceptance. An acceptance
+	that leaves a blocking item undecided is refused.
+	"""
+	agentTaskHumanReview(taskUuid: ID!, accept: Boolean!, note: String, reviewItems: [BoardReviewItemDecisionInput!], about: BoardReviewItemsAboutInput): AgentTask
+	"""Operator sign-off on a task queued in a HUMAN-kind role (no claim step; humans have no sessions)."""
+	agentTaskHumanSignOff(taskUuid: ID!, outcome: AgentSignOffOutcome!, note: String): AgentTask
+	"""
+	Operator manual hold (OPERATOR level; the coordinator cannot lift it) or lift. HUMAN_GATE holds resolve via
+	agentTaskHumanReview, not here. On a lift, role optionally names an active role to route to instead of the one
+	routing would pick; lifting a no-progress or cycle-cap stop routes past that stop once (task 4c566d0d).
+	A hop its holder parked for the operator (task RD4-5) is lifted with the answer as reason, which is required
+	and recorded on the task (a status row and an INFO); it takes no role, and the hop resumes with its holder.
+	A task the coordinator seat parked for the operator (task RD4-17) is lifted the same way, and returns to the
+	status it was parked from (hold.returnTo).
+	"""
+	agentTaskOperatorHold(taskUuid: ID!, hold: Boolean!, reason: String, role: String): AgentTask
+	"""Operator set/clear of the per-task add-only human-review flag."""
+	agentTaskRequireHumanReview(taskUuid: ID!, value: Boolean!): AgentTask
+	"""
+	Answer the open questions a task is waiting on, as a round of its BOARD_QUESTIONS index, and let the
+	board route the answer back to whoever asked. The answer is a round rather than a note so the
+	asking agent reads it as a pinned input instead of prose it would have to go and find. Either
+	per-id answers or one text applied to every open id; liftHold also lifts a QUESTION hold.
+	"""
+	agentTaskAnswer(taskUuid: ID!, answers: [BoardReviewItemAnswerInput!], answerAll: String, liftHold: Boolean = true): AgentTask
+	"""
+	Register a task by hand, as PENDING_INTAKE. On a board with sources the tracker reference is
+	required and must belong to one of them, so the coordinator's later intake of the same issue
+	finds this task; on a board without sources it is optional.
+	"""
+	agentTaskRegister(boardUuid: ID!, input: AgentTaskUserRegisterInput!): AgentTask
+	"""
+	Commission an investigation as a person with BOARD_WRITE (task RD4-12): any role that produces
+	BOARD_INVESTIGATION_REPORT, from a task (its report comes back pinned there) or from none. Queued at once.
+	"""
+	agentTaskCommission(input: AgentTaskCommissionInput!): AgentTask
+	"""
+	Authorize a task for a role, as the coordinator does, from PENDING_INTAKE or
+	AWAITING_COORDINATOR. Strength is set separately, with agentTaskSetStrength.
+	"""
+	agentTaskAuthorize(taskUuid: ID!, role: String!, orderIndex: Int, dependsOn: [ID!], producesComponent: ID, workLevel: Int, requiredInputs: [AgentTaskPrerequisiteInput]): AgentTask
+	"""Set a task's order. Recorded as orderSetBy; the coordinator may reorder after you."""
+	agentTaskOrder(taskUuid: ID!, orderIndex: Int!): AgentTask
+	"""Set or clear (null) what a task may spend, in USD micros. Org admin. A raise does not release a budget hold."""
+	agentTaskSetBudget(taskUuid: ID!, budgetMicros: Long): AgentTask
+	"""
+	Set a task's work level, 0 to 9, or clear it (null) so it reads the board's default (RD2-1). BOARD_WRITE
+	on the board. Refused on a completed or cancelled task. Recorded as workLevelSetBy and workLevelSetAt.
+	"""
+	agentTaskSetWorkLevel(taskUuid: ID!, workLevel: Int): AgentTask
+	"""
+	A person unassigns an ASSIGNED task, back to QUEUED for the same role, with a reason (task RD3-4). BOARD_WRITE.
+	The holding session stays open; its later sign-off, publish or question on the task is refused.
+	"""
+	agentTaskUnassign(taskUuid: ID!, reason: String!): AgentTask
+	"""
+	Create or edit a group of the board, by key (task RD2-29). CONFIGURATION_WRITE and BOARD_WRITE on
+	the board. status CLOSED closes it: no new tasks, nothing else changes.
+	"""
+	agentBoardGroupSet(boardUuid: ID!, group: TaskGroupInput!): TaskGroup
+	"""Delete an empty group; refused while a task names it (task RD2-29)."""
+	agentBoardGroupDelete(boardUuid: ID!, key: String!): Boolean
+	"""Move a task into a group by key, or out of every group with null (task RD2-29). BOARD_WRITE."""
+	agentTaskSetGroup(taskUuid: ID!, group: String): AgentTask
+	"""Replace a task's tags (task RD2-29). BOARD_WRITE."""
+	agentTaskSetTags(taskUuid: ID!, tags: [TagRecordInput!]!): AgentTask
+	"""
+	Complete a task. Refused while a review item that blocks completion is open -- accept or dismiss it
+	first -- and while a required role has not passed. A required role whose rejection you have
+	decided over counts as passed. skipRequiredRoles completes without the others, and needs a note
+	saying why; review items are never skipped.
+	"""
+	agentTaskComplete(taskUuid: ID!, note: String, skipRequiredRoles: Boolean): AgentTask
+	"""A person's declaration of a delivery unit, as agentTaskDeclareDeliveryProgrammatic (task 18c5c293). Org admin."""
+	agentTaskDeclareDelivery(taskUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
+	"""A person declares a linked PR superseded by its replacement, as agentTaskSupersedePullRequestProgrammatic (task RD3-13). BOARD_WRITE."""
+	agentTaskSupersedePullRequest(taskUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""Cancel a task from any state but COMPLETED. An agent working it finds it gone at its next call."""
+	agentTaskCancel(taskUuid: ID!, note: String): AgentTask
+	"""
+	Decide review items on a task, as one round of its BOARD_REVIEW_ITEMS or BOARD_TEST_REPORT index. A round that
+	leaves something new blocking sends the task back to the role that produces what it is about;
+	name that in about when the index does not say yet. Refused while an agent is working the task.
+	"""
+	agentTaskDecideReviewItems(taskUuid: ID!, specification: SpecificationType!, decisions: [BoardReviewItemDecisionInput!]!, about: BoardReviewItemsAboutInput): AgentTask
+	"""
+	Apply a board file: the organization's admin, or a user holding CONFIGURATION_WRITE. One
+	transaction; any problem refuses the whole file and the result lists every one. dryRun returns
+	the change set without writing.
+	"""
+	agentBoardApplySpec(orgUuid: ID!, spec: BoardSpecInput!, dryRun: Boolean, source: DeclarativeSourceInput): DeclarativeApplyResult
+	"""Apply the organization's presets file, with the same gate."""
+	agentRolePresetsApplySpec(orgUuid: ID!, spec: RolePresetsSpecInput!, dryRun: Boolean): DeclarativeApplyResult
+
+}
+
+"""A person's registration of a task. externalRef is required on a board with sources."""
+input AgentTaskUserRegisterInput {
+	"""One line of at most 120 characters: what a card shows. The rest goes in description."""
+	title: String!
+	"""What the task is, beyond its title: free text of at most 4000 characters, kept whole."""
+	description: String
+	externalRef: String
+	sourceUrl: String
+	parentTask: ID
+	producesComponent: ID
+	workLevel: Int
+	requiredInputs: [AgentTaskPrerequisiteInput]
+	"""A group of the board by key (task RD2-29); refused when unknown or CLOSED."""
+	group: String
+	"""Free labels; each key lower-cased, at most 20."""
+	tags: [TagRecordInput]
+}
+
+"""One decision about one review item."""
+input BoardReviewItemDecisionInput {
+	action: BoardReviewItemDecisionAction!
+	"""The review item decided. Every action but FILE."""
+	reviewItemId: String
+	"""SET_PRIORITY and FILE: 1 highest, at most the organization's level count."""
+	priority: Int
+	"""FILE: one line."""
+	title: String
+	"""FILE, optional."""
+	location: BoardReviewItemLocationInput
+	"""Required for ACCEPT (why the risk is acceptable) and DISMISS (why it does not apply)."""
+	resolution: String
+}
+
+"""What an index's review items are about. Sets it when the index does not say yet; may not contradict it."""
+input BoardReviewItemsAboutInput {
+	specification: SpecificationType!
+	release: ID
+}
+
+input BoardReviewItemLocationInput {
+	path: String
+	line: Int
+	ref: String
+	"""The element the review item is about; path and line are filled in from the index when left out."""
+	element: String
+}
+
+"""One answered question: the id, what it becomes, and the words that close it."""
+input BoardReviewItemAnswerInput {
+	id: String!
+	"""RESOLVED when the question is answered, WITHDRAWN when it does not apply after all."""
+	status: BoardReviewItemStatus = RESOLVED
+	resolution: String!
 }
 
 """
@@ -526,12 +1033,18 @@ type DeclarativeChange {
 	"""Fields that differ (UPDATE) or would be set (CREATE)."""
 	fields: [String!]
 	message: String
+	"""What the change leaves for someone to deal with, e.g. tasks waiting on a role the file deactivates. Never a refusal."""
+	warnings: [String!]
 }
 
 """Ownership slice a declarative spec describes. One kind per file; the apply / export operations are per kind."""
 enum DeclarativeKind {
 	CATALOG
 	BRANCHES
+	BOARD
+	ROLE_PRESETS
+	"""An organization's FREEFORM API keys: identity and settings, never a secret (task RD3-11)."""
+	API_KEYS
 }
 
 type DeclarativeProvenance {
@@ -958,12 +1471,61 @@ input SessionInitializeInput {
 	time sessions.
 	"""
 	parentSession: ID
+
+	"""
+	The agent tool's own id for the conversation opening this session, so the ReARM session
+	can be traced back to it. Optional; the rearm CLI fills it in under Claude Code.
+	"""
+	providerSession: ProviderSessionInput
+
+	"""
+	What the client says about the device it runs on. Optional and self-reported; stored beside
+	what the server observed, never in place of it. The rearm CLI sends it unless told not to.
+	"""
+	device: SessionDeviceInput
+}
+
+"""
+A client's description of its device. Each value is trimmed and clipped to 200 characters.
+hostname is personal data and is shown only to org admins and the session's owner.
+"""
+input SessionDeviceInput {
+	hostname: String
+	os: String
+	"""The local UTC offset and zone abbreviation, e.g. "UTC+02:00 CEST"."""
+	timeZone: String
+	"""The client and its version, e.g. "rearm-cli/26.09.4"."""
+	client: String
 }
 
 input SessionUpdateMetaInput {
 	uuid: ID!
 	title: String
 	clientSessionId: String
+	"""
+	Record a provider session against an open session -- a conversation that resumes the work
+	reports its own id here. Appends; a repeat of a recorded (provider, id) is a no-op, and may
+	fill in a remoteId the first report lacked.
+	"""
+	providerSession: ProviderSessionInput
+}
+
+"""
+The agent tool's own session, as a client reports it. See Session.providerSessions.
+"""
+input ProviderSessionInput {
+	"""The tool, as a short lower-case identifier ("claude-code"). Stored lower-cased."""
+	provider: String!
+	"""
+	The tool's local id for the session -- for Claude Code, the id its transcript is filed
+	under ($CLAUDE_CODE_SESSION_ID). Printable ASCII, no whitespace, at most 256 characters.
+	"""
+	id: String!
+	"""
+	The id a hosted surface of the tool knows the session by, when there is one -- for Claude
+	Code, the bridge / web session id (session_...). Same character rules as id.
+	"""
+	remoteId: String
 }
 
 """
@@ -1011,4 +1573,54 @@ input VersionFeatureSetOverride {
 	vcsUri: String
 	repoPath: String
 	branch: String!
+}
+
+"""What an agent states about a document it has already committed."""
+input AgentDocumentPublishInput {
+	sessionUuid: ID!
+	"""Required for TASK-scoped types (BOARD_REVIEW_ITEMS, BOARD_TEST_REPORT)."""
+	taskUuid: ID
+	specification: SpecificationType!
+	"""Required for COMPONENT-scoped types: which document series this belongs to."""
+	component: ID
+	"""
+	Repo-relative path of the document at the commit below. Omit it, with digest, commit and
+	vcsUri, to publish an index alone -- a BOARD_QUESTIONS round usually has no prose worth committing,
+	and requiring a file would put an empty markdown in the repository to satisfy a check.
+	"""
+	path: String
+	"""sha256 of the file at that path. Required with a path."""
+	digest: String
+	mediaType: String
+	indexPath: String
+	indexDigest: String
+	"""The review item index. Required for BOARD_REVIEW_ITEMS, BOARD_TEST_REPORT and BOARD_QUESTIONS."""
+	index: Object
+	"""
+	The element index of a prose document (gaps §2.A), as the exact JSON text the CLI parsed and
+	digested -- text, not an object, so the digest is over the bytes both sides see. Warnings, never
+	refusals, for what it says; refused for an index type, and when it does not match elementsDigest.
+	"""
+	elements: String
+	"""sha256 (hex) of elements. Required with elements."""
+	elementsDigest: String
+	"""
+	Publish on a task another session holds, as an advisory round (task e97fde56): only a prose type
+	a role your agent has signed off on this board produces, on an active task. The round is
+	ASSEMBLED at once and an INFO event tells the board. Ignored when your session holds the task:
+	its round is a normal one. Without it, publishing on a task you do not hold is refused.
+	"""
+	advisory: Boolean
+	"""HEAD of the documents repository when the files were read. Required with a path."""
+	commit: String
+	"""Must equal the board's documentsRepo. Required with a path; an index-only round writes no file, so it names no repository."""
+	vcsUri: String
+	commitMessage: String
+	commitDate: DateTime
+	"""
+	Deprecated: leave it out. A document is published as DRAFT and the board promotes it to
+	ASSEMBLED when the hop that produced it signs off. DRAFT is the only value accepted; anything
+	else is refused. Removed in a later release.
+	"""
+	lifecycle: ReleaseLifecycleEnum
 }

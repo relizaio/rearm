@@ -46,7 +46,38 @@ public enum RearmSpecificationType {
 	/** Glossary: the terms the other documents rest on. */
 	GLOSSARY,
 	/** A recorded architectural decision (ADR) and its rationale. */
-	DECISION_RECORD;
+	DECISION_RECORD,
+	/**
+	 * One review round of one task: the review items a reviewer hop produced.
+	 *
+	 * <p>Task-scoped, unlike everything above it. One component per board target holds every
+	 * task's rounds, and each release names the task it belongs to, so resolution has to filter
+	 * by task as well as by type.
+	 */
+	BOARD_REVIEW_ITEMS,
+	/** One test run of one task: counts and an entry per failed case. Task-scoped like the above. */
+	BOARD_TEST_REPORT,
+	/**
+	 * Questions one hop asked about one of its inputs, as an index. Task-scoped like the two above.
+	 *
+	 * <p>The index's {@code about} names the input, which is what sends the questions to the role
+	 * that produces it; the answer is a new release of that input whose index closes the ids. A
+	 * BOARD_QUESTIONS release usually has no file at all -- the items are the document.
+	 */
+	BOARD_QUESTIONS,
+	/**
+	 * What the element checks found on one document of one task (gaps §2.A): a {@link ElementCheckReport}.
+	 * Task-scoped like the three above, and always index-only: the board cuts it when an
+	 * element-bearing document is published or re-checked, no agent publishes it, and it has no
+	 * path. It is evidence, not an index the router reads.
+	 */
+	BOARD_ELEMENT_CHECK_REPORT,
+	/**
+	 * What one investigation found (task RD4-12): the deliverable of an INVESTIGATION task, which a role
+	 * commissions from another and which comes back to the asker pinned. Task-scoped prose, like a design
+	 * round, but its element grammar is references only: it defines no ids, it cites them.
+	 */
+	BOARD_INVESTIGATION_REPORT;
 
 	/**
 	 * @param value candidate identifier value

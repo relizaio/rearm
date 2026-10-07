@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.util.List;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,13 +23,13 @@ import org.springframework.stereotype.Service;
  * {@code @Transactional} advice on the nested feature-set / marker writes — the
  * worker then runs with no active transaction and every {@code @Modifying}
  * write fails with TransactionRequiredException. Calling back into the release
- * service from here goes through its clean transaction proxy, exactly like the
- * working {@code autoIntegrateProductsForBatch} path.
+ * service from here goes through its clean transaction proxy.
  *
  * <p>Runs on the bounded {@code autoIntegrateExecutor} so background
  * integration can never exhaust the Hikari pool (the failure this whole change
- * fixes). In tests the executor is overridden with a SyncTaskExecutor so the
- * work completes inline.
+ * fixes). It is NOT overridden in tests: TestAsyncConfig replaces only the
+ * default {@code taskExecutor}, so this hop runs on a real background thread
+ * there too, and tests that trigger it wait for its result.
  */
 @Service
 public class AutoIntegrateDispatcher {
@@ -40,5 +41,11 @@ public class AutoIntegrateDispatcher {
 	@Async("autoIntegrateExecutor")
 	public void asyncProcess(UUID releaseUuid) {
 		releaseService.processAutoIntegrateForRelease(releaseUuid);
+	}
+
+	/** The batch counterpart of {@link #asyncProcess}: one hop for a whole batch's queued releases. */
+	@Async("autoIntegrateExecutor")
+	public void asyncProcessBatch(List<UUID> releaseUuids) {
+		releaseService.processAutoIntegrateForBatch(releaseUuids);
 	}
 }

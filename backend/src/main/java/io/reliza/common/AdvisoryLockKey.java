@@ -24,6 +24,20 @@ public enum AdvisoryLockKey {
 	ENRICHMENT_PULL(32),
 	FLUSH_INSTANCE_DEPLOYMENT_COALESCE(33),
 	PURGE_CLI_SESSIONS(34),
+	AGENT_TASK_DELIVERY(35),
+	/** 39 and 45 since main merged in: main took 36-38, 43 and 44 meanwhile. */
+	AGENT_TASK_QUEUE_AGE(39),
+	AGENT_BOARD_EVENT_RETENTION(45),
+	/**
+	 * Namespace of the per-organization transaction lock over the task-key prefix registry
+	 * (board-documents.md D9), taken with the two-key form whose second key is the org; not a
+	 * scheduler lock.
+	 */
+	AGENT_TASK_PREFIXES(40),
+	/** The model catalogue's daily re-resolve and fold by canonical id (task RD2-26). */
+	MODEL_CATALOGUE_DEDUP(41),
+	/** The staleness sweep over boards that set any staleness threshold (task RD3-4). */
+	AGENT_BOARD_STALENESS(42),
 	RECOMPUTE_VULNERABILITY_RECORDS(36),
 	REDETECT_DTRACK_VERSIONS(43),
 	/**
