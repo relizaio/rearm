@@ -53,6 +53,7 @@ Exports the merged SBOM for the release. Options:
 | **Media Type** | `JSON`, `CSV`, or `Excel` |
 | **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
 | **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
+| **Leave out file components** | Drops components of type `file` (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out in the metadata property `reliza:export:fileComponentsExcluded`; it applies to every media type. On the API: `releaseSbomExport(excludeFileComponents: true)` |
 
 Click **Export** to download the file.
 

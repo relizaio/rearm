@@ -138,6 +138,9 @@ export interface ReleaseScoreForm {
     orgSupportInjectionEnabled: boolean
     // This server rejected the metadata arguments on an export: the score omits them too.
     exportMetadataArgsUnsupported: boolean
+    // "Leave out file components" (SCORE-11), as the export would send it: false when the switch
+    // is off or not available on this server.
+    excludeFileComponents: boolean
 }
 
 /**
@@ -153,6 +156,8 @@ export function buildReleaseScoreVariables (form: ReleaseScoreForm): Record<stri
         structure: form.selectedBomStructureType,
         belongsTo: form.selectedRebomType ? form.selectedRebomType : null,
         excludeCoverageTypes: form.computedExcludeCoverageTypes.length > 0 ? form.computedExcludeCoverageTypes : null,
+        // true or null, never false: an unticked switch is no request at all (SCORE-11 ADR-6).
+        excludeFileComponents: form.excludeFileComponents ? true : null,
         profiles: [...SBOM_SCORE_PROFILES]
     }
     if (!form.exportMetadataArgsUnsupported) {

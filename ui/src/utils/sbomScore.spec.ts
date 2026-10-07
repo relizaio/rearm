@@ -138,6 +138,7 @@ describe('buildReleaseScoreVariables', () => {
         includeInternalMetadata: false,
         orgSupportInjectionEnabled: false,
         exportMetadataArgsUnsupported: true,
+        excludeFileComponents: false,
     }
 
     // T-6
@@ -150,6 +151,7 @@ describe('buildReleaseScoreVariables', () => {
             structure: 'FLAT',
             belongsTo: null,
             excludeCoverageTypes: null,
+            excludeFileComponents: null,
             profiles: ['cisa-2026', 'fda'],
         })
         expect('mediaType' in v).toBe(false)
@@ -177,6 +179,7 @@ describe('buildReleaseScoreVariables', () => {
             excludeCoverageTypes: ['DEV', 'TEST'],
             includeSupportMetadata: true,
             includeInternalMetadata: true,
+            excludeFileComponents: null,
             profiles: ['cisa-2026', 'fda'],
         })
         expect('mediaType' in v).toBe(false)
