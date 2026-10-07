@@ -128,6 +128,11 @@ const typeDefs = gql`
     createdDate: DateTime
     lastUpdatedDate: DateTime
     ignoreDev: Boolean
+    """
+    True on a merged BOM whose components of type file were left out (see the
+    RebomOptions input); null or false when they were kept.
+    """
+    excludeFileComponents: Boolean
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
     enrichmentError: String
@@ -318,6 +323,9 @@ input RebomOptions {
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
     ignoreDev: Boolean
+    # Merge only: leave components of type file out of the merged BOM. Null or false
+    # keeps them. The merged document then carries reliza:export:fileComponentsExcluded.
+    excludeFileComponents: Boolean
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 

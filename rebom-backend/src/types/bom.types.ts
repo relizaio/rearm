@@ -44,6 +44,7 @@ export type BomMetaDto = {
     createdDate: Date,
     lastUpdatedDate: Date,
     ignoreDev?: boolean,
+    excludeFileComponents?: boolean,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,
     enrichmentError?: string,
@@ -136,6 +137,9 @@ export type RebomOptions = {
     purl?: string,
     rootComponentMergeMode?: RootComponentMergeMode,
     ignoreDev?: boolean,
+    // Merge only: components of type file were left out of the merged BOM (SCORE-11).
+    // Part of the merge options, so of the cache key ReARM matches stored merges on.
+    excludeFileComponents?: boolean,
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

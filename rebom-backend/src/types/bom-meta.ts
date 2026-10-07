@@ -26,6 +26,7 @@ export interface BomMetaNested {
         rootComponentMergeMode?: RootComponentMergeMode;
         tldOnly: boolean;
         ignoreDev: boolean;
+        excludeFileComponents?: boolean;
         sourceIds?: string[];
     };
     spdx?: {
@@ -78,7 +79,8 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             structure: (opts.structure?.toUpperCase() as any) || 'FLAT',
             rootComponentMergeMode: opts.rootComponentMergeMode,
             tldOnly: opts.tldOnly ?? false,
-            ignoreDev: opts.ignoreDev ?? false
+            ignoreDev: opts.ignoreDev ?? false,
+            excludeFileComponents: opts.excludeFileComponents
         };
     }
 
@@ -124,6 +126,7 @@ export function fromNestedMeta(nested: BomMetaNested): RebomOptions {
         rootComponentMergeMode: nested.merge?.rootComponentMergeMode as any,
         tldOnly: nested.merge?.tldOnly ?? false,
         ignoreDev: nested.merge?.ignoreDev,
+        excludeFileComponents: nested.merge?.excludeFileComponents,
         originalFileDigest: nested.spdx?.originalFileDigest,
         originalFileSize: nested.spdx?.originalFileSize,
         originalMediaType: nested.spdx?.originalMediaType,

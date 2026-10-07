@@ -41,6 +41,7 @@ export function createTestRebomOptions(overrides: any = {}): any {
         rootComponentMergeMode: overrides.rootComponentMergeMode,
         tldOnly: overrides.tldOnly !== undefined ? overrides.tldOnly : false,
         ignoreDev: overrides.ignoreDev !== undefined ? overrides.ignoreDev : false,
+        excludeFileComponents: overrides.excludeFileComponents,
         storage: 'oci', // Always use OCI storage for tests
         mod: overrides.mod || 'raw',
         bomState: overrides.bomState || 'raw',
