@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { escapeRegExp } from '@/utils/specText'
 
 /**
  * Import and call-site assertions for the attestation form, comment-aware.
@@ -44,7 +45,7 @@ describe('the attestation form is wired into ReleaseView', () => {
     ])('imports %s from %s', (symbol, module) => {
         expect(source, `${symbol} is used but not imported -- the build will not catch this`)
             .toMatch(new RegExp(
-                `import\\s+(type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`))
+                `import\\s+(type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
     })
 
     /**

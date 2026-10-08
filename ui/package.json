@@ -24,7 +24,7 @@
     "vega": "^6.2.0",
     "vega-embed": "^7.1.0",
     "vega-lite": "^6.4.2",
-    "vue": "^3.5.31",
+    "vue": "^3.5.43",
     "vue-prism-editor": "^2.0.0-alpha.2",
     "vue-router": "^5.0.4",
     "vuex": "^4.1.0",
@@ -52,7 +52,7 @@
     "sass": "^1.98.0",
     "typescript": "~5.9.3",
     "vite": "^7.3.1",
-    "vitest": "^3.2.7"
+    "vitest": "^5.0.2"
   },
   "optionalDependencies": {
     "@esbuild/linux-x64": "^0.27.3",

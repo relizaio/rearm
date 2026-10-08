@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { ADDENDUM_COLUMNS } from '@/utils/addendumDocument'
+import { escapeRegExp } from '@/utils/specText'
 
 /**
  * Import and wiring assertions for the FDA addendum export.
@@ -61,7 +62,7 @@ describe('the FDA addendum export is wired into the export modal', () => {
         ['findUnrenderableText', '@/utils/addendumPdf']
     ])('imports %s from %s', (symbol, module) => {
         expect(source).toMatch(new RegExp(
-            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`))
+            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
     })
 
     it('declares the handler the export button routes to', () => {

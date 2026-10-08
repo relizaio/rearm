@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { withoutHtmlComments } from '@/utils/specText'
 
 /**
  * Wiring guard for the incomplete-condition block on the two rule editors. While the builder has
@@ -8,8 +9,7 @@ import { fileURLToPath } from 'url'
  * previous condition. Scope is bindings only; the builder logic runs in celConditionBuilder.spec.ts.
  */
 function source (file: string): string {
-    return readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
-        .replace(/<!--[\s\S]*?-->/g, '')
+    return withoutHtmlComments(readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8'))
 }
 
 describe.each([
