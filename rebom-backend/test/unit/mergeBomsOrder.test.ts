@@ -5,6 +5,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 // returns, and everything rebom does to it afterwards runs for real.
 const findBomObjectById = vi.fn();
 const shellExec = vi.fn();
+// SCORE-14 T-12: the passes mergeBoms runs, in the order it runs them, with their arguments.
+const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[] }[] }));
 
 vi.mock('../../src/services/bom/bomCrudService', () => ({
     findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any)
@@ -16,6 +18,21 @@ vi.mock('../../src/utils', async (importOriginal) => {
         createTmpFiles: vi.fn(async (objs: any[]) => objs.map((_: any, i: number) => `/tmp/merge-input-${i}.json`)),
         deleteTmpFiles: vi.fn(async () => undefined),
         shellExec: (...a: any[]) => shellExec.apply(null, a as any)
+    };
+});
+
+vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) => {
+    const actual: any = await importOriginal();
+    const recorded = (name: string) => (...args: any[]) => {
+        passes.calls.push({ name, args });
+        return actual[name](...args);
+    };
+    return {
+        ...actual,
+        carryServices: recorded('carryServices'),
+        dedupeBomRefs: recorded('dedupeBomRefs'),
+        extractFileFilteredBom: recorded('extractFileFilteredBom'),
+        dropDanglingRefs: recorded('dropDanglingRefs')
     };
 });
 
@@ -84,7 +101,11 @@ describe('mergeBoms: bom-ref de-dup before the file filter', () => {
         findBomObjectById.mockReset();
         shellExec.mockReset();
         findBomObjectById.mockImplementation(async (id: string) => input(id));
-        shellExec.mockImplementation(async () => JSON.stringify(mergeBomsOutput()));
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            return JSON.stringify(mergeBomsOutput());
+        });
+        passes.calls.length = 0;
     });
 
     it('leaves a file duplicated under itself out once, and counts both passes (T-9)', async () => {
@@ -120,5 +141,46 @@ describe('mergeBoms: bom-ref de-dup before the file filter', () => {
 
         expect(property(bom, BOM_REFS_DEDUPLICATED_PROPERTY)).toStrictEqual([]);
         expect(property(bom, FILE_COMPONENTS_EXCLUDED_PROPERTY)).toStrictEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' }]);
+    });
+
+    it('runs merge-boms, then carryServices, dedupeBomRefs, the file filter and dropDanglingRefs last (T-12)', async () => {
+        const inputs = [input('one'), input('two')];
+        findBomObjectById.mockImplementation(async (id: string) => inputs[id === 'one' ? 0 : 1]);
+
+        const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'extractFileFilteredBom', 'dropDanglingRefs']);
+        const carry = passes.calls[1];
+        expect(carry.args[1]).toHaveLength(2);
+        expect(carry.args[1][0]).toBe(inputs[0]);
+        expect(carry.args[1][1]).toBe(inputs[1]);
+        expect(carry.args[2]).toStrictEqual({ referencedOnly: false });
+        // each pass works on what the one before it returned
+        expect(passes.calls[2].args[0]).toBe(carry.args[0]);
+        expect(passes.calls[4].args[0]).not.toBe(passes.calls[3].args[0]);
+        expect(passes.calls[4].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
+        expect(bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0'] }]);
+    });
+
+    it('skips the file filter without the switch and still runs dropDanglingRefs last (T-12)', async () => {
+        await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'dropDanglingRefs']);
+        expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: false });
+    });
+
+    it('asks carryServices for referenced services only in the top-level-only merge (T-12)', async () => {
+        await mergeBoms(['one', 'two'], options({ tldOnly: true }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'dropDanglingRefs']);
+        expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: true });
+    });
+
+    it('treats an absent tldOnly as a full merge (T-12)', async () => {
+        const opts = options();
+        delete opts.tldOnly;
+        await mergeBoms(['one', 'two'], opts, 'org');
+
+        expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: false });
     });
 });

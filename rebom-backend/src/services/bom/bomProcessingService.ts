@@ -627,6 +627,171 @@ export function dedupeBomRefs(bom: any): BomRefDedupResult {
   return { bom: out, count: tree.count }
 }
 
+export type ServiceCarryResult = {
+  bom: any,
+  count: number
+}
+
+/** Every component bom-ref in the tree: `metadata.component`, `components[]`, at any depth. */
+function componentBomRefs(bom: any): Set<string> {
+  const refs = new Set<string>()
+  const visit = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    if (ref) refs.add(ref)
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  visit(bom?.metadata?.component)
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return refs
+}
+
+/** A service's own bom-ref and those of the services nested inside it. */
+function serviceBomRefs(service: any, into: Set<string> = new Set<string>()): Set<string> {
+  if (!service || typeof service !== 'object') return into
+  const ref = bomRefOf(service)
+  if (ref) into.add(ref)
+  if (Array.isArray(service.services)) service.services.forEach((s: any) => serviceBomRefs(s, into))
+  return into
+}
+
+/** Every ref a dependency entry names: its `ref`, its `dependsOn[]` and its `provides[]`. */
+function dependencyRefsNamed(bom: any): Set<string> {
+  const named = new Set<string>()
+  if (!Array.isArray(bom?.dependencies)) return named
+  for (const dep of bom.dependencies) {
+    if (typeof dep?.ref === 'string') named.add(dep.ref)
+    for (const key of ['dependsOn', 'provides']) {
+      if (Array.isArray(dep?.[key])) dep[key].forEach((r: any) => { if (typeof r === 'string') named.add(r) })
+    }
+  }
+  return named
+}
+
+/**
+ * Re-attaches the inputs' `services[]` to a merged BOM (SCORE-14 ADR-1, ADR-2). rearm-cli
+ * merge-boms carries the inputs' dependency entries but never reads their services, so an
+ * entry whose `ref` is a service resolves to nothing in the merged document. Rules:
+ * - top-level `services[]` of every input, in input order; nested services stay in their parent;
+ * - union into the merged document's own `services` (its entries first) keyed by the exact
+ *   bom-ref string: the first occurrence wins whole, later ones are dropped (and not counted);
+ *   a service without a bom-ref is carried once per distinct JSON serialization;
+ * - a service whose bom-ref is also a component bom-ref anywhere in the merged tree is skipped
+ *   (warn): the component wins;
+ * - `referencedOnly` (the top-level-only export): only a service named, itself or a service
+ *   nested in it, by a dependency entry of the merged document (`ref`, `dependsOn[]`,
+ *   `provides[]`) is carried.
+ * Returns the input object as is when nothing is carried; `count` is the number of services added.
+ */
+export function carryServices(bom: any, inputs: any[], opts: { referencedOnly: boolean }): ServiceCarryResult {
+  if (!bom || typeof bom !== 'object' || !Array.isArray(inputs)) return { bom, count: 0 }
+  const candidates = inputs.flatMap((input: any) => Array.isArray(input?.services) ? input.services : [])
+  if (!candidates.length) return { bom, count: 0 }
+
+  const existing: any[] = Array.isArray(bom.services) ? bom.services : []
+  const seenRefs = new Set<string>()
+  const seenUnreferenced = new Set<string>()
+  for (const service of existing) {
+    const ref = bomRefOf(service)
+    if (ref) seenRefs.add(ref)
+    else seenUnreferenced.add(JSON.stringify(service))
+  }
+  const components = componentBomRefs(bom)
+  const named = opts.referencedOnly ? dependencyRefsNamed(bom) : null
+
+  const added: any[] = []
+  for (const service of candidates) {
+    if (!service || typeof service !== 'object') continue
+    const ref = bomRefOf(service)
+    if (named && !Array.from(serviceBomRefs(service)).some(r => named.has(r))) continue
+    if (!ref) {
+      const key = JSON.stringify(service)
+      if (seenUnreferenced.has(key)) continue
+      seenUnreferenced.add(key)
+      added.push(service)
+      continue
+    }
+    if (seenRefs.has(ref)) continue
+    if (components.has(ref)) {
+      logger.warn(`Service carry: service ${ref} shares its bom-ref with a component, the component is kept and the service skipped`)
+      continue
+    }
+    seenRefs.add(ref)
+    added.push(service)
+  }
+  if (!added.length) return { bom, count: 0 }
+
+  logger.info(`Service carry: ${added.length} services carried from the merge inputs`)
+  return { bom: { ...bom, services: [...existing, ...added] }, count: added.length }
+}
+
+/**
+ * Metadata property a merged BOM carries when dependency references that resolve to nothing
+ * were dropped from it (SCORE-14 ADR-3): how many entries and list items were removed. Written
+ * only when that number is above 0.
+ */
+export const DANGLING_REFS_DROPPED_PROPERTY = 'reliza:export:danglingRefsDropped'
+
+export type DanglingRefsResult = {
+  bom: any,
+  count: number
+}
+
+const DANGLING_REFS_LOGGED = 20
+
+/**
+ * Drops the `dependencies[]` references that resolve to no component or service of the
+ * document (SCORE-14 ADR-3), as the last pass of a merge. Resolvable refs are the bom-refs of
+ * `metadata.component`, of `components[]` and of `services[]`, at any depth. An entry whose
+ * `ref` does not resolve goes; `dependsOn[]` and `provides[]` lose the items that do not
+ * resolve, and an entry whose lists become empty stays (an empty `dependsOn` is valid).
+ * Every removed entry and every removed item counts 1. `compositions` and
+ * `vulnerabilities[].affects` are left alone. With nothing to drop the input is returned as
+ * is; otherwise the document gains DANGLING_REFS_DROPPED_PROPERTY with the count, replacing
+ * a value already present.
+ */
+export function dropDanglingRefs(bom: any): DanglingRefsResult {
+  if (!bom || typeof bom !== 'object' || !Array.isArray(bom.dependencies)) return { bom, count: 0 }
+
+  const resolvable = componentBomRefs(bom)
+  if (Array.isArray(bom.services)) bom.services.forEach((s: any) => serviceBomRefs(s, resolvable))
+  const resolves = (ref: any) => typeof ref === 'string' && resolvable.has(ref)
+
+  const dropped: string[] = []
+  const dependencies: any[] = []
+  for (const dep of bom.dependencies) {
+    if (!resolves(dep?.ref)) {
+      dropped.push(String(dep?.ref))
+      continue
+    }
+    let next = dep
+    for (const key of ['dependsOn', 'provides']) {
+      if (!Array.isArray(dep[key]) || dep[key].every(resolves)) continue
+      const kept = dep[key].filter((r: any) => {
+        if (resolves(r)) return true
+        dropped.push(String(r))
+        return false
+      })
+      next = next === dep ? { ...dep } : next
+      next[key] = kept
+    }
+    dependencies.push(next)
+  }
+  if (!dropped.length) return { bom, count: 0 }
+
+  const shown = dropped.slice(0, DANGLING_REFS_LOGGED).join(', ')
+  const more = dropped.length > DANGLING_REFS_LOGGED ? ` and ${dropped.length - DANGLING_REFS_LOGGED} more` : ''
+  logger.warn(`Dangling refs: ${dropped.length} dependency references resolve to nothing and were dropped: ${shown}${more}`)
+
+  const metadata = { ...(bom.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== DANGLING_REFS_DROPPED_PROPERTY)
+    : []
+  properties.push({ name: DANGLING_REFS_DROPPED_PROPERTY, value: String(dropped.length) })
+  metadata.properties = properties
+  return { bom: { ...bom, dependencies, metadata }, count: dropped.length }
+}
+
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {
   let purlStr = rebomOverride.purl
   if (!purlStr) {

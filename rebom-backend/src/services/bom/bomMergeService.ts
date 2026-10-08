@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -13,6 +13,11 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
+    // merge-boms carries the inputs' dependency entries but not their services; put the
+    // services back first, so a service-vs-component bom-ref clash is settled before the
+    // de-dup keys components by bom-ref. In the top-level-only export only the services a
+    // surviving dependency entry names are carried.
+    if (mergedBom) mergedBom = carryServices(mergedBom, bomObjs, { referencedOnly: rebomOptions.tldOnly === true }).bom
     // Before the file filter: the filter keys what it drops by bom-ref and assumes one
     // component per ref, and a hoisted subtree can hold file components it has to see.
     if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
@@ -24,6 +29,8 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
       const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
       mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
     }
+    // Last: a check on the final graph, after every pass that may repair a reference.
+    if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     return mergedBom
   } catch (e) {
     logger.error({ err: e }, "Error During merge")
