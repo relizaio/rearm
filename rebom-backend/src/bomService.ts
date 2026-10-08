@@ -50,6 +50,8 @@ export {
   extractTldFromBom,
   extractDevFilteredBom,
   extractFileFilteredBom,
+  carryServices,
+  dropDanglingRefs,
   establishPurl,
   computeRootDepIndex,
   createRebomToolObject,
