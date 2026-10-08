@@ -1,4 +1,4 @@
-import { describe, it, expect, vi, beforeEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import * as fs from 'fs';
 import * as path from 'path';
 
@@ -23,10 +23,13 @@ vi.mock('../../src/utils', async (importOriginal) => {
 
 import { mergeBoms } from '../../src/services/bom/bomMergeService';
 import {
+    carryServices,
+    dropDanglingRefs,
     BOM_REFS_DEDUPLICATED_PROPERTY,
     DANGLING_REFS_DROPPED_PROPERTY,
     FILE_COMPONENTS_EXCLUDED_PROPERTY
 } from '../../src/services/bom/bomProcessingService';
+import { logger } from '../../src/logger';
 
 /**
  * SCORE-14 (T-13 and the SCORE-9 T-4 regression): the services carry, the SCORE-13 de-dup,
@@ -198,5 +201,55 @@ describe('mergeBoms: services carried from the inputs (SCORE-9 T-4)', () => {
         expect(unresolved(bom)).toStrictEqual([]);
         expect(serviceDependencyCount(bom)).toBe(2);
         expect(property(bom, DANGLING_REFS_DROPPED_PROPERTY)).toStrictEqual([{ name: DANGLING_REFS_DROPPED_PROPERTY, value: '1' }]);
+    });
+});
+
+describe('carryServices then dropDanglingRefs', () => {
+    const A = 'pkg:npm/a@1.0.0';
+    const B = 'pkg:npm/b@1.0.0';
+
+    function merged(dependencies: any[]): any {
+        return {
+            bomFormat: 'CycloneDX', specVersion: '1.6', version: 1,
+            metadata: { component: { type: 'application', name: 'prod', 'bom-ref': ROOT } },
+            components: [
+                { type: 'library', name: 'a', version: '1.0.0', 'bom-ref': A },
+                { type: 'library', name: 'b', version: '1.0.0', 'bom-ref': B }
+            ],
+            dependencies
+        };
+    }
+
+    function input(services?: any[]): any {
+        const bom: any = { bomFormat: 'CycloneDX', specVersion: '1.6', metadata: {}, components: [] };
+        if (services) bom.services = services;
+        return bom;
+    }
+
+    afterEach(() => vi.restoreAllMocks());
+
+    it('never lets a service without a bom-ref make a dangling ref resolve (T-5)', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = merged([{ ref: ROOT, dependsOn: [A, 'cron'] }, { ref: 'syslog', dependsOn: [A] }]);
+        const carried = carryServices(bom, [input([{ name: 'cron' }, { name: 'syslog' }])], { referencedOnly: false }).bom;
+        const result = dropDanglingRefs(carried);
+
+        expect(carried.services).toStrictEqual([{ name: 'cron' }, { name: 'syslog' }]);
+        expect(result.count).toBe(2);
+        expect(result.bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: [A] }]);
+    });
+
+    it('passes a document without services through both passes unchanged, with no marker (T-8)', () => {
+        const bom = merged([{ ref: ROOT, dependsOn: [A, B] }]);
+        const before = structuredClone(bom);
+        const carried = carryServices(bom, [input(), input()], { referencedOnly: false });
+        const checked = dropDanglingRefs(carried.bom);
+
+        expect(checked.bom).toBe(bom);
+        expect(checked.bom).toStrictEqual(before);
+        expect(carried.count).toBe(0);
+        expect(checked.count).toBe(0);
+        expect(checked.bom).not.toHaveProperty('services');
+        expect(checked.bom.metadata).not.toHaveProperty('properties');
     });
 });

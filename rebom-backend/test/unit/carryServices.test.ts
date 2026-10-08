@@ -1,10 +1,6 @@
 import { describe, it, expect, vi, afterEach } from 'vitest';
 import { logger } from '../../src/logger';
-import {
-    carryServices,
-    dropDanglingRefs,
-    DANGLING_REFS_DROPPED_PROPERTY
-} from '../../src/services/bom/bomProcessingService';
+import { carryServices } from '../../src/services/bom/bomProcessingService';
 
 /**
  * SCORE-14 (ADR-1, ADR-2): rearm-cli merge-boms carries the inputs' dependency entries but
@@ -112,17 +108,6 @@ describe('carryServices', () => {
         expect(result.count).toBe(2);
     });
 
-    it('never lets a service without a bom-ref make a dangling ref resolve (T-5)', () => {
-        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
-        const bom = merged({ dependencies: [{ ref: ROOT, dependsOn: [A, 'cron'] }, { ref: 'syslog', dependsOn: [A] }] });
-        const carried = carryServices(bom, [input([{ name: 'cron' }, { name: 'syslog' }])], { referencedOnly: false }).bom;
-        const result = dropDanglingRefs(carried);
-
-        expect(carried.services).toStrictEqual([{ name: 'cron' }, { name: 'syslog' }]);
-        expect(result.count).toBe(2);
-        expect(result.bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: [A] }]);
-    });
-
     it('carries only the services a dependency entry names when referencedOnly (T-6)', () => {
         const bom = merged({
             dependencies: [{ ref: ROOT, dependsOn: [A, 's1'] }]
@@ -187,19 +172,5 @@ describe('carryServices', () => {
 
         expect(carried.bom).toBe(bom);
         expect(carried.bom).not.toHaveProperty('services');
-    });
-
-    it('passes a document without services through both passes with no marker (T-8)', () => {
-        const bom = merged({ dependencies: [{ ref: ROOT, dependsOn: [A, B] }] });
-        const before = structuredClone(bom);
-        const carried = carryServices(bom, [input(), input()], { referencedOnly: false });
-        const checked = dropDanglingRefs(carried.bom);
-
-        expect(checked.bom).toStrictEqual(before);
-        expect(checked.count).toBe(0);
-        expect(carried.count).toBe(0);
-        expect(checked.bom).not.toHaveProperty('services');
-        expect(checked.bom.metadata).not.toHaveProperty('properties');
-        expect(JSON.stringify(checked.bom)).not.toContain(DANGLING_REFS_DROPPED_PROPERTY);
     });
 });

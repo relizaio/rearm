@@ -96,17 +96,19 @@ function property(bom: any, name: string): any[] {
     return (bom.metadata.properties || []).filter((p: any) => p.name === name);
 }
 
-describe('mergeBoms: bom-ref de-dup before the file filter', () => {
-    beforeEach(() => {
-        findBomObjectById.mockReset();
-        shellExec.mockReset();
-        findBomObjectById.mockImplementation(async (id: string) => input(id));
-        shellExec.mockImplementation(async (...args: any[]) => {
-            passes.calls.push({ name: 'merge-boms', args });
-            return JSON.stringify(mergeBomsOutput());
-        });
-        passes.calls.length = 0;
+function serveInputsAndMergeBomsOutput() {
+    findBomObjectById.mockReset();
+    shellExec.mockReset();
+    findBomObjectById.mockImplementation(async (id: string) => input(id));
+    shellExec.mockImplementation(async (...args: any[]) => {
+        passes.calls.push({ name: 'merge-boms', args });
+        return JSON.stringify(mergeBomsOutput());
     });
+    passes.calls.length = 0;
+}
+
+describe('mergeBoms: bom-ref de-dup before the file filter', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
 
     it('leaves a file duplicated under itself out once, and counts both passes (T-9)', async () => {
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true }), 'org');
@@ -142,6 +144,14 @@ describe('mergeBoms: bom-ref de-dup before the file filter', () => {
         expect(property(bom, BOM_REFS_DEDUPLICATED_PROPERTY)).toStrictEqual([]);
         expect(property(bom, FILE_COMPONENTS_EXCLUDED_PROPERTY)).toStrictEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' }]);
     });
+});
+
+/**
+ * SCORE-14 (T-12, ADR-4): merge-boms, then carryServices, dedupeBomRefs, the file filter (only
+ * with the switch) and dropDanglingRefs last, each on what the one before returned.
+ */
+describe('mergeBoms: pass order', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
 
     it('runs merge-boms, then carryServices, dedupeBomRefs, the file filter and dropDanglingRefs last (T-12)', async () => {
         const inputs = [input('one'), input('two')];
