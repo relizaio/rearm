@@ -334,7 +334,24 @@ input RebomOptions {
     # Merge only: the caller's version of the merge rules, stored verbatim with the merged
     # BOM so the caller can tell merges built before a rule change; rebom does not read it.
     mergeVersion: Int
+    # Merge only: the component releases of a product merge that have no SBOM. Each becomes a
+    # placeholder component with the property reliza:sbom:missing, a direct dependency of the
+    # merged root, and the document states their dependencies unknown (compositions). Not stored.
+    missingSbomComponents: [MissingSbomComponentInput!]
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
+  }
+
+  # A component release ReARM holds no SBOM for. reason: NO_SBOM_ARTIFACT or COVERAGE_EXCLUDED.
+  # purl only when ReARM records one; it is never made up.
+  input MissingSbomComponentInput {
+    releaseUuid: String!
+    name: String!
+    version: String!
+    type: String!
+    supplierName: String
+    group: String
+    purl: String
+    reason: String!
   }
 
   input BomSearch {

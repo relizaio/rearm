@@ -57,6 +57,22 @@ Exports the merged SBOM for the release. Options:
 
 Click **Export** to download the file.
 
+### Component releases without an SBOM
+
+Component releases of a product that have no SBOM (or whose SBOMs are all excluded by the coverage
+filter) appear in the product export as components with the property `reliza:sbom:missing`,
+listed in the root's dependencies, and a `compositions` entry with `aggregate: unknown` states that
+their own dependencies are unknown. `reliza:export:componentsWithoutSbom` on the document counts
+them. Such a component's bom-ref is `urn:rearm:release:<release uuid>`; the property's value says
+why ReARM holds no SBOM for it: `NO_SBOM_ARTIFACT` (none was uploaded) or `COVERAGE_EXCLUDED` (every
+SBOM it has was left out by **Exclude coverage types**). It carries the release's purl when the
+release records one, and none otherwise. A component release's first SBOM, or a replaced SBOM,
+rebuilds the merged exports of every product above it, nested products included, so a placeholder
+leaves the product export once its release has an SBOM. A product none of whose component releases has an SBOM
+still has nothing to export. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
+property and the `compositions` entry are in the CycloneDX JSON only.
+
 ### Scoring the export
 
 Beside **Export**, **Score** checks the document the export would give you, with the same content options,
@@ -163,6 +179,11 @@ are already gone.
 left out of it, and how many. It describes the document you hold rather than ReARM's working
 state, so a reader of an export with internal metadata off can still tell that the inventory is
 not complete.
+
+**Not removed either: `reliza:sbom:missing` and `reliza:export:componentsWithoutSbom`.** They mark
+the components that stand for component releases ReARM holds no SBOM for, and count them (see
+[Component releases without an SBOM](#component-releases-without-an-sbom)). Without them a reader
+could not tell a release without an SBOM from one whose SBOM lists nothing.
 
 **With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
