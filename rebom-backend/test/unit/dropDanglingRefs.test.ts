@@ -13,6 +13,8 @@ import {
 const ROOT = 'pkg:generic/Example/merged@1.0.0';
 const X = 'pkg:npm/x@1.0.0';
 const A = 'pkg:npm/a@1.0.0';
+const B = 'pkg:npm/b@1.0.0';
+const C = 'pkg:npm/c@1.0.0';
 
 function lib(ref: string, extra: any = {}): any {
     return { type: 'library', name: ref, version: '1.0.0', 'bom-ref': ref, ...extra };
@@ -159,5 +161,130 @@ describe('dropDanglingRefs', () => {
     it('passes a document without dependencies through unchanged', () => {
         const bom = doc();
         expect(dropDanglingRefs(bom).bom).toBe(bom);
+    });
+});
+
+describe('dropDanglingRefs: the marker name', () => {
+    it('writes the property under the literal name reliza:export:danglingRefsDropped (ADR-3)', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const result = dropDanglingRefs(doc({ dependencies: [{ ref: X, dependsOn: [A, 'ghost'] }, { ref: 'ghost2' }] }));
+
+        expect(DANGLING_REFS_DROPPED_PROPERTY).toBe('reliza:export:danglingRefsDropped');
+        expect(result.bom.metadata.properties).toStrictEqual([
+            { name: 'existing', value: 'kept' },
+            { name: 'cdx:other', value: '1' },
+            { name: 'reliza:export:danglingRefsDropped', value: '2' }
+        ]);
+    });
+
+    it('moves a replaced marker to the end, after the properties it found, like the de-dup marker', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = doc({ dependencies: [{ ref: X, dependsOn: [A, 'ghost'] }] });
+        bom.metadata.properties = [
+            { name: 'first', value: 'a' },
+            { name: DANGLING_REFS_DROPPED_PROPERTY, value: '7' },
+            { name: 'last', value: 'b' }
+        ];
+        const result = dropDanglingRefs(bom);
+
+        expect(result.bom.metadata.properties).toStrictEqual([
+            { name: 'first', value: 'a' },
+            { name: 'last', value: 'b' },
+            { name: DANGLING_REFS_DROPPED_PROPERTY, value: '1' }
+        ]);
+    });
+});
+
+describe('dropDanglingRefs: the exact bom-ref string resolves (ADR-3, no normalisation)', () => {
+    it('drops and counts a dependsOn item that differs from a component bom-ref only by case', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = doc({ components: [lib(X), lib('A')], dependencies: [{ ref: X, dependsOn: ['a', 'A'] }] });
+        const result = dropDanglingRefs(bom);
+
+        expect(result.bom.dependencies).toStrictEqual([{ ref: X, dependsOn: ['A'] }]);
+        expect(result.count).toBe(1);
+        expect(marker(result.bom)).toStrictEqual([{ name: DANGLING_REFS_DROPPED_PROPERTY, value: '1' }]);
+    });
+
+    it('drops an entry whose ref differs from a component bom-ref only by case, and a provides item that differs from a service bom-ref only by case', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = doc({
+            services: [{ 'bom-ref': 'urn:svc:nginx', name: 'nginx' }],
+            dependencies: [
+                { ref: X.toUpperCase(), dependsOn: [A] },
+                { ref: X, provides: ['urn:svc:Nginx', 'urn:svc:nginx'] }
+            ]
+        });
+        const result = dropDanglingRefs(bom);
+
+        expect(result.bom.dependencies).toStrictEqual([{ ref: X, provides: ['urn:svc:nginx'] }]);
+        expect(result.count).toBe(2);
+    });
+
+    it('does not trim: a ref with a trailing space resolves to nothing', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const result = dropDanglingRefs(doc({ dependencies: [{ ref: X, dependsOn: [`${A} `, A] }] }));
+
+        expect(result.bom.dependencies).toStrictEqual([{ ref: X, dependsOn: [A] }]);
+        expect(result.count).toBe(1);
+    });
+
+    it('drops and counts an entry without a ref (D-3)', () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const result = dropDanglingRefs(doc({ dependencies: [{ dependsOn: [A] }, { ref: X, dependsOn: [A] }] }));
+
+        expect(result.bom.dependencies).toStrictEqual([{ ref: X, dependsOn: [A] }]);
+        expect(result.count).toBe(1);
+        expect(warn).toHaveBeenCalledTimes(1);
+    });
+});
+
+describe('dropDanglingRefs: order of what is kept', () => {
+    it('keeps the surviving dependsOn and provides items in their order around the dropped ones', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = doc({
+            components: [lib(X), lib(A), lib(B), lib(C)],
+            services: [{ 'bom-ref': 's1', name: 's1' }, { 'bom-ref': 's2', name: 's2' }, { 'bom-ref': 's3', name: 's3' }],
+            dependencies: [
+                { ref: X, dependsOn: [C, 'ghost', A, B], provides: ['s3', 'ghost2', 's1', 's2'] },
+                { ref: A, dependsOn: [B, 'ghost3', C] }
+            ]
+        });
+        const result = dropDanglingRefs(bom);
+
+        expect(result.bom.dependencies).toStrictEqual([
+            { ref: X, dependsOn: [C, A, B], provides: ['s3', 's1', 's2'] },
+            { ref: A, dependsOn: [B, C] }
+        ]);
+        expect(result.count).toBe(3);
+    });
+
+    it('keeps the surviving entries and their keys in their order around a dropped entry', () => {
+        vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = doc({
+            components: [lib(X), lib(A), lib(B)],
+            dependencies: [
+                { ref: B, provides: [A, 'ghost'], dependsOn: [X] },
+                { ref: 'ghost2', dependsOn: [A] },
+                { ref: X, dependsOn: [A] },
+                { ref: A, dependsOn: ['ghost3', B] }
+            ]
+        });
+        const result = dropDanglingRefs(bom);
+
+        expect(result.bom.dependencies).toStrictEqual([
+            { ref: B, provides: [A], dependsOn: [X] },
+            { ref: X, dependsOn: [A] },
+            { ref: A, dependsOn: [B] }
+        ]);
+        expect(Object.keys(result.bom.dependencies[0])).toStrictEqual(['ref', 'provides', 'dependsOn']);
+        expect(result.bom.dependencies.map((d: any) => d.ref)).toStrictEqual([B, X, A]);
+    });
+
+    it('logs the dropped refs in document order', () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        dropDanglingRefs(doc({ dependencies: [{ ref: X, dependsOn: ['g1', A], provides: ['g2'] }, { ref: 'g3' }] }));
+
+        expect(String(warn.mock.calls[0][0])).toContain('g1, g2, g3');
     });
 });

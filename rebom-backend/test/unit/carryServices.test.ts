@@ -174,3 +174,83 @@ describe('carryServices', () => {
         expect(carried.bom).not.toHaveProperty('services');
     });
 });
+
+describe('carryServices: the exact bom-ref string is the key (ADR-2, no normalisation)', () => {
+    it('carries two services whose bom-refs differ only by case', () => {
+        const upper = { 'bom-ref': 'urn:svc:Nginx', name: 'Nginx' };
+        const lower = { 'bom-ref': 'urn:svc:nginx', name: 'nginx' };
+        const result = carryServices(merged(), [input([upper]), input([lower])], { referencedOnly: false });
+
+        expect(result.bom.services).toStrictEqual([upper, lower]);
+        expect(result.count).toBe(2);
+    });
+
+    it('carries an input service whose bom-ref differs from one the merged document has only by case', () => {
+        const S0 = { 'bom-ref': 'S1', name: 'native' };
+        const result = carryServices(merged({ services: [S0] }), [input([S1])], { referencedOnly: false });
+
+        expect(result.bom.services).toStrictEqual([S0, S1]);
+        expect(result.count).toBe(1);
+    });
+
+    it('carries a service whose bom-ref differs from a component bom-ref only by case, without a warning', () => {
+        const warn = vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any);
+        const bom = merged({ components: [lib('PKG'), lib(B)] });
+        const service = { 'bom-ref': 'pkg', name: 'pkg-service' };
+        const result = carryServices(bom, [input([service])], { referencedOnly: false });
+
+        expect(result.bom.services).toStrictEqual([service]);
+        expect(result.count).toBe(1);
+        expect(warn).not.toHaveBeenCalled();
+    });
+
+    it('does not count a dependency reference that differs only by case as naming a service when referencedOnly', () => {
+        const bom = merged({ dependencies: [{ ref: ROOT, dependsOn: [A, 'S1'] }, { ref: A, provides: ['S2'] }] });
+        const carried = carryServices(bom, [input([S1, S2])], { referencedOnly: true });
+
+        expect(carried.bom).toBe(bom);
+        expect(carried.count).toBe(0);
+        expect(carried.bom).not.toHaveProperty('services');
+    });
+
+    it('does not trim a bom-ref: a trailing space makes another service', () => {
+        const spaced = { 'bom-ref': 's1 ', name: 'nginx spaced' };
+        const result = carryServices(merged(), [input([S1, spaced])], { referencedOnly: false });
+
+        expect(result.bom.services).toStrictEqual([S1, spaced]);
+    });
+
+    it('keys a service without a bom-ref by its serialization with the keys as given', () => {
+        const nameFirst = { name: 'cron', version: '1' };
+        const versionFirst = { version: '1', name: 'cron' };
+        const result = carryServices(merged(), [input([nameFirst, versionFirst])], { referencedOnly: false });
+
+        expect(result.bom.services).toStrictEqual([nameFirst, versionFirst]);
+        expect(result.bom.services[1]).toBe(versionFirst);
+        expect(result.count).toBe(2);
+    });
+});
+
+describe('carryServices: order of what is carried', () => {
+    it('keeps the merged document services, then each input in input order, then each input service in its own order', () => {
+        const S0a = { 'bom-ref': 's0a', name: 'native-a' };
+        const S0b = { 'bom-ref': 's0b', name: 'native-b' };
+        const S3 = { 'bom-ref': 's3', name: 's3' };
+        const S4 = { 'bom-ref': 's4', name: 's4' };
+        const anon = { name: 'anonymous' };
+        const result = carryServices(merged({ services: [S0a, S0b] }),
+            [input([S2, anon, S1]), input([S4, S3])], { referencedOnly: false });
+
+        expect(result.bom.services.map((s: any) => s['bom-ref'] ?? s.name))
+            .toStrictEqual(['s0a', 's0b', 's2', 'anonymous', 's1', 's4', 's3']);
+        expect(result.count).toBe(5);
+    });
+
+    it('keeps input order when referencedOnly filters', () => {
+        const S3 = { 'bom-ref': 's3', name: 's3' };
+        const bom = merged({ dependencies: [{ ref: ROOT, dependsOn: ['s3', A, 's1'] }] });
+        const result = carryServices(bom, [input([S3, S2]), input([S1])], { referencedOnly: true });
+
+        expect(result.bom.services).toStrictEqual([S3, S1]);
+    });
+});
