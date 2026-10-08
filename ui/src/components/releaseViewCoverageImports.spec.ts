@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { escapeRegExp } from '@/utils/specText'
 
 /**
  * Asserts ReleaseView.vue IMPORTS what it uses. Nothing else.
@@ -49,7 +50,7 @@ describe('ReleaseView imports the coverage symbols it uses', () => {
         ['useReleaseSupportCoverage', '@/utils/useReleaseSupportCoverage']
     ])('imports %s from %s', (symbol, module) => {
         const imported = new RegExp(
-            `import\\s+(type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`)
+            `import\\s+(type\\s+)?\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`)
         expect(source, `${symbol} is used but not imported -- vite build will not catch this`)
             .toMatch(imported)
     })

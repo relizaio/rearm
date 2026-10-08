@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { escapeRegExp } from '@/utils/specText'
 
 /**
  * Import and wiring assertions for the bulk sweep, comment-aware.
@@ -36,7 +37,7 @@ describe('the bulk sweep is wired into ReleaseView', () => {
         ['validateBulkInput', '@/utils/useBulkAttest']
     ])('imports %s from %s', (symbol, module) => {
         expect(source).toMatch(new RegExp(
-            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`))
+            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
     })
 
     it.each(['openBulkAttest', 'collectBulkTargets', 'runBulkAttest'])(

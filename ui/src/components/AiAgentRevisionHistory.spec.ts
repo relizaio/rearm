@@ -45,7 +45,7 @@ describe('revision history', () => {
         expect(w.findAll('.revhist__compare')).toHaveLength(2)
         await w.findAll('.revhist__compare')[0].trigger('click')
         expect(w.find('.revhist__text--before').text()).toBe('v1')
-        expect(w.find('.revhist__text--after').text()).toBe(LONG.replace('\n', '\n'))
+        expect(w.find('.revhist__text--after').text()).toBe(LONG)
         // tableOnly exists on the live object only: not a change.
         expect(w.findAll('.revhist__key').map(k => k.text())).toEqual(['prompt'])
     })
