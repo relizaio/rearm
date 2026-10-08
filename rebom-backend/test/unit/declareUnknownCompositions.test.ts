@@ -77,6 +77,28 @@ describe('declareUnknownCompositions', () => {
         expect(result.bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [HTTPD, FLYWAY] }]);
     });
 
+    it('takes the marker by its exact name, never a near miss a producer SBOM may carry (T-19)', () => {
+        // Producer SBOMs keep their own reliza: component properties through upload and merge,
+        // so only the exact name marks a placeholder: no prefix, no case folding, no trimming.
+        const nearMiss = (ref: string, name: string): any => (
+            { type: 'library', name: ref, version: '1.0.0', 'bom-ref': ref, properties: [{ name, value: 'NO_SBOM_ARTIFACT' }] }
+        );
+        const bom = doc();
+        bom.components = [
+            nearMiss('pkg:npm/generator@1.0.0', 'reliza:sbom:generator'),
+            placeholder(HTTPD),
+            nearMiss('pkg:npm/missingness@1.0.0', 'reliza:sbom:missingness'),
+            nearMiss('pkg:npm/upper@1.0.0', 'Reliza:SBOM:Missing'),
+            nearMiss('pkg:npm/trailing@1.0.0', 'reliza:sbom:missing ')
+        ];
+
+        const result = declareUnknownCompositions(bom, null);
+
+        expect(result.count).toBe(1);
+        expect(result.bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [HTTPD] }]);
+        expect(result.bom.metadata.properties).toContainEqual({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: '1' });
+    });
+
     it('counts a placeholder the document holds twice once (T-8)', () => {
         const bom = doc();
         bom.components[2].components = [placeholder(FLYWAY)];
