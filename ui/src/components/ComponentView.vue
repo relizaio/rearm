@@ -1321,6 +1321,7 @@ import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import { resolveComponentPageTab } from '@/utils/componentPageTab'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
@@ -1773,7 +1774,15 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const selectedTab: Ref<string> = ref((route.query.tab as string) || 'latest')
+// An explicit ?tab= wins; a branch or feature-set link (a :branchuuid with no
+// tab) opens Branches / Feature Sets; a plain component link opens Latest.
+const selectedTab: Ref<string> = ref(resolveComponentPageTab({
+    queryTab: route.query.tab,
+    branchUuid: branchRouteId,
+    // Cached on a revisit; initLoad re-resolves once the branch list is fetched.
+    branchType: branchRouteId ? store.getters.branchById(branchRouteId)?.type : undefined,
+    isComponent: store.getters.componentById(componentUuid)?.type !== 'PRODUCT'
+}))
 // Bumped after branch list changes so the Latest tab refetches.
 const latestRefreshToken = ref(0)
 const branchCollapseState: Ref<any> = ref({})
@@ -2204,12 +2213,19 @@ function handleTabChange (tabName: string) {
 
 // Query-only navigations no longer remount the view (router-view keys on
 // path), so browser back/forward across tab states must be applied to
-// local state here; absent param = the default tab, mirroring the old
-// remount-initializer. Local writes only — safe without a route guard.
+// local state here; an absent param resolves exactly as on mount (the
+// branch in the path keeps Branches open and stays selected). Only while
+// this view's route is active: on route leave the params flip to the
+// destination's. Local writes only.
 watch(() => route.query.tab, (t) => {
-    const next = (typeof t === 'string' && t) ? t : 'branches'
+    const here = (route.name === 'ComponentsOfOrg' || route.name === 'ProductsOfOrg') &&
+        String(route.params.compuuid || '') === componentUuid
+    if (!here) return
+    const branchParam = route.params.branchuuid ? route.params.branchuuid.toString() : ''
+    const branchType = branchParam ? store.getters.branchById(branchParam)?.type : undefined
+    const next = resolveComponentPageTab({ queryTab: t, branchUuid: branchParam, branchType, isComponent: isComponent.value })
     if (next !== selectedTab.value) {
-        selectedBranchUuid.value = ''
+        selectedBranchUuid.value = branchParam
         selectedTab.value = next
     }
 })
@@ -4021,19 +4037,15 @@ async function initLoad() {
         fetchSecretsIfAllowed()
     }
     
-    // Auto-select tab based on branch type if branchuuid is provided
-    // Only run on initial load, not when closing settings modal
+    // Now that the branch list is loaded, a tag link opens the Tags tab.
+    // Only on initial load, not when closing the settings modal.
     if (branchRouteId && !route.query.tab && !route.query.branchSettingsView) {
-        const allBranches = store.getters.branchesOfComponent(compUuid)
-        const selectedBranch = allBranches.find((b: any) => b.uuid === branchRouteId)
-        if (selectedBranch) {
-            if (selectedBranch.type === 'PULL_REQUEST') {
-                selectedTab.value = 'pull-requests'
-            } else if (selectedBranch.type === 'TAG') {
-                selectedTab.value = 'tags'
-            }
-            // For 'BRANCH' type or undefined, keep default 'branches'
-        }
+        const selectedBranch = store.getters.branchesOfComponent(compUuid).find((b: any) => b.uuid === branchRouteId)
+        selectedTab.value = resolveComponentPageTab({
+            branchUuid: branchRouteId,
+            branchType: selectedBranch?.type,
+            isComponent: isComponent.value
+        })
     }
 }
 
