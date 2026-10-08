@@ -678,6 +678,135 @@ mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
     deleteTeaProfile(org: $org, scope: $scope, object: $object)
 }`
 
+// TEA publications (task TEA-5): the release page's view, and publish, re-publish and hide. A
+// Pro-only schema surface like the profiles above (no CE backend sync): the release page sends
+// them only where teaProfilesAvailable says the backend serves TEA, and Release.teaPublication is
+// deliberately absent from the shared release fragments. teaProfileSchemaDrift.spec.ts pins both
+// schemas.
+const TEA_PUBLICATION_FIELDS_GQL = `
+    uuid
+    org
+    release
+    component
+    componentType
+    state
+    latestVersion
+    profile
+    profileRevision
+    profileSource
+    profileSourceObject
+    cascadeOf
+    aggregateArtifact
+    tei
+    firstPublishedDate
+    lastPublishedDate
+    lastHiddenDate
+    lastPublishedBy
+    exposure
+    concealedBecause
+    cascadeOfLabel
+    publicUrl
+`
+
+const TEA_PUBLISHED_COLLECTION_FIELDS_GQL = `
+    uuid
+    version
+    createdDate
+    createdBy
+    belongsTo
+    updateReasonType
+    updateReasonComment
+    profileRevision
+    documentSha256
+    document
+    entries {
+        artifact
+        teaUuid
+        revision
+        origin
+        type
+        name
+        mediaType
+        url
+        checksums {
+            algType
+            algValue
+        }
+        signatureArtifact
+        signatureRevision
+    }
+`
+
+const TEA_PUBLISH_RESULT_FIELDS_GQL = `
+    publication {
+        ${TEA_PUBLICATION_FIELDS_GQL}
+    }
+    collection {
+        ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
+    }
+    outcome
+    artifacts {
+        artifact
+        status
+        detail
+    }
+    children {
+        release
+        componentName
+        version
+        outcome
+        refusal
+        detail
+        publication
+    }
+`
+
+const RELEASE_TEA_PUBLICATION_VIEW = gql`
+query ReleaseTeaPublicationView($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        release
+        kind
+        canPublish
+        refusal
+        refusalMessage
+        effectiveVisibility
+        profileSource
+        profileSourceObject
+        apiBase
+        publicUrl
+        cascades
+        cascadeChildren
+        profileRevision
+        publication {
+            ${TEA_PUBLICATION_FIELDS_GQL}
+        }
+        collections {
+            ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
+        }
+    }
+}`
+
+const PUBLISH_RELEASE_ON_TEA = gql`
+mutation PublishReleaseOnTea($release: ID!, $comment: String) {
+    publishReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLISH_RESULT_FIELDS_GQL}
+    }
+}`
+
+const REPUBLISH_RELEASE_ON_TEA = gql`
+mutation RepublishReleaseOnTea($release: ID!, $comment: String) {
+    republishReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLISH_RESULT_FIELDS_GQL}
+    }
+}`
+
+const HIDE_RELEASE_ON_TEA = gql`
+mutation HideReleaseOnTea($release: ID!, $comment: String) {
+    hideReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLICATION_FIELDS_GQL}
+    }
+}`
+
 // EXTERNAL API keys (task TEA-3): keys handed to a party outside the organization, which reach
 // nothing but TEA. Pro only, like the TEA profile documents above: the CE schema has none of these
 // fields or operations, so the External Keys pane reads them itself and the shared apiKeys
@@ -2134,6 +2263,10 @@ export default {
     TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,
     TeaComponentNameGql: TEA_COMPONENT_NAME,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
+    ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
+    PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
+    RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
+    HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,
     ExternalApiKeysGql: EXTERNAL_API_KEYS,
     CreateExternalApiKeyGql: CREATE_EXTERNAL_API_KEY,
     SetApiKeyHolderNameGql: SET_API_KEY_HOLDER_NAME,

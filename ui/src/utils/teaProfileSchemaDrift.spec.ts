@@ -27,6 +27,15 @@ const DOCS = {
     TeaMembershipExposureChangeGql: graphqlQueries.TeaMembershipExposureChangeGql,
 }
 
+// The release page's TEA publication documents (task TEA-5): the same Pro-only surface, behind the
+// same gate (ReleaseView.loadTeaPublication checks teaProfilesAvailable before it sends any).
+const PUBLICATION_DOCS = {
+    ReleaseTeaPublicationViewGql: graphqlQueries.ReleaseTeaPublicationViewGql,
+    PublishReleaseOnTeaGql: graphqlQueries.PublishReleaseOnTeaGql,
+    RepublishReleaseOnTeaGql: graphqlQueries.RepublishReleaseOnTeaGql,
+    HideReleaseOnTeaGql: graphqlQueries.HideReleaseOnTeaGql,
+}
+
 // The org TEA table's name read of an archived component (TEA-9) selects only long-standing
 // Component fields, so it validates on CE too; it is sent only from the TEA tab, which the gate hides.
 const COMPONENT_NAME_READ = graphqlQueries.TeaComponentNameGql
@@ -111,5 +120,20 @@ describe('EXTERNAL key documents, the TEA functions and the edition gate', () =>
         const pro = enumValuesOf(proSchema!, 'PermissionFunction')
         for (const f of [...constants.PermissionFunctions, 'TEA_READ']) expect(pro, f).toContain(f)
         expect(enumValuesOf(proSchema!, 'ApiTypeEnum')).toContain('EXTERNAL')
+    })
+})
+
+describe('TEA publication documents (TEA-5) and the edition gate', () => {
+    it('none of the four validates against the CE schema while CE serves no TEA, so the gate must hold them back', () => {
+        expect(Object.keys(PUBLICATION_DOCS)).toHaveLength(4)
+        for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
+            expect(validate(ceSchema, doc).length === 0, name).toBe(ceServesTea())
+        }
+    })
+
+    it.runIf(proSchema)('every TEA publication document validates against the Pro schema', () => {
+        for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
+            expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
     })
 })

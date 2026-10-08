@@ -130,6 +130,15 @@ describe('TEA surfaces contract', () => {
         expect(full.split('\n').map(l => l.trim())).toContain('status')
     })
 
+    it('graphqlQueries holds the four TEA publication documents (TEA-5)', () => {
+        const q = src('../utils/graphqlQueries.ts')
+        const docs = ['RELEASE_TEA_PUBLICATION_VIEW', 'PUBLISH_RELEASE_ON_TEA', 'REPUBLISH_RELEASE_ON_TEA', 'HIDE_RELEASE_ON_TEA']
+        for (const doc of docs) {
+            expect(q).toContain('const ' + doc + ' = gql`')
+        }
+        expect(q.match(/^const \w+ = gql`\n(query ReleaseTeaPublicationView|mutation (Publish|Republish|Hide)ReleaseOnTea)\(/gm)).toHaveLength(docs.length)
+    })
+
     // EXTERNAL API keys (task TEA-3, design 3.11 and 4.10)
     it('OrgSettings hosts the External Keys pane after Federated Identities, where TEA is served', () => {
         const os = src('OrgSettings.vue')

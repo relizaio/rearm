@@ -206,6 +206,7 @@ import { useStore } from 'vuex'
 import graphqlClient from '@/utils/graphql'
 import { LIST_CHANNELS_QUERY, TYPE_LABELS, eventTypeOptions, isOwnerRouted, extractError } from '@/utils/notificationsCommon'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import { isProEdition } from '@/utils/editionCapabilities'
 import {
     ownedComponentEventTypes,
     selectedFromExcluded,
@@ -328,7 +329,8 @@ const savingTeam = ref<boolean>(false)
 const teamModalError = ref<string>('')
 const teamForm = ref<TeamForm>(freshTeamForm())
 
-const ownedEventTypeOptions = computed(() => ownedComponentEventTypes(eventTypeOptions))
+const ownedEventTypeOptions = computed(() => ownedComponentEventTypes(eventTypeOptions,
+    isProEdition(store.getters.myuser?.installationType)))
 
 /**
  * The picker shows what the team WILL receive; the record stores what it will
