@@ -111,13 +111,16 @@ Public Demo is available at https://demo.rearmhq.com. When you register for the 
 ### Generate TEA-overlay from TEA OpenAPI spec
 OpenAPI Spec can be found here - https://github.com/CycloneDX/transparency-exchange-api/blob/main/spec/openapi.yaml
 
-And then copied into tea-spec/ directory in this repository as well.
+And then copied into tea-spec/ directory in this repository as well. The copy here is TEA 1.0.0 (`info.version: 1.0.0`), taken from that repository at commit `d496de7000d1ec330671189a13cf8bf078eafc1c` (the file last changed in `a31ee8caebdd818867b016d43c8656a1b51eb8aa`).
 
-To generate initial tea-server spring service, run
+To generate initial tea-server spring service, pin the generator and run
 
 ```
-npx @openapitools/openapi-generator-cli generate -i tea-spec/openapi.yaml -g spring -o tea-server/ --additional-properties="useSpringBoot3=true,modelPackage=io.reliza.model.tea,apiPackage=io.reliza.ws.tea,modelNamePrefix=Tea"
+npx @openapitools/openapi-generator-cli version-manager set 7.21.0
+npx @openapitools/openapi-generator-cli generate -i tea-spec/openapi.yaml -g spring -o tea-server/ --additional-properties="useSpringBoot3=true,modelPackage=io.reliza.model.tea,apiPackage=io.reliza.ws.tea,modelNamePrefix=Tea" --parameter-name-mappings mediaType=requestedMediaType
 ```
+
+The parameter name mapping renames only the Java parameter of the artifact download operations' `mediaType` query parameter (the HTTP name stays `mediaType`): without it the generated `ArtifactApi` does not compile, because its example bodies declare a local variable of the same name. Only `model/tea/*.java`, `ws/tea/*Api.java` and `ws/tea/ApiUtil.java` are taken from `tea-server/`.
 
 ### Local Development
 
