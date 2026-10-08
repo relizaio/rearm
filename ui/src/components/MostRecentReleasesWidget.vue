@@ -61,7 +61,7 @@
                                     Release created: {{ formatDateTime(rel.createdDate) }}
                                 </n-tooltip>
                             </span>
-                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ rel.lifecycle }}</span>
+                            <span style="flex-shrink: 0;">&nbsp;·&nbsp;{{ lifecycleLabel(rel.lifecycle) }}</span>
                         </span>
                         <span
                             v-if="showsScanBadge(getPendingStatus(rel))"
@@ -124,6 +124,7 @@ import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus, showsScanBadge, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
 import { recentReleasesKinds } from '@/utils/agentDocumentsView'
+import { lifecycleLabel } from '@/utils/lifecycle'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{

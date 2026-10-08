@@ -110,6 +110,7 @@ import { useRoute, RouterLink } from 'vue-router'
 import { NDataTable, NIcon, NTag, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
 import { QuestionMark } from '@vicons/tabler'
 import { Info20Regular, Copy20Regular } from '@vicons/fluent'
+import { lifecycleLabel } from '@/utils/lifecycle'
 
 const store = useStore()
 const route = useRoute()
@@ -293,7 +294,7 @@ const attributedReleaseCols: DataTableColumns<any> = [
         title: 'Lifecycle',
         key: 'lifecycle',
         width: 140,
-        render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => row.lifecycle || '—' })
+        render: (row) => h(NTag, { size: 'small', bordered: false }, { default: () => lifecycleLabel(row.lifecycle) || '—' })
     },
     {
         title: 'Created',
