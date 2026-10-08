@@ -63,6 +63,29 @@ export type BomInput = {
     }
 }
 
+/** Why ReARM holds no SBOM for a component release of a product merge (SCORE-15 ADR-2). */
+export enum MissingSbomReason {
+    // the release has no SBOM artifact
+    NO_SBOM_ARTIFACT = 'NO_SBOM_ARTIFACT',
+    // every SBOM artifact it has was left out by the export's coverage filter
+    COVERAGE_EXCLUDED = 'COVERAGE_EXCLUDED'
+}
+
+/**
+ * A component release of a product merge that has no SBOM (SCORE-15 ADR-2), as ReARM describes
+ * it. purl is absent when ReARM records none.
+ */
+export type MissingSbomComponent = {
+    releaseUuid: string,
+    name: string,
+    version: string,
+    type: string,
+    supplierName?: string | null,
+    group?: string | null,
+    purl?: string | null,
+    reason: MissingSbomReason
+}
+
 export enum RootComponentMergeMode {
     PRESERVE_UNDER_NEW_ROOT = 'PRESERVE_UNDER_NEW_ROOT',
     FLATTEN_UNDER_NEW_ROOT = 'FLATTEN_UNDER_NEW_ROOT'
@@ -144,6 +167,9 @@ export type RebomOptions = {
     // Merge only: the caller's merge rule version (SCORE-13), stored verbatim, part of the
     // merge options ReARM matches stored merges on. rebom does not interpret it.
     mergeVersion?: number,
+    // Merge only: the component releases of a product merge ReARM holds no SBOM for (SCORE-15).
+    // Each becomes a placeholder component with unknown dependencies. Not stored with the row.
+    missingSbomComponents?: MissingSbomComponent[],
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

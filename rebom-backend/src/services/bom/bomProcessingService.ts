@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -790,6 +790,115 @@ export function dropDanglingRefs(bom: any): DanglingRefsResult {
   properties.push({ name: DANGLING_REFS_DROPPED_PROPERTY, value: String(dropped.length) })
   metadata.properties = properties
   return { bom: { ...bom, dependencies, metadata }, count: dropped.length }
+}
+
+/**
+ * Property a placeholder component carries (SCORE-15 ADR-2, ADR-3): ReARM holds no SBOM for the
+ * component release it stands for, so its dependencies are unknown. The value is the
+ * MissingSbomReason ReARM sent.
+ */
+export const SBOM_MISSING_PROPERTY = 'reliza:sbom:missing'
+
+/**
+ * Metadata property a merged BOM carries when it lists placeholder components (SCORE-15 ADR-3):
+ * how many, as a decimal string. Absent means every component release of the merge had an SBOM.
+ */
+export const COMPONENTS_WITHOUT_SBOM_PROPERTY = 'reliza:export:componentsWithoutSbom'
+
+/** The bom-ref of the placeholder for one component release, a ReARM release uuid (SCORE-15 ADR-2). */
+export const RELEASE_BOM_REF_PREFIX = 'urn:rearm:release:'
+
+/** The CycloneDX composition aggregate that states the dependencies of the placeholders are unknown. */
+export const COMPOSITION_AGGREGATE_UNKNOWN = 'unknown'
+
+export function placeholderBomRef(releaseUuid: string): string {
+  return RELEASE_BOM_REF_PREFIX + releaseUuid
+}
+
+/**
+ * One synthetic merge input per component release ReARM holds no SBOM for (SCORE-15 ADR-1,
+ * ADR-2): `metadata.component` describes the release with the bom-ref placeholderBomRef(uuid)
+ * and the SBOM_MISSING_PROPERTY marker, `components` is empty and the one dependency entry has
+ * an empty `dependsOn`, like every other input root. merge-boms then makes it a component of the
+ * merged document and a direct dependency of the merged root. `group`, `supplier` and `purl` are
+ * left out when ReARM sent none: a purl is never made up. Nothing is stored for these inputs.
+ */
+export function placeholderBomObjects(list: MissingSbomComponent[] | null | undefined): any[] {
+  if (!Array.isArray(list)) return []
+  return list.map(missing => {
+    const ref = placeholderBomRef(missing.releaseUuid)
+    const component: any = { type: missing.type, name: missing.name, version: missing.version }
+    if (missing.group) component.group = missing.group
+    if (missing.supplierName) component.supplier = { name: missing.supplierName }
+    if (missing.purl) component.purl = missing.purl
+    component['bom-ref'] = ref
+    component.properties = [{ name: SBOM_MISSING_PROPERTY, value: missing.reason }]
+    return {
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      metadata: { component },
+      components: [],
+      dependencies: [{ ref, dependsOn: [] }]
+    }
+  })
+}
+
+export type UnknownCompositionsResult = {
+  bom: any,
+  count: number
+}
+
+/** The bom-refs of the components, at any depth, that carry the SBOM_MISSING_PROPERTY marker. */
+function placeholderRefsOf(bom: any): Set<string> {
+  const refs = new Set<string>()
+  const visit = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    const marked = Array.isArray(component.properties)
+      && component.properties.some((p: any) => p?.name === SBOM_MISSING_PROPERTY)
+    if (ref && marked) refs.add(ref)
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return refs
+}
+
+/**
+ * States that the dependencies of the placeholder components are unknown (SCORE-15 ADR-4), as
+ * the last pass of a merge: the placeholders are the components, at any depth, that carry the
+ * SBOM_MISSING_PROPERTY marker, so the ones a product merge took from a nested product's merge
+ * count too. Appends one `compositions` entry `{ aggregate: unknown, dependencies: [their
+ * bom-refs, sorted] }` after any entry already there, and sets COMPONENTS_WITHOUT_SBOM_PROPERTY
+ * to their number, replacing a value already present. With no placeholder the input is returned
+ * as is. A placeholder of `requested` that the merged document does not hold (merge-boms kept
+ * another component with the same purl, ADR-6) is described elsewhere in the merge: nothing is
+ * added for it, and it is logged.
+ */
+export function declareUnknownCompositions(bom: any, requested: MissingSbomComponent[] | null | undefined): UnknownCompositionsResult {
+  if (!bom || typeof bom !== 'object') return { bom, count: 0 }
+  const refs = placeholderRefsOf(bom)
+  if (Array.isArray(requested)) {
+    for (const missing of requested) {
+      const ref = placeholderBomRef(missing.releaseUuid)
+      if (!refs.has(ref)) {
+        logger.info(`Component release without SBOM ${ref} is described elsewhere in the merge: another component with its purl was kept`)
+      }
+    }
+  }
+  if (!refs.size) return { bom, count: 0 }
+
+  const dependencies = [...refs].sort()
+  const compositions = [
+    ...(Array.isArray(bom.compositions) ? bom.compositions : []),
+    { aggregate: COMPOSITION_AGGREGATE_UNKNOWN, dependencies }
+  ]
+  const metadata = { ...(bom.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== COMPONENTS_WITHOUT_SBOM_PROPERTY)
+    : []
+  properties.push({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: String(dependencies.length) })
+  metadata.properties = properties
+  return { bom: { ...bom, metadata, compositions }, count: dependencies.length }
 }
 
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {

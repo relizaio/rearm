@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -11,6 +11,10 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
   try {
     let mergedBom = null
     const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    // Component releases without an SBOM join as synthetic inputs, after the per-input
+    // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
+    // them and lists them in the root's dependencies like every other input.
+    bomObjs.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
     // merge-boms carries the inputs' dependency entries but not their services; put the
@@ -29,8 +33,10 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
       const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
       mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
     }
-    // Last: a check on the final graph, after every pass that may repair a reference.
+    // A check on the final graph, after every pass that may repair a reference.
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
+    // After it: adds no dependency ref, and describes the placeholders that survived.
+    if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
     return mergedBom
   } catch (e) {
     logger.error({ err: e }, "Error During merge")
