@@ -20,7 +20,7 @@
                 The repository id is pinned on first use, so a renamed or recreated repository is refused until the pin is reset. Deactivating a row refuses that repository alone and holds
                 until an admin activates it again; deleting a row only forgets its history, the next run from that repository materialises it again as long as a rule trusts it.
             </p>
-            <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" class="table-hover"></n-data-table>
+            <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" :row-key="(row: any) => row.uuid" :pagination="identitiesPagination" class="table-hover"></n-data-table>
         </div>
 
         <n-modal preset="dialog" :show-icon="false" style="width: 85%;" :show="showEditor" @update:show="(v: boolean) => { if (!v) showEditor = false }">
@@ -152,6 +152,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import { apiKeyIdsColumn } from '../utils/apiKeyControls'
+import { apiKeyPagination } from '@/utils/apiKeyTable'
 
 const props = defineProps<{
     orgUuid: string
@@ -166,6 +167,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits(['changed'])
 const store = useStore()
+const identitiesPagination = apiKeyPagination()
 
 const rules = ref<any[]>([])
 const loading = ref(false)

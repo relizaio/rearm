@@ -108,7 +108,7 @@
                 </n-space>
                 <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a Free Form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
                 <ApiKeyPermissionsModal v-model:show="showRequestModal" mode="request" :api-key="null" :org-uuid="newKeyOrg || ''" :notify="notify" @saved="loadMyKeys" />
-                <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2200" class="table-hover"></n-data-table>
+                <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2010" class="table-hover"></n-data-table>
                 <h4 class="mt-4">CLI sessions</h4>
                 <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
                 <n-data-table :columns="cliSessionFields" :data="cliSessions" class="table-hover"></n-data-table>
@@ -494,7 +494,7 @@ const myKeyFields: ComputedRef<any> = computed((): any => [
     { key: 'createdDisplay', width: 170, title: 'Created' },
     { key: 'accessDisplay', width: 170, title: 'Last Accessed' },
     { key: 'status', width: 170, title: 'Status', render: apiKeyControls.statusCell },
-    { key: 'secrets', width: 470, title: 'Secrets', render: apiKeyControls.secretsCell },
+    { key: 'secrets', width: 280, title: 'Secrets', render: apiKeyControls.secretsCell },
     {
         key: 'ceiling', width: 160, title: 'Permissions',
         render: (row: any) => {
