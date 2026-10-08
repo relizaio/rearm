@@ -67,8 +67,8 @@ them. Such a component's bom-ref is `urn:rearm:release:<release uuid>`; the prop
 why ReARM holds no SBOM for it: `NO_SBOM_ARTIFACT` (none was uploaded) or `COVERAGE_EXCLUDED` (every
 SBOM it has was left out by **Exclude coverage types**). It carries the release's purl when the
 release records one, and none otherwise. A component release's first SBOM, or a replaced SBOM,
-rebuilds the merged exports of every product that contains it, so a placeholder leaves the product
-export once its release has an SBOM. A product none of whose component releases has an SBOM
+rebuilds the merged exports of every product above it, nested products included, so a placeholder
+leaves the product export once its release has an SBOM. A product none of whose component releases has an SBOM
 still has nothing to export. From the ReARM release after 26.10.52 on; product exports cached
 before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
 property and the `compositions` entry are in the CycloneDX JSON only.
