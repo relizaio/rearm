@@ -1,4 +1,4 @@
-<!-- orientation section: deployments · core 2026-09-28 -->
+<!-- orientation section: deployments · core 2026-10-08 -->
 ## 10. Deployment operations (ReARM Pro only)
 
 `rearm devops` commands change which build a running ReARM instance
@@ -47,9 +47,9 @@ else — that's the rollback target if the operator needs to revert.
 
 This is also how you answer "what version is deployed on this
 instance": `deployedRelease.version` per product, no product read
-access needed. The release fields need **rearm-cli 26.09.1 or
-newer** (the version pinned in §1.2); older CLIs still work but only
-show feature-set names.
+access needed. The release fields need **rearm-cli 26.10.2 or
+newer** (the version pinned in §1.2); a CLI older than that is below
+`rearm_cli_min`, and the oldest ones show only feature-set names.
 
 **Names are resolved here, by you.** Every write command takes
 UUIDs only. When the operator says "switch to feature set X" or
@@ -103,7 +103,7 @@ candidates `listfeaturesets` returned under
 version). The plan entry becomes `TARGET`, pinned to that release,
 and stays there until changed. To go back to following the newest
 approved release, pass `--follow`. The two flags are mutually
-exclusive; both need **rearm-cli 26.09.1 or newer**, the version
+exclusive; both need **rearm-cli 26.10.2 or newer**, the version
 pinned in §1.2. If you are stuck on an older CLI, report that to the
 operator rather than guessing when the task needs a specific version.
 
@@ -144,7 +144,7 @@ all of these. If you can't tick all six, stop and ask:
 - [ ] You've recorded the previous `currentFeatureSet.uuid` so rollback is one command away.
 - [ ] You understand the change rolls a running pod within minutes — there is no preview mode.
 - [ ] You are on **ReARM Pro** — `listfeaturesets` succeeded at all (not a CE backend).
-- [ ] If the task names a specific version: it appears under `availableFeatureSets[].releases[]` for the target feature set, and your CLI is 26.09.1 or newer (`--release` / `--follow`).
+- [ ] If the task names a specific version: it appears under `availableFeatureSets[].releases[]` for the target feature set, and your CLI is 26.10.2 or newer (`--release` / `--follow`).
 
 ---
 
