@@ -1,4 +1,4 @@
-<!-- orientation section: taking-a-task · core 2026-09-28 -->
+<!-- orientation section: taking-a-task · core 2026-10-08 -->
 ### 2.5 Taking a task (task boards)
 
 Ask for work with `rearm agent task next --session <session-uuid>`,

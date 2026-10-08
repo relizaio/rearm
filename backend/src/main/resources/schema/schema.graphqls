@@ -1380,6 +1380,15 @@ enum EnrichmentStatus {
 }
 
 
+"""
+Security metrics of a release, artifact, source code entry or analytics period.
+
+The severity counts and vulnerabilities count OPEN findings of two kinds: dependency
+vulnerabilities (vulnerabilityDetails) and weaknesses, the code-scanning findings
+(weaknessDetails, for example CodeQL). weaknesses is the weakness share of them. Findings
+analysed as FALSE_POSITIVE, NOT_AFFECTED or RESOLVED are listed in the details but not
+counted, so a count can be lower than the rows it is computed from.
+"""
 type DependencyTrackMetrics {
 	dependencyTrackFullUri: String
 	dtrackSubmissionFailed: Boolean
@@ -1391,12 +1400,20 @@ type DependencyTrackMetrics {
 	dtrackFetchSkipUntil: String
 	lastScanned: DateTime
 	firstScanned: DateTime
+	"Open CRITICAL vulnerabilities plus open CRITICAL weaknesses"
 	critical: Int
+	"Open HIGH vulnerabilities plus open HIGH weaknesses"
 	high: Int
+	"Open MEDIUM vulnerabilities plus open MEDIUM weaknesses"
 	medium: Int
+	"Open LOW vulnerabilities plus open LOW weaknesses"
 	low: Int
+	"Open UNASSIGNED vulnerabilities plus open UNASSIGNED weaknesses"
 	unassigned: Int
+	"critical + high + medium + low + unassigned: open vulnerabilities AND open weaknesses. Open vulnerabilities alone are vulnerabilities - weaknesses"
 	vulnerabilities: Int
+	"Open weaknesses (code-scanning findings, weaknessDetails), already included in the severity counts and in vulnerabilities"
+	weaknesses: Int
 	vulnerableComponents: Int
 	components: Int
 	suppressed: Int

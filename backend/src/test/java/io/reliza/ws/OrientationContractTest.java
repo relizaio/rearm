@@ -171,7 +171,7 @@ class OrientationContractTest {
 	private static final List<String> OLD_HEADINGS = List.of(
 			"## 1. Prerequisites",
 			"### 1.1 Environment variables",
-			"### 1.2 Install the CLI — `26.09.1` exactly",
+			"### 1.2 Install the CLI — `26.10.2` exactly",
 			"## 2. Session lifecycle",
 			"### 2.1 When to open a session",
 			"### 2.2 Picking a `clientSessionId`",

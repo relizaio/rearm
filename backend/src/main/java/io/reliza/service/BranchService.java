@@ -191,6 +191,9 @@ public class BranchService {
 	
 	public Optional<Branch> findBranchByName (UUID component, String name, boolean create, WhoUpdated wu) throws RelizaException {
 		Optional<Branch> ob = Optional.empty();
+		// No name names no branch. Utils.cleanBranch(null) throws, which reached a caller that
+		// omitted the branch as "Internal server error".
+		if (StringUtils.isBlank(name)) return ob;
 		List<Branch> branches = listBranchesOfComponent(component, null);
 		Iterator<Branch> brIter = branches.iterator();
 		// Normalize the search name for consistent comparison

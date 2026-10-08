@@ -1,4 +1,4 @@
-<!-- orientation section: reading-releases · core 2026-09-28 -->
+<!-- orientation section: reading-releases · core 2026-10-08 -->
 ## 5. Read-side helpers
 
 When you need the full current state of a session (after an inbox

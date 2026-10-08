@@ -63,7 +63,7 @@ public class DocumentReleaseMetricsGraphqlIntegrationTest {
 	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
 	private static final AtomicInteger VERSION = new AtomicInteger();
 	private static final String METRICS = "query($o: ID, $r: [ID]) { releases(orgFilter: $o, releaseFilter: $r) {"
-			+ " uuid metrics { dtrackFetchStatus firstScanned lastScanned critical policyViolationsLicenseTotal } } }";
+			+ " uuid metrics { dtrackFetchStatus firstScanned lastScanned critical vulnerabilities weaknesses policyViolationsLicenseTotal } } }";
 
 	@MockitoSpyBean private UserService userService;
 	@Autowired private DgsQueryExecutor dgsQueryExecutor;
@@ -157,10 +157,13 @@ public class DocumentReleaseMetricsGraphqlIntegrationTest {
 			assertNull(dm.get("firstScanned"));
 			assertNull(dm.get("lastScanned"));
 			assertEquals(0, dm.get("critical"));
+			assertEquals(0, dm.get("weaknesses"), "weaknesses resolves on the not-applicable path too");
 			assertEquals(0, dm.get("policyViolationsLicenseTotal"));
 		}
 		Map<String, Object> sm = m.get(software.toString());
 		assertNull(sm.get("dtrackFetchStatus"), "a software release carries no fetch status of its own");
 		assertNotNull(sm.get("firstScanned"), "and reads its stored scan state");
+		assertEquals(0, sm.get("weaknesses"), "the stored weaknesses count is served");
+		assertEquals(0, sm.get("vulnerabilities"));
 	}
 }

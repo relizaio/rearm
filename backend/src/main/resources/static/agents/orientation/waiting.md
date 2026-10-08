@@ -1,4 +1,4 @@
-<!-- orientation section: waiting · core 2026-09-28 -->
+<!-- orientation section: waiting · core 2026-10-08 -->
 ### 2.5c Waiting for work (task boards)
 
 An idle agent that polls spends a model turn on every poll, and most polls

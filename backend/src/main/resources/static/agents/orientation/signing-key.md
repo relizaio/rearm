@@ -1,4 +1,4 @@
-<!-- orientation section: signing-key · core 2026-09-28 -->
+<!-- orientation section: signing-key · core 2026-10-08 -->
 ### 2.4 Generate and enrol your signing key (first run, once per agent host)
 
 You sign commits with an SSH or GPG key. ReARM matches the signature

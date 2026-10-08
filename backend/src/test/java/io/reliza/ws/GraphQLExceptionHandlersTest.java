@@ -5,6 +5,8 @@ package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import org.junit.jupiter.api.Test;
 
@@ -43,8 +45,37 @@ public class GraphQLExceptionHandlersTest {
 		// The trap this follow-up avoids: wrapping a validation RelizaException in a
 		// RuntimeException routes it here and hides the reason from the user.
 		GraphQLError err = handlers.handleGeneric(new RuntimeException("boom: secret was blank"));
-		assertEquals("Internal server error", err.getMessage());
+		assertTrue(err.getMessage().matches("Internal server error \\(ref [0-9a-f]{8}\\)"), err.getMessage());
 		assertFalse(err.getMessage().contains("blank"),
 				"the generic handler must not leak the underlying exception message");
+	}
+
+	/**
+	 * A server fault carries a short reference, in the message and in the extensions, and the
+	 * log line carries the same one -- so "Internal server error" can be matched to its stack by
+	 * the reference rather than by timestamp. Two faults get two references.
+	 */
+	@Test
+	public void serverErrorsCarryAReferenceTheLogCanBeSearchedFor() {
+		GraphQLError a = handlers.handleGeneric(new NullPointerException("branch is null"));
+		GraphQLError b = handlers.handleGeneric(new NullPointerException("branch is null"));
+		String ref = String.valueOf(a.getExtensions().get("ref"));
+		assertTrue(ref.matches("[0-9a-f]{8}"), ref);
+		assertTrue(a.getMessage().endsWith("(ref " + ref + ")"), a.getMessage());
+		assertNotEquals(ref, String.valueOf(b.getExtensions().get("ref")));
+		GraphQLError db = handlers.handleDataAccess(new org.springframework.dao.DataAccessResourceFailureException("pool exhausted"));
+		assertTrue(db.getMessage().matches("Database error \\(ref [0-9a-f]{8}\\)"), db.getMessage());
+		assertFalse(db.getMessage().contains("pool"));
+	}
+
+	/** Client errors stay as they were: no reference, nothing logged as a fault. */
+	@Test
+	public void clientErrorsCarryNoReference() {
+		GraphQLError denied = handlers.handleAccessDenied(
+				new org.springframework.security.access.AccessDeniedException("key lacks READ"));
+		assertEquals("Not authorized", denied.getMessage());
+		GraphQLError bad = handlers.handleReliza(new RelizaException("branch is required"));
+		assertEquals("branch is required", bad.getMessage());
+		assertTrue(null == bad.getExtensions() || !bad.getExtensions().containsKey("ref"));
 	}
 }

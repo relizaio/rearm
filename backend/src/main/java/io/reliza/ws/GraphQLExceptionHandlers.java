@@ -35,6 +35,27 @@ public class GraphQLExceptionHandlers {
         return GraphqlErrorBuilder.newError().message(message).build();
     }
 
+    /**
+     * A server-side fault: the client gets the generic message plus a short reference, and the
+     * full exception is logged under the same reference. The client still learns nothing about
+     * the cause (no exception text reaches it), but a user can quote "ref 3f9a1c2e" and the log
+     * line is one search away. Before, "Internal server error" could only be matched to its
+     * stack by timestamp.
+     */
+    private GraphQLError serverError(String message, String logMessage, Throwable ex) {
+        String ref = newErrorRef();
+        log.error("{} [ref {}]", logMessage, ref, ex);
+        return GraphqlErrorBuilder.newError()
+                .message(message + " (ref " + ref + ")")
+                .extensions(java.util.Map.of("ref", ref))
+                .build();
+    }
+
+    /** 8 hex characters: enough to find one line in a day of logs, short enough to read out. */
+    static String newErrorRef() {
+        return String.format("%08x", java.util.concurrent.ThreadLocalRandom.current().nextInt());
+    }
+
     @GraphQlExceptionHandler
     public GraphQLError handleReliza(RelizaException ex) {
         // Business error messages are considered safe to expose
@@ -82,14 +103,12 @@ public class GraphQLExceptionHandlers {
 
     @GraphQlExceptionHandler
     public GraphQLError handleDataAccess(DataAccessException ex) {
-        log.error("Data access error", ex);
-        return safeError("Database error");
+        return serverError("Database error", "Data access error", ex);
     }
 
     @GraphQlExceptionHandler
     public GraphQLError handlePersistence(PersistenceException ex) {
-        log.error("Persistence error", ex);
-        return safeError("Database error");
+        return serverError("Database error", "Persistence error", ex);
     }
 
     @GraphQlExceptionHandler
@@ -115,8 +134,7 @@ public class GraphQLExceptionHandlers {
         if (null != ex.getTargetType() && java.util.UUID.class.equals(ex.getTargetType().getType())) {
             return notAUuid(env, ex.getValue());
         }
-        log.error("Unhandled server error", ex);
-        return safeError("Internal server error");
+        return serverError("Internal server error", "Unhandled server error", ex);
     }
 
     /**
@@ -129,8 +147,7 @@ public class GraphQLExceptionHandlers {
         if (null != m && (m.startsWith(INVALID_UUID) || m.startsWith("UUID string too large"))) {
             return notAUuid(env, m.startsWith(INVALID_UUID) ? m.substring(INVALID_UUID.length()) : null);
         }
-        log.error("Unhandled server error", ex);
-        return safeError("Internal server error");
+        return serverError("Internal server error", "Unhandled server error", ex);
     }
 
     private static final String INVALID_UUID = "Invalid UUID string: ";
@@ -161,7 +178,6 @@ public class GraphQLExceptionHandlers {
 
     @GraphQlExceptionHandler
     public GraphQLError handleGeneric(Exception ex) {
-        log.error("Unhandled server error", ex);
-        return safeError("Internal server error");
+        return serverError("Internal server error", "Unhandled server error", ex);
     }
 }

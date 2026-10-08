@@ -1,4 +1,4 @@
-<!-- orientation section: stopping-and-asking · core 2026-09-28 -->
+<!-- orientation section: stopping-and-asking · core 2026-10-08 -->
 ## 7. When to stop and ask the operator
 
 **This is the most important section. Read it carefully.**
@@ -69,6 +69,9 @@ Check the front-matter at the top of this doc:
 
 - `rearm_cli_min` — if your installed `rearm` CLI version is below
   this, stop and ask the operator to bump (or install per §1.2).
+- `rearm_cli_recommended` — the version §1.2 installs. It equals
+  `rearm_cli_min` (`26.10.2`): the core flows and the board verbs both
+  need it.
 
 ## 9. Quick command index
 

@@ -1,4 +1,4 @@
-<!-- orientation section: asking · core 2026-09-28 -->
+<!-- orientation section: asking · core 2026-10-08 -->
 ### 2.5b Asking a question (task boards)
 
 When you cannot finish because something you were given is wrong, unclear or
