@@ -1,6 +1,8 @@
 // Board enums as words (task RD2-23, sweep UI-31): one table, so a specification, a lifecycle, a hold, a
 // level, an outcome or a status reads the same on every board surface instead of as its raw identifier.
 
+import { lifecycleLabel } from '@/utils/lifecycle'
+
 /** The rule every family starts from: "DETAILED_DESIGN" reads "detailed design". Empty for nothing. */
 export function enumWord (value: string | null | undefined): string {
     return String(value ?? '').toLowerCase().replace(/_/g, ' ')
@@ -15,9 +17,13 @@ export function specWord (specification: string | null | undefined): string {
     return enumWord(String(specification ?? '').replace(/^BOARD_/, ''))
 }
 
-/** A release lifecycle: "READY_TO_SHIP" → "ready to ship", "ASSEMBLED" → "assembled" (RD2-24 first named it). */
+/**
+ * A release lifecycle: "READY_TO_SHIP" → "ready to ship", "ASSEMBLED" → "assembled" (RD2-24 first named it). The
+ * product's own label, lower-cased, so "GENERAL_AVAILABILITY" reads "shipped" here as it does everywhere else.
+ */
 export function lifecycleWord (lifecycle: string | null | undefined): string {
-    return enumWord(lifecycle)
+    const label = lifecycleLabel(lifecycle)
+    return label === lifecycle ? enumWord(lifecycle) : label.toLowerCase()
 }
 
 /** A sign-off outcome: "PASSED" → "passed", "REJECTED" → "rejected". */

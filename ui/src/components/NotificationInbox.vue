@@ -449,6 +449,7 @@ import {
 import { loadNotificationInboxPage } from '@/utils/notificationInboxQuery'
 import { inboxLinksOf } from '@/utils/agentInboxLinks'
 import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
+import { lifecycleLabel } from '@/utils/lifecycle'
 
 const props = defineProps<{
     orguuid: string
@@ -1181,7 +1182,7 @@ const approvalsColumns = computed(() => [
     {
         title: 'Lifecycle', key: 'lifecycle',
         render: (row: ReleasePendingApproval) => row.lifecycle
-            ? h(NTag, { size: 'small' }, { default: () => row.lifecycle })
+            ? h(NTag, { size: 'small' }, { default: () => lifecycleLabel(row.lifecycle) })
             : h('span', { class: 'muted-12' }, '—'),
     },
     {

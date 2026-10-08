@@ -21,6 +21,13 @@ describe('agentWords', () => {
         expect(lifecycleWord(null)).toBe('')
     })
 
+    it('names general availability "shipped", as every other surface does', () => {
+        expect(lifecycleWord('GENERAL_AVAILABILITY')).toBe('shipped')
+        expect(lifecycleWord('END_OF_SUPPORT')).toBe('end of support')
+        // A value the product does not know yet still reads as words, not as an identifier
+        expect(lifecycleWord('SOME_NEW_STAGE')).toBe('some new stage')
+    })
+
     it('names hold kinds and levels', () => {
         expect(holdWord({ kind: 'HUMAN_GATE', level: 'OPERATOR' })).toBe('human gate')
         expect(holdWord({ kind: 'MANUAL', level: 'OPERATOR' })).toBe('operator hold')

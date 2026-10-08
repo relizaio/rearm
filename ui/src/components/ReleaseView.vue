@@ -1037,7 +1037,7 @@
                             </template>
                             <div><strong>Previous release on this {{ words.branch }}</strong></div>
                             <div>{{ release.previousRelease.version }}</div>
-                            <div>Lifecycle: {{ release.previousRelease.lifecycle }}</div>
+                            <div>Lifecycle: {{ lifecycleLabel(release.previousRelease.lifecycle) }}</div>
                             <div v-if="release.previousRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.previousRelease.createdDate) }}</div>
                         </n-tooltip>
                         <n-tooltip v-if="release.nextRelease" trigger="hover">
@@ -1046,7 +1046,7 @@
                             </template>
                             <div><strong>Next release on this {{ words.branch }}</strong></div>
                             <div>{{ release.nextRelease.version }}</div>
-                            <div>Lifecycle: {{ release.nextRelease.lifecycle }}</div>
+                            <div>Lifecycle: {{ lifecycleLabel(release.nextRelease.lifecycle) }}</div>
                             <div v-if="release.nextRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.nextRelease.createdDate) }}</div>
                         </n-tooltip>
                         <n-tooltip trigger="hover">
@@ -1164,7 +1164,7 @@
                                 </n-dropdown>
                             </span>
                             <span v-if="!canUpdateLifecycle">
-                                <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
+                                <n-tag type="success">{{ lifecycleLabel(updatedRelease.lifecycle) }}</n-tag>
                             </span>
                         </span>
                     </n-gi>
@@ -2164,6 +2164,7 @@ import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStat
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
+import { lifecycleLabel } from '@/utils/lifecycle'
 import { PackageURL } from 'packageurl-js'
 
 const route = useRoute()    
@@ -3881,7 +3882,7 @@ async function reevaluateTriggers () {
         await fetchRelease()
         const withheld = newGuardNote(guardsBefore, after)
         if (after?.lifecycle && after.lifecycle !== before) {
-            notify('success', 'Re-evaluated', `Lifecycle moved to ${after.lifecycle}.`)
+            notify('success', 'Re-evaluated', `Lifecycle moved to ${lifecycleLabel(after.lifecycle)}.`)
         } else if (withheld) {
             notify('warning', 'Still withheld', withheld, 0)
         } else {
