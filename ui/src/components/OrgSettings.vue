@@ -697,14 +697,14 @@
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
                             <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
-                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
-                                class="table-hover">
+                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1020"
+                                :row-key="dataTableRowKey" :pagination="keyRequestsPagination" class="table-hover" data-testid="key-requests-table">
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2560"
-                                class="table-hover">
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1240"
+                                :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
                                 title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
@@ -714,8 +714,8 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="2200"
-                                class="table-hover">
+                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1130"
+                                :row-key="dataTableRowKey" :pagination="userKeysPagination" class="table-hover" data-testid="user-keys-table">
                             </n-data-table>
                         </div>
                     </n-tab-pane>
@@ -723,8 +723,8 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2200"
-                                class="table-hover">
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1220"
+                                :row-key="dataTableRowKey" :pagination="scopedKeysPagination" class="table-hover" data-testid="scoped-keys-table">
                             </n-data-table>
                             <n-modal
                                 preset="dialog"
@@ -1395,7 +1395,8 @@ import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
-import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
+import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns } from '../utils/apiKeyControls'
+import { apiKeyPagination, fmtKeyDate } from '@/utils/apiKeyTable'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
@@ -1889,8 +1890,13 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 // ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
 const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
-const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
-const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
+const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 110, render: apiKeyControls.statusCell }
+const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 280, render: apiKeyControls.secretsCell }
+// one client-side pager per key table, so each keeps its own page across reloads
+const keyRequestsPagination = apiKeyPagination()
+const freeFormKeysPagination = apiKeyPagination()
+const userKeysPagination = apiKeyPagination()
+const scopedKeysPagination = apiKeyPagination()
 
 // ---- declared names (task RD3-11): the name an API_KEYS file knows a key by, and the apply that last wrote it ----
 const showDeclareModal = ref(false)
@@ -1907,7 +1913,7 @@ async function releaseKeyName (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const apiKeyDeclaredColumn = {
-    key: 'declaredName', width: 260, title: 'Declared As',
+    key: 'declaredName', width: 170, title: 'Declared As',
     render: (row: any) => {
         const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
         if (row.declarative) {
@@ -1928,7 +1934,7 @@ const apiKeyDeclaredColumn = {
                 default: () => `Release the name ${row.declaredName}? The next API_KEYS apply naming it creates a new key instead of updating this one.`
             }))
         }
-        if (actions.length) lines.push(h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions))
+        if (actions.length) lines.push(h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px; margin-top: 3px;' }, actions))
         return h('div', lines)
     }
 }
@@ -1945,26 +1951,11 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
 }
 
 const programmaticAccessFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    {
-        key: 'createdDate',
-        width: 180,
-        title: 'Created'
-    },
-    {
-        key: 'accessDate',
-        width: 180,
-        title: 'Last Accessed'
-    },
-    {
-        key: 'updatedByName',
-        width: 150,
-        title: 'Updated By'
-    },
+    ...apiKeyLeadColumns('scoped'),
+    apiKeyActivityColumn(),
     {
         key: 'object',
-        width: 220,
+        width: 140,
         title: 'Object',
         render: (row: any) => {
             let el = h('div')
@@ -1988,7 +1979,7 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     {
         key: 'resolvedApprovals',
-        width: 160,
+        width: 100,
         title: 'Approvals',
         render: (row: any) => {
             let el = h('div')
@@ -2005,7 +1996,7 @@ const programmaticAccessFields: Ref<any> = ref([
     apiKeySecretsColumn,
     {
         key: 'notes',
-        width: 180,
+        width: 120,
         title: 'Notes'
     },
     {
@@ -2047,25 +2038,10 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
+    ...apiKeyLeadColumns('freeForm'),
+    apiKeyActivityColumn(),
     {
-        key: 'createdDate',
-        width: 180,
-        title: 'Created'
-    },
-    {
-        key: 'accessDate',
-        width: 180,
-        title: 'Last Accessed'
-    },
-    {
-        key: 'updatedByName',
-        width: 150,
-        title: 'Updated By'
-    },
-    {
-        key: 'holderName', width: 200, title: 'Holder',
+        key: 'holderName', width: 110, title: 'Holder',
         render: (row: any) => {
             if (!row.holder) return h('span', { class: 'text-muted' }, '—')
             const kids: any[] = [h('span', row.holderName)]
@@ -2077,13 +2053,13 @@ const freeFormKeyFields: Ref<any> = ref([
     apiKeySecretsColumn,
     {
         key: 'notes',
-        width: 180,
+        width: 110,
         title: 'Notes'
     },
     apiKeyDeclaredColumn,
     {
         key: 'boundAgents',
-        width: 200,
+        width: 130,
         title: 'Bound Agent(s)',
         render: (row: any) => {
             const agents = row.boundAgents || []
@@ -2136,21 +2112,19 @@ const freeFormKeyFields: Ref<any> = ref([
     }
 ])
 const userKeyFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    { key: 'ownerName', width: 200, title: 'Owner' },
-    { key: 'createdDate', width: 180, title: 'Created' },
-    { key: 'accessDate', width: 180, title: 'Last Accessed' },
+    ...apiKeyLeadColumns('user'),
+    { key: 'ownerName', width: 140, title: 'Owner' },
+    apiKeyActivityColumn(),
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
-        key: 'ceiling', width: 160, title: 'Ceiling',
+        key: 'ceiling', width: 120, title: 'Ceiling',
         render: (row: any) => {
             const n = (row.permissions?.permissions || []).length
             return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
         }
     },
-    { key: 'notes', width: 180, title: 'Notes' },
+    { key: 'notes', width: 130, title: 'Notes' },
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -4771,8 +4745,9 @@ async function loadInvitedUsers(useCache: boolean) {
 
 function formatValuesForApiKeys (apiKeyEntry: any) {
     const updEntry = Object.assign({}, apiKeyEntry)
-    updEntry['createdDate'] = (new Date(apiKeyEntry['createdDate'])).toLocaleString('en-CA')
-    updEntry['accessDate'] = apiKeyEntry['accessDate']? (new Date(apiKeyEntry['accessDate'])).toLocaleString('en-CA') : 'Never'
+    // to the minute in 24h form (2026-10-06, 13:55): short enough to sit on one line of the Activity column
+    updEntry['createdDate'] = fmtKeyDate(apiKeyEntry['createdDate'])
+    updEntry['accessDate'] = apiKeyEntry['accessDate'] ? fmtKeyDate(apiKeyEntry['accessDate']) : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
         const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
         updEntry['updatedByName'] = updater['name'] || updater['email'] || ''
@@ -5301,13 +5276,12 @@ async function reassignHolder (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const keyRequestFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    { key: 'holderName', width: 200, title: 'Requested By' },
-    { key: 'createdDate', width: 180, title: 'Requested' },
-    { key: 'status', width: 120, title: 'Status', render: apiKeyControls.statusCell },
-    { key: 'proposed', width: 150, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
-    { key: 'notes', width: 260, title: 'Purpose / Notes' },
+    ...apiKeyLeadColumns('keyRequests'),
+    { key: 'holderName', width: 150, title: 'Requested By' },
+    { key: 'createdDate', width: 130, title: 'Requested' },
+    { key: 'status', width: 140, title: 'Status', render: apiKeyControls.statusCell },
+    { key: 'proposed', width: 120, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
+    { key: 'notes', width: 220, title: 'Purpose / Notes' },
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -5317,7 +5291,7 @@ const keyRequestFields: Ref<any> = ref([
                 els.push(h(NButton, { size: 'tiny', type: 'warning', style: 'margin-right: 4px;', onClick: () => resolveKeyRequest(row, false) }, { default: () => 'Deny' }))
             }
             els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
-            return h('div', { style: 'display: flex; align-items: center;' }, els)
+            return h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;' }, els)
         }
     }
 ])

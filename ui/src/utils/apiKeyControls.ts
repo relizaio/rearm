@@ -5,6 +5,7 @@ import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
+import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -25,8 +26,9 @@ export interface ApiKeyControlOptions {
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
 function deniedReason (row: any): string { const m = /Denied(?::\s*(.*))?$/.exec(row.notes || ''); return m ? (m[1] || '') : '' }
 
-function fmtDate (d: any): string { return d ? new Date(d).toLocaleString('en-CA', { hour12: false }).slice(0, 16) : '' }
-function isExpired (sec: any): boolean { return !!sec.expiresDate && new Date(sec.expiresDate).getTime() <= Date.now() }
+/** A flex row that wraps onto the next line rather than overflowing a narrow column. */
+const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
+
 /** local datetime-local value -> ISO instant, or null when empty */
 function toIso (local: string): string | null { return local ? new Date(local).toISOString() : null }
 
@@ -130,7 +132,7 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
         if (row.status === 'REQUESTED' || row.status === 'DENIED') {
             const kids: any[] = [h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error', style: 'margin-right: 6px;' }, { default: () => row.status })]
             if (row.status === 'DENIED') kids.push(h('span', { class: 'subtle' }, deniedReason(row) ? `reason: ${deniedReason(row)}` : 'no reason given'))
-            return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, kids)
+            return h('div', { style: WRAP_ROW }, kids)
         }
         const inactive = row.status === 'INACTIVE'
         const children: any[] = [h(NTag, { size: 'small', type: inactive ? 'error' : 'success', style: 'margin-right: 6px;' }, { default: () => inactive ? 'INACTIVE' : 'ACTIVE' })]
@@ -143,7 +145,7 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
                     { default: () => inactive ? 'Activate' : 'Deactivate' }))
             }
         }
-        return h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, children)
+        return h('div', { style: WRAP_ROW }, children)
     }
     const secretsCell = (row: any) => {
         const secrets: any[] = row.secrets || []
@@ -153,14 +155,12 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
         const manage = canManage(row)
         const mint = canMint(row)
         const lines = secrets.map((sec: any) => {
-            // a legacy slot 1 predates per-secret dates: fall back to the key's own creation date
-            const created = sec.createdDate || (sec.slot === 1 ? row.createdDate : null)
             const expired = isExpired(sec)
-            const meta = `created ${created ? String(created).slice(0, 10) : 'n/a'} · last used ${sec.lastUsedDate ? String(sec.lastUsedDate).slice(0, 10) : 'never'}` + (sec.expiresDate ? ` · expires ${fmtDate(sec.expiresDate)}` : '')
+            // created / last used / expires sit behind an info icon so the column stays narrow
             const kids: any[] = [
                 h('strong', { style: 'margin-right: 4px;' }, `#${sec.slot}`),
                 h(NTag, { size: 'tiny', type: expired ? 'error' : (sec.active ? 'success' : 'default'), style: 'margin-right: 6px;' }, { default: () => expired ? 'expired' : (sec.active ? 'active' : 'retired') }),
-                h('span', { class: 'subtle', style: 'margin-right: 6px;' }, meta)
+                secretDetailsTooltip(sec, row)
             ]
             // actions on their own line under the secret, so the column stays narrow
             const actions: any[] = []
@@ -172,7 +172,7 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
             }
             return h('div', { style: 'margin: 2px 0 6px 0;' }, [
                 h('div', { style: 'display: flex; align-items: center; white-space: nowrap;' }, kids),
-                actions.length ? h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions) : null
+                actions.length ? h('div', { style: WRAP_ROW + ' margin-top: 3px;' }, actions) : null
             ])
         })
         if (row.holder && !mint && manage) {
@@ -189,6 +189,18 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     return { statusCell, secretsCell, mintSecret, addApiKeySecret, regenerateApiKeySecret, setApiKeySecretExpiry, setApiKeySecretActive, deleteApiKeySecret, setApiKeyStatus, deleteApiKey, askExpiry }
 }
 
+function detailLinesView (lines: DetailLine[]) {
+    return h('div', { style: 'font-size: 12px;' }, lines.map((l, i) => h('div', { style: i ? 'margin-top: 2px;' : '' }, [h('strong', `${l.label}: `), l.value])))
+}
+
+/** The info icon of one secret: its created, last used and expires dates in the tooltip. */
+export function secretDetailsTooltip (sec: any, row: any) {
+    return h(NTooltip, { trigger: 'hover' }, {
+        trigger: () => h(NIcon, { class: 'icons', size: 18, 'data-testid': 'secret-details-icon', 'aria-label': `Secret #${sec.slot}: ${secretDetailsText(sec, row)}`, style: 'cursor: help;' }, { default: () => h(Info20Regular) }),
+        default: () => h('div', { 'data-testid': 'secret-details' }, [detailLinesView(secretDetailLines(sec, row))])
+    })
+}
+
 /** One narrow "IDs" column: a tooltip carrying both the internal uuid and the API id clients present. */
 export function apiKeyIdsColumn (): any {
     return {
@@ -203,8 +215,21 @@ export function apiKeyIdsColumn (): any {
     }
 }
 
-/** Left-most column of every key table. */
-export const apiKeyTypeColumn = { key: 'type', width: 130, title: 'Type' }
+/** Type column: only on a table that mixes key types (see showsKeyType). */
+export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
+
+/** Left-most columns of a key table: Type where the table mixes types, then IDs. */
+export function apiKeyLeadColumns (table: ApiKeyTableKind): any[] {
+    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyIdsColumn()] : [apiKeyIdsColumn()]
+}
+
+/** Created, last accessed and updated by, stacked in one column instead of three. */
+export function apiKeyActivityColumn (width: number = 200): any {
+    return {
+        key: 'activity', width, title: 'Activity',
+        render: (row: any) => h('div', { style: 'font-size: 12px;' }, keyActivityLines(row).map(l => h('div', [h('span', { class: 'subtle' }, `${l.label} `), h('span', { style: l.label === 'Updated by' ? '' : 'white-space: nowrap;' }, l.value)])))
+    }
+}
 
 /** The id string a client presents for this key (Basic user name / client_id). */
 export function apiKeyIdOf (row: any): string {
