@@ -12,6 +12,9 @@ import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
 import { useRoute } from 'vue-router'
 import Swal from 'sweetalert2'
+import { brandingState, applySignUpBackground } from '@/utils/branding'
+
+applySignUpBackground()
 
 const route = useRoute()
 
@@ -48,7 +51,7 @@ if (!isError) {
 } else {
     swalResp = await Swal.fire({
         title: 'Error!',
-        text: 'Error verifying email, please retry or contact support at info@reliza.io',
+        text: `Error verifying email, please retry or contact support at ${brandingState.supportEmail}`,
         icon: 'warning',
         confirmButtonText: 'OK'
     })
@@ -59,9 +62,3 @@ if (swalResp) window.location.href = '/'
 
 
 </script>
-
-<style scoped lang="scss">
-body {
-    background-image: 'url("/reliza_in_sand_right_corner.jpg")'
-}
-</style>

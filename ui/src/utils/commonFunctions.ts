@@ -1,6 +1,7 @@
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
+import { brandingState } from './branding'
 
 function translatePermissionName(type: string): string {
     switch (type) {
@@ -370,7 +371,7 @@ async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
     if (fetchUserResult._unauthorized) {
         await Swal.fire({
             title: 'Account Inactive',
-            text: 'Your account is inactive. Please contact your System Administrator or support at info@reliza.io',
+            text: `Your account is inactive. Please contact your System Administrator or support at ${brandingState.supportEmail}`,
             icon: 'error',
             allowOutsideClick: false,
             showConfirmButton: false,
@@ -379,7 +380,7 @@ async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
     } else if (fetchUserResult._offline) {
         await Swal.fire({
             title: 'System Offline',
-            text: 'System offline. Please contact your System Administrator or support at info@reliza.io',
+            text: `System offline. Please contact your System Administrator or support at ${brandingState.supportEmail}`,
             icon: 'error',
             allowOutsideClick: false,
             showConfirmButton: false,

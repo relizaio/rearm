@@ -20,8 +20,8 @@
                             v-if="!myUser.policiesAccepted"
                             v-model:checked="userPostSignup.tosAccepted"
                         />
-                        <span style="margin-left:7px;">Accept <a target="_blank" rel="noopener noreferrer" href="https://rearmhq.com/tos.html">Terms Of Service</a> and
-                            <a target="_blank" rel="noopener noreferrer" href="https://rearmhq.com/privacy.html">Privacy Policy</a>.
+                        <span style="margin-left:7px;">Accept <a target="_blank" rel="noopener noreferrer" :href="brandingState.termsOfServiceUrl">Terms Of Service</a> and
+                            <a target="_blank" rel="noopener noreferrer" :href="brandingState.privacyPolicyUrl">Privacy Policy</a>.
                         </span>
                     </n-form-item>
                     <n-form-item
@@ -30,13 +30,14 @@
                                 label="Your email:">
                         <n-input v-model:value="userPostSignup.email" placeholder="Enter your email"/>
                     </n-form-item>
-                    <n-form-item    
+                    <n-form-item
+                                v-if="brandingState.marketingConsent === 'SHOWN'"
                                 path="marketingAccepted"
                                 label="News and Promotions">
                         <n-checkbox
                             v-model:checked="userPostSignup.marketingAccepted"
                         >
-                            Agree to receive news and promotions from Reliza by email (Optional).
+                            {{ brandingState.marketingConsentText }}
                         </n-checkbox>
                     </n-form-item>
                     <n-button :loading="emailVerificationCallPending" @click="postSignupAccept" type="success">
@@ -54,7 +55,7 @@
             :mask-closable="false"
         >
             <div>
-                <p>We require an additional email verification of your email address <strong>{{ myUser.email }}</strong> to proceed with ReARM.</p>
+                <p>We require an additional email verification of your email address <strong>{{ myUser.email }}</strong> to proceed with {{ brandingState.titleText }}.</p>
                 <p>If you need a new verification link, please click the button below.</p>
                 <n-button :loading="emailVerificationCallPending" @click="resendVerificationLink" :disabled="emailVerificationCallPending">
                         <span v-if="emailVerificationCallPending">Processing...</span>
@@ -99,6 +100,7 @@ import Swal from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
+import { brandingState, applySignUpBackground } from '../utils/branding'
 
 const notification = useNotification()
 const store = useStore()
@@ -241,14 +243,7 @@ const onCreate = async function () {
     } else {
         window.location.href = '/'
     }
-    if (document) {
-        const bodyel = document.querySelector('body')
-        if (bodyel) {
-            bodyel.style.background = "DimGrey none"
-            bodyel.style.backgroundImage = 'url("/reliza_in_sand_right_corner.jpg")'
-            bodyel.style.backgroundSize = 'cover'
-        }
-    }
+    applySignUpBackground()
     
 }
 

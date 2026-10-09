@@ -37,7 +37,8 @@ function sidebar() {
           {text: 'Programmatic Access', link: '/configure/programmatic-access'},
           {text: 'Component Ownership', link: '/configure/component-ownership'},
           {text: 'Notifications', link: '/configure/notifications'},
-          {text: 'Approval Queues', link: '/configure/approval-queues'}
+          {text: 'Approval Queues', link: '/configure/approval-queues'},
+          {text: 'Branding Presets (ReARM Pro)', link: '/configure/branding'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
