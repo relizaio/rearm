@@ -8,8 +8,8 @@
 
 ## 4. [Pull Request Validation and Commenting](./githubValidate)
 
-## 5. [Federated (keyless) login: authenticate to ReARM without a stored secret](./githubActionsFederated)
-
-## 6. [Verify GitHub web-flow (web-UI) commit signatures](../workflows/committers#github-web-flow-signing)
+## 5. [Verify GitHub web-flow (web-UI) commit signatures](../workflows/committers#github-web-flow-signing)
 
 Make commits created through the GitHub web UI (the Merge button, edit-in-browser, etc.) verify in ReARM by enrolling GitHub's web-flow key on a committer.
+
+## 6. [Federated (keyless) login: authenticate to ReARM without a stored secret](./githubActionsFederated)
