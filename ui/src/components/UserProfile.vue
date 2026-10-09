@@ -34,7 +34,8 @@
                         <n-checkbox :disabled="updateEmailObj.isPrimary" id="profile-update-email-primary"
                             v-model:checked="updateEmailObj.isPrimary" />
                     </n-form-item>
-                    <n-form-item label='Receive Reliza News and Promotions?'>
+                    <n-form-item v-if="brandingState.marketingConsent === 'SHOWN'"
+                        :label="brandingState.isDefault ? 'Receive Reliza News and Promotions?' : brandingState.marketingConsentText">
                         <n-checkbox id="profile-update-email-marketing"
                             v-model:checked="updateEmailObj.isAcceptMarketing" />
                     </n-form-item>
@@ -127,6 +128,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { Edit as EditIcon, Eye as EyeIcon, X, Check, CirclePlus, LockOpen, Trash, ArrowDown, ArrowUp } from '@vicons/tabler'
 import commonFunctions from '@/utils/commonFunctions'
+import { brandingState } from '@/utils/branding'
 import Swal from 'sweetalert2'
 import { OnChange } from 'naive-ui/es/upload/src/interface'
 import gql from 'graphql-tag'
@@ -165,7 +167,7 @@ const apiKeyHeader = ref('')
 const orgname = ref('')
 const emailFields: ComputedRef<any> = computed((): any => {
     const installationType = store.getters.myuser?.installationType
-    const showMarketing = installationType === 'SAAS' || installationType === 'DEMO'
+    const showMarketing = (installationType === 'SAAS' || installationType === 'DEMO') && brandingState.marketingConsent === 'SHOWN'
     const fields: any[] = [
         {
             key: 'email',
@@ -189,7 +191,7 @@ const emailFields: ComputedRef<any> = computed((): any => {
     if (showMarketing) {
         fields.push({
             key: 'isAcceptMarketing',
-            title: 'Receive Reliza Info?',
+            title: brandingState.isDefault ? 'Receive Reliza Info?' : 'News and Promotions?',
             render(row: any) {
                 const isMarketingAccepting = row.isAcceptMarketing ? "true" : "false";
                 return h('div', isMarketingAccepting)

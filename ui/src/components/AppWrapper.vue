@@ -15,22 +15,7 @@
                             </n-layout-content>
                         </n-layout>
                     </div>
-                    <div class="footer-container">
-                        <n-divider />
-                        <div class="footer-content">
-                            <div class="footer-text">
-                                {{ footerVersionText }}
-                            </div>
-                            <div class="footer-text">
-                                © Reliza Incorporated, 2019-2026
-                            </div>
-                            <div class="footer-links">
-                                <a href="https://docs.rearmhq.com" rel="noopener noreferrer" target="_blank" class="footer-link">Documentation</a>
-                                <span class="footer-separator">•</span>
-                                <a href="mailto:info@reliza.io" class="footer-link">Support</a>
-                            </div>
-                        </div>
-                    </div>
+                    <app-footer />
                 </div>
                 <sign-up-flow v-if="showSignUpFlow === 'signup'" />
                 <verify-email v-if="showSignUpFlow === 'verifyEmail'" />
@@ -45,10 +30,11 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { Ref, ref, ComputedRef, computed } from 'vue'
-import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NLoadingBarProvider, NMessageProvider, NDialogProvider, NDivider } from 'naive-ui'
+import { ref, ComputedRef, computed } from 'vue'
+import { NConfigProvider, NLayout, NSpace, NLayoutContent, NNotificationProvider, NLoadingBarProvider, NMessageProvider, NDialogProvider } from 'naive-ui'
 import TopNavBar from './TopNavBar.vue'
 import LeftNavBar from './LeftNavBar.vue'
+import AppFooter from './AppFooter.vue'
 import { useStore } from 'vuex'
 import constants from '@/utils/constants'
 import SignUpFlow from '@/components/SignUpFlow.vue'
@@ -59,10 +45,12 @@ import Swal from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '../utils/commonFunctions'
+import { loadBranding, supportContactHtml } from '../utils/branding'
 
 
 const store = useStore()
-await fetchCsrfToken()
+// The branding is awaited so the first paint is already branded; loadBranding is bounded and never throws.
+await Promise.all([loadBranding(), fetchCsrfToken()])
 const fetchUserResult = await store.dispatch('fetchMyUser')
 if (!fetchUserResult || fetchUserResult._unauthorized || fetchUserResult._offline) {
     console.log(fetchUserResult)
@@ -70,16 +58,6 @@ if (!fetchUserResult || fetchUserResult._unauthorized || fetchUserResult._offlin
     await commonFunctions.handleFetchUserResult(fetchUserResult)
 }
 const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
-const rearmProductVersion: Ref<string> = ref('54ab89bb-f1f1-459c-afbf-e4d78655b298')
-const footerVersionText: ComputedRef<string> = computed((): string => {
-    const flavor = myUser.value?.installationType === 'OSS' ? 'ReARM CE' : 'ReARM Pro'
-    const rearmProductVersionComparisonString: string = '54ab89bb-f1f1-459c' + '-afbf-e4d78655b298'
-    if (rearmProductVersion.value !== rearmProductVersionComparisonString) {
-        return `${flavor} v${rearmProductVersion.value}`
-    } else {
-        return flavor
-    }
-})
 
 const showSignUpFlow = ref('')
 async function fetchCsrfToken() {
@@ -217,7 +195,7 @@ const onCreate = async function () {
             // Non-admin: show contact admin message
             Swal.fire({
                 title: 'License Invalid or Expired',
-                html: '<p>The software license is not valid.</p><p>Please contact your Global System Administrator or Reliza Support at <a href="mailto:info@reliza.io">info@reliza.io</a></p>',
+                html: `<p>The software license is not valid.</p><p>Please contact your Global System Administrator or ${supportContactHtml()}</p>`,
                 icon: 'warning',
                 showCancelButton: false,
                 showConfirmButton: false,
@@ -248,40 +226,5 @@ await onCreate()
 
 .content-area {
   flex: 1;
-}
-
-.footer-container {
-  margin-top: auto;
-  padding: 0 20px;
-}
-
-.footer-content {
-  display: flex;
-  justify-content: space-between;
-  align-items: center;
-  padding: 16px 0;
-  color: #666;
-  font-size: 14px;
-  
-  @media (max-width: 768px) {
-    flex-direction: column;
-    gap: 12px;
-    text-align: center;
-  }
-}
-
-.footer-text {
-  font-weight: 500;
-}
-
-.footer-links {
-  display: flex;
-  align-items: center;
-  gap: 8px;
-}
-
-a {
-  color: inherit;
-  text-decoration: none;
 }
 </style>

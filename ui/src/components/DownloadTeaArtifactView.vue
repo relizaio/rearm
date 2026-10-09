@@ -16,6 +16,7 @@ import { fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import graphqlClient from '@/utils/graphql'
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
+import { brandingState } from '@/utils/branding'
 
 const route = useRoute()
 const router = useRouter()
@@ -69,7 +70,7 @@ async function postDownloadNotification () {
     const swalResult = await Swal.fire({
         title: 'Downloaded',
         text: 'Your Artifact should be downloaded.',
-        confirmButtonText: 'Proceed to ReARM Home'
+        confirmButtonText: `Proceed to ${brandingState.titleText} Home`
     })
 
     if (swalResult.value) {
@@ -82,7 +83,7 @@ async function postDownloadNotification () {
 async function errorNotification () {
     Swal.fire(
         'Error on Downloading',
-        'Your artifact could not be donwloaded. Please contact your administrator or Reliza Support.',
+        `Your artifact could not be donwloaded. Please contact your administrator or ${brandingState.supportName}.`,
         'error'
     )
 }
