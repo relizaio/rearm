@@ -261,6 +261,9 @@ takes `key` and `session`.
 Pass `--org <organization uuid>` (or `REARM_ORG`) only when **several** organizations trust the
 same repository, which would otherwise be ambiguous.
 
+For end-to-end sample pipelines with the ReARM GitHub Actions and a troubleshooting list, see
+[Federated (Keyless) Login from GitHub Actions](../integrations/githubActionsFederated).
+
 `rearm whoami --auth github-oidc` reports which key and repository the job is acting as. A refused
 exchange names the reason: no trust rule matches, several organizations match, or the repository
 was renamed since its identity was pinned.
