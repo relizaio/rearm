@@ -49,7 +49,8 @@ function sidebar() {
                 {text: 'Build Pipelines', link: '/integrations/githubActionsBuild'},
                 {text: 'Cosign and Sigstore', link: '/integrations/githubActionsCosign'},
                 {text: 'Workflow Triggers', link: '/integrations/githubActionsTriggers'},
-                {text: 'Pull Request Validation', link: '/integrations/githubValidate'}
+                {text: 'Pull Request Validation', link: '/integrations/githubValidate'},
+                {text: 'Federated (Keyless) Login', link: '/integrations/githubActionsFederated'}
               ]
             },
             {text: 'GitLab', link: '/integrations/gitlab',
