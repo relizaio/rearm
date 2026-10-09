@@ -29,10 +29,13 @@ describe('branding surfaces contract', () => {
         // The gate itself: the style block names the class too, so the bare word would pass without it.
         expect(nav).toContain('<div class="topNavBar" :class="{ topNavBarBranded: !brandingState.isDefault }">')
         expect(nav).toContain('&.topNavBarBranded {')
-        expect(nav).not.toContain('relizaLogo')
-        expect(nav).not.toContain('logo_svg_no_tag_3.svg')
         expect(nav).toContain('<b>{{ brandingState.navProductName }}</b>')
-        expect(nav).not.toContain('<b>ReARM</b>')
+        // The negatives read the raw source, comments included, as 33, 34 and 34b do: a forbidden literal
+        // fails even in a comment, and code(f)'s line-comment rule cannot hide one after a // in live text.
+        const raw = src('components/TopNavBar.vue')
+        for (const literal of ['relizaLogo', 'logo_svg_no_tag_3.svg', '<b>ReARM</b>']) {
+            expect(raw).not.toContain(literal)
+        }
     })
 
     it('33: SignUpFlow reads its links, consent, product name and background from the branding', () => {
