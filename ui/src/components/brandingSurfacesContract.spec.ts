@@ -8,6 +8,12 @@ import { join, relative, resolve } from 'node:path'
 const SRC = resolve(__dirname, '..')
 const DOCS = resolve(__dirname, '../../../documentation_site/docs')
 const src = (f: string) => readFileSync(resolve(SRC, f), 'utf8')
+// The source without its comments, for the lines that must be live: a commented-out call or class gate
+// still contains the text. Line comments need a non-colon before the slashes so URLs stay intact.
+const code = (f: string) => src(f)
+    .replace(/<!--[\s\S]*?-->/g, '')
+    .replace(/\/\*[\s\S]*?\*\//g, '')
+    .replace(/(^|[^:])\/\/.*$/gm, '$1')
 
 function files (dir: string): string[] {
     return readdirSync(dir).flatMap(f => {
@@ -18,9 +24,11 @@ function files (dir: string): string[] {
 
 describe('branding surfaces contract', () => {
     it('32: TopNavBar uses NavBrand, the branded grid, and the preset nav name', () => {
-        const nav = src('components/TopNavBar.vue')
+        const nav = code('components/TopNavBar.vue')
         expect(nav).toContain('<nav-brand')
-        expect(nav).toContain('topNavBarBranded')
+        // The gate itself: the style block names the class too, so the bare word would pass without it.
+        expect(nav).toContain('<div class="topNavBar" :class="{ topNavBarBranded: !brandingState.isDefault }">')
+        expect(nav).toContain('&.topNavBarBranded {')
         expect(nav).not.toContain('relizaLogo')
         expect(nav).not.toContain('logo_svg_no_tag_3.svg')
         expect(nav).toContain('<b>{{ brandingState.navProductName }}</b>')
@@ -28,24 +36,26 @@ describe('branding surfaces contract', () => {
     })
 
     it('33: SignUpFlow reads its links, consent, product name and background from the branding', () => {
-        const s = src('components/SignUpFlow.vue')
+        const s = code('components/SignUpFlow.vue')
         for (const line of [':href="brandingState.termsOfServiceUrl"', ':href="brandingState.privacyPolicyUrl"',
             'v-if="brandingState.marketingConsent === \'SHOWN\'"', '{{ brandingState.marketingConsentText }}',
             'to proceed with {{ brandingState.titleText }}', 'applySignUpBackground()', 'marketingAccepted: false']) {
             expect(s).toContain(line)
         }
+        const raw = src('components/SignUpFlow.vue')
         for (const literal of ['rearmhq.com', 'reliza_in_sand', 'promotions from Reliza', 'with ReARM']) {
-            expect(s).not.toContain(literal)
+            expect(raw).not.toContain(literal)
         }
     })
 
     it('34: VerifyEmail and JoinOrganization take the background and the support address from the branding', () => {
         for (const f of ['components/VerifyEmail.vue', 'components/JoinOrganization.vue']) {
-            const s = src(f)
+            const s = code(f)
             expect(s).toContain('applySignUpBackground()')
             expect(s).toContain('brandingState.supportEmail')
-            expect(s).not.toContain('info@reliza.io')
-            expect(s).not.toContain('<style')
+            const raw = src(f)
+            expect(raw).not.toContain('info@reliza.io')
+            expect(raw).not.toContain('<style')
         }
     })
 
@@ -61,14 +71,15 @@ describe('branding surfaces contract', () => {
     })
 
     it('34b: AppWrapper loads the branding before the user and leaves the footer to AppFooter; no Reliza support literals', () => {
-        const s = src('components/AppWrapper.vue')
+        const s = code('components/AppWrapper.vue')
         expect(s).toContain('<app-footer')
         const load = s.indexOf('Promise.all([loadBranding(), fetchCsrfToken()])')
         expect(load).toBeGreaterThan(-1)
         expect(load).toBeLessThan(s.indexOf('fetchMyUser'))
         expect(s).toContain('supportContactHtml()')
+        const raw = src('components/AppWrapper.vue')
         for (const literal of ['docs.rearmhq.com', 'info@reliza.io', 'Reliza Support', 'footer-links']) {
-            expect(s).not.toContain(literal)
+            expect(raw).not.toContain(literal)
         }
         for (const f of ['utils/commonFunctions.ts', 'components/DownloadTeaArtifactView.vue']) {
             const t = src(f)

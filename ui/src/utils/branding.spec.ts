@@ -226,6 +226,7 @@ describe('branding: helpers', () => {
         expect(navLogoLayoutFor(430, 512)).toBe('stacked')
         expect(navLogoLayoutFor(100, 100)).toBe('stacked')
         expect(navLogoLayoutFor(0, 0)).toBe('stacked')
+        expect(navLogoLayoutFor(430, 0)).toBe('stacked')
     })
 
     it('28b: the Legal hover text, without a doubled full stop', () => {
