@@ -87,6 +87,11 @@ const resolvers = {
 				BomService.computeEnrichedBomContent(bomContent.format, bomContent.bom, bomContent.org),
 			'getEnrichedBomProbe'
 		),
+		scoreBomProbe: withErrorHandling(
+			async (_: any, input: { bom: string; profiles: string[] }): Promise<string> =>
+				BomService.scoreBom(input.bom, input.profiles),
+			'scoreBomProbe'
+		),
 		isEnrichmentConfigured: withErrorHandling(
 			async (_: any, input: { org: string }): Promise<boolean> =>
 				BomService.isEnrichmentConfigured(input.org),

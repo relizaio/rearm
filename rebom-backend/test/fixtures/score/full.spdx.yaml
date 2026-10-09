@@ -1,0 +1,110 @@
+spdxVersion: SPDX-2.3
+dataLicense: CC0-1.0
+SPDXID: SPDXRef-DOCUMENT
+name: example-device-app-5.0.0
+documentNamespace: https://example.com/spdx/example-device-app-5.0.0
+creationInfo:
+  created: '2026-10-01T12:00:00Z'
+  creators:
+  - 'Organization: Example Devices Inc.'
+  - 'Tool: example-scanner-4.2.0'
+documentDescribes:
+- SPDXRef-app
+packages:
+- SPDXID: SPDXRef-app
+  name: example-device-app
+  versionInfo: 5.0.0
+  supplier: 'Organization: Example Devices Inc.'
+  downloadLocation: NOASSERTION
+  filesAnalyzed: false
+  checksums:
+  - algorithm: SHA256
+    checksumValue: b5bb9d8014a0f9b1d61e21e796d78dccdf1352f23cd32812f4850b878ae4944c
+  licenseDeclared: LicenseRef-Proprietary
+  externalRefs:
+  - referenceCategory: PACKAGE-MANAGER
+    referenceType: purl
+    referenceLocator: pkg:generic/example-device-app@5.0.0
+  validUntilDate: '2031-01-01T00:00:00Z'
+- SPDXID: SPDXRef-alpha
+  name: alpha
+  versionInfo: 1.0.0
+  supplier: 'Organization: Alpha Org'
+  downloadLocation: NOASSERTION
+  filesAnalyzed: false
+  checksums:
+  - algorithm: SHA256
+    checksumValue: 2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae
+  licenseDeclared: MIT
+  externalRefs:
+  - referenceCategory: PACKAGE-MANAGER
+    referenceType: purl
+    referenceLocator: pkg:npm/alpha@1.0.0
+  - referenceCategory: SECURITY
+    referenceType: cpe23Type
+    referenceLocator: cpe:2.3:a:alpha:alpha:1.0.0:*:*:*:*:*:*:*
+  validUntilDate: '2028-12-31T00:00:00Z'
+- SPDXID: SPDXRef-beta
+  name: beta
+  versionInfo: 2.0.0
+  originator: 'Organization: Beta Labs'
+  downloadLocation: NOASSERTION
+  filesAnalyzed: false
+  checksums:
+  - algorithm: SHA1
+    checksumValue: a94a8fe5ccb19ba61c4c0873d391e987982fbbd3
+  licenseConcluded: Apache-2.0 OR MIT
+  externalRefs:
+  - referenceCategory: PACKAGE-MANAGER
+    referenceType: purl
+    referenceLocator: pkg:maven/org.beta/beta@2.0.0
+  validUntilDate: '2025-06-30T00:00:00Z'
+- SPDXID: SPDXRef-gamma
+  name: gamma
+  versionInfo: 3.1.0
+  supplier: 'Person: Gamma Author'
+  downloadLocation: NOASSERTION
+  filesAnalyzed: false
+  checksums:
+  - algorithm: SHA512
+    checksumValue: ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff
+  licenseDeclared: LicenseRef-Gamma
+  externalRefs:
+  - referenceCategory: PACKAGE-MANAGER
+    referenceType: purl
+    referenceLocator: pkg:pypi/gamma@3.1.0
+  - referenceCategory: PERSISTENT-ID
+    referenceType: swh
+    referenceLocator: swh:1:cnt:94a9ed024d3859793618152ea559a168bbcbb5e2
+  validUntilDate: '2024-01-15T00:00:00Z'
+- SPDXID: SPDXRef-delta
+  name: delta
+  versionInfo: 0.4.2
+  supplier: 'Organization: Delta Maintainers'
+  downloadLocation: NOASSERTION
+  filesAnalyzed: false
+  checksums:
+  - algorithm: SHA256
+    checksumValue: fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9
+  licenseDeclared: BSD-3-Clause
+  externalRefs:
+  - referenceCategory: PACKAGE-MANAGER
+    referenceType: purl
+    referenceLocator: pkg:golang/example.com/delta@v0.4.2
+  - referenceCategory: PERSISTENT-ID
+    referenceType: gitoid
+    referenceLocator: gitoid:blob:sha1:261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64
+  validUntilDate: '2030-03-01T00:00:00Z'
+relationships:
+- spdxElementId: SPDXRef-app
+  relationshipType: DEPENDS_ON
+  relatedSpdxElement: SPDXRef-alpha
+- spdxElementId: SPDXRef-app
+  relationshipType: DEPENDS_ON
+  relatedSpdxElement: SPDXRef-beta
+- spdxElementId: SPDXRef-beta
+  relationshipType: DEPENDS_ON
+  relatedSpdxElement: SPDXRef-gamma
+- spdxElementId: SPDXRef-gamma
+  relationshipType: DEPENDS_ON
+  relatedSpdxElement: SPDXRef-delta

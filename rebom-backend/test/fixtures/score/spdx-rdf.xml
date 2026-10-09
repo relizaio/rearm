@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<rdf:RDF xmlns:rdf="http://www.w3.org/1999/02/22-rdf-syntax-ns#" xmlns:spdx="http://spdx.org/rdf/terms#">
+  <spdx:SpdxDocument rdf:about="http://example.com/spdx-rdf-fixture#SPDXRef-DOCUMENT">
+    <spdx:specVersion>SPDX-2.3</spdx:specVersion>
+    <spdx:name>spdx-rdf-fixture</spdx:name>
+  </spdx:SpdxDocument>
+</rdf:RDF>

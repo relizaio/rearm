@@ -53,8 +53,41 @@ Exports the merged SBOM for the release. Options:
 | **Media Type** | `JSON`, `CSV`, or `Excel` |
 | **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
 | **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
+| **Leave out file components** | Drops components of type `file` (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out in the metadata property `reliza:export:fileComponentsExcluded`; it applies to every media type. On the API: `releaseSbomExport(excludeFileComponents: true)` |
 
 Click **Export** to download the file.
+
+### Component releases without an SBOM
+
+Component releases of a product that have no SBOM (or whose SBOMs are all excluded by the coverage
+filter) appear in the product export as components with the property `reliza:sbom:missing`,
+listed in the root's dependencies, and a `compositions` entry with `aggregate: unknown` states that
+their own dependencies are unknown. `reliza:export:componentsWithoutSbom` on the document counts
+them. Such a component's bom-ref is `urn:rearm:release:<release uuid>`; the property's value says
+why ReARM holds no SBOM for it: `NO_SBOM_ARTIFACT` (none was uploaded) or `COVERAGE_EXCLUDED` (every
+SBOM it has was left out by **Exclude coverage types**). It carries the release's purl when the
+release records one, and none otherwise. A component release's first SBOM, or a replaced SBOM,
+rebuilds the merged exports of every product above it, nested products included, so a placeholder
+leaves the product export once its release has an SBOM. A product none of whose component releases has an SBOM
+still has nothing to export. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
+property and the `compositions` entry are in the CycloneDX JSON only.
+
+### Scoring the export
+
+Beside **Export**, **Score** checks the document the export would give you, with the same content options,
+against the CISA 2026 minimum elements and the FDA premarket SBOM expectations, and shows the
+report in the same dialog. It applies to the CycloneDX 1.6 (JSON) format. See
+[Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring).
+
+The score ignores the two metadata switches (**Include support metadata** and **Include internal
+metadata**): it scores the document the organization setting gives, with the support facts
+included when the organization's support disclosure is ENABLED and ReARM's markers kept. The
+other options, **Leave out file components** included, apply to the score as to the export.
+
+The `fda` support checks (level of support and end of support) do not judge files, cryptographic
+assets, data, machine-learning models or devices: those components are not software packages a
+supplier supports, and the report says how many it skipped.
 
 ## Per-export metadata options
 
@@ -80,10 +113,16 @@ Every caller written before these arguments existed -- including `rearm-cli` -- 
 
 ### Include support metadata
 
-**Shown only when your organization publishes support attestations**, and **off by default**.
-The organization setting says the disclosure is *allowed*; it does not say every download wants
-it, so each export opts in. When the organization setting is off the switch is absent rather
-than greyed out -- the place to change that is Organization Settings, not the export dialog.
+**Shown whenever the server offers the option**, and **off by default**. The organization
+setting says the disclosure is *allowed*; it does not say every download wants it, so each export
+opts in. The switch follows the setting of the organization that **owns the release**, which may
+differ from the organization selected in the header. When that setting is off the switch is
+**greyed out**, with a hint that support disclosure is off for this organization and that an
+organization admin turns it on in **Organization Settings -> Support disclosure export**. While
+ReARM checks the setting, or when it cannot, the switch is greyed out and the export follows the
+organization setting. A greyed-out switch sends nothing, so the organization setting decides. A
+server that does not offer the option at all (a ReARM CE installation before its next sync) shows
+no switch, and says so.
 
 | Setting | Effect |
 |---|---|
@@ -135,7 +174,18 @@ scanner -- are carried into merged and aggregated exports beside it.
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**With both switches off, no `reliza:` property remains**, not even the
+**Not removed either: `reliza:export:fileComponentsExcluded`.** It is on the document only when
+**Leave out file components** was on, and it is the file's own record that file components were
+left out of it, and how many. It describes the document you hold rather than ReARM's working
+state, so a reader of an export with internal metadata off can still tell that the inventory is
+not complete.
+
+**Not removed either: `reliza:sbom:missing` and `reliza:export:componentsWithoutSbom`.** They mark
+the components that stand for component releases ReARM holds no SBOM for, and count them (see
+[Component releases without an SBOM](#component-releases-without-an-sbom)). Without them a reader
+could not tell a release without an SBOM from one whose SBOM lists nothing.
+
+**With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
 `includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools` and,
 where rebom recorded one, the top-level `bom` external reference to the document as uploaded
@@ -234,6 +284,19 @@ requested it declined the support disclosure**. When the marker is there it has 
 | `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
 | *no marker at all* | The requester asked for a document without the support disclosure (`includeSupportMetadata: false`), so there is no support statement for a marker to qualify. Also the case for the raw download |
 
+With `derived-non-attested-current-state` the document also carries two counts in
+`metadata.properties`, as decimal strings, written even when 0. A component is identified when it
+has a purl, or a purl-shaped `bom-ref` (some tools, Trivy for Go's `stdlib` for example, put the
+purl only there), or a cpe. Every component node is counted, nested ones and `metadata.component`
+included.
+
+| Property | Meaning |
+|---|---|
+| `reliza:support:unidentifiedComponents` | How many components could not be identified, so no support fact can be matched to them |
+| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn) |
+
+Neither appears with `provenance-stripped-no-disclosure` or without a marker.
+
 Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
 when it does, and reading the third as either is how they conclude the server made a claim it did
 not. The values are deliberately distinct so that absence and silence cannot be confused.
@@ -245,7 +308,9 @@ it is not, because the person holding the file is the one who asked for it that 
 stripped identically -- only the statement differs.
 
 Note that the export modal now defaults the support switch **off**, so a document downloaded from
-the UI without touching it is the declined case and carries no marker. Scripted callers that omit
+the UI without touching it is the declined case and carries no marker. When the release's
+organization setting is off the switch is greyed out and sends nothing, so that document is marked
+`provenance-stripped-no-disclosure`. Scripted callers that omit
 the argument are unaffected: omission means "the organization decides" and is marked as before.
 
 Support facts are **derived current state, not a frozen attestation**: they are computed when the

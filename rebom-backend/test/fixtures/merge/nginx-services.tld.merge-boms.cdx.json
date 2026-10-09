@@ -1,0 +1,75 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:62f57818-3062-46ec-9d7d-660ab244c973",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "bom-ref": "pkg:generic/Example/prod@1.0.0",
+      "type": "application",
+      "group": "Example",
+      "name": "prod",
+      "version": "1.0.0",
+      "purl": "pkg:generic/Example/prod@1.0.0"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64",
+      "type": "library",
+      "name": "musl",
+      "version": "1.2.5-r10",
+      "purl": "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+    },
+    {
+      "bom-ref": "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+      "type": "library",
+      "name": "nginx",
+      "version": "1.31.3-r1",
+      "purl": "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64"
+    },
+    {
+      "bom-ref": "pkg:npm/a@1.0.0",
+      "type": "library",
+      "name": "a",
+      "version": "1.0.0",
+      "purl": "pkg:npm/a@1.0.0"
+    },
+    {
+      "bom-ref": "pkg:npm/app@1.0.0",
+      "type": "application",
+      "name": "app",
+      "version": "1.0.0",
+      "purl": "pkg:npm/app@1.0.0"
+    },
+    {
+      "bom-ref": "pkg:oci/nginx@1.31.3",
+      "type": "container",
+      "name": "nginx",
+      "version": "1.31.3",
+      "purl": "pkg:oci/nginx@1.31.3"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/Example/prod@1.0.0",
+      "dependsOn": [
+        "pkg:npm/app@1.0.0",
+        "pkg:oci/nginx@1.31.3"
+      ]
+    },
+    {
+      "ref": "pkg:npm/app@1.0.0",
+      "dependsOn": [
+        "pkg:npm/a@1.0.0"
+      ]
+    },
+    {
+      "ref": "pkg:oci/nginx@1.31.3",
+      "dependsOn": [
+        "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64",
+        "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64"
+      ]
+    }
+  ]
+}

@@ -1,0 +1,138 @@
+{
+  "reportVersion": 1,
+  "engine": {
+    "name": "rearm-cli",
+    "version": "test"
+  },
+  "input": {
+    "format": "SPDX",
+    "specVersion": "2.3",
+    "serialization": "json",
+    "components": 4,
+    "sha256": "baecc4b0b72a979dd9573c48101c2d4de99b71a603958a1b500459a48579f491"
+  },
+  "profiles": [
+    {
+      "key": "ntia-2021",
+      "title": "NTIA Minimum Elements for an SBOM (2021)",
+      "source": {
+        "title": "NTIA, \"The Minimum Elements For a Software Bill of Materials (SBOM)\"",
+        "version": "",
+        "date": "2021-07-12",
+        "url": "https://www.ntia.gov/files/ntia/publications/sbom_minimum_elements_report.pdf"
+      },
+      "verdict": "READY",
+      "score": 100,
+      "summary": {
+        "pass": 7,
+        "fail": 0,
+        "notAssessed": 0,
+        "errors": 0
+      },
+      "checks": [
+        {
+          "id": "ntia-2021.supplier-name",
+          "title": "Supplier Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Supplier Name",
+          "remedy": "run rearm bomutils enrich, or ask the supplier",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.component-name",
+          "title": "Component Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Component Name",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.component-version",
+          "title": "Version of the Component",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Version of the Component",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.other-unique-identifiers",
+          "title": "Other Unique Identifiers",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Other Unique Identifiers",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.dependency-relationship",
+          "title": "Dependency Relationship",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Dependency Relationship",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.author-of-sbom-data",
+          "title": "Author of SBOM Data",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Author of SBOM Data",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "ntia-2021.timestamp",
+          "title": "Timestamp",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "Data Fields, Timestamp",
+          "remedy": "",
+          "note": ""
+        }
+      ]
+    }
+  ],
+  "structure": {
+    "checks": []
+  },
+  "errors": []
+}

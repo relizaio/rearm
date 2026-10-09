@@ -1,0 +1,123 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:3e671687-395b-41f5-a30f-a58921a69b79",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-10-01T12:00:00Z",
+    "lifecycles": [
+      { "phase": "build" }
+    ],
+    "tools": {
+      "components": [
+        { "type": "application", "name": "example-scanner", "version": "4.2.0" }
+      ]
+    },
+    "authors": [
+      { "name": "Jane Builder", "email": "jane@example.com" }
+    ],
+    "manufacturer": { "name": "Example Devices Inc." },
+    "component": {
+      "bom-ref": "app",
+      "type": "application",
+      "name": "example-device-app",
+      "version": "5.0.0"
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "alpha",
+      "type": "library",
+      "supplier": { "name": "Alpha Org" },
+      "name": "alpha",
+      "version": "1.0.0",
+      "hashes": [
+        { "alg": "SHA-256", "content": "2c26b46b68ffc68ff99b453c1d30413413422d706483bfa0f98a5e886266e7ae" }
+      ],
+      "licenses": [
+        { "license": { "id": "MIT" } }
+      ],
+      "cpe": "cpe:2.3:a:alpha:alpha:1.0.0:*:*:*:*:*:*:*",
+      "purl": "pkg:npm/alpha@1.0.0",
+      "properties": [
+        { "name": "reliza:support:levelOfSupport", "value": "actively maintained" },
+        { "name": "cdx:lifecycle:milestone:endOfSupport", "value": "2028-12-31" }
+      ]
+    },
+    {
+      "bom-ref": "beta",
+      "type": "library",
+      "manufacturer": { "name": "Beta Labs" },
+      "name": "beta",
+      "version": "2.0.0",
+      "hashes": [
+        { "alg": "SHA-1", "content": "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3" }
+      ],
+      "licenses": [
+        { "expression": "Apache-2.0 OR MIT" }
+      ],
+      "purl": "pkg:maven/org.beta/beta@2.0.0",
+      "swid": { "tagId": "swidgen-beta-2.0.0", "name": "beta" },
+      "properties": [
+        { "name": "reliza:support:levelOfSupport", "value": "no longer maintained" },
+        { "name": "cdx:lifecycle:milestone:endOfSupport", "value": "2025-06-30T00:00:00Z" }
+      ],
+      "components": [
+        {
+          "bom-ref": "gamma",
+          "type": "library",
+          "authors": [
+            { "name": "Gamma Author" }
+          ],
+          "name": "gamma",
+          "version": "3.1.0",
+          "hashes": [
+            { "alg": "SHA-512", "content": "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff" }
+          ],
+          "licenses": [
+            { "license": { "name": "Gamma Custom License" } }
+          ],
+          "purl": "pkg:pypi/gamma@3.1.0",
+          "swhid": [ "swh:1:cnt:94a9ed024d3859793618152ea559a168bbcbb5e2" ],
+          "properties": [
+            { "name": "reliza:support:levelOfSupport", "value": "abandoned" },
+            { "name": "cdx:lifecycle:milestone:endOfSupport", "value": "2024-01-15" }
+          ],
+          "components": [
+            {
+              "bom-ref": "delta",
+              "type": "library",
+              "author": "Delta Maintainer",
+              "name": "delta",
+              "version": "0.4.2",
+              "hashes": [
+                { "alg": "SHA-256", "content": "fcde2b2edba56bf408601fb721fe9b5c338d10ee429ea04fae5511b68fbf8fb9" }
+              ],
+              "licenses": [
+                { "license": { "id": "BSD-3-Clause" } }
+              ],
+              "purl": "pkg:golang/example.com/delta@v0.4.2",
+              "omniborId": [ "gitoid:blob:sha1:261eeb9e9f8b2b4b0d119366dda99c6fd7d35c64" ],
+              "properties": [
+                { "name": "reliza:support:levelOfSupport", "value": "actively maintained" },
+                { "name": "cdx:lifecycle:milestone:endOfSupport", "value": "2030-03-01" }
+              ]
+            }
+          ]
+        }
+      ]
+    }
+  ],
+  "dependencies": [
+    { "ref": "app", "dependsOn": [ "alpha", "beta" ] },
+    { "ref": "alpha", "dependsOn": [] },
+    { "ref": "beta", "dependsOn": [ "gamma" ] },
+    { "ref": "gamma", "dependsOn": [ "delta" ] },
+    { "ref": "delta", "dependsOn": [] }
+  ],
+  "signature": {
+    "algorithm": "ES256",
+    "publicKey": { "kty": "EC", "crv": "P-256", "x": "dGVzdC14LWNvb3JkaW5hdGU", "y": "dGVzdC15LWNvb3JkaW5hdGU" },
+    "value": "dGVzdC1zaWduYXR1cmUtdmFsdWUtbm90LXZlcmlmaWVk"
+  }
+}

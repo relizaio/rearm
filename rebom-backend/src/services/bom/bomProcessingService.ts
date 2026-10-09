@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -161,6 +161,744 @@ export function extractDevFilteredBom(bom: any): any {
     components: prodComponents,
     dependencies: newDependencies
   };
+}
+
+/**
+ * Metadata property a file-filtered merged BOM carries: how many components of type
+ * `file` were left out of it. Absent means the document was not filtered; "0" means it
+ * was filtered and nothing matched. Kept outside the reliza:support:* namespace, which
+ * ReARM strips from every export.
+ */
+export const FILE_COMPONENTS_EXCLUDED_PROPERTY = 'reliza:export:fileComponentsExcluded'
+
+/** The CycloneDX component type the file filter leaves out (SCORE-10 3.2's definition, exactly). */
+export const CDX_COMPONENT_TYPE_FILE = 'file'
+
+export type FileFilterResult = {
+  bom: any,
+  excludedCount: number
+}
+
+function isFileComponent(component: any): boolean {
+  return component?.type === CDX_COMPONENT_TYPE_FILE
+}
+
+/**
+ * Drops the file components of a list, walking nested components. A non-file component
+ * nested under a dropped file takes the file's place in the parent list, so filtering
+ * never removes anything but files. Collects the dropped bom-refs into `dropped`.
+ */
+function dropFileComponents(components: any[], dropped: Set<string>, rootRef: string | undefined): { kept: any[], count: number } {
+  const kept: any[] = []
+  let count = 0
+  for (const component of components) {
+    const ref = component?.['bom-ref']
+    const nested = Array.isArray(component?.components) ? dropFileComponents(component.components, dropped, rootRef) : null
+    if (nested) count += nested.count
+    if (isFileComponent(component) && ref !== rootRef) {
+      count++
+      if (ref) dropped.add(ref)
+      if (nested) kept.push(...nested.kept)
+    } else if (nested) {
+      kept.push({ ...component, components: nested.kept })
+    } else {
+      kept.push(component)
+    }
+  }
+  return { kept, count }
+}
+
+/**
+ * The non-dropped refs a dropped ref stood for in the graph: what its own entry depended
+ * on, following further dropped refs transitively, first-seen order. A cycle through
+ * dropped refs terminates on the visited set. Only complete answers are memoised (one per
+ * top-level call), so a partial result from inside a cycle is never reused.
+ */
+function spliceTargets(ref: string, dropped: Set<string>, edges: Map<string, string[]>, memo: Map<string, string[]>): string[] {
+  const known = memo.get(ref)
+  if (known) return known
+  const out: string[] = []
+  const visited = new Set<string>([ref])
+  const walk = (from: string) => {
+    for (const next of edges.get(from) || []) {
+      if (!dropped.has(next)) {
+        out.push(next)
+      } else if (memo.has(next)) {
+        out.push(...memo.get(next)!)
+      } else if (!visited.has(next)) {
+        visited.add(next)
+        walk(next)
+      }
+    }
+  }
+  walk(ref)
+  const unique = Array.from(new Set(out))
+  memo.set(ref, unique)
+  return unique
+}
+
+function withoutDropped(refs: any, dropped: Set<string>): any {
+  return Array.isArray(refs) ? refs.filter((r: any) => !dropped.has(r)) : refs
+}
+
+function hadRefs(refs: any): boolean {
+  return Array.isArray(refs) && refs.length > 0
+}
+
+function isEmptyList(refs: any): boolean {
+  return !Array.isArray(refs) || refs.length === 0
+}
+
+/**
+ * Leaves the CycloneDX components of type `file` out of a BOM (SCORE-11), repairing every
+ * reference to them so the document stays consistent:
+ * - dependencies: a dropped component's own entry goes; in every other entry a dropped
+ *   ref is replaced by the non-file refs it depended on (transitively), so code reached
+ *   only through a file stays reachable from what depended on the file; `provides` is
+ *   filtered without splicing;
+ * - compositions: dropped refs leave `assemblies` and `dependencies`; an entry the filter
+ *   emptied (and that names no vulnerabilities) goes; `aggregate` is unchanged;
+ * - vulnerabilities[].affects and annotations[].subjects: dropped refs go, and an entry
+ *   the filter emptied goes.
+ * `metadata.component` is never dropped, kept components are neither changed nor
+ * re-ordered. Writes FILE_COMPONENTS_EXCLUDED_PROPERTY into metadata.properties: the
+ * number left out here plus `inheritedCount` (what the inputs of a merge had already
+ * left out), replacing a value already present so the document carries exactly one.
+ */
+export function extractFileFilteredBom(bom: any, inheritedCount: number = 0): FileFilterResult {
+  const rootRef: string | undefined = bom?.metadata?.component?.['bom-ref']
+  const dropped = new Set<string>()
+  const { kept, count } = Array.isArray(bom?.components)
+    ? dropFileComponents(bom.components, dropped, rootRef)
+    : { kept: bom?.components, count: 0 }
+  logger.info(`File filter: ${count} file components left out, ${Array.isArray(kept) ? kept.length : 0} kept`)
+
+  const out: any = { ...bom }
+  if (bom?.components !== undefined) out.components = kept
+
+  if (Array.isArray(bom?.dependencies)) {
+    const edges = new Map<string, string[]>()
+    for (const dep of bom.dependencies) {
+      if (dep?.ref && Array.isArray(dep.dependsOn)) edges.set(dep.ref, dep.dependsOn)
+    }
+    const memo = new Map<string, string[]>()
+    out.dependencies = bom.dependencies
+      .filter((dep: any) => !dropped.has(dep?.ref))
+      .map((dep: any) => {
+        if (!dropped.size) return dep
+        const repaired: any = { ...dep }
+        if (Array.isArray(dep.dependsOn)) {
+          const refs: string[] = []
+          for (const r of dep.dependsOn) {
+            if (dropped.has(r)) refs.push(...spliceTargets(r, dropped, edges, memo))
+            else refs.push(r)
+          }
+          repaired.dependsOn = Array.from(new Set(refs)).filter(r => r !== dep.ref)
+        }
+        if (Array.isArray(dep.provides)) repaired.provides = withoutDropped(dep.provides, dropped)
+        return repaired
+      })
+  }
+
+  if (Array.isArray(bom?.compositions) && dropped.size) {
+    out.compositions = bom.compositions
+      .map((c: any) => {
+        const next = { ...c }
+        if (Array.isArray(c.assemblies)) next.assemblies = withoutDropped(c.assemblies, dropped)
+        if (Array.isArray(c.dependencies)) next.dependencies = withoutDropped(c.dependencies, dropped)
+        return next
+      })
+      .filter((c: any, i: number) => {
+        const before = bom.compositions[i]
+        const emptiedByFilter = (hadRefs(before.assemblies) || hadRefs(before.dependencies))
+          && isEmptyList(c.assemblies) && isEmptyList(c.dependencies)
+        return !(emptiedByFilter && isEmptyList(c.vulnerabilities))
+      })
+  }
+
+  if (Array.isArray(bom?.vulnerabilities) && dropped.size) {
+    out.vulnerabilities = bom.vulnerabilities
+      .map((v: any) => Array.isArray(v.affects)
+        ? { ...v, affects: v.affects.filter((a: any) => !dropped.has(a?.ref)) }
+        : v)
+      .filter((v: any, i: number) => !(hadRefs(bom.vulnerabilities[i].affects) && isEmptyList(v.affects)))
+  }
+
+  if (Array.isArray(bom?.annotations) && dropped.size) {
+    out.annotations = bom.annotations
+      .map((a: any) => Array.isArray(a.subjects) ? { ...a, subjects: withoutDropped(a.subjects, dropped) } : a)
+      .filter((a: any, i: number) => !(hadRefs(bom.annotations[i].subjects) && isEmptyList(a.subjects)))
+  }
+
+  const excludedCount = count + inheritedCount
+  const metadata = { ...(bom?.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== FILE_COMPONENTS_EXCLUDED_PROPERTY)
+    : []
+  properties.push({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: String(excludedCount) })
+  metadata.properties = properties
+  out.metadata = metadata
+
+  return { bom: out, excludedCount }
+}
+
+/** The file-component count a BOM says was already left out of it, 0 when it says nothing. */
+export function fileComponentsExcludedOf(bom: any): number {
+  const props = bom?.metadata?.properties
+  if (!Array.isArray(props)) return 0
+  const prop = props.find((p: any) => p?.name === FILE_COMPONENTS_EXCLUDED_PROPERTY)
+  const n = prop ? parseInt(prop.value, 10) : 0
+  return Number.isFinite(n) && n > 0 ? n : 0
+}
+
+/**
+ * Metadata property a merged BOM carries when the merge had to fold components that
+ * shared one bom-ref (SCORE-13): how many copies were folded into their first
+ * occurrence. Written only when that number is above 0, so a merge without a duplicate
+ * produces the same document as before.
+ */
+export const BOM_REFS_DEDUPLICATED_PROPERTY = 'reliza:export:bomRefsDeduplicated'
+
+export type BomRefDedupResult = {
+  bom: any,
+  count: number
+}
+
+/** Fields that never move from a duplicate onto its survivor (the survivor's stand). */
+const DEDUP_SKIPPED_FIELDS = new Set(['bom-ref', 'type', 'components'])
+
+function bomRefOf(component: any): string | undefined {
+  const ref = component?.['bom-ref']
+  return typeof ref === 'string' && ref !== '' ? ref : undefined
+}
+
+function isEmptyValue(value: any): boolean {
+  if (value === undefined || value === null || value === '') return true
+  if (Array.isArray(value)) return value.length === 0
+  if (typeof value === 'object') return Object.keys(value).length === 0
+  return false
+}
+
+/**
+ * The survivor's list followed by the duplicate's entries whose key it does not hold yet,
+ * in their order. Returns the survivor's own list (same object) when nothing is added.
+ */
+function unionByKey(survivor: any, duplicate: any, keyOf: (entry: any) => string, prepare?: (list: any[]) => any[]): any {
+  if (!Array.isArray(duplicate) || duplicate.length === 0) return survivor
+  if (isEmptyValue(survivor)) return duplicate
+  if (!Array.isArray(survivor)) return survivor
+  const seen = new Set<string>((prepare ? prepare(survivor) : survivor).map(keyOf))
+  const added: any[] = []
+  for (const entry of (prepare ? prepare(duplicate) : duplicate)) {
+    const key = keyOf(entry)
+    if (seen.has(key)) continue
+    seen.add(key)
+    added.push(entry)
+  }
+  return added.length ? [...survivor, ...added] : survivor
+}
+
+function licenseKey(entry: any): string {
+  if (typeof entry?.expression === 'string') return `expression:${entry.expression}`
+  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}`
+  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}`
+  return `json:${JSON.stringify(entry)}`
+}
+
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
+  licenses: (s, d) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list) || []),
+  hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
+  externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
+  properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
+  tags: (s, d) => unionByKey(s, d, (t) => (typeof t === 'string' ? t : JSON.stringify(t)))
+}
+
+/**
+ * SCORE-13 ADR-4: the survivor wins, nothing is dropped. A field the survivor lacks or has empty
+ * is taken from the duplicate; a non-empty survivor value is never overwritten. The
+ * identity lists are unioned, survivor first. The duplicate's `type` is dropped and its
+ * `components` are hoisted by the caller.
+ */
+function mergeDuplicateInto(survivor: any, duplicate: any): void {
+  for (const key of Object.keys(duplicate)) {
+    if (DEDUP_SKIPPED_FIELDS.has(key)) continue
+    const union = DEDUP_LIST_UNIONS[key]
+    if (union) {
+      survivor[key] = union(survivor[key], duplicate[key])
+    } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
+      survivor[key] = duplicate[key]
+    }
+  }
+}
+
+function hasRepeatedBomRef(bom: any): boolean {
+  const seen = new Set<string>()
+  let repeated = false
+  const visit = (component: any) => {
+    if (repeated || !component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    if (ref) {
+      if (seen.has(ref)) {
+        repeated = true
+        return
+      }
+      seen.add(ref)
+    }
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  visit(bom?.metadata?.component)
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return repeated
+}
+
+/**
+ * SCORE-13 ADR-3: one pre-order, depth-first walk, `metadata.component` first, then `components[]`
+ * in document order, each component before its own children. The first occurrence of a
+ * bom-ref survives; a later one is removed where it sits, merged into the survivor, and
+ * its children are appended after the survivor's children (once the survivor's own list
+ * has been walked) and walked in turn, so a duplicate nested in a duplicate is found too.
+ * Works on shallow copies: the input is never changed.
+ */
+function dedupeComponentTree(root: any, components: any): { root: any, components: any, count: number } {
+  const survivors = new Map<string, any>()
+  // A survivor whose children are being walked, with the children of its duplicates
+  // found meanwhile, appended once the current list is done.
+  const open = new Map<any, any[]>()
+  let count = 0
+
+  const fill = (survivor: any, children: any[]) => {
+    const pending = open.get(survivor)
+    if (pending) {
+      pending.push(...children)
+      return
+    }
+    if (!Array.isArray(survivor.components)) survivor.components = []
+    let batch = children
+    while (batch.length) {
+      open.set(survivor, [])
+      walkInto(batch, survivor.components)
+      batch = open.get(survivor)!
+    }
+    open.delete(survivor)
+  }
+
+  const place = (component: any, out: any[]): void => {
+    if (!component || typeof component !== 'object') {
+      out.push(component)
+      return
+    }
+    const ref = bomRefOf(component)
+    const survivor = ref ? survivors.get(ref) : undefined
+    if (survivor) {
+      count++
+      mergeDuplicateInto(survivor, component)
+      if (Array.isArray(component.components) && component.components.length) fill(survivor, component.components)
+      return
+    }
+    const copy = { ...component }
+    if (ref) survivors.set(ref, copy)
+    out.push(copy)
+    if (Array.isArray(component.components)) {
+      copy.components = []
+      fill(copy, component.components)
+    }
+  }
+
+  const walkInto = (list: any[], out: any[]) => {
+    for (const component of list) place(component, out)
+  }
+
+  let rootOut = root
+  if (root && typeof root === 'object') {
+    const rootList: any[] = []
+    place(root, rootList)
+    rootOut = rootList[0]
+  }
+  let componentsOut = components
+  if (Array.isArray(components)) {
+    componentsOut = []
+    walkInto(components, componentsOut)
+  }
+  return { root: rootOut, components: componentsOut, count }
+}
+
+function uniqueInOrder(refs: any[]): any[] {
+  return Array.from(new Set(refs))
+}
+
+function hasRepeats(refs: any): boolean {
+  return Array.isArray(refs) && new Set(refs).size !== refs.length
+}
+
+/** Entries with one `ref` folded into the first; the named lists unioned in order. */
+function foldByRef(entries: any, listKeys: string[], unionList: (a: any[], b: any[]) => any[]): any {
+  if (!Array.isArray(entries)) return entries
+  const position = new Map<string, number>()
+  const out: any[] = []
+  let folded = false
+  for (const entry of entries) {
+    const ref = entry?.ref
+    if (typeof ref !== 'string' || !position.has(ref)) {
+      if (typeof ref === 'string') position.set(ref, out.length)
+      out.push(entry)
+      continue
+    }
+    folded = true
+    const index = position.get(ref)!
+    const merged = { ...out[index] }
+    for (const key of listKeys) {
+      if (!Array.isArray(entry[key])) continue
+      merged[key] = unionList(Array.isArray(merged[key]) ? merged[key] : [], entry[key])
+    }
+    out[index] = merged
+  }
+  return folded ? out : entries
+}
+
+function withoutRepeats(entry: any, keys: string[]): any {
+  if (!keys.some((key) => hasRepeats(entry?.[key]))) return entry
+  const next = { ...entry }
+  for (const key of keys) if (hasRepeats(entry[key])) next[key] = uniqueInOrder(entry[key])
+  return next
+}
+
+/** The list itself when no entry changed, else a new list of the (possibly new) entries. */
+function mapIfChanged(list: any, fn: (entry: any) => any): any {
+  if (!Array.isArray(list)) return list
+  const mapped = list.map(fn)
+  return mapped.some((entry, i) => entry !== list[i]) ? mapped : list
+}
+
+function affectedVersionKey(v: any): string {
+  return JSON.stringify([v?.version, v?.range, v?.status])
+}
+
+/**
+ * Folds the components that share one bom-ref into its first occurrence (SCORE-13).
+ * CycloneDX requires bom-refs to be unique; merge-boms reads only the top level of its
+ * inputs, so a component an input repeats inside its own subtree (and the nesting a
+ * HIERARCHICAL merge builds) reaches the merged document twice. Rules:
+ * - the key is the bom-ref string exactly (SCORE-13 ADR-2); components without one are not touched;
+ * - walk and survivor as in dedupeComponentTree (SCORE-13 ADR-3), fields as in mergeDuplicateInto
+ *   (SCORE-13 ADR-4);
+ * - reference lists (SCORE-13 ADR-5): no ref changes, because the survivor keeps the bom-ref every
+ *   reference already names; `dependencies` entries of one ref are folded into the first
+ *   (`dependsOn` and `provides` unioned in order), composition `assemblies` and
+ *   `dependencies` lose repeats, `vulnerabilities[].affects` of one ref are folded
+ *   (`versions` unioned), `annotations[].subjects` lose repeats; a list with nothing to
+ *   repair is the same object.
+ * With no duplicate the input is returned as is; otherwise the document gains
+ * BOM_REFS_DEDUPLICATED_PROPERTY with the number of copies folded.
+ */
+export function dedupeBomRefs(bom: any): BomRefDedupResult {
+  if (!bom || typeof bom !== 'object' || !hasRepeatedBomRef(bom)) return { bom, count: 0 }
+
+  const tree = dedupeComponentTree(bom.metadata?.component, bom.components)
+  const out: any = { ...bom }
+  if (bom.components !== undefined) out.components = tree.components
+
+  if ('dependencies' in bom) {
+    out.dependencies = foldByRef(bom.dependencies, ['dependsOn', 'provides'], (a, b) => uniqueInOrder([...a, ...b]))
+  }
+  if ('compositions' in bom) {
+    out.compositions = mapIfChanged(bom.compositions, (c: any) => withoutRepeats(c, ['assemblies', 'dependencies']))
+  }
+  if ('vulnerabilities' in bom) {
+    out.vulnerabilities = mapIfChanged(bom.vulnerabilities, (v: any) => {
+      if (!Array.isArray(v?.affects)) return v
+      const affects = foldByRef(v.affects, ['versions'], (a, b) => unionByKey(a, b, affectedVersionKey))
+      return affects === v.affects ? v : { ...v, affects }
+    })
+  }
+  if ('annotations' in bom) {
+    out.annotations = mapIfChanged(bom.annotations, (a: any) => withoutRepeats(a, ['subjects']))
+  }
+
+  const metadata = { ...(bom.metadata || {}) }
+  if (bom.metadata?.component !== undefined) metadata.component = tree.root
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== BOM_REFS_DEDUPLICATED_PROPERTY)
+    : []
+  properties.push({ name: BOM_REFS_DEDUPLICATED_PROPERTY, value: String(tree.count) })
+  metadata.properties = properties
+  out.metadata = metadata
+
+  logger.info(`bom-ref de-dup: ${tree.count} duplicate components folded into their first occurrence`)
+  return { bom: out, count: tree.count }
+}
+
+export type ServiceCarryResult = {
+  bom: any,
+  count: number
+}
+
+/** Every component bom-ref in the tree: `metadata.component`, `components[]`, at any depth. */
+function componentBomRefs(bom: any): Set<string> {
+  const refs = new Set<string>()
+  const visit = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    if (ref) refs.add(ref)
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  visit(bom?.metadata?.component)
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return refs
+}
+
+/** A service's own bom-ref and those of the services nested inside it. */
+function serviceBomRefs(service: any, into: Set<string> = new Set<string>()): Set<string> {
+  if (!service || typeof service !== 'object') return into
+  const ref = bomRefOf(service)
+  if (ref) into.add(ref)
+  if (Array.isArray(service.services)) service.services.forEach((s: any) => serviceBomRefs(s, into))
+  return into
+}
+
+/** Every ref a dependency entry names: its `ref`, its `dependsOn[]` and its `provides[]`. */
+function dependencyRefsNamed(bom: any): Set<string> {
+  const named = new Set<string>()
+  if (!Array.isArray(bom?.dependencies)) return named
+  for (const dep of bom.dependencies) {
+    if (typeof dep?.ref === 'string') named.add(dep.ref)
+    for (const key of ['dependsOn', 'provides']) {
+      if (Array.isArray(dep?.[key])) dep[key].forEach((r: any) => { if (typeof r === 'string') named.add(r) })
+    }
+  }
+  return named
+}
+
+/**
+ * Re-attaches the inputs' `services[]` to a merged BOM (SCORE-14 ADR-1, ADR-2). rearm-cli
+ * merge-boms carries the inputs' dependency entries but never reads their services, so an
+ * entry whose `ref` is a service resolves to nothing in the merged document. Rules:
+ * - top-level `services[]` of every input, in input order; nested services stay in their parent;
+ * - union into the merged document's own `services` (its entries first) keyed by the exact
+ *   bom-ref string: the first occurrence wins whole, later ones are dropped (and not counted);
+ *   a service without a bom-ref is carried once per distinct JSON serialization;
+ * - a service whose bom-ref is also a component bom-ref anywhere in the merged tree is skipped
+ *   (warn): the component wins;
+ * - `referencedOnly` (the top-level-only export): only a service named, itself or a service
+ *   nested in it, by a dependency entry of the merged document (`ref`, `dependsOn[]`,
+ *   `provides[]`) is carried.
+ * Returns the input object as is when nothing is carried; `count` is the number of services added.
+ */
+export function carryServices(bom: any, inputs: any[], opts: { referencedOnly: boolean }): ServiceCarryResult {
+  if (!bom || typeof bom !== 'object' || !Array.isArray(inputs)) return { bom, count: 0 }
+  const candidates = inputs.flatMap((input: any) => Array.isArray(input?.services) ? input.services : [])
+  if (!candidates.length) return { bom, count: 0 }
+
+  const existing: any[] = Array.isArray(bom.services) ? bom.services : []
+  const seenRefs = new Set<string>()
+  const seenUnreferenced = new Set<string>()
+  for (const service of existing) {
+    const ref = bomRefOf(service)
+    if (ref) seenRefs.add(ref)
+    else seenUnreferenced.add(JSON.stringify(service))
+  }
+  const components = componentBomRefs(bom)
+  const named = opts.referencedOnly ? dependencyRefsNamed(bom) : null
+
+  const added: any[] = []
+  for (const service of candidates) {
+    if (!service || typeof service !== 'object') continue
+    const ref = bomRefOf(service)
+    if (named && !Array.from(serviceBomRefs(service)).some(r => named.has(r))) continue
+    if (!ref) {
+      const key = JSON.stringify(service)
+      if (seenUnreferenced.has(key)) continue
+      seenUnreferenced.add(key)
+      added.push(service)
+      continue
+    }
+    if (seenRefs.has(ref)) continue
+    if (components.has(ref)) {
+      logger.warn(`Service carry: service ${ref} shares its bom-ref with a component, the component is kept and the service skipped`)
+      continue
+    }
+    seenRefs.add(ref)
+    added.push(service)
+  }
+  if (!added.length) return { bom, count: 0 }
+
+  logger.info(`Service carry: ${added.length} services carried from the merge inputs`)
+  return { bom: { ...bom, services: [...existing, ...added] }, count: added.length }
+}
+
+/**
+ * Metadata property a merged BOM carries when dependency references that resolve to nothing
+ * were dropped from it (SCORE-14 ADR-3): how many entries and list items were removed. Written
+ * only when that number is above 0.
+ */
+export const DANGLING_REFS_DROPPED_PROPERTY = 'reliza:export:danglingRefsDropped'
+
+export type DanglingRefsResult = {
+  bom: any,
+  count: number
+}
+
+const DANGLING_REFS_LOGGED = 20
+
+/**
+ * Drops the `dependencies[]` references that resolve to no component or service of the
+ * document (SCORE-14 ADR-3), as the last pass of a merge. Resolvable refs are the bom-refs of
+ * `metadata.component`, of `components[]` and of `services[]`, at any depth. An entry whose
+ * `ref` does not resolve goes; `dependsOn[]` and `provides[]` lose the items that do not
+ * resolve, and an entry whose lists become empty stays (an empty `dependsOn` is valid).
+ * Every removed entry and every removed item counts 1. `compositions` and
+ * `vulnerabilities[].affects` are left alone. With nothing to drop the input is returned as
+ * is; otherwise the document gains DANGLING_REFS_DROPPED_PROPERTY with the count, replacing
+ * a value already present.
+ */
+export function dropDanglingRefs(bom: any): DanglingRefsResult {
+  if (!bom || typeof bom !== 'object' || !Array.isArray(bom.dependencies)) return { bom, count: 0 }
+
+  const resolvable = componentBomRefs(bom)
+  if (Array.isArray(bom.services)) bom.services.forEach((s: any) => serviceBomRefs(s, resolvable))
+  const resolves = (ref: any) => typeof ref === 'string' && resolvable.has(ref)
+
+  const dropped: string[] = []
+  const dependencies: any[] = []
+  for (const dep of bom.dependencies) {
+    if (!resolves(dep?.ref)) {
+      dropped.push(String(dep?.ref))
+      continue
+    }
+    let next = dep
+    for (const key of ['dependsOn', 'provides']) {
+      if (!Array.isArray(dep[key]) || dep[key].every(resolves)) continue
+      const kept = dep[key].filter((r: any) => {
+        if (resolves(r)) return true
+        dropped.push(String(r))
+        return false
+      })
+      next = next === dep ? { ...dep } : next
+      next[key] = kept
+    }
+    dependencies.push(next)
+  }
+  if (!dropped.length) return { bom, count: 0 }
+
+  const shown = dropped.slice(0, DANGLING_REFS_LOGGED).join(', ')
+  const more = dropped.length > DANGLING_REFS_LOGGED ? ` and ${dropped.length - DANGLING_REFS_LOGGED} more` : ''
+  logger.warn(`Dangling refs: ${dropped.length} dependency references resolve to nothing and were dropped: ${shown}${more}`)
+
+  const metadata = { ...(bom.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== DANGLING_REFS_DROPPED_PROPERTY)
+    : []
+  properties.push({ name: DANGLING_REFS_DROPPED_PROPERTY, value: String(dropped.length) })
+  metadata.properties = properties
+  return { bom: { ...bom, dependencies, metadata }, count: dropped.length }
+}
+
+/**
+ * Property a placeholder component carries (SCORE-15 ADR-2, ADR-3): ReARM holds no SBOM for the
+ * component release it stands for, so its dependencies are unknown. The value is the
+ * MissingSbomReason ReARM sent.
+ */
+export const SBOM_MISSING_PROPERTY = 'reliza:sbom:missing'
+
+/**
+ * Metadata property a merged BOM carries when it lists placeholder components (SCORE-15 ADR-3):
+ * how many, as a decimal string. Absent means every component release of the merge had an SBOM.
+ */
+export const COMPONENTS_WITHOUT_SBOM_PROPERTY = 'reliza:export:componentsWithoutSbom'
+
+/** The bom-ref of the placeholder for one component release, a ReARM release uuid (SCORE-15 ADR-2). */
+export const RELEASE_BOM_REF_PREFIX = 'urn:rearm:release:'
+
+/** The CycloneDX composition aggregate that states the dependencies of the placeholders are unknown. */
+export const COMPOSITION_AGGREGATE_UNKNOWN = 'unknown'
+
+export function placeholderBomRef(releaseUuid: string): string {
+  return RELEASE_BOM_REF_PREFIX + releaseUuid
+}
+
+/**
+ * One synthetic merge input per component release ReARM holds no SBOM for (SCORE-15 ADR-1,
+ * ADR-2): `metadata.component` describes the release with the bom-ref placeholderBomRef(uuid)
+ * and the SBOM_MISSING_PROPERTY marker, `components` is empty and the one dependency entry has
+ * an empty `dependsOn`, like every other input root. merge-boms then makes it a component of the
+ * merged document and a direct dependency of the merged root. `group`, `supplier` and `purl` are
+ * left out when ReARM sent none: a purl is never made up. Nothing is stored for these inputs.
+ */
+export function placeholderBomObjects(list: MissingSbomComponent[] | null | undefined): any[] {
+  if (!Array.isArray(list)) return []
+  return list.map(missing => {
+    const ref = placeholderBomRef(missing.releaseUuid)
+    const component: any = { type: missing.type, name: missing.name, version: missing.version }
+    if (missing.group) component.group = missing.group
+    if (missing.supplierName) component.supplier = { name: missing.supplierName }
+    if (missing.purl) component.purl = missing.purl
+    component['bom-ref'] = ref
+    component.properties = [{ name: SBOM_MISSING_PROPERTY, value: missing.reason }]
+    return {
+      bomFormat: 'CycloneDX',
+      specVersion: '1.6',
+      metadata: { component },
+      components: [],
+      dependencies: [{ ref, dependsOn: [] }]
+    }
+  })
+}
+
+export type UnknownCompositionsResult = {
+  bom: any,
+  count: number
+}
+
+/** The bom-refs of the components, at any depth, that carry the SBOM_MISSING_PROPERTY marker. */
+function placeholderRefsOf(bom: any): Set<string> {
+  const refs = new Set<string>()
+  const visit = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const ref = bomRefOf(component)
+    const marked = Array.isArray(component.properties)
+      && component.properties.some((p: any) => p?.name === SBOM_MISSING_PROPERTY)
+    if (ref && marked) refs.add(ref)
+    if (Array.isArray(component.components)) component.components.forEach(visit)
+  }
+  if (Array.isArray(bom?.components)) bom.components.forEach(visit)
+  return refs
+}
+
+/**
+ * States that the dependencies of the placeholder components are unknown (SCORE-15 ADR-4), as
+ * the last pass of a merge: the placeholders are the components, at any depth, that carry the
+ * SBOM_MISSING_PROPERTY marker, so the ones a product merge took from a nested product's merge
+ * count too. Appends one `compositions` entry `{ aggregate: unknown, dependencies: [their
+ * bom-refs, sorted] }` after any entry already there, and sets COMPONENTS_WITHOUT_SBOM_PROPERTY
+ * to their number, replacing a value already present. With no placeholder the input is returned
+ * as is. A placeholder of `requested` that the merged document does not hold (merge-boms kept
+ * another component with the same purl, ADR-6) is described elsewhere in the merge: nothing is
+ * added for it, and it is logged.
+ */
+export function declareUnknownCompositions(bom: any, requested: MissingSbomComponent[] | null | undefined): UnknownCompositionsResult {
+  if (!bom || typeof bom !== 'object') return { bom, count: 0 }
+  const refs = placeholderRefsOf(bom)
+  if (Array.isArray(requested)) {
+    for (const missing of requested) {
+      const ref = placeholderBomRef(missing.releaseUuid)
+      if (!refs.has(ref)) {
+        logger.info(`Component release without SBOM ${ref} is described elsewhere in the merge: another component with its purl was kept`)
+      }
+    }
+  }
+  if (!refs.size) return { bom, count: 0 }
+
+  const dependencies = [...refs].sort()
+  const compositions = [
+    ...(Array.isArray(bom.compositions) ? bom.compositions : []),
+    { aggregate: COMPOSITION_AGGREGATE_UNKNOWN, dependencies }
+  ]
+  const metadata = { ...(bom.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== COMPONENTS_WITHOUT_SBOM_PROPERTY)
+    : []
+  properties.push({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: String(dependencies.length) })
+  metadata.properties = properties
+  return { bom: { ...bom, metadata, compositions }, count: dependencies.length }
 }
 
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {

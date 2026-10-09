@@ -1,0 +1,76 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:0b7c2b1e-1f6e-4a55-9f0a-000000000014",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "container",
+      "name": "nginx",
+      "version": "1.31.3",
+      "bom-ref": "pkg:oci/nginx@1.31.3",
+      "purl": "pkg:oci/nginx@1.31.3"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "nginx",
+      "version": "1.31.3-r1",
+      "purl": "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+      "bom-ref": "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64"
+    },
+    {
+      "type": "library",
+      "name": "musl",
+      "version": "1.2.5-r10",
+      "purl": "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64",
+      "bom-ref": "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+    }
+  ],
+  "services": [
+    {
+      "bom-ref": "urn:service:sysvinit:pkg:apk-alpine-nginx-1.31.3-r1:nginx",
+      "name": "nginx",
+      "properties": [
+        {
+          "name": "cdx:service:packageName",
+          "value": "nginx"
+        }
+      ]
+    },
+    {
+      "bom-ref": "urn:service:sysvinit:pkg:apk-alpine-nginx-1.31.3-r1:nginx-debug",
+      "name": "nginx-debug"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:oci/nginx@1.31.3",
+      "dependsOn": [
+        "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+        "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+      ]
+    },
+    {
+      "ref": "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+      "dependsOn": [
+        "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+      ]
+    },
+    {
+      "ref": "urn:service:sysvinit:pkg:apk-alpine-nginx-1.31.3-r1:nginx",
+      "dependsOn": [
+        "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+        "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+      ]
+    },
+    {
+      "ref": "urn:service:sysvinit:pkg:apk-alpine-nginx-1.31.3-r1:nginx-debug",
+      "dependsOn": [
+        "pkg:apk/alpine/nginx@1.31.3-r1?arch=x86_64",
+        "pkg:apk/alpine/musl@1.2.5-r10?arch=x86_64"
+      ]
+    }
+  ]
+}
