@@ -24,6 +24,7 @@ the default (Reliza) branding.
 | Logo | the navigation bar and the Keycloak login page |
 | Favicon | the browser tab icon and the Keycloak login page |
 | Sign-up background | the background of the sign-up, email verification and join-organization pages |
+| Login background | the background of the Keycloak login page. A preset without one gets Keycloak's own background; the Reliza background is shown on the default branding only |
 
 With a preset selected, the footer shows the product name, a "Built on ReARM"
 line and Documentation, Support and Legal links. In the navigation bar, a wide
@@ -69,10 +70,12 @@ The UI needs no setting: it asks the backend for the branding when it starts.
 
 A field a preset leaves out takes the default (Reliza) value. This applies
 per field, per asset (logo, favicon, sign-up background) and per file of the
-login page. The `medware` preset sets the product name, organization, logo and
-favicon, and hides the marketing consent checkbox; it leaves the support
-contact, documentation, terms of service, privacy policy and legal links and
-the sign-up background to the Reliza defaults.
+login page. The login page background is the exception: a preset that provides
+none shows Keycloak's own background, not the Reliza one. The `medware` preset
+sets the product name, organization, logo and favicon, and hides the marketing
+consent checkbox; it leaves the support contact, documentation, terms of
+service, privacy policy and legal links and the sign-up background to the
+Reliza defaults; its login page has Keycloak's own background.
 
 ## What is never branded
 
@@ -99,6 +102,9 @@ is ignored, with a warning in the backend log.
   a login-page overlay logs `branding preset "<name>" has no Keycloak overlay ...`
   and keeps the default login page. Keycloak reads the preset at startup, so
   restart it after a change.
+- **The login page shows the Reliza beach background with a preset set.**
+  Keycloak is still running without the preset (see the bullet above); with a
+  preset applied the login page never shows it.
 - **The browser tab shows ReARM for a moment.** This is expected: the tab
   title and icon switch to the preset's once the UI has read the branding
   from the backend.
