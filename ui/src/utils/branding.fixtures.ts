@@ -1,7 +1,9 @@
 // Branding settings fixtures for the specs (task WL-3). Not a suite: vitest collects *.spec.ts only.
 // MEDWARE_SETTINGS is what the backend answers for the shipped medware preset; EXAMPLE_SETTINGS is the
 // backend's test-only example preset, which sets every field that is not a fallback, so the specs
-// exercise each one; CONSENT_SHOWN_SETTINGS is the one shape the shipped preset cannot reach.
+// exercise each one; CONSENT_SHOWN_SETTINGS is the one shape the shipped preset cannot reach. Neither preset
+// ships a sign-up background, so the backend answers null for it (task WL-6); BACKGROUND_SETTINGS is a
+// preset that ships one.
 import type { BrandingSettings } from './branding'
 
 export const MEDWARE_SETTINGS: BrandingSettings = {
@@ -20,7 +22,7 @@ export const MEDWARE_SETTINGS: BrandingSettings = {
     marketingConsentText: 'Agree to receive news and promotions from Reliza by email (Optional).',
     logoUrl: '/api/branding/v1/asset/logo?v=19741e4ca576',
     faviconUrl: '/api/branding/v1/asset/favicon?v=652d6f562b4d',
-    signUpBackgroundUrl: '/reliza_in_sand_right_corner.jpg'
+    signUpBackgroundUrl: null
 }
 
 export const EXAMPLE_SETTINGS: BrandingSettings = {
@@ -39,11 +41,16 @@ export const EXAMPLE_SETTINGS: BrandingSettings = {
     marketingConsentText: 'Agree to receive news and promotions from Reliza by email (Optional).',
     logoUrl: '/api/branding/v1/asset/logo?v=0123456789ab',
     faviconUrl: '/api/branding/v1/asset/favicon?v=ba9876543210',
-    signUpBackgroundUrl: '/reliza_in_sand_right_corner.jpg'
+    signUpBackgroundUrl: null
 }
 
 export const CONSENT_SHOWN_SETTINGS: BrandingSettings = {
     ...EXAMPLE_SETTINGS,
     marketingConsent: 'SHOWN',
     marketingConsentText: 'Agree to receive news from Example Organization (Optional).'
+}
+
+export const BACKGROUND_SETTINGS: BrandingSettings = {
+    ...EXAMPLE_SETTINGS,
+    signUpBackgroundUrl: '/api/branding/v1/asset/signUpBackground?v=0123456789ab'
 }
