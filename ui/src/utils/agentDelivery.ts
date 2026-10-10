@@ -24,6 +24,19 @@ export interface PrChip {
      * about whether the PR still merges.
      */
     baseMoved?: string
+    /** How delivery counts the PR now, as the server reads it (task t20261010-033525-24393), in words. */
+    unit?: string
+}
+
+/** The server's delivery unit of a linked PR (task t20261010-033522-23606), in words; undefined when not read. */
+export function unitLine (unit: string | null | undefined): string | undefined {
+    switch (unit) {
+        case 'DELIVERED': return 'delivery: delivered'
+        case 'WAITING': return 'delivery: waiting on it to merge'
+        case 'BLOCKED': return 'delivery: blocked (closed unmerged, or declared abandoned)'
+        case 'SUPERSEDED': return 'delivery: superseded, its replacement counts'
+        default: return undefined
+    }
 }
 
 /** A PR URL as the board matches it: no query, fragment, trailing slash or .git, and case-folded. */
@@ -72,7 +85,7 @@ export function prChips (task: any): PrChip[] {
     if (resolved.length) {
         // A declaration settles the chip (task 18c5c293); the heads line stays on it (task 3b97ccfd).
         return resolved.map((pr: any) => ({ ...(declarationChip(pr) ?? chipOf(pr)), ...headLine(tested.get(prKey(pr.url)), pr.head),
-            ...baseMovedLine(pr.baseMovedBy) }))
+            ...baseMovedLine(pr.baseMovedBy), unit: unitLine(pr.unit) }))
     }
     return (task?.prUrls ?? []).map((url: string) => ({ url, label: shortPr(url), state: 'linked', type: 'default',
         title: 'linked PR' }))

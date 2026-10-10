@@ -34,7 +34,7 @@ const EMITTERS: [any, string, string[]][] = [
     [TaskSummary, 'TaskSummary', ['open']],
     [TaskReviewItems, 'TaskReviewItems', ['decide', 'open-element']],
     [TaskQuestions, 'TaskQuestions', ['answer']],
-    [TaskPullRequests, 'TaskPullRequests', ['declare-delivery', 'supersede']],
+    [TaskPullRequests, 'TaskPullRequests', ['declare-delivery', 'supersede', 'unlink']],
 ]
 
 /** What the board panel listens to on the drawer, bar close. */
@@ -51,7 +51,7 @@ const PAGE_ACTIONS: Record<string, string> = {
     answer: 'agentTaskAnswer', 'set-strength': 'agentTaskSetStrength', 'operator-hold': 'agentTaskOperatorHold', 'set-budget': 'agentTaskSetBudget',
     'set-work-level': 'agentTaskSetWorkLevel', 'set-group': 'agentTaskSetGroup', 'set-tags': 'agentTaskSetTags',
     'declare-delivery': 'agentTaskDeclareDelivery', 'unassign': 'agentTaskUnassign',
-    supersede: 'agentTaskSupersedePullRequest',
+    supersede: 'agentTaskSupersedePullRequest', unlink: 'agentTaskUnlinkPr',
 }
 
 const stubs = {
