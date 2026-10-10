@@ -122,7 +122,7 @@ describe('branding surfaces contract', () => {
         expect(existsSync(page)).toBe(true)
         const md = readFileSync(page, 'utf8')
         for (const s of ['brandingPreset', 'BRANDING_PRESET', 'RELIZAPROP_BRANDING_PRESET', 'REARM_BRANDING_PRESET',
-            'medware', 'Community Edition']) {
+            'medware', 'Community Edition', 'plain background']) {
             expect(md).toContain(s)
         }
         expect(md).not.toContain('example')

@@ -23,7 +23,7 @@ the default (Reliza) branding.
 | Marketing consent | whether the sign-up page shows the news and promotions checkbox (and the matching option on the profile page), and its text |
 | Logo | the navigation bar and the Keycloak login page |
 | Favicon | the browser tab icon and the Keycloak login page |
-| Sign-up background | the background of the sign-up, email verification and join-organization pages |
+| Sign-up background | the background of the sign-up, email verification and join-organization pages. A preset without one gets a plain background (a flat grey, no image); the Reliza beach background is shown on the default branding only |
 | Login background | the background of the Keycloak login page. A preset without one gets Keycloak's own background; the Reliza background is shown on the default branding only |
 
 With a preset selected, the footer shows the product name, a "Built on ReARM"
@@ -40,6 +40,11 @@ logo is shown as a mark with the product name beside it.
 Presets are bundled with ReARM Pro: a new preset is a content change shipped
 with a release. To request one, contact Reliza at
 [info@reliza.io](mailto:info@reliza.io).
+
+A preset declares its sign-up background as `signUpBackground: <file>` under
+`assets` in its `preset.yaml` (a `jpg`, `jpeg`, `png` or `webp` file beside
+it). The login page background is a separate file in the preset's Keycloak
+login-page overlay, so a picture wanted on both pages is shipped twice.
 
 ## Selecting a preset
 
@@ -69,13 +74,15 @@ The UI needs no setting: it asks the backend for the branding when it starts.
 ## Fallback
 
 A field a preset leaves out takes the default (Reliza) value. This applies
-per field, per asset (logo, favicon, sign-up background) and per file of the
-login page. The login page background is the exception: a preset that provides
-none shows Keycloak's own background, not the Reliza one. The `medware` preset
-sets the product name, organization, logo and favicon, and hides the marketing
-consent checkbox; it leaves the support contact, documentation, terms of
-service, privacy policy and legal links and the sign-up background to the
-Reliza defaults; its login page has Keycloak's own background.
+per field, per asset (logo, favicon) and per file of the login page. The two
+backgrounds are the exception: a preset that provides no sign-up background
+gets a plain one, and one that provides no login background shows Keycloak's
+own; the Reliza backgrounds appear on the default branding only. The `medware`
+preset sets the product name, organization, logo and favicon, and hides the
+marketing consent checkbox; it leaves the support contact, documentation, terms
+of service, privacy policy and legal links to the Reliza defaults; its sign-up
+pages have the plain background and its login page has Keycloak's own
+background.
 
 ## What is never branded
 
@@ -105,6 +112,11 @@ is ignored, with a warning in the backend log.
 - **The login page shows the Reliza beach background with a preset set.**
   Keycloak is still running without the preset (see the bullet above); with a
   preset applied the login page never shows it.
+- **The sign-up page shows the Reliza beach background with a preset set.**
+  Open `/api/branding/v1/settings`: with a preset applied,
+  `signUpBackgroundUrl` is `null` or the preset's asset URL. If it is
+  `/reliza_in_sand_right_corner.jpg`, the backend is running without the
+  preset (see the first bullet).
 - **The browser tab shows ReARM for a moment.** This is expected: the tab
   title and icon switch to the preset's once the UI has read the branding
   from the backend.

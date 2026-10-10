@@ -1,14 +1,14 @@
 // @vitest-environment happy-dom
 //
-// Branding presets, the UI state (task WL-3, tests 24 to 28c): the default the UI starts from and falls
+// Branding presets, the UI state (task WL-3, tests 24 to 28c; task WL-6, test 35): the default the UI starts from and falls
 // back to, the one settings call it makes at start, the per-field checks on what it takes, and the helpers
 // every branded surface reads. No spec fetches anything: loadBranding takes the fetch function.
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import {
-    DEFAULT_BRANDING, applySignUpBackground, brandingState, legalTooltipText, loadBranding, navLogoLayoutFor,
-    parseBrandingSettings, supportContactHtml
+    DEFAULT_BRANDING, PLAIN_SIGN_UP_BACKGROUND, applySignUpBackground, brandingState, legalTooltipText, loadBranding,
+    navLogoLayoutFor, parseBrandingSettings, supportContactHtml
 } from './branding'
-import { CONSENT_SHOWN_SETTINGS, EXAMPLE_SETTINGS, MEDWARE_SETTINGS } from './branding.fixtures'
+import { BACKGROUND_SETTINGS, CONSENT_SHOWN_SETTINGS, EXAMPLE_SETTINGS, MEDWARE_SETTINGS } from './branding.fixtures'
 
 const MEDWARE_LEGAL = 'ReARM™ is a trademark of Reliza Incorporated, used under license. MedWare Cyber Dossier is offered by MedWare Cyber, LLC.'
 
@@ -168,7 +168,9 @@ describe('branding: parseBrandingSettings', () => {
         ['marketingConsent', 'MAYBE'], ['marketingConsent', 'hidden'],
         ['documentationUrl', 'docs.example.com'], ['documentationUrl', 'javascript:alert(1)'],
         ['logoUrl', 'https://evil.example/x.svg'], ['logoUrl', '//evil.example/x.svg'],
-        ['supportEmail', 'nope'], ['supportEmail', 'a b@example.com']
+        ['supportEmail', 'nope'], ['supportEmail', 'a b@example.com'],
+        ['signUpBackgroundUrl', ''], ['signUpBackgroundUrl', 42], ['signUpBackgroundUrl', '//evil.example/x.jpg'],
+        ['signUpBackgroundUrl', 'https://evil.example/x.jpg']
     ]
     for (const [field, value] of cases) {
         it(`27: ${field} = ${JSON.stringify(value)} keeps the default for that field only`, () => {
@@ -199,6 +201,20 @@ describe('branding: parseBrandingSettings', () => {
     it('27: the consent-shown fixture is taken whole', () => {
         expect(parseBrandingSettings(CONSENT_SHOWN_SETTINGS)).toEqual(CONSENT_SHOWN_SETTINGS)
     })
+
+    it('27: a null signUpBackgroundUrl is stored as null, the presets without a background are taken whole', () => {
+        expect(parseBrandingSettings({ ...BACKGROUND_SETTINGS, signUpBackgroundUrl: null }).signUpBackgroundUrl).toBeNull()
+        expect(parseBrandingSettings(MEDWARE_SETTINGS)).toEqual(MEDWARE_SETTINGS)
+        expect(parseBrandingSettings(EXAMPLE_SETTINGS)).toEqual(EXAMPLE_SETTINGS)
+        expect(parseBrandingSettings(BACKGROUND_SETTINGS)).toEqual(BACKGROUND_SETTINGS)
+    })
+
+    it('27: an absent signUpBackgroundUrl keeps the default path (a backend from before WL-6)', () => {
+        const { signUpBackgroundUrl: _omitted, ...withoutKey } = MEDWARE_SETTINGS
+        expect(Object.keys(withoutKey)).not.toContain('signUpBackgroundUrl')
+        expect(parseBrandingSettings(withoutKey).signUpBackgroundUrl).toBe(DEFAULT_BRANDING.signUpBackgroundUrl)
+        expect(DEFAULT_BRANDING.signUpBackgroundUrl).toBe('/reliza_in_sand_right_corner.jpg')
+    })
 })
 
 describe('branding: helpers', () => {
@@ -218,6 +234,53 @@ describe('branding: helpers', () => {
         applySignUpBackground(branded)
         expect(branded.style.backgroundImage).toBe(`url("${bg}")`)
         expect(branded.style.backgroundSize).toBe('cover')
+    })
+
+    it('35: applySignUpBackground paints the photo on default, the plain look on a preset without one, the asset on a preset with one', () => {
+        const styles = (b: HTMLElement) => ({ ...b.style })
+        const record = () => ({ style: {} } as unknown as HTMLElement)
+
+        Object.assign(brandingState, DEFAULT_BRANDING)
+        const def = record()
+        applySignUpBackground(def)
+        expect(styles(def)).toEqual({
+            background: 'DimGrey none',
+            backgroundImage: 'url("/reliza_in_sand_right_corner.jpg")',
+            backgroundSize: 'cover'
+        })
+
+        Object.assign(brandingState, MEDWARE_SETTINGS)
+        const plain = record()
+        applySignUpBackground(plain)
+        expect(styles(plain)).toEqual({
+            background: `${PLAIN_SIGN_UP_BACKGROUND} none`,
+            backgroundImage: 'none',
+            backgroundSize: 'auto'
+        })
+
+        Object.assign(brandingState, BACKGROUND_SETTINGS)
+        const own = record()
+        applySignUpBackground(own)
+        expect(styles(own)).toEqual({
+            background: 'DimGrey none',
+            backgroundImage: 'url("/api/branding/v1/asset/signUpBackground?v=0123456789ab")',
+            backgroundSize: 'cover'
+        })
+    })
+
+    it('35: on a body that holds the photo, the plain look leaves no image behind', () => {
+        Object.assign(brandingState, DEFAULT_BRANDING)
+        const body = document.createElement('body')
+        applySignUpBackground(body)
+        expect(body.style.backgroundImage).toContain('url(')
+
+        Object.assign(brandingState, MEDWARE_SETTINGS)
+        applySignUpBackground(body)
+        for (const v of [body.style.background, body.style.backgroundImage, body.style.backgroundSize]) {
+            expect(v).not.toContain('url(')
+        }
+        expect(body.style.backgroundImage).toBe('none')
+        expect(body.style.backgroundSize).toBe('auto')
     })
 
     it('28a: navLogoLayoutFor: wide from a 2:1 ratio up, stacked below and for unknown sizes', () => {

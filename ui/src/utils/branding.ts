@@ -26,7 +26,8 @@ export interface BrandingSettings {
     marketingConsentText: string
     logoUrl: string
     faviconUrl: string
-    signUpBackgroundUrl: string
+    // null: the preset has no sign-up background and does not inherit the default's (task WL-6).
+    signUpBackgroundUrl: string | null
 }
 
 export const DEFAULT_BRANDING: Readonly<BrandingSettings> = Object.freeze({
@@ -48,6 +49,11 @@ export const DEFAULT_BRANDING: Readonly<BrandingSettings> = Object.freeze({
     signUpBackgroundUrl: '/reliza_in_sand_right_corner.jpg'
 })
 
+// The plain sign-up background (task WL-6 design 3.3): what the sign-up, email verification and
+// join-organization pages show, with no image, when the active preset has no background of its own.
+// Any CSS colour; a one-line change here changes the look.
+export const PLAIN_SIGN_UP_BACKGROUND = 'DimGrey'
+
 export const SETTINGS_PATH = '/api/branding/v1/settings'
 
 export const brandingState: BrandingSettings = reactive<BrandingSettings>({ ...DEFAULT_BRANDING })
@@ -56,7 +62,7 @@ export type NavLogoLayout = 'wide' | 'stacked'
 
 export const navLogoLayout = ref<'unknown' | NavLogoLayout>('unknown')
 
-type FieldRule = (v: unknown) => string | undefined
+type FieldRule = (v: unknown) => string | null | undefined
 
 const text: FieldRule = v => (typeof v === 'string' && v.trim() ? v.trim() : undefined)
 const email: FieldRule = v => {
@@ -65,6 +71,8 @@ const email: FieldRule = v => {
 }
 const href: FieldRule = v => (typeof v === 'string' && /^https?:\/\//.test(v) ? v : undefined)
 const samePath: FieldRule = v => (typeof v === 'string' && v.startsWith('/') && !v.startsWith('//') ? v : undefined)
+// null is the backend saying the preset has none; anything else that is not a same-origin path keeps the default.
+const samePathOrNone: FieldRule = v => (v === null ? null : samePath(v))
 const consent: FieldRule = v => (v === 'SHOWN' || v === 'HIDDEN' ? v : undefined)
 
 const FIELD_RULES: Record<Exclude<keyof BrandingSettings, 'isDefault'>, FieldRule> = {
@@ -82,7 +90,7 @@ const FIELD_RULES: Record<Exclude<keyof BrandingSettings, 'isDefault'>, FieldRul
     marketingConsentText: text,
     logoUrl: samePath,
     faviconUrl: samePath,
-    signUpBackgroundUrl: samePath
+    signUpBackgroundUrl: samePathOrNone
 }
 
 function isPlainObject (v: unknown): v is Record<string, unknown> {
@@ -161,11 +169,18 @@ export async function loadBranding (fetchFn: typeof fetch = globalThis.fetch, do
     applyDocumentBranding(doc)
 }
 
+// All three styles are written either way, so the body never keeps a value from an earlier page.
 export function applySignUpBackground (body: HTMLElement | null = document.body): void {
     if (!body) return
-    body.style.background = 'DimGrey none'
-    body.style.backgroundImage = `url("${brandingState.signUpBackgroundUrl}")`
-    body.style.backgroundSize = 'cover'
+    if (brandingState.signUpBackgroundUrl === null) {
+        body.style.background = `${PLAIN_SIGN_UP_BACKGROUND} none`
+        body.style.backgroundImage = 'none'
+        body.style.backgroundSize = 'auto'
+    } else {
+        body.style.background = 'DimGrey none'
+        body.style.backgroundImage = `url("${brandingState.signUpBackgroundUrl}")`
+        body.style.backgroundSize = 'cover'
+    }
 }
 
 export function offeredBy (): string {
