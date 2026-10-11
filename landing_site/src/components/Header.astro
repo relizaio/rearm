@@ -111,6 +111,9 @@ const { active = '' } = Astro.props;
       position: absolute; top: 68px; left: 0; right: 0;
       background: #FFFFFF; border-bottom: 1px solid var(--border-card);
       flex-direction: column; align-items: stretch; gap: 0; padding: 8px 0 16px;
+      /* A tall menu (both dropdowns open) scrolls inside itself, and reaching its end does not
+         scroll the page underneath, which would close it (see the script). */
+      max-height: calc(100vh - 68px); overflow-y: auto; overscroll-behavior: contain;
     }
     .nav.open { display: flex; }
     .nav-link { padding: 12px 20px; min-height: 44px; display: flex; align-items: center; }
@@ -124,10 +127,20 @@ const { active = '' } = Astro.props;
 <script>
   const burger = document.getElementById('hamburger');
   const nav = document.getElementById('site-nav');
+  let openedAtY = 0;
   burger?.addEventListener('click', () => {
     const open = nav?.classList.toggle('open');
     burger.setAttribute('aria-expanded', String(!!open));
+    if (open) openedAtY = window.scrollY;
   });
+  // The header is sticky, so an open mobile menu stays pinned while the page scrolls under it.
+  // Scrolling the page means the reader has moved on: close the menu. A few pixels of slack keeps a
+  // layout nudge from the menu opening, or the mobile address bar, from closing it at once.
+  window.addEventListener('scroll', () => {
+    if (!nav?.classList.contains('open') || Math.abs(window.scrollY - openedAtY) < 8) return;
+    nav.classList.remove('open');
+    burger?.setAttribute('aria-expanded', 'false');
+  }, { passive: true });
   // click-toggle for dropdowns (touch / keyboard; hover handles desktop pointer)
   document.querySelectorAll('.dd-toggle').forEach((t) => {
     t.addEventListener('click', (e) => {
