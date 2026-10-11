@@ -69,6 +69,13 @@ BRANDING_PRESET=medware
 The backend reads it as `RELIZAPROP_BRANDING_PRESET` and Keycloak as
 `REARM_BRANDING_PRESET`. Restart both containers after changing it.
 
+**The Keycloak image must carry the preset.** The login-page overlay is part of
+the `rearm-keycloak` image, so a preset needs an image built from a ReARM Pro
+release that ships branding presets; check that your chart's
+`image.keycloakImage` (or the compose images override) points at one. With an
+older Keycloak image the preset is applied everywhere else, Keycloak still
+starts, and the login page keeps the default look.
+
 The UI needs no setting: it asks the backend for the branding when it starts.
 
 ## Fallback
@@ -112,6 +119,11 @@ is ignored, with a warning in the backend log.
 - **The login page shows the Reliza beach background with a preset set.**
   Keycloak is still running without the preset (see the bullet above); with a
   preset applied the login page never shows it.
+- **The Keycloak log shows `Error opening file: open branding: no such file or directory`
+  followed by
+  `WARNING kc_override branding failed (preset not applied), starting Keycloak with the default login theme`.**
+  The Keycloak image predates branding presets; Keycloak runs with the default
+  login page. Move to a `rearm-keycloak` image that carries the preset.
 - **The sign-up page shows the Reliza beach background with a preset set.**
   Open `/api/branding/v1/settings`: with a preset applied,
   `signUpBackgroundUrl` is `null` or the preset's asset URL. If it is
