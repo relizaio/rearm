@@ -207,7 +207,8 @@ const SPECIFICATION_TYPES = [
     { label: 'UX concept', value: 'UX_CONCEPT' },
     { label: 'Test plan', value: 'TEST_PLAN' },
     { label: 'Glossary', value: 'GLOSSARY' },
-    { label: 'Decision record (ADR)', value: 'DECISION_RECORD' }
+    { label: 'Decision record (ADR)', value: 'DECISION_RECORD' },
+    { label: 'Threat model', value: 'THREAT_MODEL' }
 ]
 
 const PERMISSION_FUNCTIONS: string[] = [
