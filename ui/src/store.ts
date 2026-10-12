@@ -2876,7 +2876,8 @@ const storeObject : any = {
                         agentTask(uuid: $uuid) {
                             ${AGENT_TASK_SELECTION}
                             testedHeads { pr head }
-                            pullRequests { url head }
+                            pullRequests { url head unit }
+                            unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
                         }
                     }`,
                 variables: { uuid },
@@ -3436,6 +3437,23 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskSupersedePullRequest
+        },
+        /**
+         * A person unlinks a PR that should never have counted (task t20261010-033523-18839, t20261010-033525-24393):
+         * a mistaken link, or the superseded half of a pair. Recorded on unlinkedPrs. BOARD_WRITE.
+         */
+        async agentTaskUnlinkPr (context: any, payload: { taskUuid: string, prUrl: string, note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskUnlinkPr($taskUuid: ID!, $prUrl: String!, $note: String) {
+                        agentTaskUnlinkPr(taskUuid: $taskUuid, prUrl: $prUrl, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskUnlinkPr
         },
         /** A task's work level, a rung of the board's ladder (task RD3-6); null clears it to the default (RD2-1). BOARD_WRITE. */
         async agentTaskSetWorkLevel (context: any, payload: { taskUuid: string, workLevel: number | null }) {

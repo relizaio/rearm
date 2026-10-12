@@ -3,6 +3,9 @@
 // apply, and what each sends; pure, so the specs need no store.
 
 import { boardCan } from './agentBoardAccess'
+import { prKey, shortPr } from './agentDelivery'
+import { awaitingOperator } from './agentOperatorQuestion'
+import { isTerminal } from './agentTaskFormat'
 
 /** The statuses the server places a hold from; ASSIGNED and later are refused (placeHold). */
 export const HOLDABLE_STATUSES = ['PENDING_INTAKE', 'QUEUED', 'AWAITING_COORDINATOR']
@@ -82,9 +85,9 @@ export function prRepository (url: string | null | undefined): string | null {
     return s
 }
 
-/** The task's PR row for a URL, as the task read resolves it. */
+/** The task's PR row for a URL, as the task read resolves it, matched as the board matches PRs. */
 function prRow (task: any, url: string): any {
-    return (task?.pullRequests ?? []).find((p: any) => p?.url === url)
+    return (task?.pullRequests ?? []).find((p: any) => prKey(p?.url) === prKey(url))
 }
 
 /**
@@ -117,4 +120,64 @@ export function supersedePayload (task: any, oldUrl: string, byUrl: string | nul
     if (!byUrl || !supersedeCandidates(task, oldUrl).includes(byUrl)) return null
     const n = (note ?? '').trim()
     return { task, oldUrl, byUrl, note: n || null }
+}
+
+// ---------- unlinking a PR that should never have counted (task t20261010-033525-24393) ----------
+
+/** Whether a row offers "Unlink...": a PR linked to a task not yet completed or cancelled. */
+export function offersUnlink (task: any, url: string): boolean {
+    return !isTerminal(task) && ((task?.prUrls ?? []) as string[]).some(u => prKey(u) === prKey(url))
+}
+
+/** The linked PRs a DELIVERING task still has to deliver once `url` is gone: waiting on, or delivered. */
+function othersToDeliver (task: any, url: string): any[] {
+    return (task?.pullRequests ?? []).filter((p: any) => prKey(p?.url) !== prKey(url)
+        && (p?.unit === 'WAITING' || p?.unit === 'DELIVERED'))
+}
+
+/**
+ * Why "Unlink..." is disabled, or null (RD2-16), in the server's words (task t20261010-033523-18839) and its order,
+ * the task's own label aside: the permission, a task parked for the operator, a delivered PR, the replacement of a
+ * superseded one, and the last PR a DELIVERING task has to deliver. Past the pass before DELIVERING (a live tested
+ * pass, or every role passed at the coordinator) the page cannot tell, so the server's refusal says it; a read
+ * without units checks no delivery.
+ */
+export function unlinkDisabledReason (task: any, url: string, canOperate: boolean): string | null {
+    if (!canOperate) return 'unlinking a PR needs BOARD_WRITE on this board'
+    if (awaitingOperator(task)) return 'This task is parked, awaiting the operator; release the hold first, then unlink'
+    const pr = prRow(task, url)
+    if (pr?.registered && pr?.state === 'MERGED') return `${url} merged; a delivered PR stays linked`
+    if (pr?.declaration?.outcome === 'DELIVERED') return `${url} is declared delivered; a delivered PR stays linked`
+    const replaced = (task?.pullRequests ?? []).find((o: any) => prKey(o?.url) !== prKey(url)
+        && o?.declaration?.outcome === 'SUPERSEDED' && prKey(o.declaration.supersededBy) === prKey(url))
+    if (replaced) {
+        return `${url} is the replacement of ${replaced.url} (declared superseded by it); unlink ${replaced.url} first,`
+            + ' or supersede it by another PR'
+    }
+    const units = (task?.pullRequests ?? []).some((p: any) => p?.unit)
+    if (task?.status === 'DELIVERING' && units && !othersToDeliver(task, url).length) {
+        return `Unlinking ${url} would leave this task with no PR to deliver; reopen it to the role that redoes the work,`
+            + ' supersede it (task supersedepr), or cancel it'
+    }
+    return null
+}
+
+/**
+ * What a person is told before taking out a PR a DELIVERING task still waits on: the server takes it from a person
+ * and posts an ALERT naming the tested head that no longer counts. Only DELIVERING is certain to be past the pass
+ * here, so earlier the server's ALERT alone says it. Null when nothing is at stake.
+ */
+export function unlinkWarning (task: any, url: string): string | null {
+    const pr = prRow(task, url)
+    if (task?.status !== 'DELIVERING' || pr?.unit !== 'WAITING') return null
+    const tested = (task?.testedHeads ?? []).find((t: any) => prKey(t?.pr) === prKey(url))
+    const head = tested?.head ? `, and the tested head ${String(tested.head).slice(0, 7)} no longer counts` : ''
+    return `${shortPr(url)} is ${pr.registered ? 'open' : 'unregistered'} and delivery waits on it: unlinking it posts an ALERT${head}`
+}
+
+/** The user mutation's variables: the note trimmed, none when blank (the field caps it at the server's limit). */
+export function unlinkPayload (task: any, prUrl: string, note: string | null | undefined):
+        { task: any, prUrl: string, note: string | null } {
+    const n = (note ?? '').trim()
+    return { task, prUrl, note: n || null }
 }
