@@ -213,9 +213,13 @@ describe('the export modal states the support gate once, and sends it through th
     // argument -- and nothing in the framework ties them together. These two assertions are
     // what keep them saying the same thing. The three-case rule itself is asserted by RUNNING
     // it, in utils/exportMetadataFallback.spec.ts.
-    it('renders the support switch only when the organization publishes attestations', () => {
-        expect(source).toContain('<n-form-item v-if="orgSupportInjectionEnabled">')
-        // Absent, not disabled. The old hint must not come back with it.
+    // SCORE-21 (SCORE-12 ADR-2) superseded the 2026-09-22 "absent, not disabled" rule: the switch
+    // shows whenever the server offers it and is disabled, with a hint, while the org setting is
+    // off. The template structure is pinned in releaseViewExportWiring.spec.ts.
+    it('renders the support switch when the server offers it, disabled while the organization setting is off', () => {
+        expect(source).toContain('<n-form-item v-if="orgSupportInjectionSupported">')
+        expect(source).toContain(':disabled="!orgSupportInjectionEnabled"')
+        // The pre-2026-09-22 hint stays gone; the new one names where the setting is.
         expect(source).not.toContain('Enable support metadata in Organization Settings')
     })
 
@@ -239,8 +243,8 @@ describe('the export modal states the support gate once, and sends it through th
         expect(body).not.toMatch(/includeSupportMetadata\.value = orgSupportInjection/)
     })
 
-    // The org-disabled case is deliberately unexplained -- the settings screen is reachable.
-    // A backend that does not declare the setting is not, so that case keeps its hint.
+    // A backend that does not declare the setting has no switch at all, so that case keeps its
+    // own hint (the org-disabled hint is in releaseViewExportWiring.spec.ts).
     it('explains an absent switch only in the case the operator cannot go and change', () => {
         expect(source).toContain('<div v-if="!orgSupportInjectionSupported"')
         expect(source).toContain('gains it at its next sync')

@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -11,8 +11,32 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
   try {
     let mergedBom = null
     const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    // Component releases without an SBOM join as synthetic inputs, after the per-input
+    // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
+    // them and lists them in the root's dependencies like every other input.
+    bomObjs.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
+    // merge-boms carries the inputs' dependency entries but not their services; put the
+    // services back first, so a service-vs-component bom-ref clash is settled before the
+    // de-dup keys components by bom-ref. In the top-level-only export only the services a
+    // surviving dependency entry names are carried.
+    if (mergedBom) mergedBom = carryServices(mergedBom, bomObjs, { referencedOnly: rebomOptions.tldOnly === true }).bom
+    // Before the file filter: the filter keys what it drops by bom-ref and assumes one
+    // component per ref, and a hoisted subtree can hold file components it has to see.
+    if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
+    if (mergedBom && rebomOptions.excludeFileComponents === true) {
+      // On the merged graph, not per input: merge-boms re-roots the inputs, and the
+      // splice has to run on the graph the root actually has. The inputs of a product
+      // merge are themselves filtered merges, so what they already left out is added to
+      // the count this merge writes.
+      const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
+      mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
+    }
+    // A check on the final graph, after every pass that may repair a reference.
+    if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
+    // After it: adds no dependency ref, and describes the placeholders that survived.
+    if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
     return mergedBom
   } catch (e) {
     logger.error({ err: e }, "Error During merge")

@@ -24,6 +24,7 @@ const typeDefs = gql`
     getBearIntegration(org: ID!): BearIntegration
     getBomDigestProbe(bomContent: BomContentInput!): String!
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
+    scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
   }
 
@@ -127,6 +128,16 @@ const typeDefs = gql`
     createdDate: DateTime
     lastUpdatedDate: DateTime
     ignoreDev: Boolean
+    """
+    True on a merged BOM whose components of type file were left out (see the
+    RebomOptions input); null or false when they were kept.
+    """
+    excludeFileComponents: Boolean
+    """
+    The merge rule set a merged BOM was built with (see the RebomOptions input); null on
+    merges stored before rebom de-duplicated bom-refs.
+    """
+    mergeVersion: Int
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
     enrichmentError: String
@@ -317,7 +328,30 @@ input RebomOptions {
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
     ignoreDev: Boolean
+    # Merge only: leave components of type file out of the merged BOM. Null or false
+    # keeps them. The merged document then carries reliza:export:fileComponentsExcluded.
+    excludeFileComponents: Boolean
+    # Merge only: the caller's version of the merge rules, stored verbatim with the merged
+    # BOM so the caller can tell merges built before a rule change; rebom does not read it.
+    mergeVersion: Int
+    # Merge only: the component releases of a product merge that have no SBOM. Each becomes a
+    # placeholder component with the property reliza:sbom:missing, a direct dependency of the
+    # merged root, and the document states their dependencies unknown (compositions). Not stored.
+    missingSbomComponents: [MissingSbomComponentInput!]
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
+  }
+
+  # A component release ReARM holds no SBOM for. reason: NO_SBOM_ARTIFACT or COVERAGE_EXCLUDED.
+  # purl only when ReARM records one; it is never made up.
+  input MissingSbomComponentInput {
+    releaseUuid: String!
+    name: String!
+    version: String!
+    type: String!
+    supplierName: String
+    group: String
+    purl: String
+    reason: String!
   }
 
   input BomSearch {

@@ -40,6 +40,101 @@ export async function shellExec(cmd: string, args: any[], timeout?: number): Pro
   })
 }
 
+export interface ShellResult {
+    code: number | null;                 // exit code; null when killed or never started
+    signal: string | null;
+    stdout: string;                      // complete up to maxStdoutBytes, not trimmed
+    stderr: string;                      // first maxStderrBytes (default 64 KiB)
+    timedOut: boolean;                   // our timer fired
+    stdoutOverflow: boolean;             // stdout passed maxStdoutBytes; process was killed
+    spawnError?: NodeJS.ErrnoException;  // the process never started, e.g. code ENOENT
+}
+
+export interface ShellExecDetailedOptions {
+    timeoutMs: number;
+    maxStdoutBytes: number;
+    maxStderrBytes?: number;
+}
+
+const DEFAULT_MAX_STDERR_BYTES = 64 * 1024;
+
+/**
+ * Sibling of shellExec for callers that need the exit code, stderr and a bounded stdout.
+ * Never rejects and logs nothing. Resolves on 'close' (stdout fully drained), or on
+ * 'error' when the process never started. On timeout or stdout overflow the process
+ * is killed with SIGKILL and the promise still resolves only once it has closed.
+ */
+export function shellExecDetailed(cmd: string, args: string[], opts: ShellExecDetailedOptions): Promise<ShellResult> {
+    const maxStderrBytes = opts.maxStderrBytes ?? DEFAULT_MAX_STDERR_BYTES;
+    return new Promise((resolve) => {
+        const stdoutChunks: Buffer[] = [];
+        const stderrChunks: Buffer[] = [];
+        let stdoutBytes = 0;
+        let stderrBytes = 0;
+        let timedOut = false;
+        let stdoutOverflow = false;
+        let settled = false;
+
+        const child = spawn(cmd, args, { stdio: ['ignore', 'pipe', 'pipe'] });
+
+        const timer = setTimeout(() => {
+            timedOut = true;
+            child.kill('SIGKILL');
+        }, opts.timeoutMs);
+
+        const finish = (result: ShellResult) => {
+            if (settled) return;
+            settled = true;
+            clearTimeout(timer);
+            resolve(result);
+        };
+
+        child.stdout.on('data', (chunk: Buffer) => {
+            if (stdoutOverflow) return;
+            if (stdoutBytes + chunk.length > opts.maxStdoutBytes) {
+                stdoutOverflow = true;
+                child.kill('SIGKILL');
+                return;
+            }
+            stdoutChunks.push(chunk);
+            stdoutBytes += chunk.length;
+        });
+
+        child.stderr.on('data', (chunk: Buffer) => {
+            if (stderrBytes >= maxStderrBytes) return;
+            const part = chunk.subarray(0, maxStderrBytes - stderrBytes);
+            stderrChunks.push(part);
+            stderrBytes += part.length;
+        });
+
+        child.on('error', (err: NodeJS.ErrnoException) => {
+            // 'error' without a pid: the process never started, and no 'close' follows.
+            // With a pid (e.g. a failed kill) the 'close' event still settles the call.
+            if (child.pid !== undefined) return;
+            finish({
+                code: null,
+                signal: null,
+                stdout: '',
+                stderr: '',
+                timedOut,
+                stdoutOverflow,
+                spawnError: err
+            });
+        });
+
+        child.on('close', (code: number | null, signal: NodeJS.Signals | null) => {
+            finish({
+                code,
+                signal,
+                stdout: Buffer.concat(stdoutChunks).toString('utf8'),
+                stderr: Buffer.concat(stderrChunks).toString('utf8'),
+                timedOut,
+                stdoutOverflow
+            });
+        });
+    });
+}
+
 export async function createTmpFiles(dataArr: any[]): Promise<string[]> {
     const tmpDir = os.tmpdir();
     const filePaths: string[] = [];

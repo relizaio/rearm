@@ -1,7 +1,4 @@
-import { ApolloServer } from '@apollo/server'
-import { startStandaloneServer } from '@apollo/server/standalone'
-import typeDefs from './schema.graphql'
-import resolvers from './bomResolver';
+import { createGraphqlServer, startGraphqlHttp } from './graphqlServer';
 import { logger } from './logger';
 import { initEncryption } from './services/encryptionService';
 import { startEnrichmentScheduler, stopEnrichmentScheduler } from './services/enrichmentScheduler';
@@ -38,30 +35,13 @@ process.on('SIGINT', () => {
   process.exit(0);
 });
 
-async function startApolloServer(typeDefs: any, resolvers: any) {
+async function startApolloServer() {
   // Initialize encryption service (uses defaults if env vars not set)
   initEncryption();
 
   // Start GraphQL server separately
-  const server = new ApolloServer({
-    typeDefs,
-    resolvers,
-    formatError: (err) => {
-      // Log all GraphQL errors but return them to client
-      // This prevents errors from crashing the server
-      logger.error({ 
-        err: err,
-        message: err.message,
-        path: err.path,
-        extensions: err.extensions
-      }, 'GraphQL Error');
-      return err;
-    },
-  });
-
-  const { url } = await startStandaloneServer(server, {
-    listen: { port: 4000 },
-  });
+  const server = createGraphqlServer();
+  const { url } = await startGraphqlHttp(server, 4000);
 
   logger.info(`🚀 GraphQL Server ready at ${url}`);
 
@@ -76,7 +56,7 @@ async function startApolloServer(typeDefs: any, resolvers: any) {
 }
 
 // Wrap startup in try-catch to handle initialization errors
-startApolloServer(typeDefs, resolvers).catch((error) => {
+startApolloServer().catch((error) => {
   logger.error({ err: error }, 'Failed to start Apollo Server');
   process.exit(1); // Only exit on startup failure
 });  

@@ -166,6 +166,31 @@ export class BomDataIntegrityError extends Error {
 }
 
 /**
+ * Why scoreBomProbe could not return a report. Callers (the ReARM backend) decide
+ * on this value, never on the message text.
+ */
+export enum BomScoreErrorReason {
+    UNKNOWN_PROFILE = 'UNKNOWN_PROFILE',
+    INPUT_TOO_LARGE = 'INPUT_TOO_LARGE',
+    INPUT_REFUSED = 'INPUT_REFUSED',
+    TIMEOUT = 'TIMEOUT',
+    CLI_UNAVAILABLE = 'CLI_UNAVAILABLE',
+    CLI_FAILED = 'CLI_FAILED',
+    REPORT_INVALID = 'REPORT_INVALID'
+}
+
+export class BomScoreError extends Error {
+    constructor(
+        public reason: BomScoreErrorReason,
+        message: string
+    ) {
+        super(message);
+        this.name = 'BomScoreError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
+/**
  * Error code mapping for GraphQL responses
  */
 export const ERROR_CODES = {
@@ -177,6 +202,7 @@ export const ERROR_CODES = {
     OCI_STORAGE_ERROR: 'OCI_STORAGE_ERROR',
     BOM_DATA_INTEGRITY_ERROR: 'BOM_DATA_INTEGRITY_ERROR',
     BOM_VERSION_CONFLICT: 'BOM_VERSION_CONFLICT',
+    BOM_SCORE_ERROR: 'BOM_SCORE_ERROR',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
 
@@ -293,6 +319,18 @@ export function toGraphQLError(error: Error): {
                     identifier: error.identifier,
                     count: error.count,
                     context: error.context,
+                },
+            },
+        };
+    }
+
+    if (error instanceof BomScoreError) {
+        return {
+            message: error.message,
+            extensions: {
+                code: ERROR_CODES.BOM_SCORE_ERROR,
+                details: {
+                    reason: error.reason,
                 },
             },
         };
