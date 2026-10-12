@@ -1,7 +1,7 @@
 <template>
     <div id="app">
-        <div class="topNavBar">
-            <div><router-link to="/"><img id="relizaLogo" src="/logo_svg_no_tag_3.svg" /></router-link></div>
+        <div class="topNavBar" :class="{ topNavBarBranded: !brandingState.isDefault }">
+            <div><nav-brand /></div>
             <div class="publicSupport">
                 <span v-if="version" class="version">Version: {{version}} </span>
             </div>
@@ -19,7 +19,7 @@
                     
                 </span>
                 <span v-if="organizations && organizations.length === 1 && myUser.installationType !== 'OSS'"><b>{{ myorg.name }}</b></span>
-                <span v-if="organizations && organizations.length === 1 && myUser.installationType === 'OSS'"><b>ReARM</b></span>
+                <span v-if="organizations && organizations.length === 1 && myUser.installationType === 'OSS'"><b>{{ brandingState.navProductName }}</b></span>
             </div>
             <div class="horizontalNavElement horizontalNavElementPerspective" v-if="myUser.installationType !== 'OSS'">
                 <span v-if="perspectiveOptions.length > 1">
@@ -76,6 +76,8 @@ import { CaretDownFilled } from '@vicons/antd'
 import { Icon } from '@vicons/utils'
 import constants from '@/utils/constants'
 import NotificationInbox from './NotificationInbox.vue'
+import NavBrand from './NavBrand.vue'
+import { brandingState } from '@/utils/branding'
 
 const isPlayground : boolean = false
 let version : string = ""
@@ -220,16 +222,16 @@ body {
     color: #2c3e50;
 }
 
-#relizaLogo {
-    width: 130px;
-    margin-left: -52px;
-}
 .topNavBar {
     border-bottom: solid;
     border-bottom-width: thin;
     border-bottom-color: #dfe4e5;
     display: grid;
     grid-template-columns: 0.1fr 0.4fr 0.3fr 0.3fr 0.25fr 145px;
+    // A preset's logo lockup (NavBrand) needs its own width; the default grid stays tuned to the Reliza logo.
+    &.topNavBarBranded {
+        grid-template-columns: auto 0.4fr 0.3fr 0.3fr 0.25fr 145px;
+    }
     a {
         font-weight: bold;
         color: rgb(25, 25, 25);

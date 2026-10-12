@@ -13,6 +13,9 @@ import gql from 'graphql-tag'
 import { useRoute } from 'vue-router'
 import Swal from 'sweetalert2'
 import commonFunctions from '@/utils/commonFunctions'
+import { brandingState, applySignUpBackground } from '@/utils/branding'
+
+applySignUpBackground()
 
 const route = useRoute()
 
@@ -49,7 +52,7 @@ if (!isError) {
         confirmButtonText: 'OK'
     })
 } else {
-    const errText = errMsg ? commonFunctions.parseGraphQLError(errMsg) : 'Error joining organization, please retry or contact support at info@reliza.io'
+    const errText = errMsg ? commonFunctions.parseGraphQLError(errMsg) : `Error joining organization, please retry or contact support at ${brandingState.supportEmail}`
     swalResp = await Swal.fire({
         title: 'Error!',
         text: errText,
@@ -63,9 +66,3 @@ if (swalResp) window.location.href = '/'
 
 
 </script>
-
-<style scoped lang="scss">
-body {
-    background-image: 'url("/reliza_in_sand_right_corner.jpg")'
-}
-</style>
