@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
+import { API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyLabelOf, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
     cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
 
 describe('apiKeyLabel', () => {
@@ -68,5 +68,16 @@ describe('apiKeyLabel', () => {
         expect(apiKeyLabel(key, { withType: true })).toBe('Free Form · CI pipeline · 77781336')
         expect(apiKeyLabel({ type: 'USER', uuid: '86d93bbc-0000-0000-0000-000000000000' }, { withType: true })).toBe('Personal · 86d93bbc')
         expect(apiKeyLabel({ type: 'FREEFORM', notes: 'Personal · 86d93bbc', uuid: '1c069715-0000-0000-0000-000000000000' })).toBe('Personal 86d93bbc · 1c069715')
+    })
+
+    it('labels a key looked up by uuid, and guesses nothing about one that is missing', () => {
+        const keys = [
+            { type: 'FREEFORM', uuid: '1c069715-0000-0000-0000-000000000000' },
+            { type: 'USER', uuid: '86d93bbc-0000-0000-0000-000000000000' }
+        ]
+        expect(apiKeyLabelOf('1c069715-0000-0000-0000-000000000000', keys, 'not in your keys')).toBe('Free Form · 1c069715')
+        expect(apiKeyLabelOf('f9b07b52-0000-0000-0000-000000000000', keys, 'not in your keys')).toBe('Key · f9b07b52 · not in your keys')
+        expect(apiKeyLabelOf('f9b07b52-0000-0000-0000-000000000000', [])).toBe('Key · f9b07b52')
+        expect(apiKeyLabelOf(null, keys)).toBe('Key')
     })
 })

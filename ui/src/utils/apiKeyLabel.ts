@@ -90,3 +90,14 @@ export function apiKeyLabel (key: any, opts: ApiKeyLabelOptions = {}): string {
     const parts = [opts.withType && name.kind !== 'type' ? apiKeyTypeWord(key?.type) : '', name.text, apiKeyShortId(key, opts.siblings)]
     return parts.filter(p => !!p).join(' · ')
 }
+
+/**
+ * The label of the key with this uuid among keys (with its type word), or, when keys does not hold it,
+ * its short id with missingNote after it ("Key · 86d93bbc · not in your keys"). Nothing is guessed about
+ * a key that is not there: not its type, not why it is missing.
+ */
+export function apiKeyLabelOf (uuid: string | null | undefined, keys: any[], missingNote: string = ''): string {
+    const key = (keys || []).find((k: any) => k?.uuid === uuid)
+    if (key) return apiKeyLabel(key, { withType: true, siblings: keys })
+    return [apiKeyLabel({ uuid }, { withType: true, siblings: keys }), missingNote].filter(p => !!p).join(' · ')
+}

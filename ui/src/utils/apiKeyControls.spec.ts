@@ -122,3 +122,25 @@ describe('API key tables: pagination', () => {
         expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyUuid: 'key-9', status: 'INACTIVE' })
     })
 })
+
+describe('API key dialogs', () => {
+    it('puts a key label in titleText, never in the HTML title', async () => {
+        fire.mockResolvedValue({ value: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.deleteApiKey(freeFormRow(1), 'the key Free Form · <img src=x onerror=alert(1)> · key-1')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Delete the key Free Form · <img src=x onerror=alert(1)> · key-1?')
+        expect(mutate).not.toHaveBeenCalled()
+    })
+    it('escapes the expiry dialog text it puts into html, and keeps its title as text', async () => {
+        fire.mockResolvedValue({ isConfirmed: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.askExpiry('Regenerate <b>x</b>', 'Key <img src=x onerror=alert(1)>', 'Go')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Regenerate <b>x</b>')
+        expect(opts.html).toContain('Key &lt;img src=x onerror=alert(1)&gt;')
+        expect(opts.html).not.toContain('<img')
+    })
+})
