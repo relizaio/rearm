@@ -5269,12 +5269,14 @@ const computedKeyRequests: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder).sort(byNewest)
 })
 async function resolveKeyRequest (row: any, approve: boolean) {
+    // every request is for a Free Form key, so the request is named without the type word
+    const request = apiKeyLabel(row, { siblings: programmaticAccessKeys.value })
     let reason: string | null = null
     if (approve) {
-        const r = await Swal.fire({ title: 'Approve this request?', text: `Request ${keyLabelOf(row)} from ${row.holderName}. ` + 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
+        const r = await Swal.fire({ title: 'Approve this request?', text: `Request ${request} from ${row.holderName}. ` + 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
         if (!r.value) return
     } else {
-        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${keyLabelOf(row)} from ${row.holderName}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${request} from ${row.holderName}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
         if (!r.isConfirmed) return
         reason = r.value || null
     }
