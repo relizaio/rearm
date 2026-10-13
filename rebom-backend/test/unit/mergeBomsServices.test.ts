@@ -89,7 +89,7 @@ describe('mergeBoms: services carried from the inputs (SCORE-9 T-4)', () => {
     });
 
     it('carries the nginx sysvinit services the dependency entries name, so every ref resolves', async () => {
-        // The merge-boms output is what rearm-cli 2026-10-sbom-score.3 (the image rebom pins)
+        // The merge-boms output is what rearm-cli 2026-10-sbom-score.3 (rebom's pin when recorded)
         // printed for the two inputs: both service entries, no services[].
         const raw = fixture('nginx-services.merge-boms.cdx.json');
         expect(serviceDependencyCount(raw)).toBe(2);

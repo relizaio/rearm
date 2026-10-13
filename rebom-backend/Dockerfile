@@ -1,15 +1,12 @@
-# Temporary pin (SCORE-4 design 3.7, moved by SCORE-22): the rearm CLI with `bomutils score`
-# comes from the rearm-cli integration-branch image built on bbbffc3 (SCORE-20 merge, carries
-# SCORE-10 and SCORE-20) until the released zip carries the command; SCORE-7 then deletes this
-# stage, the COPY and the amd64-only checks below, and sets the released zip on both
-# architectures. The image is linux/amd64 only, so arm64 keeps zip 26.07.9 and answers
-# CLI_UNAVAILABLE for scoreBomProbe until then.
-FROM --platform=linux/amd64 registry.relizahub.com/library/rearm-cli:2026-10-sbom-score.3@sha256:831a7fb255b77665a5b34bddef84b1285dd687ad93a4aae66eff2ce7ffa1cdf6 AS rearm-cli-score
-
 FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
+# The rearm CLI release rebom runs (bomutils merge-boms, bomutils score). To move to a newer
+# release: change this value and the rearm zip line of tools.amd64.sha256 and tools.arm64.sha256
+# (hashes from <cdn>/rearm-download/<version>/sha256sums.txt, SCORE-7 design 3.5). The two engine
+# checks in the tools RUN fail the build on a zip without `bomutils score` or with an older engine.
+ARG REARM_CLI_VERSION=26.10.8
 
 # Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
 RUN apk add postgresql postgresql-contrib unzip wget
@@ -32,14 +29,12 @@ WORKDIR /app
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 COPY test/fixtures/score/full.types.cdx.json /tmp/engine-check.cdx.json
-COPY --from=rearm-cli-score /app/app /opt/rearm-score/rearm
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        cp /opt/rearm-score/rearm ./rearm ;\
+RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
+    unzip rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.9/rearm-26.07.9-linux-arm64.zip ;\
-        unzip rearm-26.07.9-linux-arm64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
@@ -47,8 +42,8 @@ RUN if [ "$TARGETARCH" = "amd64" ]; then \
     mv rearm /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/cyclonedx-cli && \
-    if [ "$TARGETARCH" = "amd64" ]; then rearm bomutils score --help | grep -q -- '--profile'; fi && \
-    if [ "$TARGETARCH" = "amd64" ]; then rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json | grep -q '"skippedTypes"'; fi && \
+    rearm bomutils score --help | grep -q -- '--profile' && \
+    rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json | grep -q '"skippedTypes"' && \
     rm -f /tmp/engine-check.cdx.json
 
 COPY package*.json ./
