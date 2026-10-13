@@ -116,7 +116,7 @@ const columns: DataTableColumns<any> = [
     {
         title: 'Name',
         key: 'name',
-        sorter: 'default',
+        sorter: (a: any, b: any) => agentDisplayLabel(a).localeCompare(agentDisplayLabel(b)),
         render: (row: any) => h('span', { class: 'name-text' }, agentDisplayLabel(row)),
     },
     {

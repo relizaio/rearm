@@ -10,7 +10,8 @@
             </div>
             <div class="hero__title">
                 <div v-if="!editingName" class="hero__name-row">
-                    <h3>{{ agentDisplay }}</h3>
+                    <!-- the uuid chip beside the title carries the id, so the title is the name alone -->
+                    <h3 :class="{ 'hero__admin-name': agentNameIsAdminSet(agent) }">{{ agentOwnName(agent) }}</h3>
                     <n-icon v-if="isOrgAdmin" class="hero__edit-name" size="18"
                             title="Edit display name" @click="startEditName"><EditIcon/></n-icon>
                 </div>
@@ -169,7 +170,7 @@
                         </template>
                         <span v-if="boundApiKeys.length">
                             <code v-for="(k, idx) in boundApiKeys" :key="k.uuid" class="bound-key">
-                                <span v-if="idx > 0">, </span>{{ apiKeyLabelOf(k) }}
+                                <span v-if="idx > 0">, </span>{{ apiKeyLabelOf(k.uuid, boundApiKeys) }}
                             </code>
                         </span>
                         <span v-else class="dim">—</span>
@@ -211,8 +212,8 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
 import SessionTable from './AiAgentSessionTable.vue'
 import SigningKeyManager from './SigningKeyManager.vue'
-import { agentDisplayLabel } from '@/utils/agentSessionLabel'
-import { apiKeyLabel } from '@/utils/apiKeyLabel'
+import { agentDisplayLabel, agentNameIsAdminSet, agentOwnName } from '@/utils/agentSessionLabel'
+import { apiKeyLabelOf } from '@/utils/apiKeyLabel'
 
 const store = useStore()
 const route = useRoute()
@@ -247,8 +248,9 @@ const closedSessions = computed(() => agent.value?.closedSessions ?? [])
 
 const boundApiKeys = computed(() => agent.value?.boundApiKeys ?? [])
 
-// the bound keys by label: the page fetches only uuid, type and declaredName of them (any org member opens it)
-const apiKeyLabelOf = (k: any) => apiKeyLabel(k, { withType: true, siblings: boundApiKeys.value })
+// bound keys are named by label from uuid, type and declaredName only: any org member opens this page, so
+// fetchAgent asks the server for no more of a key than that (the server-side restriction is board task
+// t20261013-072815-22413)
 
 const identityShareCount = computed(() => 1 + siblingAgents.value.length)
 
@@ -290,7 +292,7 @@ const siblingColumns: DataTableColumns<any> = [
         render: (row: any) => h('a', {
             href: '#',
             onClick: (e: Event) => { e.preventDefault(); openSibling(row.uuid) },
-        }, agentDisplayLabel(row)),
+        }, agentOwnName(row)),
     },
     { title: 'UUID', key: 'uuid', render: (row: any) => h('code', { class: 'mono-cell' }, shortUuid(row.uuid)) },
     { title: 'Type', key: 'agentType', width: 80 },
@@ -385,6 +387,7 @@ const subAgentColumns: DataTableColumns<any> = [
 .hero__title { flex: 1; }
 .hero__name-row { display: flex; align-items: center; gap: 8px; }
 .hero__name-row h3 { margin: 0; }
+.hero__admin-name { text-decoration: underline dotted; text-underline-offset: 4px; }
 .hero__edit-name { align-self: center; cursor: pointer; color: var(--n-text-color-3, #888); }
 .hero__edit-name:hover { color: var(--n-primary-color, #18a058); }
 .hero__name-edit { display: flex; align-items: center; gap: 6px; }

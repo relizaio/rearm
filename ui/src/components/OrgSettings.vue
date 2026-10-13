@@ -1409,6 +1409,7 @@ import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 import { agentDisplayLabel } from '@/utils/agentSessionLabel'
+import { cleanLabelText } from '@/utils/apiKeyLabel'
 
 const route = useRoute()
 const router = useRouter()
@@ -2072,7 +2073,7 @@ const freeFormKeyFields: Ref<any> = ref([
                 if (idx > 0) links.push(h('span', ', '))
                 links.push(h(
                     RouterLink,
-                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } }, title: row.declaredName ? 'key: ' + row.declaredName : undefined },
+                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } }, title: row.declaredName ? 'key: ' + cleanLabelText(row.declaredName) : undefined },
                     { default: () => agentDisplayLabel(a) }
                 ))
             })

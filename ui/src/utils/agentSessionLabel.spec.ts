@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDirectory, agentDisplayLabel, agentNameOf, agentOfSession, agentOwnName, sessionLabel, sessionOf, sessionOfActor, sessionOnTask, sessionPath } from './agentSessionLabel'
+import { agentDirectory, agentDisplayLabel, agentNameIsAdminSet, agentNameOf, agentOfSession, agentOwnName, sessionLabel, sessionOf, sessionOfActor, sessionOnTask, sessionPath } from './agentSessionLabel'
 
 // Sessions and agents told apart (RD2-11).
 describe('a session\'s label', () => {
@@ -88,5 +88,19 @@ describe('an agent\'s own label', () => {
     it('gives the name alone for places that show the id apart', () => {
         expect(agentOwnName({ name: 'Reviewer', displayName: '  ' })).toBe('Reviewer')
         expect(agentOwnName({ effectiveDisplayName: 'CI pipeline' })).toBe('agent')
+    })
+
+    it('cuts a long name in the label, never the short id', () => {
+        expect(agentDisplayLabel({ uuid: '89cabc98-0000-0000-0000-000000000000', name: 'n'.repeat(60) })).toBe('n'.repeat(47) + '… · 89cabc98')
+    })
+
+    it('marks a name as admin-set only when the display name says something', () => {
+        expect(agentNameIsAdminSet({ name: 'Reviewer', displayName: 'Coder bot' })).toBe(true)
+        expect(agentNameIsAdminSet({ name: 'Reviewer', displayName: '·' })).toBe(false)
+        expect(agentNameIsAdminSet({ name: 'Reviewer' })).toBe(false)
+    })
+
+    it('reads the same own name on the board pages as on the agent pages', () => {
+        expect(agentNameOf({ name: 'Claude · Code' }).name).toBe(agentOwnName({ name: 'Claude · Code' }))
     })
 })

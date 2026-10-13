@@ -51,10 +51,15 @@ export function apiKeyNotesUncut (key: any): string {
     return cleanLabelText(denied ? denied.note : key?.notes)
 }
 
+/** Label text cut to max characters (whole code points), with an ellipsis when it was longer. */
+export function cutLabelText (s: string, max: number = MAX_NOTES_IN_LABEL): string {
+    const chars = Array.from(s)
+    return chars.length > max ? chars.slice(0, max - 1).join('') + '…' : s
+}
+
 /** The key's notes as a label shows them: cleaned, and cut to MAX_NOTES_IN_LABEL characters. */
 export function apiKeyNotesForLabel (key: any): string {
-    const chars = Array.from(apiKeyNotesUncut(key))
-    return chars.length > MAX_NOTES_IN_LABEL ? chars.slice(0, MAX_NOTES_IN_LABEL - 1).join('') + '…' : chars.join('')
+    return cutLabelText(apiKeyNotesUncut(key))
 }
 
 export type ApiKeyNameKind = 'declared' | 'notes' | 'type'

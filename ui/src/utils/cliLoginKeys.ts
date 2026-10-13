@@ -24,7 +24,7 @@ export function keysToOffer (keys: any[], showBound: boolean): any[] {
 
 /** "bound to Claude Code · 89cabc98, Reviewer · f00d6ca9": the agents' own labels, for the tag of a bound key. */
 export function boundAgentsLabel (key: any): string {
-    const names = boundAgentsOf(key).map(agentDisplayLabel)
+    const names = boundAgentsOf(key).filter(Boolean).map((a: any) => agentDisplayLabel(a))
     return names.length ? 'bound to ' + names.join(', ') : ''
 }
 

@@ -3,7 +3,7 @@
 // falls back to the key's note. Here a session reads "<role> · <agent or session name> · <uuid8>", and
 // the key's note comes last, only when nothing names the agent. Pure, so the rule is testable.
 import type { InjectionKey, Ref } from 'vue'
-import { cleanLabelText } from './apiKeyLabel'
+import { cleanLabelText, cutLabelText } from './apiKeyLabel'
 
 export interface AgentName {
     /** The agent's own name: its displayName, else its name. */
@@ -12,10 +12,15 @@ export interface AgentName {
     notes: string | null
 }
 
+// an agent's own name, cleaned like a key label: its displayName, else its name; null when it has neither
+function ownNameOf (agent: any): string | null {
+    return cleanLabelText(agent?.displayName) || cleanLabelText(agent?.name) || null
+}
+
 /** An agent as the page names it: its own name, with the key's note apart. */
 export function agentNameOf (agent: any): AgentName {
-    const own = (agent?.displayName || agent?.name || '').trim() || null
-    const effective = (agent?.effectiveDisplayName || '').trim() || null
+    const own = ownNameOf(agent)
+    const effective = cleanLabelText(agent?.effectiveDisplayName) || null
     return { name: own, notes: effective && effective !== own ? effective : null }
 }
 
@@ -112,13 +117,19 @@ export function roleOfSession (task: any, session: string): string | null {
  * bound key's notes (effectiveDisplayName falls back to them), so agents on one key no longer share a name.
  */
 export function agentOwnName (agent: any): string {
-    return cleanLabelText(agent?.displayName) || cleanLabelText(agent?.name) || 'agent'
+    return ownNameOf(agent) || 'agent'
 }
 
-/** "Claude Code · 89cabc98": the agent's own name and short id, so two agents of one name tell apart. */
+/** Whether the name an agent shows is one an admin set (a display name that is more than separators or blanks). */
+export function agentNameIsAdminSet (agent: any): boolean {
+    return !!cleanLabelText(agent?.displayName)
+}
+
+/** "Claude Code · 89cabc98": the agent's own name (cut like key notes) and short id, so two agents of one name tell apart. */
 export function agentDisplayLabel (agent: any): string {
     const id = String(agent?.uuid ?? '').slice(0, 8)
-    return id ? `${agentOwnName(agent)} · ${id}` : agentOwnName(agent)
+    const name = cutLabelText(agentOwnName(agent))
+    return id ? `${name} · ${id}` : name
 }
 
 /** An agent in one line: its own name and short id, the key's note only when it has no name. */
