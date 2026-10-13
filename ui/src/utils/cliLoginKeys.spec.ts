@@ -33,10 +33,12 @@ describe('keys the CLI login offers', () => {
         expect(keysToOffer(null as any, false)).toEqual([])
     })
 
-    it('names the agents of a bound key', () => {
-        expect(boundAgentsLabel(key('b', { boundAgents: [{ uuid: 'a1', name: 'builder' }, { uuid: 'a2', name: 'reviewer' }] })))
-            .toBe('bound to builder, reviewer')
-        expect(boundAgentsLabel(key('b', { boundAgents: [{ uuid: 'a3' }] }))).toBe('bound to a3')
+    it('names the agents of a bound key by their own label', () => {
+        expect(boundAgentsLabel(key('b', { boundAgents: [
+            { uuid: '89cabc98-70fd-419b-affc-b255d393cfb4', name: 'Claude Code' },
+            { uuid: 'f00d6ca9-0000-0000-0000-000000000000', name: 'Reviewer', displayName: 'Coder bot' }
+        ] }))).toBe('bound to Claude Code · 89cabc98, Coder bot · f00d6ca9')
+        expect(boundAgentsLabel(key('b', { boundAgents: [{ uuid: 'a3000000-0000-0000-0000-000000000000' }] }))).toBe('bound to agent · a3000000')
         expect(boundAgentsLabel(key('free'))).toBe('')
     })
 })
