@@ -4,7 +4,7 @@
 // and on a preset its product name, the Built on ReARM line, its links and the Legal hover text.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { DEFAULT_BRANDING, brandingState, legalTooltipText } from '@/utils/branding'
+import { DEFAULT_BRANDING, brandingState } from '@/utils/branding'
 import { EXAMPLE_SETTINGS, MEDWARE_SETTINGS } from '@/utils/branding.fixtures'
 
 const getters: { myuser: any } = { myuser: { installationType: 'SAAS' } }
@@ -53,7 +53,7 @@ describe('AppFooter: a preset', () => {
         expect(legal.attributes('href')).toBe('https://rearmhq.com/tos.html')
         expect(legal.attributes('target')).toBe('_blank')
         expect(legal.attributes('rel')).toContain('noopener')
-        expect(legal.attributes('title')).toBe(legalTooltipText())
+        expect(legal.attributes('title')).toBeUndefined()
         expect(byId(w, 'footer-legal-tooltip').text()).toBe(MEDWARE_LEGAL)
     })
 

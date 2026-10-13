@@ -29,7 +29,7 @@
                 <n-tooltip trigger="hover">
                     <template #trigger>
                         <a :href="brandingState.legalUrl" rel="noopener noreferrer" target="_blank" class="footer-link"
-                            :title="legalTooltipText()" data-testid="footer-legal">Legal</a>
+                            data-testid="footer-legal">Legal</a>
                     </template>
                     <span data-testid="footer-legal-tooltip">{{ legalTooltipText() }}</span>
                 </n-tooltip>
