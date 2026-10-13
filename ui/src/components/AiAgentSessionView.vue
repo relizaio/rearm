@@ -2,7 +2,7 @@
     <div class="aiAgentSessionView" v-if="session">
         <n-breadcrumb separator="›" class="crumbs">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
-            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agent.name }}</n-breadcrumb-item>
+            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agentDisplayLabel(agent) }}</n-breadcrumb-item>
             <n-breadcrumb-item>Session {{ sessionShortLabel }}</n-breadcrumb-item>
         </n-breadcrumb>
         <div class="hero">
@@ -31,7 +31,7 @@
                 <span :style="{ background: agent.color || '#888', color: 'white', padding: '0 4px', borderRadius: '4px', marginRight: '4px' }">
                     {{ agent.iconKind || '◆' }}
                 </span>
-                {{ agent.name }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
+                {{ agentOwnName(agent) }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
             </a>
             <template v-if="session.primaryModel">
                 <span class="dim">·</span>
@@ -229,6 +229,7 @@ import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
+import { agentDisplayLabel, agentOwnName } from '@/utils/agentSessionLabel'
 import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 import { lifecycleWord } from '@/utils/agentWords'
 import { isOrgAdmin } from '@/utils/agentReopen'

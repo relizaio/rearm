@@ -70,7 +70,7 @@
                             </div>
                             <div class="acard__head">
                                 <div class="acard__name">
-                                    <span>{{ a.effectiveDisplayName || a.name }}</span>
+                                    <span :class="{ 'acard__admin-name': agentNameIsAdminSet(a) }" :title="agentNameIsAdminSet(a) ? 'Display name set by an admin' : 'Registration name'">{{ agentOwnName(a) }}</span>
                                     <n-icon v-if="isOrgAdmin" class="acard__edit-name" size="16"
                                             title="Edit display name" @click.stop="openEditName(a)"><EditIcon/></n-icon>
                                 </div>
@@ -184,6 +184,7 @@ import { NButton, NCard, NDataTable, NIcon, NInput, NModal, NSpace, NSpin, NTabP
 import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
 import AiAgentBoardsPanel from '@/components/AiAgentBoardsPanel.vue'
+import { agentNameIsAdminSet, agentOwnName } from '@/utils/agentSessionLabel'
 
 const store = useStore()
 const route = useRoute()
@@ -380,6 +381,7 @@ const sessionColumns: DataTableColumns<any> = [
 .acard__mark { width: 36px; height: 36px; border-radius: 8px; color: white; display: flex; align-items: center; justify-content: center; font-weight: 600; font-size: 18px; flex-shrink: 0; }
 .acard__head { flex: 1; min-width: 0; }
 .acard__name { font-weight: 600; display: flex; align-items: center; gap: 6px; }
+.acard__admin-name { text-decoration: underline dotted; text-underline-offset: 3px; }
 .acard__edit-name { cursor: pointer; color: var(--n-text-color-3, #888); }
 .acard__edit-name:hover { color: var(--n-primary-color, #18a058); }
 .edit-name-hint { font-size: 12px; color: var(--n-text-color-3, #666); margin: 8px 0 0; }

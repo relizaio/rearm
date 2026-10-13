@@ -41,7 +41,7 @@ describe('API key tables: type column', () => {
     it('shows no Type column or FREEFORM label on the Free Form table', () => {
         const w = mountTable('freeForm', [freeFormRow(1), freeFormRow(2)])
         const headers = w.findAll('thead th').map(th => th.text())
-        expect(headers).toEqual(['IDs', 'Activity', 'Status', 'Secrets'])
+        expect(headers).toEqual(['Key', 'Activity', 'Status', 'Secrets'])
         expect(w.find('tbody').text()).not.toContain('FREEFORM')
     })
     it('keeps the Type column on the scoped table, which mixes types', () => {
@@ -50,6 +50,31 @@ describe('API key tables: type column', () => {
         expect(w.findAll('thead th').map(th => th.text())[0]).toBe('Type')
         expect(w.find('tbody').text()).toContain('COMPONENT')
         expect(w.find('tbody').text()).toContain('ORGANIZATION_RW')
+    })
+})
+
+describe('API key tables: key label', () => {
+    it('names each key and adds its short id, so keys of one type without notes tell apart', () => {
+        const rows = [
+            { ...freeFormRow(1), uuid: '1c069715-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            { ...freeFormRow(2), uuid: 'ae9254bd-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+            { ...freeFormRow(3), uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'CI pipeline' },
+            { ...freeFormRow(4), uuid: '6688e1ec-dddd-4ddd-8ddd-dddddddddddd', notes: 'CI pipeline', declaredName: 'release-pipeline' }
+        ]
+        const w = mountTable('freeForm', rows)
+        const cells = w.findAll('tbody tr').map(tr => tr.findAll('td')[0])
+        expect(cells.map(c => c.text())).toEqual(['Free Formid 1c069715', 'Free Formid ae9254bd', 'CI pipelineid 77781336', 'release-pipelineid 6688e1ec'])
+        // a declared name is code-styled, notes and the type word are plain text
+        expect(cells[3].find('code:not(.key-id-chip)').text()).toBe('release-pipeline')
+        expect(cells[2].find('code:not(.key-id-chip)').exists()).toBe(false)
+    })
+    it('carries cut notes whole in the title, and renders markup in notes as text', () => {
+        const long = 'n'.repeat(60)
+        const w = mountTable('freeForm', [{ ...freeFormRow(1), notes: long }, { ...freeFormRow(2), notes: '<b>x</b>' }])
+        const cells = w.findAll('tbody tr').map(tr => tr.findAll('td')[0])
+        expect(cells[0].find('span').attributes('title')).toBe(long)
+        expect(cells[1].find('b').exists()).toBe(false)
+        expect(cells[1].text()).toContain('<b>x</b>')
     })
 })
 
@@ -95,5 +120,46 @@ describe('API key tables: pagination', () => {
         await new Promise(r => setTimeout(r, 0))
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyUuid: 'key-9', status: 'INACTIVE' })
+    })
+})
+
+describe('API key dialogs', () => {
+    it('puts a key label in titleText, never in the HTML title', async () => {
+        fire.mockResolvedValue({ value: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.deleteApiKey(freeFormRow(1), 'the key Free Form · <img src=x onerror=alert(1)> · key-1')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Delete the key Free Form · <img src=x onerror=alert(1)> · key-1?')
+        expect(mutate).not.toHaveBeenCalled()
+    })
+    it('escapes the expiry dialog text it puts into html, and keeps its title as text', async () => {
+        fire.mockResolvedValue({ isConfirmed: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.askExpiry('Regenerate <b>x</b>', 'Key <img src=x onerror=alert(1)>', 'Go')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Regenerate <b>x</b>')
+        expect(opts.html).toContain('Key &lt;img src=x onerror=alert(1)&gt;')
+        expect(opts.html).not.toContain('<img')
+    })
+    it('names the key a row dialog acts on, with a short id unique among the keys listed', async () => {
+        fire.mockResolvedValue({ value: false })
+        const a = { ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa', notes: 'CI pipeline' }
+        const b = { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true, siblings: () => [a, b] })
+        await controls.setApiKeyStatus(a, 'INACTIVE')
+        expect(fire.mock.calls[0][0].text).toMatch(/^Key Free Form \u00B7 CI pipeline \u00B7 77781336-a\. Every secret/)
+    })
+})
+
+describe('API key tables: short ids among siblings', () => {
+    it('grows the chip where two listed keys start the same', () => {
+        const rows = [{ ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }]
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        const columns = [...apiKeyLeadColumns('freeForm', () => rows), { key: 'status', title: 'Status', render: controls.statusCell }]
+        const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, rowKey: (r: any) => r.uuid }) }) })
+        const w = mount(Host, { attachTo: document.body })
+        expect(w.findAll('.key-id-chip').map(c => c.text())).toEqual(['id 77781336-a', 'id 77781336-b'])
     })
 })
