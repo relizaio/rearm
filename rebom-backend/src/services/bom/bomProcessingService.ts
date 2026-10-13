@@ -932,8 +932,11 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
       }
     }
     const type = (origPurlParsed && origPurlParsed.type && origPurlParsed.type !== "container" && origPurlParsed.type !== "application") ? origPurlParsed.type : 'generic'
-    const namespace = (origPurlParsed && (origPurlParsed.namespace || type === 'oci')) ? origPurlParsed.namespace : encodeURIComponent(rebomOverride.group)
-    const name = (origPurlParsed && origPurlParsed.name && origPurlParsed.name !== 'app' && origPurlParsed.name !== '.') ? origPurlParsed.name : encodeURIComponent(rebomOverride.name)
+    // Raw segments in, one encoding out: PackageURL.toString() percent-encodes the namespace
+    // and the name, and fromString() above decodes them, so pre-encoding here would encode
+    // twice (a space read %2520).
+    const namespace = (origPurlParsed && (origPurlParsed.namespace || type === 'oci')) ? origPurlParsed.namespace : rebomOverride.group
+    const name = (origPurlParsed && origPurlParsed.name && origPurlParsed.name !== 'app' && origPurlParsed.name !== '.') ? origPurlParsed.name : rebomOverride.name
 
     const version = rebomOverride.version
     const qualifiers = (origPurlParsed && origPurlParsed.qualifiers) ? origPurlParsed.qualifiers : {}
@@ -963,6 +966,66 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
     }
   }
   return purlStr || ''
+}
+
+/**
+ * True when a parsed purl segment is the raw value encoded one time too many: the segment as
+ * parsed (decoded once) is not the raw value, and decoding it once more gives the raw value.
+ */
+function isDoubleEncodedSegment(parsed: string | undefined | null, raw: unknown): boolean {
+  if (typeof raw !== 'string' || !raw || typeof parsed !== 'string' || parsed === raw) return false
+  try {
+    return decodeURIComponent(parsed) === raw
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Repairs the root purl an upload stored before the purl fix (establishPurl percent-encoded
+ * group and name before PackageURL encoded them again, so a space read %2520). The raw truth
+ * sits beside the purl: augmentBomWithComponentContext writes `group` and `name` raw on
+ * metadata.component. Each segment is judged on its own and rebuilt from the raw value; the
+ * old string is then replaced wherever it references the root (purl, bom-ref, dependencies
+ * ref and dependsOn). Idempotent, a no-op on a single-encoded root, and never throws: anything
+ * it cannot read is returned as it came.
+ */
+export function repairDoubleEncodedRoot(bom: any): any {
+  const root = bom?.metadata?.component
+  const oldPurl = root?.purl
+  if (!root || typeof oldPurl !== 'string' || !oldPurl) return bom
+  try {
+    const parsed = PackageURL.fromString(oldPurl)
+    const namespaceDoubled = isDoubleEncodedSegment(parsed.namespace, root.group)
+    const nameDoubled = isDoubleEncodedSegment(parsed.name, root.name)
+    if (!namespaceDoubled && !nameDoubled) return bom
+    const newPurl = new PackageURL(
+      parsed.type,
+      namespaceDoubled ? root.group : parsed.namespace,
+      nameDoubled ? root.name : parsed.name,
+      parsed.version,
+      parsed.qualifiers,
+      parsed.subpath
+    ).toString()
+    if (newPurl === oldPurl) return bom
+    const swap = (ref: any) => (ref === oldPurl ? newPurl : ref)
+    const component = { ...root, purl: newPurl }
+    if (root['bom-ref'] === oldPurl) component['bom-ref'] = newPurl
+    const repaired: any = { ...bom, metadata: { ...bom.metadata, component } }
+    if (Array.isArray(bom.dependencies)) {
+      repaired.dependencies = bom.dependencies.map((dep: any) => {
+        if (!dep || typeof dep !== 'object') return dep
+        const out = { ...dep, ref: swap(dep.ref) }
+        if (Array.isArray(dep.dependsOn)) out.dependsOn = dep.dependsOn.map(swap)
+        return out
+      })
+    }
+    logger.debug({ oldPurl, newPurl }, 'repaired a double-encoded root purl')
+    return repaired
+  } catch (e: any) {
+    logger.warn({ purl: oldPurl, err: e?.message }, 'root purl repair skipped')
+    return bom
+  }
 }
 
 export function computeRootDepIndex(bom: any): number {
