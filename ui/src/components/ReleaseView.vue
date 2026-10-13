@@ -2182,6 +2182,8 @@ import {
     verdictType,
 } from '@/utils/agentDocuments'
 import { outcomeWord, specWord } from '@/utils/agentWords'
+import { actorLabel } from '@/utils/actorLabel'
+import { isOrgAdmin as isOrgAdminOf } from '@/utils/agentReopen'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -2277,13 +2279,23 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key actor in the history reads as a key label; loaded for org admins only
+const orgKeys: Ref<any[]> = ref([])
 const acollections: Ref<any[]> = ref([])
 const combinedHistoryEvents: Ref<any[]> = ref([])
 
 async function loadUsers() {
     if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
+        loadOrgKeys(release.value.orgDetails.uuid)
         users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
     }
+}
+
+// The admin check reads the signed-in user's own permissions, not the isOrgAdmin computed below,
+// which depends on data loaded later; the server's apiKeys gate is ADMIN either way.
+async function loadOrgKeys(orgUuid: string) {
+    if (!isOrgAdminOf(store.getters?.myuser?.permissions?.permissions, orgUuid)) return
+    orgKeys.value = await store.dispatch('fetchApiKeyRefsOfOrg', orgUuid)
 }
 
 async function loadAcollections() {
@@ -2629,13 +2641,7 @@ function buildCombinedHistory() {
 }
 
 function resolveUserById(uuid: string, createdType?: string): string {
-    if (createdType === 'AUTO') return 'System'
-    if (!uuid || !users.value.length) return uuid
-    const user = users.value.find((u: any) => u.uuid === uuid)
-    if (user) {
-        return user.email ? `${user.name} <${user.email}>` : user.name
-    }
-    return "API Key ID: " + uuid
+    return actorLabel(uuid, createdType, users.value, orgKeys.value)
 }
 
 const copyToClipboard = async function (text: string) {
