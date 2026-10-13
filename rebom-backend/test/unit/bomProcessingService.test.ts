@@ -641,5 +641,168 @@ describe('BOM Processing Service - Unit Tests', () => {
             BomProcessingService.normalizeLicensesInBom(bom);
             await expect(validateBom(bom)).resolves.toBe(true);
         });
+
+        // TPF-55: a rewritten single-id expression keeps the fields its BOM version shares with a license object.
+        it('keeps acknowledgement and bom-ref when it rewrites a single-id expression in 1.6', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '1.6');
+            expect(out).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
+        });
+
+        it('keeps acknowledgement and bom-ref through the whitespace retry', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'Apache 2.0', acknowledgement: 'declared', 'bom-ref': 'lic-2' }], '1.6');
+            expect(out).toStrictEqual([{ license: { id: 'Apache-2.0', acknowledgement: 'declared', 'bom-ref': 'lic-2' } }]);
+        });
+
+        it('rewrites a single-id expression without kept fields to a bare license id', () => {
+            const out = BomProcessingService.normalizeLicenses([{ expression: 'MIT' }], '1.6');
+            expect(out).toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('keeps the fields on a rewritten expression beside a native license object', () => {
+            const out = BomProcessingService.normalizeLicenses([
+                { expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' },
+                { license: { id: 'Apache-2.0', acknowledgement: 'declared', 'bom-ref': 'lic-2' } },
+            ], '1.6');
+            expect(out).toStrictEqual([
+                { license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } },
+                { license: { id: 'Apache-2.0', acknowledgement: 'declared', 'bom-ref': 'lic-2' } },
+            ]);
+        });
+
+        it('leaves a compound expression with acknowledgement and bom-ref as it is', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT OR Apache-2.0', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '1.6');
+            expect(out).toStrictEqual([{ expression: 'MIT OR Apache-2.0', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }]);
+        });
+
+        it('leaves a non-SPDX expression with acknowledgement and bom-ref as it is', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'LicenseRef-Acme-EULA', acknowledgement: 'declared', 'bom-ref': 'lic-3' }], '1.6');
+            expect(out).toStrictEqual([{ expression: 'LicenseRef-Acme-EULA', acknowledgement: 'declared', 'bom-ref': 'lic-3' }]);
+        });
+
+        it('keeps only bom-ref on a rewritten expression in 1.5', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '1.5');
+            expect(out).toStrictEqual([{ license: { id: 'MIT', 'bom-ref': 'lic-1' } }]);
+        });
+
+        it('keeps no field on a rewritten expression in 1.4', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '1.4');
+            expect(out).toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('keeps acknowledgement and bom-ref on a rewritten expression in 1.7', () => {
+            const out = BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '1.7');
+            expect(out).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
+        });
+
+        it('keeps no field with no version, an unknown version or an inherited property name', () => {
+            expect(BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }]))
+                .toStrictEqual([{ license: { id: 'MIT' } }]);
+            expect(BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], '2.0'))
+                .toStrictEqual([{ license: { id: 'MIT' } }]);
+            expect(BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }], 'constructor'))
+                .toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('drops a kept field whose value the license object schema refuses', () => {
+            expect(BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'Concluded', 'bom-ref': '' }], '1.6'))
+                .toStrictEqual([{ license: { id: 'MIT' } }]);
+            expect(BomProcessingService.normalizeLicenses(
+                [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 7 }], '1.6'))
+                .toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded' } }]);
+        });
+
+        it('drops every expression field outside the kept list on the rewrite', () => {
+            const out = BomProcessingService.normalizeLicenses([{
+                expression: 'MIT',
+                'bom-ref': 'lic-1',
+                expressionDetails: [{ licenseIdentifier: 'MIT' }],
+                licensing: { licenseTypes: ['perpetual'] },
+                properties: [{ name: 'a', value: 'b' }],
+                url: 'https://example.com/mit',
+            }], '1.6');
+            expect(out).toStrictEqual([{ license: { id: 'MIT', 'bom-ref': 'lic-1' } }]);
+        });
+
+        it('passes the BOM version to every license list normalizeLicensesInBom walks', () => {
+            const e = (ref: string) => ({ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': ref });
+            const bom: any = {
+                specVersion: '1.6',
+                metadata: {
+                    component: { licenses: [e('lic-mc')], components: [{ licenses: [e('lic-mcc')] }] },
+                    licenses: [e('lic-ml')],
+                },
+                components: [{ licenses: [e('lic-c')], components: [{ licenses: [e('lic-cc')] }] }],
+                services: [{ licenses: [e('lic-s')] }],
+            };
+            BomProcessingService.normalizeLicensesInBom(bom);
+            const kept = (ref: string) => [{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': ref } }];
+            expect(bom.metadata.component.licenses).toStrictEqual(kept('lic-mc'));
+            expect(bom.metadata.component.components[0].licenses).toStrictEqual(kept('lic-mcc'));
+            expect(bom.metadata.licenses).toStrictEqual(kept('lic-ml'));
+            expect(bom.components[0].licenses).toStrictEqual(kept('lic-c'));
+            expect(bom.components[0].components[0].licenses).toStrictEqual(kept('lic-cc'));
+            expect(bom.services[0].licenses).toStrictEqual(kept('lic-s'));
+        });
+
+        it('produces a valid licenses array for 1.4, 1.5 and 1.6 with the fields each version allows', async () => {
+            const validateBom = (await import('../../src/validateBom')).default;
+            const expected: Record<string, any[]> = {
+                '1.4': [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }],
+                '1.5': [{ license: { id: 'MIT', 'bom-ref': 'lic-1' } }, { license: { id: 'Apache-2.0' } }],
+                '1.6': [
+                    { license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } },
+                    { license: { id: 'Apache-2.0' } },
+                ],
+            };
+            for (const v of ['1.4', '1.5', '1.6']) {
+                const bom: any = {
+                    bomFormat: 'CycloneDX', specVersion: v, serialNumber: 'urn:uuid:c1c0e0e0-0000-0000-0000-000000000000', version: 1,
+                    metadata: { timestamp: '2026-05-11T00:00:00Z' },
+                    components: [{
+                        type: 'library', name: 'tpf55-lib', version: '1.0.0', 'bom-ref': 'pkg:npm/tpf55-lib@1.0.0',
+                        licenses: [
+                            { expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' },
+                            { license: { id: 'Apache-2.0' } },
+                        ],
+                    }],
+                };
+                BomProcessingService.normalizeLicensesInBom(bom);
+                expect(bom.components[0].licenses).toStrictEqual(expected[v]);
+                await expect(validateBom(bom)).resolves.toBe(true);
+            }
+        });
+
+        it('keeps acknowledgement and bom-ref of a 1.7 upload through the downgrade and the rewrite', async () => {
+            const validateBom = (await import('../../src/validateBom')).default;
+            const { downgradeCycloneDxSpecIfNeeded } = await import('../../src/services/cyclonedx/cdxSpecDowngrade');
+            const bom: any = {
+                bomFormat: 'CycloneDX', specVersion: '1.7', serialNumber: 'urn:uuid:c1c0e0e0-0000-0000-0000-000000000000', version: 1,
+                metadata: { timestamp: '2026-05-11T00:00:00Z' },
+                components: [{
+                    type: 'library', name: 'tpf55-lib', version: '1.0.0', 'bom-ref': 'pkg:npm/tpf55-lib@1.0.0',
+                    licenses: [{
+                        expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1',
+                        expressionDetails: [{ licenseIdentifier: 'MIT' }],
+                    }],
+                }],
+            };
+            downgradeCycloneDxSpecIfNeeded(bom);
+            BomProcessingService.normalizeLicensesInBom(bom);
+            expect(bom.specVersion).toBe('1.6');
+            expect(bom.components[0].licenses).toStrictEqual(
+                [{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
+            await expect(validateBom(bom)).resolves.toBe(true);
+        });
     });
 });

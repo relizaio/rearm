@@ -405,8 +405,8 @@ function licenseKey(entry: any): string {
   return `json:${JSON.stringify(entry)}`
 }
 
-const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
-  licenses: (s, d) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list) || []),
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, specVersion?: string) => any> = {
+  licenses: (s, d, v) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list, v) || []),
   hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
   externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
   properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
@@ -419,12 +419,12 @@ const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> 
  * identity lists are unioned, survivor first. The duplicate's `type` is dropped and its
  * `components` are hoisted by the caller.
  */
-function mergeDuplicateInto(survivor: any, duplicate: any): void {
+function mergeDuplicateInto(survivor: any, duplicate: any, specVersion?: string): void {
   for (const key of Object.keys(duplicate)) {
     if (DEDUP_SKIPPED_FIELDS.has(key)) continue
     const union = DEDUP_LIST_UNIONS[key]
     if (union) {
-      survivor[key] = union(survivor[key], duplicate[key])
+      survivor[key] = union(survivor[key], duplicate[key], specVersion)
     } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
       survivor[key] = duplicate[key]
     }
@@ -459,7 +459,7 @@ function hasRepeatedBomRef(bom: any): boolean {
  * has been walked) and walked in turn, so a duplicate nested in a duplicate is found too.
  * Works on shallow copies: the input is never changed.
  */
-function dedupeComponentTree(root: any, components: any): { root: any, components: any, count: number } {
+function dedupeComponentTree(root: any, components: any, specVersion?: string): { root: any, components: any, count: number } {
   const survivors = new Map<string, any>()
   // A survivor whose children are being walked, with the children of its duplicates
   // found meanwhile, appended once the current list is done.
@@ -491,7 +491,7 @@ function dedupeComponentTree(root: any, components: any): { root: any, component
     const survivor = ref ? survivors.get(ref) : undefined
     if (survivor) {
       count++
-      mergeDuplicateInto(survivor, component)
+      mergeDuplicateInto(survivor, component, specVersion)
       if (Array.isArray(component.components) && component.components.length) fill(survivor, component.components)
       return
     }
@@ -593,7 +593,7 @@ function affectedVersionKey(v: any): string {
 export function dedupeBomRefs(bom: any): BomRefDedupResult {
   if (!bom || typeof bom !== 'object' || !hasRepeatedBomRef(bom)) return { bom, count: 0 }
 
-  const tree = dedupeComponentTree(bom.metadata?.component, bom.components)
+  const tree = dedupeComponentTree(bom.metadata?.component, bom.components, bom.specVersion)
   const out: any = { ...bom }
   if (bom.components !== undefined) out.components = tree.components
 
@@ -1287,13 +1287,36 @@ export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, l
  *
  * Convert any expression that resolves to a known SPDX id via fixupSpdxId
  * (retried with whitespace-to-dash for the npm variant) into a license
- * object, then dedupe by `license.id`. We deliberately do NOT touch
+ * object, then dedupe by `license.id`. The rewritten license object keeps the
+ * expression entry's fields that the CycloneDX schema of the BOM's version
+ * (`specVersion`) defines the same way on both objects, with a value that
+ * schema accepts (`bom-ref` from 1.5, `acknowledgement` from 1.6; see
+ * EXPRESSION_FIELDS_KEPT_ON_LICENSE), and drops the rest; with no version or
+ * an unknown one it keeps none. We deliberately do NOT touch
  * compound expressions ("MIT OR Apache-2.0"), do NOT dedupe by `name`
  * (freeform — siblings may differ in url/text), and do NOT try to reconcile
  * mixed expression+license arrays beyond what dedupe-by-id resolves.
  * Anything ambiguous falls through to validation as before.
  */
-export function normalizeLicenses(licenses: any): any[] | undefined {
+/**
+ * Fields a single-id expression keeps when normalizeLicenses rewrites it into a license object: the fields the
+ * CycloneDX schema of the BOM's version defines, with the same definition, on both the expression entry and the
+ * license object (TPF-55 architecture 3.2). 1.4 and older, an unknown version and no version keep none.
+ */
+const EXPRESSION_FIELDS_KEPT_ON_LICENSE = new Map<string, readonly string[]>([
+  ['1.5', ['bom-ref']],
+  ['1.6', ['acknowledgement', 'bom-ref']],
+  ['1.7', ['acknowledgement', 'bom-ref']],
+]);
+
+/** A value the license object's schema accepts: refType is a non-empty string, the acknowledgement an enum value. */
+function isKeepableLicenseField(field: string, value: unknown): boolean {
+  if (field === 'bom-ref') return typeof value === 'string' && value.length > 0;
+  if (field === 'acknowledgement') return value === 'declared' || value === 'concluded';
+  return false;
+}
+
+export function normalizeLicenses(licenses: any, specVersion?: string): any[] | undefined {
   if (!Array.isArray(licenses) || licenses.length === 0) return licenses;
 
   const converted = licenses.map((entry: any) => {
@@ -1302,7 +1325,14 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
       if (typeof entry.expression === 'string') {
         const expr = entry.expression;
         const fixedId = CDXSpdx.fixupSpdxId(expr) ?? CDXSpdx.fixupSpdxId(expr.replace(/\s+/g, '-'));
-        if (fixedId) return { license: { id: fixedId } };
+        if (fixedId) {
+          const license: any = { id: fixedId };
+          const kept = typeof specVersion === 'string' ? EXPRESSION_FIELDS_KEPT_ON_LICENSE.get(specVersion) : undefined;
+          for (const field of kept ?? []) {
+            if (isKeepableLicenseField(field, entry[field])) license[field] = entry[field];
+          }
+          return { license };
+        }
         return entry;
       }
       // license.id must be a recognized SPDX id — Dependency-Track strict-validates
@@ -1339,12 +1369,13 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
 
 export function normalizeLicensesInBom(bom: any): any {
   if (!bom || typeof bom !== 'object') return bom;
+  const specVersion = bom.specVersion;
 
   const walkComponents = (comps: any) => {
     if (!Array.isArray(comps)) return;
     for (const c of comps) {
       if (!c || typeof c !== 'object') continue;
-      if (c.licenses) c.licenses = normalizeLicenses(c.licenses);
+      if (c.licenses) c.licenses = normalizeLicenses(c.licenses, specVersion);
       if (c.components) walkComponents(c.components);
     }
   };
@@ -1353,12 +1384,12 @@ export function normalizeLicensesInBom(bom: any): any {
   walkComponents(bom.services);
   if (bom.metadata?.component) {
     if (bom.metadata.component.licenses) {
-      bom.metadata.component.licenses = normalizeLicenses(bom.metadata.component.licenses);
+      bom.metadata.component.licenses = normalizeLicenses(bom.metadata.component.licenses, specVersion);
     }
     walkComponents(bom.metadata.component.components);
   }
   if (bom.metadata?.licenses) {
-    bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses);
+    bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses, specVersion);
   }
   return bom;
 }

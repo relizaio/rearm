@@ -429,4 +429,22 @@ describe('dedupeBomRefs', () => {
             { name: BOM_REFS_DEDUPLICATED_PROPERTY, value: '1' }
         ]);
     });
+
+    it('unions a rewritten license keeping acknowledgement and bom-ref for the BOM version (TPF-55)', () => {
+        const components = () => [
+            lib('L', { licenses: [{ license: { id: 'Apache-2.0' } }] }),
+            lib('A', { components: [lib('L', { licenses: [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }] })] })
+        ];
+        const v16 = dedupeBomRefs(doc(components())).bom;
+        const v15 = dedupeBomRefs(doc(components(), { specVersion: '1.5' })).bom;
+
+        expect(v16.components[0].licenses).toStrictEqual([
+            { license: { id: 'Apache-2.0' } },
+            { license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }
+        ]);
+        expect(v15.components[0].licenses).toStrictEqual([
+            { license: { id: 'Apache-2.0' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-1' } }
+        ]);
+    });
 });
