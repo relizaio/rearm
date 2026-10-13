@@ -53,7 +53,8 @@ async function askExpiry (title: string, text: string, confirmButtonText: string
 }
 
 async function confirmThen (title: string, text: string, confirmButtonText: string): Promise<boolean> {
-    const r = await Swal.fire({ title, text, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel' })
+    // titleText, not title: a caller may name the key by its label, which carries user text (Swal renders title as HTML)
+    const r = await Swal.fire({ titleText: title, text, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel' })
     return !!r.value
 }
 

@@ -109,10 +109,10 @@
                 </n-space>
                 <p v-if="!isAdminOfSelectedOrg" class="subtle">Need more than your own permissions allow, or a key that outlives your membership? Request a Free Form key: admins approve it with the permissions they choose, and you alone generate and see its secrets.</p>
                 <ApiKeyPermissionsModal v-model:show="showRequestModal" mode="request" :api-key="null" :org-uuid="newKeyOrg || ''" :notify="notify" @saved="loadMyKeys" />
-                <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2010" class="table-hover"></n-data-table>
+                <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2190" class="table-hover"></n-data-table>
                 <h4 class="mt-4">CLI sessions</h4>
                 <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
-                <n-data-table :columns="cliSessionFields" :data="cliSessions" class="table-hover"></n-data-table>
+                <n-data-table :columns="cliSessionFields" :data="cliSessionRows" class="table-hover"></n-data-table>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
@@ -134,7 +134,8 @@ import { OnChange } from 'naive-ui/es/upload/src/interface'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
-import { createApiKeyControls, apiKeyIdsColumn } from '../utils/apiKeyControls'
+import { createApiKeyControls, apiKeyLabelColumn } from '../utils/apiKeyControls'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 import { hardEndCell } from '@/utils/cliSessionLifetime'
 
 
@@ -414,7 +415,7 @@ watch(orgOptions, (opts) => {
 async function loadMyKeys () {
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes status holder adminDisabled sessionMaxMinutes
+            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes declaredName status holder adminDisabled sessionMaxMinutes
                 secrets { slot active createdDate lastUsedDate expiresDate }
                 permissions { permissions { org scope object type meta approvals functions } } } }`,
             fetchPolicy: 'network-only'
@@ -454,7 +455,6 @@ async function loadCliSessions () {
         const resp: any = await graphqlClient.query({ query: gql`query myCliSessions { myCliSessions { uuid status apiKey org requestedFrom createdDate expiresDate hardExpiresDate lastUsedDate deviceInfo { reportedOs reportedTimeZone reportedClient observedIp } } }`, fetchPolicy: 'network-only' })
         cliSessions.value = (resp.data.myCliSessions || []).map((s: any) => Object.assign({}, s, {
             orgName: store.getters.orgById(s.org)?.name || s.org,
-            keyLabel: (myKeys.value.find((k: any) => k.uuid === s.apiKey) || {}).type === 'FREEFORM' ? 'Free Form (held)' : 'Personal',
             createdDisplay: s.createdDate ? new Date(s.createdDate).toLocaleString('en-CA') : '',
             lastUsedDisplay: s.lastUsedDate ? new Date(s.lastUsedDate).toLocaleString('en-CA') : 'never',
             expiresDisplay: s.expiresDate ? new Date(s.expiresDate).toLocaleString('en-CA') : '',
@@ -462,6 +462,15 @@ async function loadCliSessions () {
         }))
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
+// "Acts as" follows both lists, so a session reads right whichever of keys and sessions loads last
+function actsAsLabel (s: any): string {
+    const key = myKeys.value.find((k: any) => k.uuid === s.apiKey)
+    if (key) return apiKeyLabel(key, { withType: true, siblings: myKeys.value })
+    // the server only approves a personal key you own or a Free Form key you hold, so a key that is not
+    // in your list is a Free Form key whose holder an admin reassigned
+    return `Free Form · ${String(s.apiKey || '').slice(0, 8)} · no longer held by you`
+}
+const cliSessionRows = computed(() => cliSessions.value.map((s: any) => Object.assign({}, s, { keyLabel: actsAsLabel(s) })))
 async function revokeCliSession (row: any) {
     const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once. A key created for it is deleted.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
     if (!r.value) return
@@ -475,7 +484,7 @@ const cliSessionFields: ComputedRef<any> = computed((): any => [
     { key: 'reportedOs', width: 150, title: 'System', render: (row: any) => h('span', { class: row.deviceInfo?.reportedOs ? '' : 'text-muted' }, row.deviceInfo?.reportedOs || 'unknown') },
     { key: 'reportedTimeZone', width: 130, title: 'Time zone', render: (row: any) => h('span', { class: row.deviceInfo?.reportedTimeZone ? '' : 'text-muted' }, row.deviceInfo?.reportedTimeZone || 'unknown') },
     { key: 'observedIp', width: 150, title: 'Address seen by server', render: (row: any) => h('code', { style: 'font-size: 12px;' }, row.deviceInfo?.observedIp || 'unknown') },
-    { key: 'keyLabel', width: 150, title: 'Acts as' },
+    { key: 'keyLabel', width: 260, title: 'Acts as' },
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
@@ -491,7 +500,7 @@ function editMyKey (row: any, mode: 'edit' | 'view' = 'edit') {
 }
 const myKeyFields: ComputedRef<any> = computed((): any => [
     { key: 'kind', width: 150, title: 'Type', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free Form (held)' },
-    apiKeyIdsColumn(),
+    apiKeyLabelColumn(),
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Created' },
     { key: 'accessDisplay', width: 170, title: 'Last Accessed' },
@@ -516,7 +525,7 @@ const myKeyFields: ComputedRef<any> = computed((): any => [
                 // a held Free Form key: the admins own its permissions, the holder can see them
                 els.push(h(NIcon, { title: 'View Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row, 'view') }, { default: () => h(EyeIcon) }))
             }
-            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, row.status === 'REQUESTED' ? 'this request' : 'this key') }, { default: () => h(Trash) }))
+            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, (row.status === 'REQUESTED' ? 'the request ' : 'the key ') + apiKeyLabel(row, { withType: true, siblings: myKeys.value })) }, { default: () => h(Trash) }))
             return h('div', els)
         }
     }
