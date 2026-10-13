@@ -6,6 +6,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
+import { apiKeyName, apiKeyNotesUncut, apiKeyShortId } from '@/utils/apiKeyLabel'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -207,20 +208,44 @@ export function apiKeyIdsColumn (): any {
         key: 'ids', width: 60, title: 'IDs',
         render: (row: any) => h(NTooltip, { trigger: 'hover' }, {
             trigger: () => h(NIcon, { class: 'icons', size: 22 }, { default: () => h(Info20Regular) }),
-            default: () => h('div', { style: 'font-size: 12px;' }, [
-                h('div', [h('strong', 'Internal ID: '), h('code', row.uuid)]),
-                h('div', { style: 'margin-top: 4px;' }, [h('strong', 'API ID: '), h('code', { style: 'word-break: break-all;' }, apiKeyIdOf(row))])
-            ])
+            default: () => apiKeyIdsDetail(row)
         })
+    }
+}
+
+/** The internal uuid and the API id clients present, for the hover of a key's IDs or Key cell. */
+function apiKeyIdsDetail (row: any) {
+    return h('div', { style: 'font-size: 12px;' }, [
+        h('div', [h('strong', 'Internal ID: '), h('code', row.uuid)]),
+        h('div', { style: 'margin-top: 4px;' }, [h('strong', 'API ID: '), h('code', { style: 'word-break: break-all;' }, apiKeyIdOf(row))])
+    ])
+}
+
+/** "Key" column: what names the key and its short id, so two keys of one type tell apart; hover shows both ids. */
+export function apiKeyLabelCell (): any {
+    return {
+        key: 'label', width: 240, title: 'Key',
+        render: (row: any) => {
+            const name = apiKeyName(row)
+            const uncut = name.kind === 'notes' ? apiKeyNotesUncut(row) : ''
+            const nameProps = uncut && uncut !== name.text ? { title: uncut } : {}
+            return h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h('div', { style: WRAP_ROW + ' column-gap: 6px;' }, [
+                    h(name.kind === 'declared' ? 'code' : 'span', nameProps, name.text),
+                    h('code', { class: 'key-id-chip', title: row.uuid }, ['id ', apiKeyShortId(row)])
+                ]),
+                default: () => apiKeyIdsDetail(row)
+            })
+        }
     }
 }
 
 /** Type column: only on a table that mixes key types (see showsKeyType). */
 export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
 
-/** Left-most columns of a key table: Type where the table mixes types, then IDs. */
+/** Left-most columns of a key table: Type where the table mixes types, then the Key label. */
 export function apiKeyLeadColumns (table: ApiKeyTableKind): any[] {
-    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyIdsColumn()] : [apiKeyIdsColumn()]
+    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelCell()] : [apiKeyLabelCell()]
 }
 
 /** Created, last accessed and updated by, stacked in one column instead of three. */

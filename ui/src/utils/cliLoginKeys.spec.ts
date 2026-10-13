@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { boundAgentsLabel, isBoundToAgent, keysToOffer } from './cliLoginKeys'
+import { boundAgentsLabel, isBoundToAgent, keysToOffer, permissionSummary } from './cliLoginKeys'
 
 const key = (uuid: string, extra: any = {}) => ({ uuid, status: 'ACTIVE', type: 'FREEFORM', ...extra })
 
@@ -38,5 +38,23 @@ describe('keys the CLI login offers', () => {
             .toBe('bound to builder, reviewer')
         expect(boundAgentsLabel(key('b', { boundAgents: [{ uuid: 'a3' }] }))).toBe('bound to a3')
         expect(boundAgentsLabel(key('free'))).toBe('')
+    })
+})
+
+describe('permission summary of a key', () => {
+    const perms = (...types: string[]) => ({ permissions: { permissions: types.map(type => ({ scope: 'ORGANIZATION', type })) } })
+
+    it('says so when the key grants nothing', () => {
+        expect(permissionSummary(perms())).toBe('no permissions')
+        expect(permissionSummary({})).toBe('no permissions')
+    })
+
+    it('names the one permission a key grants', () => {
+        expect(permissionSummary(perms('READ_WRITE'))).toBe('1 permission, READ_WRITE')
+    })
+
+    it('counts several and names the highest, an unknown type ranking below NONE', () => {
+        expect(permissionSummary(perms('READ_ONLY', 'ADMIN', 'NONE'))).toBe('3 permissions, highest ADMIN')
+        expect(permissionSummary(perms('SOMETHING_NEW', 'NONE'))).toBe('2 permissions, highest NONE')
     })
 })

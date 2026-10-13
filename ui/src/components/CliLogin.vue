@@ -71,11 +71,14 @@
                             <n-radio-group v-model:value="chosenKey">
                                 <n-space vertical>
                                     <n-radio v-for="k in offeredKeys" :key="k.uuid" :value="k.uuid">
-                                        <strong>{{ k.type === 'USER' ? 'Personal' : 'Free Form (held)' }}</strong> · {{ orgName(k.org) }}
-                                        <span class="subtle"> · {{ (k.permissions?.permissions || []).length }} permission{{ (k.permissions?.permissions || []).length === 1 ? '' : 's' }}</span>
-                                        <span class="subtle" v-if="k.notes"> · {{ k.notes }}</span>
+                                        <strong>{{ apiKeyTypeWord(k.type) }}</strong>
+                                        <template v-if="apiKeyName(k).kind !== 'type'"> · <code v-if="apiKeyName(k).kind === 'declared'">{{ apiKeyName(k).text }}</code><span v-else>{{ apiKeyName(k).text }}</span></template>
+                                        · <code class="key-id-chip" :title="k.uuid">id {{ apiKeyShortId(k, offeredKeys) }}</code>
+                                        · {{ orgName(k.org) }}
+                                        <span class="subtle"> · {{ permissionSummary(k) }}</span>
+                                        <span class="subtle" v-if="apiKeyName(k).kind === 'declared' && apiKeyNotesForLabel(k)"> · {{ apiKeyNotesForLabel(k) }}</span>
                                         <span class="subtle" v-if="k.sessionMaxMinutes"> · sessions end after {{ describeMinutes(k.sessionMaxMinutes) }}</span>
-                                        <span class="subtle" v-if="isBoundToAgent(k)"> · {{ boundAgentsLabel(k) }}</span>
+                                        <n-tag v-if="isBoundToAgent(k)" size="tiny" type="warning" style="margin-left: 6px;">{{ boundAgentsLabel(k) }}</n-tag>
                                     </n-radio>
                                 </n-space>
                             </n-radio-group>
@@ -95,8 +98,9 @@
                 <n-input-number v-model:value="maxMinutes" clearable :show-button="false" style="max-width: 280px;"
                     :placeholder="keyLimit ? 'The key allows up to ' + keyLimit : 'Shorter than the default, if you want'" />
             </n-form-item>
+            <p class="subtle" v-if="chosenKeyRow">This session will act as {{ apiKeyLabel(chosenKeyRow, { withType: true, siblings: offeredKeys }) }} in {{ orgName(chosenKeyRow.org) }}, with {{ permissionSummary(chosenKeyRow) }}.</p>
             <n-space>
-                <n-button type="primary" :disabled="!canApprove" @click="approve">Approve</n-button>
+                <n-button type="primary" :disabled="!canApprove" @click="approve">{{ approveLabel }}</n-button>
                 <n-button type="error" ghost @click="deny">Deny</n-button>
             </n-space>
         </div>
@@ -115,7 +119,7 @@
  * Browser side of `rearm login` (device authorization). The user is already signed in to ReARM
  * (the SPA requires it); here they approve the CLI's request by choosing what the session acts as.
  */
-import { NAlert, NButton, NCheckbox, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, useNotification, NotificationType } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTag, useNotification, NotificationType } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import ScopedPermissions from './ScopedPermissions.vue'
 import constants from '../utils/constants'
@@ -125,7 +129,8 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { approvalLifetimeProblem, describeMinutes, sessionEndSentence } from '@/utils/cliSessionLifetime'
-import { boundAgentsLabel, isBoundToAgent, keysToOffer } from '@/utils/cliLoginKeys'
+import { boundAgentsLabel, isBoundToAgent, keysToOffer, permissionSummary } from '@/utils/cliLoginKeys'
+import { apiKeyLabel, apiKeyName, apiKeyNotesForLabel, apiKeyShortId, apiKeyTypeWord } from '@/utils/apiKeyLabel'
 
 const route = useRoute()
 const store = useStore()
@@ -153,6 +158,9 @@ const offeredKeys = computed(() => keysToOffer(myKeys.value, showBoundKeys.value
 const boundKeyCount = computed(() => eligibleKeys.value.filter(isBoundToAgent).length)
 // hiding the bound keys again drops a choice that is no longer on screen, so nothing unseen is approved
 watch(showBoundKeys, (show) => { if (!show && chosenKey.value && !offeredKeys.value.some((k: any) => k.uuid === chosenKey.value)) chosenKey.value = null })
+// the chosen key named on the button and in the line above it, so the approver sees which of two alike keys they picked
+const chosenKeyRow = computed(() => choice.value === 'existing' ? offeredKeys.value.find((k: any) => k.uuid === chosenKey.value) ?? null : null)
+const approveLabel = computed(() => chosenKeyRow.value ? 'Approve as ' + apiKeyLabel(chosenKeyRow.value, { withType: true, siblings: offeredKeys.value }) : 'Approve')
 const defaultNotes = computed(() => 'CLI session' + (request.value.requestedFrom ? ' on ' + request.value.requestedFrom : ''))
 // the session's lifetime (task RD3-7): the chosen key's limit, which the approver may shorten but not lengthen;
 // a fresh key carries no limit
@@ -252,7 +260,7 @@ async function lookup () {
         })
         if (!resp.data.cliLoginRequest) { lookupError.value = 'No pending sign-in for this code. It may have expired: run rearm login again.'; return }
         request.value = resp.data.cliLoginRequest
-        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes sessionMaxMinutes permissions { permissions { scope type } } boundAgents { uuid name } } }`, fetchPolicy: 'no-cache' })
+        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes declaredName sessionMaxMinutes permissions { permissions { scope type } } boundAgents { uuid name displayName } } }`, fetchPolicy: 'no-cache' })
         myKeys.value = keys.data.myApiKeys || []
         phase.value = 'choose'
     } catch (e: any) { lookupError.value = commonFunctions.parseGraphQLError(e.message) }
