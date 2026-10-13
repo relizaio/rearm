@@ -185,6 +185,9 @@
                                 @update:show="handleComponentSettingsClose"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
+                                <ComponentRevisionConflict v-if="revisionConflict" :conflict="revisionConflict.info" :users="users"
+                                    :can-force="isWritable" :when="commonFunctions.dateDisplay" :component-word="words.component"
+                                    @reload="reloadComponentForm" @force="forceSave" />
                                 <n-tabs
                                     type="segment"
                                     size="medium"
@@ -507,7 +510,7 @@
                                         </div>
                                         <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
-                                                <n-button type="success" @click="save">
+                                                <n-button type="success" data-testid="component-settings-save" @click="save">
                                                     <template #icon>
                                                         <n-icon><Check /></n-icon>
                                                     </template>
@@ -862,7 +865,8 @@
                                             :org-uuid="orguuid"
                                             :component-uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
                                         <!-- Shown to everyone: what a release is held to is worth
@@ -872,7 +876,8 @@
                                             scope="COMPONENT"
                                             :uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
@@ -1317,6 +1322,8 @@ import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
 import ComponentLocks from './ComponentLocks.vue'
+import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
+import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
@@ -1325,6 +1332,13 @@ import { resolveComponentPageTab } from '@/utils/componentPageTab'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
+// TPF-62: the revision the settings form was read at, advanced by this page's own writes of the
+// component, and the pending refusal when a save was refused as stale. Destructured so the
+// template sees top-level refs (a ref nested in a plain object is not unwrapped there).
+const {
+    expected: formRevision, conflict: revisionConflict, baseline: revisionBaseline,
+    saved: revisionSaved, ownWrite: ownComponentWrite, refused: revisionRefused, force: forceRevision
+} = useComponentRevision()
 
 onMounted(async () => {
     await initLoad()
@@ -1514,21 +1528,29 @@ const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
  * possible thing to be wrong about.
  */
 async function saveDeviceClass (): Promise<void> {
+    await submitDeviceClass(formRevision.value)
+}
+
+async function submitDeviceClass (expected: number | null): Promise<void> {
     if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
     savingDeviceClass.value = true
     deviceWindowError.value = null
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: { uuid: componentUuid,
+            variables: { component: withExpectedRevision({ uuid: componentUuid,
                 name: componentData.value?.name || updatedComponent.value?.name,
-                deviceClass: deviceClassEdit.value } },
+                deviceClass: deviceClassEdit.value }, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         await initLoad()
         deviceClassBaseline.value = deviceClassEdit.value
         await loadDeviceWindow()
     } catch (e: any) {
+        // A stale-revision refusal shows the panel and keeps the class as the user set it, so
+        // Force resends it.
+        if (revisionRefused(e, (rev) => submitDeviceClass(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
         deviceClassEdit.value = deviceClassBaseline.value
     } finally {
@@ -1556,6 +1578,10 @@ async function loadDeviceWindow (): Promise<void> {
 }
 
 async function saveDeviceWindow (): Promise<void> {
+    await submitDeviceWindow(formRevision.value)
+}
+
+async function submitDeviceWindow (expected: number | null): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
     const input = deviceWindowMutationInput(componentUuid,
@@ -1566,9 +1592,10 @@ async function saveDeviceWindow (): Promise<void> {
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: input },
+            variables: { component: withExpectedRevision(input, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         // Advance the baseline from what was SENT and accepted -- the mutation deliberately does
         // not select the window back, for the CE reason above.
         deviceWindowBaseline.eos = deviceWindow.eos
@@ -1580,6 +1607,9 @@ async function saveDeviceWindow (): Promise<void> {
         // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
         // end of life", the device-class refusal the walkthrough quotes -- never reaches the
         // panel. saveDeviceClass 40 lines up already uses the right one.
+        // A stale-revision refusal shows the panel instead, and keeps the pickers as the user
+        // set them, so Force resends them.
+        if (revisionRefused(e, (rev) => submitDeviceWindow(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         savingDeviceWindow.value = false
@@ -1899,6 +1929,8 @@ const handleComponentSettingsClose = async function(show: boolean) {
     }
     
     if (!show) {
+        // A refusal belongs to the edit being closed; the form revision stays.
+        revisionConflict.value = null
         // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
         const newQuery = new URLSearchParams(window.location.search)
         newQuery.delete('componentSettingsView')
@@ -1998,6 +2030,8 @@ async function savePerspectives() {
                 perspectiveUuids: selectedPerspectives.value
             }
         })
+        // The perspectives write saves the component row (even for an unchanged set): count it.
+        ownComponentWrite()
         
         if (response.data && response.data.setPerspectivesOnComponent) {
             updatedComponent.value.perspectiveDetails = response.data.setPerspectivesOnComponent.perspectiveDetails
@@ -2667,6 +2701,11 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 }
 
 async function save () {
+    // Bound as a click handler, which receives the event: the revision cannot be an argument.
+    await submitComponentSave(formRevision.value)
+}
+
+async function submitComponentSave (expected: number | null) {
     // approvalPolicy is sent as null both for "leave unchanged" (server
     // convention) and "clear" (UI operator hit the clearable X). We
     // disambiguate by setting an explicit clearApprovalPolicy flag when
@@ -2683,9 +2722,13 @@ async function save () {
     } else if (stagedOwnerChange.value === 'clear') {
         payload.clearOwner = true
     }
+    // TPF-62: the revision the form was read at; the server refuses the save if the component
+    // changed since.
+    if (expected !== null) payload.expectedRevision = expected
     const ownerWasStaged = stagedOwnerChange.value !== 'none'
     try {
         updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
+        revisionSaved(expected)
         // Update originalComponent to match current state so hasComponentChanges() returns false
         originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
         // Refresh the effective-policy snapshot so the provenance card
@@ -2697,6 +2740,9 @@ async function save () {
         if (ownerWasStaged) await loadOwnership()
         notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
     } catch (err: any) {
+        // A stale-revision refusal: the panel is the message, so no toast. Rethrown so that
+        // saveTriggers still sees a failure.
+        if (revisionRefused(err, (rev) => submitComponentSave(rev))) throw err
         // RelizaException surfaces as BAD_REQUEST with the actual
         // domain message (e.g. "Cannot clear approval policy while
         // component references global events…"). Otherwise it's a
@@ -4014,10 +4060,12 @@ async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
     latestRefreshToken.value++
-    let storeComponent = store.getters.componentById(compUuid)
-    if (!storeComponent || !storeComponent.versionType) {
-        storeComponent = await store.dispatch('fetchComponentFull', compUuid)
-    }
+    // TPF-62: always a fresh read, never the store cache, so the form and the revision it is
+    // saved against come from one read.
+    const { component, revision } = await loadComponentForForm(graphqlClient as any, compUuid)
+    store.commit('ADD_UPDATE_COMPONENT', component)
+    const storeComponent = component
+    revisionBaseline(revision)
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
     marketingVersionEnabled.value = updatedComponent.value.versionType === 'MARKETING'
     isComponent.value = updatedComponent.value.type === 'COMPONENT'
@@ -4046,6 +4094,42 @@ async function initLoad() {
             branchType: selectedBranch?.type,
             isComponent: isComponent.value
         })
+    }
+}
+
+/**
+ * Reload on a revision refusal (TPF-62): a fresh read of the form and its revision (which clears
+ * the panel), and every baseline the settings modal compares against, as opening the page does.
+ * The modal stays open on the current values.
+ */
+async function reloadComponentForm () {
+    await initLoad()
+    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassBaseline.value = deviceClassEdit.value
+    await loadDeviceWindow()
+    await loadOwnership()
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    if (updatedComponent.value?.perspectiveDetails) {
+        selectedPerspectives.value = updatedComponent.value.perspectiveDetails.map((p: any) => p.uuid)
+        originalPerspectives.value = [...selectedPerspectives.value]
+    }
+}
+
+/**
+ * Force on a revision refusal (TPF-62): re-runs the refused save with the refusal's revision. A
+ * second refusal re-renders the panel with the newer who and when; any other error was already
+ * shown by the save it re-ran.
+ */
+let forcing = false
+async function forceSave () {
+    if (forcing) return
+    forcing = true
+    try {
+        await forceRevision()
+    } catch {
+        // shown by the save it re-ran
+    } finally {
+        forcing = false
     }
 }
 

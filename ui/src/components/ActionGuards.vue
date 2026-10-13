@@ -160,6 +160,10 @@ const props = withDefaults(defineProps<{
     orgUuid?: string
 }>(), { componentWord: 'component', orgUuid: '' })
 
+// TPF-62: a component's guards are saved through updateComponent, which moves the component's
+// revision by one; the settings page counts its own writes so its next save is not refused.
+const emit = defineEmits<{ (e: 'component-written'): void }>()
+
 const store = useStore()
 const notification = useNotification()
 
@@ -303,7 +307,9 @@ const persist = async (next: any[], successMsg: string) => {
         namePattern: props.scope === 'ORG' ? (g.namePattern || null) : null
     }))
     try {
-        guards.value = await dispatchSave(payload)
+        const saved = await dispatchSave(payload)
+        if (props.scope === 'COMPONENT') emit('component-written')
+        guards.value = saved
         notification.success({ title: 'Saved', content: successMsg, duration: 3500 })
         return true
     } catch (e: any) {
