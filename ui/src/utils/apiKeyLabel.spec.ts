@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
-    cleanLabelText, MAX_NOTES_IN_LABEL } from './apiKeyLabel'
+    cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
 
 describe('apiKeyLabel', () => {
     it('names every key type in words, and falls back to the raw type', () => {
@@ -11,8 +11,12 @@ describe('apiKeyLabel', () => {
     })
 
     it('cleans user text of the separator, control and zero-width characters', () => {
-        expect(cleanLabelText(' CI · pipeline​\n')).toBe('CI pipeline')
-        expect(cleanLabelText('a\u0000b\u007Fc⁠d﻿e')).toBe('a b c d e')
+        expect(cleanLabelText(' CI · pipeline\u200B\n')).toBe('CI pipeline')
+        expect(cleanLabelText('a\u0000b\u007Fc\u2060d\uFEFFe\u0085f')).toBe('a b c d e f')
+        // a bidi override in a note must not reverse the short id that follows it
+        expect(cleanLabelText('deploy\u202Eabc\u2066x\u2069\u200Fy')).toBe('deploy abc x y')
+        // joiners stay: Persian and emoji sequences need them
+        expect(cleanLabelText('\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645')).toBe('\u0645\u06CC\u200C\u062E\u0648\u0627\u0647\u0645')
         expect(cleanLabelText(null)).toBe('')
         expect(cleanLabelText('   ')).toBe('')
     })
@@ -27,6 +31,18 @@ describe('apiKeyLabel', () => {
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget' })).toEqual({ text: 'Release automation', kind: 'notes' })
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied' })).toEqual({ text: 'Free Form', kind: 'type' })
         expect(apiKeyName({ type: 'FREEFORM', status: 'ACTIVE', notes: 'Access Denied' })).toEqual({ text: 'Access Denied', kind: 'notes' })
+        // the split is at the server's " | Denied" separator, so a note that says "Denied:" itself stays whole
+        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Fix Denied: errors in CI | Denied: no budget' })).toEqual({ text: 'Fix Denied: errors in CI', kind: 'notes' })
+        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied: build logs | Denied' })).toEqual({ text: 'Denied: build logs', kind: 'notes' })
+    })
+
+    it('splits the denial off the notes, reason and all', () => {
+        expect(splitDeniedNotes('Release automation | Denied: no budget')).toEqual({ note: 'Release automation', reason: 'no budget' })
+        expect(splitDeniedNotes('Release automation | Denied')).toEqual({ note: 'Release automation', reason: '' })
+        expect(splitDeniedNotes('Denied: no budget')).toEqual({ note: '', reason: 'no budget' })
+        expect(splitDeniedNotes('Fix Denied: errors | Denied: x')).toEqual({ note: 'Fix Denied: errors', reason: 'x' })
+        expect(splitDeniedNotes('CI pipeline')).toBeNull()
+        expect(splitDeniedNotes(null)).toBeNull()
     })
 
     it('cuts long notes, and keeps them whole uncut', () => {

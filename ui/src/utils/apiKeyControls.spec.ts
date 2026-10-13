@@ -64,7 +64,6 @@ describe('API key tables: key label', () => {
         const w = mountTable('freeForm', rows)
         const cells = w.findAll('tbody tr').map(tr => tr.findAll('td')[0])
         expect(cells.map(c => c.text())).toEqual(['Free Formid 1c069715', 'Free Formid ae9254bd', 'CI pipelineid 77781336', 'release-pipelineid 6688e1ec'])
-        expect(cells[0].find('.key-id-chip').attributes('title')).toBe('1c069715-aaaa-4aaa-8aaa-aaaaaaaaaaaa')
         // a declared name is code-styled, notes and the type word are plain text
         expect(cells[3].find('code:not(.key-id-chip)').text()).toBe('release-pipeline')
         expect(cells[2].find('code:not(.key-id-chip)').exists()).toBe(false)

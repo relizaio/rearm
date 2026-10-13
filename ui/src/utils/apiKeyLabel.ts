@@ -21,10 +21,12 @@ export function apiKeyTypeWord (type: string | null | undefined): string {
     return API_KEY_TYPE_WORDS[type] || type
 }
 
-// the label separator, control characters and zero-width characters, each read as one space
-const LABEL_NOISE = /[·\u0000-\u001F\u007F​‌‍⁠﻿]/g
+// read as one space in a label: the label separator, C0 and C1 control characters, zero-width spaces and
+// joiners that hide text, and the bidi controls that would let a note reorder the short id after it.
+// ZWNJ and ZWJ (U+200C, U+200D) stay: scripts and emoji sequences need them and they reorder nothing.
+const LABEL_NOISE = /[\u00B7\u0000-\u001F\u007F-\u009F\u200B\u200E\u200F\u202A-\u202E\u2060\u2066-\u2069\uFEFF]/g
 
-/** User text made safe to sit between the label's separators: no separator, no control or zero-width characters. */
+/** User text made safe to sit between the label's separators: no separator, no control, zero-width or bidi characters. */
 export function cleanLabelText (s: string | null | undefined): string {
     if (!s) return ''
     return String(s).replace(LABEL_NOISE, ' ').replace(/\s+/g, ' ').trim()
@@ -33,13 +35,20 @@ export function cleanLabelText (s: string | null | undefined): string {
 /** Notes longer than this are cut in a label; the full text stays on the key. */
 export const MAX_NOTES_IN_LABEL = 48
 
-// the server records a denial as "<note> | Denied: <reason>", or "Denied: <reason>" when there was no note
-const DENIED_SUFFIX = /(\s*\|\s*)?Denied(:.*)?$/
+/**
+ * The server records a denial in the notes as "<note> | Denied: <reason>", "<note> | Denied" without a reason,
+ * or "Denied: <reason>" when there was no note (ApiKeyService). Split at the first such separator, so a note
+ * that itself says "Denied:" stays whole. null when the notes carry no denial.
+ */
+export function splitDeniedNotes (notes: string | null | undefined): { note: string, reason: string } | null {
+    const m = /^(?:(.*?)\s*\|\s*)?Denied(?::\s*(.*))?$/s.exec(String(notes ?? ''))
+    return m ? { note: m[1] ?? '', reason: m[2] ?? '' } : null
+}
 
 /** The key's notes as written, cleaned, without the denial the server appends to a DENIED request. */
 export function apiKeyNotesUncut (key: any): string {
-    const notes = cleanLabelText(key?.notes)
-    return key?.status === 'DENIED' ? notes.replace(DENIED_SUFFIX, '').trim() : notes
+    const denied = key?.status === 'DENIED' ? splitDeniedNotes(key?.notes) : null
+    return cleanLabelText(denied ? denied.note : key?.notes)
 }
 
 /** The key's notes as a label shows them: cleaned, and cut to MAX_NOTES_IN_LABEL characters. */

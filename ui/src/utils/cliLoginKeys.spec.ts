@@ -57,4 +57,12 @@ describe('permission summary of a key', () => {
         expect(permissionSummary(perms('READ_ONLY', 'ADMIN', 'NONE'))).toBe('3 permissions, highest ADMIN')
         expect(permissionSummary(perms('SOMETHING_NEW', 'NONE'))).toBe('2 permissions, highest NONE')
     })
+
+    it('says when the highest grant sits on one object rather than the organization', () => {
+        const scoped = (...ps: [string, string][]) => ({ permissions: { permissions: ps.map(([scope, type]) => ({ scope, type })) } })
+        expect(permissionSummary(scoped(['COMPONENT', 'ADMIN']))).toBe('1 permission, ADMIN on one component')
+        expect(permissionSummary(scoped(['ORGANIZATION', 'READ_ONLY'], ['COMPONENT', 'ADMIN']))).toBe('2 permissions, highest ADMIN on one component')
+        // the same type org-wide wins over the scoped one
+        expect(permissionSummary(scoped(['COMPONENT', 'ADMIN'], ['ORGANIZATION', 'ADMIN']))).toBe('2 permissions, highest ADMIN')
+    })
 })

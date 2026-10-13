@@ -6,7 +6,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
-import { apiKeyName, apiKeyNotesUncut, apiKeyShortId } from '@/utils/apiKeyLabel'
+import { apiKeyName, apiKeyNotesUncut, apiKeyShortId, splitDeniedNotes } from '@/utils/apiKeyLabel'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -25,7 +25,7 @@ export interface ApiKeyControlOptions {
     isAdmin?: () => boolean
 }
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
-function deniedReason (row: any): string { const m = /Denied(?::\s*(.*))?$/.exec(row.notes || ''); return m ? (m[1] || '') : '' }
+function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.reason ?? '' }
 
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
@@ -222,7 +222,7 @@ function apiKeyIdsDetail (row: any) {
 }
 
 /** "Key" column: what names the key and its short id, so two keys of one type tell apart; hover shows both ids. */
-export function apiKeyLabelCell (): any {
+export function apiKeyLabelColumn (): any {
     return {
         key: 'label', width: 240, title: 'Key',
         render: (row: any) => {
@@ -232,7 +232,8 @@ export function apiKeyLabelCell (): any {
             return h(NTooltip, { trigger: 'hover' }, {
                 trigger: () => h('div', { style: WRAP_ROW + ' column-gap: 6px;' }, [
                     h(name.kind === 'declared' ? 'code' : 'span', nameProps, name.text),
-                    h('code', { class: 'key-id-chip', title: row.uuid }, ['id ', apiKeyShortId(row)])
+                    // no native title on the chip: the cell's tooltip already shows the full uuid
+                    h('code', { class: 'key-id-chip' }, ['id ', apiKeyShortId(row)])
                 ]),
                 default: () => apiKeyIdsDetail(row)
             })
@@ -245,7 +246,7 @@ export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
 
 /** Left-most columns of a key table: Type where the table mixes types, then the Key label. */
 export function apiKeyLeadColumns (table: ApiKeyTableKind): any[] {
-    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelCell()] : [apiKeyLabelCell()]
+    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn()] : [apiKeyLabelColumn()]
 }
 
 /** Created, last accessed and updated by, stacked in one column instead of three. */
