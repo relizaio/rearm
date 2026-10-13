@@ -697,13 +697,13 @@
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
                             <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
-                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1020"
+                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1200"
                                 :row-key="dataTableRowKey" :pagination="keyRequestsPagination" class="table-hover" data-testid="key-requests-table">
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1240"
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1420"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
@@ -714,7 +714,7 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1130"
+                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1310"
                                 :row-key="dataTableRowKey" :pagination="userKeysPagination" class="table-hover" data-testid="user-keys-table">
                             </n-data-table>
                         </div>
@@ -723,7 +723,7 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1220"
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1400"
                                 :row-key="dataTableRowKey" :pagination="scopedKeysPagination" class="table-hover" data-testid="scoped-keys-table">
                             </n-data-table>
                             <n-modal

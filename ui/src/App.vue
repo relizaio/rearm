@@ -64,6 +64,17 @@ import AppWrapper from '@/components/AppWrapper.vue'
     width: 90% !important;
 }
 
+/* short key id next to a key's name (apiKeyLabelColumn, the CLI login picker); same look as the agent cards' uuid chip */
+.key-id-chip {
+    font-family: monospace;
+    font-size: 11px;
+    padding: 1px 6px;
+    border-radius: 4px;
+    background: var(--n-color-embedded, #f5f5f5);
+    color: var(--n-text-color-2, #555);
+    white-space: nowrap;
+}
+
 .n-tooltip a {
   color: #eee !important;
   text-decoration: underline;
