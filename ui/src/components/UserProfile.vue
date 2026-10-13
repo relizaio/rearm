@@ -113,7 +113,7 @@
                 <h4 class="mt-4">CLI sessions</h4>
                 <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
                 <n-data-table :columns="cliSessionFields" :data="cliSessions" :scroll-x="1860" class="table-hover"></n-data-table>
-                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :sibling-keys="myKeys" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
         </n-tabs>
@@ -429,7 +429,7 @@ async function loadMyKeys () {
         myKeysLoaded.value = true
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
-const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true, canMint: (row: any) => row.status === 'ACTIVE' || row.status === 'INACTIVE' })
+const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true, canMint: (row: any) => row.status === 'ACTIVE' || row.status === 'INACTIVE', siblings: () => myKeys.value })
 
 async function createMyKey () {
     if (!newKeyOrg.value) return

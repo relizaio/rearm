@@ -23,17 +23,17 @@ export interface ApiKeyControlOptions {
     canMint?: (row: any) => boolean
     /** whether the viewer acts as an org admin: only admins may re-activate a key an admin disabled; defaults to false */
     isAdmin?: () => boolean
+    /** the keys listed alongside, so a dialog's short id is unique among them, as the table's chip is */
+    siblings?: () => any[]
 }
-/** "Key Free Form · CI pipeline · 77781336. ": the first words of a row dialog's text, naming the key it acts on. */
-function keyIntro (row: any): string { return `Key ${apiKeyLabel(row, { withType: true })}. ` }
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
 function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.reason ?? '' }
 
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
 
-/** Text made safe to sit in a SweetAlert2 html string (the dialog text may name a key by its label). */
-function escapeHtml (s: string): string {
+/** Text made safe to sit in a SweetAlert2 html string or option label (a dialog may carry a key label or a user name). */
+export function escapeHtml (s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
@@ -74,6 +74,8 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const canMint = opts.canMint || canManage
     const isAdmin = opts.isAdmin || (() => false)
     const fail = (e: any) => notify('error', 'Error', commonFunctions.parseGraphQLError(e.message))
+    // the first words of a row dialog's text, naming the key it acts on
+    const keyIntro = (row: any) => `Key ${apiKeyLabel(row, { withType: true, siblings: opts.siblings?.() })}. `
 
     async function mintSecret (apiKeyUuid: string, title: string, expiresDate: string | null = null) {
         try {

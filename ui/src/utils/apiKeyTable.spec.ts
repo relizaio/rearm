@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_KEY_PAGE_SIZE, apiKeyPagination, fmtKeyDate, isSecretExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from './apiKeyTable'
+import { API_KEY_PAGE_SIZE, apiKeyPagination, byNewestKey, fmtKeyDate, isSecretExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from './apiKeyTable'
 
 describe('apiKeyTable: type column', () => {
     it('hides the type on the single-type tables (Free Form, key requests, user keys)', () => {
@@ -68,5 +68,19 @@ describe('apiKeyTable: activity column', () => {
     })
     it('drops updated by when nobody is resolved', () => {
         expect(keyActivityLines({ createdDate: 'x', accessDate: 'y', updatedByName: '' }).map(l => l.label)).toEqual(['Created', 'Last accessed'])
+    })
+})
+
+describe('apiKeyTable: newest first', () => {
+    it('orders by the creation instant, whatever offset it was written with', () => {
+        const keys = [
+            { uuid: 'old', createdDateIso: '2026-10-25T02:30:00+02:00' },
+            { uuid: 'new', createdDateIso: '2026-10-25T02:10:00+01:00' },
+            { uuid: 'oldest', createdDateIso: '2026-10-01T00:00:00Z' }
+        ]
+        expect([...keys].sort(byNewestKey).map(k => k.uuid)).toEqual(['new', 'old', 'oldest'])
+    })
+    it('puts a key without a date last', () => {
+        expect([{ uuid: 'none' }, { uuid: 'dated', createdDateIso: '2026-10-01T00:00:00Z' }].sort(byNewestKey).map(k => k.uuid)).toEqual(['dated', 'none'])
     })
 })

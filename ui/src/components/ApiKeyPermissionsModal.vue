@@ -6,7 +6,7 @@
         :show="show"
         @update:show="(v: boolean) => { if (!v) emit('update:show', false) }"
     >
-        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : 'Edit key ') + (apiKey ? apiKeyLabel(apiKey, { withType: true }) : '') }}</template>
+        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : 'Edit key ') + (apiKey ? apiKeyLabel(apiKey, { withType: true, siblings: siblingKeys }) : '') }}</template>
         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
             <div v-if="isView">
                 <p class="subtle" style="margin-top: 0;">What this key may do, as set by the organization admins. Ask an admin to change it.</p>
@@ -133,6 +133,8 @@ const props = defineProps<{
     notify: (type: 'success' | 'error' | 'warning' | 'info', title: string, content: string) => void
     /** 'edit' (default) edits an existing key; 'request' asks admins for a new Free Form key with purpose and proposed permissions on one screen */
     mode?: 'edit' | 'request' | 'view'
+    /** the keys listed alongside, so the header's short id is unique among them */
+    siblingKeys?: any[]
 }>()
 const isRequest = computed(() => props.mode === 'request')
 const isView = computed(() => props.mode === 'view')

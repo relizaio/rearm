@@ -74,3 +74,11 @@ export function keyActivityLines (row: any): DetailLine[] {
     if (row?.updatedByName) lines.push({ label: 'Updated by', value: row.updatedByName })
     return lines
 }
+
+/**
+ * Newest key first, by the raw createdDate instant (createdDateIso: the tables replace createdDate with
+ * display text). Compared as instants, not strings, since the server writes them with its zone's offset.
+ */
+export function byNewestKey (a: any, b: any): number {
+    return (Date.parse(b?.createdDateIso || '') || 0) - (Date.parse(a?.createdDateIso || '') || 0)
+}
