@@ -153,6 +153,7 @@ import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import { apiKeyIdsColumn } from '../utils/apiKeyControls'
 import { apiKeyPagination } from '@/utils/apiKeyTable'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     orgUuid: string
@@ -206,9 +207,10 @@ function matcherSummary (m: any): { main: string, constraints: string[] } {
     if ((m?.subjects || []).length) constraints.push('subjects: ' + m.subjects.join(', '))
     return { main: `${m?.owner || '?'} / ${repos}`, constraints }
 }
+// every key here is Free Form, so no type word; a short id tells keys with one note apart
 function keyLabel (uuid: string): string {
     const k = props.freeFormKeys.find((x: any) => x.uuid === uuid)
-    return k ? (k.notes || k.uuid) : (uuid || '?')
+    return k ? apiKeyLabel(k, { siblings: props.freeFormKeys }) : (uuid ? uuid.slice(0, 8) + ' · key not in this list' : '?')
 }
 function grantSummary (g: any): string {
     if (!g) return ''
@@ -229,7 +231,8 @@ async function setStatus (row: any, status: string) {
     } catch (e: any) { fail(e) }
 }
 async function deleteRule (row: any) {
-    const r = await Swal.fire({ title: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
+    // titleText: a rule name is user text, and Swal renders title as HTML
+    const r = await Swal.fire({ titleText: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
     if (!r.value) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation deleteFederatedTrustRule($uuid: ID!) { deleteFederatedTrustRule(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
@@ -361,7 +364,7 @@ const scopeOptions = computed(() => {
     if (installationType.value !== 'OSS') o.push({ label: 'Instance / Cluster', value: 'INSTANCE' })
     return o
 })
-const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: `${k.notes || '(no notes)'} · ${k.uuid.slice(0, 8)}`, value: k.uuid })))
+const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: apiKeyLabel(k, { siblings: props.freeFormKeys }) + (k.holder ? '' : ' · no holder'), value: k.uuid })))
 function objectOptions (scope: string) {
     if (scope === 'PERSPECTIVE') return perspectives.value.map((p: any) => ({ label: p.name, value: p.uuid }))
     if (scope === 'INSTANCE') {
