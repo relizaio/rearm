@@ -24,6 +24,11 @@ describe('releaseActorLabel', () => {
         expect(releaseActorLabel('u-4', 'API', USERS, KEYS)).toBe('u-4')
     })
 
+    it('cleans a person name of bidi and zero-width characters', () => {
+        const users = [{ uuid: 'u-5', name: 'Eve\u202Eevil', email: 'eve@example.com\u200B' }]
+        expect(releaseActorLabel('u-5', 'MANUAL', users, KEYS)).toBe('Eve evil <eve@example.com>')
+    })
+
     it('labels a key the viewer can see with its type word and declared name', () => {
         expect(releaseActorLabel(KEY, 'API', USERS, KEYS)).toBe('Free Form' + DOT + 'CI pipeline' + DOT + '77781336')
     })

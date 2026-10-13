@@ -1,12 +1,17 @@
 // Who updated a release, as a person reads it (task t20261013-072815-31687). The release history's
 // "Updated by" printed "API Key ID: <uuid>" for a key actor; a key now reads like it does elsewhere,
 // through apiKeyLabelOf. Pure: strings only, never markup.
-import { apiKeyLabelOf } from './apiKeyLabel'
+import { apiKeyLabelOf, cleanLabelText } from './apiKeyLabel'
 
-/** A person as "name <email>", else the name, else the email, else the uuid. */
+/**
+ * A person as "name <email>", else the name, else the email, else the uuid. Cleaned like key text, so a
+ * name cannot hide or reorder what sits around it in the column.
+ */
 function personLabel (user: any, uuid: string): string {
-    if (user.name && user.email) return `${user.name} <${user.email}>`
-    return user.name || user.email || uuid
+    const name = cleanLabelText(user.name)
+    const email = cleanLabelText(user.email)
+    if (name && email) return `${name} <${email}>`
+    return name || email || uuid
 }
 
 /**

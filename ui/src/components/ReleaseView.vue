@@ -2278,27 +2278,33 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const users: Ref<any[]> = ref([])
-// the org's keys, so a key actor in the history reads as a key label; loaded once per org, for admins only
+// the org's keys, so a key actor in the history reads as a key label; loaded with the History tab, for admins only
 const orgKeys: Ref<any[]> = ref([])
+// the org orgKeys holds, or is being loaded for; empty when there is nothing to keep
 let orgKeysOrg = ''
 const acollections: Ref<any[]> = ref([])
 const combinedHistoryEvents: Ref<any[]> = ref([])
 
 async function loadUsers() {
     if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
-        loadOrgKeys(release.value.orgDetails.uuid)
         users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
     }
 }
 
 // The server's apiKeys gate is ADMIN (or a global admin); anyone else keeps the short-id label.
-async function loadOrgKeys(orgUuid: string) {
-    if (orgKeysOrg === orgUuid) return
-    orgKeysOrg = orgUuid
-    orgKeys.value = []
+async function loadOrgKeys() {
+    const orgUuid = release.value?.orgDetails?.uuid
+    if (!orgUuid || orgKeysOrg === orgUuid) return
+    orgKeysOrg = ''
+    if (orgKeys.value.length) orgKeys.value = []
+    // checked on every load until it holds: permissions may not have loaded on the first one
     if (!isOrgAdmin.value && !store.getters.myuser?.isGlobalAdmin) return
+    orgKeysOrg = orgUuid
     const keys = await store.dispatch('fetchApiKeyRefsOfOrg', orgUuid)
-    if (orgKeysOrg === orgUuid) orgKeys.value = keys
+    if (orgKeysOrg !== orgUuid) return
+    orgKeys.value = keys
+    // nothing back (a failed read, or an org without keys): ask again on the next load
+    if (!keys.length) orgKeysOrg = ''
 }
 
 async function loadAcollections() {
@@ -8646,7 +8652,7 @@ async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
     } else if (tabName === "history") {
-        await Promise.all([loadUsers(), loadAcollections()])
+        await Promise.all([loadUsers(), loadOrgKeys(), loadAcollections()])
     } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
         await fetchProductArtifacts()
     } else if (tabName === "bomComponents") {
