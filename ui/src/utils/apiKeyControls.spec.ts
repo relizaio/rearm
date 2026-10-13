@@ -143,4 +143,23 @@ describe('API key dialogs', () => {
         expect(opts.html).toContain('Key &lt;img src=x onerror=alert(1)&gt;')
         expect(opts.html).not.toContain('<img')
     })
+    it('names the key a row dialog acts on, with a short id unique among the keys listed', async () => {
+        fire.mockResolvedValue({ value: false })
+        const a = { ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa', notes: 'CI pipeline' }
+        const b = { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true, siblings: () => [a, b] })
+        await controls.setApiKeyStatus(a, 'INACTIVE')
+        expect(fire.mock.calls[0][0].text).toMatch(/^Key Free Form \u00B7 CI pipeline \u00B7 77781336-a\. Every secret/)
+    })
+})
+
+describe('API key tables: short ids among siblings', () => {
+    it('grows the chip where two listed keys start the same', () => {
+        const rows = [{ ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }]
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        const columns = [...apiKeyLeadColumns('freeForm', () => rows), { key: 'status', title: 'Status', render: controls.statusCell }]
+        const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, rowKey: (r: any) => r.uuid }) }) })
+        const w = mount(Host, { attachTo: document.body })
+        expect(w.findAll('.key-id-chip').map(c => c.text())).toEqual(['id 77781336-a', 'id 77781336-b'])
+    })
 })

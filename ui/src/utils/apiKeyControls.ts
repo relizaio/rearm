@@ -6,7 +6,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
-import { apiKeyName, apiKeyNotesUncut, apiKeyShortId, splitDeniedNotes } from '@/utils/apiKeyLabel'
+import { apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId, splitDeniedNotes } from '@/utils/apiKeyLabel'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -23,6 +23,8 @@ export interface ApiKeyControlOptions {
     canMint?: (row: any) => boolean
     /** whether the viewer acts as an org admin: only admins may re-activate a key an admin disabled; defaults to false */
     isAdmin?: () => boolean
+    /** the keys listed alongside, so a dialog's short id is unique among them, as the table's chip is */
+    siblings?: () => any[]
 }
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
 function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.reason ?? '' }
@@ -30,8 +32,8 @@ function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.r
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
 
-/** Text made safe to sit in a SweetAlert2 html string (the dialog text may name a key by its label). */
-function escapeHtml (s: string): string {
+/** Text made safe to sit in a SweetAlert2 html string or option label (a dialog may carry a key label or a user name). */
+export function escapeHtml (s: string): string {
     return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
 }
 
@@ -72,6 +74,8 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const canMint = opts.canMint || canManage
     const isAdmin = opts.isAdmin || (() => false)
     const fail = (e: any) => notify('error', 'Error', commonFunctions.parseGraphQLError(e.message))
+    // the first words of a row dialog's text, naming the key it acts on
+    const keyIntro = (row: any) => `Key ${apiKeyLabel(row, { withType: true, siblings: opts.siblings?.() })}. `
 
     async function mintSecret (apiKeyUuid: string, title: string, expiresDate: string | null = null) {
         try {
@@ -81,12 +85,12 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     }
     async function addApiKeySecret (row: any) {
         const first = !(row.secrets || []).length
-        const a = await askExpiry(first ? 'Generate the first secret?' : 'Add a second secret?', first ? 'The secret is shown once.' : 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.', first ? 'Generate' : 'Add secret')
+        const a = await askExpiry(first ? 'Generate the first secret?' : 'Add a second secret?', keyIntro(row) + (first ? 'The secret is shown once.' : 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.'), first ? 'Generate' : 'Add secret')
         if (!a) return
         await mintSecret(row.uuid, first ? 'Secret generated' : 'Secret added', a.expiresDate)
     }
     async function regenerateApiKeySecret (row: any, slot: number) {
-        const a = await askExpiry(`Regenerate secret #${slot}?`, 'The current secret in this slot stops working immediately, and so does every access token exchanged with it. The other secret, if any, is unaffected.', 'Regenerate')
+        const a = await askExpiry(`Regenerate secret #${slot}?`, keyIntro(row) + 'The current secret in this slot stops working immediately, and so does every access token exchanged with it. The other secret, if any, is unaffected.', 'Regenerate')
         if (!a) return
         try {
             const resp: any = await graphqlClient.mutate({ mutation: gql`mutation regenerateApiKeySecret($apiKeyUuid: ID!, $slot: Int!, $expiresDate: DateTime) { regenerateApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot, expiresDate: $expiresDate) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid: row.uuid, slot, expiresDate: a.expiresDate }, fetchPolicy: 'no-cache' })
@@ -95,7 +99,7 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     }
     async function setApiKeySecretExpiry (row: any, slot: number) {
         const sec = (row.secrets || []).find((x: any) => x.slot === slot)
-        const a = await askExpiry(`Expiry of secret #${slot}`, 'Change when this secret stops working. Tokens already exchanged with it end at the new expiry at the latest.', 'Save', sec?.expiresDate, !!sec?.expiresDate)
+        const a = await askExpiry(`Expiry of secret #${slot}`, keyIntro(row) + 'Change when this secret stops working. Tokens already exchanged with it end at the new expiry at the latest.', 'Save', sec?.expiresDate, !!sec?.expiresDate)
         if (!a) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretExpiry($apiKeyUuid: ID!, $slot: Int!, $expiresDate: DateTime) { setApiKeySecretExpiry(apiKeyUuid: $apiKeyUuid, slot: $slot, expiresDate: $expiresDate) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, expiresDate: a.clear ? null : a.expiresDate }, fetchPolicy: 'no-cache' })
@@ -107,21 +111,21 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
         return usable.length === 1 && usable[0].slot === slot ? 'This is the last active secret: the key will authenticate nothing until a new secret is added. ' : ''
     }
     async function setApiKeySecretActive (row: any, slot: number, active: boolean) {
-        if (!active && !(await confirmThen(`Retire secret #${slot}?`, lastActiveWarning(row, slot) + 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
+        if (!active && !(await confirmThen(`Retire secret #${slot}?`, keyIntro(row) + lastActiveWarning(row, slot) + 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretActive($apiKeyUuid: ID!, $slot: Int!, $active: Boolean!) { setApiKeySecretActive(apiKeyUuid: $apiKeyUuid, slot: $slot, active: $active) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, active }, fetchPolicy: 'no-cache' })
             notify('success', active ? 'Enabled' : 'Retired', `Secret #${slot} ${active ? 'enabled' : 'retired'}`); await reload()
         } catch (e: any) { fail(e) }
     }
     async function deleteApiKeySecret (row: any, slot: number) {
-        if (!(await confirmThen(`Delete secret #${slot}?`, lastActiveWarning(row, slot) + 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
+        if (!(await confirmThen(`Delete secret #${slot}?`, keyIntro(row) + lastActiveWarning(row, slot) + 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation deleteApiKeySecret($apiKeyUuid: ID!, $slot: Int!) { deleteApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot }, fetchPolicy: 'no-cache' })
             notify('success', 'Deleted', `Secret #${slot} deleted`); await reload()
         } catch (e: any) { fail(e) }
     }
     async function setApiKeyStatus (row: any, status: string) {
-        if (status === 'INACTIVE' && !(await confirmThen('Deactivate this key?', 'Every secret and every access token of this key id are refused until you activate it again. Nothing is deleted.', 'Deactivate'))) return
+        if (status === 'INACTIVE' && !(await confirmThen('Deactivate this key?', keyIntro(row) + 'Every secret and every access token of this key id are refused until you activate it again. Nothing is deleted.', 'Deactivate'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeyStatus($apiKeyUuid: ID!, $status: ApiKeyStatus!) { setApiKeyStatus(apiKeyUuid: $apiKeyUuid, status: $status) { uuid status } }`, variables: { apiKeyUuid: row.uuid, status }, fetchPolicy: 'no-cache' })
             notify('success', status === 'INACTIVE' ? 'Deactivated' : 'Activated', `Key ${status.toLowerCase()}`); await reload()
