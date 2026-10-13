@@ -106,3 +106,27 @@ export function apiKeyLabelOf (uuid: string | null | undefined, keys: any[], mis
     if (key) return apiKeyLabel(key, { withType: true, siblings: keys })
     return [apiKeyLabel({ uuid }, { withType: true, siblings: keys }), missingNote].filter(p => !!p).join(' · ')
 }
+
+/**
+ * A Free Form key a trust rule may act as, among the org's Free Form keys: its label without the type word
+ * (they are all Free Form), and what keeps it from working as expected: inactive (token exchanges are
+ * refused), no holder, or a holder who left the organization.
+ */
+export function actAsKeyLabel (key: any, keys: any[]): string {
+    const notes = [
+        key?.status === 'INACTIVE' ? 'inactive' : '',
+        key?.holderLeft ? 'holder left' : (key?.holder ? '' : 'no holder')
+    ]
+    return [apiKeyLabel(key, { siblings: keys }), ...notes].filter(p => !!p).join(' \u00B7 ')
+}
+
+/**
+ * The key a trust rule acts as, by uuid. Not among keys: its full uuid and that it is gone, but only once
+ * keys has loaded (an empty list proves nothing, so then it is just the short id).
+ */
+export function actAsKeyLabelOf (uuid: string | null | undefined, keys: any[]): string {
+    if (!uuid) return '?'
+    const key = (keys || []).find((k: any) => k?.uuid === uuid)
+    if (key) return actAsKeyLabel(key, keys)
+    return (keys || []).length ? `${uuid} \u00B7 not among the org's Free Form keys` : apiKeyShortId({ uuid })
+}

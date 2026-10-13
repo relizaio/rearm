@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyLabelOf, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
+import { actAsKeyLabel, actAsKeyLabelOf, API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyLabelOf, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
     cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
 
 describe('apiKeyLabel', () => {
@@ -79,5 +79,21 @@ describe('apiKeyLabel', () => {
         expect(apiKeyLabelOf('f9b07b52-0000-0000-0000-000000000000', keys, 'not in your keys')).toBe('Key · f9b07b52 · not in your keys')
         expect(apiKeyLabelOf('f9b07b52-0000-0000-0000-000000000000', [])).toBe('Key · f9b07b52')
         expect(apiKeyLabelOf(null, keys)).toBe('Key')
+    })
+
+    it('labels a key a trust rule acts as, with what keeps it from working', () => {
+        const keys = [
+            { type: 'FREEFORM', uuid: '77781336-0000-0000-0000-000000000000', notes: 'CI pipeline', status: 'ACTIVE', holder: 'u1' },
+            { type: 'FREEFORM', uuid: 'bea61f77-0000-0000-0000-000000000000', notes: 'CI pipeline', status: 'ACTIVE', holder: null },
+            { type: 'FREEFORM', uuid: '1c069715-0000-0000-0000-000000000000', status: 'INACTIVE', holder: 'u2', holderLeft: true }
+        ]
+        expect(actAsKeyLabel(keys[0], keys)).toBe('CI pipeline \u00B7 77781336')
+        expect(actAsKeyLabel(keys[1], keys)).toBe('CI pipeline \u00B7 bea61f77 \u00B7 no holder')
+        expect(actAsKeyLabel(keys[2], keys)).toBe('Free Form \u00B7 1c069715 \u00B7 inactive \u00B7 holder left')
+        expect(actAsKeyLabelOf('77781336-0000-0000-0000-000000000000', keys)).toBe('CI pipeline \u00B7 77781336')
+        expect(actAsKeyLabelOf('6688e1ec-0000-0000-0000-000000000000', keys)).toBe("6688e1ec-0000-0000-0000-000000000000 \u00B7 not among the org's Free Form keys")
+        // before the keys load, nothing is claimed about a key
+        expect(actAsKeyLabelOf('6688e1ec-0000-0000-0000-000000000000', [])).toBe('6688e1ec')
+        expect(actAsKeyLabelOf(null, keys)).toBe('?')
     })
 })
