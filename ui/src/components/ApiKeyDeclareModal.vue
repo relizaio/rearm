@@ -1,7 +1,7 @@
 <template>
     <n-modal preset="dialog" :show-icon="false" style="width: 560px;" :show="show"
         @update:show="(v: boolean) => { if (!v) emit('update:show', false) }">
-        <template #header>{{ apiKey?.declaredName ? 'Rename declared key' : 'Declare key as…' }}</template>
+        <template #header>{{ (apiKey?.declaredName ? 'Rename declared key ' : 'Declare key ') + (apiKey ? apiKeyLabel(apiKey, { withType: true }) : '') + (apiKey?.declaredName ? '' : ' as…') }}</template>
         <p class="subtle" style="margin-top: 0;">
             The name an API_KEYS file knows this key by. The next apply naming it updates this key rather than creating another.
         </p>
@@ -27,6 +27,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { declaredNameProblem, declarePayload } from '@/utils/apiKeyDeclaration'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     show: boolean

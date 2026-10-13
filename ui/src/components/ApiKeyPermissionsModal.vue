@@ -6,7 +6,7 @@
         :show="show"
         @update:show="(v: boolean) => { if (!v) emit('update:show', false) }"
     >
-        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : 'Edit key ') + apiKey?.uuid }}</template>
+        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : 'Edit key ') + (apiKey ? apiKeyLabel(apiKey, { withType: true }) : '') }}</template>
         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
             <div v-if="isView">
                 <p class="subtle" style="margin-top: 0;">What this key may do, as set by the organization admins. Ask an admin to change it.</p>
@@ -123,6 +123,7 @@ import commonFunctions from '@/utils/commonFunctions'
 import ScopedPermissions from './ScopedPermissions.vue'
 import SessionLimitEditor from './SessionLimitEditor.vue'
 import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     show: boolean
