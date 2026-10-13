@@ -3,6 +3,7 @@
 // falls back to the key's note. Here a session reads "<role> · <agent or session name> · <uuid8>", and
 // the key's note comes last, only when nothing names the agent. Pure, so the rule is testable.
 import type { InjectionKey, Ref } from 'vue'
+import { cleanLabelText } from './apiKeyLabel'
 
 export interface AgentName {
     /** The agent's own name: its displayName, else its name. */
@@ -104,6 +105,20 @@ export function roleOfSession (task: any, session: string): string | null {
         if (r?.session === session && String(r.returnedAt ?? '') >= at) { role = r.role ?? null; at = String(r.returnedAt ?? '') }
     }
     return role
+}
+
+/**
+ * An agent's own name: the admin-set displayName, else its registration name, else "agent". Never the
+ * bound key's notes (effectiveDisplayName falls back to them), so agents on one key no longer share a name.
+ */
+export function agentOwnName (agent: any): string {
+    return cleanLabelText(agent?.displayName) || cleanLabelText(agent?.name) || 'agent'
+}
+
+/** "Claude Code · 89cabc98": the agent's own name and short id, so two agents of one name tell apart. */
+export function agentDisplayLabel (agent: any): string {
+    const id = String(agent?.uuid ?? '').slice(0, 8)
+    return id ? `${agentOwnName(agent)} · ${id}` : agentOwnName(agent)
 }
 
 /** An agent in one line: its own name and short id, the key's note only when it has no name. */

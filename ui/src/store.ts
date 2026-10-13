@@ -2685,9 +2685,7 @@ const storeObject : any = {
                             boundApiKeys {
                                 uuid
                                 type
-                                object
-                                keyOrder
-                                notes
+                                declaredName
                             }
                         }
                     }`,

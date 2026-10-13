@@ -119,28 +119,13 @@
                     </n-descriptions-item>
                     <n-descriptions-item>
                         <template #label>
-                            Bound key note(s)
-                            <n-tooltip trigger="hover" :width="320">
-                                <template #trigger>
-                                    <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
-                                </template>
-                                Note(s) on the bound FREEFORM key(s). Used as the shown name
-                                when no display name is set. Edit under Org Settings › Free
-                                Form Keys.
-                            </n-tooltip>
-                        </template>
-                        <span v-if="keyNotes.length">{{ keyNotes.join(', ') }}</span>
-                        <span v-else class="dim">—</span>
-                    </n-descriptions-item>
-                    <n-descriptions-item>
-                        <template #label>
                             Display name
                             <n-tooltip trigger="hover" :width="320">
                                 <template #trigger>
                                     <n-icon size="12" class="help-icon"><Info20Regular/></n-icon>
                                 </template>
-                                Admin-set override (edit it in the header). Strongest input —
-                                wins over the key note and the registration name.
+                                Admin-set name, shown in place of the registration name.
+                                A key's notes never name an agent.
                             </n-tooltip>
                         </template>
                         <span v-if="agent.displayName">{{ agent.displayName }}</span>
@@ -184,7 +169,7 @@
                         </template>
                         <span v-if="boundApiKeys.length">
                             <code v-for="(k, idx) in boundApiKeys" :key="k.uuid" class="bound-key">
-                                <span v-if="idx > 0">, </span>{{ apiKeyLabel(k) }}
+                                <span v-if="idx > 0">, </span>{{ apiKeyLabelOf(k) }}
                             </code>
                         </span>
                         <span v-else class="dim">—</span>
@@ -226,6 +211,8 @@ import { Info20Regular } from '@vicons/fluent'
 import { Edit as EditIcon } from '@vicons/tabler'
 import SessionTable from './AiAgentSessionTable.vue'
 import SigningKeyManager from './SigningKeyManager.vue'
+import { agentDisplayLabel } from '@/utils/agentSessionLabel'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const store = useStore()
 const route = useRoute()
@@ -253,21 +240,15 @@ const isOrgAdmin = computed<boolean>(() => {
         && p.scope === 'ORGANIZATION' && p.type === 'ADMIN')
 })
 
-const agentDisplay = computed(() => agent.value?.effectiveDisplayName || agent.value?.name || '')
+const agentDisplay = computed(() => agent.value ? agentDisplayLabel(agent.value) : '')
 
 const openSessions = computed(() => agent.value?.openSessions ?? [])
 const closedSessions = computed(() => agent.value?.closedSessions ?? [])
 
 const boundApiKeys = computed(() => agent.value?.boundApiKeys ?? [])
 
-const keyNotes = computed<string[]>(() =>
-    boundApiKeys.value.map((k: any) => k.notes).filter((n: any) => !!n && String(n).trim()))
-
-function apiKeyLabel (k: any): string {
-    let label = (k.type || 'FREEFORM') + '__' + k.object
-    if (k.keyOrder) label += '__ord__' + k.keyOrder
-    return label
-}
+// the bound keys by label: the page fetches only uuid, type and declaredName of them (any org member opens it)
+const apiKeyLabelOf = (k: any) => apiKeyLabel(k, { withType: true, siblings: boundApiKeys.value })
 
 const identityShareCount = computed(() => 1 + siblingAgents.value.length)
 
@@ -309,7 +290,7 @@ const siblingColumns: DataTableColumns<any> = [
         render: (row: any) => h('a', {
             href: '#',
             onClick: (e: Event) => { e.preventDefault(); openSibling(row.uuid) },
-        }, row.effectiveDisplayName || row.name),
+        }, agentDisplayLabel(row)),
     },
     { title: 'UUID', key: 'uuid', render: (row: any) => h('code', { class: 'mono-cell' }, shortUuid(row.uuid)) },
     { title: 'Type', key: 'agentType', width: 80 },
@@ -389,7 +370,7 @@ async function saveName () {
 }
 
 const subAgentColumns: DataTableColumns<any> = [
-    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, row.effectiveDisplayName || row.name) },
+    { title: 'Name', key: 'name', render: (row: any) => h('a', { onClick: () => router.push({ name: 'AiAgentView', params: { uuid: row.uuid } }) }, agentDisplayLabel(row)) },
     { title: 'Sessions', key: 'sess', render: (row: any) => (row.sessionCounts?.openSessions ?? 0) + ' open / ' + (row.sessionCounts?.closedSessions ?? 0) + ' closed' },
     { title: 'Last activity', key: 'lastActivityAt', render: (row: any) => row.lastActivityAt ? new Date(row.lastActivityAt).toLocaleString('en-CA') : '—' },
 ]

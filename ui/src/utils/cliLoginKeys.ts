@@ -1,5 +1,6 @@
 // Which of the approver's keys the CLI login page offers (CliLogin.vue, "Use one of my keys").
 import constants from '@/utils/constants'
+import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 
 /** Agents an ApiKey is bound to: the root agents that have signed in with it (ApiKey.boundAgents). */
 export function boundAgentsOf (key: any): any[] {
@@ -21,9 +22,9 @@ export function keysToOffer (keys: any[], showBound: boolean): any[] {
     return showBound ? eligible : eligible.filter(k => !isBoundToAgent(k))
 }
 
-/** "bound to builder, reviewer": the agents' names, for the label of a bound key. */
+/** "bound to Claude Code · 89cabc98, Reviewer · f00d6ca9": the agents' own labels, for the tag of a bound key. */
 export function boundAgentsLabel (key: any): string {
-    const names = boundAgentsOf(key).map(a => a?.name || a?.uuid).filter(Boolean)
+    const names = boundAgentsOf(key).map(agentDisplayLabel)
     return names.length ? 'bound to ' + names.join(', ') : ''
 }
 
