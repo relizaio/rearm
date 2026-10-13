@@ -398,7 +398,7 @@ onMounted(load)
 const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
 // the session's key as a label from the agent's bound keys; a personal key, or a session whose agent is
 // gone, reads by its short id, the full uuid in the tooltip
-const sessionKeyLabel = computed(() => apiKeyLabelOf(session.value?.apiKey, agent.value?.boundApiKeys ?? [], ''))
+const sessionKeyLabel = computed(() => apiKeyLabelOf(session.value?.apiKey, agent.value?.boundApiKeys ?? []))
 const closing = ref(false)
 const closeReasonInput = ref('')
 // The org's boards the reader sees, with their myPermissions: read only when they decide whether a

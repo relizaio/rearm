@@ -2427,7 +2427,7 @@ const storeObject : any = {
             return response.data.users
         },
         // The org's keys, enough to label a key actor (task t20261013-072815-31687). The server answers
-        // org admins only; anyone else, or any failure, gets an empty list and no notification.
+        // org admins only and the caller asks only as one; a failure leaves the short-id labels, no notification.
         async fetchApiKeyRefsOfOrg (context: any, orgUuid: string) {
             try {
                 const response = await graphqlClient.query({
@@ -2446,6 +2446,7 @@ const storeObject : any = {
                 })
                 return response.data?.apiKeys || []
             } catch (err) {
+                console.error(err)
                 return []
             }
         },
