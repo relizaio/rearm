@@ -30,6 +30,11 @@ function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.r
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
 
+/** Text made safe to sit in a SweetAlert2 html string (the dialog text may name a key by its label). */
+function escapeHtml (s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
+
 /** local datetime-local value -> ISO instant, or null when empty */
 function toIso (local: string): string | null { return local ? new Date(local).toISOString() : null }
 
@@ -38,9 +43,9 @@ async function askExpiry (title: string, text: string, confirmButtonText: string
     const cur = current ? new Date(current) : null
     const curLocal = cur ? new Date(cur.getTime() - cur.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
     const r = await Swal.fire({
-        title, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel',
+        titleText: title, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel',
         showDenyButton: allowClear, denyButtonText: 'Clear expiry',
-        html: `<p style="text-align:left">${text}</p><label style="display:block;text-align:left;margin-top:8px">Expiry (optional, local time; the secret is refused after it and its tokens end there at the latest)</label><input id="swal-expiry" type="datetime-local" class="swal2-input" style="width: 80%" value="${curLocal}">`,
+        html: `<p style="text-align:left">${escapeHtml(text)}</p><label style="display:block;text-align:left;margin-top:8px">Expiry (optional, local time; the secret is refused after it and its tokens end there at the latest)</label><input id="swal-expiry" type="datetime-local" class="swal2-input" style="width: 80%" value="${curLocal}">`,
         preConfirm: () => {
             const v = (document.getElementById('swal-expiry') as HTMLInputElement).value
             if (v && new Date(v).getTime() <= Date.now()) { Swal.showValidationMessage('Expiry must be in the future'); return false }
@@ -59,7 +64,7 @@ async function confirmThen (title: string, text: string, confirmButtonText: stri
 }
 
 export async function showMintedSecret (forUser: any, title: string) {
-    await Swal.fire({ title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
+    await Swal.fire({ titleText: title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
 }
 
 export function createApiKeyControls (opts: ApiKeyControlOptions) {
@@ -222,8 +227,11 @@ function apiKeyIdsDetail (row: any) {
     ])
 }
 
-/** "Key" column: what names the key and its short id, so two keys of one type tell apart; hover shows both ids. */
-export function apiKeyLabelColumn (): any {
+/**
+ * "Key" column: what names the key and its short id, so two keys of one type tell apart; hover shows both ids.
+ * siblings: the table's keys, so a short id grows where two of them start the same (as the dialogs' labels do).
+ */
+export function apiKeyLabelColumn (siblings?: () => any[]): any {
     return {
         key: 'label', width: 240, title: 'Key',
         render: (row: any) => {
@@ -234,7 +242,7 @@ export function apiKeyLabelColumn (): any {
                 trigger: () => h('div', { style: WRAP_ROW + ' column-gap: 6px;' }, [
                     h(name.kind === 'declared' ? 'code' : 'span', nameProps, name.text),
                     // no native title on the chip: the cell's tooltip already shows the full uuid
-                    h('code', { class: 'key-id-chip' }, ['id ', apiKeyShortId(row)])
+                    h('code', { class: 'key-id-chip' }, ['id ', apiKeyShortId(row, siblings?.())])
                 ]),
                 default: () => apiKeyIdsDetail(row)
             })
@@ -246,8 +254,8 @@ export function apiKeyLabelColumn (): any {
 export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
 
 /** Left-most columns of a key table: Type where the table mixes types, then the Key label. */
-export function apiKeyLeadColumns (table: ApiKeyTableKind): any[] {
-    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn()] : [apiKeyLabelColumn()]
+export function apiKeyLeadColumns (table: ApiKeyTableKind, siblings?: () => any[]): any[] {
+    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn(siblings)] : [apiKeyLabelColumn(siblings)]
 }
 
 /** Created, last accessed and updated by, stacked in one column instead of three. */

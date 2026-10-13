@@ -112,7 +112,7 @@
                 <n-data-table :columns="myKeyFields" :data="myKeys" :scroll-x="2190" class="table-hover"></n-data-table>
                 <h4 class="mt-4">CLI sessions</h4>
                 <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
-                <n-data-table :columns="cliSessionFields" :data="cliSessionRows" class="table-hover"></n-data-table>
+                <n-data-table :columns="cliSessionFields" :data="cliSessions" :scroll-x="1860" class="table-hover"></n-data-table>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
@@ -135,7 +135,7 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import { createApiKeyControls, apiKeyLabelColumn } from '../utils/apiKeyControls'
-import { apiKeyLabel } from '@/utils/apiKeyLabel'
+import { apiKeyLabel, apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import { hardEndCell } from '@/utils/cliSessionLifetime'
 
 
@@ -394,6 +394,7 @@ const myUser: ComputedRef<any> = computed((): any => store.getters.myuser)
 // ---- personal (USER) API keys: created here, managed here; org admins also see them in org settings ----
 const profileTab = ref<'profile' | 'apiKeys'>('profile')
 const myKeys: Ref<any[]> = ref([])
+const myKeysLoaded = ref(false)
 const newKeyOrg = ref<string | null>(null)
 const newKeyNotes = ref('')
 const showKeyEditModal = ref(false)
@@ -425,6 +426,7 @@ async function loadMyKeys () {
             createdDisplay: k.createdDate ? new Date(k.createdDate).toLocaleString('en-CA') : '',
             accessDisplay: k.accessDate ? new Date(k.accessDate).toLocaleString('en-CA') : 'Never'
         }))
+        myKeysLoaded.value = true
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const apiKeyControls = createApiKeyControls({ notify, reload: loadMyKeys, canManage: () => true, canMint: (row: any) => row.status === 'ACTIVE' || row.status === 'INACTIVE' })
@@ -462,21 +464,18 @@ async function loadCliSessions () {
         }))
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
-// "Acts as" follows both lists, so a session reads right whichever of keys and sessions loads last
+// "Acts as" names the session's key by its label. A key missing from your keys (deleted, or a Free Form key an
+// admin gave to someone else) reads as its short id; nothing is said about it while your keys have not loaded.
 function actsAsLabel (s: any): string {
-    const key = myKeys.value.find((k: any) => k.uuid === s.apiKey)
-    if (key) return apiKeyLabel(key, { withType: true, siblings: myKeys.value })
-    // the server only approves a personal key you own or a Free Form key you hold, so a key that is not
-    // in your list is a Free Form key whose holder an admin reassigned
-    return `Free Form · ${String(s.apiKey || '').slice(0, 8)} · no longer held by you`
+    return apiKeyLabelOf(s.apiKey, myKeys.value, myKeysLoaded.value ? 'not in your keys' : '')
 }
-const cliSessionRows = computed(() => cliSessions.value.map((s: any) => Object.assign({}, s, { keyLabel: actsAsLabel(s) })))
 async function revokeCliSession (row: any) {
     const r = await Swal.fire({ title: 'Sign this CLI out?', text: `The session${row.requestedFrom ? ' on ' + row.requestedFrom : ''} stops working at once. A key created for it is deleted.`, icon: 'warning', showCancelButton: true, confirmButtonText: 'Revoke' })
     if (!r.value) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation revokeCliSession($uuid: ID!) { revokeCliSession(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
-        notify('success', 'Revoked', 'CLI session revoked'); await loadMyKeys(); await loadCliSessions()
+        // sessions first: the revoked session's own key is deleted with it, so its row must go before the key does
+        notify('success', 'Revoked', 'CLI session revoked'); await loadCliSessions(); await loadMyKeys()
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const cliSessionFields: ComputedRef<any> = computed((): any => [
@@ -484,7 +483,7 @@ const cliSessionFields: ComputedRef<any> = computed((): any => [
     { key: 'reportedOs', width: 150, title: 'System', render: (row: any) => h('span', { class: row.deviceInfo?.reportedOs ? '' : 'text-muted' }, row.deviceInfo?.reportedOs || 'unknown') },
     { key: 'reportedTimeZone', width: 130, title: 'Time zone', render: (row: any) => h('span', { class: row.deviceInfo?.reportedTimeZone ? '' : 'text-muted' }, row.deviceInfo?.reportedTimeZone || 'unknown') },
     { key: 'observedIp', width: 150, title: 'Address seen by server', render: (row: any) => h('code', { style: 'font-size: 12px;' }, row.deviceInfo?.observedIp || 'unknown') },
-    { key: 'keyLabel', width: 260, title: 'Acts as' },
+    { key: 'keyLabel', width: 260, title: 'Acts as', render: (row: any) => actsAsLabel(row) },
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Signed in' },
     { key: 'lastUsedDisplay', width: 170, title: 'Last used' },
@@ -500,7 +499,7 @@ function editMyKey (row: any, mode: 'edit' | 'view' = 'edit') {
 }
 const myKeyFields: ComputedRef<any> = computed((): any => [
     { key: 'kind', width: 150, title: 'Type', render: (row: any) => row.type === 'USER' ? 'Personal' : 'Free Form (held)' },
-    apiKeyLabelColumn(),
+    apiKeyLabelColumn(() => myKeys.value),
     { key: 'orgName', width: 200, title: 'Organization' },
     { key: 'createdDisplay', width: 170, title: 'Created' },
     { key: 'accessDisplay', width: 170, title: 'Last Accessed' },
@@ -525,7 +524,7 @@ const myKeyFields: ComputedRef<any> = computed((): any => [
                 // a held Free Form key: the admins own its permissions, the holder can see them
                 els.push(h(NIcon, { title: 'View Permissions', class: 'icons clickable', size: 25, onClick: () => editMyKey(row, 'view') }, { default: () => h(EyeIcon) }))
             }
-            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, (row.status === 'REQUESTED' ? 'the request ' : 'the key ') + apiKeyLabel(row, { withType: true, siblings: myKeys.value })) }, { default: () => h(Trash) }))
+            els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => apiKeyControls.deleteApiKey(row, (row.status === 'REQUESTED' || row.status === 'DENIED' ? 'the request ' : 'the key ') + apiKeyLabel(row, { withType: true, siblings: myKeys.value })) }, { default: () => h(Trash) }))
             return h('div', els)
         }
     }
