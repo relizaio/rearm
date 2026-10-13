@@ -2182,6 +2182,7 @@ import {
     verdictType,
 } from '@/utils/agentDocuments'
 import { outcomeWord, specWord } from '@/utils/agentWords'
+import { releaseActorLabel } from '@/utils/actorLabel'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -2277,13 +2278,27 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key actor in the history reads as a key label; loaded once per org, for admins only
+const orgKeys: Ref<any[]> = ref([])
+let orgKeysOrg = ''
 const acollections: Ref<any[]> = ref([])
 const combinedHistoryEvents: Ref<any[]> = ref([])
 
 async function loadUsers() {
     if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
+        loadOrgKeys(release.value.orgDetails.uuid)
         users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
     }
+}
+
+// The server's apiKeys gate is ADMIN (or a global admin); anyone else keeps the short-id label.
+async function loadOrgKeys(orgUuid: string) {
+    if (orgKeysOrg === orgUuid) return
+    orgKeysOrg = orgUuid
+    orgKeys.value = []
+    if (!isOrgAdmin.value && !store.getters.myuser?.isGlobalAdmin) return
+    const keys = await store.dispatch('fetchApiKeyRefsOfOrg', orgUuid)
+    if (orgKeysOrg === orgUuid) orgKeys.value = keys
 }
 
 async function loadAcollections() {
@@ -2628,14 +2643,22 @@ function buildCombinedHistory() {
     combinedHistoryEvents.value = events
 }
 
+// labels are computed once per actor until the users or the keys change: a history table renders many rows
+const actorLabels = computed(() => {
+    void users.value
+    void orgKeys.value
+    return new Map<string, string>()
+})
+
 function resolveUserById(uuid: string, createdType?: string): string {
-    if (createdType === 'AUTO') return 'System'
-    if (!uuid || !users.value.length) return uuid
-    const user = users.value.find((u: any) => u.uuid === uuid)
-    if (user) {
-        return user.email ? `${user.name} <${user.email}>` : user.name
+    const cache = actorLabels.value
+    const cacheKey = (createdType ?? '') + ':' + uuid
+    let label = cache.get(cacheKey)
+    if (label === undefined) {
+        label = releaseActorLabel(uuid, createdType, users.value, orgKeys.value)
+        cache.set(cacheKey, label)
     }
-    return "API Key ID: " + uuid
+    return label
 }
 
 const copyToClipboard = async function (text: string) {
@@ -6903,7 +6926,8 @@ const releaseHistoryFields = computed(() => [
         title: 'Updated By',
         render(row: any) {
             if (row.wu) {
-                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
+                // the full uuid stays reachable: a key label shows only its short id
+                return h('span', { title: row.wu.lastUpdatedBy }, resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType))
             }
         }
     },
@@ -7020,7 +7044,8 @@ const approvalHistoryFields = computed(() => [
         title: 'Updated By',
         render(row: any) {
             if (row.wu) {
-                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
+                // the full uuid stays reachable: a key label shows only its short id
+                return h('span', { title: row.wu.lastUpdatedBy }, resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType))
             }
         }
     },
