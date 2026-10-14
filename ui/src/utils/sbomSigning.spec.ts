@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import {
+    PROP_SIGNATURE_KEY_ID, PROP_SIGNED, PROP_UNSIGNED_REASON,
     exportSigningLine, hasRootSignature, scoreSignatureLine, signatureStatus,
     type SignatureReportInput, type SignedStatus,
 } from './sbomSigning'
@@ -60,6 +61,119 @@ describe('signatureStatus', () => {
     it('reads signed=false without a reason as UNSIGNED with an empty reason', () => {
         const doc = { metadata: { properties: [{ name: 'reliza:export:signed', value: 'false' }] } }
         expect(signatureStatus(doc)).toEqual({ kind: 'UNSIGNED', reason: '' })
+    })
+})
+
+// T-1 (SCORE-35 run 1): the stamp is matched by its exact property name, first occurrence wins
+// (design 3.5), and only the exact string "true" says signed. A forged or near-name property from
+// an uploaded SBOM survives the server's egress sweep (it strips by exact name only), so a name
+// or value that is normalised before matching would turn a NO_KEY export into a signed line.
+describe('signatureStatus: exact names and values only', () => {
+    const NO_KEY_LINE = 'Not signed: no organization SBOM signing key is configured (Organization settings, SBOM export signing)'
+    const FORGED_KID = '00000000-0000-4000-8000-0000000000ff'
+    const prop = (name: string, value: unknown) => ({ name, value })
+    const doc = (...properties: object[]) => ({ metadata: { properties } })
+    const line = (d: string | object) => exportSigningLine(signatureStatus(d), 'JSON')
+    // Leading or trailing blanks (space, tab, newline, no-break space), other case, a prefix or a suffix.
+    const nearNames = (name: string): string[] => {
+        const near = [
+            ` ${name}`, `${name} `, `\t${name}`, `${name}\n`, `${name}\u00a0`,
+            name.toUpperCase(), name.charAt(0).toUpperCase() + name.slice(1), name.slice(0, -1) + name.slice(-1).toUpperCase(),
+            `x-${name}`, `${name}X`, `${name}:`, name.replace(/:/g, '.'),
+        ]
+        // every variant really differs from the name, or a case would test nothing
+        expect(near.filter(n => n === name)).toEqual([])
+        return near
+    }
+
+    it('reads the real forged NO_KEY export as NO_KEY: its near-name true stamps count for nothing', () => {
+        const text = signingFixture('forged-nokey.cdx.json')
+        expect(signatureStatus(text)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+        expect(line(text)).toBe(NO_KEY_LINE)
+        expect(line(JSON.parse(text))).toBe(NO_KEY_LINE)
+    })
+
+    it('a near-name signed=true ahead of the real NO_KEY stamp is not a stamp', () => {
+        for (const near of nearNames(PROP_SIGNED)) {
+            const d = doc(prop(near, 'true'), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID),
+                prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'))
+            expect(signatureStatus(d), JSON.stringify(near)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+            expect(line(d), JSON.stringify(near)).toBe(NO_KEY_LINE)
+            expect(line(JSON.stringify(d)), JSON.stringify(near)).toBe(NO_KEY_LINE)
+        }
+    })
+
+    it('a near-name signed=true alone leaves the document unstamped: no line', () => {
+        for (const near of nearNames(PROP_SIGNED)) {
+            const d = doc(prop(near, 'true'), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID))
+            expect(signatureStatus(d), JSON.stringify(near)).toEqual({ kind: 'UNSTAMPED' })
+            expect(line(d), JSON.stringify(near)).toBeNull()
+        }
+    })
+
+    it('property keys are name and value exactly: Name/Value entries are not a stamp', () => {
+        const d = doc({ Name: PROP_SIGNED, Value: 'true' }, { NAME: PROP_SIGNED, VALUE: 'true' },
+            prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'))
+        expect(signatureStatus(d)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+        expect(line(d)).toBe(NO_KEY_LINE)
+    })
+
+    it('a near-name unsignedReason is not the reason: the exact one is, or none', () => {
+        for (const near of nearNames(PROP_UNSIGNED_REASON)) {
+            const ahead = doc(prop(PROP_SIGNED, 'false'), prop(near, 'SIGNING_ERROR'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'))
+            expect(signatureStatus(ahead), JSON.stringify(near)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+            expect(line(ahead), JSON.stringify(near)).toBe(NO_KEY_LINE)
+            const alone = doc(prop(PROP_SIGNED, 'false'), prop(near, 'NO_KEY'))
+            expect(signatureStatus(alone), JSON.stringify(near)).toEqual({ kind: 'UNSIGNED', reason: '' })
+            expect(line(alone), JSON.stringify(near)).toBe('Not signed')
+        }
+    })
+
+    it('a near-name signatureKeyId is not the key id: the exact one is, or <unknown>', () => {
+        for (const near of nearNames(PROP_SIGNATURE_KEY_ID)) {
+            const ahead = doc(prop(PROP_SIGNED, 'true'), prop(near, FORGED_KID), prop(PROP_SIGNATURE_KEY_ID, KEY_ID))
+            expect(signatureStatus(ahead), JSON.stringify(near)).toEqual({ kind: 'SIGNED', keyId: KEY_ID })
+            expect(line(ahead), JSON.stringify(near)).toBe(`Signed with organization key ${KEY_ID}`)
+            const alone = doc(prop(PROP_SIGNED, 'true'), prop(near, FORGED_KID))
+            expect(signatureStatus(alone), JSON.stringify(near)).toEqual({ kind: 'SIGNED', keyId: '' })
+            expect(line(alone), JSON.stringify(near)).toBe('Signed with organization key <unknown>')
+        }
+    })
+
+    it('only the exact value "true" says signed: case and blank variants read not signed', () => {
+        for (const value of ['TRUE', 'True', ' true', 'true ', '\ttrue', 'true\n', 'true\u00a0', 'yes', '1', 'truex']) {
+            const d = doc(prop(PROP_SIGNED, value), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID))
+            expect(signatureStatus(d), JSON.stringify(value)).toEqual({ kind: 'UNSIGNED', reason: '' })
+            expect(line(d), JSON.stringify(value)).toBe('Not signed')
+        }
+        for (const value of [true, 1, ['true'], { value: 'true' }, null]) {
+            const d = doc(prop(PROP_SIGNED, value), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID))
+            expect(signatureStatus(d), JSON.stringify(value)).toEqual({ kind: 'UNSIGNED', reason: '' })
+        }
+    })
+
+    it('the reason is printed as written: a blank or case variant of NO_KEY is not the NO_KEY line', () => {
+        expect(line(doc(prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, ' NO_KEY')))).toBe('Not signed:  NO_KEY')
+        expect(line(doc(prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'no_key')))).toBe('Not signed: no_key')
+    })
+
+    it('first occurrence wins in both orders, for the stamp, the key id and the reason', () => {
+        // unsigned first, signed later: a later true never overrides the first stamp
+        const falseFirst = doc(prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'),
+            prop(PROP_SIGNED, 'true'), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID))
+        expect(signatureStatus(falseFirst)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+        expect(line(falseFirst)).toBe(NO_KEY_LINE)
+        expect(signatureStatus(doc(prop(PROP_SIGNED, 'true'), prop(PROP_SIGNATURE_KEY_ID, KEY_ID), prop(PROP_SIGNATURE_KEY_ID, FORGED_KID))))
+            .toEqual({ kind: 'SIGNED', keyId: KEY_ID })
+        expect(signatureStatus(doc(prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'), prop(PROP_UNSIGNED_REASON, 'SIGNING_ERROR'))))
+            .toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+    })
+
+    it('a property without a string name is skipped, not taken as the first occurrence', () => {
+        const d = doc(null, 'reliza:export:signed', { value: 'true' }, { name: null, value: 'true' }, { name: ['reliza:export:signed'], value: 'true' },
+            prop(PROP_SIGNED, 'false'), prop(PROP_UNSIGNED_REASON, 'NO_KEY'))
+        expect(signatureStatus(d)).toEqual({ kind: 'UNSIGNED', reason: 'NO_KEY' })
+        expect(line(d)).toBe(NO_KEY_LINE)
     })
 })
 
