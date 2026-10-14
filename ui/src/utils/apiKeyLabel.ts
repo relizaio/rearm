@@ -41,7 +41,7 @@ export const MAX_NOTES_IN_LABEL = 48
  * Split at the first such separator, so a note that itself says "Denied:" stays whole. null when the notes
  * carry no denial. Read only for a key denied before that change; see legacyDenial.
  */
-export function splitDeniedNotes (notes: string | null | undefined): { note: string, reason: string } | null {
+function splitDeniedNotes (notes: string | null | undefined): { note: string, reason: string } | null {
     const m = /^(?:(.*?)\s*\|\s*)?Denied(?::\s*(.*))?$/s.exec(String(notes ?? ''))
     return m ? { note: m[1] ?? '', reason: m[2] ?? '' } : null
 }
@@ -55,7 +55,7 @@ function legacyDenial (key: any): { note: string, reason: string } | null {
     return key?.status === 'DENIED' && key?.deniedReason == null ? splitDeniedNotes(key?.notes) : null
 }
 
-/** The key's notes as written, cleaned; a key denied before deniedReason existed without its denial tail. */
+/** The key's notes as written, cleaned, without the denial tail on a key denied before deniedReason existed. */
 export function apiKeyNotesUncut (key: any): string {
     const denied = legacyDenial(key)
     return cleanLabelText(denied ? denied.note : key?.notes)

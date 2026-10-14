@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { actAsKeyLabel, actAsKeyLabelOf, API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyLabelOf, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
-    apiKeyDeniedReason, cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
+    apiKeyDeniedReason, cleanLabelText, MAX_NOTES_IN_LABEL } from './apiKeyLabel'
 
 describe('apiKeyLabel', () => {
     it('names every key type in words, and falls back to the raw type', () => {
@@ -61,13 +61,15 @@ describe('apiKeyLabel', () => {
         expect(apiKeyDeniedReason(null)).toBe('')
     })
 
-    it('splits the denial off the notes, reason and all', () => {
-        expect(splitDeniedNotes('Release automation | Denied: no budget')).toEqual({ note: 'Release automation', reason: 'no budget' })
-        expect(splitDeniedNotes('Release automation | Denied')).toEqual({ note: 'Release automation', reason: '' })
-        expect(splitDeniedNotes('Denied: no budget')).toEqual({ note: '', reason: 'no budget' })
-        expect(splitDeniedNotes('Fix Denied: errors | Denied: x')).toEqual({ note: 'Fix Denied: errors', reason: 'x' })
-        expect(splitDeniedNotes('CI pipeline')).toBeNull()
-        expect(splitDeniedNotes(null)).toBeNull()
+    it('splits an older denial off the notes, reason and all', () => {
+        const legacy = (notes: string | null) => ({ status: 'DENIED', notes })
+        const split = (notes: string | null) => ({ note: apiKeyNotesUncut(legacy(notes)), reason: apiKeyDeniedReason(legacy(notes)) })
+        expect(split('Release automation | Denied: no budget')).toEqual({ note: 'Release automation', reason: 'no budget' })
+        expect(split('Release automation | Denied')).toEqual({ note: 'Release automation', reason: '' })
+        expect(split('Denied: no budget')).toEqual({ note: '', reason: 'no budget' })
+        expect(split('Fix Denied: errors | Denied: x')).toEqual({ note: 'Fix Denied: errors', reason: 'x' })
+        expect(split('CI pipeline')).toEqual({ note: 'CI pipeline', reason: '' })
+        expect(split(null)).toEqual({ note: '', reason: '' })
     })
 
     it('cuts long notes, and keeps them whole uncut', () => {
