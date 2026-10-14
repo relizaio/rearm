@@ -5,7 +5,7 @@ import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
 import { fetchFromOci, extractRepositoryNameFromBom, extractRepositoryNameFromSpdxOciResponse, resolveAndFetchRawBom, fetchProcessedBomWithRetry } from '../oci';
 import { parseBom, ParsedBom, ParsedBomComponent, parseHbom, ParsedHbom } from './bomComponentExtractor';
-import { repairDoubleEncodedRoot } from './bomProcessingService';
+import { repairDoubleEncodedRoot, fillRootFromRecordMeta } from './bomProcessingService';
 
 export async function findAllBoms(): Promise<BomDto[]> {
     const bomRecords = await BomRepository.findAllBoms();
@@ -56,7 +56,11 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
     const bomContent = await fetchProcessedBomWithRetry(bomRecord);
     // Uploads stored before the purl fix carry a double-encoded root; every reader of this
     // path (exports, merges, Dependency-Track) gets it single-encoded.
-    return repairDoubleEncodedRoot(bomContent);
+    const repaired = repairDoubleEncodedRoot(bomContent);
+    // Rows stored before SCORE-30 carry no supplier or hash on their root: filled from the
+    // attachment facts stored with the row, as an upload today is (ADR-4). A no-op on a row
+    // that has them.
+    return fillRootFromRecordMeta(repaired, bomRecord.meta);
 }
 
 /**

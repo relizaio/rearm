@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -820,8 +820,9 @@ export function placeholderBomRef(releaseUuid: string): string {
  * ADR-2): `metadata.component` describes the release with the bom-ref placeholderBomRef(uuid)
  * and the SBOM_MISSING_PROPERTY marker, `components` is empty and the one dependency entry has
  * an empty `dependsOn`, like every other input root. merge-boms then makes it a component of the
- * merged document and a direct dependency of the merged root. `group`, `supplier` and `purl` are
- * left out when ReARM sent none: a purl is never made up. Nothing is stored for these inputs.
+ * merged document and a direct dependency of the merged root. `group`, `supplier`, `purl` and
+ * `hashes` (SCORE-30 ADR-3) are left out when ReARM sent none: a purl is never made up. Nothing is
+ * stored for these inputs.
  */
 export function placeholderBomObjects(list: MissingSbomComponent[] | null | undefined): any[] {
   if (!Array.isArray(list)) return []
@@ -831,6 +832,8 @@ export function placeholderBomObjects(list: MissingSbomComponent[] | null | unde
     if (missing.group) component.group = missing.group
     if (missing.supplierName) component.supplier = { name: missing.supplierName }
     if (missing.purl) component.purl = missing.purl
+    const hashes = cycloneDxHashes(missing.hashes)
+    if (hashes.length) component.hashes = hashes
     component['bom-ref'] = ref
     component.properties = [{ name: SBOM_MISSING_PROPERTY, value: missing.reason }]
     return {
@@ -841,6 +844,139 @@ export function placeholderBomObjects(list: MissingSbomComponent[] | null | unde
       dependencies: [{ ref, dependsOn: [] }]
     }
   })
+}
+
+/** The CycloneDX 1.6 `hash-alg` names; a hash under any other name fails schema validation. */
+const CYCLONEDX_HASH_ALGS = new Set(['MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512', 'SHA3-256', 'SHA3-384',
+  'SHA3-512', 'BLAKE2b-256', 'BLAKE2b-384', 'BLAKE2b-512', 'BLAKE3'])
+
+/** The CycloneDX 1.6 `hash-content` pattern. */
+const CYCLONEDX_HASH_CONTENT = /^([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64}|[a-fA-F0-9]{96}|[a-fA-F0-9]{128})$/
+
+/**
+ * The entries of `list` a CycloneDX 1.6 document can carry, as plain `{ alg, content }` objects in
+ * the order given (SCORE-30 ADR-7). ReARM sends the digest records it holds as recorded; one whose
+ * algorithm or value the schema refuses is left out and logged, since stored as is it would fail
+ * the merged document's validation and with it the whole export.
+ */
+function cycloneDxHashes(list: BomHash[] | null | undefined): BomHash[] {
+  if (!Array.isArray(list)) return []
+  const kept: BomHash[] = []
+  for (const h of list) {
+    const alg = typeof h?.alg === 'string' ? h.alg.trim() : ''
+    const content = typeof h?.content === 'string' ? h.content.trim() : ''
+    if (!alg || !content) continue
+    if (!CYCLONEDX_HASH_ALGS.has(alg) || !CYCLONEDX_HASH_CONTENT.test(content)) {
+      logger.info({ alg }, 'a release digest CycloneDX cannot carry was left out')
+      continue
+    }
+    kept.push({ alg, content })
+  }
+  return kept
+}
+
+/** Whether a component names its supplier: a `supplier` object with a non-blank `name`. */
+function hasSupplierName(component: any): boolean {
+  const name = component?.supplier?.name
+  return typeof name === 'string' && name.trim() !== ''
+}
+
+/** Whether a component carries at least one hash. */
+function hasHashes(component: any): boolean {
+  return Array.isArray(component?.hashes) && component.hashes.length > 0
+}
+
+/** `component.supplier` with `name` set, keeping any other supplier field already there. */
+function withSupplierName(component: any, name: string): any {
+  const supplier = component.supplier && typeof component.supplier === 'object' ? component.supplier : {}
+  return { ...supplier, name }
+}
+
+/** Algorithms an attachment reference names by prefix, and the hex length each must have. */
+const REFERENCE_PREFIX_ALGS: Record<string, { alg: string, length: number }> = {
+  sha1: { alg: 'SHA-1', length: 40 },
+  sha256: { alg: 'SHA-256', length: 64 },
+  sha512: { alg: 'SHA-512', length: 128 }
+}
+
+const HEX = /^[0-9a-fA-F]+$/
+
+/**
+ * The hash an attachment reference stands for (SCORE-30 ADR-4): the `hash` ReARM stores with an
+ * upload, a git commit for a source code entry or a deliverable digest. An optional prefix
+ * `sha1:`, `sha256:` or `sha512:` (any case) names the algorithm, and the rest must be hex of its
+ * length (40, 64, 128); without one, 40 hex characters are SHA-1, 64 SHA-256 and 128 SHA-512.
+ * Anything else (an svn revision, a short sha, a tag, another algorithm) has no hash: undefined.
+ * The content is the hex lower-cased; surrounding whitespace is ignored. A commit hash is the
+ * address of the commit object, not the digest of a source archive.
+ */
+export function hashFromReference(ref: string | null | undefined): BomHash | undefined {
+  if (typeof ref !== 'string') return undefined
+  let hex = ref.trim()
+  let named: { alg: string, length: number } | undefined
+  const colon = hex.indexOf(':')
+  if (colon >= 0) {
+    named = REFERENCE_PREFIX_ALGS[hex.substring(0, colon).toLowerCase()]
+    if (!named) return undefined
+    hex = hex.substring(colon + 1)
+  } else {
+    named = Object.values(REFERENCE_PREFIX_ALGS).find(a => a.length === hex.length)
+  }
+  if (!named || hex.length !== named.length || !HEX.test(hex)) return undefined
+  return { alg: named.alg, content: hex.toLowerCase() }
+}
+
+/** The attachment facts rebom stores with every upload (the flat row meta): its organization and reference. */
+export type RecordMetaFacts = Partial<Pick<RebomOptions, 'group' | 'belongsTo' | 'hash'>>
+
+/**
+ * Fills the root of an uploaded document from the facts ReARM stored with it (SCORE-30 ADR-4,
+ * ADR-6): `supplier.name` = the organization (`group`) when the root names no supplier, and
+ * `hashes` = the hash of the attachment reference (hashFromReference) when it has none. A value
+ * the root already carries always stands; `licenses` is never touched. Returns a copy when
+ * something was filled, else the input itself; the input is never changed. `belongsTo` does not
+ * change the rule: a commit and a digest are read the same way.
+ */
+export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | undefined): any {
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || !meta) return bom
+  const group = typeof meta.group === 'string' ? meta.group.trim() : ''
+  const hash = hashFromReference(meta.hash)
+  const fillSupplier = group !== '' && !hasSupplierName(root)
+  const fillHashes = hash !== undefined && !hasHashes(root)
+  if (!fillSupplier && !fillHashes) return bom
+  const component = { ...root }
+  if (fillSupplier) component.supplier = withSupplierName(root, group)
+  if (fillHashes) component.hashes = [hash]
+  return { ...bom, metadata: { ...bom.metadata, component } }
+}
+
+export type ReleaseNodeFillResult = {
+  bom: any,
+  filled: { supplier: boolean, hashes: boolean }
+}
+
+/**
+ * Fills the merged root, the node that describes the release itself, from what ReARM holds about
+ * the release (SCORE-30 ADR-1, ADR-7): `supplier.name` from `facts.supplierName` and `hashes` from
+ * `facts.hashes` (those CycloneDX can carry, in order), each only when the root has none (ADR-6):
+ * runs after dedupeBomRefs, so an uploaded copy of the root collapsed into it has already given
+ * it its own. Writes no `licenses` and no marker property. With no facts, or nothing to fill, the
+ * input comes back unchanged; otherwise a copy, the input untouched.
+ */
+export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undefined): ReleaseNodeFillResult {
+  const none = { bom, filled: { supplier: false, hashes: false } }
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || !facts) return none
+  const supplierName = typeof facts.supplierName === 'string' ? facts.supplierName.trim() : ''
+  const hashes = cycloneDxHashes(facts.hashes)
+  const supplier = supplierName !== '' && !hasSupplierName(root)
+  const fillHashes = hashes.length > 0 && !hasHashes(root)
+  if (!supplier && !fillHashes) return none
+  const component = { ...root }
+  if (supplier) component.supplier = withSupplierName(root, supplierName)
+  if (fillHashes) component.hashes = hashes
+  return { bom: { ...bom, metadata: { ...bom.metadata, component } }, filled: { supplier, hashes: fillHashes } }
 }
 
 export type UnknownCompositionsResult = {
@@ -1055,7 +1191,8 @@ export function computeRootDepIndex(bom: any): number {
 
 /**
  * Augments a BOM's root component with release/component context.
- * Adds: name, version, group, purl, authors, supplier, timestamp.
+ * Adds: name, version, group, purl, authors, supplier, timestamp; and on the root the supplier
+ * and the attachment's hash where it carries none (fillRootFromRecordMeta, SCORE-30).
  * 
  * This augmentation adds component metadata to the BOM's root component,
  * making it clear which release/component this BOM belongs to.
@@ -1100,11 +1237,13 @@ export function augmentBomWithComponentContext(bom: any, componentDetails: Rebom
   const newDependencies = [...dependenciesArray];
   if (rootdepIndex > -1) newDependencies[rootdepIndex]['ref'] = newPurl;
 
-  return {
+  // The root's supplier and hash from the attachment the upload came with (SCORE-30 ADR-4),
+  // where the generator wrote none.
+  return fillRootFromRecordMeta({
     ...bom,
     metadata: newMetadata,
     dependencies: newDependencies
-  };
+  }, componentDetails);
 }
 
 /**

@@ -309,6 +309,9 @@ input RebomOptions {
     name: String
     group: String
     version: String
+    # The attachment's reference: the commit of a source code entry, the digest of a deliverable.
+    # An upload's root without hashes gets it as one when it reads as a SHA-1, SHA-256 or SHA-512
+    # value; a commit hash is the address of the commit object, not the digest of a source archive.
     hash: String
     belongsTo: String
     tldOnly: Boolean
@@ -338,11 +341,31 @@ input RebomOptions {
     # placeholder component with the property reliza:sbom:missing, a direct dependency of the
     # merged root, and the document states their dependencies unknown (compositions). Not stored.
     missingSbomComponents: [MissingSbomComponentInput!]
+    # Merge only: what ReARM holds about the release the merged root describes. Filled into the
+    # root where it names no supplier or carries no hashes of its own; never replaces a value.
+    # Derived by ReARM at generation time, not part of the options it matches stored merges on.
+    releaseNode: ReleaseNodeFactsInput
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 
+  # The release a merged root describes. supplierName: the organization's name. hashes: the digest
+  # records of the release's deliverable when it has exactly one deliverable with digests, else
+  # none (several deliverables have no single set of bytes). Either may be absent.
+  input ReleaseNodeFactsInput {
+    supplierName: String
+    hashes: [BomHashInput!]
+  }
+
+  # One CycloneDX hashes[] entry. alg: a CycloneDX hash algorithm (SHA-256, SHA-512, ...);
+  # content: the hex value. An entry the CycloneDX schema refuses is left out.
+  input BomHashInput {
+    alg: String!
+    content: String!
+  }
+
   # A component release ReARM holds no SBOM for. reason: NO_SBOM_ARTIFACT or COVERAGE_EXCLUDED.
-  # purl only when ReARM records one; it is never made up.
+  # purl only when ReARM records one; it is never made up. hashes: the digests of its one
+  # deliverable, by the rule of ReleaseNodeFactsInput.hashes.
   input MissingSbomComponentInput {
     releaseUuid: String!
     name: String!
@@ -351,6 +374,7 @@ input RebomOptions {
     supplierName: String
     group: String
     purl: String
+    hashes: [BomHashInput!]
     reason: String!
   }
 
