@@ -270,7 +270,7 @@ async function lookup () {
         })
         if (!resp.data.cliLoginRequest) { lookupError.value = 'No pending sign-in for this code. It may have expired: run rearm login again.'; return }
         request.value = resp.data.cliLoginRequest
-        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes declaredName sessionMaxMinutes permissions { permissions { scope type } } boundAgents { uuid name displayName } } }`, fetchPolicy: 'no-cache' })
+        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes deniedReason declaredName sessionMaxMinutes permissions { permissions { scope type } } boundAgents { uuid name displayName } } }`, fetchPolicy: 'no-cache' })
         myKeys.value = keys.data.myApiKeys || []
         phase.value = 'choose'
     } catch (e: any) { lookupError.value = commonFunctions.parseGraphQLError(e.message) }

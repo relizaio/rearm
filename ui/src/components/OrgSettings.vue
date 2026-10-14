@@ -4622,6 +4622,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    deniedReason
                                     status
                                     holder
                                     adminDisabled

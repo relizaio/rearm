@@ -78,6 +78,30 @@ describe('API key tables: key label', () => {
     })
 })
 
+describe('API key tables: denied requests', () => {
+    const forged = 'mine | Denied: forged'
+    const denied = (i: number, extra: any) => ({ ...freeFormRow(i), status: 'DENIED', secrets: [], holder: 'user-1', ...extra })
+    it('shows the reason the admin gave, never one written into the note', () => {
+        const w = mountTable('freeForm', [
+            denied(1, { uuid: '1c069715-aaaa-4aaa-8aaa-aaaaaaaaaaaa', notes: forged, deniedReason: 'no budget' }),
+            denied(2, { uuid: 'ae9254bd-bbbb-4bbb-8bbb-bbbbbbbbbbbb', notes: forged, deniedReason: '' })
+        ])
+        const rows = w.findAll('tbody tr')
+        expect(rows[0].findAll('td')[0].text()).toBe(forged + 'id 1c069715')
+        expect(rows[0].text()).toContain('reason: no budget')
+        expect(rows[0].text()).not.toContain('reason: forged')
+        expect(rows[1].findAll('td')[0].text()).toBe(forged + 'id ae9254bd')
+        expect(rows[1].text()).toContain('no reason given')
+        expect(rows[1].text()).not.toContain('reason: forged')
+    })
+    it('reads the reason off the notes of a request denied before the server kept it apart', () => {
+        const w = mountTable('freeForm', [denied(1, { uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'Release automation | Denied: no budget' })])
+        const row = w.find('tbody tr')
+        expect(row.findAll('td')[0].text()).toBe('Release automationid 77781336')
+        expect(row.text()).toContain('reason: no budget')
+    })
+})
+
 describe('API key tables: secret details', () => {
     it('shows only an info icon in the row, not the dates', () => {
         const w = mountTable('freeForm', [freeFormRow(1)])

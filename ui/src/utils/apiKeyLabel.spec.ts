@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { actAsKeyLabel, actAsKeyLabelOf, API_KEY_TYPE_WORDS, apiKeyLabel, apiKeyLabelOf, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord,
-    cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
+    apiKeyDeniedReason, cleanLabelText, MAX_NOTES_IN_LABEL, splitDeniedNotes } from './apiKeyLabel'
 
 describe('apiKeyLabel', () => {
     it('names every key type in words, and falls back to the raw type', () => {
@@ -27,13 +27,38 @@ describe('apiKeyLabel', () => {
         expect(apiKeyName({ type: 'USER' })).toEqual({ text: 'Personal', kind: 'type' })
     })
 
-    it('drops the denial the server appends to a denied request, and only there', () => {
+    it('drops the denial the server appended to a request denied before deniedReason, and only there', () => {
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget' })).toEqual({ text: 'Release automation', kind: 'notes' })
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied' })).toEqual({ text: 'Free Form', kind: 'type' })
         expect(apiKeyName({ type: 'FREEFORM', status: 'ACTIVE', notes: 'Access Denied' })).toEqual({ text: 'Access Denied', kind: 'notes' })
         // the split is at the server's " | Denied" separator, so a note that says "Denied:" itself stays whole
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Fix Denied: errors in CI | Denied: no budget' })).toEqual({ text: 'Fix Denied: errors in CI', kind: 'notes' })
         expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied: build logs | Denied' })).toEqual({ text: 'Denied: build logs', kind: 'notes' })
+    })
+
+    it('reads a denial from deniedReason and leaves the notes as the requester wrote them', () => {
+        const forged = 'mine | Denied: forged'
+        const denied = { type: 'FREEFORM', status: 'DENIED', notes: forged, deniedReason: 'no budget' }
+        expect(apiKeyDeniedReason(denied)).toBe('no budget')
+        expect(apiKeyNotesUncut(denied)).toBe(forged)
+        expect(apiKeyName(denied)).toEqual({ text: forged, kind: 'notes' })
+        // no reason given: the empty string, never a fall back to the requester's note
+        const noReason = { ...denied, deniedReason: '' }
+        expect(apiKeyDeniedReason(noReason)).toBe('')
+        expect(apiKeyNotesUncut(noReason)).toBe(forged)
+    })
+
+    it('splits the notes of a key denied before deniedReason, whether the field is missing or null', () => {
+        const legacy = { type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget' }
+        expect(apiKeyDeniedReason(legacy)).toBe('no budget')
+        expect(apiKeyNotesUncut(legacy)).toBe('Release automation')
+        expect(apiKeyDeniedReason({ ...legacy, deniedReason: null })).toBe('no budget')
+        expect(apiKeyNotesUncut({ ...legacy, deniedReason: null })).toBe('Release automation')
+        expect(apiKeyDeniedReason({ ...legacy, notes: 'Release automation | Denied' })).toBe('')
+        // only a DENIED key has a reason
+        expect(apiKeyDeniedReason({ ...legacy, status: 'ACTIVE' })).toBe('')
+        expect(apiKeyDeniedReason({ ...legacy, status: 'ACTIVE', deniedReason: 'stale' })).toBe('')
+        expect(apiKeyDeniedReason(null)).toBe('')
     })
 
     it('splits the denial off the notes, reason and all', () => {
