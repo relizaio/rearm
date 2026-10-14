@@ -36,35 +36,38 @@ export function cleanLabelText (s: string | null | undefined): string {
 export const MAX_NOTES_IN_LABEL = 48
 
 /**
- * How the server recorded a denial before it kept the reason in deniedReason: in the notes, as
+ * How a server that does not keep the reason apart records a denial: in the notes, as
  * "<note> | Denied: <reason>", "<note> | Denied" without a reason, or "Denied: <reason>" when there was no note.
- * Split at the first such separator, so a note that itself says "Denied:" stays whole. null when the notes
- * carry no denial. Read only for a key denied before that change; see legacyDenial.
+ * The server appends it, so split at the last such separator: a requester's note that itself ends in
+ * "| Denied: ..." stays their note. null when the notes carry no denial. Read only through legacyDenial.
  */
 function splitDeniedNotes (notes: string | null | undefined): { note: string, reason: string } | null {
-    const m = /^(?:(.*?)\s*\|\s*)?Denied(?::\s*(.*))?$/s.exec(String(notes ?? ''))
-    return m ? { note: m[1] ?? '', reason: m[2] ?? '' } : null
+    const m = /^(?:(.*)\s*\|\s*)?Denied(?::\s*(.*))?$/s.exec(String(notes ?? ''))
+    return m ? { note: (m[1] ?? '').trimEnd(), reason: m[2] ?? '' } : null
 }
 
 /**
- * The denial split off the notes of a DENIED key with no deniedReason, which marks a key denied before the
- * server kept the reason apart; null for any other key. A denial now always stores deniedReason, the empty
- * string when no reason was given, so a requester's note that ends in "| Denied: ..." stays their note.
+ * The denial split off the notes of a DENIED key whose deniedReason came back null: a key denied before the
+ * server kept the reason apart, or any denial on a server that never does (CE). null for any other key. A
+ * server that keeps it stores deniedReason on every denial, the empty string when no reason was given, so
+ * the requester's note stays theirs. A row whose query did not select deniedReason is never split: it
+ * shows the note as stored and no reason, rather than a reason the requester may have written.
  */
 function legacyDenial (key: any): { note: string, reason: string } | null {
-    return key?.status === 'DENIED' && key?.deniedReason == null ? splitDeniedNotes(key?.notes) : null
+    if (key?.status !== 'DENIED' || !('deniedReason' in key) || key.deniedReason !== null) return null
+    return splitDeniedNotes(key.notes)
 }
 
-/** The key's notes as written, cleaned, without the denial tail on a key denied before deniedReason existed. */
+/** The key's notes as written, cleaned, without the denial tail legacyDenial splits off. */
 export function apiKeyNotesUncut (key: any): string {
     const denied = legacyDenial(key)
     return cleanLabelText(denied ? denied.note : key?.notes)
 }
 
-/** Why a DENIED key was denied, '' when no reason was given or the key is not DENIED. */
+/** Why a DENIED key was denied, cleaned like label text; '' when no reason was given or the key is not DENIED. */
 export function apiKeyDeniedReason (key: any): string {
     if (key?.status !== 'DENIED') return ''
-    return key?.deniedReason ?? legacyDenial(key)?.reason ?? ''
+    return cleanLabelText(key.deniedReason ?? legacyDenial(key)?.reason)
 }
 
 /** Label text cut to max characters (whole code points), with an ellipsis when it was longer. */

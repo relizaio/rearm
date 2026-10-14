@@ -688,6 +688,8 @@ type DeclaredApiKey {
 	status: ApiKeyStatus
 	adminDisabled: Boolean
 	notes: String
+	"""Always null here, as on ApiKey: a denial's reason is at the end of notes."""
+	deniedReason: String
 	permissions: ApiKeyPermissionsSpec
 	secretExpiresDays: Int
 	sessionMaxMinutes: Int
@@ -734,7 +736,8 @@ type ApiKey {
 	notes: String
 	"""
 	The reason an administrator gave when denying this request, on a server that keeps it apart from the
-	notes. Always null here: this server appends the reason to notes after ' | Denied: ', where clients read it.
+	notes. Always null here: this server ends a denied request's notes in 'Denied' (after ' | ' when the
+	request had a note), then ': <reason>' when one was given, and clients read the reason there.
 	"""
 	deniedReason: String
 	status: ApiKeyStatus

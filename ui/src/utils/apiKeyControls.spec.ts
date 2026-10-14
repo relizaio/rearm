@@ -95,7 +95,7 @@ describe('API key tables: denied requests', () => {
         expect(rows[1].text()).not.toContain('reason: forged')
     })
     it('reads the reason off the notes of a request denied before the server kept it apart', () => {
-        const w = mountTable('freeForm', [denied(1, { uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'Release automation | Denied: no budget' })])
+        const w = mountTable('freeForm', [denied(1, { uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'Release automation | Denied: no budget', deniedReason: null })])
         const row = w.find('tbody tr')
         expect(row.findAll('td')[0].text()).toBe('Release automationid 77781336')
         expect(row.text()).toContain('reason: no budget')

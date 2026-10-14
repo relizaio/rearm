@@ -141,7 +141,10 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const statusCell = (row: any) => {
         if (row.status === 'REQUESTED' || row.status === 'DENIED') {
             const kids: any[] = [h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error', style: 'margin-right: 6px;' }, { default: () => row.status })]
-            if (row.status === 'DENIED') kids.push(h('span', { class: 'subtle' }, apiKeyDeniedReason(row) ? `reason: ${apiKeyDeniedReason(row)}` : 'no reason given'))
+            if (row.status === 'DENIED') {
+                const reason = apiKeyDeniedReason(row)
+                kids.push(h('span', { class: 'subtle' }, reason ? `reason: ${reason}` : 'no reason given'))
+            }
             return h('div', { style: WRAP_ROW }, kids)
         }
         const inactive = row.status === 'INACTIVE'

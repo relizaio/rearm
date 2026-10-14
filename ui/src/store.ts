@@ -2438,7 +2438,6 @@ const storeObject : any = {
                                 type
                                 declaredName
                                 notes
-                                deniedReason
                                 status
                             }
                         }`,

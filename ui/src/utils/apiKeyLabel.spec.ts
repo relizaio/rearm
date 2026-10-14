@@ -27,13 +27,14 @@ describe('apiKeyLabel', () => {
         expect(apiKeyName({ type: 'USER' })).toEqual({ text: 'Personal', kind: 'type' })
     })
 
-    it('drops the denial the server appended to a request denied before deniedReason, and only there', () => {
-        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget' })).toEqual({ text: 'Release automation', kind: 'notes' })
-        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied' })).toEqual({ text: 'Free Form', kind: 'type' })
-        expect(apiKeyName({ type: 'FREEFORM', status: 'ACTIVE', notes: 'Access Denied' })).toEqual({ text: 'Access Denied', kind: 'notes' })
+    it('drops the denial the server appended to a request whose deniedReason is null, and only there', () => {
+        const denied = (notes: string) => ({ type: 'FREEFORM', status: 'DENIED', notes, deniedReason: null })
+        expect(apiKeyName(denied('Release automation | Denied: no budget'))).toEqual({ text: 'Release automation', kind: 'notes' })
+        expect(apiKeyName(denied('Denied'))).toEqual({ text: 'Free Form', kind: 'type' })
+        expect(apiKeyName({ type: 'FREEFORM', status: 'ACTIVE', notes: 'Access Denied', deniedReason: null })).toEqual({ text: 'Access Denied', kind: 'notes' })
         // the split is at the server's " | Denied" separator, so a note that says "Denied:" itself stays whole
-        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Fix Denied: errors in CI | Denied: no budget' })).toEqual({ text: 'Fix Denied: errors in CI', kind: 'notes' })
-        expect(apiKeyName({ type: 'FREEFORM', status: 'DENIED', notes: 'Denied: build logs | Denied' })).toEqual({ text: 'Denied: build logs', kind: 'notes' })
+        expect(apiKeyName(denied('Fix Denied: errors in CI | Denied: no budget'))).toEqual({ text: 'Fix Denied: errors in CI', kind: 'notes' })
+        expect(apiKeyName(denied('Denied: build logs | Denied'))).toEqual({ text: 'Denied: build logs', kind: 'notes' })
     })
 
     it('reads a denial from deniedReason and leaves the notes as the requester wrote them', () => {
@@ -48,28 +49,39 @@ describe('apiKeyLabel', () => {
         expect(apiKeyNotesUncut(noReason)).toBe(forged)
     })
 
-    it('splits the notes of a key denied before deniedReason, whether the field is missing or null', () => {
-        const legacy = { type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget' }
+    it('splits the notes only when deniedReason came back null, never when the query did not select it', () => {
+        const legacy = { type: 'FREEFORM', status: 'DENIED', notes: 'Release automation | Denied: no budget', deniedReason: null }
         expect(apiKeyDeniedReason(legacy)).toBe('no budget')
         expect(apiKeyNotesUncut(legacy)).toBe('Release automation')
-        expect(apiKeyDeniedReason({ ...legacy, deniedReason: null })).toBe('no budget')
-        expect(apiKeyNotesUncut({ ...legacy, deniedReason: null })).toBe('Release automation')
         expect(apiKeyDeniedReason({ ...legacy, notes: 'Release automation | Denied' })).toBe('')
+        // a row without the field shows its note as stored and no reason, which may be the requester's text
+        const unselected = { type: 'FREEFORM', status: 'DENIED', notes: 'mine | Denied: forged' }
+        expect(apiKeyDeniedReason(unselected)).toBe('')
+        expect(apiKeyNotesUncut(unselected)).toBe('mine | Denied: forged')
         // only a DENIED key has a reason
         expect(apiKeyDeniedReason({ ...legacy, status: 'ACTIVE' })).toBe('')
         expect(apiKeyDeniedReason({ ...legacy, status: 'ACTIVE', deniedReason: 'stale' })).toBe('')
         expect(apiKeyDeniedReason(null)).toBe('')
     })
 
-    it('splits an older denial off the notes, reason and all', () => {
-        const legacy = (notes: string | null) => ({ status: 'DENIED', notes })
+    it('splits an older denial off the notes, reason and all, at the separator the server appended', () => {
+        const legacy = (notes: string | null) => ({ status: 'DENIED', notes, deniedReason: null })
         const split = (notes: string | null) => ({ note: apiKeyNotesUncut(legacy(notes)), reason: apiKeyDeniedReason(legacy(notes)) })
         expect(split('Release automation | Denied: no budget')).toEqual({ note: 'Release automation', reason: 'no budget' })
         expect(split('Release automation | Denied')).toEqual({ note: 'Release automation', reason: '' })
         expect(split('Denied: no budget')).toEqual({ note: '', reason: 'no budget' })
         expect(split('Fix Denied: errors | Denied: x')).toEqual({ note: 'Fix Denied: errors', reason: 'x' })
+        // a requester's note that already ends in a denial tail stays their note; the reason is the server's
+        expect(split('mine | Denied: approved by security | Denied: no budget')).toEqual({ note: 'mine | Denied: approved by security', reason: 'no budget' })
+        expect(split('mine | Denied: approved by security | Denied')).toEqual({ note: 'mine | Denied: approved by security', reason: '' })
         expect(split('CI pipeline')).toEqual({ note: 'CI pipeline', reason: '' })
         expect(split(null)).toEqual({ note: '', reason: '' })
+    })
+
+    it('cleans a reason like label text', () => {
+        const denied = { status: 'DENIED', notes: 'ci', deniedReason: 'no\u202E budget\u200B ' }
+        expect(apiKeyDeniedReason(denied)).toBe('no budget')
+        expect(apiKeyDeniedReason({ status: 'DENIED', notes: 'ci | Denied: too\n\n broad', deniedReason: null })).toBe('too broad')
     })
 
     it('cuts long notes, and keeps them whole uncut', () => {

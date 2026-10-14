@@ -2,14 +2,15 @@ import { describe, it, expect } from 'vitest'
 import { parse, validate, type GraphQLSchema } from 'graphql'
 import { ceSchema, proSchema } from './schemaDriftSupport'
 
-// The key queries (OrgSettings apiKeys, UserProfile and CliLogin myApiKeys, the store's apiKeyRefsOfOrg) select
-// deniedReason next to status and notes, so apiKeyDeniedReason can tell a denial's reason from the requester's
-// note (task t20261013-182431-31189). The CE mirror declares the field, always null there, so the same queries
-// load on a CE install and fall back to reading an older denial off the notes.
+// The key tables' queries (OrgSettings apiKeys, UserProfile myApiKeys) select deniedReason next to status and notes,
+// so apiKeyDeniedReason can tell a denial's reason from the requester's note (task t20261013-182431-31189). The CE
+// mirror declares the field, always null there: CE still writes a denial's reason into the notes, so the same
+// queries load on a CE install and read every denial off the notes. DeclaredApiKey carries it too, as on Pro.
 const DENIAL_FIELDS = parse(`
     query keyDenials($orgUuid: ID!) {
         apiKeys(orgUuid: $orgUuid) { uuid status notes deniedReason }
         myApiKeys { uuid status notes deniedReason }
+        apiKeysProgrammatic { uuid status notes deniedReason }
     }
 `)
 
