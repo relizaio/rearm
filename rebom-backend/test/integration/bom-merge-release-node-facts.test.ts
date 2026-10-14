@@ -201,16 +201,20 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         await expect(validateBom(product)).resolves.toBeTruthy();
     });
 
-    it('a second product merge of the same inputs carries the licence it was sent, not the stored one (SCORE-40 T-5)', async () => {
+    it('a second product merge of the same inputs carries the licences it was sent, not the stored ones, url dropped beside an expression (SCORE-40 T-5)', async () => {
         const { ids } = await buildProductExport(created, true, true);
         const request = productMergeRequest(true, 'MIT OR Apache-2.0');
+        // a url beside the compound is dropped; a single LicenseRef without one is an expression
+        request.extra.releaseNode.licenseUrl = 'https://facts.example/product-licence';
+        request.extra.missingSbomComponents[0].licenseExpression = 'LicenseRef-Facts-Worker';
 
         const again: any = await BomService.mergeBoms([ids.componentMerge, ids.release],
             { ...createTestRebomOptions({ group: ORG, ...request.overrides }), ...request.extra }, TEST_ORG_UUID);
 
         expect(again.metadata.component.purl).toBe(PRODUCT_ROOT);
         expect(again.metadata.component.licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
-        expect(node(again, PLACEHOLDER_REF).licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+        expect(node(again, PLACEHOLDER_REF).licenses).toStrictEqual([{ expression: 'LicenseRef-Facts-Worker' }]);
+        expect(node(again, EXTERNAL_PLACEHOLDER_REF)).not.toHaveProperty('licenses');
         expect(node(again, RELEASE_NODE).licenses).toStrictEqual(NAMED);
         await expect(validateBom(again)).resolves.toBeTruthy();
     });
