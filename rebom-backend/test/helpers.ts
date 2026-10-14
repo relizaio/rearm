@@ -49,6 +49,7 @@ export function createTestRebomOptions(overrides: any = {}): any {
         stripBom: overrides.stripBom || 'false',
         belongsTo: overrides.belongsTo || '',
         hash: overrides.hash,
+        supplierName: overrides.supplierName,
         originalFileDigest: overrides.originalFileDigest,
         originalFileSize: overrides.originalFileSize,
         originalMediaType: overrides.originalMediaType,

@@ -4,9 +4,12 @@ import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from './h
 /**
  * SCORE-30 (T-8, T-10): the documents of a product export as ReARM builds them. One component
  * release with two uploads, one attached to its source code entry and one to its deliverable,
- * merged with the release's facts; another release with one upload attached to the release; and
- * a release without an SBOM, as a placeholder. Every component the uploads list is complete
- * (supplier, hash, licence), so what fails a score is a node ReARM wrote or an uploaded root.
+ * each stored with the supplier ReARM names (ADR-12), merged with the release's facts; another
+ * release with one upload attached to the release and stored in the shape of a row from before
+ * this task (no supplierName); and two releases without an SBOM, as placeholders: one of an
+ * INTERNAL component with a hashed deliverable, one of an EXTERNAL component (no supplier, no
+ * hash). Every component the uploads list is complete (supplier, hash, licence), so what fails a
+ * score is a node ReARM wrote or an uploaded root.
  */
 
 export const ORG = 'Facts Org';
@@ -19,6 +22,9 @@ export const RELEASE_DIGEST = '60303ae22b998861bce3b28f33eec1be758a213c86c93c076
 export const PLACEHOLDER_DIGEST = 'fd61a03af4f77d870fc21e05e7e80678095c92d808cfb3b5c279ee04c74aca13';
 export const PLACEHOLDER_UUID = '0b0f4a52-6c55-4d1f-9a8e-000000000301';
 export const PLACEHOLDER_REF = `urn:rearm:release:${PLACEHOLDER_UUID}`;
+/** The SBOM-less release of an EXTERNAL component: ReARM names no supplier for it (ADR-2). */
+export const EXTERNAL_PLACEHOLDER_UUID = '0b0f4a52-6c55-4d1f-9a8e-000000000302';
+export const EXTERNAL_PLACEHOLDER_REF = `urn:rearm:release:${EXTERNAL_PLACEHOLDER_UUID}`;
 
 // packageurl-js lower-cases an npm namespace
 export const SCE_ROOT = `pkg:npm/facts%20org/api@1.0.0?belongsto=SCE&hash=${COMMIT}`;
@@ -78,12 +84,22 @@ export function placeholder(withHashes: boolean): any {
     };
 }
 
+/** The placeholder of an EXTERNAL component's release, as rearm-saas sends it: no supplierName. */
+export function externalPlaceholder(): any {
+    return {
+        releaseUuid: EXTERNAL_PLACEHOLDER_UUID, name: 'vendor-db', version: '15.0.0', type: 'library',
+        group: ORG, purl: null, reason: 'NO_SBOM_ARTIFACT'
+    };
+}
+
 export type Built = { componentMerge: any, product: any, ids: { sce: string, deliverable: string, release: string, componentMerge: string, product: string } };
 
 /**
- * Uploads the three SBOMs as ReARM attaches them, merges the component release (FLATTEN) and the
- * product (PRESERVE) the way rearm-saas asks, and returns both merged documents as served.
- * `withFacts` false sends the requests of the pre-task shape: no releaseNode, no placeholder hashes.
+ * Uploads the three SBOMs as ReARM attaches them (the SCE and deliverable uploads with
+ * supplierName, the release upload without it, as a legacy row), merges the component release
+ * (FLATTEN) and the product (PRESERVE) the way rearm-saas asks, and returns both merged documents
+ * as served. `withFacts` false sends the merge requests of the pre-task shape: no releaseNode, no
+ * placeholder hashes.
  */
 export async function buildProductExport(created: string[], withFacts: boolean): Promise<Built> {
     async function upload(bom: any, overrides: any): Promise<string> {
@@ -108,8 +124,8 @@ export async function buildProductExport(created: string[], withFacts: boolean):
         return record.uuid;
     }
 
-    const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT });
-    const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST });
+    const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
+    const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
     const release = await upload(releaseUpload(), { name: 'web', version: '2.0.0', belongsTo: 'RELEASE' });
 
     const componentMerge = await merge([sce, deliverable],
@@ -118,8 +134,8 @@ export async function buildProductExport(created: string[], withFacts: boolean):
     const product = await merge([componentMerge, release],
         { name: 'facts-product', version: '3.0.0', rootComponentMergeMode: 'PRESERVE_UNDER_NEW_ROOT' },
         withFacts
-            ? { releaseNode: { supplierName: ORG }, missingSbomComponents: [placeholder(true)] }
-            : { missingSbomComponents: [placeholder(false)] });
+            ? { releaseNode: { supplierName: ORG }, missingSbomComponents: [placeholder(true), externalPlaceholder()] }
+            : { missingSbomComponents: [placeholder(false), externalPlaceholder()] });
 
     return {
         componentMerge: await BomService.findBomObjectById(componentMerge, TEST_ORG_UUID),

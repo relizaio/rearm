@@ -892,6 +892,10 @@ function withSupplierName(component: any, name: string): any {
   return { ...supplier, name }
 }
 
+/** The `belongsTo` values (rearm-saas enum names) whose reference fills the root. */
+const BELONGS_TO_DELIVERABLE = 'DELIVERABLE'
+const BELONGS_TO_SCE = 'SCE'
+
 /** Algorithms an attachment reference names by prefix, and the hex length each must have. */
 const REFERENCE_PREFIX_ALGS: Record<string, { alg: string, length: number }> = {
   sha1: { alg: 'SHA-1', length: 40 },
@@ -902,13 +906,12 @@ const REFERENCE_PREFIX_ALGS: Record<string, { alg: string, length: number }> = {
 const HEX = /^[0-9a-fA-F]+$/
 
 /**
- * The hash an attachment reference stands for (SCORE-30 ADR-4): the `hash` ReARM stores with an
- * upload, a git commit for a source code entry or a deliverable digest. An optional prefix
+ * The hash a deliverable reference stands for (SCORE-30 ADR-4): the `hash` ReARM stores with an
+ * upload attached to a deliverable, its digest. An optional prefix
  * `sha1:`, `sha256:` or `sha512:` (any case) names the algorithm, and the rest must be hex of its
  * length (40, 64, 128); without one, 40 hex characters are SHA-1, 64 SHA-256 and 128 SHA-512.
- * Anything else (an svn revision, a short sha, a tag, another algorithm) has no hash: undefined.
- * The content is the hex lower-cased; surrounding whitespace is ignored. A commit hash is the
- * address of the commit object, not the digest of a source archive.
+ * Anything else (a short value, a tag, another algorithm) has no hash: undefined. The content is
+ * the hex lower-cased; surrounding whitespace is ignored.
  */
 export function hashFromReference(ref: string | null | undefined): BomHash | undefined {
   if (typeof ref !== 'string') return undefined
@@ -926,28 +929,48 @@ export function hashFromReference(ref: string | null | undefined): BomHash | und
   return { alg: named.alg, content: hex.toLowerCase() }
 }
 
-/** The attachment facts rebom stores with every upload (the flat row meta): its organization and reference. */
-export type RecordMetaFacts = Partial<Pick<RebomOptions, 'group' | 'belongsTo' | 'hash'>>
+/**
+ * The attachment facts rebom stores with every upload (the flat row meta) that its root is filled
+ * from: the supplier ReARM names for it, what it is attached to and the attachment's reference.
+ */
+export type RecordMetaFacts = Partial<Pick<RebomOptions, 'supplierName' | 'belongsTo' | 'hash'>>
+
+/** Whether a component's pedigree lists at least one commit. */
+function hasPedigreeCommits(component: any): boolean {
+  return Array.isArray(component?.pedigree?.commits) && component.pedigree.commits.length > 0
+}
 
 /**
  * Fills the root of an uploaded document from the facts ReARM stored with it (SCORE-30 ADR-4,
- * ADR-6): `supplier.name` = the organization (`group`) when the root names no supplier, and
- * `hashes` = the hash of the attachment reference (hashFromReference) when it has none. A value
- * the root already carries always stands; `licenses` is never touched. Returns a copy when
- * something was filled, else the input itself; the input is never changed. `belongsTo` does not
- * change the rule: a commit and a digest are read the same way.
+ * ADR-6, ADR-12), each only where the root carries none:
+ * - `supplier.name` = `supplierName`, the supplier ReARM decided for the upload; a row without
+ *   it (every row stored before the field) gets no supplier, and `group` is never read;
+ * - `belongsTo` DELIVERABLE (any case): `hashes` = the deliverable digest the reference stands
+ *   for (hashFromReference), when it parses;
+ * - `belongsTo` SCE: `pedigree.commits` = [{ uid: reference }], the source commit, other pedigree
+ *   members kept; a commit id addresses a commit object, not the root's bytes, so no `hashes`;
+ * - any other `belongsTo` (RELEASE, AGENT_SESSION, none): neither, whatever `hash` holds.
+ * A value the root already carries always stands; `licenses` is never touched. Returns a copy when
+ * something was filled, else the input itself; the input is never changed.
  */
 export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | undefined): any {
   const root = bom?.metadata?.component
   if (!root || typeof root !== 'object' || !meta) return bom
-  const group = typeof meta.group === 'string' ? meta.group.trim() : ''
-  const hash = hashFromReference(meta.hash)
-  const fillSupplier = group !== '' && !hasSupplierName(root)
+  const supplierName = typeof meta.supplierName === 'string' ? meta.supplierName.trim() : ''
+  const belongsTo = typeof meta.belongsTo === 'string' ? meta.belongsTo.trim().toUpperCase() : ''
+  const reference = typeof meta.hash === 'string' ? meta.hash.trim() : ''
+  const hash = belongsTo === BELONGS_TO_DELIVERABLE ? hashFromReference(reference) : undefined
+  const fillSupplier = supplierName !== '' && !hasSupplierName(root)
   const fillHashes = hash !== undefined && !hasHashes(root)
-  if (!fillSupplier && !fillHashes) return bom
+  const fillCommit = belongsTo === BELONGS_TO_SCE && reference !== '' && !hasPedigreeCommits(root)
+  if (!fillSupplier && !fillHashes && !fillCommit) return bom
   const component = { ...root }
-  if (fillSupplier) component.supplier = withSupplierName(root, group)
+  if (fillSupplier) component.supplier = withSupplierName(root, supplierName)
   if (fillHashes) component.hashes = [hash]
+  if (fillCommit) {
+    const pedigree = root.pedigree && typeof root.pedigree === 'object' ? root.pedigree : {}
+    component.pedigree = { ...pedigree, commits: [{ uid: reference }] }
+  }
   return { ...bom, metadata: { ...bom.metadata, component } }
 }
 
@@ -1192,7 +1215,8 @@ export function computeRootDepIndex(bom: any): number {
 /**
  * Augments a BOM's root component with release/component context.
  * Adds: name, version, group, purl, authors, supplier, timestamp; and on the root the supplier
- * and the attachment's hash where it carries none (fillRootFromRecordMeta, SCORE-30).
+ * ReARM names for the upload, the deliverable digest or the source commit where it carries none
+ * (fillRootFromRecordMeta, SCORE-30).
  * 
  * This augmentation adds component metadata to the BOM's root component,
  * making it clear which release/component this BOM belongs to.
@@ -1237,8 +1261,8 @@ export function augmentBomWithComponentContext(bom: any, componentDetails: Rebom
   const newDependencies = [...dependenciesArray];
   if (rootdepIndex > -1) newDependencies[rootdepIndex]['ref'] = newPurl;
 
-  // The root's supplier and hash from the attachment the upload came with (SCORE-30 ADR-4),
-  // where the generator wrote none.
+  // The root's supplier, deliverable digest or source commit from the facts the upload came
+  // with (SCORE-30 ADR-4, ADR-12), where the generator wrote none.
   return fillRootFromRecordMeta({
     ...bom,
     metadata: newMetadata,

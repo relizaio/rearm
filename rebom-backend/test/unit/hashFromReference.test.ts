@@ -2,9 +2,8 @@ import { describe, it, expect } from 'vitest';
 import { hashFromReference } from '../../src/services/bom/bomProcessingService';
 
 /**
- * SCORE-30 (T-1, ADR-4): the hash an attachment reference stands for. A git commit (SHA-1, or
- * SHA-256 on a sha256 repository) and a deliverable digest, bare or prefixed, give one CycloneDX
- * hash; anything else gives none.
+ * SCORE-30 (T-1, ADR-4): the hash a deliverable reference stands for. A digest, bare or
+ * prefixed, gives one CycloneDX hash; anything else gives none.
  */
 
 const SHA1 = 'a94a8fe5ccb19ba61c4c0873d391e987982fbbd3';
@@ -50,6 +49,12 @@ describe('hashFromReference', () => {
         expect(hashFromReference(SHA1.substring(0, 32))).toBeUndefined();
         // the right length, not hex
         expect(hashFromReference('g'.repeat(40))).toBeUndefined();
+    });
+
+    it('gives none for a prefix it does not know, whatever the length after it (T-1, run 1 item T-4)', () => {
+        expect(hashFromReference('sha3-256:' + SHA256)).toBeUndefined();
+        expect(hashFromReference('blake3:' + SHA256)).toBeUndefined();
+        expect(hashFromReference('md5:' + SHA256.substring(0, 32))).toBeUndefined();
     });
 
     it('gives none for empty, whitespace, null and undefined (T-1)', () => {

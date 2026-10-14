@@ -310,10 +310,16 @@ input RebomOptions {
     group: String
     version: String
     # The attachment's reference: the commit of a source code entry, the digest of a deliverable.
-    # An upload's root without hashes gets it as one when it reads as a SHA-1, SHA-256 or SHA-512
-    # value; a commit hash is the address of the commit object, not the digest of a source archive.
+    # With belongsTo DELIVERABLE an upload's root without hashes gets the digest as one when it
+    # reads as a SHA-1, SHA-256 or SHA-512 value; with belongsTo SCE a root without pedigree
+    # commits gets the commit as pedigree.commits[].uid, never as a hash (a commit id addresses a
+    # commit object, not the root's bytes); any other belongsTo fills nothing from it.
     hash: String
     belongsTo: String
+    # The supplier ReARM names for the root of this upload: the deliverable's publisher or the
+    # organization for its own software; absent for third-party software. Filled into the root
+    # where it names no supplier; stored with the row.
+    supplierName: String
     tldOnly: Boolean
     structure: String
     notes: String

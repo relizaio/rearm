@@ -18,20 +18,26 @@ vi.mock('../../src/integrationRepository', () => ({
 import { pool } from '../../src/utils';
 import { clearMockOciStorage } from '../../src/services/oci';
 import {
-    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, buildProductExport
+    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, buildProductExport
 } from '../releaseNodeFacts.fixture';
 
 /**
  * SCORE-30 (T-10, ADR-5, section 5): the product export of releaseNodeFacts.fixture, whose uploaded
- * components are complete, scored by the real `rearm bomutils score`. Producer and supplier now
- * pass on every node; the hash fails only where ReARM holds none (the release-attached root);
- * the licence fails on every node ReARM wrote and every uploaded root without one, the remaining
- * gap. The same document with the fields this task writes taken out fails producer and hash on
- * those nodes: the change is what moves them.
+ * components are complete, scored by the real `rearm bomutils score`. Producer and supplier pass
+ * on every node but the EXTERNAL component's placeholder and the root of the row stored without a
+ * supplier (both by design, ADR-2, ADR-12); the hash passes where ReARM holds a digest and fails
+ * on the source code entry root (its commit is a pedigree fact, ADR-4), the release-attached root
+ * and the unhashed placeholder; the licence fails on every node ReARM wrote and every uploaded root
+ * without one, the remaining gap. The same document with the fields this task writes taken out
+ * fails producer on every ReARM node: the change is what moves them.
  */
 
-/** The placeholder has no purl: the engine names it name@version. */
+/** The placeholders have no purl: the engine names them name@version. */
 const PLACEHOLDER = 'worker@4.0.0';
+const EXTERNAL_PLACEHOLDER = 'vendor-db@15.0.0';
+
+const PRODUCER_CHECKS = ['cisa-2026.component-producer', 'ntia-2021.supplier-name', 'fda.baseline.supplier-name'];
+const HASH_CHECKS = ['cisa-2026.component-hash-value', 'fda.baseline.component-hash'];
 
 function score(bom: any): any {
     const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'score30-'));
@@ -46,8 +52,9 @@ function score(bom: any): any {
 }
 
 /**
- * The product export as it read before this task: no supplier and no hashes on the release node
- * and the uploaded roots, no hashes on the placeholder (its supplier is SCORE-15's).
+ * The product export as it read before this task: no supplier, hashes or pedigree on the release
+ * node and the uploaded roots, no hashes on the placeholders (the INTERNAL placeholder's supplier
+ * is SCORE-15's).
  */
 function preTaskShape(bom: any): any {
     const copy = JSON.parse(JSON.stringify(bom));
@@ -55,8 +62,9 @@ function preTaskShape(bom: any): any {
         if ([RELEASE_NODE, SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT].includes(c['bom-ref'])) {
             delete c.supplier;
             delete c.hashes;
+            delete c.pedigree;
         }
-        if (c['bom-ref'] === PLACEHOLDER_REF) delete c.hashes;
+        if ([PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF].includes(c['bom-ref'])) delete c.hashes;
     }
     return copy;
 }
@@ -67,6 +75,10 @@ function check(report: any, id: string): any {
         if (found) return found;
     }
     throw new Error(`no check ${id} in the report`);
+}
+
+function failing(report: any, id: string): string[] {
+    return [...check(report, id).failing].sort();
 }
 
 // The image pins a CLI with `bomutils score` for linux/amd64 only (SCORE-4 design 3.7).
@@ -84,27 +96,27 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         }
     });
 
-    it('passes producer and supplier name on every node (T-10)', async () => {
+    it('fails producer and supplier name exactly on the EXTERNAL placeholder and the legacy-shape root (T-10)', async () => {
         const { product } = await buildProductExport(created, true);
         const report = score(product);
 
-        for (const id of ['cisa-2026.component-producer', 'ntia-2021.supplier-name', 'fda.baseline.supplier-name']) {
+        for (const id of PRODUCER_CHECKS) {
             const c = check(report, id);
-            expect(c.failing, id).toStrictEqual([]);
-            expect(c.passed, id).toBe(c.total);
-            // the release node, three uploaded roots, five libraries and the placeholder
-            expect(c.total, id).toBe(10);
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT].sort());
+            // the release node, three uploaded roots, five libraries and two placeholders
+            expect(c.total, id).toBe(11);
+            expect(c.passed, id).toBe(9);
         }
     });
 
-    it('fails the hash only on the release-attached root, which ReARM holds no hash for (T-10)', async () => {
+    it('fails the hash on the source code entry root, the release-attached root and the unhashed placeholder (T-10)', async () => {
         const { product } = await buildProductExport(created, true);
         const report = score(product);
 
-        for (const id of ['cisa-2026.component-hash-value', 'cisa-2026.component-hash-algorithm', 'fda.baseline.component-hash']) {
+        for (const id of HASH_CHECKS) {
             const c = check(report, id);
-            expect(c.failing, id).toStrictEqual([RELEASE_ROOT]);
-            expect(c.passed, id).toBe(c.total - 1);
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT, SCE_ROOT].sort());
+            expect(c.passed, id).toBe(c.total - 3);
         }
     });
 
@@ -112,32 +124,31 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         const { product } = await buildProductExport(created, true);
         const report = score(product);
 
-        const c = check(report, 'cisa-2026.component-license');
-        expect([...c.failing].sort()).toStrictEqual([DELIVERABLE_ROOT, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT, PLACEHOLDER].sort());
-        expect(c.passed).toBe(5);
+        expect(failing(report, 'cisa-2026.component-license'))
+            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT, PLACEHOLDER, EXTERNAL_PLACEHOLDER].sort());
+        expect(check(report, 'cisa-2026.component-license').passed).toBe(5);
     });
 
-    it('without the facts the release node still names the organization (stored row) but carries no hash, nor does the placeholder (T-10)', async () => {
+    it('without the facts the release node names no supplier and carries no hash, nor does the placeholder (T-10)', async () => {
         const { product } = await buildProductExport(created, false);
         const report = score(product);
 
-        // ADR-4 fills every stored root from its row, a merged one too: the supplier is there
-        for (const id of ['cisa-2026.component-producer', 'ntia-2021.supplier-name', 'fda.baseline.supplier-name']) {
-            expect(check(report, id).failing, id).toStrictEqual([]);
+        for (const id of PRODUCER_CHECKS) {
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT].sort());
         }
-        expect([...check(report, 'fda.baseline.component-hash').failing].sort())
-            .toStrictEqual([RELEASE_NODE, RELEASE_ROOT, PLACEHOLDER].sort());
+        expect(failing(report, 'fda.baseline.component-hash'))
+            .toStrictEqual([EXTERNAL_PLACEHOLDER, PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
     });
 
-    it('the pre-task shape, the fields this task writes taken out, fails producer and hash on the ReARM nodes (T-10)', async () => {
+    it('the pre-task shape, the fields this task writes taken out, fails producer on every ReARM node (T-10)', async () => {
         const { product } = await buildProductExport(created, true);
-        const before = preTaskShape(product);
-        const report = score(before);
+        const report = score(preTaskShape(product));
 
-        for (const id of ['cisa-2026.component-producer', 'ntia-2021.supplier-name', 'fda.baseline.supplier-name']) {
-            expect([...check(report, id).failing].sort(), id).toStrictEqual([DELIVERABLE_ROOT, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
+        for (const id of PRODUCER_CHECKS) {
+            expect(failing(report, id), id)
+                .toStrictEqual([DELIVERABLE_ROOT, EXTERNAL_PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
         }
-        expect([...check(report, 'fda.baseline.component-hash').failing].sort())
-            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT, PLACEHOLDER].sort());
+        expect(failing(report, 'fda.baseline.component-hash'))
+            .toStrictEqual([DELIVERABLE_ROOT, EXTERNAL_PLACEHOLDER, PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
     });
 });

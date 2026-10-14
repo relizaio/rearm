@@ -140,6 +140,9 @@ export type RebomOptions = {
     version: string,
     belongsTo: string,
     hash?: string,
+    // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
+    // publisher or the organization; absent for third-party software and on older rows.
+    supplierName?: string,
     notes: string,
     tldOnly: boolean,
     structure: string,
