@@ -60,6 +60,8 @@ import { useStore } from 'vuex'
 import { NIcon, NCheckbox, NModal, NDataTable } from 'naive-ui'
 import SideBySide from '@/components/SideBySide.vue'
 import { Eye, Download, LayoutColumns } from '@vicons/tabler'
+import { loadOrgKeyRefs, releaseActorLabel } from '@/utils/actorLabel'
+import commonFunctions from '@/utils/commonFunctions'
 const props = defineProps<{
     instanceUuid: String,
     history: Array,
@@ -76,17 +78,14 @@ const instance: ComputedRef<any> = computed((): any => {
 })
 const parsedHistory: Ref<any[]> = ref([])
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key actor reads as a key label; loaded for admins only
+const orgKeys: Ref<any[]> = ref([])
 const revisionsToCompare: Ref<any[]> = ref([])
 
 const showRevisionComparisonModal = ref(false)
 
-const displayUser = function (userId: string) {
-    let displayRes = userId
-    let user = users.value.find(u => (u.uuid === userId))
-    if (user) {
-        displayRes = user.name
-    }
-    return displayRes
+const displayUser = function (userId: string, updateType: string | undefined) {
+    return releaseActorLabel(userId, updateType, users.value, orgKeys.value)
 }
 
 const handleComparison = function (revision: any) {
@@ -167,6 +166,11 @@ function formatChangeType(raw: any): string {
 const onCreate = async function () {
     // get users
     users.value = store.getters.allUsers
+    // the keys before the rows: parsedHistory is built once and would not relabel
+    const org = props.orgProp as string
+    const myuser = store.getters.myuser
+    const isAdmin = commonFunctions.getUserPermission(org, myuser).org === 'ADMIN' || !!myuser?.isGlobalAdmin
+    orgKeys.value = await loadOrgKeyRefs(store, org, isAdmin)
     // parse history — supports both the legacy axios shape (h.instance,
     // h.dateActual, h.lastUpdatedBy, h.type) and the new GraphQL shape
     // (h.instanceUuid, h.date, h.updatedBy, h.changeType) so the same
@@ -181,7 +185,8 @@ const onCreate = async function () {
             uuid: h.uuid,
             revision: h.revision,
             date: dateField ? (new Date(dateField)).toLocaleString('en-CA') : '',
-            updatedBy: updatedByUuid ? displayUser(updatedByUuid) : (h.updateType || 'system'),
+            updatedBy: updatedByUuid ? displayUser(updatedByUuid, h.updateType) : (h.updateType || 'system'),
+            updatedByUuid,
             type: formatChangeType(rawType)
         }
         parsedHistory.value.push(parsedHist)
@@ -225,7 +230,7 @@ const historyFields: any = [
     {
         key: 'updated_by',
         title: 'Updated By',
-        render: (row: any) => row.updatedBy
+        render: (row: any) => h('span', { title: row.updatedByUuid || '' }, row.updatedBy)
     },
     {
         key: 'type',

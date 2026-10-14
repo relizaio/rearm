@@ -200,6 +200,7 @@ import VulnerabilityModal from './VulnerabilityModal.vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
+import { loadOrgKeyRefs, releaseActorLabel } from '@/utils/actorLabel'
 import constants from '@/utils/constants'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -357,6 +358,10 @@ const releasedVersion: Ref<string> = ref('')
 const words: Ref<any> = ref({})
 const marketingReleaseLifecycles: Ref<any[]> = ref([])
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key that released reads as a key label; loaded with the users, for admins only
+const orgKeys: Ref<any[]> = ref([])
+// the org orgKeys holds, or is being loaded for; empty when there is nothing to keep
+const orgKeysOrg = ref('')
 
 const marketingReleaseLifecyclesOptions: ComputedRef<SelectOption[]> = computed(() => {
     return marketingReleaseLifecycles.value.map((lifecycle: any) => ({
@@ -374,17 +379,14 @@ const releasedReleasesItems: ComputedRef<any> = computed((): any => {
     if (updatedMarketingRelease.value && updatedMarketingRelease.value.events && updatedMarketingRelease.value.events.length) {
         releaseItems = updatedMarketingRelease.value.events.map((ev: any) => {
             const releasedByUuid = ev.wu.lastUpdatedBy
-            let releasedByName = ''
-            if (releasedByUuid && users.value.find((user) => user.uuid === releasedByUuid)) {
-                releasedByName = users.value.find((user) => user.uuid === releasedByUuid)['name']
-            }
             return {
                 uuid: ev.release,
                 version: ev.releaseDetails.version,
                 marketingVersion: ev.releaseDetails.marketingVersion,
                 createdDate: ev.releaseDetails.createdDate,
                 releasedDate: ev.date,
-                releasedBy: releasedByName || releasedByUuid,
+                releasedBy: releaseActorLabel(releasedByUuid, ev.wu.createdType, users.value, orgKeys.value),
+                releasedByUuid,
                 status: ev.releaseDetails.status
             }
         }).sort((a: any, b: any) => new Date(b.releasedDate).getTime() - new Date(a.releasedDate).getTime())
@@ -423,7 +425,8 @@ const releasedReleasesFields: DataTableColumns<any> = [
     },
     {
         key: 'releasedBy',
-        title: 'Released By'
+        title: 'Released By',
+        render: (row: any) => h('span', { title: row.releasedByUuid || '' }, row.releasedBy)
     },
     {
         key: 'status',
@@ -572,9 +575,24 @@ async function loadUsers() {
     }
 }
 
+async function loadOrgKeys() {
+    const orgUuid = marketingRelease.value?.orgDetails?.uuid
+    if (!orgUuid || orgKeysOrg.value === orgUuid) return
+    // checked on every load until it holds: permissions may not have loaded on the first one
+    const isAdmin = userPermission.value === 'ADMIN' || !!store.getters.myuser?.isGlobalAdmin
+    if (!isAdmin) return
+    orgKeysOrg.value = orgUuid
+    const keys = await loadOrgKeyRefs(store, orgUuid, isAdmin)
+    if (orgKeysOrg.value !== orgUuid) return
+    orgKeys.value = keys
+    // nothing back (a failed read, or an org without keys): ask again on the next load
+    if (!keys.length) orgKeysOrg.value = ''
+}
+
 function handleTabChange(tabName: string) {
-    if (tabName === 'history' && users.value.length === 0) {
-        loadUsers()
+    if (tabName === 'history') {
+        if (users.value.length === 0) loadUsers()
+        loadOrgKeys()
     }
 }
 
