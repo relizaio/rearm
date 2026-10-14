@@ -19,7 +19,7 @@ describe('key denial fields vs the CE mirror schema (in-repo, always runs)', () 
     })
 })
 
-describe('key denial fields vs the Pro schema (skipped if rearm-core absent)', () => {
+describe('key denial fields vs the Pro schema (skipped when it is not checked out alongside)', () => {
     it.runIf(proSchema)('Pro declares deniedReason', () => {
         expect(validate(proSchema as GraphQLSchema, DENIAL_FIELDS).map(e => e.message)).toEqual([])
     })
