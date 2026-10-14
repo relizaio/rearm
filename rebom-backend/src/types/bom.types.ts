@@ -71,9 +71,26 @@ export enum MissingSbomReason {
     COVERAGE_EXCLUDED = 'COVERAGE_EXCLUDED'
 }
 
+/** One CycloneDX `hashes[]` entry: `alg` a CycloneDX hash algorithm name, `content` its hex value. */
+export type BomHash = {
+    alg: string,
+    content: string
+}
+
+/**
+ * What ReARM holds about the release a merged root describes (SCORE-30 ADR-7): its supplier, the
+ * organization's name, and the digests of its one deliverable. Either may be absent; ReARM sends
+ * nothing it does not hold.
+ */
+export type ReleaseNodeFacts = {
+    supplierName?: string | null,
+    hashes?: BomHash[] | null
+}
+
 /**
  * A component release of a product merge that has no SBOM (SCORE-15 ADR-2), as ReARM describes
- * it. purl is absent when ReARM records none.
+ * it. purl is absent when ReARM records none; hashes are the digests of its one deliverable
+ * (SCORE-30 ADR-3), absent otherwise.
  */
 export type MissingSbomComponent = {
     releaseUuid: string,
@@ -83,6 +100,7 @@ export type MissingSbomComponent = {
     supplierName?: string | null,
     group?: string | null,
     purl?: string | null,
+    hashes?: BomHash[] | null,
     reason: MissingSbomReason
 }
 
@@ -122,6 +140,9 @@ export type RebomOptions = {
     version: string,
     belongsTo: string,
     hash?: string,
+    // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
+    // publisher or the organization; absent for third-party software and on older rows.
+    supplierName?: string,
     notes: string,
     tldOnly: boolean,
     structure: string,
@@ -170,6 +191,11 @@ export type RebomOptions = {
     // Merge only: the component releases of a product merge ReARM holds no SBOM for (SCORE-15).
     // Each becomes a placeholder component with unknown dependencies. Not stored with the row.
     missingSbomComponents?: MissingSbomComponent[],
+    // Merge only: what ReARM holds about the release the merged root describes (SCORE-30), filled
+    // into the root where it has no supplier or hashes of its own. Derived by ReARM from the
+    // release at generation time, like missingSbomComponents: not part of the options ReARM
+    // matches stored merges on.
+    releaseNode?: ReleaseNodeFacts | null,
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

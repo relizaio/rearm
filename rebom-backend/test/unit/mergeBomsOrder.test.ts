@@ -36,6 +36,7 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
         ...actual,
         carryServices: recorded('carryServices'),
         dedupeBomRefs: recorded('dedupeBomRefs'),
+        fillReleaseNode: recorded('fillReleaseNode'),
         extractFileFilteredBom: recorded('extractFileFilteredBom'),
         dropDanglingRefs: recorded('dropDanglingRefs'),
         declareUnknownCompositions: recorded('declareUnknownCompositions')
@@ -168,7 +169,7 @@ describe('mergeBoms: pass order', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
         const carry = passes.calls[1];
         expect(carry.args[1]).toHaveLength(2);
         expect(carry.args[1][0]).toBe(inputs[0]);
@@ -176,22 +177,22 @@ describe('mergeBoms: pass order', () => {
         expect(carry.args[2]).toStrictEqual({ referencedOnly: false });
         // each pass works on what the one before it returned
         expect(passes.calls[2].args[0]).toBe(carry.args[0]);
-        expect(passes.calls[4].args[0]).not.toBe(passes.calls[3].args[0]);
-        expect(passes.calls[4].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
+        expect(passes.calls[5].args[0]).not.toBe(passes.calls[4].args[0]);
+        expect(passes.calls[5].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
         expect(bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0'] }]);
     });
 
     it('skips the file filter without the switch and still runs dropDanglingRefs then declareUnknownCompositions (T-12)', async () => {
         await mergeBoms(['one', 'two'], options(), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: false });
     });
 
     it('asks carryServices for referenced services only in the top-level-only merge (T-12)', async () => {
         await mergeBoms(['one', 'two'], options({ tldOnly: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: true });
     });
 
@@ -256,13 +257,13 @@ describe('mergeBoms: component releases without an SBOM', () => {
         const list = [missing(HTTPD, 'httpd'), missing(FLYWAY, 'flyway')];
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, missingSbomComponents: list }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // carryServices sees every input merge-boms saw, the placeholders included
         expect(passes.calls[1].args[1].map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual([
             'pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`
         ]);
-        expect(passes.calls[5].args[0]).toBe(passes.calls[4].args[0]);
-        expect(passes.calls[5].args[1]).toBe(list);
+        expect(passes.calls[6].args[0]).toBe(passes.calls[5].args[0]);
+        expect(passes.calls[6].args[1]).toBe(list);
         expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [`urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] }]);
         expect(bom.metadata.properties).toContainEqual({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: '2' });
         expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] });
@@ -301,5 +302,80 @@ describe('mergeBoms: component releases without an SBOM', () => {
         expect(mergeInputs.objs.map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual(['pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0']);
         expect(bom).not.toHaveProperty('compositions');
         expect(property(bom, COMPONENTS_WITHOUT_SBOM_PROPERTY)).toStrictEqual([]);
+    });
+});
+
+/**
+ * SCORE-30 (T-6, ADR-6, ADR-7): the release node is filled right after the bom-ref de-dup, with
+ * the facts the merge options carry, on what the de-dup returned; the file filter, the dangling
+ * check and the composition pass then run on the filled document.
+ */
+describe('mergeBoms: the release node fill', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    const SHA256 = '9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08';
+    const SHA512 = 'ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db27ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff';
+    const facts = () => ({ supplierName: 'Example', hashes: [{ alg: 'SHA-256', content: SHA256 }, { alg: 'SHA-512', content: SHA512 }] });
+
+    it('runs after dedupeBomRefs and before the file filter, on what the de-dup returned, with the facts sent (T-6)', async () => {
+        const releaseNode = facts();
+        const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, releaseNode }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        const fill = passes.calls[3];
+        expect(fill.args[1]).toBe(releaseNode);
+        // its input is the de-dup's output: the de-dup property is already on it
+        expect(fill.args[0].metadata.properties).toContainEqual({ name: BOM_REFS_DEDUPLICATED_PROPERTY, value: '1' });
+        expect(fill.args[0].metadata.component).not.toHaveProperty('supplier');
+        // the file filter works on the filled document
+        expect(passes.calls[4].args[0].metadata.component.supplier).toStrictEqual({ name: 'Example' });
+        expect(bom.metadata.component).toStrictEqual({
+            type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
+            supplier: { name: 'Example' },
+            hashes: [{ alg: 'SHA-256', content: SHA256 }, { alg: 'SHA-512', content: SHA512 }]
+        });
+    });
+
+    it('is called with undefined facts when the options carry none, and fills nothing (T-6)', async () => {
+        const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+        const fill = passes.calls.find(c => c.name === 'fillReleaseNode')!;
+        expect(fill.args[1]).toBeUndefined();
+        expect(passes.calls[4].args[0]).toBe(fill.args[0]);
+        expect(bom.metadata.component).toStrictEqual({ type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT });
+    });
+
+    it('keeps the supplier and hashes of an uploaded copy of the root merge-boms placed beside it (T-7, ADR-6)', async () => {
+        const own = [{ alg: 'SHA-256', content: '60303ae22b998861bce3b28f33eec1be758a213c86c93c076dbe9f558c11c752' }];
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.push({ type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
+                supplier: { name: 'Reliza Hub' }, hashes: own });
+            return JSON.stringify(out);
+        });
+
+        const bom = await mergeBoms(['one', 'two'], options({ releaseNode: facts() }), 'org');
+
+        expect(bom.components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0']);
+        expect(bom.metadata.component.supplier).toStrictEqual({ name: 'Reliza Hub' });
+        expect(bom.metadata.component.hashes).toStrictEqual(own);
+    });
+
+    it('fills the product root the placeholders join, and the placeholders carry their own hashes (T-6)', async () => {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            return JSON.stringify(mergeBomsOutputWithPlaceholders());
+        });
+        const withHashes = { ...missing(HTTPD, 'httpd'), hashes: [{ alg: 'SHA-256', content: SHA256 }] };
+
+        const bom = await mergeBoms(['one', 'two'], options({ releaseNode: { supplierName: 'Example' }, missingSbomComponents: [withHashes, missing(FLYWAY, 'flyway')] }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(bom.metadata.component.supplier).toStrictEqual({ name: 'Example' });
+        expect(bom.metadata.component).not.toHaveProperty('hashes');
+        expect(mergeInputs.objs[2].metadata.component.hashes).toStrictEqual([{ alg: 'SHA-256', content: SHA256 }]);
+        expect(mergeInputs.objs[3].metadata.component).not.toHaveProperty('hashes');
     });
 });
