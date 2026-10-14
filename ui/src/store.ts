@@ -2426,6 +2426,30 @@ const storeObject : any = {
             context.commit('SET_USERS', response.data.users)
             return response.data.users
         },
+        // The org's keys, enough to label a key actor (task t20261013-072815-31687). The server answers
+        // org admins only and the caller asks only as one; a failure leaves the short-id labels, no notification.
+        async fetchApiKeyRefsOfOrg (context: any, orgUuid: string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query apiKeyRefsOfOrg($orgUuid: ID!) {
+                            apiKeys(orgUuid: $orgUuid) {
+                                uuid
+                                type
+                                declaredName
+                                notes
+                                status
+                            }
+                        }`,
+                    variables: { orgUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return response.data?.apiKeys || []
+            } catch (err) {
+                console.error(err)
+                return []
+            }
+        },
         async updateUserName (context: any, name: string) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
