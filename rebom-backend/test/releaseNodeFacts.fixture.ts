@@ -198,15 +198,29 @@ export function node(bom: any, ref: string): any {
 /** SCORE-40 T-10: the application whose SBOM lists the component release by its ReARM purl. */
 export const LISTING_ROOT = 'pkg:npm/web-app@2.0.0';
 
+/** SCORE-40 T-10: the library the nested listing sits under, the listing upload's top-level component. */
+export const LISTING_MID = 'pkg:npm/mid@1.0.0';
+
 /**
  * SCORE-40 T-10: an upload of another application (`LISTING_ROOT`) that lists the component
  * release under its release node purl and bom-ref, as an in-house library, with `licenses` when
- * given (no key when undefined), and a dependency from its root to it.
+ * given (no key when undefined), and a dependency from its root to it. `nested`: the listing sits
+ * in the `components` of the library `LISTING_MID`, the upload's top-level component, with
+ * dependencies from the root to it and from it to the listing.
  */
-export function releaseNodeListing(licenses?: any[]): any {
+export function releaseNodeListing(licenses?: any[], nested = false): any {
     const listed: any = { type: 'library', name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE };
     if (licenses !== undefined) listed.licenses = licenses;
-    return uploadDoc({ type: 'application', name: 'web-app', version: '2.0.0', purl: LISTING_ROOT, 'bom-ref': LISTING_ROOT }, [listed]);
+    const root = { type: 'application', name: 'web-app', version: '2.0.0', purl: LISTING_ROOT, 'bom-ref': LISTING_ROOT };
+    if (!nested) return uploadDoc(root, [listed]);
+    const mid = { type: 'library', name: 'mid', version: '1.0.0', purl: LISTING_MID, 'bom-ref': LISTING_MID, components: [listed] };
+    const bom = uploadDoc(root, [mid]);
+    bom.dependencies = [
+        { ref: LISTING_ROOT, dependsOn: [LISTING_MID] },
+        { ref: LISTING_MID, dependsOn: [RELEASE_NODE] },
+        { ref: RELEASE_NODE, dependsOn: [] }
+    ];
+    return bom;
 }
 
 /** SCORE-40 T-10: the licence a component release declares, as rearm-saas sends it. */
@@ -221,13 +235,13 @@ export type ListingProducts = {
 
 /**
  * SCORE-40 T-10: merges the component release (FLATTEN, its facts plus `declared` when set) over
- * the SCE and deliverable uploads, uploads releaseNodeListing(listingLicenses), then merges the
+ * the SCE and deliverable uploads, uploads releaseNodeListing(listingLicenses, nested), then merges the
  * product (PRESERVE, the product facts of productMergeRequest with PRODUCT_LICENSE) over the
  * component merge and the listing in both input orders: once in memory (BomService.mergeBoms,
  * the shape before any store normalisation) and once stored and served.
  */
 export async function buildListingProducts(created: string[], declared: DeclaredLicence | undefined,
-    listingLicenses: any[] | undefined): Promise<ListingProducts> {
+    listingLicenses: any[] | undefined, nested = false): Promise<ListingProducts> {
     async function upload(bom: any, overrides: any): Promise<string> {
         const record = await BomService.addBom({
             bomInput: {
@@ -252,7 +266,7 @@ export async function buildListingProducts(created: string[], declared: Declared
             { releaseNode: { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }], ...(declared || {}) } }),
         TEST_ORG_UUID, BomService.addBom);
     created.push(component.uuid);
-    const listing = await upload(releaseNodeListing(listingLicenses), { name: 'web-app', version: '2.0.0', purl: LISTING_ROOT });
+    const listing = await upload(releaseNodeListing(listingLicenses, nested), { name: 'web-app', version: '2.0.0', purl: LISTING_ROOT });
 
     const productOptions = () => {
         const request = productMergeRequest(true, PRODUCT_LICENSE);

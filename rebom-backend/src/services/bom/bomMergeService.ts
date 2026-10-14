@@ -1,8 +1,8 @@
 import { logger } from '../../logger';
-import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
+import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -101,6 +101,9 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     // The forEach + async pattern was also broken (doesn't actually await)
     
     const purl = establishPurl(undefined, rebomOptions)
+    // merge-boms folds by purl or bom-ref under FLAT (any structure but HIERARCHICAL) and drops a
+    // listed expression beside the survivor's licences without a word: name it here (SCORE-40 ADR-8).
+    if (rebomOptions.structure !== BomStructure.HIERARCHICAL) logListedLicenseDrops(bomObjects)
     bomPaths = await createTmpFiles(bomObjects)
     const command = ['bomutils', 'merge-boms']
     

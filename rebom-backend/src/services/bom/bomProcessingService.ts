@@ -1694,6 +1694,72 @@ export function settleLicenseFolds(bom: any): number {
   return count
 }
 
+/** The key rearm-cli merge-boms folds a component by: its purl, else its bom-ref, else none. */
+function mergeBomsKey(component: any): string {
+  if (typeof component?.purl === 'string' && component.purl !== '') return component.purl
+  if (typeof component?.['bom-ref'] === 'string') return component['bom-ref']
+  return ''
+}
+
+/** A license entry's key in the merge-boms union: its id, else its name; none for an expression. */
+function mergeBomsLicenseKey(entry: any): string {
+  return entry?.license ? (entry.license.id || entry.license.name || '') : ''
+}
+
+/**
+ * SCORE-40 ADR-8: logs, from the inputs alone and before rearm-cli merge-boms runs under FLAT, the
+ * listed licences the CLI will drop. The CLI keys every input's `metadata.component` (a later root
+ * of a key replaces an earlier one), then every input's top-level `components[]` in input order, by
+ * purl else bom-ref; a component whose key is taken folds into the holder, which survives. A
+ * survivor without a `licenses` array takes the component's whole; otherwise the component's
+ * `license` entries it lacks by id or name are appended and every `expression` entry is skipped.
+ * So a folded component whose `licenses` holds an `expression` entry, beside a survivor holding a
+ * `licenses` array, loses it: one info line per such component, with the survivor's bom-ref, the
+ * survivor's licenses as the CLI holds them at that fold, and the component's. Reads the inputs
+ * only and returns the number of lines logged.
+ */
+export function logListedLicenseDrops(bomObjects: any[]): number {
+  if (!Array.isArray(bomObjects)) return 0
+  const survivors = new Map<string, { bomRef: any, licenses: any }>()
+  for (const bom of bomObjects) {
+    const root = bom?.metadata?.component
+    const key = mergeBomsKey(root)
+    if (key !== '') survivors.set(key, { bomRef: root['bom-ref'], licenses: root.licenses })
+  }
+  let count = 0
+  for (const bom of bomObjects) {
+    if (!Array.isArray(bom?.components)) continue
+    for (const component of bom.components) {
+      const key = mergeBomsKey(component)
+      if (key === '') continue
+      const survivor = survivors.get(key)
+      if (!survivor) {
+        survivors.set(key, { bomRef: component['bom-ref'], licenses: component.licenses })
+        continue
+      }
+      const listed = component.licenses
+      if (!Array.isArray(listed)) continue
+      if (!Array.isArray(survivor.licenses)) {
+        survivor.licenses = listed
+        continue
+      }
+      if (listed.some(isExpressionEntry)) {
+        logger.info({ bomRef: survivor.bomRef, kept: survivor.licenses, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
+        count++
+      }
+      const seen = new Set(survivor.licenses.map(mergeBomsLicenseKey).filter((k: string) => k !== ''))
+      const added = listed.filter((entry: any) => {
+        const k = mergeBomsLicenseKey(entry)
+        if (k === '' || seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+      if (added.length > 0) survivor.licenses = [...survivor.licenses, ...added]
+    }
+  }
+  return count
+}
+
 function extractComponentIdentity(components: any[]): any[] {
   if (!components || !Array.isArray(components)) return []
   

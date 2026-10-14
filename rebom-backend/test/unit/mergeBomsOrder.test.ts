@@ -47,6 +47,8 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
 });
 
 import { mergeBoms } from '../../src/services/bom/bomMergeService';
+import { logger } from '../../src/logger';
+import { BomStructure } from '../../src/types';
 import {
     BOM_REFS_DEDUPLICATED_PROPERTY,
     COMPONENTS_WITHOUT_SBOM_PROPERTY,
@@ -254,6 +256,57 @@ describe('mergeBoms: a licence fold merge-boms left mixed', () => {
         expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // the de-dup already sees the settled list
         expect(passes.calls[2].args[0].components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+    });
+});
+
+const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
+
+/**
+ * SCORE-40 (T-11, ADR-8): under FLAT merge-boms drops a listed expression beside the survivor's
+ * licences without a word. mergeBomObjects names it from the inputs before it runs merge-boms;
+ * under HIERARCHICAL merge-boms folds nothing and the de-dup logs its own drops.
+ */
+describe('mergeBoms: the expression merge-boms drops is logged before it runs', () => {
+    const ONE = 'pkg:npm/one@1.0.0';
+
+    beforeEach(() => {
+        serveInputsAndMergeBomsOutput();
+        findBomObjectById.mockImplementation(async (id: string) => {
+            const doc = input(id);
+            doc.metadata.component.purl = doc.metadata.component['bom-ref'];
+            if (id === 'one') doc.metadata.component.licenses = [{ license: { id: 'MIT' } }];
+            if (id === 'two') doc.components = [{ type: 'library', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': ONE, licenses: [{ expression: 'BSD-3-Clause OR MIT' }] }];
+            return doc;
+        });
+    });
+
+    it('logs one line with the bom-ref, the kept ids and the dropped expression, before merge-boms runs (T-11)', async () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            await expect(mergeBoms(['one', 'two'], options(), 'org')).resolves.toBeDefined();
+
+            const drops = info.mock.calls.map((call, i) => ({ call, order: info.mock.invocationCallOrder[i] }))
+                .filter(({ call }) => call[1] === LISTED_DROP);
+            expect(drops.map(d => d.call)).toStrictEqual([
+                [{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }], dropped: [{ expression: 'BSD-3-Clause OR MIT' }] }, LISTED_DROP]
+            ]);
+            expect(shellExec).toHaveBeenCalledTimes(1);
+            expect(drops[0].order).toBeLessThan(shellExec.mock.invocationCallOrder[0]);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('logs no such line under HIERARCHICAL (T-11)', async () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            await expect(mergeBoms(['one', 'two'], options({ structure: BomStructure.HIERARCHICAL }), 'org')).resolves.toBeDefined();
+
+            expect(shellExec).toHaveBeenCalledTimes(1);
+            expect(info.mock.calls.filter(call => call[1] === LISTED_DROP)).toStrictEqual([]);
+        } finally {
+            info.mockRestore();
+        }
     });
 });
 
