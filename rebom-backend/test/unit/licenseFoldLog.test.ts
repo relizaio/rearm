@@ -132,6 +132,17 @@ describe('the de-dup licence union logs the duplicate it drops (T-13)', () => {
         expect(lines(UNION_KEPT)).toStrictEqual([[{ bomRef: X, kept: XP(), dropped: duplicate }, UNION_KEPT]]);
     });
 
+    it('names both lists as the nodes hold them, not as normalised for the fold', () => {
+        // a single-id expression is read as the id for the fold, and logged as written
+        foldLicenses([{ expression: 'MIT' }], X2());
+        foldLicenses(XP(), [{ expression: 'MIT' }]);
+
+        expect(lines(UNION_KEPT)).toStrictEqual([
+            [{ bomRef: X, kept: [{ expression: 'MIT' }], dropped: X2() }, UNION_KEPT],
+            [{ bomRef: X, kept: XP(), dropped: [{ expression: 'MIT' }] }, UNION_KEPT]
+        ]);
+    });
+
     const IDENTICAL: [string, () => any[]][] = [['MIT OR Apache-2.0', XP], ['NOASSERTION', N]];
     for (const [label, list] of IDENTICAL) {
         it(`survivor ${label} with the same duplicate expression: the survivor list stands, the same array, and no licence line (ADR-9)`, () => {
@@ -221,6 +232,20 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
             kept: [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }],
             dropped: X2()
         }, LISTED_DROP]]);
+    });
+
+    it('a listing that repeats an id: merge-boms appends it once, and the line keeps it once', () => {
+        const twice = [{ license: { id: 'Apache-2.0' } }, { license: { id: 'Apache-2.0' } }];
+
+        expect(run([rooted('one', L()), listing(listedOne(twice)), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }], dropped: X2() }, LISTED_DROP]]);
+    });
+
+    it('a root without licenses takes a first listing\'s empty array whole, and the next listing\'s expression is dropped beside it', () => {
+        expect(run([rooted('one'), listing(listedOne([])), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: [], dropped: X2() }, LISTED_DROP]]);
     });
 
     it('a root with an expression and a listing with a different expression: one line (the control for ADR-9)', () => {

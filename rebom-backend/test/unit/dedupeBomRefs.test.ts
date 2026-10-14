@@ -433,6 +433,14 @@ describe('dedupeBomRefs', () => {
             });
         }
 
+        it('survivor absent, duplicate []: an empty duplicate changes nothing, no licenses on the survivor', async () => {
+            const { bom } = foldLicenses(undefined, []);
+
+            expect(bom.components[0].licenses).toBeUndefined();
+            expect(JSON.parse(JSON.stringify(bom.components[0]))).not.toHaveProperty('licenses');
+            await expect(validateBom(wrapped(undefined))).resolves.toBeTruthy();
+        });
+
         it('reads a single-id expression as an id, so it unions with a duplicate id', async () => {
             const { bom } = foldLicenses([{ expression: 'MIT' }], [{ license: { id: 'Apache-2.0' } }]);
 
