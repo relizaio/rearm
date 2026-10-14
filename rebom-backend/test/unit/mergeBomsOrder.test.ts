@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const findBomObjectById = vi.fn();
 const shellExec = vi.fn();
 // SCORE-14 T-12: the passes mergeBoms runs, in the order it runs them, with their arguments.
-const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[] }[] }));
+// SCORE-40 T-4: each recorded pass also keeps what it returned.
+const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[], result?: any }[] }));
 // SCORE-15 T-10: the documents mergeBomObjects hands merge-boms, in input-file order.
 const mergeInputs = vi.hoisted(() => ({ objs: [] as any[] }));
 
@@ -29,8 +30,10 @@ vi.mock('../../src/utils', async (importOriginal) => {
 vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) => {
     const actual: any = await importOriginal();
     const recorded = (name: string) => (...args: any[]) => {
-        passes.calls.push({ name, args });
-        return actual[name](...args);
+        const call: { name: string, args: any[], result?: any } = { name, args };
+        passes.calls.push(call);
+        call.result = actual[name](...args);
+        return call.result;
     };
     return {
         ...actual,
@@ -44,6 +47,8 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
 });
 
 import { mergeBoms } from '../../src/services/bom/bomMergeService';
+import { logger } from '../../src/logger';
+import { BomStructure } from '../../src/types';
 import {
     BOM_REFS_DEDUPLICATED_PROPERTY,
     COMPONENTS_WITHOUT_SBOM_PROPERTY,
@@ -203,6 +208,134 @@ describe('mergeBoms: pass order', () => {
 
         expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: false });
     });
+
+    it('fills the licence with the release node fill, on what dedupeBomRefs returned (SCORE-40 T-4)', async () => {
+        const releaseNode = { supplierName: 'Acme', licenseExpression: 'LicenseRef-Acme-Commercial', licenseUrl: 'https://acme.example/licence' };
+
+        const bom = await mergeBoms(['one', 'two'], options({ releaseNode }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls[3].name).toBe('fillReleaseNode');
+        expect(passes.calls[3].args[1]).toBe(releaseNode);
+        expect(passes.calls[3].args[0]).toBe(passes.calls[2].result.bom);
+        expect(passes.calls[3].args[0].metadata.component).not.toHaveProperty('licenses');
+        expect(passes.calls[3].result.filled).toStrictEqual({ supplier: true, hashes: false, licenses: true });
+        // the pass after it works on the filled document
+        expect(passes.calls[4].args[0]).toBe(passes.calls[3].result.bom);
+        expect(bom.metadata.component).toStrictEqual({
+            type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
+            supplier: { name: 'Acme' },
+            licenses: [{ license: { name: 'LicenseRef-Acme-Commercial', url: 'https://acme.example/licence' } }]
+        });
+    });
+});
+
+/**
+ * SCORE-40 (T-11, ADR-6): merge-boms folds a duplicate's license entries onto a survivor that holds
+ * an expression, a mixed array CycloneDX 1.6 refuses. mergeBomObjects settles it before its first
+ * validation, survivor first, inside the merge-boms step: no pass is added or moved.
+ */
+describe('mergeBoms: a licence fold merge-boms left mixed', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    it('keeps the survivor expression alone, resolves, and runs the same passes in the same order (T-11)', async () => {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.unshift({ type: 'application', name: 'one', version: '1.0.0', purl: 'pkg:npm/one@1.0.0', 'bom-ref': 'pkg:npm/one@1.0.0',
+                licenses: [{ expression: 'MIT OR Apache-2.0' }, { license: { id: 'MIT' } }] });
+            out.dependencies[0].dependsOn.unshift('pkg:npm/one@1.0.0');
+            return JSON.stringify(out);
+        });
+
+        const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(bom.components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/one@1.0.0', 'pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0']);
+        expect(bom.components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        // the de-dup already sees the settled list
+        expect(passes.calls[2].args[0].components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+    });
+});
+
+const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
+
+/**
+ * SCORE-40 (T-11, ADR-8): under FLAT merge-boms drops a listed expression beside the survivor's
+ * licences without a word. mergeBomObjects names it from the inputs before it runs merge-boms;
+ * under HIERARCHICAL merge-boms folds nothing and the de-dup logs its own drops.
+ */
+describe('mergeBoms: the expression merge-boms drops is logged before it runs', () => {
+    const ONE = 'pkg:npm/one@1.0.0';
+
+    beforeEach(() => {
+        serveInputsAndMergeBomsOutput();
+        findBomObjectById.mockImplementation(async (id: string) => {
+            const doc = input(id);
+            doc.metadata.component.purl = doc.metadata.component['bom-ref'];
+            if (id === 'one') doc.metadata.component.licenses = [{ license: { id: 'MIT' } }];
+            if (id === 'two') doc.components = [{ type: 'library', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': ONE, licenses: [{ expression: 'BSD-3-Clause OR MIT' }] }];
+            return doc;
+        });
+    });
+
+    it('logs one line with the bom-ref, the kept ids and the dropped expression, before merge-boms runs (T-11)', async () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            await expect(mergeBoms(['one', 'two'], options(), 'org')).resolves.toBeDefined();
+
+            const drops = info.mock.calls.map((call, i) => ({ call, order: info.mock.invocationCallOrder[i] }))
+                .filter(({ call }) => call[1] === LISTED_DROP);
+            expect(drops.map(d => d.call)).toStrictEqual([
+                [{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }], dropped: [{ expression: 'BSD-3-Clause OR MIT' }] }, LISTED_DROP]
+            ]);
+            expect(shellExec).toHaveBeenCalledTimes(1);
+            expect(drops[0].order).toBeLessThan(shellExec.mock.invocationCallOrder[0]);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    // merge-boms runs FLAT for every structure but HIERARCHICAL (merge_boms.go compares with "HIERARCHICAL"
+    // alone); rebom passes FLAT when the option is unset. [case, structure, the --structure merge-boms gets]
+    const NOT_HIERARCHICAL: [string, string | undefined, string][] = [
+        ['unset', undefined, BomStructure.FLAT],
+        ['hierarchical in lower case', 'hierarchical', 'hierarchical']
+    ];
+    for (const [label, structure, flag] of NOT_HIERARCHICAL) {
+        it(`logs the same line, before merge-boms runs, when the structure is ${label} (T-11, round 4)`, async () => {
+            const info = vi.spyOn(logger, 'info');
+            try {
+                await expect(mergeBoms(['one', 'two'], options({ structure }), 'org')).resolves.toBeDefined();
+
+                const drops = info.mock.calls.map((call, i) => ({ call, order: info.mock.invocationCallOrder[i] }))
+                    .filter(({ call }) => call[1] === LISTED_DROP);
+                expect(drops.map(d => d.call)).toStrictEqual([
+                    [{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }], dropped: [{ expression: 'BSD-3-Clause OR MIT' }] }, LISTED_DROP]
+                ]);
+                expect(shellExec).toHaveBeenCalledTimes(1);
+                const command: string[] = shellExec.mock.calls[0][1];
+                const at = command.indexOf('--structure');
+                expect(command.slice(at, at + 2)).toStrictEqual(['--structure', flag]);
+                expect(drops[0].order).toBeLessThan(shellExec.mock.invocationCallOrder[0]);
+            } finally {
+                info.mockRestore();
+            }
+        });
+    }
+
+    it('logs no such line under HIERARCHICAL (T-11)', async () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            await expect(mergeBoms(['one', 'two'], options({ structure: BomStructure.HIERARCHICAL }), 'org')).resolves.toBeDefined();
+
+            expect(shellExec).toHaveBeenCalledTimes(1);
+            expect(info.mock.calls.filter(call => call[1] === LISTED_DROP)).toStrictEqual([]);
+        } finally {
+            info.mockRestore();
+        }
+    });
 });
 
 const HTTPD = '0b0f4a52-6c55-4d1f-9a8e-000000000001';
@@ -292,6 +425,20 @@ describe('mergeBoms: component releases without an SBOM', () => {
             components: [],
             dependencies: [{ ref: `urn:rearm:release:${HTTPD}`, dependsOn: [] }]
         });
+    });
+
+    it('hands merge-boms placeholders carrying the licence ReARM sent, and none where it sent none (SCORE-40 T-4)', async () => {
+        const licensed = { ...missing(HTTPD, 'httpd'), licenseExpression: 'AGPL-3.0-only' };
+
+        await mergeBoms(['one', 'two'], options({ missingSbomComponents: [licensed, missing(FLYWAY, 'flyway')] }), 'org');
+
+        expect(mergeInputs.objs.map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual([
+            'pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`
+        ]);
+        expect(mergeInputs.objs[2].metadata.component.licenses).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+        expect(Object.keys(mergeInputs.objs[2].metadata.component)).toStrictEqual(
+            ['type', 'name', 'version', 'group', 'supplier', 'licenses', 'bom-ref', 'properties']);
+        expect(mergeInputs.objs[3].metadata.component).not.toHaveProperty('licenses');
     });
 
     it('hands merge-boms the stored inputs alone and writes no composition without the list (T-10)', async () => {

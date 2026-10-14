@@ -17,10 +17,13 @@ import validateBom from '../../src/validateBom';
 import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { TEST_ORG_UUID, createTestRebomOptions } from '../helpers';
+import { logger } from '../../src/logger';
 import {
     ORG, COMMIT, UPLOAD_DIGEST, RELEASE_DIGEST, PLACEHOLDER_DIGEST, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF,
     SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
-    buildProductExport, node, sceUpload, deliverableUpload
+    COMPONENT_LICENSE, COMPONENT_LICENSE_URL, PRODUCT_LICENSE,
+    buildProductExport, productMergeRequest, node, sceUpload, deliverableUpload,
+    LISTING_ROOT, LISTING_MID, DeclaredLicence, buildListingProducts
 } from '../releaseNodeFacts.fixture';
 
 /**
@@ -155,6 +158,98 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         expect(node(product, DELIVERABLE_ROOT).hashes).toStrictEqual([{ alg: 'SHA-256', content: UPLOAD_DIGEST }]);
     });
 
+    // SCORE-40 (T-5, ADR-2 to ADR-4): the licence ReARM declares lands on the nodes ReARM wrote, in
+    // the form declaredLicenses gives, and never on an uploaded node.
+    const NAMED = [{ license: { name: COMPONENT_LICENSE, url: COMPONENT_LICENSE_URL } }];
+    const PRODUCT_ID_FORM = [{ license: { id: PRODUCT_LICENSE } }];
+    const LIBRARIES = ['lib-a', 'lib-b', 'lib-c', 'lib-d', 'lib-e'].map(name => `pkg:npm/${name}@1.0.0`);
+
+    it('a component merge: the root carries the declared licence in the named form, the uploaded roots none (SCORE-40 T-5)', async () => {
+        const { componentMerge } = await buildProductExport(created, true, true);
+
+        expect(componentMerge.metadata.component).toStrictEqual({
+            type: 'application', name: 'facts-api', group: ORG, version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE,
+            supplier: { name: ORG },
+            hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }],
+            licenses: [{ license: { name: 'LicenseRef-Facts-Commercial', url: 'https://facts.example/licence' } }]
+        });
+        expect(node(componentMerge, SCE_ROOT)).not.toHaveProperty('licenses');
+        expect(node(componentMerge, DELIVERABLE_ROOT)).not.toHaveProperty('licenses');
+        for (const ref of LIBRARIES.slice(0, 3)) {
+            expect(node(componentMerge, ref).licenses, ref).toStrictEqual([{ license: { id: 'MIT' } }]);
+        }
+        await expect(validateBom(componentMerge)).resolves.toBeTruthy();
+    });
+
+    it('a product merge: the root and the INTERNAL placeholder in the id form, the release node in the named form, nothing else (SCORE-40 T-5)', async () => {
+        const { product } = await buildProductExport(created, true, true);
+
+        expect(product.metadata.component.purl).toBe(PRODUCT_ROOT);
+        expect(product.metadata.component.licenses).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+        // the normaliser of the product merge leaves the named form alone
+        expect(node(product, RELEASE_NODE).licenses).toStrictEqual(NAMED);
+        expect(node(product, PLACEHOLDER_REF).licenses).toStrictEqual(PRODUCT_ID_FORM);
+        for (const ref of [EXTERNAL_PLACEHOLDER_REF, SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT]) {
+            expect(node(product, ref), ref).toBeDefined();
+            expect(node(product, ref), ref).not.toHaveProperty('licenses');
+        }
+        for (const ref of LIBRARIES) {
+            expect(node(product, ref).licenses, ref).toStrictEqual([{ license: { id: 'MIT' } }]);
+        }
+        // supplier and hashes as SCORE-30 writes them
+        expect(product.metadata.component.supplier).toStrictEqual({ name: ORG });
+        expect(node(product, RELEASE_NODE).hashes).toStrictEqual([{ alg: 'SHA-256', content: RELEASE_DIGEST }]);
+        expect(node(product, PLACEHOLDER_REF).hashes).toStrictEqual([{ alg: 'SHA-256', content: PLACEHOLDER_DIGEST }]);
+        await expect(validateBom(product)).resolves.toBeTruthy();
+    });
+
+    it('a second product merge of the same inputs carries the licences it was sent, not the stored ones, url dropped beside an expression (SCORE-40 T-5)', async () => {
+        const { ids } = await buildProductExport(created, true, true);
+        const request = productMergeRequest(true, 'MIT OR Apache-2.0');
+        // a url beside the compound is dropped; a single LicenseRef without one is an expression
+        request.extra.releaseNode.licenseUrl = 'https://facts.example/product-licence';
+        request.extra.missingSbomComponents[0].licenseExpression = 'LicenseRef-Facts-Worker';
+
+        const again: any = await BomService.mergeBoms([ids.componentMerge, ids.release],
+            { ...createTestRebomOptions({ group: ORG, ...request.overrides }), ...request.extra }, TEST_ORG_UUID);
+
+        expect(again.metadata.component.purl).toBe(PRODUCT_ROOT);
+        expect(again.metadata.component.licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+        expect(node(again, PLACEHOLDER_REF).licenses).toStrictEqual([{ expression: 'LicenseRef-Facts-Worker' }]);
+        expect(node(again, EXTERNAL_PLACEHOLDER_REF)).not.toHaveProperty('licenses');
+        expect(node(again, RELEASE_NODE).licenses).toStrictEqual(NAMED);
+        await expect(validateBom(again)).resolves.toBeTruthy();
+    });
+
+    it('without a licence fact no node ReARM wrote carries a licence (SCORE-40 T-5, ADR-5)', async () => {
+        const { componentMerge, product } = await buildProductExport(created, true);
+
+        expect(componentMerge.metadata.component).not.toHaveProperty('licenses');
+        expect(product.metadata.component).not.toHaveProperty('licenses');
+        for (const ref of [RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF]) {
+            expect(node(product, ref), ref).not.toHaveProperty('licenses');
+        }
+        await expect(validateBom(componentMerge)).resolves.toBeTruthy();
+        await expect(validateBom(product)).resolves.toBeTruthy();
+    });
+
+    it('keeps the NOASSERTION an uploaded copy of the release node carries, in the component merge and in the product (SCORE-40 T-5)', async () => {
+        const { componentMerge, product, ids } = await buildProductExport(created, true, true, [{ expression: 'NOASSERTION' }]);
+
+        expect(ids.releaseNodeCopy).toBeDefined();
+        // the copy collapsed into the merged root, which keeps the uploaded licence over the facts
+        expect(node(componentMerge, RELEASE_NODE)).toBeUndefined();
+        expect(componentMerge.metadata.component['bom-ref']).toBe(RELEASE_NODE);
+        expect(componentMerge.metadata.component.licenses).toStrictEqual([{ expression: 'NOASSERTION' }]);
+        expect(componentMerge.metadata.component.supplier).toStrictEqual({ name: ORG });
+        expect(node(componentMerge, 'pkg:npm/lib-f@1.0.0').licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+        // in the product it is a component like any other, still NOASSERTION
+        expect(node(product, RELEASE_NODE).licenses).toStrictEqual([{ expression: 'NOASSERTION' }]);
+        expect(product.metadata.component.licenses).toStrictEqual(PRODUCT_ID_FORM);
+        await expect(validateBom(componentMerge)).resolves.toBeTruthy();
+        await expect(validateBom(product)).resolves.toBeTruthy();
+    });
+
     it('serves a legacy deliverable row with its digest and no supplier from its group (T-9, ADR-12)', async () => {
         const id = await storeWithMeta(deliverableUpload(), { group: ORG, belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST });
 
@@ -200,4 +295,198 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         expect(input.pedigree).toStrictEqual(COMMITS);
         expect(input).not.toHaveProperty('hashes');
     });
+});
+
+/** SCORE-40 T-10: every component carrying `ref`, at any depth, the root included. */
+function carrying(bom: any, ref: string): any[] {
+    const walk = (list: any[] = []): any[] => list.flatMap((c: any) => [c, ...walk(c.components)]);
+    return [bom.metadata.component, ...walk(bom.metadata.component?.components), ...walk(bom.components)]
+        .filter((c: any) => c?.['bom-ref'] === ref);
+}
+
+/**
+ * SCORE-40 (T-10, ADR-6): in a product merge the component release's node, an input root that
+ * already carries the declared licence, is folded with another input's component of the same purl
+ * (an application listing the release as an in-house library). The node is the survivor whatever
+ * the input order: its licences stand, listed ids are unioned beside an id or named form, a listed
+ * expression or NOASSERTION is dropped, and a node without a declared licence keeps the listing.
+ * Every product passes validation. Real `rearm bomutils merge-boms`, in memory and stored.
+ */
+describe('a product merge folds the release node with a listing of its purl', () => {
+    const created: string[] = [];
+
+    beforeEach(() => {
+        clearMockOciStorage();
+    });
+
+    afterEach(async () => {
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    const NAMED_FORM = { license: { name: COMPONENT_LICENSE, url: COMPONENT_LICENSE_URL } };
+    const DECLARED: Record<string, DeclaredLicence | undefined> = {
+        named: { licenseExpression: COMPONENT_LICENSE, licenseUrl: COMPONENT_LICENSE_URL },
+        id: { licenseExpression: PRODUCT_LICENSE },
+        expression: { licenseExpression: 'MIT OR Apache-2.0' },
+        none: undefined
+    };
+    const LISTED: Record<string, any[] | undefined> = {
+        expression: [{ expression: 'BSD-3-Clause OR MIT' }],
+        id: [{ license: { id: 'MIT' } }],
+        NOASSERTION: [{ expression: 'NOASSERTION' }],
+        'no key': undefined
+    };
+    // [declared, listed, the release node's licenses in the product (undefined: no key)]
+    const CASES: [string, string, any[] | undefined][] = [
+        ['named', 'expression', [NAMED_FORM]],
+        ['named', 'id', [NAMED_FORM, { license: { id: 'MIT' } }]],
+        ['named', 'NOASSERTION', [NAMED_FORM]],
+        ['named', 'no key', [NAMED_FORM]],
+        ['id', 'id', [{ license: { id: 'AGPL-3.0-only' } }, { license: { id: 'MIT' } }]],
+        ['id', 'expression', [{ license: { id: 'AGPL-3.0-only' } }]],
+        // the T-1 reproduction of run 1: refused by validation before ADR-6
+        ['expression', 'id', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['expression', 'expression', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['expression', 'NOASSERTION', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['none', 'expression', [{ expression: 'BSD-3-Clause OR MIT' }]],
+        ['none', 'id', [{ license: { id: 'MIT' } }]],
+        ['none', 'NOASSERTION', [{ expression: 'NOASSERTION' }]],
+        ['none', 'no key', undefined]
+    ];
+
+    for (const [declared, listed, expected] of CASES) {
+        it(`declared ${declared}, listed ${listed}: the release node carries ${expected === undefined ? 'no licenses' : JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+            const { merged, stored } = await buildListingProducts(created, DECLARED[declared], LISTED[listed]);
+
+            const products = [['merged, component first', merged[0]], ['merged, listing first', merged[1]],
+                ['stored, component first', stored[0]], ['stored, listing first', stored[1]]];
+            for (const [label, product] of products) {
+                expect(carrying(product, RELEASE_NODE), label).toHaveLength(1);
+                const releaseNode = node(product, RELEASE_NODE);
+                if (expected === undefined) {
+                    expect(releaseNode, label).not.toHaveProperty('licenses');
+                } else {
+                    expect(releaseNode.licenses, label).toStrictEqual(expected);
+                }
+                expect(product.metadata.component.purl, label).toBe(PRODUCT_ROOT);
+                expect(product.metadata.component.licenses, label).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+                expect(node(product, LISTING_ROOT), label).toBeDefined();
+                await expect(validateBom(product), label).resolves.toBeTruthy();
+            }
+        });
+    }
+});
+
+/**
+ * SCORE-40 (T-10, ADR-6): the same fold on the de-dup path. The listing sits one level down, under
+ * a library of the other application, where merge-boms folds nothing; dedupeBomRefs folds it into
+ * the release node, the first occurrence (the top-level components sort by key, pkg:generic before
+ * pkg:npm), with the same three lines. Real `rearm bomutils merge-boms`, in memory and stored.
+ */
+describe('a product merge folds the release node with a listing nested under another component', () => {
+    const created: string[] = [];
+
+    beforeEach(() => {
+        clearMockOciStorage();
+    });
+
+    afterEach(async () => {
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    // [case, declared, listed, the release node's licenses in the product]
+    const CASES: [string, DeclaredLicence | undefined, any[], any[]][] = [
+        // the de-dup twin of run 1's T-1 reproduction: refused by validation if the union read the duplicate alone
+        ['declared expression, listed id', { licenseExpression: 'MIT OR Apache-2.0' }, [{ license: { id: 'MIT' } }], [{ expression: 'MIT OR Apache-2.0' }]],
+        ['declared id, listed NOASSERTION', { licenseExpression: PRODUCT_LICENSE }, [{ expression: 'NOASSERTION' }], [{ license: { id: 'AGPL-3.0-only' } }]],
+        ['no declared licence, listed id', undefined, [{ license: { id: 'MIT' } }], [{ license: { id: 'MIT' } }]]
+    ];
+
+    for (const [label, declared, listed, expected] of CASES) {
+        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+            const { merged, stored } = await buildListingProducts(created, declared, listed, true);
+
+            const products = [['merged, component first', merged[0]], ['merged, listing first', merged[1]],
+                ['stored, component first', stored[0]], ['stored, listing first', stored[1]]];
+            for (const [where, product] of products) {
+                expect(carrying(product, RELEASE_NODE), where).toHaveLength(1);
+                expect(node(product, RELEASE_NODE).licenses, where).toStrictEqual(expected);
+                expect(product.metadata.component.purl, where).toBe(PRODUCT_ROOT);
+                expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+                expect(node(product, LISTING_ROOT), where).toBeDefined();
+                expect(node(product, LISTING_MID), where).toBeDefined();
+                await expect(validateBom(product), where).resolves.toBeTruthy();
+            }
+        });
+    }
+});
+
+const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
+const FOLD_LINES = [
+    LISTED_DROP,
+    'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand',
+    'license fold settled: the survivor licenses stand'
+];
+
+/**
+ * SCORE-40 (T-10, ADR-6 line 1 as round 4 states it, ADR-8): an empty licences list on the release
+ * node, an uploaded root of the product merge, beside a listing of its purl with an expression.
+ * Where merge-boms folds (the listing at the top level) `[]` is held: the expression is dropped and
+ * ADR-8 logs it. Where dedupeBomRefs folds (the listing nested) `[]` is absent: the node takes the
+ * listing whole and nothing is logged. Real `rearm bomutils merge-boms`, in memory and stored.
+ */
+describe('a product merge folds a release node with an empty licences list and a listing of its purl', () => {
+    const created: string[] = [];
+    const X2 = [{ expression: 'BSD-3-Clause OR MIT' }];
+    let info: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        clearMockOciStorage();
+        info = vi.spyOn(logger, 'info');
+    });
+
+    afterEach(async () => {
+        info.mockRestore();
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    /** The fold lines the info spy saw. */
+    function foldLines(): any[][] {
+        return info.mock.calls.filter((call: any[]) => FOLD_LINES.includes(call[1]));
+    }
+
+    // [layout, nested, the release node's licenses in the product, the fold lines over the four merges]
+    const CASES: [string, boolean, any[], () => any[][]][] = [
+        ['top level, merge-boms holds [] and drops the expression, logged', false, [],
+            () => Array(4).fill([{ bomRef: RELEASE_NODE, kept: [], dropped: X2 }, LISTED_DROP])],
+        ['nested, the de-dup reads [] as absent and takes the listing, nothing logged', true, X2, () => []]
+    ];
+
+    for (const [label, nested, expected, lines] of CASES) {
+        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+            const { merged, stored } = await buildListingProducts(created, undefined, X2, nested, []);
+
+            // one ADR-8 line per product merge on the top level (two in memory, two stored), none nested
+            expect(foldLines()).toStrictEqual(lines());
+            const products = [['merged, release node first', merged[0]], ['merged, listing first', merged[1]],
+                ['stored, release node first', stored[0]], ['stored, listing first', stored[1]]];
+            for (const [where, product] of products) {
+                expect(carrying(product, RELEASE_NODE), where).toHaveLength(1);
+                expect(node(product, RELEASE_NODE).licenses, where).toStrictEqual(expected);
+                expect(product.metadata.component.purl, where).toBe(PRODUCT_ROOT);
+                expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+                expect(node(product, LISTING_ROOT), where).toBeDefined();
+                await expect(validateBom(product), where).resolves.toBeTruthy();
+            }
+        });
+    }
 });

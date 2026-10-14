@@ -348,7 +348,8 @@ input RebomOptions {
     # merged root, and the document states their dependencies unknown (compositions). Not stored.
     missingSbomComponents: [MissingSbomComponentInput!]
     # Merge only: what ReARM holds about the release the merged root describes. Filled into the
-    # root where it names no supplier or carries no hashes of its own; never replaces a value.
+    # root where it names no supplier, carries no hashes or carries no license of its own; never
+    # replaces a value.
     # Derived by ReARM at generation time, not part of the options it matches stored merges on.
     releaseNode: ReleaseNodeFactsInput
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
@@ -360,6 +361,13 @@ input RebomOptions {
   input ReleaseNodeFactsInput {
     supplierName: String
     hashes: [BomHashInput!]
+    # The license ReARM declares for the release's software: an SPDX license expression
+    # (Apache-2.0, MIT OR GPL-2.0-only, LicenseRef-Acme-Commercial for a proprietary license),
+    # as rearm-saas canonicalised it. Written as the root's licenses where the root has none.
+    licenseExpression: String
+    # Where the text of the license is. Carried only beside a single LicenseRef- expression,
+    # in the named CycloneDX form; CycloneDX cannot carry a url beside an expression.
+    licenseUrl: String
   }
 
   # One CycloneDX hashes[] entry. alg: a CycloneDX hash algorithm (SHA-256, SHA-512, ...);
@@ -381,6 +389,9 @@ input RebomOptions {
     group: String
     purl: String
     hashes: [BomHashInput!]
+    # licenseExpression, licenseUrl: as on ReleaseNodeFactsInput, written as the placeholder's licenses.
+    licenseExpression: String
+    licenseUrl: String
     reason: String!
   }
 

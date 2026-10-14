@@ -29,7 +29,9 @@ import {
  * on the source code entry root (its commit is a pedigree fact, ADR-4), the release-attached root
  * and the unhashed placeholder; the licence fails on every node ReARM wrote and every uploaded root
  * without one, the remaining gap. The same document with the fields this task writes taken out
- * fails producer on every ReARM node: the change is what moves them.
+ * fails producer on every ReARM node: the change is what moves them. SCORE-40 (T-6): with the
+ * licences ReARM declares sent, the licence fails only on the uploaded roots without one and the
+ * EXTERNAL placeholder.
  */
 
 /** The placeholders have no purl: the engine names them name@version. */
@@ -127,6 +129,21 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         expect(failing(report, 'cisa-2026.component-license'))
             .toStrictEqual([DELIVERABLE_ROOT, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT, PLACEHOLDER, EXTERNAL_PLACEHOLDER].sort());
         expect(check(report, 'cisa-2026.component-license').passed).toBe(5);
+    });
+
+    it('with the declared licences the licence fails only on the uploaded roots without one and the EXTERNAL placeholder (SCORE-40 T-6)', async () => {
+        const { product } = await buildProductExport(created, true, true);
+        const report = score(product);
+
+        // the release node passes in the named form (the engine reads license.name), the INTERNAL
+        // placeholder in the id form; the product root is metadata.component, not scored per component
+        expect(failing(report, 'cisa-2026.component-license'))
+            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_ROOT, SCE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+        expect(check(report, 'cisa-2026.component-license').total).toBe(11);
+        expect(check(report, 'cisa-2026.component-license').passed).toBe(7);
+        for (const id of PRODUCER_CHECKS) {
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT].sort());
+        }
     });
 
     it('without the facts the release node names no supplier and carries no hash, nor does the placeholder (T-10)', async () => {
