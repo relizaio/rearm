@@ -732,6 +732,11 @@ type ApiKey {
 	accessDate: DateTime
 	createdDate: DateTime
 	notes: String
+	"""
+	The reason an administrator gave when denying this request, on a server that keeps it apart from the
+	notes. Always null here: this server appends the reason to notes after ' | Denied: ', where clients read it.
+	"""
+	deniedReason: String
 	status: ApiKeyStatus
 	secrets: [ApiKeySecretInfo!]
 	"FREEFORM keys: the user who requested the key and the only one who may mint or regenerate its secrets"
