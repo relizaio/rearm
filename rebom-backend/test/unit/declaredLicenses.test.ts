@@ -27,6 +27,11 @@ describe('declaredLicenses', () => {
             .toStrictEqual([{ license: { name: 'LicenseRef-Acme-Commercial', url: 'https://acme.example/licence' } }]);
     });
 
+    it('reads the LicenseRef- prefix case-sensitively: a lowercase one with a url is an expression, url dropped (SCORE-40 r2 T-1)', () => {
+        expect(declaredLicenses('licenseref-acme', 'https://acme.example/l')).toStrictEqual([{ expression: 'licenseref-acme' }]);
+        expect(declaredLicenses('LICENSEREF-Acme', 'https://acme.example/l')).toStrictEqual([{ expression: 'LICENSEREF-Acme' }]);
+    });
+
     it('writes a single LicenseRef without a url, or with a blank one, in the expression form (T-1)', () => {
         for (const url of [undefined, null, '', '   ']) {
             expect(declaredLicenses('LicenseRef-Acme-Commercial', url), String(url))

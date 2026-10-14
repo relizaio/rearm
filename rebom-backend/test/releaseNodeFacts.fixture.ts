@@ -194,3 +194,77 @@ export async function buildProductExport(created: string[], withFacts: boolean, 
 export function node(bom: any, ref: string): any {
     return (bom.components || []).find((c: any) => c['bom-ref'] === ref);
 }
+
+/** SCORE-40 T-10: the application whose SBOM lists the component release by its ReARM purl. */
+export const LISTING_ROOT = 'pkg:npm/web-app@2.0.0';
+
+/**
+ * SCORE-40 T-10: an upload of another application (`LISTING_ROOT`) that lists the component
+ * release under its release node purl and bom-ref, as an in-house library, with `licenses` when
+ * given (no key when undefined), and a dependency from its root to it.
+ */
+export function releaseNodeListing(licenses?: any[]): any {
+    const listed: any = { type: 'library', name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE };
+    if (licenses !== undefined) listed.licenses = licenses;
+    return uploadDoc({ type: 'application', name: 'web-app', version: '2.0.0', purl: LISTING_ROOT, 'bom-ref': LISTING_ROOT }, [listed]);
+}
+
+/** SCORE-40 T-10: the licence a component release declares, as rearm-saas sends it. */
+export type DeclaredLicence = { licenseExpression: string, licenseUrl?: string };
+
+export type ListingProducts = {
+    /** The product merged over [component merge, listing] and over [listing, component merge], in memory. */
+    merged: any[],
+    /** The same two product merges stored and served. */
+    stored: any[]
+};
+
+/**
+ * SCORE-40 T-10: merges the component release (FLATTEN, its facts plus `declared` when set) over
+ * the SCE and deliverable uploads, uploads releaseNodeListing(listingLicenses), then merges the
+ * product (PRESERVE, the product facts of productMergeRequest with PRODUCT_LICENSE) over the
+ * component merge and the listing in both input orders: once in memory (BomService.mergeBoms,
+ * the shape before any store normalisation) and once stored and served.
+ */
+export async function buildListingProducts(created: string[], declared: DeclaredLicence | undefined,
+    listingLicenses: any[] | undefined): Promise<ListingProducts> {
+    async function upload(bom: any, overrides: any): Promise<string> {
+        const record = await BomService.addBom({
+            bomInput: {
+                format: 'CYCLONEDX' as const,
+                bom,
+                org: TEST_ORG_UUID,
+                rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, group: ORG, ...overrides })
+            }
+        });
+        created.push(record.uuid);
+        return record.uuid;
+    }
+    const options = (overrides: any, extra: any) => ({
+        ...createTestRebomOptions({ serialNumber: generateSerialNumber(), group: ORG, ...overrides }),
+        ...extra
+    });
+
+    const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
+    const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
+    const component = await BomService.mergeAndStoreBoms([sce, deliverable],
+        options({ name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', mergeVersion: declared ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
+            { releaseNode: { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }], ...(declared || {}) } }),
+        TEST_ORG_UUID, BomService.addBom);
+    created.push(component.uuid);
+    const listing = await upload(releaseNodeListing(listingLicenses), { name: 'web-app', version: '2.0.0', purl: LISTING_ROOT });
+
+    const productOptions = () => {
+        const request = productMergeRequest(true, PRODUCT_LICENSE);
+        return options(request.overrides, request.extra);
+    };
+    const merged: any[] = [];
+    const stored: any[] = [];
+    for (const ids of [[component.uuid, listing], [listing, component.uuid]]) {
+        merged.push(await BomService.mergeBoms(ids, productOptions(), TEST_ORG_UUID));
+        const record = await BomService.mergeAndStoreBoms(ids, productOptions(), TEST_ORG_UUID, BomService.addBom);
+        created.push(record.uuid);
+        stored.push(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
+    }
+    return { merged, stored };
+}

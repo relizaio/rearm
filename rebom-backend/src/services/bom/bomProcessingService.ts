@@ -405,8 +405,39 @@ function licenseKey(entry: any): string {
   return `json:${JSON.stringify(entry)}`
 }
 
-const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
-  licenses: (s, d) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list) || []),
+/** Whether a `licenses` entry is an `expression` entry. */
+function isExpressionEntry(entry: any): boolean {
+  return !!entry && typeof entry === 'object' && 'expression' in entry
+}
+
+/** Whether a `licenses` list holds an `expression` entry. */
+function hasExpressionEntry(list: any[]): boolean {
+  return list.some(isExpressionEntry)
+}
+
+/**
+ * SCORE-40 ADR-6: two `licenses` lists folded into one. Both are normalised first, so a
+ * single-id expression counts as an id. An empty or absent survivor list takes the duplicate's
+ * whole; when either list holds an `expression` entry the survivor's list stands whole, the same
+ * object, and the duplicate's is dropped (CycloneDX 1.6 cannot union an expression with
+ * anything); otherwise the two are unioned by expression, id or name, survivor first.
+ */
+function unionLicenses(survivor: any, duplicate: any, ref?: string): any {
+  if (!Array.isArray(duplicate) || duplicate.length === 0) return survivor
+  if (isEmptyValue(survivor)) return duplicate
+  if (!Array.isArray(survivor)) return survivor
+  const kept = normalizeLicenses(survivor) || []
+  const added = normalizeLicenses(duplicate) || []
+  if (hasExpressionEntry(kept) || hasExpressionEntry(added)) {
+    logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
+    return survivor
+  }
+  const union = unionByKey(kept, added, licenseKey)
+  return union === kept ? survivor : union
+}
+
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, ref?: string) => any> = {
+  licenses: unionLicenses,
   hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
   externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
   properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
@@ -416,7 +447,8 @@ const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> 
 /**
  * SCORE-13 ADR-4: the survivor wins, nothing is dropped. A field the survivor lacks or has empty
  * is taken from the duplicate; a non-empty survivor value is never overwritten. The
- * identity lists are unioned, survivor first. The duplicate's `type` is dropped and its
+ * identity lists are unioned, survivor first; the one exception is a `licenses` list
+ * beside an expression, which the survivor keeps whole (SCORE-40 ADR-6). The duplicate's `type` is dropped and its
  * `components` are hoisted by the caller.
  */
 function mergeDuplicateInto(survivor: any, duplicate: any): void {
@@ -424,7 +456,7 @@ function mergeDuplicateInto(survivor: any, duplicate: any): void {
     if (DEDUP_SKIPPED_FIELDS.has(key)) continue
     const union = DEDUP_LIST_UNIONS[key]
     if (union) {
-      survivor[key] = union(survivor[key], duplicate[key])
+      survivor[key] = union(survivor[key], duplicate[key], bomRefOf(survivor))
     } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
       survivor[key] = duplicate[key]
     }
@@ -1627,6 +1659,39 @@ export function normalizeLicensesInBom(bom: any): any {
     bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses);
   }
   return bom;
+}
+
+/**
+ * SCORE-40 ADR-6: settles the `licenses` arrays a fold left mixed, so the document passes the
+ * CycloneDX 1.6 `oneOf` (a list of `license` objects, or exactly one `expression`). rearm-cli
+ * merge-boms folds components of one purl survivor first: it appends the duplicate's `license`
+ * entries to the survivor's list and drops the duplicate's `expression` entries, so a survivor
+ * holding an expression ends up with a mixed array. Walks `metadata.component` and
+ * `components[]` at every depth (not `services[]`). On an array of more than one entry that holds
+ * an `expression` entry: when the first entry (the survivor's) is an expression, the array
+ * becomes that one entry; otherwise its `expression` entries are removed and the `license`
+ * entries stay in order. Every other value is left as it is, the same object. Changes the
+ * document in place, logs each node it changed, and returns the number of nodes changed.
+ */
+export function settleLicenseFolds(bom: any): number {
+  if (!bom || typeof bom !== 'object') return 0
+  let count = 0
+  const settle = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const licenses = component.licenses
+    if (Array.isArray(licenses) && licenses.length > 1 && licenses.some(isExpressionEntry)) {
+      const kept = isExpressionEntry(licenses[0]) ? [licenses[0]] : licenses.filter((entry: any) => !isExpressionEntry(entry))
+      const dropped = licenses.filter((entry: any) => !kept.includes(entry))
+      logger.info({ bomRef: component['bom-ref'], kept, dropped }, 'license fold settled: the survivor licenses stand')
+      component.licenses = kept
+      count++
+    }
+    if (Array.isArray(component.components)) component.components.forEach(settle)
+  }
+  settle(bom.metadata?.component)
+  if (Array.isArray(bom.components)) bom.components.forEach(settle)
+  if (count > 0) logger.info(`license fold settle: ${count} licenses arrays a fold left mixed settled`)
+  return count
 }
 
 function extractComponentIdentity(components: any[]): any[] {

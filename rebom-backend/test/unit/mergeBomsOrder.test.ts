@@ -228,6 +228,35 @@ describe('mergeBoms: pass order', () => {
     });
 });
 
+/**
+ * SCORE-40 (T-11, ADR-6): merge-boms folds a duplicate's license entries onto a survivor that holds
+ * an expression, a mixed array CycloneDX 1.6 refuses. mergeBomObjects settles it before its first
+ * validation, survivor first, inside the merge-boms step: no pass is added or moved.
+ */
+describe('mergeBoms: a licence fold merge-boms left mixed', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    it('keeps the survivor expression alone, resolves, and runs the same passes in the same order (T-11)', async () => {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.unshift({ type: 'application', name: 'one', version: '1.0.0', purl: 'pkg:npm/one@1.0.0', 'bom-ref': 'pkg:npm/one@1.0.0',
+                licenses: [{ expression: 'MIT OR Apache-2.0' }, { license: { id: 'MIT' } }] });
+            out.dependencies[0].dependsOn.unshift('pkg:npm/one@1.0.0');
+            return JSON.stringify(out);
+        });
+
+        const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(bom.components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/one@1.0.0', 'pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0']);
+        expect(bom.components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        // the de-dup already sees the settled list
+        expect(passes.calls[2].args[0].components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
+    });
+});
+
 const HTTPD = '0b0f4a52-6c55-4d1f-9a8e-000000000001';
 const FLYWAY = '0b0f4a52-6c55-4d1f-9a8e-000000000002';
 

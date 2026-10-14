@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -223,6 +223,9 @@ async function processBomObj(bom: any): Promise<any> {
   })
 
   normalizeLicensesInBom(processedBom);
+  // Before the validation: a license fold of merge-boms can leave an expression beside the
+  // duplicate's license entries, which CycloneDX 1.6 refuses; the survivor's stand (SCORE-40 ADR-6).
+  settleLicenseFolds(processedBom);
 
   // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
   // This is lightweight defensive validation for BOMs from other sources or legacy versions.

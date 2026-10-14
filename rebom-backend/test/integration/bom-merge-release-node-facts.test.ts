@@ -21,7 +21,8 @@ import {
     ORG, COMMIT, UPLOAD_DIGEST, RELEASE_DIGEST, PLACEHOLDER_DIGEST, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF,
     SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
     COMPONENT_LICENSE, COMPONENT_LICENSE_URL, PRODUCT_LICENSE,
-    buildProductExport, productMergeRequest, node, sceUpload, deliverableUpload
+    buildProductExport, productMergeRequest, node, sceUpload, deliverableUpload,
+    LISTING_ROOT, DeclaredLicence, buildListingProducts
 } from '../releaseNodeFacts.fixture';
 
 /**
@@ -293,4 +294,87 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         expect(input.pedigree).toStrictEqual(COMMITS);
         expect(input).not.toHaveProperty('hashes');
     });
+});
+
+/**
+ * SCORE-40 (T-10, ADR-6): in a product merge the component release's node, an input root that
+ * already carries the declared licence, is folded with another input's component of the same purl
+ * (an application listing the release as an in-house library). The node is the survivor whatever
+ * the input order: its licences stand, listed ids are unioned beside an id or named form, a listed
+ * expression or NOASSERTION is dropped, and a node without a declared licence keeps the listing.
+ * Every product passes validation. Real `rearm bomutils merge-boms`, in memory and stored.
+ */
+describe('a product merge folds the release node with a listing of its purl', () => {
+    const created: string[] = [];
+
+    beforeEach(() => {
+        clearMockOciStorage();
+    });
+
+    afterEach(async () => {
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    const NAMED_FORM = { license: { name: COMPONENT_LICENSE, url: COMPONENT_LICENSE_URL } };
+    const DECLARED: Record<string, DeclaredLicence | undefined> = {
+        named: { licenseExpression: COMPONENT_LICENSE, licenseUrl: COMPONENT_LICENSE_URL },
+        id: { licenseExpression: PRODUCT_LICENSE },
+        expression: { licenseExpression: 'MIT OR Apache-2.0' },
+        none: undefined
+    };
+    const LISTED: Record<string, any[] | undefined> = {
+        expression: [{ expression: 'BSD-3-Clause OR MIT' }],
+        id: [{ license: { id: 'MIT' } }],
+        NOASSERTION: [{ expression: 'NOASSERTION' }],
+        'no key': undefined
+    };
+    // [declared, listed, the release node's licenses in the product (undefined: no key)]
+    const CASES: [string, string, any[] | undefined][] = [
+        ['named', 'expression', [NAMED_FORM]],
+        ['named', 'id', [NAMED_FORM, { license: { id: 'MIT' } }]],
+        ['named', 'NOASSERTION', [NAMED_FORM]],
+        ['named', 'no key', [NAMED_FORM]],
+        ['id', 'id', [{ license: { id: 'AGPL-3.0-only' } }, { license: { id: 'MIT' } }]],
+        ['id', 'expression', [{ license: { id: 'AGPL-3.0-only' } }]],
+        // the T-1 reproduction of run 1: refused by validation before ADR-6
+        ['expression', 'id', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['expression', 'expression', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['expression', 'NOASSERTION', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['none', 'expression', [{ expression: 'BSD-3-Clause OR MIT' }]],
+        ['none', 'id', [{ license: { id: 'MIT' } }]],
+        ['none', 'NOASSERTION', [{ expression: 'NOASSERTION' }]],
+        ['none', 'no key', undefined]
+    ];
+
+    /** Every component carrying `ref`, at any depth, the root included. */
+    function carrying(bom: any, ref: string): any[] {
+        const walk = (list: any[] = []): any[] => list.flatMap((c: any) => [c, ...walk(c.components)]);
+        return [bom.metadata.component, ...walk(bom.metadata.component?.components), ...walk(bom.components)]
+            .filter((c: any) => c?.['bom-ref'] === ref);
+    }
+
+    for (const [declared, listed, expected] of CASES) {
+        it(`declared ${declared}, listed ${listed}: the release node carries ${expected === undefined ? 'no licenses' : JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+            const { merged, stored } = await buildListingProducts(created, DECLARED[declared], LISTED[listed]);
+
+            const products = [['merged, component first', merged[0]], ['merged, listing first', merged[1]],
+                ['stored, component first', stored[0]], ['stored, listing first', stored[1]]];
+            for (const [label, product] of products) {
+                expect(carrying(product, RELEASE_NODE), label).toHaveLength(1);
+                const releaseNode = node(product, RELEASE_NODE);
+                if (expected === undefined) {
+                    expect(releaseNode, label).not.toHaveProperty('licenses');
+                } else {
+                    expect(releaseNode.licenses, label).toStrictEqual(expected);
+                }
+                expect(product.metadata.component.purl, label).toBe(PRODUCT_ROOT);
+                expect(product.metadata.component.licenses, label).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+                expect(node(product, LISTING_ROOT), label).toBeDefined();
+                await expect(validateBom(product), label).resolves.toBeTruthy();
+            }
+        });
+    }
 });
