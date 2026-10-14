@@ -820,9 +820,9 @@ export function placeholderBomRef(releaseUuid: string): string {
  * ADR-2): `metadata.component` describes the release with the bom-ref placeholderBomRef(uuid)
  * and the SBOM_MISSING_PROPERTY marker, `components` is empty and the one dependency entry has
  * an empty `dependsOn`, like every other input root. merge-boms then makes it a component of the
- * merged document and a direct dependency of the merged root. `group`, `supplier`, `purl` and
- * `hashes` (SCORE-30 ADR-3) are left out when ReARM sent none: a purl is never made up. Nothing is
- * stored for these inputs.
+ * merged document and a direct dependency of the merged root. `group`, `supplier`, `purl`,
+ * `hashes` (SCORE-30 ADR-3) and `licenses` (SCORE-40 ADR-4, declaredLicenses) are left out when
+ * ReARM sent none: a purl or a license is never made up. Nothing is stored for these inputs.
  */
 export function placeholderBomObjects(list: MissingSbomComponent[] | null | undefined): any[] {
   if (!Array.isArray(list)) return []
@@ -834,6 +834,8 @@ export function placeholderBomObjects(list: MissingSbomComponent[] | null | unde
     if (missing.purl) component.purl = missing.purl
     const hashes = cycloneDxHashes(missing.hashes)
     if (hashes.length) component.hashes = hashes
+    const licenses = declaredLicenses(missing.licenseExpression, missing.licenseUrl)
+    if (licenses) component.licenses = licenses
     component['bom-ref'] = ref
     component.properties = [{ name: SBOM_MISSING_PROPERTY, value: missing.reason }]
     return {
@@ -875,6 +877,32 @@ function cycloneDxHashes(list: BomHash[] | null | undefined): BomHash[] {
   return kept
 }
 
+/** One SPDX `LicenseRef-` term alone: no operator, no parenthesis, no `+` (SCORE-40 ADR-2). */
+const SINGLE_LICENSE_REF = /^LicenseRef-[A-Za-z0-9.-]+$/
+
+/**
+ * The CycloneDX 1.6 `licenses` a node carries for the license ReARM declares (SCORE-40 ADR-2):
+ * - `expression` not a string or blank after trimming: undefined, nothing to write;
+ * - exactly one `LicenseRef-` term with a non-blank `url`: the named form
+ *   `[{ license: { name: expression, url } }]`, the one place the url is carried;
+ * - anything else: `normalizeLicenses([{ expression }])`, which is `[{ license: { id } }]` for one
+ *   SPDX list id (in the list's casing) and `[{ expression }]` for the rest (a compound, a `+` or
+ *   `WITH` form, a parenthesised one, a LicenseRef without a url); the url is dropped, CycloneDX
+ *   cannot carry one beside an expression.
+ * Both values are trimmed and written as sent otherwise: rearm-saas validates them. A fresh array
+ * on every call.
+ */
+export function declaredLicenses(expression: string | null | undefined, url: string | null | undefined): any[] | undefined {
+  const value = typeof expression === 'string' ? expression.trim() : ''
+  const link = typeof url === 'string' ? url.trim() : ''
+  if (value === '') {
+    if (link !== '') logger.debug({ url: link }, 'a license url without a license expression was left out')
+    return undefined
+  }
+  if (link !== '' && SINGLE_LICENSE_REF.test(value)) return [{ license: { name: value, url: link } }]
+  return normalizeLicenses([{ expression: value }])
+}
+
 /** Whether a component names its supplier: a `supplier` object with a non-blank `name`. */
 function hasSupplierName(component: any): boolean {
   const name = component?.supplier?.name
@@ -884,6 +912,14 @@ function hasSupplierName(component: any): boolean {
 /** Whether a component carries at least one hash. */
 function hasHashes(component: any): boolean {
   return Array.isArray(component?.hashes) && component.hashes.length > 0
+}
+
+/**
+ * Whether a component carries a license: a non-empty `licenses` array. An entry asserting
+ * NOASSERTION or NONE counts: it is the generator's statement, not ReARM's to replace.
+ */
+function hasLicenses(component: any): boolean {
+  return Array.isArray(component?.licenses) && component.licenses.length > 0
 }
 
 /** `component.supplier` with `name` set, keeping any other supplier field already there. */
@@ -972,30 +1008,38 @@ export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | 
 
 export type ReleaseNodeFillResult = {
   bom: any,
-  filled: { supplier: boolean, hashes: boolean }
+  filled: { supplier: boolean, hashes: boolean, licenses: boolean }
 }
 
 /**
  * Fills the merged root, the node that describes the release itself, from what ReARM holds about
- * the release (SCORE-30 ADR-1, ADR-7): `supplier.name` from `facts.supplierName` and `hashes` from
- * `facts.hashes` (those CycloneDX can carry, in order), each only when the root has none (ADR-6):
- * runs after dedupeBomRefs, so an uploaded copy of the root collapsed into it has already given
- * it its own. Writes no `licenses` and no marker property. With no facts, or nothing to fill, the
- * input comes back unchanged; otherwise a copy, the input untouched.
+ * the release (SCORE-30 ADR-1, ADR-7; SCORE-40 ADR-3): `supplier.name` from `facts.supplierName`,
+ * `hashes` from `facts.hashes` (those CycloneDX can carry, in order) and `licenses` from
+ * `facts.licenseExpression` and `facts.licenseUrl` (declaredLicenses), each only when the root has
+ * none (ADR-6): runs after dedupeBomRefs, so an uploaded copy of the root collapsed into it has
+ * already given it its own. A license the root carries, NOASSERTION or NONE included, stands.
+ * Writes no marker property. With no facts, or nothing to fill, the input comes back unchanged;
+ * otherwise a copy, the input untouched.
  */
 export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undefined): ReleaseNodeFillResult {
-  const none = { bom, filled: { supplier: false, hashes: false } }
+  const none = { bom, filled: { supplier: false, hashes: false, licenses: false } }
   const root = bom?.metadata?.component
   if (!root || typeof root !== 'object' || !facts) return none
   const supplierName = typeof facts.supplierName === 'string' ? facts.supplierName.trim() : ''
   const hashes = cycloneDxHashes(facts.hashes)
+  const licenses = declaredLicenses(facts.licenseExpression, facts.licenseUrl)
   const supplier = supplierName !== '' && !hasSupplierName(root)
   const fillHashes = hashes.length > 0 && !hasHashes(root)
-  if (!supplier && !fillHashes) return none
+  const fillLicenses = licenses !== undefined && !hasLicenses(root)
+  if (!supplier && !fillHashes && !fillLicenses) return none
   const component = { ...root }
   if (supplier) component.supplier = withSupplierName(root, supplierName)
   if (fillHashes) component.hashes = hashes
-  return { bom: { ...bom, metadata: { ...bom.metadata, component } }, filled: { supplier, hashes: fillHashes } }
+  if (fillLicenses) component.licenses = licenses
+  return {
+    bom: { ...bom, metadata: { ...bom.metadata, component } },
+    filled: { supplier, hashes: fillHashes, licenses: fillLicenses }
+  }
 }
 
 export type UnknownCompositionsResult = {

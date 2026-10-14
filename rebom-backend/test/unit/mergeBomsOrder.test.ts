@@ -6,7 +6,8 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 const findBomObjectById = vi.fn();
 const shellExec = vi.fn();
 // SCORE-14 T-12: the passes mergeBoms runs, in the order it runs them, with their arguments.
-const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[] }[] }));
+// SCORE-40 T-4: each recorded pass also keeps what it returned.
+const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[], result?: any }[] }));
 // SCORE-15 T-10: the documents mergeBomObjects hands merge-boms, in input-file order.
 const mergeInputs = vi.hoisted(() => ({ objs: [] as any[] }));
 
@@ -29,8 +30,10 @@ vi.mock('../../src/utils', async (importOriginal) => {
 vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) => {
     const actual: any = await importOriginal();
     const recorded = (name: string) => (...args: any[]) => {
-        passes.calls.push({ name, args });
-        return actual[name](...args);
+        const call: { name: string, args: any[], result?: any } = { name, args };
+        passes.calls.push(call);
+        call.result = actual[name](...args);
+        return call.result;
     };
     return {
         ...actual,
@@ -203,6 +206,26 @@ describe('mergeBoms: pass order', () => {
 
         expect(passes.calls[1].args[2]).toStrictEqual({ referencedOnly: false });
     });
+
+    it('fills the licence with the release node fill, on what dedupeBomRefs returned (SCORE-40 T-4)', async () => {
+        const releaseNode = { supplierName: 'Acme', licenseExpression: 'LicenseRef-Acme-Commercial', licenseUrl: 'https://acme.example/licence' };
+
+        const bom = await mergeBoms(['one', 'two'], options({ releaseNode }), 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['merge-boms', 'carryServices', 'dedupeBomRefs', 'fillReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls[3].name).toBe('fillReleaseNode');
+        expect(passes.calls[3].args[1]).toBe(releaseNode);
+        expect(passes.calls[3].args[0]).toBe(passes.calls[2].result.bom);
+        expect(passes.calls[3].args[0].metadata.component).not.toHaveProperty('licenses');
+        expect(passes.calls[3].result.filled).toStrictEqual({ supplier: true, hashes: false, licenses: true });
+        // the pass after it works on the filled document
+        expect(passes.calls[4].args[0]).toBe(passes.calls[3].result.bom);
+        expect(bom.metadata.component).toStrictEqual({
+            type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
+            supplier: { name: 'Acme' },
+            licenses: [{ license: { name: 'LicenseRef-Acme-Commercial', url: 'https://acme.example/licence' } }]
+        });
+    });
 });
 
 const HTTPD = '0b0f4a52-6c55-4d1f-9a8e-000000000001';
@@ -292,6 +315,20 @@ describe('mergeBoms: component releases without an SBOM', () => {
             components: [],
             dependencies: [{ ref: `urn:rearm:release:${HTTPD}`, dependsOn: [] }]
         });
+    });
+
+    it('hands merge-boms placeholders carrying the licence ReARM sent, and none where it sent none (SCORE-40 T-4)', async () => {
+        const licensed = { ...missing(HTTPD, 'httpd'), licenseExpression: 'AGPL-3.0-only' };
+
+        await mergeBoms(['one', 'two'], options({ missingSbomComponents: [licensed, missing(FLYWAY, 'flyway')] }), 'org');
+
+        expect(mergeInputs.objs.map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual([
+            'pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`
+        ]);
+        expect(mergeInputs.objs[2].metadata.component.licenses).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+        expect(Object.keys(mergeInputs.objs[2].metadata.component)).toStrictEqual(
+            ['type', 'name', 'version', 'group', 'supplier', 'licenses', 'bom-ref', 'properties']);
+        expect(mergeInputs.objs[3].metadata.component).not.toHaveProperty('licenses');
     });
 
     it('hands merge-boms the stored inputs alone and writes no composition without the list (T-10)', async () => {

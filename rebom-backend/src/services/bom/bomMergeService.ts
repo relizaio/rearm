@@ -26,7 +26,8 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     // component per ref, and a hoisted subtree can hold file components it has to see.
     if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
     // After the de-dup: an uploaded copy of the root collapsed into it has already given the
-    // root its own supplier and hashes, which the release's facts never replace (SCORE-30 ADR-6).
+    // root its own supplier, hashes and licenses, which the release's facts never replace
+    // (SCORE-30 ADR-6, SCORE-40 ADR-3).
     if (mergedBom) mergedBom = fillReleaseNode(mergedBom, rebomOptions.releaseNode).bom
     if (mergedBom && rebomOptions.excludeFileComponents === true) {
       // On the merged graph, not per input: merge-boms re-roots the inputs, and the

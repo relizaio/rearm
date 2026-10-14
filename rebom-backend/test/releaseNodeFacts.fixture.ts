@@ -92,16 +92,60 @@ export function externalPlaceholder(): any {
     };
 }
 
-export type Built = { componentMerge: any, product: any, ids: { sce: string, deliverable: string, release: string, componentMerge: string, product: string } };
+/** The merge version rearm-saas sends with the declared licences (SCORE-40 ADR-5; 39b bumps it). */
+export const LICENSE_MERGE_VERSION = 7;
+/** The merge version of the SCORE-30 requests, without licences. */
+export const FACTS_MERGE_VERSION = 6;
+
+/** SCORE-40 T-5: the licence the component release declares, proprietary with its text online. */
+export const COMPONENT_LICENSE = 'LicenseRef-Facts-Commercial';
+export const COMPONENT_LICENSE_URL = 'https://facts.example/licence';
+/** SCORE-40 T-5: the licence the product release and the SBOM-less INTERNAL release declare. */
+export const PRODUCT_LICENSE = 'AGPL-3.0-only';
+
+/**
+ * An upload attached to the component release whose root is the release node itself (its purl is
+ * the merged root's), as a build tool that describes the release writes it, with `licenses` on
+ * that root: in the component merge it collapses into the merged root (SCORE-40 T-5).
+ */
+export function releaseNodeUpload(licenses: any[]): any {
+    return uploadDoc({ type: 'application', name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE, licenses },
+        [complete('lib-f', 'f')]);
+}
+
+/**
+ * The product merge as rearm-saas asks for it (SCORE-30, SCORE-40): `withFacts` sends the release
+ * node facts and the placeholder hashes, `productLicense` (when set) the licence the product
+ * release and the INTERNAL placeholder declare, with the merge version that sends it.
+ */
+export function productMergeRequest(withFacts: boolean, productLicense?: string): { overrides: any, extra: any } {
+    const licence = productLicense ? { licenseExpression: productLicense } : {};
+    return {
+        overrides: { name: 'facts-product', version: '3.0.0', rootComponentMergeMode: 'PRESERVE_UNDER_NEW_ROOT', mergeVersion: productLicense ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
+        extra: withFacts
+            ? { releaseNode: { supplierName: ORG, ...licence }, missingSbomComponents: [{ ...placeholder(true), ...licence }, externalPlaceholder()] }
+            : { missingSbomComponents: [{ ...placeholder(false), ...licence }, externalPlaceholder()] }
+    };
+}
+
+export type Built = {
+    componentMerge: any,
+    product: any,
+    ids: { sce: string, deliverable: string, release: string, releaseNodeCopy?: string, componentMerge: string, product: string }
+};
 
 /**
  * Uploads the three SBOMs as ReARM attaches them (the SCE and deliverable uploads with
  * supplierName, the release upload without it, as a legacy row), merges the component release
  * (FLATTEN) and the product (PRESERVE) the way rearm-saas asks, and returns both merged documents
  * as served. `withFacts` false sends the merge requests of the pre-task shape: no releaseNode, no
- * placeholder hashes.
+ * placeholder hashes. `withLicenses` (SCORE-40 T-5) adds the licences ReARM declares, under merge
+ * version 7: COMPONENT_LICENSE with its url on the component release's node, PRODUCT_LICENSE on the
+ * product root and the INTERNAL placeholder. `releaseNodeLicenses`, when set, also attaches
+ * releaseNodeUpload(releaseNodeLicenses) to the component release.
  */
-export async function buildProductExport(created: string[], withFacts: boolean): Promise<Built> {
+export async function buildProductExport(created: string[], withFacts: boolean, withLicenses = false,
+    releaseNodeLicenses?: any[]): Promise<Built> {
     async function upload(bom: any, overrides: any): Promise<string> {
         const record = await BomService.addBom({
             bomInput: {
@@ -117,7 +161,7 @@ export async function buildProductExport(created: string[], withFacts: boolean):
 
     async function merge(ids: string[], overrides: any, extra: any): Promise<string> {
         const record = await BomService.mergeAndStoreBoms(ids, {
-            ...createTestRebomOptions({ serialNumber: generateSerialNumber(), group: ORG, mergeVersion: 6, ...overrides }),
+            ...createTestRebomOptions({ serialNumber: generateSerialNumber(), group: ORG, mergeVersion: FACTS_MERGE_VERSION, ...overrides }),
             ...extra
         }, TEST_ORG_UUID, BomService.addBom);
         created.push(record.uuid);
@@ -127,20 +171,22 @@ export async function buildProductExport(created: string[], withFacts: boolean):
     const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
     const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
     const release = await upload(releaseUpload(), { name: 'web', version: '2.0.0', belongsTo: 'RELEASE' });
+    const releaseNodeCopy = releaseNodeLicenses
+        ? await upload(releaseNodeUpload(releaseNodeLicenses), { name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE })
+        : undefined;
 
-    const componentMerge = await merge([sce, deliverable],
-        { name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT' },
-        withFacts ? { releaseNode: { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }] } } : {});
-    const product = await merge([componentMerge, release],
-        { name: 'facts-product', version: '3.0.0', rootComponentMergeMode: 'PRESERVE_UNDER_NEW_ROOT' },
-        withFacts
-            ? { releaseNode: { supplierName: ORG }, missingSbomComponents: [placeholder(true), externalPlaceholder()] }
-            : { missingSbomComponents: [placeholder(false), externalPlaceholder()] });
+    const componentLicence = withLicenses ? { licenseExpression: COMPONENT_LICENSE, licenseUrl: COMPONENT_LICENSE_URL } : {};
+    const componentFacts = withFacts ? { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }] } : {};
+    const componentMerge = await merge(releaseNodeCopy ? [sce, deliverable, releaseNodeCopy] : [sce, deliverable],
+        { name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', mergeVersion: withLicenses ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
+        withFacts || withLicenses ? { releaseNode: { ...componentFacts, ...componentLicence } } : {});
+    const productRequest = productMergeRequest(withFacts, withLicenses ? PRODUCT_LICENSE : undefined);
+    const product = await merge([componentMerge, release], productRequest.overrides, productRequest.extra);
 
     return {
         componentMerge: await BomService.findBomObjectById(componentMerge, TEST_ORG_UUID),
         product: await BomService.findBomObjectById(product, TEST_ORG_UUID),
-        ids: { sce, deliverable, release, componentMerge, product }
+        ids: { sce, deliverable, release, releaseNodeCopy, componentMerge, product }
     };
 }
 

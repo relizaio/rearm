@@ -84,7 +84,11 @@ export type BomHash = {
  */
 export type ReleaseNodeFacts = {
     supplierName?: string | null,
-    hashes?: BomHash[] | null
+    hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null
 }
 
 /**
@@ -101,6 +105,10 @@ export type MissingSbomComponent = {
     group?: string | null,
     purl?: string | null,
     hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null,
     reason: MissingSbomReason
 }
 
