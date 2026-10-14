@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -892,10 +892,6 @@ function withSupplierName(component: any, name: string): any {
   return { ...supplier, name }
 }
 
-/** The `belongsTo` values (rearm-saas enum names) whose reference fills the root. */
-const BELONGS_TO_DELIVERABLE = 'DELIVERABLE'
-const BELONGS_TO_SCE = 'SCE'
-
 /** Algorithms an attachment reference names by prefix, and the hex length each must have. */
 const REFERENCE_PREFIX_ALGS: Record<string, { alg: string, length: number }> = {
   sha1: { alg: 'SHA-1', length: 40 },
@@ -957,12 +953,12 @@ export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | 
   const root = bom?.metadata?.component
   if (!root || typeof root !== 'object' || !meta) return bom
   const supplierName = typeof meta.supplierName === 'string' ? meta.supplierName.trim() : ''
-  const belongsTo = typeof meta.belongsTo === 'string' ? meta.belongsTo.trim().toUpperCase() : ''
+  const belongsTo = normalizeArtifactBelongsTo(meta.belongsTo)
   const reference = typeof meta.hash === 'string' ? meta.hash.trim() : ''
-  const hash = belongsTo === BELONGS_TO_DELIVERABLE ? hashFromReference(reference) : undefined
+  const hash = belongsTo === ArtifactBelongsTo.DELIVERABLE ? hashFromReference(reference) : undefined
   const fillSupplier = supplierName !== '' && !hasSupplierName(root)
   const fillHashes = hash !== undefined && !hasHashes(root)
-  const fillCommit = belongsTo === BELONGS_TO_SCE && reference !== '' && !hasPedigreeCommits(root)
+  const fillCommit = belongsTo === ArtifactBelongsTo.SCE && reference !== '' && !hasPedigreeCommits(root)
   if (!fillSupplier && !fillHashes && !fillCommit) return bom
   const component = { ...root }
   if (fillSupplier) component.supplier = withSupplierName(root, supplierName)
