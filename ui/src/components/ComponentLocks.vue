@@ -123,6 +123,10 @@ const props = withDefaults(defineProps<{
     componentWord?: string
 }>(), { componentWord: 'component' })
 
+// TPF-62: a COMPONENT lock raised or released here writes the component row, which moves its
+// revision by one; the settings page counts its own writes so its next save is not refused.
+const emit = defineEmits<{ (e: 'component-written'): void }>()
+
 const store = useStore()
 const notification = useNotification()
 
@@ -174,6 +178,7 @@ const raise = async () => {
                 unlockLevel: draft.unlockLevel,
                 attestationRequirement: 'NONE'
             })
+            emit('component-written')
         }
         notification.success({ title: 'Locked', content: 'No builds until it is released.', duration: 3500 })
         lockModalOpen.value = false
@@ -199,6 +204,7 @@ const release = async () => {
             reason: releaseDraft.reason,
             override: releaseDraft.override
         })
+        if (releasing.value?.scope === 'COMPONENT') emit('component-written')
         notification.success({ title: 'Released', content: 'Recorded as an attestation.', duration: 3500 })
         releaseModalOpen.value = false
         await load()
