@@ -416,11 +416,23 @@ function hasExpressionEntry(list: any[]): boolean {
 }
 
 /**
+ * SCORE-40 ADR-9: whether a fold that keeps `kept` and drops `dropped` loses an entry, that is
+ * whether `dropped` holds an entry whose licenseKey (expression text, else id, else name) no entry
+ * of `kept` has. A fold line is logged only then: an expression beside the same expression loses
+ * nothing.
+ */
+function losesLicenseEntry(kept: any[], dropped: any[]): boolean {
+  const keys = new Set(kept.map(licenseKey))
+  return dropped.some((entry: any) => !keys.has(licenseKey(entry)))
+}
+
+/**
  * SCORE-40 ADR-6: two `licenses` lists folded into one. Both are normalised first, so a
  * single-id expression counts as an id. An empty or absent survivor list takes the duplicate's
  * whole; when either list holds an `expression` entry the survivor's list stands whole, the same
  * object, and the duplicate's is dropped (CycloneDX 1.6 cannot union an expression with
- * anything); otherwise the two are unioned by expression, id or name, survivor first.
+ * anything), logged when the duplicate held an entry the survivor lacks (ADR-9); otherwise the two
+ * are unioned by expression, id or name, survivor first.
  */
 function unionLicenses(survivor: any, duplicate: any, ref?: string): any {
   if (!Array.isArray(duplicate) || duplicate.length === 0) return survivor
@@ -429,7 +441,9 @@ function unionLicenses(survivor: any, duplicate: any, ref?: string): any {
   const kept = normalizeLicenses(survivor) || []
   const added = normalizeLicenses(duplicate) || []
   if (hasExpressionEntry(kept) || hasExpressionEntry(added)) {
-    logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
+    if (losesLicenseEntry(kept, added)) {
+      logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
+    }
     return survivor
   }
   const union = unionByKey(kept, added, licenseKey)
@@ -1671,7 +1685,9 @@ export function normalizeLicensesInBom(bom: any): any {
  * an `expression` entry: when the first entry (the survivor's) is an expression, the array
  * becomes that one entry; otherwise its `expression` entries are removed and the `license`
  * entries stay in order. Every other value is left as it is, the same object. Changes the
- * document in place, logs each node it changed, and returns the number of nodes changed.
+ * document in place, logs each node it changed, and returns the number of nodes changed. The
+ * arrays it meets are mixed (the CLI never appends an expression), so a settle always loses an
+ * entry the kept list lacks and ADR-9 never withholds its line.
  */
 export function settleLicenseFolds(bom: any): number {
   if (!bom || typeof bom !== 'object') return 0
@@ -1715,8 +1731,9 @@ function mergeBomsLicenseKey(entry: any): string {
  * `license` entries it lacks by id or name are appended and every `expression` entry is skipped.
  * So a folded component whose `licenses` holds an `expression` entry, beside a survivor holding a
  * `licenses` array, loses it: one info line per such component, with the survivor's bom-ref, the
- * survivor's licenses as the CLI holds them at that fold, and the component's. Reads the inputs
- * only and returns the number of lines logged.
+ * survivor's licenses as the CLI holds them at that fold, and the component's, unless that list
+ * already holds the expression by key (ADR-9: nothing is lost). Reads the inputs only and returns
+ * the number of lines logged.
  */
 export function logListedLicenseDrops(bomObjects: any[]): number {
   if (!Array.isArray(bomObjects)) return 0
@@ -1743,7 +1760,8 @@ export function logListedLicenseDrops(bomObjects: any[]): number {
         survivor.licenses = listed
         continue
       }
-      if (listed.some(isExpressionEntry)) {
+      // The CLI drops the listed expression entries; ADR-9: logged only when one is not already kept.
+      if (losesLicenseEntry(survivor.licenses, listed.filter(isExpressionEntry))) {
         logger.info({ bomRef: survivor.bomRef, kept: survivor.licenses, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
         count++
       }

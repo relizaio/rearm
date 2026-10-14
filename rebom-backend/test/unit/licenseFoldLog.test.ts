@@ -7,10 +7,11 @@ import {
 } from '../../src/services/bom/bomProcessingService';
 
 /**
- * SCORE-40 T-13 (ADR-6, ADR-8): every licence a fold drops is named in rebom's log at info, with
- * the bom-ref, the list kept and the entries dropped: the settle of a mixed array, the de-dup
+ * SCORE-40 T-13 (ADR-6, ADR-8, ADR-9): every licence a fold drops is named in rebom's log at info,
+ * with the bom-ref, the list kept and the entries dropped: the settle of a mixed array, the de-dup
  * union beside an expression, and the drop rearm-cli merge-boms performs under FLAT, predicted
- * from the inputs before the CLI runs.
+ * from the inputs before the CLI runs. A fold that loses no entry by key (an expression beside the
+ * same expression) logs nothing.
  */
 
 const SETTLED = 'license fold settled: the survivor licenses stand';
@@ -24,6 +25,7 @@ const L = () => [{ license: { id: 'MIT' } }];
 const L2 = () => [{ license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }];
 const XP = () => [{ expression: 'MIT OR Apache-2.0' }];
 const X2 = () => [{ expression: 'BSD-3-Clause OR MIT' }];
+const N = () => [{ expression: 'NOASSERTION' }];
 
 let info: ReturnType<typeof vi.spyOn>;
 
@@ -107,6 +109,42 @@ describe('the de-dup licence union logs the duplicate it drops (T-13)', () => {
         expect(lines(UNION_KEPT)).toStrictEqual([[{ bomRef: X, kept: L(), dropped: X2() }, UNION_KEPT]]);
     });
 
+    it('survivor ids with a duplicate expression of the design (L, X): one line', () => {
+        foldLicenses(L(), XP());
+
+        expect(lines(UNION_KEPT)).toStrictEqual([[{ bomRef: X, kept: L(), dropped: XP() }, UNION_KEPT]]);
+    });
+
+    it('survivor expression with a different duplicate expression: one line with the kept and the dropped expression (the control, ADR-9)', () => {
+        const survivor = XP();
+
+        const bom = foldLicenses(survivor, X2());
+
+        expect(bom.components[0].licenses).toBe(survivor);
+        expect(lines(UNION_KEPT)).toStrictEqual([[{ bomRef: X, kept: XP(), dropped: X2() }, UNION_KEPT]]);
+    });
+
+    it('survivor expression with a duplicate holding that expression and an id: the id is lost, one line (ADR-9: an entry the kept list lacks)', () => {
+        const duplicate = [...XP(), { license: { id: 'MIT' } }];
+
+        foldLicenses(XP(), duplicate);
+
+        expect(lines(UNION_KEPT)).toStrictEqual([[{ bomRef: X, kept: XP(), dropped: duplicate }, UNION_KEPT]]);
+    });
+
+    const IDENTICAL: [string, () => any[]][] = [['MIT OR Apache-2.0', XP], ['NOASSERTION', N]];
+    for (const [label, list] of IDENTICAL) {
+        it(`survivor ${label} with the same duplicate expression: the survivor list stands, the same array, and no licence line (ADR-9)`, () => {
+            const survivor = list();
+
+            const bom = foldLicenses(survivor, list());
+
+            expect(bom.components[0].licenses).toBe(survivor);
+            expect(survivor).toStrictEqual(list());
+            expect(info.mock.calls.filter((call: any[]) => JSON.stringify(call).includes('licen'))).toStrictEqual([]);
+        });
+    }
+
     it('two license lists unioned: no licence line', () => {
         const bom = foldLicenses(L(), L2());
 
@@ -175,7 +213,27 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
         expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: L2(), dropped: X2() }, LISTED_DROP]]);
     });
 
+    it('a root with ids, a listing with more ids, then a listing with an expression: the line keeps the union merge-boms holds by then (round 4, A08)', () => {
+        expect(run([rooted('one', L()), listing(listedOne(L2())), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([[{
+            bomRef: ONE,
+            kept: [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }],
+            dropped: X2()
+        }, LISTED_DROP]]);
+    });
+
+    it('a root with an expression and a listing with a different expression: one line (the control for ADR-9)', () => {
+        expect(run([rooted('one', XP()), listing(listedOne(X2()))])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: XP(), dropped: X2() }, LISTED_DROP]]);
+    });
+
     const QUIET: [string, () => any[]][] = [
+        ['a listing with the root\'s own expression (ADR-9: nothing is lost)', () => [rooted('one', XP()), listing(listedOne(XP()))]],
+        ['a listing with NOASSERTION beside a root with NOASSERTION (ADR-9: nothing is lost)', () => [rooted('one', N()), listing(listedOne(N()))]],
+        ['a listing with the root\'s expression after a listing with ids was appended to it (ADR-9: the tracked list holds it; the settle logs the ids)',
+            () => [rooted('one', XP()), listing(listedOne(L2())), rooted('three', undefined, [listedOne(XP())])]],
         ['a listing with ids (a union, nothing dropped)', () => [rooted('one', L()), listing(listedOne(L2()))]],
         ['a root without licenses (the listing is copied whole)', () => [rooted('one'), listing(listedOne(X2()))]],
         ['a root with an expression and a listing with ids (the settle\'s case)', () => [rooted('one', XP()), listing(listedOne(L2()))]],
@@ -183,6 +241,9 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
             rooted('two', undefined, [{ type: 'library', name: 'mid', version: '1.0.0', purl: 'pkg:npm/mid@1.0.0', 'bom-ref': 'pkg:npm/mid@1.0.0', components: [listedOne(X2())] }])]],
         ['a listing whose purl differs from the root\'s (different keys)', () => [rooted('one', L()),
             listing({ type: 'library', name: 'one', version: '2.0.0', purl: 'pkg:npm/one@2.0.0', 'bom-ref': ONE, licenses: X2() })]],
+        ['components with neither purl nor bom-ref (merge-boms drops them, no fold)', () => [
+            rooted('app', undefined, [{ type: 'library', name: 'nokey', version: '1', licenses: L() }]),
+            rooted('three', undefined, [{ type: 'library', name: 'nokey', version: '1', licenses: X2() }])]],
         ['a listing without a licenses array', () => [rooted('one', L()), listing({ type: 'library', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': ONE })]]
     ];
     for (const [label, inputs] of QUIET) {

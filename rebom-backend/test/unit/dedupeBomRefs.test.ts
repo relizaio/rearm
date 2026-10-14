@@ -1,4 +1,5 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { logger } from '../../src/logger';
 import {
     dedupeBomRefs,
     BOM_REFS_DEDUPLICATED_PROPERTY
@@ -360,11 +361,22 @@ describe('dedupeBomRefs', () => {
 
     /**
      * SCORE-40 T-9 (ADR-6): the fold matrix. A licenses array stays homogeneous: an absent or empty
-     * survivor list takes the duplicate's whole; when either list holds an expression entry the
+     * survivor list takes the duplicate's whole (here, where dedupeBomRefs folds, an empty list is
+     * absent; merge-boms holds it, design T-10); when either list holds an expression entry the
      * survivor's list stands whole, the same object; otherwise the two license lists are unioned by
      * id or name, survivor first. One case per pair of survivor and duplicate kind.
      */
     describe('licence fold matrix (SCORE-40 T-9)', () => {
+        let info: ReturnType<typeof vi.spyOn>;
+
+        beforeEach(() => {
+            info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+        });
+
+        afterEach(() => {
+            info.mockRestore();
+        });
+
         // The design's values, a fresh copy on every call (the X of the design, not the bom-ref constant X).
         const LISTS: Record<string, () => any[] | undefined> = {
             absent: () => undefined,
@@ -383,6 +395,10 @@ describe('dedupeBomRefs', () => {
             ['absent', 'X2', list('X2'), false],
             ['absent', 'N', list('N'), false],
             ['[]', 'L2', list('L2'), false],
+            // SCORE-40 round 4 (ADR-6 line 1): where dedupeBomRefs folds, an empty survivor list is absent
+            ['[]', 'X2', list('X2'), false],
+            ['[]', 'N', list('N'), false],
+            ['[]', 'absent', [], true],
             ['L', 'absent', list('L'), true],
             ['L', '[]', list('L'), true],
             ['L', 'L2', [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }], false],
@@ -402,6 +418,10 @@ describe('dedupeBomRefs', () => {
             it(`survivor ${survivor}, duplicate ${duplicate}: ${expected === undefined ? 'no licenses key' : JSON.stringify(expected)}${same ? ', the same array' : ''}`, async () => {
                 const { bom, survivorList } = foldLicenses(LISTS[survivor](), LISTS[duplicate]());
                 const folded = bom.components[0];
+                // an empty survivor loses nothing here: no licence line (ADR-6 line 1, ADR-9)
+                if (survivor === '[]') {
+                    expect(info.mock.calls.filter((call: any[]) => JSON.stringify(call).includes('licen'))).toStrictEqual([]);
+                }
 
                 if (expected === undefined) {
                     expect(folded).not.toHaveProperty('licenses');

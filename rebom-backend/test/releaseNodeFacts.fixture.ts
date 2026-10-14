@@ -238,10 +238,12 @@ export type ListingProducts = {
  * the SCE and deliverable uploads, uploads releaseNodeListing(listingLicenses, nested), then merges the
  * product (PRESERVE, the product facts of productMergeRequest with PRODUCT_LICENSE) over the
  * component merge and the listing in both input orders: once in memory (BomService.mergeBoms,
- * the shape before any store normalisation) and once stored and served.
+ * the shape before any store normalisation) and once stored and served. `releaseNodeLicenses`,
+ * when set (round 4), replaces the component merge by an upload of
+ * releaseNodeUpload(releaseNodeLicenses), whose root is the release node itself (`declared` unused).
  */
 export async function buildListingProducts(created: string[], declared: DeclaredLicence | undefined,
-    listingLicenses: any[] | undefined, nested = false): Promise<ListingProducts> {
+    listingLicenses: any[] | undefined, nested = false, releaseNodeLicenses?: any[]): Promise<ListingProducts> {
     async function upload(bom: any, overrides: any): Promise<string> {
         const record = await BomService.addBom({
             bomInput: {
@@ -259,13 +261,21 @@ export async function buildListingProducts(created: string[], declared: Declared
         ...extra
     });
 
-    const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
-    const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
-    const component = await BomService.mergeAndStoreBoms([sce, deliverable],
-        options({ name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', mergeVersion: declared ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
-            { releaseNode: { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }], ...(declared || {}) } }),
-        TEST_ORG_UUID, BomService.addBom);
-    created.push(component.uuid);
+    async function releaseNodeInput(): Promise<string> {
+        if (releaseNodeLicenses !== undefined) {
+            return upload(releaseNodeUpload(releaseNodeLicenses), { name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE });
+        }
+        const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
+        const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
+        const merged = await BomService.mergeAndStoreBoms([sce, deliverable],
+            options({ name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', mergeVersion: declared ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
+                { releaseNode: { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }], ...(declared || {}) } }),
+            TEST_ORG_UUID, BomService.addBom);
+        created.push(merged.uuid);
+        return merged.uuid;
+    }
+
+    const component = await releaseNodeInput();
     const listing = await upload(releaseNodeListing(listingLicenses, nested), { name: 'web-app', version: '2.0.0', purl: LISTING_ROOT });
 
     const productOptions = () => {
@@ -274,7 +284,7 @@ export async function buildListingProducts(created: string[], declared: Declared
     };
     const merged: any[] = [];
     const stored: any[] = [];
-    for (const ids of [[component.uuid, listing], [listing, component.uuid]]) {
+    for (const ids of [[component, listing], [listing, component]]) {
         merged.push(await BomService.mergeBoms(ids, productOptions(), TEST_ORG_UUID));
         const record = await BomService.mergeAndStoreBoms(ids, productOptions(), TEST_ORG_UUID, BomService.addBom);
         created.push(record.uuid);

@@ -17,6 +17,7 @@ import validateBom from '../../src/validateBom';
 import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { TEST_ORG_UUID, createTestRebomOptions } from '../helpers';
+import { logger } from '../../src/logger';
 import {
     ORG, COMMIT, UPLOAD_DIGEST, RELEASE_DIGEST, PLACEHOLDER_DIGEST, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF,
     SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
@@ -420,6 +421,70 @@ describe('a product merge folds the release node with a listing nested under ano
                 expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
                 expect(node(product, LISTING_ROOT), where).toBeDefined();
                 expect(node(product, LISTING_MID), where).toBeDefined();
+                await expect(validateBom(product), where).resolves.toBeTruthy();
+            }
+        });
+    }
+});
+
+const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
+const FOLD_LINES = [
+    LISTED_DROP,
+    'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand',
+    'license fold settled: the survivor licenses stand'
+];
+
+/**
+ * SCORE-40 (T-10, ADR-6 line 1 as round 4 states it, ADR-8): an empty licences list on the release
+ * node, an uploaded root of the product merge, beside a listing of its purl with an expression.
+ * Where merge-boms folds (the listing at the top level) `[]` is held: the expression is dropped and
+ * ADR-8 logs it. Where dedupeBomRefs folds (the listing nested) `[]` is absent: the node takes the
+ * listing whole and nothing is logged. Real `rearm bomutils merge-boms`, in memory and stored.
+ */
+describe('a product merge folds a release node with an empty licences list and a listing of its purl', () => {
+    const created: string[] = [];
+    const X2 = [{ expression: 'BSD-3-Clause OR MIT' }];
+    let info: ReturnType<typeof vi.spyOn>;
+
+    beforeEach(() => {
+        clearMockOciStorage();
+        info = vi.spyOn(logger, 'info');
+    });
+
+    afterEach(async () => {
+        info.mockRestore();
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    /** The fold lines the info spy saw. */
+    function foldLines(): any[][] {
+        return info.mock.calls.filter((call: any[]) => FOLD_LINES.includes(call[1]));
+    }
+
+    // [layout, nested, the release node's licenses in the product, the fold lines over the four merges]
+    const CASES: [string, boolean, any[], () => any[][]][] = [
+        ['top level, merge-boms holds [] and drops the expression, logged', false, [],
+            () => Array(4).fill([{ bomRef: RELEASE_NODE, kept: [], dropped: X2 }, LISTED_DROP])],
+        ['nested, the de-dup reads [] as absent and takes the listing, nothing logged', true, X2, () => []]
+    ];
+
+    for (const [label, nested, expected, lines] of CASES) {
+        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+            const { merged, stored } = await buildListingProducts(created, undefined, X2, nested, []);
+
+            // one ADR-8 line per product merge on the top level (two in memory, two stored), none nested
+            expect(foldLines()).toStrictEqual(lines());
+            const products = [['merged, release node first', merged[0]], ['merged, listing first', merged[1]],
+                ['stored, release node first', stored[0]], ['stored, listing first', stored[1]]];
+            for (const [where, product] of products) {
+                expect(carrying(product, RELEASE_NODE), where).toHaveLength(1);
+                expect(node(product, RELEASE_NODE).licenses, where).toStrictEqual(expected);
+                expect(product.metadata.component.purl, where).toBe(PRODUCT_ROOT);
+                expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
+                expect(node(product, LISTING_ROOT), where).toBeDefined();
                 await expect(validateBom(product), where).resolves.toBeTruthy();
             }
         });

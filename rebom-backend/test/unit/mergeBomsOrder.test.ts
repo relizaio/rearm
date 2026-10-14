@@ -297,6 +297,34 @@ describe('mergeBoms: the expression merge-boms drops is logged before it runs', 
         }
     });
 
+    // merge-boms runs FLAT for every structure but HIERARCHICAL (merge_boms.go compares with "HIERARCHICAL"
+    // alone); rebom passes FLAT when the option is unset. [case, structure, the --structure merge-boms gets]
+    const NOT_HIERARCHICAL: [string, string | undefined, string][] = [
+        ['unset', undefined, BomStructure.FLAT],
+        ['hierarchical in lower case', 'hierarchical', 'hierarchical']
+    ];
+    for (const [label, structure, flag] of NOT_HIERARCHICAL) {
+        it(`logs the same line, before merge-boms runs, when the structure is ${label} (T-11, round 4)`, async () => {
+            const info = vi.spyOn(logger, 'info');
+            try {
+                await expect(mergeBoms(['one', 'two'], options({ structure }), 'org')).resolves.toBeDefined();
+
+                const drops = info.mock.calls.map((call, i) => ({ call, order: info.mock.invocationCallOrder[i] }))
+                    .filter(({ call }) => call[1] === LISTED_DROP);
+                expect(drops.map(d => d.call)).toStrictEqual([
+                    [{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }], dropped: [{ expression: 'BSD-3-Clause OR MIT' }] }, LISTED_DROP]
+                ]);
+                expect(shellExec).toHaveBeenCalledTimes(1);
+                const command: string[] = shellExec.mock.calls[0][1];
+                const at = command.indexOf('--structure');
+                expect(command.slice(at, at + 2)).toStrictEqual(['--structure', flag]);
+                expect(drops[0].order).toBeLessThan(shellExec.mock.invocationCallOrder[0]);
+            } finally {
+                info.mockRestore();
+            }
+        });
+    }
+
     it('logs no such line under HIERARCHICAL (T-11)', async () => {
         const info = vi.spyOn(logger, 'info');
         try {
