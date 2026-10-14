@@ -447,4 +447,57 @@ describe('dedupeBomRefs', () => {
             { license: { id: 'MIT', 'bom-ref': 'lic-1' } }
         ]);
     });
+
+    it('unions a declared and a concluded license and two bom-refs with one id, per version (TPF-56)', () => {
+        const v16 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT', acknowledgement: 'declared' } }] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+            ] })] })
+        ])).bom;
+        const v15 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT', 'bom-ref': 'lic-a' } }] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { id: 'MIT', 'bom-ref': 'lic-b' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-a' } }
+            ] })] })
+        ], { specVersion: '1.5' })).bom;
+        const v14 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT' } }] }),
+            lib('A', { components: [lib('L', { licenses: [{ license: { id: 'MIT', 'bom-ref': 'lic-b' } }] })] })
+        ], { specVersion: '1.4' })).bom;
+
+        expect(v16.components[0].licenses).toStrictEqual([
+            { license: { id: 'MIT', acknowledgement: 'declared' } },
+            { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+        ]);
+        expect(v15.components[0].licenses).toStrictEqual([
+            { license: { id: 'MIT', 'bom-ref': 'lic-a' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+        ]);
+        expect(v14.components[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+    });
+
+    it('unions a named license by acknowledgement and still folds a repeated expression (TPF-56)', () => {
+        const components = [
+            lib('L', { licenses: [
+                { license: { name: 'Custom', acknowledgement: 'declared' } },
+                { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' }
+            ] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { name: 'Custom', acknowledgement: 'concluded' } },
+                { expression: 'MIT OR Apache-2.0', acknowledgement: 'concluded' }
+            ] })] })
+        ];
+        const { bom } = dedupeBomRefs(doc(components));
+
+        expect(bom.components[0].licenses).toStrictEqual([
+            { license: { name: 'Custom', acknowledgement: 'declared' } },
+            { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' },
+            { license: { name: 'Custom', acknowledgement: 'concluded' } }
+        ]);
+    });
 });
