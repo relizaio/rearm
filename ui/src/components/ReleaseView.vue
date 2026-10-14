@@ -246,7 +246,7 @@
                                         <QuestionCircle20Regular />
                                     </n-icon>
                                 </template>
-                                Keeps ReARM's own markers (reliza:* properties other than support) in the export; off removes them. With either setting, what your SBOM generator wrote, build paths included, is exported as uploaded, and metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
+                                Keeps ReARM's own markers (reliza:* properties other than support) in the export; off removes them. The signing record (reliza:export:signed) stays: it describes the file. With either setting, what your SBOM generator wrote, build paths included, is exported as uploaded, and metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
                             </n-tooltip>
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
@@ -372,6 +372,8 @@
                             </n-button>
                         </n-spin>
                     </n-space>
+                    <!-- SCORE-35: whether the file just exported is signed, read from that file. -->
+                    <div v-if="exportSigningLine" data-testid="export-signing-status" style="font-size: 12px; margin-top: 6px; max-width: 620px;">{{ exportSigningLine }}</div>
                 </n-form>
                 <n-form v-if="exportBomType === 'OBOM'">
                     <h3>Format: CycloneDX 1.6 (JSON)</h3>
@@ -2224,6 +2226,8 @@ import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
 import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import { useReleaseSbomScore } from '@/utils/useReleaseSbomScore'
+import { exportSigningLine as signingLineFor, signatureStatus } from '@/utils/sbomSigning'
+import type { ExportMediaType, SignedStatus } from '@/utils/sbomSigning'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, X } from '@vicons/tabler'
@@ -3513,6 +3517,8 @@ function openExportModal () {
     fileComponentsSwitch.reset()
     // A reopened dialog starts without a score: the last one may be of other options.
     releaseSbomScore.reset()
+    // Nor a signing line: it describes a file this dialog exported, and none is exported yet.
+    lastExportSigning.value = null
     // The switch follows the release organization's export state; ask for it now when neither
     // the SBOM list nor the Support tab has yet. Not awaited: the dialog opens in the checking
     // state and flips when the answer lands.
@@ -6050,6 +6056,13 @@ const releaseSbomScoreOptionsChanged = releaseSbomScore.optionsChanged
 const releaseSbomScoreButtonDisabled = releaseSbomScore.buttonDisabled
 const scoreReleaseSbom = releaseSbomScore.score
 
+// SCORE-35: whether the last exported file is signed, read from the file itself (design 3.5).
+// Null until this dialog exports: before an export the dialog says nothing about signing.
+const lastExportSigning: Ref<SignedStatus | null> = ref(null)
+const lastExportMediaType: Ref<ExportMediaType> = ref('JSON')
+const exportSigningLine: ComputedRef<string | null> = computed((): string | null =>
+    lastExportSigning.value ? signingLineFor(lastExportSigning.value, lastExportMediaType.value) : null)
+
 async function loadReleaseSbomScore (signal: AbortSignal): Promise<string> {
     const resp: any = await graphqlClient.query({
         query: graphqlQueries.ReleaseSbomScoreGql,
@@ -6096,6 +6109,8 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
     // their own handler (exportSupportDocument), so nothing can reach here asking for one.
     // Keeping unreachable redirects would leave two entry points for one document and invite
     // the next reader to add a third.
+    // The signing line describes the file of this export, so the last one's goes first.
+    lastExportSigning.value = null
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
@@ -6141,6 +6156,10 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const gqlResp: any = attempt.data
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
+        // SCORE-35: the status line reads the document received, before any re-serialisation.
+        // CSV and EXCEL carry no stamp; the line says signing applies to JSON only.
+        lastExportMediaType.value = mediaType as ExportMediaType
+        lastExportSigning.value = mediaType === 'JSON' ? signatureStatus(exportContent) : { kind: 'UNSTAMPED' }
         if (mediaType === 'JSON') {
             if (typeof exportContent !== 'string') {
                 exportContent = JSON.stringify(exportContent, null, 2)

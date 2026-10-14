@@ -89,6 +89,14 @@ The `fda` support checks (level of support and end of support) do not judge file
 assets, data, machine-learning models or devices: those components are not software packages a
 supplier supports, and the report says how many it skipped.
 
+### Signing the export
+
+When the organization has an SBOM signing key, every CycloneDX JSON export is signed with it: the
+document carries a root JSF `signature` and the property `reliza:export:signed` `true`; without a
+key it says `false` and why, in `reliza:export:unsignedReason`. After an export the dialog shows
+one line saying whether the file you received is signed, and CSV and Excel exports carry no
+signature. See [Signing exported SBOMs](./signing-exported-sboms).
+
 ## Per-export metadata options
 
 One release is often the source of two documents with opposite requirements. An FDA premarket
@@ -184,6 +192,11 @@ not complete.
 the components that stand for component releases ReARM holds no SBOM for, and count them (see
 [Component releases without an SBOM](#component-releases-without-an-sbom)). Without them a reader
 could not tell a release without an SBOM from one whose SBOM lists nothing.
+
+**Not removed either: the signing record.** `reliza:export:signed`, with
+`reliza:export:signatureKeyId` on a signed export or `reliza:export:unsignedReason` on an unsigned
+one, says whether the file is signed (see [Signing exported SBOMs](./signing-exported-sboms)). It
+is part of the signed content and describes the document you hold, so it stays with either setting.
 
 **With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends
