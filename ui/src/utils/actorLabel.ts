@@ -30,13 +30,3 @@ export function releaseActorLabel (uuid: string | null | undefined, createdType:
     if (createdType === 'API' && (users || []).length) return apiKeyLabelOf(uuid, keys)
     return uuid
 }
-
-/**
- * The org's keys for labelling key actors in a history. The server lets only an org admin (or a global admin)
- * list them, so anyone else gets [] without a request. A failed read is [] too. Each caller keeps its own guard
- * against loading the same org twice.
- */
-export async function loadOrgKeyRefs (store: any, orgUuid: string | null | undefined, isAdmin: boolean): Promise<any[]> {
-    if (!orgUuid || !isAdmin) return []
-    return (await store.dispatch('fetchApiKeyRefsOfOrg', orgUuid)) || []
-}

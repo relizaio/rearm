@@ -200,7 +200,8 @@ import VulnerabilityModal from './VulnerabilityModal.vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import { loadOrgKeyRefs, releaseActorLabel } from '@/utils/actorLabel'
+import { releaseActorLabel } from '@/utils/actorLabel'
+import { useOrgKeyRefs } from '@/utils/useOrgKeyRefs'
 import constants from '@/utils/constants'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -359,9 +360,7 @@ const words: Ref<any> = ref({})
 const marketingReleaseLifecycles: Ref<any[]> = ref([])
 const users: Ref<any[]> = ref([])
 // the org's keys, so a key that released reads as a key label; loaded with the users, for admins only
-const orgKeys: Ref<any[]> = ref([])
-// the org orgKeys holds, or is being loaded for; empty when there is nothing to keep
-const orgKeysOrg = ref('')
+const { orgKeys, load: loadOrgKeyRefs } = useOrgKeyRefs((org) => store.dispatch('fetchApiKeyRefsOfOrg', org))
 
 const marketingReleaseLifecyclesOptions: ComputedRef<SelectOption[]> = computed(() => {
     return marketingReleaseLifecycles.value.map((lifecycle: any) => ({
@@ -576,17 +575,7 @@ async function loadUsers() {
 }
 
 async function loadOrgKeys() {
-    const orgUuid = marketingRelease.value?.orgDetails?.uuid
-    if (!orgUuid || orgKeysOrg.value === orgUuid) return
-    // checked on every load until it holds: permissions may not have loaded on the first one
-    const isAdmin = userPermission.value === 'ADMIN' || !!store.getters.myuser?.isGlobalAdmin
-    if (!isAdmin) return
-    orgKeysOrg.value = orgUuid
-    const keys = await loadOrgKeyRefs(store, orgUuid, isAdmin)
-    if (orgKeysOrg.value !== orgUuid) return
-    orgKeys.value = keys
-    // nothing back (a failed read, or an org without keys): ask again on the next load
-    if (!keys.length) orgKeysOrg.value = ''
+    await loadOrgKeyRefs(marketingRelease.value?.orgDetails?.uuid, isAdmin.value || !!store.getters.myuser?.isGlobalAdmin)
 }
 
 function handleTabChange(tabName: string) {

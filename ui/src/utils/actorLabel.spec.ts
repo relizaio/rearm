@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { loadOrgKeyRefs, releaseActorLabel } from './actorLabel'
+import { releaseActorLabel } from './actorLabel'
 
 const DOT = ' \u00B7 '
 const KEY = '77781336-0000-4000-8000-000000000001'
@@ -53,35 +53,11 @@ describe('releaseActorLabel', () => {
         expect(releaseActorLabel('', 'MANUAL', USERS, KEYS)).toBe('')
         expect(releaseActorLabel(null, 'MANUAL', USERS, KEYS)).toBe('')
     })
-})
 
-describe('releaseActorLabel with the other update types of a history row', () => {
     it('names a known person and keeps the uuid of an unknown actor on MANUAL_AND_AUTO and TEST', () => {
         for (const updateType of ['MANUAL_AND_AUTO', 'TEST']) {
             expect(releaseActorLabel('u-1', updateType, USERS, KEYS)).toBe('Ada <ada@example.com>')
             expect(releaseActorLabel(OTHER, updateType, USERS, KEYS)).toBe(OTHER)
         }
-    })
-})
-
-describe('loadOrgKeyRefs', () => {
-    const store = (keys: any) => {
-        const calls: any[] = []
-        return { calls, dispatch: async (action: string, org: string) => { calls.push([action, org]); return keys } }
-    }
-
-    it('asks for an admin only', async () => {
-        const s = store(KEYS)
-        expect(await loadOrgKeyRefs(s, 'org-1', false)).toEqual([])
-        expect(s.calls).toEqual([])
-        expect(await loadOrgKeyRefs(s, 'org-1', true)).toEqual(KEYS)
-        expect(s.calls).toEqual([['fetchApiKeyRefsOfOrg', 'org-1']])
-    })
-
-    it('answers [] without an org or when nothing comes back', async () => {
-        const s = store(undefined)
-        expect(await loadOrgKeyRefs(s, '', true)).toEqual([])
-        expect(s.calls).toEqual([])
-        expect(await loadOrgKeyRefs(s, 'org-1', true)).toEqual([])
     })
 })
