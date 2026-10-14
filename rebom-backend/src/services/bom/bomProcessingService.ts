@@ -398,15 +398,33 @@ function unionByKey(survivor: any, duplicate: any, keyOf: (entry: any) => string
   return added.length ? [...survivor, ...added] : survivor
 }
 
-function licenseKey(entry: any): string {
+/**
+ * The license-object fields that make two entries with one id (or name) different entries of a list, per CycloneDX
+ * version: `bom-ref` from 1.5, `acknowledgement` from 1.6 (TPF-56 architecture 3.2). The same rows as
+ * EXPRESSION_FIELDS_KEPT_ON_LICENSE today, kept apart on purpose: that list may grow (TPF-55 5.3), this one must not.
+ */
+const LICENSE_DISTINGUISHING_FIELDS = new Map<string, readonly string[]>([
+  ['1.5', ['bom-ref']],
+  ['1.6', ['acknowledgement', 'bom-ref']],
+  ['1.7', ['acknowledgement', 'bom-ref']],
+]);
+
+/** `<acknowledgement>\u0000<bom-ref>` of a license object; a part is blank unless the version defines the field and the value is a string. */
+function licenseDiscriminator(license: any, specVersion?: string): string {
+  const fields = typeof specVersion === 'string' ? LICENSE_DISTINGUISHING_FIELDS.get(specVersion) : undefined;
+  const part = (field: string) => (fields?.includes(field) && typeof license?.[field] === 'string') ? license[field] : '';
+  return `${part('acknowledgement')}\u0000${part('bom-ref')}`;
+}
+
+function licenseKey(entry: any, specVersion?: string): string {
   if (typeof entry?.expression === 'string') return `expression:${entry.expression}`
-  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}`
-  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}`
+  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}\u0000${licenseDiscriminator(entry.license, specVersion)}`
+  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}\u0000${licenseDiscriminator(entry.license, specVersion)}`
   return `json:${JSON.stringify(entry)}`
 }
 
 const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, specVersion?: string) => any> = {
-  licenses: (s, d, v) => unionByKey(s, d, licenseKey, (list) => normalizeLicenses(list, v) || []),
+  licenses: (s, d, v) => unionByKey(s, d, (e) => licenseKey(e, v), (list) => normalizeLicenses(list, v) || []),
   hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
   externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
   properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
@@ -1287,8 +1305,11 @@ export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, l
  *
  * Convert any expression that resolves to a known SPDX id via fixupSpdxId
  * (retried with whitespace-to-dash for the npm variant) into a license
- * object, then dedupe by `license.id`. The rewritten license object keeps the
- * expression entry's fields that the CycloneDX schema of the BOM's version
+ * object, then drop an entry whose id, acknowledgement and bom-ref (the
+ * latter two where the BOM's version defines them; see
+ * LICENSE_DISTINGUISHING_FIELDS) repeat an earlier entry's. The rewritten
+ * license object keeps the expression entry's fields that the CycloneDX
+ * schema of the BOM's version
  * (`specVersion`) defines the same way on both objects, with a value that
  * schema accepts (`bom-ref` from 1.5, `acknowledgement` from 1.6; see
  * EXPRESSION_FIELDS_KEPT_ON_LICENSE), and drops the rest; with no version or
@@ -1354,13 +1375,13 @@ export function normalizeLicenses(licenses: any, specVersion?: string): any[] | 
     return entry;
   });
 
-  const seenIds = new Set<string>();
+  const seen = new Set<string>();
   const out: any[] = [];
   for (const entry of converted) {
-    const id = entry?.license?.id;
-    if (typeof id === 'string') {
-      if (seenIds.has(id)) continue;
-      seenIds.add(id);
+    if (typeof entry?.license?.id === 'string') {
+      const key = licenseKey(entry, specVersion);
+      if (seen.has(key)) continue;
+      seen.add(key);
     }
     out.push(entry);
   }

@@ -804,5 +804,130 @@ describe('BOM Processing Service - Unit Tests', () => {
                 [{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
             await expect(validateBom(bom)).resolves.toBe(true);
         });
+
+        it('keeps a declared and a concluded license with one id in 1.6 and 1.7 (TPF-56)', () => {
+            for (const v of ['1.6', '1.7']) {
+                const out = BomProcessingService.normalizeLicenses([
+                    { license: { id: 'MIT', acknowledgement: 'declared' } },
+                    { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                ], v);
+                expect(out).toStrictEqual([
+                    { license: { id: 'MIT', acknowledgement: 'declared' } },
+                    { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                ]);
+            }
+        });
+
+        it('still collapses exact duplicates, after canonicalising the id (TPF-56)', () => {
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                { license: { id: 'mit', acknowledgement: 'concluded' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ], '1.6')).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded' } }]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT' } },
+            ], '1.6')).toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('keeps two entries with one id and different bom-refs in 1.5 and 1.6 (TPF-56)', () => {
+            for (const v of ['1.6', '1.5']) {
+                const out = BomProcessingService.normalizeLicenses([
+                    { license: { id: 'MIT', 'bom-ref': 'lic-a' } },
+                    { license: { id: 'MIT', 'bom-ref': 'lic-b' } },
+                ], v);
+                expect(out).toStrictEqual([
+                    { license: { id: 'MIT', 'bom-ref': 'lic-a' } },
+                    { license: { id: 'MIT', 'bom-ref': 'lic-b' } },
+                ]);
+            }
+        });
+
+        it('keys by id alone where the version does not define the field, with no version or an unknown one (TPF-56)', () => {
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ], '1.5')).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'declared' } }]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', 'bom-ref': 'lic-a' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-b' } },
+            ], '1.4')).toStrictEqual([{ license: { id: 'MIT', 'bom-ref': 'lic-a' } }]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ])).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'declared' } }]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ], '2.0')).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'declared' } }]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT' } },
+            ], '1.4')).toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('keeps a bare entry and an acknowledged one with the same id (TPF-56)', () => {
+            const out = BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ], '1.6');
+            expect(out).toStrictEqual([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            ]);
+        });
+
+        it('still never collapses name and expression entries (TPF-56)', () => {
+            const out = BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                { license: { name: 'Custom EULA' } },
+                { license: { name: 'Custom EULA' } },
+                { expression: 'MIT OR Apache-2.0' },
+            ], '1.6');
+            expect(out).toStrictEqual([
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                { license: { name: 'Custom EULA' } },
+                { license: { name: 'Custom EULA' } },
+                { expression: 'MIT OR Apache-2.0' },
+            ]);
+        });
+
+        it('keeps a rewritten expression whose bom-ref differs from its native sibling, per version (TPF-56)', () => {
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { expression: 'MIT', 'bom-ref': 'lic-1' },
+            ], '1.6')).toStrictEqual([
+                { license: { id: 'MIT' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-1' } },
+            ]);
+            expect(BomProcessingService.normalizeLicenses([
+                { license: { id: 'MIT' } },
+                { expression: 'MIT', 'bom-ref': 'lic-1' },
+            ], '1.4')).toStrictEqual([{ license: { id: 'MIT' } }]);
+        });
+
+        it('keeps lists that are valid for their version when entries share an id (TPF-56)', async () => {
+            const validateBom = (await import('../../src/validateBom')).default;
+            for (const v of ['1.5', '1.6']) {
+                const lists: Record<string, any[]> = {
+                    '1.5': [{ license: { id: 'MIT', 'bom-ref': 'lic-a' } }, { license: { id: 'MIT', 'bom-ref': 'lic-b' } }],
+                    '1.6': [{ license: { id: 'MIT', acknowledgement: 'declared' } }, { license: { id: 'MIT', acknowledgement: 'concluded' } }],
+                };
+                const bom: any = {
+                    bomFormat: 'CycloneDX', specVersion: v, serialNumber: 'urn:uuid:c1c0e0e0-0000-0000-0000-000000000000', version: 1,
+                    metadata: { timestamp: '2026-05-11T00:00:00Z' },
+                    components: [{ type: 'library', name: 'tpf56-lib', version: '1.0.0', 'bom-ref': 'pkg:npm/tpf56-lib@1.0.0', licenses: lists[v] }],
+                };
+                BomProcessingService.normalizeLicensesInBom(bom);
+                const expected: Record<string, any[]> = {
+                    '1.5': [{ license: { id: 'MIT', 'bom-ref': 'lic-a' } }, { license: { id: 'MIT', 'bom-ref': 'lic-b' } }],
+                    '1.6': [{ license: { id: 'MIT', acknowledgement: 'declared' } }, { license: { id: 'MIT', acknowledgement: 'concluded' } }],
+                };
+                expect(bom.components[0].licenses).toStrictEqual(expected[v]);
+                await expect(validateBom(bom)).resolves.toBe(true);
+            }
+        });
     });
 });
