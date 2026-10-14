@@ -173,7 +173,7 @@ const parsedHistory: ComputedRef<any[]> = computed((): any[] => ((props.history 
         uuid: h.uuid,
         revision: h.revision,
         date: dateField ? (new Date(dateField)).toLocaleString('en-CA') : '',
-        updatedBy: releaseActorLabel(updatedByUuid, updateType, users.value, orgKeys.value) || updateType || 'system',
+        updatedBy: releaseActorLabel(updatedByUuid, updateType, users.value, orgKeys.value) || updateType || 'System',
         updatedByUuid,
         type: formatChangeType(h.changeType || h.type)
     }
@@ -182,7 +182,9 @@ const parsedHistory: ComputedRef<any[]> = computed((): any[] => ((props.history 
 const onCreate = function () {
     const org = props.orgProp as string
     const myuser = store.getters.myuser
-    // not awaited: the rows show at once and relabel when the users and keys arrive
+    // not awaited: the rows show at once and relabel when the users and keys arrive; the store's users, the
+    // org's when this sits in the instances page, name people meanwhile
+    users.value = store.getters.allUsers || []
     store.dispatch('fetchUsers', org).then((fetched: any[]) => { users.value = fetched || [] }).catch((err: any) => console.error(err))
     loadOrgKeys(org, commonFunctions.isAdmin(org, myuser) || !!myuser?.isGlobalAdmin)
 }

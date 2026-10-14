@@ -11,7 +11,7 @@ const ORG = 'org-1'
 const KEY = '77781336-0000-4000-8000-000000000001'
 const DOT = ' \u00B7 '
 const dispatch = vi.fn()
-const getters: any = { myuser: null, instanceById: () => ({}) }
+const getters: any = { myuser: null, allUsers: [], instanceById: () => ({}) }
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters }) }))
 vi.mock('@/utils/commonFunctions', () => ({
     default: {
@@ -41,6 +41,7 @@ describe('InstanceHistory updated by', () => {
     beforeEach(() => {
         dispatch.mockReset()
         getters.myuser = { isGlobalAdmin: true }
+        getters.allUsers = []
     })
 
     it('shows the rows before the users and keys arrive, then relabels them', async () => {
@@ -67,5 +68,34 @@ describe('InstanceHistory updated by', () => {
         await flushPromises()
         expect(dispatch).not.toHaveBeenCalledWith('fetchApiKeyRefsOfOrg', ORG)
         expect(updatedBy(w)[0]).toBe('Key' + DOT + '77781336')
+    })
+
+    it('reads System for an automatic change, with or without who made it, and the type for an unnamed other change', async () => {
+        respondWith(Promise.resolve(USERS), Promise.resolve(KEYS))
+        const history = [
+            { uuid: 'rev-1', instanceUuid: 'i-1', revision: 1, date: '2026-10-14T09:00:00Z', updateType: 'AUTO', updatedBy: 'u-1', changeType: 'PROPERTY' },
+            { uuid: 'rev-0', instanceUuid: 'i-1', revision: 0, date: '2026-10-14T08:00:00Z', updateType: 'MANUAL', updatedBy: null, changeType: 'PROPERTY' }
+        ]
+        const w = mount(InstanceHistory, { props: { instanceUuid: 'i-1', history, orgProp: ORG } })
+        await flushPromises()
+        expect(updatedBy(w)).toEqual(['System', 'MANUAL'])
+    })
+
+    it('follows the history it is given, and reads a legacy row by its createdType', async () => {
+        respondWith(Promise.resolve(USERS), Promise.resolve(KEYS))
+        const w = mount(InstanceHistory, { props: { instanceUuid: 'i-1', history: HISTORY.slice(1), orgProp: ORG } })
+        await flushPromises()
+        expect(updatedBy(w)).toEqual(['Ada <ada@example.com>', 'System'])
+        const legacy = { uuid: 'rev-3', instance: 'i-1', revision: 3, dateActual: '2026-10-14T11:00:00Z', createdType: 'API', lastUpdatedBy: KEY, type: 'PROPERTY' }
+        await w.setProps({ history: [legacy, ...HISTORY.slice(1)] })
+        expect(updatedBy(w)).toEqual(['Free Form' + DOT + 'CI pipeline' + DOT + '77781336', 'Ada <ada@example.com>', 'System'])
+    })
+
+    it('names people from the store at once, before its own fetch answers', async () => {
+        getters.allUsers = USERS
+        respondWith(new Promise(() => {}), Promise.resolve(KEYS))
+        const w = mount(InstanceHistory, { props: { instanceUuid: 'i-1', history: HISTORY, orgProp: ORG } })
+        await flushPromises()
+        expect(updatedBy(w)[1]).toBe('Ada <ada@example.com>')
     })
 })
