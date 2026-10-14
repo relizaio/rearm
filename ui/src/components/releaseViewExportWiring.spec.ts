@@ -29,13 +29,13 @@ const ast: any = parseSfc(source).descriptor.template?.ast
 const SYNC_LAG = 'This server does not offer the support-metadata disclosure yet'
 
 /** Every element the predicate accepts, with its ancestors (root first). */
-function find (pred: (n: any) => boolean): any[][] {
+function find (pred: (n: any) => boolean, root: any = ast): any[][] {
     const out: any[][] = []
     const walk = (node: any, ancestors: any[]): void => {
         if (node.type === ELEMENT && pred(node)) out.push([...ancestors, node])
         for (const child of node.children || []) walk(child, node.type === ELEMENT ? [...ancestors, node] : ancestors)
     }
-    walk(ast, [])
+    walk(root, [])
     return out
 }
 
@@ -131,5 +131,65 @@ describe('ReleaseView export dialog: the support metadata switch', () => {
         expect(load).toBeGreaterThan(-1)
         expect(load).toBeLessThan(open.indexOf('showExportSBOMModal.value = true'))
         expect(open).not.toMatch(/await/)
+    })
+})
+
+/**
+ * T-26 (SCORE-35, design 3.5): one status line under Export and Score, read from the document the
+ * export just received. The texts and the per-fixture lines are run in utils/sbomSigning.spec.ts
+ * (T-27); this pins where the line reads its status and where it renders.
+ */
+describe('ReleaseView export dialog: the signing status line', () => {
+    const exportFn = (): string => code.match(/async function exportReleaseSbom \([\s\S]*?\n\}/)?.[0] || ''
+    const line = find((n) => attribute(n, 'data-testid') === 'export-signing-status')
+
+    it('reads the status from the exported content before any re-serialisation, and records the media type', () => {
+        const fn = exportFn()
+        const read = fn.indexOf("lastExportSigning.value = mediaType === 'JSON' ? signatureStatus(exportContent) : { kind: 'UNSTAMPED' }")
+        expect(read).toBeGreaterThan(fn.indexOf('let exportContent = gqlResp.data.releaseSbomExport'))
+        expect(read).toBeLessThan(fn.indexOf('JSON.stringify(exportContent'))
+        expect(fn.indexOf('lastExportMediaType.value = mediaType as ExportMediaType')).toBeGreaterThan(-1)
+        expect(fn.indexOf('lastExportMediaType.value = mediaType as ExportMediaType')).toBeLessThan(read)
+        // A new export starts without the last file's line.
+        expect(fn.indexOf('lastExportSigning.value = null')).toBeGreaterThan(-1)
+        expect(fn.indexOf('lastExportSigning.value = null')).toBeLessThan(fn.indexOf('bomExportPending.value = true'))
+    })
+
+    it('clears the line when the dialog opens: before an export there is none', () => {
+        expect(openExportModal()).toMatch(/\n    lastExportSigning\.value = null\n/)
+        expect(definition('const lastExportSigning')).toMatch(/^const lastExportSigning: Ref<SignedStatus \| null> = ref\(null\)$/m)
+    })
+
+    it('derives the line from the status and the media type only', () => {
+        expect(definition('const exportSigningLine')).toMatch(
+            /lastExportSigning\.value \? signingLineFor\(lastExportSigning\.value, lastExportMediaType\.value\) : null\)$/)
+        expect(code).toMatch(/import \{ exportSigningLine as signingLineFor, signatureStatus \} from '@\/utils\/sbomSigning'/)
+    })
+
+    it('renders one element, bound to the line alone, between the Export and Score buttons and the score block', () => {
+        expect(line).toHaveLength(1)
+        const node = line[0][line[0].length - 1]
+        expect(directive(node, 'if')).toBe('exportSigningLine')
+        expect(interpolations(node)).toEqual(['exportSigningLine'])
+        expect(text(node)).toBe('')
+
+        const order: any[] = []
+        const walk = (n: any): void => { if (n.type === ELEMENT) order.push(n); for (const c of n.children || []) walk(c) }
+        walk(ast)
+        const buttons = find((n) => n.tag === 'n-space' && find((m) => attribute(m, 'data-testid') === 'release-sbom-score', n).length > 0)
+        expect(buttons).toHaveLength(1)
+        const space = buttons[0][buttons[0].length - 1]
+        const siblings = (line[0][line[0].length - 2].children || []).filter((c: any) => c.type === ELEMENT)
+        expect(siblings[siblings.indexOf(node) - 1]).toBe(space)
+        const scoreBlock = find((n) => directive(n, 'if') === 'sbomScoreRequested')
+        expect(scoreBlock).toHaveLength(1)
+        expect(order.indexOf(node)).toBeLessThan(order.indexOf(scoreBlock[0][scoreBlock[0].length - 1]))
+    })
+
+    it('carries none of the signing texts in the template: they come from sbomSigning.ts', () => {
+        const template = parseSfc(source).descriptor.template?.content || ''
+        for (const literal of ['Signed with organization key', 'Not signed', 'Signing applies to CycloneDX JSON exports only']) {
+            expect(template).not.toContain(literal)
+        }
     })
 })

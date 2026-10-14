@@ -213,6 +213,12 @@ const storeObject : any = {
              * would reject.
              */
             supportInjectionSupported: true,
+            /**
+             * False once the organization settings section "SBOM export signing" had its key
+             * list refused as schema drift: a backend without SBOM signing (a CE mirror before
+             * its sync). Latched for the session, like the flag above; a reload clears it.
+             */
+            sbomSigningSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -443,6 +449,9 @@ const storeObject : any = {
         },
         SET_SUPPORT_INJECTION_SUPPORTED (state : any, supported : boolean) {
             state.supportInjectionSupported = supported
+        },
+        SET_SBOM_SIGNING_SUPPORTED (state : any, supported : boolean) {
+            state.sbomSigningSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
