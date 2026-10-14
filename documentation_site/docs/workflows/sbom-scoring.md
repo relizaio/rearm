@@ -157,4 +157,5 @@ Some requirements cannot be decided from one file, and the report says so rather
 - fields a format cannot represent: in SPDX 2.x the SBOM author signature, generation context and
   SBOM version (CISA 2026) and the level of support (FDA); an SPDX 2.x document is therefore
   NOT READY under both profiles by the documents' own terms;
-- an SBOM author signature is checked for presence only; it is not verified.
+- the SBOM author signature is checked for presence and well-formedness; the server does not verify it
+  (the CLI does, with `--signature-key`), see [Signing exported SBOMs](./signing-exported-sboms).

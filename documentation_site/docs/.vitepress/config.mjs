@@ -29,6 +29,7 @@ function sidebar() {
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
           {text: 'Scoring an SBOM', link: '/workflows/sbom-scoring'},
+          {text: 'Signing exported SBOMs', link: '/workflows/signing-exported-sboms'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
           {text: 'Committers & Commit Signing', link: '/workflows/committers'}
         ]},
