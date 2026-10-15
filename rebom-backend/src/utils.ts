@@ -3,13 +3,13 @@ import * as fs from 'fs';
 import * as os from 'os';
 import * as path from 'path';
 import { logger } from './logger';
-import { pool, runQuery } from './db';
+import { pool, runQuery, withTransaction } from './db';
 
 export function getPool() {
     return pool;
 }
 
-export { runQuery, pool };
+export { runQuery, withTransaction, pool };
 
 export async function shellExec(cmd: string, args: any[], timeout?: number): Promise<string> { // timeout = in ms
   return new Promise((resolve, reject) => {

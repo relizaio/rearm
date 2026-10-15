@@ -151,6 +151,12 @@ export type RebomOptions = {
     // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
     // publisher or the organization; absent for third-party software and on older rows.
     supplierName?: string,
+    // The component of the organization that owns this document's serialNumber lineage
+    // (SCORE-45): ReARM sets it from the target release's component on every upload and merge.
+    // Absent for a caller with no component context. An upload that names an owner is refused
+    // when the lineage belongs to another component, and claims the lineage when it is unowned;
+    // an upload that names none neither checks nor claims (legacy behaviour).
+    ownerComponent?: string | null,
     notes: string,
     tldOnly: boolean,
     structure: string,
@@ -238,5 +244,54 @@ export type BomSearch = {
 }
 
 export type BomFormat = 'CYCLONEDX' | 'SPDX';
+
+/** How a serialNumber lineage got its current owner (rebom.bom_lineage.claimed_via, SCORE-45). */
+export enum BomLineageClaimedVia {
+    UPLOAD = 'UPLOAD',
+    BACKFILL = 'BACKFILL',
+    REASSIGN = 'REASSIGN'
+}
+
+export enum BomLineageOwnerMode {
+    CLAIM_IF_UNOWNED = 'CLAIM_IF_UNOWNED',
+    REASSIGN = 'REASSIGN'
+}
+
+export enum BomLineageOwnerOutcome {
+    SET = 'SET',
+    UNCHANGED_SAME_OWNER = 'UNCHANGED_SAME_OWNER',
+    REFUSED_OWNED_BY_OTHER = 'REFUSED_OWNED_BY_OTHER',
+    NO_SUCH_LINEAGE = 'NO_SUCH_LINEAGE'
+}
+
+/** A row of rebom.bom_lineage as the database returns it. */
+export type BomLineageRecord = {
+    organization: string,
+    serial_number: string,
+    owner_component: string | null,
+    claimed_at: Date | null,
+    claimed_via: BomLineageClaimedVia | null,
+    claimed_by: string | null,
+    created_date: Date
+}
+
+export type BomLineageOwnerEntry = {
+    serialNumber: string,
+    ownerComponent: string
+}
+
+export type BomLineageOwnerResult = {
+    serialNumber: string,
+    outcome: BomLineageOwnerOutcome,
+    ownerComponent?: string | null
+}
+
+export type BomLineageDto = {
+    serialNumber: string,
+    ownerComponent: string | null,
+    claimedAt: Date | null,
+    claimedVia: BomLineageClaimedVia | null,
+    claimedBy: string | null
+}
 
 export const HIERARCHICHAL = 'hierarchical'
