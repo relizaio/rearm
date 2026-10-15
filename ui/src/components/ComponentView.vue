@@ -522,6 +522,64 @@
                                             </n-space>
                                         </div>
 
+                                        <!-- SCORE-42: the declared licence and the supplier ReARM writes on the
+                                             SBOM nodes it makes for this component's releases. A SIBLING of
+                                             coreSettingsActions, never a child (the device panels' lesson), with
+                                             its own document, its own Save and its own baseline: the core-settings
+                                             save sends the whole component and reads the response through
+                                             COMPONENT_FULL_DATA, which must stay valid on a CE mirror that lacks
+                                             these three fields. Hidden when the read failed; the unsupported note
+                                             only when the server cannot answer (schema drift). -->
+                                        <div v-if="updatedComponent && componentData && declaredLicenseSupported && componentLicenseLoaded"
+                                            style="margin-top: 22px;" data-testid="component-license-block">
+                                            <label style="display: flex; align-items: center; gap: 6px; font-weight: bold;">
+                                                <span>Declared licence and supplier</span>
+                                                <n-tooltip trigger="hover" placement="right">
+                                                    <template #trigger>
+                                                        <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                    </template>
+                                                    <div style="max-width: 700px; white-space: pre-line;">{{ COMPONENT_TOOLTIP }}</div>
+                                                </n-tooltip>
+                                            </label>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence expression</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.expression" :readonly="!isWritable"
+                                                        :placeholder="EXPRESSION_PLACEHOLDER" data-testid="component-license"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ EXPRESSION_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence text URL</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.url" :readonly="!isWritable"
+                                                        :placeholder="URL_PLACEHOLDER" data-testid="component-license-url"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ URL_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Supplier</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.supplier" :readonly="!isWritable"
+                                                        :placeholder="SUPPLIER_PLACEHOLDER" data-testid="component-supplier"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ SUPPLIER_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <n-button v-if="isWritable" size="small" type="primary" data-testid="component-license-save"
+                                                :disabled="!declaredLicenseDiffers(componentLicense, componentLicenseBaseline) || savingComponentLicense"
+                                                :loading="savingComponentLicense"
+                                                @click="saveComponentLicense">Save licence and supplier</n-button>
+                                            <n-alert v-if="componentLicenseError" type="error" :show-icon="true" data-testid="component-license-error"
+                                                style="font-size: 12px; max-width: 720px; margin-top: 8px;">
+                                                {{ componentLicenseError }}
+                                            </n-alert>
+                                        </div>
+                                        <div v-if="updatedComponent && componentData && !declaredLicenseSupported"
+                                            class="text-muted" style="margin-top: 22px;" data-testid="component-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
+
                                         <!-- SIBLING of coreSettingsActions, never a child. It
                                              was nested INSIDE that div, whose v-if is
                                              "hasCoreSettingsChanges && isWritable" -- the
@@ -1319,6 +1377,11 @@ import ActionGuards from './ActionGuards.vue'
 import ComponentLocks from './ComponentLocks.vue'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
+import {
+    COMPONENT_SAVED, COMPONENT_TOOLTIP, EXPRESSION_HINT, EXPRESSION_PLACEHOLDER, SUPPLIER_HINT, SUPPLIER_PLACEHOLDER,
+    UNSUPPORTED_NOTE, UPDATE_COMPONENT_DECLARED_LICENSE, URL_HINT, URL_PLACEHOLDER,
+    componentDeclaredLicenseVariables, declaredLicenseDiffers, loadComponentDeclaredLicense,
+} from '@/utils/declaredLicense'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { resolveComponentPageTab } from '@/utils/componentPageTab'
@@ -1332,6 +1395,8 @@ onMounted(async () => {
     deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
     deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
+    // Never throws (it catches every read error), so the settings modal below always opens.
+    await loadComponentLicense()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
         await openComponentSettings()
@@ -1528,6 +1593,7 @@ async function saveDeviceClass (): Promise<void> {
         await initLoad()
         deviceClassBaseline.value = deviceClassEdit.value
         await loadDeviceWindow()
+        await loadComponentLicense()
     } catch (e: any) {
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
         deviceClassEdit.value = deviceClassBaseline.value
@@ -1552,6 +1618,74 @@ async function loadDeviceWindow (): Promise<void> {
         // A real failure hides the panel rather than showing an empty editable one: an operator
         // must never be able to "declare" a window against a backend we could not read.
         deviceWindowSupported.value = false
+    }
+}
+
+/**
+ * The declared licence and supplier (SCORE-42, design ADR-3). Inline rather than a composable:
+ * the view is routed per component uuid (componentUuid is fixed for the instance), so no
+ * navigation reset or request fence is needed, unlike the release page.
+ */
+const componentLicense = reactive({ expression: '', url: '', supplier: '' })
+/** What the server last confirmed; refreshed from the mutation response. */
+const componentLicenseBaseline = reactive({ expression: '', url: '', supplier: '' })
+const componentLicenseLoaded: Ref<boolean> = ref(false)
+const savingComponentLicense: Ref<boolean> = ref(false)
+const componentLicenseError: Ref<string | null> = ref(null)
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function takeComponentLicense (expression: string, url: string, supplier: string): void {
+    componentLicense.expression = expression
+    componentLicense.url = url
+    componentLicense.supplier = supplier
+    componentLicenseBaseline.expression = expression
+    componentLicenseBaseline.url = url
+    componentLicenseBaseline.supplier = supplier
+}
+
+async function loadComponentLicense (): Promise<void> {
+    if (!componentUuid) return
+    try {
+        const r = await loadComponentDeclaredLicense(graphqlClient as any, componentUuid)
+        if (!r.supported) {
+            // Schema drift: the server cannot answer. Latched for the session on every surface.
+            store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+            componentLicenseLoaded.value = false
+            return
+        }
+        takeComponentLicense(r.expression, r.url, r.supplier)
+        componentLicenseError.value = null
+        componentLicenseLoaded.value = true
+    } catch (e: any) {
+        // A failed read is not an unsupported server: hide the block, write nothing, say nothing
+        // (the device window's rule). Never rethrown, so onMounted reaches the settings modal.
+        componentLicenseLoaded.value = false
+        componentLicenseError.value = null
+    }
+}
+
+async function saveComponentLicense (): Promise<void> {
+    // name is REQUIRED: UpdateComponentInput.name is String!.
+    const variables = componentDeclaredLicenseVariables(componentUuid,
+        componentData.value?.name || updatedComponent.value?.name, componentLicense, componentLicenseBaseline)
+    if (!variables) return
+    savingComponentLicense.value = true
+    componentLicenseError.value = null
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: UPDATE_COMPONENT_DECLARED_LICENSE,
+            variables,
+            fetchPolicy: 'no-cache'
+        })
+        // The canonical form, and the URL the server cleared with the expression.
+        const saved = resp?.data?.updateComponent
+        takeComponentLicense(saved?.licenseExpression || '', saved?.licenseUrl || '', saved?.supplierName || '')
+        notify('success', 'Saved', COMPONENT_SAVED)
+    } catch (e: any) {
+        componentLicenseError.value = commonFunctions.extractGraphQLErrorMessage(e)
+    } finally {
+        savingComponentLicense.value = false
     }
 }
 

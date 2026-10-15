@@ -73,6 +73,81 @@ still has nothing to export. From the ReARM release after 26.10.52 on; product e
 before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
 property and the `compositions` entry are in the CycloneDX JSON only.
 
+### What the nodes ReARM makes carry
+
+ReARM writes three kinds of node into an export itself: a component release's own node (the root
+of its merged SBOM), a product's root, and the placeholders of component releases without an SBOM
+(see [Component releases without an SBOM](#component-releases-without-an-sbom)). Everything else in
+an export is what was uploaded, and ReARM never replaces uploaded data.
+
+**Supplier.** A node ReARM makes names as supplier the publisher of the release's deliverable when
+one is recorded, else the component's **Supplier**, else the organization for its own (INTERNAL)
+software, else nobody (EXTERNAL software). The root of an uploaded SBOM takes the same rule when it
+is uploaded, and keeps a supplier its generator wrote. When a change of the component's supplier
+shows, as the field states it:
+
+> Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set. A root
+> uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM (a new
+> serialNumber) uploaded to a release made after the change carries the new value in that release's
+> export. An identical file is answered with the stored row, unchanged.
+
+**Hashes.** A release's node carries the hashes of the release's one hashed outbound deliverable
+when the deliverable's purl type agrees with the node's, and none otherwise. The root of an SBOM
+attached to a source code entry carries its commit in `pedigree.commits`, not as a hash.
+
+**Declared licence.** A licence can be declared at three levels: on a release, on its component, and
+as the organization default. The first level that declares one, in that order, is the licence on the
+release's node and on its placeholder in a product; a licence URL comes only from the level that won,
+and a release that declares its own licence carries no URL. A value is an SPDX licence expression:
+ids from the [SPDX licence list](https://spdx.org/licenses/) in any case (stored in the list's
+casing, `apache-2.0` becomes `Apache-2.0`), a trailing `+`, `LicenseRef-` followed by letters,
+digits, dots and hyphens for a licence that is not on the list, the operators `AND`, `OR` and `WITH`
+in upper case, and parentheses, at most 512 characters. `NOASSERTION`, `NONE`, `DocumentRef-` and
+licence names are refused. The export writes it as follows:
+
+- a single SPDX id:
+
+  ```json
+  "licenses": [{ "license": { "id": "Apache-2.0" } }]
+  ```
+
+- a single `LicenseRef-` id with a URL:
+
+  ```json
+  "licenses": [{ "license": { "name": "LicenseRef-Acme-Commercial", "url": "https://example.com/licence.txt" } }]
+  ```
+
+- anything else (a compound expression, or a `LicenseRef-` id without a URL), with no URL:
+
+  ```json
+  "licenses": [{ "expression": "MIT OR Apache-2.0" }]
+  ```
+
+On a product export, a component release's declared licence stands on its node; licence ids that
+another uploaded SBOM lists for the same purl appear beside it, while a listed expression or
+`NOASSERTION` does not. A root whose generator wrote licences, `NOASSERTION` included, keeps them.
+ReARM never reads a LICENSE file or an artifact to find a licence.
+
+**When a change shows.** A release's own exports show a change at their next request. A change of
+a release's licence also rebuilds the product exports above it. A change of the organization default
+or of a component does not: a product exported before it serves its stored export until something
+rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
+regenerates merged exports). Likewise a release exported before an upload keeps serving its stored
+export until a product above it is rebuilt or the release's declared facts change.
+
+**Where to set them.** In the UI: **Organization Settings**, **Admin Settings**, **Default declared
+licence** (organization administrators); a component's settings, **Declared licence and supplier**;
+a release's **Meta** tab, **Declared licence for this release**. On the API:
+`updateOrganizationSettings` (`defaultLicenseExpression`, `defaultLicenseUrl`); `updateComponent`,
+`createComponent` and `createComponentProgrammatic` (`licenseExpression`, `licenseUrl`,
+`supplierName`); `updateRelease` and `addReleaseProgrammatic` (`licenseExpression`). The ReARM CLI
+and the Terraform provider gain them in a later release.
+
+**What still fails.** The scoring check Component License still fails on the root of an uploaded
+SBOM whose generator wrote no licence, which is the release's own software in an SBOM attached to
+the release or to a deliverable: the declared licence is not written there. See
+[Reading the report](./sbom-scoring#reading-the-report).
+
 ### Scoring the export
 
 Beside **Export**, **Score** checks the document the export would give you, with the same content options,

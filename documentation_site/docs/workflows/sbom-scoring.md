@@ -99,6 +99,11 @@ A failed component check expands to the list of failing components (the purl or 
 sorted). The engine lists at most 20; a longer list is cut there and says "list truncated by the
 engine", while the Result column still counts every component.
 
+Component License on the nodes ReARM makes passes once a licence is declared for the release, its
+component or the organization (the check is presence-only: any SPDX expression, a LicenseRef- id
+included, passes); the uploaded roots the report still lists need the licence in the SBOM their
+generator wrote. See [What the nodes ReARM makes carry](./exporting-compliance-artifacts#what-the-nodes-rearm-makes-carry).
+
 **Structure checks**, collapsed below the profiles, report on the document itself (for example
 whether every component is in the dependency graph). They are run on CycloneDX documents only and
 do not affect any profile's verdict or score.
