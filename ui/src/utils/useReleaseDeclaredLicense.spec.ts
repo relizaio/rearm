@@ -242,4 +242,34 @@ describe('useReleaseDeclaredLicense: save', () => {
         expect(s.override.value).toBe('GPL-3.0-only')
         expect(s.effective.value).toEqual({ expression: 'GPL-3.0-only', url: null, level: 'RELEASE' })
     })
+
+    // Round 3 (T-3): the finally is fenced too; without it A's late reply clears B's saving while
+    // B's own save is in flight, and B's Save is enabled again for a second mutation.
+    it.each([
+        ['success', (d: { resolve: (v: any) => void, reject: (e: any) => void }) => d.resolve(saved('Apache-2.0', { expression: 'Apache-2.0', url: null, level: 'RELEASE' }))],
+        ['refusal', (d: { resolve: (v: any) => void, reject: (e: any) => void }) => d.reject({ graphQLErrors: [{ message: 'licenseExpression invalid: unknown licence id "Apache-2"' }] })],
+    ])('keeps B saving when a late %s for the previous release lands during B\'s save', async (_kind, settleA) => {
+        const { s, pending, mutations, mutate } = await loadedWithMit()
+        s.override.value = 'Apache-2.0'
+        const a = s.save()
+        expect(s.saving.value).toBe(true)
+        s.reset()
+        const b = s.load('rel-B', ORG)
+        pending[1].resolve(read('GPL-3.0-only', { expression: 'GPL-3.0-only', url: null, level: 'RELEASE' }))
+        expect(await b).toBe('loaded')
+        s.override.value = 'MIT'
+        const bSave = s.save()
+        expect(mutate.mock.calls[1][0].variables).toEqual({ release: { uuid: 'rel-B', org: ORG, licenseExpression: 'MIT' } })
+        expect(s.saving.value).toBe(true)
+        settleA(mutations[0])
+        expect(await a).toBe('dropped')
+        expect(s.saving.value).toBe(true)
+        expect(s.error.value).toBeNull()
+        expect(s.override.value).toBe('MIT')
+        mutations[1].resolve(saved('MIT', MIT_RELEASE))
+        expect(await bSave).toBe('saved')
+        expect(s.saving.value).toBe(false)
+        expect(s.baseline.value).toBe('MIT')
+        expect(s.effective.value).toEqual(MIT_RELEASE)
+    })
 })
