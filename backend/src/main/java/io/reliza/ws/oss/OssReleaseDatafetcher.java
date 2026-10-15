@@ -180,7 +180,7 @@ public class OssReleaseDatafetcher {
 		// (the same shape that authorises VERSION_FEATURESET) authorises
 		// the read here too. Other key types continue through the legacy
 		// supportedApiTypes path.
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isRbacKey()) {
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 					ro.getUuid(), List.of(ro), CallType.READ);

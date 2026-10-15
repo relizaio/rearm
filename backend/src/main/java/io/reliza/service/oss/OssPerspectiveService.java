@@ -74,29 +74,19 @@ public class OssPerspectiveService {
 	}
 
 	/**
-	 * The perspective an object of {@code orgUuid} may be attached to: a live real perspective of that
-	 * organization. Same rule as Pro; CE has no perspectives, so every uuid is "Perspective not found".
+	 * The perspective an object of {@code orgUuid} may be attached to. Part of ReARM Pro only: CE has no
+	 * perspectives, so every uuid is "Perspective not found", the answer Pro gives for a missing one.
 	 */
 	public PerspectiveData requireAssignablePerspective(UUID orgUuid, UUID perspectiveUuid) throws RelizaException {
-		PerspectiveData pd = requireLivePerspective(orgUuid, perspectiveUuid);
-		if (pd.getType() != PerspectiveType.PERSPECTIVE) {
-			throw new RelizaException("Only real perspectives can be assigned, not product-based ones: " + perspectiveUuid);
-		}
-		return pd;
+		return requireLivePerspective(orgUuid, perspectiveUuid);
 	}
 
 	/**
-	 * The perspective a grant of {@code orgUuid} may name: a row that exists, belongs to that organization
-	 * and is not ARCHIVED; missing, foreign and archived are one answer, "Perspective not found: <uuid>".
-	 * Same rule as Pro; CE has no perspectives, so every uuid is refused.
+	 * The perspective a grant of {@code orgUuid} may name. Part of ReARM Pro only: CE has no perspectives,
+	 * so every uuid is "Perspective not found", the answer Pro gives for a missing one.
 	 */
 	public PerspectiveData requireLivePerspective(UUID orgUuid, UUID perspectiveUuid) throws RelizaException {
-		Optional<PerspectiveData> opd = perspectiveUuid == null ? Optional.empty() : getPerspectiveData(perspectiveUuid);
-		if (opd.isEmpty() || orgUuid == null || !orgUuid.equals(opd.get().getOrg())
-				|| StatusEnum.ARCHIVED == opd.get().getStatus()) {
-			throw new RelizaException("Perspective not found: " + perspectiveUuid);
-		}
-		return opd.get();
+		throw new RelizaException("Perspective not found: " + perspectiveUuid);
 	}
 
 	/**
