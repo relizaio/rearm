@@ -42,7 +42,7 @@ const name = ref('')
 const serverError = ref('')
 const saving = ref(false)
 watch(() => [props.show, props.apiKey], () => { name.value = props.apiKey?.declaredName ?? ''; serverError.value = '' }, { immediate: true })
-const problem = computed(() => declaredNameProblem(name.value))
+const problem = computed(() => declaredNameProblem(name.value, props.apiKey?.declaredName))
 const unchanged = computed(() => name.value === (props.apiKey?.declaredName ?? ''))
 // an empty field is not worth an error until something was typed
 const shownProblem = computed(() => serverError.value || (name.value ? problem.value : ''))
