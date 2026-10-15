@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, isUuid } from '../../types';
+import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, isUuid, canonicalUuid } from '../../types';
 import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError, BomLineageOwnerError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
 import * as BomLineageRepository from '../../bomLineageRepository';
@@ -29,12 +29,29 @@ import { createHash } from 'crypto';
 const AUGMENT_ON_STORAGE = true;
 
 export async function addBom(bomInput: BomInput): Promise<BomRecord> {
-  const format: BomFormat = (bomInput.bomInput as any).format || 'CYCLONEDX';
+  const input = withCanonicalOrg(bomInput);
+  const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
-    return await addSpdxBom(bomInput);
+    return await addSpdxBom(input);
   } else {
-    return await addCycloneDxBom(bomInput);
+    return await addCycloneDxBom(input);
   }
+}
+
+/**
+ * The upload with its organization in canonical form (SCORE-46, review item
+ * T-3), set once before anything reads it: rebom.boms and rebom.bom_lineage
+ * store every spelling PostgreSQL's uuid type parses as one organization, so
+ * the lineage lock, the deduplication, both version checks, the owner checks
+ * and the insert must all see the one text form. An organization that is not
+ * a uuid is refused before any read or push.
+ */
+function withCanonicalOrg(bomInput: BomInput): BomInput {
+  const org = canonicalUuid(bomInput.bomInput?.org);
+  if (!org) {
+    throw new BomValidationError('org must be a uuid', { field: 'org', value: bomInput.bomInput?.org });
+  }
+  return { ...bomInput, bomInput: { ...bomInput.bomInput, org } };
 }
 
 /**

@@ -51,18 +51,21 @@ export async function hasBomRows(org: string, key: string): Promise<boolean> {
  * It writes nothing and is released by the commit or the rollback, so the owner
  * and version decisions of two uploads of one serialNumber commit in a serial
  * order. Two-key lock space, apart from the one-key session lock of
- * services/advisoryLock.ts. The organization is lowercased so that callers that
- * pass it as sent and callers that lowercase it take the same lock.
+ * services/advisoryLock.ts. The organization is keyed by its uuid value
+ * ($1::uuid::text), so every spelling the uuid type parses takes the one lock
+ * its lineage row and stored rows are under.
  */
 export async function lockLineage(client: TxClient, org: string, key: string): Promise<void> {
-    await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [org.toLowerCase(), key]);
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2))', [org, key]);
 }
 
 /**
  * The lineage's newest stored row of any format, in either serialNumber form,
  * read on the transaction's own client (never through runQuery: a transaction
  * holding one pool connection and waiting for another starves the pool).
- * Authoritative only under lockLineage. Null when the lineage has no row.
+ * Authoritative only under lockLineage. The organization is compared as a uuid,
+ * so any spelling of it reads the rows stored under it. Null when the lineage
+ * has no row.
  */
 export async function latestStoredVersion(
     client: TxClient, org: string, key: string
@@ -71,10 +74,10 @@ export async function latestStoredVersion(
     const queryRes = await client.query(
         `SELECT uuid, meta->>'bomVersion' AS bom_version FROM rebom.boms
          WHERE (meta->>'serialNumber' = $1 OR meta->>'serialNumber' = $2)
-         AND organization::text = $3
+         AND organization = $3::uuid
          ORDER BY (meta->>'bomVersion')::numeric DESC NULLS LAST
          LIMIT 1`,
-        [key, serialWithoutUrn, org.toLowerCase()]
+        [key, serialWithoutUrn, org]
     );
     const row = queryRes.rows[0];
     return row ? { uuid: row.uuid, bom_version: row.bom_version } : null;

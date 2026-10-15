@@ -18,7 +18,7 @@ const S = 'urn:uuid:11111111-2222-3333-4444-555555555555';
 const S_BARE = '11111111-2222-3333-4444-555555555555';
 const A = 'aaaaaaaa-0000-4000-8000-000000000001';
 const B = 'bbbbbbbb-0000-4000-8000-000000000002';
-const LOCK = 'SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))';
+const LOCK = 'SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2))';
 
 type Recorded = { text: string, params: any[] };
 
@@ -77,10 +77,13 @@ describe('claimInTransaction', () => {
         expect(kinds(statements)).toStrictEqual(['lock', 'insert', 'select']);
     });
 
-    it('T-19: the lock is keyed on the lowercased organization', async () => {
+    // The database cases (bom-lineage-org-spelling.test.ts) pin that every
+    // spelling of the organization waits on the one lock.
+    it('T-19: the lock is keyed on the organization as a uuid value', async () => {
         const { client, statements } = fakeClient([]);
-        await claimInTransaction(client, 'ABCDEF00-0000-0000-0000-000000000000', S, null);
-        expect(statements[0].params[0]).toBe('abcdef00-0000-0000-0000-000000000000');
+        await claimInTransaction(client, '{ABCDEF00-0000-0000-0000-000000000000}', S, null);
+        expect(statements[0].text).toBe(LOCK);
+        expect(statements[0].params[0]).toBe('{ABCDEF00-0000-0000-0000-000000000000}');
     });
 });
 
