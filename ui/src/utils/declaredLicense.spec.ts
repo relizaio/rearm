@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-    COMPONENT_DECLARED_LICENSE_QUERY, EFFECTIVE_NONE, ORG_DECLARED_LICENSE_QUERY, RELEASE_DECLARED_LICENSE_QUERY,
+    COMPONENT_DECLARED_LICENSE_QUERY, EFFECTIVE_NONE, ORG_DECLARED_LICENSE_QUERY, ORG_NOT_LISTED, RELEASE_DECLARED_LICENSE_QUERY,
     SUPPLIER_HINT, SUPPLIER_SENTENCE,
     componentDeclaredLicenseVariables, declaredLicenseDiffers, effectiveLicenseLine, licenseUrlHref,
     loadComponentDeclaredLicense, loadOrgDeclaredLicense, loadReleaseDeclaredLicense, orgDeclaredLicenseVariables,
@@ -138,10 +138,29 @@ describe('licenseUrlHref', () => {
 })
 
 describe('the loaders', () => {
-    it('read the organization default, nulls as empty, without the cache', async () => {
-        const c = clientAnswering({ organization: { uuid: ORG, settings: { defaultLicenseExpression: 'Apache-2.0', defaultLicenseUrl: null } } })
-        expect(await loadOrgDeclaredLicense(c, ORG)).toEqual({ supported: true, expression: 'Apache-2.0', url: '' })
-        expect(c.query).toHaveBeenCalledWith({ query: ORG_DECLARED_LICENSE_QUERY, variables: { orgUuid: ORG }, fetchPolicy: 'no-cache' })
+    // Round 3 (T-1): the organization is read from the organizations list and matched by uuid; the
+    // single-organization root field is never resolved by rearm-saas and answers null.
+    const OTHER = { uuid: 'org-2', settings: { defaultLicenseExpression: 'GPL-3.0-only', defaultLicenseUrl: 'https://other.example/l' } }
+
+    it('read the organization default from the organizations list, matched by uuid, without the cache', async () => {
+        const mine = { uuid: ORG, settings: { defaultLicenseExpression: 'AGPL-3.0-only', defaultLicenseUrl: 'https://x.example/l' } }
+        const c = clientAnswering({ organizations: [OTHER, mine] })
+        expect(await loadOrgDeclaredLicense(c, ORG)).toEqual({ supported: true, expression: 'AGPL-3.0-only', url: 'https://x.example/l' })
+        expect(c.query).toHaveBeenCalledWith({ query: ORG_DECLARED_LICENSE_QUERY, variables: {}, fetchPolicy: 'no-cache' })
+    })
+
+    it('read the matched organization\'s null settings fields as empty', async () => {
+        const c = clientAnswering({ organizations: [OTHER, { uuid: ORG, settings: { defaultLicenseExpression: null, defaultLicenseUrl: null } }] })
+        expect(await loadOrgDeclaredLicense(c, ORG)).toEqual({ supported: true, expression: '', url: '' })
+    })
+
+    it.each([
+        ['a list without the organization', { organizations: [OTHER] }],
+        ['an empty list', { organizations: [] }],
+        ['a null list', { organizations: null }],
+        ['the unresolved single-organization root', { organization: null }],
+    ])('refuse %s as a failed read, never an empty declaration', async (_name, data) => {
+        await expect(loadOrgDeclaredLicense(clientAnswering(data), ORG)).rejects.toThrow(new Error(ORG_NOT_LISTED))
     })
 
     it('read the component fields, nulls as empty, without the cache', async () => {
@@ -177,6 +196,10 @@ describe('the copy', () => {
     it('carries the supplier sentence of the schema comment word for word', () => {
         expect(SUPPLIER_SENTENCE).toBe(CARRIER)
         expect(SUPPLIER_HINT.endsWith(CARRIER)).toBe(true)
+    })
+
+    it('words the missing-organization read as design 3.7 does', () => {
+        expect(ORG_NOT_LISTED).toBe('The server\'s list of your organizations does not include this one, so its default licence could not be read.')
     })
 
     it('never uses the struck remedies', () => {

@@ -19,9 +19,15 @@ import { isSchemaDriftError, type DriftFallbackClient } from './graphqlDriftFall
  * selection written into the Apollo cache would replace the cached organization's settings.
  */
 
+/**
+ * The organizations list, filtered by uuid on the client (loadOrgDeclaredLicense), the
+ * ORG_DEFAULT_VIEW_GQL shape. Never the single-organization root field: rearm-saas declares
+ * organization(orgUuid:) but resolves nothing for it, so it answers null to everyone and a stored
+ * default would read as none (SCORE-42 T-1).
+ */
 export const ORG_DECLARED_LICENSE_QUERY = gql`
-    query orgDeclaredLicense($orgUuid: ID!) {
-        organization(orgUuid: $orgUuid) {
+    query orgDeclaredLicense {
+        organizations {
             uuid
             settings { defaultLicenseExpression defaultLicenseUrl }
         }
@@ -137,6 +143,12 @@ export const RELEASE_INTRO = 'Declares a different licence for this release only
     'component\'s licence, else the organization default. While this release declares its own licence, no licence ' +
     'URL is carried.'
 
+/**
+ * The message of the error loadOrgDeclaredLicense throws when the served list does not hold the
+ * organization: a failed read the panel shows with Retry, never an organization with no default.
+ */
+export const ORG_NOT_LISTED = 'The server\'s list of your organizations does not include this one, so its default licence could not be read.'
+
 export const EFFECTIVE_NONE = 'No licence declared at any level.'
 export const UNSUPPORTED_NOTE = 'This server does not offer a declared licence yet. A ReARM CE installation gains it at its next sync.'
 
@@ -171,10 +183,16 @@ async function readOrDrift (client: DriftFallbackClient, query: DocumentNode, va
     }
 }
 
+/**
+ * The organization's default from the organizations list. An organization the list does not hold
+ * throws ORG_NOT_LISTED: one the server does not list for this user is not one with no default.
+ */
 export async function loadOrgDeclaredLicense (client: DriftFallbackClient, orgUuid: string): Promise<OrgDeclaredLicenseResult> {
-    const data = await readOrDrift(client, ORG_DECLARED_LICENSE_QUERY, { orgUuid })
+    const data = await readOrDrift(client, ORG_DECLARED_LICENSE_QUERY, {})
     if (data === null) return { supported: false, expression: '', url: '' }
-    const s = data.organization?.settings
+    const org = Array.isArray(data.organizations) ? data.organizations.find((o: any) => o?.uuid === orgUuid) : undefined
+    if (!org) throw new Error(ORG_NOT_LISTED)
+    const s = org.settings
     return { supported: true, expression: text(s?.defaultLicenseExpression), url: text(s?.defaultLicenseUrl) }
 }
 

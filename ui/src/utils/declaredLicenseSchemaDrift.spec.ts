@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { GraphQLObjectType, print, validate, type GraphQLSchema } from 'graphql'
+import { GraphQLObjectType, print, validate, type FieldNode, type GraphQLSchema, type OperationDefinitionNode } from 'graphql'
 import {
     COMPONENT_DECLARED_LICENSE_QUERY, ORG_DECLARED_LICENSE_QUERY, RELEASE_DECLARED_LICENSE_QUERY,
     SUPPLIER_SENTENCE, UPDATE_COMPONENT_DECLARED_LICENSE, UPDATE_ORG_DECLARED_LICENSE, UPDATE_RELEASE_DECLARED_LICENSE,
@@ -58,6 +58,17 @@ describe('declared licence documents vs the schemas', () => {
     it.each(SHARED)('the shared document %s selects none of the new fields', (_name, text) => {
         expect(text.length).toBeGreaterThan(0)
         for (const field of NEW_FIELDS) expect(text).not.toMatch(new RegExp(`\\b${field}\\b`))
+    })
+
+    // Round 3 (T-1): organization(orgUuid:) is declared but never resolved by rearm-saas, so it
+    // validates and answers null; validation cannot catch it, this can.
+    it('the organization read selects the organizations list root', () => {
+        const op = ORG_DECLARED_LICENSE_QUERY.definitions[0] as OperationDefinitionNode
+        expect(op.selectionSet.selections.map(f => (f as FieldNode).name.value)).toEqual(['organizations'])
+    })
+
+    it.each(DOCUMENTS)('%s never selects the unresolved single-organization root field', (_name, doc) => {
+        expect(print(doc)).not.toMatch(/\borganization\s*\(/)
     })
 
     it.runIf(proSchema)('the UI supplier sentence is the served Component.supplierName description\'s', () => {

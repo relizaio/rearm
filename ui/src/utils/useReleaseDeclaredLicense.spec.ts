@@ -124,6 +124,20 @@ describe('useReleaseDeclaredLicense: load', () => {
         expect(s.override.value).toBe('')
     })
 
+    // Round 3 (T-2): the catch branch is fenced too; without it a 502 for A landing on B hides B.
+    it('drops a failed read for the previous release that settles after B loaded', async () => {
+        const { s, pending } = setup()
+        const a = s.load('rel-A', ORG)
+        s.reset()
+        const b = s.load('rel-B', ORG)
+        pending[1].resolve(read(null, APACHE_COMPONENT))
+        expect(await b).toBe('loaded')
+        pending[0].reject(new Error('502 Bad Gateway'))
+        expect(await a).toBe('dropped')
+        expect(s.loaded.value).toBe(true)
+        expect(s.effective.value).toEqual(APACHE_COMPONENT)
+    })
+
     it('reset clears override, baseline, effective, loaded, saving and error together', async () => {
         const { s, mutations } = await loadedWithMit()
         s.override.value = 'Apache-2'
@@ -209,5 +223,23 @@ describe('useReleaseDeclaredLicense: save', () => {
         expect(s.baseline.value).toBe('')
         expect(s.effective.value).toBeNull()
         expect(s.loaded.value).toBe(false)
+    })
+
+    // Round 3 (T-2): the refusal is fenced too; without it A's message shows under B.
+    it('drops a refusal for the previous release that settles after B loaded', async () => {
+        const { s, pending, mutations } = await loadedWithMit()
+        s.override.value = 'Apache-2'
+        const p = s.save()
+        s.reset()
+        const b = s.load('rel-B', ORG)
+        pending[1].resolve(read('GPL-3.0-only', { expression: 'GPL-3.0-only', url: null, level: 'RELEASE' }))
+        expect(await b).toBe('loaded')
+        mutations[0].reject({ graphQLErrors: [{ message: 'licenseExpression invalid: unknown licence id "Apache-2"' }] })
+        expect(await p).toBe('dropped')
+        expect(s.error.value).toBeNull()
+        expect(s.saving.value).toBe(false)
+        expect(s.loaded.value).toBe(true)
+        expect(s.override.value).toBe('GPL-3.0-only')
+        expect(s.effective.value).toEqual({ expression: 'GPL-3.0-only', url: null, level: 'RELEASE' })
     })
 })

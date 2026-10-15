@@ -3,8 +3,8 @@
 // T-25 (SCORE-42, design ADR-2): the organization settings block "Default declared licence":
 // the two inputs from a mocked read, Save with only the changed field, the canonical form and
 // the cleared URL taken from the mutation response, the server's refusal inline, a schema-drift
-// read reported to OrgSettings, any other read failure shown with a Retry, and read-only for a
-// non-admin.
+// read reported to OrgSettings, any other read failure (the organization missing from the served
+// list included) shown with a Retry, one save in flight at a time, and read-only for a non-admin.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -14,14 +14,18 @@ const mutate = vi.fn()
 vi.mock('@/utils/graphql', () => ({ default: { query: (...a: any[]) => query(...a), mutate: (...a: any[]) => mutate(...a) } }))
 
 const { default: Panel } = await import('./OrgDeclaredLicensePanel.vue')
-const { ORG_CLEARED, ORG_DECLARED_LICENSE_QUERY, ORG_SAVED, UPDATE_ORG_DECLARED_LICENSE } = await import('@/utils/declaredLicense')
+const { ORG_CLEARED, ORG_DECLARED_LICENSE_QUERY, ORG_NOT_LISTED, ORG_SAVED, UPDATE_ORG_DECLARED_LICENSE } = await import('@/utils/declaredLicense')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const URL1 = 'https://x.example/licence.txt'
 const URL_REFUSAL = 'defaultLicenseUrl needs a defaultLicenseExpression at the same level'
 
+// The organizations list (round 3, T-1), with another organization first, so the panel shows its
+// own organization's values only when it matches by uuid.
+const OTHER = { uuid: '99999999-2222-3333-4444-555555555555', settings: { defaultLicenseExpression: 'GPL-3.0-only', defaultLicenseUrl: 'https://other.example/l' } }
 const reply = (expression: string | null, url: string | null) =>
-    ({ data: { organization: { uuid: ORG, settings: { defaultLicenseExpression: expression, defaultLicenseUrl: url } } } })
+    ({ data: { organizations: [OTHER, { uuid: ORG, settings: { defaultLicenseExpression: expression, defaultLicenseUrl: url } }] } })
+const notListed = () => ({ data: { organizations: [OTHER] } })
 const saved = (expression: string | null, url: string | null) =>
     ({ data: { updateOrganizationSettings: { uuid: ORG, settings: { defaultLicenseExpression: expression, defaultLicenseUrl: url } } } })
 
@@ -56,7 +60,7 @@ beforeEach(() => {
 describe('OrgDeclaredLicensePanel', () => {
     it('rendersBothInputsFromTheReadWithSaveDisabled', async () => {
         const { w } = await mountPanel(reply('Apache-2.0', URL1))
-        expect(query).toHaveBeenCalledWith({ query: ORG_DECLARED_LICENSE_QUERY, variables: { orgUuid: ORG }, fetchPolicy: 'no-cache' })
+        expect(query).toHaveBeenCalledWith({ query: ORG_DECLARED_LICENSE_QUERY, variables: {}, fetchPolicy: 'no-cache' })
         expect(input(w, 'org-default-license').value).toBe('Apache-2.0')
         expect(input(w, 'org-default-license-url').value).toBe(URL1)
         expect(disabled(w)).toBe(true)
@@ -144,6 +148,41 @@ describe('OrgDeclaredLicensePanel', () => {
         expect(query).toHaveBeenCalledTimes(2)
         expect(input(w, 'org-default-license').value).toBe('MIT')
         expect(w.find('[data-testid="org-default-license-load-error"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('showsTheOrganizationMissingFromTheListAsAFailedReadWithARetry', async () => {
+        const { w, notify } = await mountPanel(notListed())
+        expect(w.emitted('unsupported')).toBeUndefined()
+        expect(w.find('[data-testid="org-default-license-load-error"]').text()).toContain(ORG_NOT_LISTED)
+        expect(w.find('[data-testid="org-default-license-retry"]').exists()).toBe(true)
+        expect(w.find('[data-testid="org-default-license"]').exists()).toBe(false)
+        expect(w.find('[data-testid="org-default-license-url"]').exists()).toBe(false)
+        expect(notify).toHaveBeenCalledTimes(1)
+
+        query.mockResolvedValueOnce(reply('AGPL-3.0-only', URL1))
+        await w.find('[data-testid="org-default-license-retry"]').trigger('click')
+        await flushPromises()
+        expect(input(w, 'org-default-license').value).toBe('AGPL-3.0-only')
+        expect(input(w, 'org-default-license-url').value).toBe(URL1)
+        expect(w.find('[data-testid="org-default-license-load-error"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('disablesSaveWhileASaveIsInFlightAndSendsOneMutation', async () => {
+        const { w } = await mountPanel(reply(null, null))
+        await type(w, 'org-default-license', 'MIT')
+        let settle: (v: any) => void = () => {}
+        mutate.mockReturnValueOnce(new Promise(resolve => { settle = resolve }))
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(disabled(w)).toBe(true)
+        await saveButton(w).trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        settle(saved('MIT', null))
+        await flushPromises()
+        expect(input(w, 'org-default-license').value).toBe('MIT')
         w.unmount()
     })
 

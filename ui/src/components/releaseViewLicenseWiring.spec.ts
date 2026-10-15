@@ -125,6 +125,20 @@ describe('ReleaseView: the declared licence block', () => {
         expect(directive(error, 'if')).toBe('releaseLicenseError')
     })
 
+    // Round 3: one save in flight at a time, from either button (naive-ui loading does not block a
+    // second click).
+    it('disables both Save and Clear while a save is in flight', () => {
+        expect(directive(node('release-license-save'), 'bind', 'disabled')).toMatch(/\bsavingReleaseLicense\b/)
+        expect(directive(node('release-license-clear'), 'bind', 'disabled')).toMatch(/\bsavingReleaseLicense\b/)
+    })
+
+    it('renders nothing of the block as raw HTML', () => {
+        const raw = find((n) => directive(n, 'html') !== undefined, last(block[0]))
+        expect(raw).toHaveLength(0)
+        expect(byTestId('release-license-unsupported').flatMap((path: any[]) => find((n) => directive(n, 'html') !== undefined, last(path))))
+            .toHaveLength(0)
+    })
+
     it('instantiates the composable once, committing the drift flag on unsupported', () => {
         expect(code).toMatch(/import \{ useReleaseDeclaredLicense \} from '@\/utils\/useReleaseDeclaredLicense'/)
         expect(code.match(/useReleaseDeclaredLicense\(/g)).toHaveLength(1)
