@@ -53,4 +53,11 @@ describe('releaseActorLabel', () => {
         expect(releaseActorLabel('', 'MANUAL', USERS, KEYS)).toBe('')
         expect(releaseActorLabel(null, 'MANUAL', USERS, KEYS)).toBe('')
     })
+
+    it('names a known person and keeps the uuid of an unknown actor on MANUAL_AND_AUTO and TEST', () => {
+        for (const updateType of ['MANUAL_AND_AUTO', 'TEST']) {
+            expect(releaseActorLabel('u-1', updateType, USERS, KEYS)).toBe('Ada <ada@example.com>')
+            expect(releaseActorLabel(OTHER, updateType, USERS, KEYS)).toBe(OTHER)
+        }
+    })
 })

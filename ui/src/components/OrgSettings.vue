@@ -4622,6 +4622,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    deniedReason
                                     status
                                     holder
                                     adminDisabled
@@ -5234,7 +5235,7 @@ async function resolveKeyRequest (row: any, approve: boolean) {
         const r = await Swal.fire({ title: 'Approve this request?', text: `Request ${request}${from}. ` + 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
         if (!r.value) return
     } else {
-        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${request}${from}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${request}${from}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', inputAttributes: { maxlength: '256' }, showCancelButton: true, confirmButtonText: 'Deny' })
         if (!r.isConfirmed) return
         reason = r.value || null
     }

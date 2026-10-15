@@ -2183,6 +2183,7 @@ import {
 } from '@/utils/agentDocuments'
 import { outcomeWord, specWord } from '@/utils/agentWords'
 import { releaseActorLabel } from '@/utils/actorLabel'
+import { useOrgKeyRefs } from '@/utils/useOrgKeyRefs'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
@@ -2279,9 +2280,7 @@ const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel
 
 const users: Ref<any[]> = ref([])
 // the org's keys, so a key actor in the history reads as a key label; loaded with the History tab, for admins only
-const orgKeys: Ref<any[]> = ref([])
-// the org orgKeys holds, or is being loaded for; empty when there is nothing to keep
-let orgKeysOrg = ''
+const { orgKeys, load: loadOrgKeyRefs } = useOrgKeyRefs((org) => store.dispatch('fetchApiKeyRefsOfOrg', org))
 const acollections: Ref<any[]> = ref([])
 const combinedHistoryEvents: Ref<any[]> = ref([])
 
@@ -2293,18 +2292,7 @@ async function loadUsers() {
 
 // The server's apiKeys gate is ADMIN (or a global admin); anyone else keeps the short-id label.
 async function loadOrgKeys() {
-    const orgUuid = release.value?.orgDetails?.uuid
-    if (!orgUuid || orgKeysOrg === orgUuid) return
-    orgKeysOrg = ''
-    if (orgKeys.value.length) orgKeys.value = []
-    // checked on every load until it holds: permissions may not have loaded on the first one
-    if (!isOrgAdmin.value && !store.getters.myuser?.isGlobalAdmin) return
-    orgKeysOrg = orgUuid
-    const keys = await store.dispatch('fetchApiKeyRefsOfOrg', orgUuid)
-    if (orgKeysOrg !== orgUuid) return
-    orgKeys.value = keys
-    // nothing back (a failed read, or an org without keys): ask again on the next load
-    if (!keys.length) orgKeysOrg = ''
+    await loadOrgKeyRefs(release.value?.orgDetails?.uuid, isOrgAdmin.value || !!store.getters.myuser?.isGlobalAdmin)
 }
 
 async function loadAcollections() {
