@@ -35,8 +35,7 @@ import io.reliza.ws.oss.TestInitializer;
 /**
  * The organization a release is created under, and its references validated against, is its
  * branch's (TPF-5, security review F-1). createRelease used to take the dto's org as given, so a
- * caller passing another organization than the branch's -- a global admin on addReleaseManual, or
- * instance product generation over a plan naming another organization's feature set -- had the
+ * caller passing another organization than the branch's -- a global admin on addReleaseManual -- had the
  * parents checked against, and the release recorded under, that other organization. The check runs
  * before the lock check, the version lookup, the reference validation and every write, for every
  * caller; the manual lane is pinned in ReleaseDatafetcherParentOrgTest.
