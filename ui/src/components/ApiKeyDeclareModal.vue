@@ -5,7 +5,8 @@
         <p class="subtle" style="margin-top: 0;">
             The name an API_KEYS file knows this key by. The next apply naming it updates this key rather than creating another.
         </p>
-        <n-form-item label="Declared name" :validation-status="shownProblem ? 'error' : undefined" :feedback="shownProblem">
+        <n-form-item label="Declared name" :validation-status="shownProblem ? 'error' : (warning ? 'warning' : undefined)"
+            :feedback="shownProblem || warning">
             <n-input v-model:value="name" placeholder="e.g. release-pipeline"
                 @update:value="serverError = ''" @keyup.enter="save" />
         </n-form-item>
@@ -20,13 +21,15 @@
 /**
  * Declare an API key made by hand under a name for API_KEYS files (task RD3-11). The name is checked here as
  * the server checks it; a refusal the server alone can make (another key carries the name) shows beside the input.
+ * A name with a character that draws nothing is flagged as a warning, not refused: the browser's Unicode data can
+ * differ from the server's.
  */
 import { NButton, NFormItem, NInput, NModal, NSpace } from 'naive-ui'
 import { computed, ref, watch } from 'vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
-import { declaredNameProblem, declarePayload } from '@/utils/apiKeyDeclaration'
+import { declaredNameProblem, declaredNameWarning, declarePayload } from '@/utils/apiKeyDeclaration'
 import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
@@ -42,7 +45,9 @@ const name = ref('')
 const serverError = ref('')
 const saving = ref(false)
 watch(() => [props.show, props.apiKey], () => { name.value = props.apiKey?.declaredName ?? ''; serverError.value = '' }, { immediate: true })
-const problem = computed(() => declaredNameProblem(name.value, props.apiKey?.declaredName))
+const problem = computed(() => declaredNameProblem(name.value))
+// what the server is expected to refuse, shown before the round trip; it does not disable Declare, the server decides
+const warning = computed(() => declaredNameWarning(name.value, props.apiKey?.declaredName))
 const unchanged = computed(() => name.value === (props.apiKey?.declaredName ?? ''))
 // an empty field is not worth an error until something was typed
 const shownProblem = computed(() => serverError.value || (name.value ? problem.value : ''))

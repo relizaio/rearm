@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import { canDeclareKey, canReleaseKeyName, DECLARABLE_KEY_TYPES, declaredNameProblem, declaredSourceDetail, declaredSourceLabel,
-    declarePayload, INVISIBLE_NAME, MAX_DECLARED_NAME, NOT_NFC_NAME, releasePayload, secretExpiresLabel } from './apiKeyDeclaration'
+    declaredNameWarning, declarePayload, INVISIBLE_NAME, MAX_DECLARED_NAME, NOT_NFC_NAME, releasePayload, secretExpiresLabel } from './apiKeyDeclaration'
 import { tsFull } from './agentTaskFormat'
 
 const key = (type: string, status: string = 'ACTIVE', declaredName: string | null = null) => ({ uuid: 'k1', type, status, declaredName })
@@ -45,15 +45,21 @@ describe('apiKeyDeclaration', () => {
         expect(declaredNameProblem('c\u0085i')).toBe('A key\'s name has no control characters')
     })
 
-    // The server's cases for a name being assigned, written as escapes so the file stays ASCII.
-    const refused = (name: string) => expect(declaredNameProblem(name).startsWith(INVISIBLE_NAME), name).toBe(true)
-    const kept = (name: string) => expect(declaredNameProblem(name), name).toBe('')
+    // The server's cases for a name being assigned, written as escapes so the file stays ASCII. They warn and never block.
+    const refused = (name: string) => {
+        expect(declaredNameWarning(name).startsWith(INVISIBLE_NAME), name).toBe(true)
+        expect(declaredNameProblem(name), name).toBe('')
+    }
+    const kept = (name: string) => {
+        expect(declaredNameWarning(name), name).toBe('')
+        expect(declaredNameProblem(name), name).toBe('')
+    }
 
-    it('refuses control, format, bidirectional, separator and private-use characters', () => {
+    it('warns on control, format, bidirectional, separator and private-use characters', () => {
         for (const name of ['a\u202Eb', 'ci\u200Brelease', 'soft\u00ADhyphen', 'ci\uFEFFrelease', 'a\u2028b', 'pua\uE000x', 'a\uD800b']) refused(name)
     })
 
-    it('refuses stray whitespace inside a name', () => {
+    it('warns on stray whitespace inside a name', () => {
         for (const name of ['two  spaces', 'no\u00A0break', 'ideographic\u3000space']) refused(name)
     })
 
@@ -74,27 +80,46 @@ describe('apiKeyDeclaration', () => {
         for (const name of ['ci\uDB40\uDC67deploy', 'ci\uDB40\uDC7Fdeploy', '\uD83C\uDFF4\uDB40\uDC67 ops']) refused(name)
     })
 
-    it('refuses blank letters, and combining marks without a visible base', () => {
+    it('warns on blank letters, and on combining marks without a visible base', () => {
         for (const name of ['ci\u3164deploy', 'ci\uFFA0deploy', 'ci\u2800deploy', 'ci\uD834\uDD59release', 'caf\u00E9\u034F key',
             '\u0301a', 'ab \u0301c', '\u0645\u200D\u0301']) refused(name)
         for (const name of ['g\u0303 ops', 'n\u0304 key', '\u00E9t\u00E9 key', 'ci release', '\uD55C\uAE00 key']) kept(name)
     })
 
-    it('refuses a name not in composed form', () => {
-        expect(declaredNameProblem('e\u0301te key')).toBe(NOT_NFC_NAME)
-        expect(declaredNameProblem('\u212Aey')).toBe(NOT_NFC_NAME)
+    it('warns on a name not in composed form', () => {
+        expect(declaredNameWarning('e\u0301te key')).toBe(NOT_NFC_NAME)
+        expect(declaredNameWarning('\u212Aey')).toBe(NOT_NFC_NAME)
+        expect(declaredNameProblem('e\u0301te key')).toBe('')
     })
 
-    it('names the refused character and its place, counted in code points', () => {
-        expect(declaredNameProblem('ci\u200Brelease')).toBe(INVISIBLE_NAME + ' (U+200B at code point 3)')
-        expect(declaredNameProblem('x\uD83D\uDE80ci\uD834\uDD59')).toBe(INVISIBLE_NAME + ' (U+1D159 at code point 5)')
+    it('names the character and its place, counted in code points', () => {
+        expect(declaredNameWarning('ci\u200Brelease')).toBe(INVISIBLE_NAME + ' (U+200B at code point 3)')
+        expect(declaredNameWarning('x\uD83D\uDE80ci\uD834\uDD59')).toBe(INVISIBLE_NAME + ' (U+1D159 at code point 5)')
     })
 
-    it('lets a key keep a name it already carries, as the server does, but still checks the rest', () => {
-        expect(declaredNameProblem('ci\u200Brelease', 'ci\u200Brelease')).toBe('')
-        refused('ci\u200Brelease')
-        expect(declaredNameProblem('ci\u200Brelease', 'other').startsWith(INVISIBLE_NAME)).toBe(true)
-        expect(declaredNameProblem(' ci', ' ci')).toBe('A key\'s name has no leading or trailing spaces')
+    it('does not warn on a name the key already carries, as the server keeps it', () => {
+        expect(declaredNameWarning('ci\u200Brelease', 'ci\u200Brelease')).toBe('')
+        expect(declaredNameWarning('ci\u200Brelease', 'other').startsWith(INVISIBLE_NAME)).toBe(true)
+        expect(declaredNameWarning('', '')).toBe('')
+    })
+
+    it('takes edge and blank whitespace as the server does: Java whitespace, not trim()', () => {
+        // U+00A0, U+2007, U+202F and U+FEFF are not Java whitespace: the server's edge check passes them, its
+        // assignment rule refuses them, and a key keeps such a name it already has
+        for (const name of ['ci\u00A0', '\u2007ci', 'ci\u202F', '\uFEFFci']) {
+            expect(declaredNameProblem(name), name).toBe('')
+            expect(declaredNameWarning(name).startsWith(INVISIBLE_NAME), name).toBe(true)
+            expect(declaredNameWarning(name, name), name).toBe('')
+        }
+        expect(declaredNameWarning('ci\u00A0')).toBe(INVISIBLE_NAME + ' (U+00A0 at code point 3)')
+        for (const name of ['\u3000ci', 'ci\u2028', '\u001Cci']) expect(declaredNameProblem(name), name).toBe('A key\'s name has no leading or trailing spaces')
+        expect(declaredNameProblem('\u3000 \u2029')).toBe('A key needs a name')
+        expect(declaredNameProblem('\u00A0')).toBe('')
+    })
+
+    it('never blocks on a property whose Unicode data can differ between the browser and the server', () => {
+        // a pictograph that is not emoji-style, with VS16: the server takes it; a browser on other emoji data may warn
+        expect(declaredNameProblem('\u2605\uFE0F ops')).toBe('')
     })
 
     it('declares with the name as typed and releases with a null name', () => {

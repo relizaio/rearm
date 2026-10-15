@@ -32,16 +32,25 @@ export const NOT_NFC_NAME = 'A key\'s name must be in Unicode normalization form
 /** Why a name with a character that draws nothing, or stray whitespace, is refused; the code point and its place follow. */
 export const INVISIBLE_NAME = 'A key\'s name has no control, invisible or bidirectional characters and no doubled or edge whitespace'
 
+/** Why a name cannot be declared, or '' when it can: the checks every server makes, with the same answer in every browser. */
+export function declaredNameProblem (name: string | null | undefined): string {
+    const text = name ?? ''
+    const chars = Array.from(text)
+    if (chars.every(isJavaWhitespace)) return 'A key needs a name'
+    if (isJavaWhitespace(chars[0]) || isJavaWhitespace(chars[chars.length - 1])) return 'A key\'s name has no leading or trailing spaces'
+    if (text.length > MAX_DECLARED_NAME) return `A key's name is at most ${MAX_DECLARED_NAME} characters`
+    if (chars.some(isControl)) return 'A key\'s name has no control characters'
+    return ''
+}
+
 /**
- * Why a name cannot be declared, or '' when it can. `current` is the name the key carries now: as on the
- * server, the invisible-character check applies only to a name being assigned, so a key keeps a name it already has.
+ * Why the server is expected to refuse a name being assigned, or ''. `current` is the name the key carries now: as
+ * on the server, the rule applies only to a name being assigned, so a key keeps a name it already has. A warning,
+ * not a refusal: the Unicode data comes from the browser and can differ from the server's, and a CE server does not
+ * check this yet, so the server decides.
  */
-export function declaredNameProblem (name: string | null | undefined, current?: string | null): string {
-    if (!name || !name.trim()) return 'A key needs a name'
-    if (name !== name.trim()) return 'A key\'s name has no leading or trailing spaces'
-    if (name.length > MAX_DECLARED_NAME) return `A key's name is at most ${MAX_DECLARED_NAME} characters`
-    if (Array.from(name).some(isControl)) return 'A key\'s name has no control characters'
-    if (name === current) return ''
+export function declaredNameWarning (name: string | null | undefined, current?: string | null): string {
+    if (!name || name === current || declaredNameProblem(name)) return ''
     return invisibleNameProblem(name)
 }
 
@@ -51,10 +60,17 @@ function isControl (ch: string): boolean {
     return c <= 0x1f || (c >= 0x7f && c <= 0x9f)
 }
 
+/** Java's Character.isWhitespace, which the server's blank and edge checks use: unlike trim(), not U+00A0, U+2007, U+202F or U+FEFF. */
+function isJavaWhitespace (ch: string): boolean {
+    const c = ch.codePointAt(0) ?? -1
+    if ((c >= 0x09 && c <= 0x0d) || (c >= 0x1c && c <= 0x1f)) return true
+    return c !== 0xa0 && c !== 0x2007 && c !== 0x202f && has(SEPARATOR, c)
+}
+
 /*
  * The server's rule for a name being assigned, code point for code point. The tables are the server's; the
- * Unicode properties come from the browser, whose Unicode version can differ from the server's for code points
- * assigned lately, where the server's answer stands.
+ * Unicode properties (emoji, scripts, general categories) come from the browser, whose Unicode data can differ from
+ * the server's, which is why declaredNameWarning only warns.
  */
 
 /** Unicode 16 Default_Ignorable_Code_Point, as [first, last] ranges: code points that draw nothing. */
@@ -92,6 +108,7 @@ const INHERITED_SCRIPT = /^\p{Script=Inherited}$/u
 /** Control, format, line and paragraph separators, surrogates, private use, unassigned, and space separators. */
 const DRAWS_NOTHING = /^[\p{Cc}\p{Cf}\p{Zl}\p{Zp}\p{Cs}\p{Co}\p{Cn}\p{Zs}]$/u
 const MARK = /^[\p{Mn}\p{Me}]$/u
+const SEPARATOR = /^[\p{Zs}\p{Zl}\p{Zp}]$/u
 
 function invisibleNameProblem (name: string): string {
     if (name.normalize('NFC') !== name) return NOT_NFC_NAME
