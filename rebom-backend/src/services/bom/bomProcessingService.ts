@@ -426,32 +426,76 @@ function losesLicenseEntry(kept: any[], dropped: any[]): boolean {
   return dropped.some((entry: any) => !keys.has(licenseKey(entry)))
 }
 
+/** The expression texts that assert no licence (SCORE-44 ADR-2): a fold that drops one loses nothing. */
+const NO_LICENSE_ASSERTED = new Set(['NOASSERTION', 'NONE'])
+
+/**
+ * SCORE-44 ADR-2: the listed licence expressions a fold that keeps `kept` and drops `dropped` loses,
+ * both lists as the fold compared them. The `expression` entries of `dropped`, in order, whose
+ * licenseKey no entry of `kept` has, leaving out NOASSERTION and NONE (trimmed, any case), each
+ * distinct text once. Ids and names are never returned. A non-array on either side returns none.
+ */
+export function droppedLicenseExpressions(kept: any, dropped: any): string[] {
+  if (!Array.isArray(kept) || !Array.isArray(dropped)) return []
+  const keys = new Set(kept.map(licenseKey))
+  const out: string[] = []
+  for (const entry of dropped) {
+    if (!isExpressionEntry(entry) || typeof entry.expression !== 'string') continue
+    if (keys.has(licenseKey(entry))) continue
+    if (NO_LICENSE_ASSERTED.has(entry.expression.trim().toUpperCase())) continue
+    if (!out.includes(entry.expression)) out.push(entry.expression)
+  }
+  return out
+}
+
+/**
+ * SCORE-44 ADR-1: records on a component each dropped licence expression it does not record yet,
+ * as a DROPPED_LICENSE_PROPERTY entry with the text as the value, appended after its properties in
+ * the given order. Always writes a new `properties` array, never into the one it found: a list a
+ * de-dup fold took from a duplicate is the duplicate's own object. Returns the number appended; a
+ * non-object component or no expression is a no-op.
+ */
+export function recordDroppedLicenses(component: any, expressions: string[]): number {
+  if (!component || typeof component !== 'object' || Array.isArray(component)) return 0
+  if (!Array.isArray(expressions) || expressions.length === 0) return 0
+  const found = Array.isArray(component.properties) ? component.properties : []
+  const recorded = new Set(found.filter((p: any) => p?.name === DROPPED_LICENSE_PROPERTY).map((p: any) => p.value))
+  const added: any[] = []
+  for (const expression of expressions) {
+    if (typeof expression !== 'string' || recorded.has(expression)) continue
+    recorded.add(expression)
+    added.push({ name: DROPPED_LICENSE_PROPERTY, value: expression })
+  }
+  if (added.length > 0) component.properties = [...found, ...added]
+  return added.length
+}
+
 /**
  * SCORE-40 ADR-6: two `licenses` lists folded into one. Both are normalised first, so a
  * single-id expression counts as an id. An empty or absent survivor list takes the duplicate's
  * whole; when either list holds an `expression` entry the survivor's list stands whole, the same
  * object, and the duplicate's is dropped (CycloneDX 1.6 cannot union an expression with
  * anything), logged when the duplicate held an entry the survivor lacks (ADR-9); otherwise the two
- * are unioned by expression, id or name, survivor first.
+ * are unioned by expression, id or name, survivor first. `dropped` holds the listed expressions
+ * the fold lost (SCORE-44 ADR-2), for the caller to record on the survivor.
  */
-function unionLicenses(survivor: any, duplicate: any, ref?: string): any {
-  if (!Array.isArray(duplicate) || duplicate.length === 0) return survivor
-  if (isEmptyValue(survivor)) return duplicate
-  if (!Array.isArray(survivor)) return survivor
+function foldLicenseLists(survivor: any, duplicate: any, ref?: string): { licenses: any, dropped: string[] } {
+  if (!Array.isArray(duplicate) || duplicate.length === 0) return { licenses: survivor, dropped: [] }
+  if (isEmptyValue(survivor)) return { licenses: duplicate, dropped: [] }
+  if (!Array.isArray(survivor)) return { licenses: survivor, dropped: [] }
   const kept = normalizeLicenses(survivor) || []
   const added = normalizeLicenses(duplicate) || []
   if (hasExpressionEntry(kept) || hasExpressionEntry(added)) {
     if (losesLicenseEntry(kept, added)) {
       logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
     }
-    return survivor
+    return { licenses: survivor, dropped: droppedLicenseExpressions(kept, added) }
   }
   const union = unionByKey(kept, added, licenseKey)
-  return union === kept ? survivor : union
+  return { licenses: union === kept ? survivor : union, dropped: [] }
 }
 
-const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, ref?: string) => any> = {
-  licenses: unionLicenses,
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
   hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
   externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
   properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
@@ -462,19 +506,27 @@ const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, ref?: st
  * SCORE-13 ADR-4: the survivor wins, nothing is dropped. A field the survivor lacks or has empty
  * is taken from the duplicate; a non-empty survivor value is never overwritten. The
  * identity lists are unioned, survivor first; the one exception is a `licenses` list
- * beside an expression, which the survivor keeps whole (SCORE-40 ADR-6). The duplicate's `type` is dropped and its
+ * beside an expression, which the survivor keeps whole (SCORE-40 ADR-6), recording each listed
+ * expression it loses (SCORE-44 ADR-2). The duplicate's `type` is dropped and its
  * `components` are hoisted by the caller.
  */
 function mergeDuplicateInto(survivor: any, duplicate: any): void {
+  let dropped: string[] = []
   for (const key of Object.keys(duplicate)) {
     if (DEDUP_SKIPPED_FIELDS.has(key)) continue
     const union = DEDUP_LIST_UNIONS[key]
-    if (union) {
-      survivor[key] = union(survivor[key], duplicate[key], bomRefOf(survivor))
+    if (key === 'licenses') {
+      const fold = foldLicenseLists(survivor.licenses, duplicate.licenses, bomRefOf(survivor))
+      survivor.licenses = fold.licenses
+      dropped = fold.dropped
+    } else if (union) {
+      survivor[key] = union(survivor[key], duplicate[key])
     } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
       survivor[key] = duplicate[key]
     }
   }
+  // After the duplicate's own properties, which may carry records of a lower merge, are unioned.
+  recordDroppedLicenses(survivor, dropped)
 }
 
 function hasRepeatedBomRef(bom: any): boolean {
@@ -844,6 +896,14 @@ export function dropDanglingRefs(bom: any): DanglingRefsResult {
  * MissingSbomReason ReARM sent.
  */
 export const SBOM_MISSING_PROPERTY = 'reliza:sbom:missing'
+
+/**
+ * Property a merged component carries once per distinct listed licence expression a fold dropped
+ * in favour of the licence kept on that node (SCORE-44 ADR-1): the value is the expression text
+ * as the input listed it. Never written for NOASSERTION, NONE or an expression the node still
+ * holds; licence ids and names a fold drops are not recorded.
+ */
+export const DROPPED_LICENSE_PROPERTY = 'reliza:license:dropped'
 
 /**
  * Metadata property a merged BOM carries when it lists placeholder components (SCORE-15 ADR-3):
@@ -1687,7 +1747,9 @@ export function normalizeLicensesInBom(bom: any): any {
  * entries stay in order. Every other value is left as it is, the same object. Changes the
  * document in place, logs each node it changed, and returns the number of nodes changed. The
  * arrays it meets are mixed (the CLI never appends an expression), so a settle always loses an
- * entry the kept list lacks and ADR-9 never withholds its line.
+ * entry the kept list lacks and ADR-9 never withholds its line. Each expression a settle drops
+ * is recorded on the node (SCORE-44 ADR-2); the pinned CLI never appends one, so that is a
+ * hand-built node's case.
  */
 export function settleLicenseFolds(bom: any): number {
   if (!bom || typeof bom !== 'object') return 0
@@ -1700,6 +1762,7 @@ export function settleLicenseFolds(bom: any): number {
       const dropped = licenses.filter((entry: any) => !kept.includes(entry))
       logger.info({ bomRef: component['bom-ref'], kept, dropped }, 'license fold settled: the survivor licenses stand')
       component.licenses = kept
+      recordDroppedLicenses(component, droppedLicenseExpressions(kept, dropped))
       count++
     }
     if (Array.isArray(component.components)) component.components.forEach(settle)
@@ -1708,6 +1771,19 @@ export function settleLicenseFolds(bom: any): number {
   if (Array.isArray(bom.components)) bom.components.forEach(settle)
   if (count > 0) logger.info(`license fold settle: ${count} licenses arrays a fold left mixed settled`)
   return count
+}
+
+/**
+ * One fold logListedLicenseDrops logged (SCORE-44 ADR-2): the survivor's merge-boms key and bom-ref,
+ * the lists the line names, and the listed expressions the fold loses (droppedLicenseExpressions
+ * over the normalised lists; may be empty, for a dropped NOASSERTION the line still reports).
+ */
+export interface ListedLicenseDrop {
+  key: string
+  bomRef: any
+  kept: any[]
+  dropped: any[]
+  expressions: string[]
 }
 
 /** The key rearm-cli merge-boms folds a component by: its purl, else its bom-ref, else none. */
@@ -1733,17 +1809,17 @@ function mergeBomsLicenseKey(entry: any): string {
  * `licenses` array, loses it: one info line per such component, with the survivor's bom-ref, the
  * survivor's licenses as the CLI holds them at that fold, and the component's, unless that list
  * already holds the expression by key (ADR-9: nothing is lost). Reads the inputs only and returns
- * the number of lines logged.
+ * one ListedLicenseDrop per line logged (SCORE-44 ADR-2), for recordListedLicenseDrops.
  */
-export function logListedLicenseDrops(bomObjects: any[]): number {
-  if (!Array.isArray(bomObjects)) return 0
+export function logListedLicenseDrops(bomObjects: any[]): ListedLicenseDrop[] {
+  const drops: ListedLicenseDrop[] = []
+  if (!Array.isArray(bomObjects)) return drops
   const survivors = new Map<string, { bomRef: any, licenses: any }>()
   for (const bom of bomObjects) {
     const root = bom?.metadata?.component
     const key = mergeBomsKey(root)
     if (key !== '') survivors.set(key, { bomRef: root['bom-ref'], licenses: root.licenses })
   }
-  let count = 0
   for (const bom of bomObjects) {
     if (!Array.isArray(bom?.components)) continue
     for (const component of bom.components) {
@@ -1763,7 +1839,13 @@ export function logListedLicenseDrops(bomObjects: any[]): number {
       // The CLI drops the listed expression entries; ADR-9: logged only when one is not already kept.
       if (losesLicenseEntry(survivor.licenses, listed.filter(isExpressionEntry))) {
         logger.info({ bomRef: survivor.bomRef, kept: survivor.licenses, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
-        count++
+        drops.push({
+          key,
+          bomRef: survivor.bomRef,
+          kept: survivor.licenses,
+          dropped: listed,
+          expressions: droppedLicenseExpressions(normalizeLicenses(survivor.licenses), normalizeLicenses(listed))
+        })
       }
       const seen = new Set(survivor.licenses.map(mergeBomsLicenseKey).filter((k: string) => k !== ''))
       const added = listed.filter((entry: any) => {
@@ -1774,6 +1856,32 @@ export function logListedLicenseDrops(bomObjects: any[]): number {
       })
       if (added.length > 0) survivor.licenses = [...survivor.licenses, ...added]
     }
+  }
+  return drops
+}
+
+/**
+ * SCORE-44 ADR-2 site 3: records on the merged document the listed expressions merge-boms dropped,
+ * as logListedLicenseDrops predicted them from the inputs. merge-boms writes every FLAT survivor as
+ * a top-level component, so each drop's node is the first top-level component of its key (never
+ * `metadata.component`, which the CLI writes fresh, nor a nested copy of the key). Only the
+ * expressions the node's served `licenses` lacks by key are recorded, so a CLI that kept one leaves
+ * no record; a key no top-level component carries records nothing. Returns the number of
+ * properties added.
+ */
+export function recordListedLicenseDrops(bom: any, drops: ListedLicenseDrop[]): number {
+  if (!Array.isArray(drops) || drops.length === 0) return 0
+  const top: any[] = Array.isArray(bom?.components) ? bom.components : []
+  let count = 0
+  for (const drop of drops) {
+    if (drop.expressions.length === 0) continue
+    const node = top.find((component: any) => component && typeof component === 'object' && mergeBomsKey(component) === drop.key)
+    if (!node) {
+      logger.info({ key: drop.key, expressions: drop.expressions }, 'merge-boms left no top-level component of the key: the dropped licence expression is not recorded')
+      continue
+    }
+    const served = new Set((Array.isArray(node.licenses) ? node.licenses : []).map(licenseKey))
+    count += recordDroppedLicenses(node, drop.expressions.filter((expression: string) => !served.has(licenseKey({ expression }))))
   }
   return count
 }

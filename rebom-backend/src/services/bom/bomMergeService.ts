@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -102,8 +102,9 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     
     const purl = establishPurl(undefined, rebomOptions)
     // merge-boms folds by purl or bom-ref under FLAT (any structure but HIERARCHICAL) and drops a
-    // listed expression beside the survivor's licences without a word: name it here (SCORE-40 ADR-8).
-    if (rebomOptions.structure !== BomStructure.HIERARCHICAL) logListedLicenseDrops(bomObjects)
+    // listed expression beside the survivor's licences without a word: name it here (SCORE-40 ADR-8),
+    // and keep what it names for the record on the merged node (SCORE-44 ADR-2).
+    const drops = rebomOptions.structure !== BomStructure.HIERARCHICAL ? logListedLicenseDrops(bomObjects) : []
     bomPaths = await createTmpFiles(bomObjects)
     const command = ['bomutils', 'merge-boms']
     
@@ -160,6 +161,8 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     if (!processedBom) {
       throw new Error('BOM processing failed - processBomObj returned null')
     }
+    // On the CLI's output, before the validation and before the de-dup of mergeBoms (SCORE-44 ADR-2).
+    recordListedLicenseDrops(processedBom, drops)
     await validateBom(processedBom)
     
     // Attach rebom tool to the merged BOM (idempotent - won't duplicate if already present)

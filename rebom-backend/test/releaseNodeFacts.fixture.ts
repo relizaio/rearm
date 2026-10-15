@@ -96,6 +96,8 @@ export function externalPlaceholder(): any {
 export const LICENSE_MERGE_VERSION = 7;
 /** The merge version of the SCORE-30 requests, without licences. */
 export const FACTS_MERGE_VERSION = 6;
+/** The merge version whose products record a dropped listed licence expression (SCORE-44 ADR-6; a label, rebom reads nothing from it). */
+export const DROPPED_MERGE_VERSION = 8;
 
 /** SCORE-40 T-5: the licence the component release declares, proprietary with its text online. */
 export const COMPONENT_LICENSE = 'LicenseRef-Facts-Commercial';
@@ -206,12 +208,13 @@ export const LISTING_MID = 'pkg:npm/mid@1.0.0';
  * release under its release node purl and bom-ref, as an in-house library, with `licenses` when
  * given (no key when undefined), and a dependency from its root to it. `nested`: the listing sits
  * in the `components` of the library `LISTING_MID`, the upload's top-level component, with
- * dependencies from the root to it and from it to the listing.
+ * dependencies from the root to it and from it to the listing. `rootPurl` (SCORE-44 T-7) names
+ * another listing application, at the top level only.
  */
-export function releaseNodeListing(licenses?: any[], nested = false): any {
+export function releaseNodeListing(licenses?: any[], nested = false, rootPurl = LISTING_ROOT): any {
     const listed: any = { type: 'library', name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE };
     if (licenses !== undefined) listed.licenses = licenses;
-    const root = { type: 'application', name: 'web-app', version: '2.0.0', purl: LISTING_ROOT, 'bom-ref': LISTING_ROOT };
+    const root = { type: 'application', name: 'web-app', version: '2.0.0', purl: rootPurl, 'bom-ref': rootPurl };
     if (!nested) return uploadDoc(root, [listed]);
     const mid = { type: 'library', name: 'mid', version: '1.0.0', purl: LISTING_MID, 'bom-ref': LISTING_MID, components: [listed] };
     const bom = uploadDoc(root, [mid]);
@@ -230,7 +233,9 @@ export type ListingProducts = {
     /** The product merged over [component merge, listing] and over [listing, component merge], in memory. */
     merged: any[],
     /** The same two product merges stored and served. */
-    stored: any[]
+    stored: any[],
+    /** The record ids of the two stored product merges (SCORE-44 T-7: inputs of a product above). */
+    storedIds: string[]
 };
 
 /**
@@ -241,6 +246,7 @@ export type ListingProducts = {
  * the shape before any store normalisation) and once stored and served. `releaseNodeLicenses`,
  * when set (round 4), replaces the component merge by an upload of
  * releaseNodeUpload(releaseNodeLicenses), whose root is the release node itself (`declared` unused).
+ * The product merges carry DROPPED_MERGE_VERSION (SCORE-44 T-5).
  */
 export async function buildListingProducts(created: string[], declared: DeclaredLicence | undefined,
     listingLicenses: any[] | undefined, nested = false, releaseNodeLicenses?: any[]): Promise<ListingProducts> {
@@ -280,15 +286,17 @@ export async function buildListingProducts(created: string[], declared: Declared
 
     const productOptions = () => {
         const request = productMergeRequest(true, PRODUCT_LICENSE);
-        return options(request.overrides, request.extra);
+        return options({ ...request.overrides, mergeVersion: DROPPED_MERGE_VERSION }, request.extra);
     };
     const merged: any[] = [];
     const stored: any[] = [];
+    const storedIds: string[] = [];
     for (const ids of [[component, listing], [listing, component]]) {
         merged.push(await BomService.mergeBoms(ids, productOptions(), TEST_ORG_UUID));
         const record = await BomService.mergeAndStoreBoms(ids, productOptions(), TEST_ORG_UUID, BomService.addBom);
         created.push(record.uuid);
+        storedIds.push(record.uuid);
         stored.push(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
     }
-    return { merged, stored };
+    return { merged, stored, storedIds };
 }

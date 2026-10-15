@@ -73,6 +73,18 @@ still has nothing to export. From the ReARM release after 26.10.52 on; product e
 before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
 property and the `compositions` entry are in the CycloneDX JSON only.
 
+### Listed licences a merge dropped
+
+When an SBOM in a product lists one of the product's component releases with a licence expression
+and the merge keeps another licence on that node (the licence the release declares, or the licence
+its own SBOM carries), the node records each dropped expression as a property
+`reliza:license:dropped`, one entry per expression, with the text as the listing wrote it. Nothing
+is recorded for `NOASSERTION`, `NONE` or an expression the node still holds. Licence ids are not
+recorded: they are merged beside kept ids or names, and dropped beside a kept expression, where only
+the server log names them. The property stays in the export when internal metadata is left out, and
+is inside the signed document. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request.
+
 ### Scoring the export
 
 Beside **Export**, **Score** checks the document the export would give you, with the same content options,
