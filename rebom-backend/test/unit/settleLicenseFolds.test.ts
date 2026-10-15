@@ -90,6 +90,8 @@ describe('settleLicenseFolds', () => {
         const expected = structuredClone(input);
         expected.metadata.component.licenses = [{ expression: 'MIT OR Apache-2.0' }];
         expected.components[0].components[0].components[0].licenses = [CUSTOM];
+        // SCORE-44 ADR-2: the expression the settle dropped is recorded on its node; the ids dropped beside the root's expression are not
+        expected.components[0].components[0].components[0].properties = [{ name: 'reliza:license:dropped', value: 'BSD-3-Clause OR MIT' }];
 
         expect(settleLicenseFolds(input)).toBe(2);
 
@@ -112,5 +114,61 @@ describe('settleLicenseFolds', () => {
         expect(settleLicenseFolds({ bomFormat: 'CycloneDX', specVersion: '1.6' })).toBe(0);
         expect(settleLicenseFolds(null)).toBe(0);
         expect(settleLicenseFolds(undefined)).toBe(0);
+    });
+});
+
+/**
+ * SCORE-44 T-2 (ADR-2 site 2): an expression the settle drops is recorded on its node as
+ * reliza:license:dropped; ids, NOASSERTION and a repeat of the kept expression are not.
+ */
+describe('settleLicenseFolds records a dropped expression (SCORE-44 T-2)', () => {
+    const X = { expression: 'MIT OR Apache-2.0' };
+    const X2 = { expression: 'BSD-3-Clause OR MIT' };
+    const P = (value: string) => ({ name: 'reliza:license:dropped', value });
+
+    it('[MIT, X] keeps [MIT] and records X', async () => {
+        const input = doc([lib('A', { licenses: [MIT, X] })]);
+
+        expect(settleLicenseFolds(input)).toBe(1);
+
+        expect(input.components[0].licenses).toStrictEqual([MIT]);
+        expect(input.components[0].properties).toStrictEqual([P('MIT OR Apache-2.0')]);
+        await expect(validateBom(input)).resolves.toBeTruthy();
+    });
+
+    it('[X, MIT] keeps X and records nothing (an id dropped)', () => {
+        const input = doc([lib('A', { licenses: [X, MIT] })]);
+
+        expect(settleLicenseFolds(input)).toBe(1);
+
+        expect(input.components[0].licenses).toStrictEqual([X]);
+        expect(input.components[0]).not.toHaveProperty('properties');
+    });
+
+    it('[MIT, NOASSERTION] keeps [MIT] and records nothing', () => {
+        const input = doc([lib('A', { licenses: [MIT, { expression: 'NOASSERTION' }] })]);
+
+        expect(settleLicenseFolds(input)).toBe(1);
+
+        expect(input.components[0].licenses).toStrictEqual([MIT]);
+        expect(input.components[0]).not.toHaveProperty('properties');
+    });
+
+    it('[X, X2] keeps X and records X2', async () => {
+        const input = doc([lib('A', { licenses: [X, X2] })]);
+
+        expect(settleLicenseFolds(input)).toBe(1);
+
+        expect(input.components[0].licenses).toStrictEqual([X]);
+        expect(input.components[0].properties).toStrictEqual([P('BSD-3-Clause OR MIT')]);
+        await expect(validateBom(input)).resolves.toBeTruthy();
+    });
+
+    it('[MIT, X, X] records X once', () => {
+        const input = doc([lib('A', { licenses: [MIT, X, { ...X }] })]);
+
+        expect(settleLicenseFolds(input)).toBe(1);
+
+        expect(input.components[0].properties).toStrictEqual([P('MIT OR Apache-2.0')]);
     });
 });

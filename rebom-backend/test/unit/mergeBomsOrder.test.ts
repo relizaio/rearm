@@ -10,6 +10,8 @@ const shellExec = vi.fn();
 const passes = vi.hoisted(() => ({ calls: [] as { name: string, args: any[], result?: any }[] }));
 // SCORE-15 T-10: the documents mergeBomObjects hands merge-boms, in input-file order.
 const mergeInputs = vi.hoisted(() => ({ objs: [] as any[] }));
+// SCORE-44 T-4: the settle, the validations, the CLI-path record and the de-dup, in call order.
+const steps = vi.hoisted(() => ({ names: [] as string[] }));
 
 vi.mock('../../src/services/bom/bomCrudService', () => ({
     findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any)
@@ -27,10 +29,25 @@ vi.mock('../../src/utils', async (importOriginal) => {
     };
 });
 
+vi.mock('../../src/validateBom', async (importOriginal) => {
+    const actual: any = await importOriginal();
+    return {
+        default: (...args: any[]) => {
+            steps.names.push('validateBom');
+            return actual.default(...args);
+        }
+    };
+});
+
 vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) => {
     const actual: any = await importOriginal();
+    const stepped = (name: string) => (...args: any[]) => {
+        steps.names.push(name);
+        return actual[name](...args);
+    };
     const recorded = (name: string) => (...args: any[]) => {
         const call: { name: string, args: any[], result?: any } = { name, args };
+        steps.names.push(name);
         passes.calls.push(call);
         call.result = actual[name](...args);
         return call.result;
@@ -42,7 +59,9 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
         fillReleaseNode: recorded('fillReleaseNode'),
         extractFileFilteredBom: recorded('extractFileFilteredBom'),
         dropDanglingRefs: recorded('dropDanglingRefs'),
-        declareUnknownCompositions: recorded('declareUnknownCompositions')
+        declareUnknownCompositions: recorded('declareUnknownCompositions'),
+        settleLicenseFolds: stepped('settleLicenseFolds'),
+        recordListedLicenseDrops: stepped('recordListedLicenseDrops')
     };
 });
 
@@ -52,6 +71,7 @@ import { BomStructure } from '../../src/types';
 import {
     BOM_REFS_DEDUPLICATED_PROPERTY,
     COMPONENTS_WITHOUT_SBOM_PROPERTY,
+    DROPPED_LICENSE_PROPERTY,
     FILE_COMPONENTS_EXCLUDED_PROPERTY
 } from '../../src/services/bom/bomProcessingService';
 
@@ -118,6 +138,7 @@ function serveInputsAndMergeBomsOutput() {
         return JSON.stringify(mergeBomsOutput());
     });
     passes.calls.length = 0;
+    steps.names.length = 0;
     mergeInputs.objs = [];
 }
 
@@ -335,6 +356,128 @@ describe('mergeBoms: the expression merge-boms drops is logged before it runs', 
         } finally {
             info.mockRestore();
         }
+    });
+});
+
+/**
+ * SCORE-44 (T-4, ADR-2 site 3): the expression merge-boms drops under FLAT, as logListedLicenseDrops
+ * predicted it from the inputs, is recorded as reliza:license:dropped on the top-level component of
+ * its key in the CLI's output, after processBomObj and before the last validation of
+ * mergeBomObjects, so before the de-dup of mergeBoms; only when that node does not hold it.
+ */
+describe('mergeBoms: the expression merge-boms dropped is recorded on its node', () => {
+    const ONE = 'pkg:npm/one@1.0.0';
+    const X2_TEXT = 'BSD-3-Clause OR MIT';
+    const RECORD = [{ name: DROPPED_LICENSE_PROPERTY, value: X2_TEXT }];
+    const NOT_RECORDED = 'merge-boms left no top-level component of the key: the dropped licence expression is not recorded';
+
+    const survivor = (licenses: any[] = [{ license: { id: 'MIT' } }]) =>
+        ({ type: 'application', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': ONE, licenses });
+
+    /** merge-boms returns `edit` applied to its output, with the survivor of ONE added top-level unless `edit` says otherwise. */
+    function cliReturns(edit: (out: any) => void = () => undefined) {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.push(survivor());
+            out.dependencies[0].dependsOn.push(ONE);
+            edit(out);
+            return JSON.stringify(out);
+        });
+    }
+
+    /** The node of ONE among the top-level components of the document mergeBomObjects returned. */
+    function merged(): any {
+        return passes.calls.find(c => c.name === 'carryServices')!.args[0];
+    }
+
+    function topLevelOne(bom: any): any {
+        return bom.components.find((c: any) => c['bom-ref'] === ONE);
+    }
+
+    beforeEach(() => {
+        serveInputsAndMergeBomsOutput();
+        findBomObjectById.mockImplementation(async (id: string) => {
+            const doc = input(id);
+            doc.metadata.component.purl = doc.metadata.component['bom-ref'];
+            if (id === 'one') doc.metadata.component.licenses = [{ license: { id: 'MIT' } }];
+            if (id === 'two') doc.components = [{ type: 'library', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': ONE, licenses: [{ expression: X2_TEXT }] }];
+            return doc;
+        });
+        cliReturns();
+    });
+
+    it('records it on the survivor after processBomObj, before the last validation and the de-dup (T-4)', async () => {
+        const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(topLevelOne(merged()).properties).toStrictEqual(RECORD);
+        expect(topLevelOne(merged()).licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+        expect(topLevelOne(bom).properties).toStrictEqual(RECORD);
+        const at = steps.names.indexOf('recordListedLicenseDrops');
+        expect(steps.names.filter(n => n === 'recordListedLicenseDrops')).toHaveLength(1);
+        expect(steps.names.lastIndexOf('settleLicenseFolds')).toBeLessThan(at);
+        expect(steps.names[at + 1]).toBe('validateBom');
+        expect(steps.names.indexOf('dedupeBomRefs')).toBeGreaterThan(at + 1);
+    });
+
+    it('records it the same when the structure is unset (T-4)', async () => {
+        await mergeBoms(['one', 'two'], options({ structure: undefined }), 'org');
+
+        expect(topLevelOne(merged()).properties).toStrictEqual(RECORD);
+    });
+
+    it('records nothing under HIERARCHICAL (T-4)', async () => {
+        await mergeBoms(['one', 'two'], options({ structure: BomStructure.HIERARCHICAL }), 'org');
+
+        expect(topLevelOne(merged())).not.toHaveProperty('properties');
+    });
+
+    it('records nothing when the node merge-boms returns holds the expression after all (T-4, the re-check)', async () => {
+        cliReturns(out => { out.components[out.components.length - 1] = survivor([{ expression: X2_TEXT }]); });
+
+        await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(topLevelOne(merged())).not.toHaveProperty('properties');
+    });
+
+    it('records nothing, without an error, and logs one info line when merge-boms left no node of the key (T-4)', async () => {
+        cliReturns(out => {
+            out.components.pop();
+            out.dependencies[0].dependsOn.pop();
+        });
+        const info = vi.spyOn(logger, 'info');
+        try {
+            const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+            expect(JSON.stringify(bom)).not.toContain(DROPPED_LICENSE_PROPERTY);
+            expect(info.mock.calls.filter(call => call[1] === NOT_RECORDED))
+                .toStrictEqual([[{ key: ONE, expressions: [X2_TEXT] }, NOT_RECORDED]]);
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('records on the top-level node, not on a nested copy of its purl that comes first in the walk (T-4, F-2)', async () => {
+        const nested = { type: 'library', name: 'one', version: '1.0.0', purl: ONE, 'bom-ref': 'nested-one', licenses: [{ license: { id: 'MIT' } }] };
+        cliReturns(out => { out.components[0].components = [nested]; });
+
+        const bom = await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(merged().components[0]['bom-ref']).toBe('pkg:npm/a@1.0.0');
+        expect(merged().components[0].components[0]).not.toHaveProperty('properties');
+        expect(topLevelOne(merged()).properties).toStrictEqual(RECORD);
+        expect(topLevelOne(bom).properties).toStrictEqual(RECORD);
+    });
+
+    it('records on the top-level node, not on a merged root that carries its purl (T-4, F-2)', async () => {
+        cliReturns(out => { out.metadata.component.purl = ONE; });
+
+        await mergeBoms(['one', 'two'], options(), 'org');
+
+        expect(merged().metadata.component.purl).toBe(ONE);
+        expect(merged().metadata.component).not.toHaveProperty('properties');
+        expect(topLevelOne(merged()).properties).toStrictEqual(RECORD);
     });
 });
 

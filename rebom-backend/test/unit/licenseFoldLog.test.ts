@@ -166,10 +166,10 @@ describe('the de-dup licence union logs the duplicate it drops (T-13)', () => {
 });
 
 describe('logListedLicenseDrops names the expression merge-boms will drop under FLAT (T-13, ADR-8)', () => {
-    /** Runs it on `inputs`, checks it left them as they were, and returns the count. */
+    /** Runs it on `inputs`, checks it left them as they were, and returns the number of drops (SCORE-44: one per line). */
     function run(inputs: any[]): number {
         const copies = structuredClone(inputs);
-        const count = logListedLicenseDrops(inputs);
+        const count = logListedLicenseDrops(inputs).length;
         expect(inputs).toStrictEqual(copies);
         return count;
     }
