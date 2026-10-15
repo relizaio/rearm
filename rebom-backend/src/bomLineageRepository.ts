@@ -44,6 +44,42 @@ export async function hasBomRows(org: string, key: string): Promise<boolean> {
     return queryRes.rows.length > 0;
 }
 
+/**
+ * The lineage lock (SCORE-46 ADR-13): a transaction-scoped advisory lock on
+ * (organization, canonical serialNumber), taken as the first statement of every
+ * transaction that may write a row of the lineage, null-owner callers included.
+ * It writes nothing and is released by the commit or the rollback, so the owner
+ * and version decisions of two uploads of one serialNumber commit in a serial
+ * order. Two-key lock space, apart from the one-key session lock of
+ * services/advisoryLock.ts. The organization is lowercased so that callers that
+ * pass it as sent and callers that lowercase it take the same lock.
+ */
+export async function lockLineage(client: TxClient, org: string, key: string): Promise<void> {
+    await client.query('SELECT pg_advisory_xact_lock(hashtext($1), hashtext($2))', [org.toLowerCase(), key]);
+}
+
+/**
+ * The lineage's newest stored row of any format, in either serialNumber form,
+ * read on the transaction's own client (never through runQuery: a transaction
+ * holding one pool connection and waiting for another starves the pool).
+ * Authoritative only under lockLineage. Null when the lineage has no row.
+ */
+export async function latestStoredVersion(
+    client: TxClient, org: string, key: string
+): Promise<{ uuid: string, bom_version: string | null } | null> {
+    const serialWithoutUrn = key.replace(URN_UUID_PREFIX, '');
+    const queryRes = await client.query(
+        `SELECT uuid, meta->>'bomVersion' AS bom_version FROM rebom.boms
+         WHERE (meta->>'serialNumber' = $1 OR meta->>'serialNumber' = $2)
+         AND organization::text = $3
+         ORDER BY (meta->>'bomVersion')::numeric DESC NULLS LAST
+         LIMIT 1`,
+        [key, serialWithoutUrn, org.toLowerCase()]
+    );
+    const row = queryRes.rows[0];
+    return row ? { uuid: row.uuid, bom_version: row.bom_version } : null;
+}
+
 async function ensureRow(client: TxClient, org: string, key: string): Promise<void> {
     await client.query(
         'INSERT INTO rebom.bom_lineage (organization, serial_number) VALUES ($1, $2) ON CONFLICT (organization, serial_number) DO NOTHING',
@@ -72,14 +108,16 @@ async function claimUnowned(
 }
 
 /**
- * The upload's claim, inside the caller's transaction: create the row (owner
- * only), lock it, claim it when unowned. Answers the owner now stored, which
- * is another component when the lineage was claimed since the pre-check; the
- * caller refuses then. A null owner creates no row and claims nothing.
+ * The upload's claim, inside the caller's transaction: take the lineage lock
+ * (every caller), create the row (owner only), lock it, claim it when unowned.
+ * Answers the owner now stored, which is another component when the lineage
+ * was claimed since the pre-check; the caller refuses then. A null owner
+ * creates no row and claims nothing.
  */
 export async function claimInTransaction(
     client: TxClient, org: string, key: string, owner: string | null
 ): Promise<string | null> {
+    await lockLineage(client, org, key);
     if (owner) {
         await ensureRow(client, org, key);
     }
@@ -102,6 +140,7 @@ export async function claimInTransaction(
 export async function claimIfUnowned(
     client: TxClient, org: string, key: string, owner: string, actor: string | null
 ): Promise<{ previousOwner: string | null, owner: string | null }> {
+    await lockLineage(client, org, key);
     await ensureRow(client, org, key);
     const locked = await lockOwner(client, org, key);
     if (locked.owner === null) {
@@ -118,6 +157,7 @@ export async function claimIfUnowned(
 export async function reassign(
     client: TxClient, org: string, key: string, owner: string, actor: string | null
 ): Promise<string | null> {
+    await lockLineage(client, org, key);
     await ensureRow(client, org, key);
     const locked = await lockOwner(client, org, key);
     await client.query(

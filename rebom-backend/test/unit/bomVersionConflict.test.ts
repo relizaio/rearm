@@ -19,11 +19,13 @@ vi.mock('../../src/bomRepository', () => ({
     allBomsBySerialNumber: (...a: any[]) => allBomsBySerialNumber.apply(null, a as any),
     bomById: vi.fn(async () => [])
 }));
-// The lineage pre-check sees no lineage and the claim writes nothing (SCORE-46 T-12).
+// The lineage pre-check sees no lineage, the claim writes nothing and the
+// in-transaction version re-check sees no row (SCORE-46 T-12).
 vi.mock('../../src/bomLineageRepository', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     find: vi.fn(async () => null),
-    claimInTransaction: vi.fn(async () => undefined)
+    claimInTransaction: vi.fn(async () => undefined),
+    latestStoredVersion: vi.fn(async () => null)
 }));
 vi.mock('../../src/services/oci', async (importOriginal) => {
     const actual: any = await importOriginal();

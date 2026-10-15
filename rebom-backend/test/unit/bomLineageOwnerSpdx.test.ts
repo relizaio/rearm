@@ -11,6 +11,8 @@ const pushToOci = vi.fn(async (tag: string) => ({
 }));
 const find = vi.fn(async (..._a: any[]) => null as any);
 const claimInTransaction = vi.fn(async (..._a: any[]) => null as any);
+const latestStoredVersion = vi.fn(async (..._a: any[]) => null as any);
+const allBomsBySerialNumber = vi.fn(async (..._a: any[]) => [] as any[]);
 const findSpdxBomBySerialNumber = vi.fn(async (..._a: any[]) => null as any);
 const findSpdxBomByNamespace = vi.fn(async (..._a: any[]) => null as any);
 const createSpdxBom = vi.fn(async (rec: any) => ({ ...rec }));
@@ -27,13 +29,14 @@ vi.mock('../../src/logger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
 vi.mock('../../src/bomRepository', () => ({
-    allBomsBySerialNumber: vi.fn(async () => [] as any[]),
+    allBomsBySerialNumber: (...a: any[]) => allBomsBySerialNumber.apply(null, a as any),
     bomById: vi.fn(async () => [])
 }));
 vi.mock('../../src/bomLineageRepository', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     find: (...a: any[]) => find.apply(null, a as any),
-    claimInTransaction: (...a: any[]) => claimInTransaction.apply(null, a as any)
+    claimInTransaction: (...a: any[]) => claimInTransaction.apply(null, a as any),
+    latestStoredVersion: (...a: any[]) => latestStoredVersion.apply(null, a as any)
 }));
 vi.mock('../../src/spdxRepository', () => ({
     findSpdxBomBySerialNumber: (...a: any[]) => findSpdxBomBySerialNumber.apply(null, a as any),
@@ -61,7 +64,7 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
 
 import { addBom } from '../../src/services/bom/bomAddService';
 import { SpdxService } from '../../src/services/spdx';
-import { BomLineageOwnerError, BomValidationError } from '../../src/types/errors';
+import { BomLineageOwnerError, BomValidationError, BomVersionConflictError } from '../../src/types/errors';
 import { logger } from '../../src/logger';
 
 const warn = logger.warn as unknown as ReturnType<typeof vi.fn>;
@@ -104,6 +107,8 @@ beforeEach(() => {
     vi.clearAllMocks();
     find.mockResolvedValue(null);
     claimInTransaction.mockResolvedValue(null);
+    latestStoredVersion.mockResolvedValue(null);
+    allBomsBySerialNumber.mockResolvedValue([]);
     findSpdxBomBySerialNumber.mockResolvedValue(null);
     findSpdxBomByNamespace.mockResolvedValue(null);
     convertSpy.mockResolvedValue({ success: true, convertedBom: converted(SC) } as any);
@@ -149,6 +154,9 @@ describe('SPDX update onto an owned lineage', () => {
         const insert = insertCall()!;
         expect(insert).toBeDefined();
         expect(claimInTransaction.mock.invocationCallOrder[0]).toBeLessThan(runQuery.mock.invocationCallOrder[0]);
+        expect(latestStoredVersion).toHaveBeenCalledTimes(1);
+        expect(latestStoredVersion.mock.invocationCallOrder[0]).toBeGreaterThan(claimInTransaction.mock.invocationCallOrder[0]);
+        expect(latestStoredVersion.mock.invocationCallOrder[0]).toBeLessThan(runQuery.mock.invocationCallOrder[0]);
         const params = insert[1] as any[];
         expect(params[5]).toBe('SPDX');
         expect(params[1].serialNumber).toBe(S);
@@ -166,6 +174,35 @@ describe('SPDX update onto an owned lineage', () => {
         await expect(uploadSpdx(spdx('ns-2'), B, S_BARE)).rejects.toBeInstanceOf(BomLineageOwnerError);
         expect(pushToOci).not.toHaveBeenCalled();
         expect(createSpdxBom).not.toHaveBeenCalled();
+        expect(runQuery).not.toHaveBeenCalled();
+    });
+
+    it('T-15 f: an update not above a CycloneDX row of the lineage is refused before any push', async () => {
+        findSpdxBomBySerialNumber.mockResolvedValue({ uuid: 'spdx-old', bom_version: 1 });
+        find.mockResolvedValue({ owner_component: A });
+        allBomsBySerialNumber.mockResolvedValue([{ uuid: 'cdx-2', meta: { bomVersion: '2', serialNumber: S } }]);
+
+        const result = uploadSpdx(spdx('ns-2'), A, S_BARE);
+        await expect(result).rejects.toBeInstanceOf(BomVersionConflictError);
+        await result.catch((e: any) => {
+            expect(e.storedVersion).toBe(2);
+            expect(e.newVersion).toBe(2);
+        });
+        expect(allBomsBySerialNumber).toHaveBeenCalledWith(S, ORG);
+        expect(pushToOci).not.toHaveBeenCalled();
+        expect(createSpdxBom).not.toHaveBeenCalled();
+        expect(runQuery).not.toHaveBeenCalled();
+    });
+
+    it('T-15 g: a row stored since the pre-checks refuses the update in the transaction', async () => {
+        findSpdxBomBySerialNumber.mockResolvedValue({ uuid: 'spdx-old', bom_version: 1 });
+        find.mockResolvedValue({ owner_component: A });
+        claimInTransaction.mockResolvedValue(A);
+        latestStoredVersion.mockResolvedValue({ uuid: 'late', bom_version: '2' });
+
+        await expect(uploadSpdx(spdx('ns-2'), A, S_BARE)).rejects.toBeInstanceOf(BomVersionConflictError);
+        expect(pushToOci).toHaveBeenCalledTimes(2);
+        expect(createSpdxBom).toHaveBeenCalledTimes(1);
         expect(runQuery).not.toHaveBeenCalled();
     });
 });

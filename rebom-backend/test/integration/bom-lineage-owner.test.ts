@@ -40,7 +40,7 @@ import * as BomRepository from '../../src/bomRepository';
 import { pool } from '../../src/utils';
 import { logger } from '../../src/logger';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber, cleanupTestBoms } from '../helpers';
-import { BomLineageOwnerError, BomValidationError } from '../../src/types/errors';
+import { BomLineageOwnerError, BomValidationError, BomVersionConflictError } from '../../src/types/errors';
 import { BomLineageOwnerMode } from '../../src/types';
 
 /**
@@ -64,19 +64,21 @@ function bare(sn: string): string {
     return sn.replace('urn:uuid:', '');
 }
 
-// A distinct document per version, so no upload dedupes onto another.
-function document(serialNumber: string, version: number): any {
+// A distinct document per version, so no upload dedupes onto another; a
+// variant makes two documents of one version distinct too.
+function document(serialNumber: string, version: number, variant?: string): any {
     const bom = loadFixture('cyclonedx-simple.json');
     bom.serialNumber = serialNumber;
     bom.version = version;
+    if (variant) bom.metadata.component.description = variant;
     return bom;
 }
 
-function upload(serialNumber: string, version: number, owner?: string) {
+function upload(serialNumber: string, version: number, owner?: string, variant?: string) {
     const rebomOptions = createTestRebomOptions({ serialNumber });
     if (owner !== undefined) rebomOptions.ownerComponent = owner;
     return BomService.addBom({
-        bomInput: { format: 'CYCLONEDX', bom: document(serialNumber, version), org: TEST_ORG_UUID, rebomOptions }
+        bomInput: { format: 'CYCLONEDX', bom: document(serialNumber, version, variant), org: TEST_ORG_UUID, rebomOptions }
     } as any);
 }
 
@@ -166,6 +168,40 @@ describe('race', () => {
         }
     });
 
+    it('T-18: the claim rolls back with the transaction when the version re-check refuses', async () => {
+        const S = fresh();
+        const info = vi.spyOn(logger, 'info');
+        race.serialNumber = S;
+        // A null-owner upload of the same document stores v1 after the outer
+        // upload's pre-checks and before its transaction.
+        race.hook = async () => { await upload(S, 1); };
+        try {
+            await expect(upload(S, 1, A)).rejects.toBeInstanceOf(BomVersionConflictError);
+            expect(await lineageRow(S)).toBeUndefined();
+            const rows = await BomRepository.allBomsBySerialNumber(S, TEST_ORG_UUID);
+            expect(rows.map((r: any) => String(r.meta.bomVersion))).toStrictEqual(['1']);
+            expect(rows[0].meta.ownerComponent).toBeUndefined();
+            expect(info).toHaveBeenCalledWith(expect.objectContaining({ serialNumber: S, ownerComponent: A, via: 'UPLOAD' }),
+                'BOM lineage claimed');
+        } finally {
+            race.hook = null;
+            info.mockRestore();
+        }
+    });
+
+    it('T-18 b: the claim rolls back with the transaction when the row insert itself fails', async () => {
+        const S = fresh();
+        const rebomOptions = createTestRebomOptions({ serialNumber: S });
+        rebomOptions.ownerComponent = A;
+        // tags is a jsonb column: a bare string is not valid JSON, so the
+        // INSERT INTO rebom.boms fails after the claim statement has run.
+        await expect(BomService.addBom({
+            bomInput: { format: 'CYCLONEDX', bom: document(S, 1), org: TEST_ORG_UUID, rebomOptions, tags: 'not json' }
+        } as any)).rejects.toThrow();
+        expect(await lineageRow(S)).toBeUndefined();
+        expect(await bomRowCount(S)).toBe(0);
+    });
+
     it('T-9: the same claim by the uploading component lets the upload through', async () => {
         const S3b = fresh();
         race.serialNumber = S3b;
@@ -182,6 +218,104 @@ describe('race', () => {
             race.hook = null;
         }
     });
+});
+
+// T-17: two uploads of one serialNumber started together, no hook. Every
+// iteration must end as one of the two serial orders, with the loser told; the
+// outcome counts are logged, not asserted, and every violation is collected so
+// a broken serialisation reports how many iterations it let through.
+describe('parallel', () => {
+    const ITERATIONS = 20;
+
+    async function versions(sn: string): Promise<string[]> {
+        return (await BomRepository.allBomsBySerialNumber(sn, TEST_ORG_UUID)).map((r: any) => String(r.meta.bomVersion)).sort();
+    }
+
+    async function served(sn: string): Promise<number> {
+        return ((await BomService.findBomObjectById(bare(sn), TEST_ORG_UUID)) as any).version;
+    }
+
+    async function runPairing(
+        name: string,
+        start: (sn: string) => Promise<[Promise<any>, Promise<any>]>,
+        judge: (sn: string, first: PromiseSettledResult<any>, second: PromiseSettledResult<any>) => Promise<string>
+    ) {
+        const counts: Record<string, number> = {};
+        const violations: string[] = [];
+        for (let i = 0; i < ITERATIONS; i++) {
+            const sn = fresh();
+            const [first, second] = await Promise.allSettled(await start(sn));
+            let outcome: string;
+            try {
+                outcome = await judge(sn, first, second);
+            } catch (e: any) {
+                outcome = 'violation';
+                violations.push(`${i}: ${e.message.split('\n')[0]}`);
+            }
+            counts[outcome] = (counts[outcome] ?? 0) + 1;
+        }
+        logger.info({ pairing: name, iterations: ITERATIONS, counts }, 'SCORE-46 T-17 race outcomes');
+        expect(violations, `${violations.length} of ${ITERATIONS} iterations broke the invariant`).toStrictEqual([]);
+    }
+
+    const fulfilledCount = (...r: PromiseSettledResult<any>[]) => r.filter(x => x.status === 'fulfilled').length;
+    const reason = (r: PromiseSettledResult<any>) => (r as PromiseRejectedResult).reason;
+
+    it('T-17 a: a lazy claim against a null upload of a higher version ends in one serial order', async () => {
+        await runPairing('a: A v2 claim vs null v3 on a stored null v1', async sn => {
+            await upload(sn, 1);
+            return [upload(sn, 2, A), upload(sn, 3)];
+        }, async (sn, owner, nullCaller) => {
+            expect(fulfilledCount(owner, nullCaller)).toBe(1);
+            if (owner.status === 'fulfilled') {
+                expect(reason(nullCaller)).toBeInstanceOf(BomLineageOwnerError);
+                expect((await lineageRow(sn)).owner_component).toBe(A);
+                expect(await versions(sn)).toStrictEqual(['1', '2']);
+                expect(await served(sn)).toBe(2);
+                return 'owner first';
+            }
+            expect(reason(owner)).toBeInstanceOf(BomVersionConflictError);
+            expect(await lineageRow(sn)).toBeUndefined();
+            expect(await versions(sn)).toStrictEqual(['1', '3']);
+            expect(await served(sn)).toBe(3);
+            return 'null first';
+        });
+    }, 120000);
+
+    it('T-17 b: a first claim of a fresh serialNumber against a null upload ends in one serial order', async () => {
+        await runPairing('b: B v1 claim vs null v2 on a fresh serialNumber', async sn => [upload(sn, 1, B), upload(sn, 2)],
+            async (sn, owner, nullCaller) => {
+                expect(fulfilledCount(owner, nullCaller)).toBe(1);
+                if (owner.status === 'fulfilled') {
+                    expect(reason(nullCaller)).toBeInstanceOf(BomLineageOwnerError);
+                    expect((await lineageRow(sn)).owner_component).toBe(B);
+                    expect(await versions(sn)).toStrictEqual(['1']);
+                    return 'owner first';
+                }
+                expect(reason(owner)).toBeInstanceOf(BomVersionConflictError);
+                expect(await lineageRow(sn)).toBeUndefined();
+                expect(await versions(sn)).toStrictEqual(['2']);
+                return 'null first';
+            });
+    }, 120000);
+
+    it('T-17 c: two components racing for a fresh serialNumber end with exactly one owner', async () => {
+        await runPairing('c: A v1 vs B v1 on a fresh serialNumber', async sn => [upload(sn, 1, A, 'a'), upload(sn, 1, B, 'b')],
+            async (sn, a, b) => {
+                expect(fulfilledCount(a, b)).toBe(1);
+                const [winner, loser] = a.status === 'fulfilled' ? [A, b] : [B, a];
+                // The loser is told by the lineage refusal; a winner committing
+                // between the loser's pre-check and its version check gives the
+                // version refusal instead (pre-transaction stage).
+                const lost = reason(loser);
+                expect(lost instanceof BomLineageOwnerError || lost instanceof BomVersionConflictError).toBe(true);
+                expect((await lineageRow(sn)).owner_component).toBe(winner);
+                const rows = await BomRepository.allBomsBySerialNumber(sn, TEST_ORG_UUID);
+                expect(rows).toHaveLength(1);
+                expect(rows[0].meta.ownerComponent).toBe(winner);
+                return winner === A ? 'A first' : 'B first';
+            });
+    }, 120000);
 });
 
 describe('setBomLineageOwners and bomLineage', () => {

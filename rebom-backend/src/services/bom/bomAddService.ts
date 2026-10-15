@@ -141,9 +141,33 @@ async function checkLineageOwner(ctx: LineageContext): Promise<void> {
 }
 
 /**
- * The claim and the rebom.boms insert in one transaction (SCORE-45 ADR-4 step 5):
- * the lineage row is locked and re-checked, so a claim that landed since the
- * pre-check refuses this upload and no row is written.
+ * The version check (SCORE-45 ADR-4 step 3): a document under a stored
+ * serialNumber must carry a higher version than the newest stored row.
+ */
+function checkVersionAbove(
+  serialNumber: string, latest: { uuid: string, bomVersion: any } | null, bomVersion: any
+): void {
+  if (!latest) {
+    return;
+  }
+  const latestVersion = parseInt(latest.bomVersion) || 0;
+  const newVersion = parseInt(bomVersion) || 0;
+  if (newVersion <= latestVersion) {
+    throw new BomVersionConflictError(
+      `BOM with serialNumber ${serialNumber} already exists at version ${latestVersion}; ` +
+      `uploaded version ${newVersion} must be greater. ` +
+      `Raw artifacts are immutable and are never replaced.`,
+      serialNumber, latestVersion, newVersion, latest.uuid);
+  }
+}
+
+/**
+ * The lineage decision and the rebom.boms insert in one transaction (SCORE-45
+ * ADR-4 step 5, SCORE-46 ADR-13): under the lineage lock, which every caller
+ * takes first (inside claimInTransaction), the owner is re-checked, then the
+ * version against the lineage's newest stored row on the same client, then the
+ * row is inserted. A claim or a row that landed since the pre-checks refuses
+ * this upload, and the rollback takes the claim with it.
  */
 async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, queryParams: any[]): Promise<any> {
   return withTransaction(async client => {
@@ -151,6 +175,8 @@ async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, q
     if (owner && owner !== ctx.caller) {
       throw lineageOwnerMismatch(ctx, owner, 'transaction');
     }
+    const latest = await BomLineageRepository.latestStoredVersion(client, ctx.org, ctx.lineageKey);
+    checkVersionAbove(ctx.serialNumber, latest && { uuid: latest.uuid, bomVersion: latest.bom_version }, ctx.bomVersion);
     return client.query(queryText, queryParams);
   });
 }
@@ -303,17 +329,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // a higher version, or it is asking us to rewrite artifacts that are already
   // stored and already scanned.
   const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
-  if (latestBom) {
-    const latestVersion = parseInt(latestBom.meta?.bomVersion) || 0;
-    const newVersion = parseInt(rebomOptions.bomVersion) || 0;
-    if (newVersion <= latestVersion) {
-      throw new BomVersionConflictError(
-        `BOM with serialNumber ${serialNumber} already exists at version ${latestVersion}; ` +
-        `uploaded version ${newVersion} must be greater. ` +
-        `Raw artifacts are immutable and are never replaced.`,
-        serialNumber, latestVersion, newVersion, latestBom.uuid);
-    }
-  }
+  checkVersionAbove(serialNumber, latestBom && { uuid: latestBom.uuid, bomVersion: latestBom.meta?.bomVersion }, rebomOptions.bomVersion);
 
   // Step 5: Store artifacts in OCI
   // Calculate repository name ONCE to prevent month boundary race conditions
@@ -445,6 +461,11 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       await checkLineageOwner({
         org: bomInput.bomInput.org, lineageKey: updateKey, caller, serialNumber: updateKey, bomVersion, path: 'SPDX'
       });
+      // The update's version (the latest SPDX row's plus one) must also be above
+      // the lineage's newest row of any format (SCORE-46 ADR-12 item 1), checked
+      // here before anything is pushed and again under the lineage lock.
+      const latestOfLineage = await findLatestBomBySerialNumber(updateKey, bomInput.bomInput.org);
+      checkVersionAbove(updateKey, latestOfLineage && { uuid: latestOfLineage.uuid, bomVersion: latestOfLineage.meta?.bomVersion }, bomVersion);
     } else {
       const existingByNamespace = await SpdxRepository.findSpdxBomByNamespace(
         spdxMetadata.documentNamespace || '',

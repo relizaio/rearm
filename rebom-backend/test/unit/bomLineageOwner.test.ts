@@ -13,6 +13,7 @@ const pushToOci = vi.fn(async (tag: string) => ({
 const allBomsBySerialNumber = vi.fn(async () => [] as any[]);
 const find = vi.fn(async (..._a: any[]) => null as any);
 const claimInTransaction = vi.fn(async (..._a: any[]) => null as any);
+const latestStoredVersion = vi.fn(async (..._a: any[]) => null as any);
 
 vi.mock('../../src/utils', () => ({
     runQuery: (...a: any[]) => runQuery.apply(null, a as any),
@@ -29,7 +30,8 @@ vi.mock('../../src/bomRepository', () => ({
 vi.mock('../../src/bomLineageRepository', async (importOriginal) => ({
     ...(await importOriginal<any>()),
     find: (...a: any[]) => find.apply(null, a as any),
-    claimInTransaction: (...a: any[]) => claimInTransaction.apply(null, a as any)
+    claimInTransaction: (...a: any[]) => claimInTransaction.apply(null, a as any),
+    latestStoredVersion: (...a: any[]) => latestStoredVersion.apply(null, a as any)
 }));
 vi.mock('../../src/services/oci', async (importOriginal) => {
     const actual: any = await importOriginal();
@@ -99,6 +101,7 @@ beforeEach(() => {
     allBomsBySerialNumber.mockResolvedValue([]);
     find.mockResolvedValue(null);
     claimInTransaction.mockResolvedValue(null);
+    latestStoredVersion.mockResolvedValue(null);
 });
 
 describe('owner matches', () => {
@@ -115,6 +118,10 @@ describe('owner matches', () => {
         expect(runQuery).toHaveBeenCalledTimes(1);
         expect(String(runQuery.mock.calls[0][0]).startsWith('INSERT INTO rebom.boms')).toBe(true);
         expect(claimInTransaction.mock.invocationCallOrder[0]).toBeLessThan(runQuery.mock.invocationCallOrder[0]);
+        expect(latestStoredVersion).toHaveBeenCalledTimes(1);
+        expect(latestStoredVersion).toHaveBeenCalledWith(expect.objectContaining({ query: expect.any(Function) }), ORG, SERIAL);
+        expect(latestStoredVersion.mock.invocationCallOrder[0]).toBeGreaterThan(claimInTransaction.mock.invocationCallOrder[0]);
+        expect(latestStoredVersion.mock.invocationCallOrder[0]).toBeLessThan(runQuery.mock.invocationCallOrder[0]);
         expect(insertedMeta().ownerComponent).toBe(A);
     });
 });
@@ -228,6 +235,42 @@ describe('ordering', () => {
         await expect(upload(bom(1, 'right-pad'), B)).rejects.toBeInstanceOf(BomLineageOwnerError);
         await expect(upload(bom(3, 'right-pad'), A)).rejects.toBeInstanceOf(BomVersionConflictError);
         expect(pushToOci).not.toHaveBeenCalled();
+    });
+
+    it('T-5 a: a row stored since the pre-checks at the same version refuses the owner in the transaction', async () => {
+        claimInTransaction.mockResolvedValue(A);
+        latestStoredVersion.mockResolvedValue({ uuid: 'late', bom_version: '2' });
+
+        const result = upload(bom(2, 'right-pad'), A);
+        await expect(result).rejects.toBeInstanceOf(BomVersionConflictError);
+        await result.catch((e: any) => {
+            expect(e.storedVersion).toBe(2);
+            expect(e.newVersion).toBe(2);
+            expect(e.existingUuid).toBe('late');
+        });
+        expect(pushToOci).toHaveBeenCalledTimes(2);
+        expect(runQuery).not.toHaveBeenCalled();
+    });
+
+    it('T-5 b: a lower stored version lets the owner through in the transaction', async () => {
+        claimInTransaction.mockResolvedValue(A);
+        latestStoredVersion.mockResolvedValue({ uuid: 'late', bom_version: '1' });
+
+        await upload(bom(2, 'right-pad'), A);
+
+        expect(runQuery).toHaveBeenCalledTimes(1);
+        expect(String(runQuery.mock.calls[0][0]).startsWith('INSERT INTO rebom.boms')).toBe(true);
+    });
+
+    it('T-5 c: inside the transaction the owner is decided before the version', async () => {
+        claimInTransaction.mockResolvedValue(B);
+        latestStoredVersion.mockResolvedValue({ uuid: 'late', bom_version: '9' });
+
+        await expect(upload(bom(2, 'right-pad'), A)).rejects.toBeInstanceOf(BomLineageOwnerError);
+        expect(latestStoredVersion).not.toHaveBeenCalled();
+        expect(runQuery).not.toHaveBeenCalled();
+        expect(warn).toHaveBeenCalledWith(expect.objectContaining({ stage: 'transaction', uploadingComponent: A }),
+            'BOM lineage owner mismatch: upload refused');
     });
 });
 
