@@ -1,7 +1,8 @@
 import { logger } from '../../logger';
-import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto } from '../../types';
-import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError } from '../../types/errors';
+import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, isUuid } from '../../types';
+import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError, BomLineageOwnerError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
+import * as BomLineageRepository from '../../bomLineageRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
 import { 
@@ -15,7 +16,7 @@ import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enr
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
-import { runQuery } from '../../utils';
+import { withTransaction } from '../../utils';
 import { createHash } from 'crypto';
 
 /**
@@ -82,6 +83,76 @@ async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: 
   }
   
   return matchingBom || null;
+}
+
+/**
+ * The upload's ownerComponent (SCORE-45 ADR-3): lowercased, or null when absent,
+ * null or empty (a null owner, the legacy behaviour). Anything else that is not
+ * a uuid is refused before any read.
+ */
+function readOwnerComponent(rebomOptions: RebomOptions | undefined | null): string | null {
+  const value = rebomOptions?.ownerComponent;
+  if (value === undefined || value === null || value === '') {
+    return null;
+  }
+  if (!isUuid(value)) {
+    throw new BomValidationError('rebomOptions.ownerComponent must be a uuid', { field: 'ownerComponent', value });
+  }
+  return value.toLowerCase();
+}
+
+type LineageContext = {
+  org: string,
+  lineageKey: string,
+  caller: string | null,
+  // The serialNumber the refusal names: the document's, as the caller sent it.
+  serialNumber: string,
+  bomVersion: string | number | undefined,
+  path: 'CYCLONEDX' | 'SPDX'
+};
+
+function lineageOwnerMismatch(ctx: LineageContext, ownerComponent: string, stage: 'precheck' | 'transaction'): BomLineageOwnerError {
+  logger.warn({
+    org: ctx.org,
+    serialNumber: ctx.lineageKey,
+    uploadingComponent: ctx.caller,
+    ownerComponent,
+    bomVersion: ctx.bomVersion,
+    stage,
+    path: ctx.path
+  }, 'BOM lineage owner mismatch: upload refused');
+  return new BomLineageOwnerError(
+    `BOM with serialNumber ${ctx.serialNumber} belongs to another component of this organization; ` +
+    `a new version of it can only be uploaded to that component. Upload an SBOM with its own serialNumber instead.`,
+    ctx.serialNumber);
+}
+
+/**
+ * The pre-check (SCORE-45 ADR-4 step 2): one primary-key read, refused when the
+ * lineage has an owner other than the caller (a null caller included). Runs
+ * before anything is pushed or written.
+ */
+async function checkLineageOwner(ctx: LineageContext): Promise<void> {
+  const lineage = await BomLineageRepository.find(ctx.org, ctx.lineageKey);
+  const owner = lineage?.owner_component ?? null;
+  if (owner !== null && owner !== ctx.caller) {
+    throw lineageOwnerMismatch(ctx, owner, 'precheck');
+  }
+}
+
+/**
+ * The claim and the rebom.boms insert in one transaction (SCORE-45 ADR-4 step 5):
+ * the lineage row is locked and re-checked, so a claim that landed since the
+ * pre-check refuses this upload and no row is written.
+ */
+async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, queryParams: any[]): Promise<any> {
+  return withTransaction(async client => {
+    const owner = await BomLineageRepository.claimInTransaction(client, ctx.org, ctx.lineageKey, ctx.caller);
+    if (owner && owner !== ctx.caller) {
+      throw lineageOwnerMismatch(ctx, owner, 'transaction');
+    }
+    return client.query(queryText, queryParams);
+  });
 }
 
 /**
@@ -155,6 +226,10 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.serialNumber = processedBom.serialNumber;
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
   rebomOptions.mod = 'raw';
+  const caller = readOwnerComponent(rebomOptions);
+  if (caller) {
+    rebomOptions.ownerComponent = caller;
+  }
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -211,6 +286,18 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     
     return duplicateBom;
   }
+
+  // A different document under a lineage another component owns is refused
+  // before the version check, so a non-owner learns nothing about its versions.
+  const lineage: LineageContext = {
+    org: bomInput.bomInput.org,
+    lineageKey: BomLineageRepository.canonicalSerialNumber(serialNumber),
+    caller,
+    serialNumber,
+    bomVersion: rebomOptions.bomVersion,
+    path: 'CYCLONEDX'
+  };
+  await checkLineageOwner(lineage);
 
   // Not a duplicate - a different file claiming the same identity has to claim
   // a higher version, or it is asking us to rewrite artifacts that are already
@@ -297,7 +384,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     augmented: AUGMENT_ON_STORAGE
   }, "Inserting BOM record");
 
-  const queryRes = await runQuery(queryText, queryParams);
+  const queryRes = await insertBomRowWithLineage(lineage, queryText, queryParams);
   const bomRecord = queryRes.rows[0];
   
   if (!bomRecord) {
@@ -335,6 +422,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
         constraint: 'must be valid SPDX format'
       });
     }
+    const caller = readOwnerComponent(bomInput.bomInput.rebomOptions);
 
     const spdxMetadata = SpdxService.extractSpdxMetadata(spdxContent);
     const fileHash = SpdxService.calculateSpdxHash(spdxContent);
@@ -351,6 +439,12 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       } else {
         logger.warn({ existingSerialNumber }, "existingSerialNumber provided but no existing SPDX found - treating as new upload");
       }
+      // The update continues the lineage of existingSerialNumber: checked before
+      // anything is pushed or the spdx_boms row is written.
+      const updateKey = BomLineageRepository.canonicalSerialNumber(existingSerialNumber);
+      await checkLineageOwner({
+        org: bomInput.bomInput.org, lineageKey: updateKey, caller, serialNumber: updateKey, bomVersion, path: 'SPDX'
+      });
     } else {
       const existingByNamespace = await SpdxRepository.findSpdxBomByNamespace(
         spdxMetadata.documentNamespace || '',
@@ -447,6 +541,22 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       mergedOptions.serialNumber = serialNumber;
       logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
     }
+    if (caller) {
+      mergedOptions.ownerComponent = caller;
+    }
+
+    // The update route's key is existingSerialNumber (checked above, before the
+    // SPDX push); a first upload's key is the converter's serialNumber, known
+    // only now, and is checked before the converted push.
+    const lineageKey = existingSerialNumber
+      ? BomLineageRepository.canonicalSerialNumber(existingSerialNumber)
+      : BomLineageRepository.canonicalSerialNumber(serialNumber);
+    const lineage: LineageContext = {
+      org: bomInput.bomInput.org, lineageKey, caller, serialNumber: lineageKey, bomVersion, path: 'SPDX'
+    };
+    if (!existingSerialNumber) {
+      await checkLineageOwner(lineage);
+    }
     
     // Converted, therefore a distinct document from the SPDX file that was
     // uploaded, and given its own identity for the same reason the augmented
@@ -492,7 +602,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       spdxRecord.uuid
     ];
 
-    const queryRes = await runQuery(queryText, queryParams);
+    const queryRes = await insertBomRowWithLineage(lineage, queryText, queryParams);
     const bomRecord: BomRecord = queryRes.rows[0];
 
     await SpdxRepository.linkConvertedBom(spdxRecord.uuid, bomRecord.uuid);

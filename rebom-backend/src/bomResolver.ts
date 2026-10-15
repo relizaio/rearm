@@ -2,7 +2,7 @@ import * as BomService from './bomService';
 import * as DiffService from './services/bom/bomDiffService';
 import { SarifService } from './services/sarif';
 import { CycloneDxService } from './services/cyclonedx';
-import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto, BearIntegrationDto } from './types';
+import { BomDto, BomMetaDto, BomInput, BomRecord, BomSearch, WeaknessDto, VulnerabilityDto, BearIntegrationDto, BomLineageDto, BomLineageOwnerEntry, BomLineageOwnerMode, BomLineageOwnerResult } from './types';
 import * as IntegrationService from './services/integrationService';
 import { toGraphQLError } from './types/errors';
 import { bomToExcel, bomToCsv } from './services/bom/bomExportService';
@@ -96,6 +96,11 @@ const resolvers = {
 			async (_: any, input: { org: string }): Promise<boolean> =>
 				BomService.isEnrichmentConfigured(input.org),
 			'isEnrichmentConfigured'
+		),
+		bomLineage: withErrorHandling(
+			async (_: any, input: { org: string, serialNumber: string }): Promise<BomLineageDto | null> =>
+				BomService.bomLineage(input.org, input.serialNumber),
+			'bomLineage'
 		)
 	},
 	Mutation: {
@@ -124,7 +129,12 @@ const resolvers = {
 		}, 'deleteBearIntegration'),
 		verifySignature: withErrorHandling(async (_:any, input: { input: VerifyInput }): Promise<VerifyResult> => {
 			return runVerifySignature(input.input);
-		}, 'verifySignature')
+		}, 'verifySignature'),
+		setBomLineageOwners: withErrorHandling(
+			async (_: any, input: { org: string, entries: BomLineageOwnerEntry[], mode: BomLineageOwnerMode, actor?: string | null }): Promise<BomLineageOwnerResult[]> =>
+				BomService.setBomLineageOwners(input.org, input.entries, input.mode, input.actor),
+			'setBomLineageOwners'
+		)
 	}
 }
 export default resolvers;

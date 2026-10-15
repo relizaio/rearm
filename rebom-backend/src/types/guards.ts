@@ -19,3 +19,10 @@ export function hasRootComponentMergeMode(opts: RebomOptions): boolean {
 export function hasIgnoreDev(opts: RebomOptions): boolean {
     return opts.ignoreDev !== undefined;
 }
+
+const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+/** A uuid in the 8-4-4-4-12 hex form, either case (the shape organization and ownerComponent have). */
+export function isUuid(value: unknown): value is string {
+    return typeof value === 'string' && UUID_PATTERN.test(value);
+}
