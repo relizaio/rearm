@@ -136,6 +136,8 @@ public class OssReleaseDatafetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
 
 		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
 		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);

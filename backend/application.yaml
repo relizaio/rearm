@@ -186,6 +186,9 @@ relizaprops:
   findingChangeV3BackfillDrainEnabled: ${FINDING_CHANGE_V3_BACKFILL_DRAIN_ENABLED:true}
   findingChangeV3BackfillBatchPerTick: ${FINDING_CHANGE_V3_BACKFILL_BATCH_PER_TICK:5}
   enableBetaTea: ${RELIZAPROP_ENABLE_BETA_TEA:false}
+  # Branding preset: empty or "default" is the Reliza branding, which CE always uses (presets are a
+  # ReARM Pro feature). An unknown preset logs an ERROR and falls back to default.
+  brandingPreset: ${RELIZAPROP_BRANDING_PRESET:}
 #spring.jpa.show-sql=true
 #spring.jpa.properties.hibernate.format_sql=true
 #logging.level.org.hibernate.SQL=DEBUG
