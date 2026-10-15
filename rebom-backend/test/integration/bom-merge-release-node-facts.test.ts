@@ -18,6 +18,7 @@ import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { TEST_ORG_UUID, createTestRebomOptions } from '../helpers';
 import { logger } from '../../src/logger';
+import { DROPPED_LICENSE_PROPERTY } from '../../src/services/bom/bomProcessingService';
 import {
     ORG, COMMIT, UPLOAD_DIGEST, RELEASE_DIGEST, PLACEHOLDER_DIGEST, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF,
     SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
@@ -297,6 +298,16 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
     });
 });
 
+/** SCORE-44: the reliza:license:dropped entries of a node, none when it has no properties. */
+function droppedRecords(component: any): any[] {
+    return (component?.properties || []).filter((p: any) => p?.name === DROPPED_LICENSE_PROPERTY);
+}
+
+const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
+
+/** SCORE-44: one reliza:license:dropped entry. */
+const P = (value: string) => ({ name: DROPPED_LICENSE_PROPERTY, value });
+
 /** SCORE-40 T-10: every component carrying `ref`, at any depth, the root included. */
 function carrying(bom: any, ref: string): any[] {
     const walk = (list: any[] = []): any[] => list.flatMap((c: any) => [c, ...walk(c.components)]);
@@ -356,9 +367,12 @@ describe('a product merge folds the release node with a listing of its purl', ()
         ['none', 'NOASSERTION', [{ expression: 'NOASSERTION' }]],
         ['none', 'no key', undefined]
     ];
+    // SCORE-44 T-5 (ADR-2): the rows whose fold drops the listed expression record it on the release node
+    const RECORDED = new Set(['named|expression', 'id|expression', 'expression|expression']);
 
     for (const [declared, listed, expected] of CASES) {
-        it(`declared ${declared}, listed ${listed}: the release node carries ${expected === undefined ? 'no licenses' : JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+        const records = RECORDED.has(`${declared}|${listed}`) ? [P('BSD-3-Clause OR MIT')] : [];
+        it(`declared ${declared}, listed ${listed}: the release node carries ${expected === undefined ? 'no licenses' : JSON.stringify(expected)}, ${records.length ? 'the dropped expression recorded' : 'no record'}, in both orders (T-10, SCORE-44 T-5)`, async () => {
             const { merged, stored } = await buildListingProducts(created, DECLARED[declared], LISTED[listed]);
 
             const products = [['merged, component first', merged[0]], ['merged, listing first', merged[1]],
@@ -374,6 +388,9 @@ describe('a product merge folds the release node with a listing of its purl', ()
                 expect(product.metadata.component.purl, label).toBe(PRODUCT_ROOT);
                 expect(product.metadata.component.licenses, label).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
                 expect(node(product, LISTING_ROOT), label).toBeDefined();
+                expect(droppedRecords(releaseNode), label).toStrictEqual(records);
+                expect(droppedRecords(product.metadata.component), label).toStrictEqual([]);
+                expect(droppedRecords(node(product, LISTING_ROOT)), label).toStrictEqual([]);
                 await expect(validateBom(product), label).resolves.toBeTruthy();
             }
         });
@@ -388,29 +405,43 @@ describe('a product merge folds the release node with a listing of its purl', ()
  */
 describe('a product merge folds the release node with a listing nested under another component', () => {
     const created: string[] = [];
+    let info: ReturnType<typeof vi.spyOn>;
 
     beforeEach(() => {
         clearMockOciStorage();
+        info = vi.spyOn(logger, 'info');
     });
 
     afterEach(async () => {
+        info.mockRestore();
         if (created.length > 0) {
             await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
             created.length = 0;
         }
     });
 
-    // [case, declared, listed, the release node's licenses in the product]
-    const CASES: [string, DeclaredLicence | undefined, any[], any[]][] = [
+    const DEDUP_LINE = 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand';
+    // [case, declared, listed, the release node's licenses in the product, its reliza:license:dropped
+    // entries (SCORE-44 T-6), the de-dup lines over the four merges]
+    const CASES: [string, DeclaredLicence | undefined, any[], any[], any[], number][] = [
         // the de-dup twin of run 1's T-1 reproduction: refused by validation if the union read the duplicate alone
-        ['declared expression, listed id', { licenseExpression: 'MIT OR Apache-2.0' }, [{ license: { id: 'MIT' } }], [{ expression: 'MIT OR Apache-2.0' }]],
-        ['declared id, listed NOASSERTION', { licenseExpression: PRODUCT_LICENSE }, [{ expression: 'NOASSERTION' }], [{ license: { id: 'AGPL-3.0-only' } }]],
-        ['no declared licence, listed id', undefined, [{ license: { id: 'MIT' } }], [{ license: { id: 'MIT' } }]]
+        ['declared expression, listed id', { licenseExpression: 'MIT OR Apache-2.0' }, [{ license: { id: 'MIT' } }], [{ expression: 'MIT OR Apache-2.0' }], [], 4],
+        ['declared id, listed NOASSERTION', { licenseExpression: PRODUCT_LICENSE }, [{ expression: 'NOASSERTION' }], [{ license: { id: 'AGPL-3.0-only' } }], [], 4],
+        ['no declared licence, listed id', undefined, [{ license: { id: 'MIT' } }], [{ license: { id: 'MIT' } }], [], 0],
+        // SCORE-44 T-6: the de-dup drops the listed expression beside the declared id and records it
+        ['declared id, listed expression', { licenseExpression: PRODUCT_LICENSE }, [{ expression: 'BSD-3-Clause OR MIT' }], [{ license: { id: 'AGPL-3.0-only' } }],
+            [P('BSD-3-Clause OR MIT')], 4],
+        // SCORE-44 T-6: the listing repeats the declared expression: nothing is lost, nothing recorded or logged
+        ['declared expression, listed the same expression', { licenseExpression: 'MIT OR Apache-2.0' }, [{ expression: 'MIT OR Apache-2.0' }], [{ expression: 'MIT OR Apache-2.0' }], [], 0]
     ];
 
-    for (const [label, declared, listed, expected] of CASES) {
-        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+    for (const [label, declared, listed, expected, records, dedupLines] of CASES) {
+        it(`${label}: the release node carries ${JSON.stringify(expected)}, ${records.length ? 'the dropped expression recorded' : 'no record'}, in both orders (T-10, SCORE-44 T-6)`, async () => {
             const { merged, stored } = await buildListingProducts(created, declared, listed, true);
+
+            // nested, merge-boms folds nothing: no ADR-8 line; the de-dup logs its own, one per product merge
+            expect(info.mock.calls.filter((call: any[]) => call[1] === LISTED_DROP)).toStrictEqual([]);
+            expect(info.mock.calls.filter((call: any[]) => call[1] === DEDUP_LINE && call[0]?.bomRef === RELEASE_NODE)).toHaveLength(dedupLines);
 
             const products = [['merged, component first', merged[0]], ['merged, listing first', merged[1]],
                 ['stored, component first', stored[0]], ['stored, listing first', stored[1]]];
@@ -421,13 +452,14 @@ describe('a product merge folds the release node with a listing nested under ano
                 expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
                 expect(node(product, LISTING_ROOT), where).toBeDefined();
                 expect(node(product, LISTING_MID), where).toBeDefined();
+                expect(droppedRecords(node(product, RELEASE_NODE)), where).toStrictEqual(records);
+                expect(droppedRecords(product.metadata.component), where).toStrictEqual([]);
                 await expect(validateBom(product), where).resolves.toBeTruthy();
             }
         });
     }
 });
 
-const LISTED_DROP = 'merge-boms will drop the listed expression: the survivor licenses stand';
 const FOLD_LINES = [
     LISTED_DROP,
     'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand',
@@ -464,15 +496,16 @@ describe('a product merge folds a release node with an empty licences list and a
         return info.mock.calls.filter((call: any[]) => FOLD_LINES.includes(call[1]));
     }
 
-    // [layout, nested, the release node's licenses in the product, the fold lines over the four merges]
-    const CASES: [string, boolean, any[], () => any[][]][] = [
-        ['top level, merge-boms holds [] and drops the expression, logged', false, [],
-            () => Array(4).fill([{ bomRef: RELEASE_NODE, kept: [], dropped: X2 }, LISTED_DROP])],
-        ['nested, the de-dup reads [] as absent and takes the listing, nothing logged', true, X2, () => []]
+    // [layout, nested, the release node's licenses in the product, the fold lines over the four merges,
+    // its reliza:license:dropped entries (SCORE-44 T-5)]
+    const CASES: [string, boolean, any[], () => any[][], any[]][] = [
+        ['top level, merge-boms holds [] and drops the expression, logged and recorded', false, [],
+            () => Array(4).fill([{ bomRef: RELEASE_NODE, kept: [], dropped: X2 }, LISTED_DROP]), [P('BSD-3-Clause OR MIT')]],
+        ['nested, the de-dup reads [] as absent and takes the listing, nothing logged or recorded', true, X2, () => [], []]
     ];
 
-    for (const [label, nested, expected, lines] of CASES) {
-        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10)`, async () => {
+    for (const [label, nested, expected, lines, records] of CASES) {
+        it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10, SCORE-44 T-5)`, async () => {
             const { merged, stored } = await buildListingProducts(created, undefined, X2, nested, []);
 
             // one ADR-8 line per product merge on the top level (two in memory, two stored), none nested
@@ -485,6 +518,8 @@ describe('a product merge folds a release node with an empty licences list and a
                 expect(product.metadata.component.purl, where).toBe(PRODUCT_ROOT);
                 expect(product.metadata.component.licenses, where).toStrictEqual([{ license: { id: 'AGPL-3.0-only' } }]);
                 expect(node(product, LISTING_ROOT), where).toBeDefined();
+                expect(droppedRecords(node(product, RELEASE_NODE)), where).toStrictEqual(records);
+                expect(droppedRecords(product.metadata.component), where).toStrictEqual([]);
                 await expect(validateBom(product), where).resolves.toBeTruthy();
             }
         });
