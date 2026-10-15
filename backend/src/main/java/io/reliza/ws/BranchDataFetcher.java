@@ -334,6 +334,8 @@ public class BranchDataFetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> synchronizeBranchInput = dfe.getArgument("synchronizeBranchInput");
 

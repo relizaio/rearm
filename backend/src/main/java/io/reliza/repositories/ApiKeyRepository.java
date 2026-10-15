@@ -8,16 +8,53 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.hibernate.Timeouts;
+
 import io.reliza.model.ApiKey;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
-	
+
+	// The three lock reads below are MANDATORY: the lock belongs to the caller's transaction and lasts until it
+	// commits, and a caller without one fails instead of getting a lock released on return.
+
+	/** The key row in any status, locked until the caller's transaction ends. Callers apply ApiKeyService.isLive. */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+	@Query("SELECT k FROM ApiKey k WHERE k.uuid = :uuid")
+	Optional<ApiKey> findByIdWriteLocked(@Param("uuid") UUID uuid);
+
+	/**
+	 * As findByIdWriteLocked, but never waits: a row locked by another transaction reads as empty (SKIP LOCKED).
+	 * Not NOWAIT, whose refusal is an error that marks the reading transaction for rollback.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "" + Timeouts.SKIP_LOCKED_MILLI))
+	@Query("SELECT k FROM ApiKey k WHERE k.uuid = :uuid")
+	Optional<ApiKey> findByIdWriteLockedSkipLocked(@Param("uuid") UUID uuid);
+
+	/**
+	 * Whether the key row is live (FIND_API_KEY_BY_UUID's rule), read from the table under the row lock; empty
+	 * when there is no row. COMMIT flush mode: nothing the caller holds in memory is written before the read.
+	 * Its wait is PostgreSQL's lock_timeout; the writers that reach it by uuid already hold the lock.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@QueryHints(@QueryHint(name = "org.hibernate.flushMode", value = "COMMIT"))
+	@Query(value = VariableQueries.LOCK_API_KEY_LIVENESS, nativeQuery = true)
+	Optional<Boolean> lockAndReadLiveness(@Param("uuid") UUID uuid);
+
 	@Query(
 			value = VariableQueries.FIND_API_KEY_BY_UUID,
 			nativeQuery = true)
@@ -57,6 +94,11 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 			value = VariableQueries.FIND_USER_API_KEY_BY_USER_ID_AND_ORG,
 			nativeQuery = true)
 	List<ApiKey> findUserApiKeyByUserUuidAndOrgUuid(UUID userUuid, UUID orgUuid);
+
+	@Query(
+			value = VariableQueries.FIND_HELD_API_KEYS_BY_USER_AND_ORG,
+			nativeQuery = true)
+	List<ApiKey> findHeldApiKeysByUserUuidAndOrgUuid(UUID userUuid, UUID orgUuid);
 
 	@Query(
 			value = VariableQueries.FIND_USER_API_KEYS_BY_USER,

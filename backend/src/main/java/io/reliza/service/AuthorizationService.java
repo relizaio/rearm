@@ -120,7 +120,7 @@ public class AuthorizationService {
 		AuthHeaderParse ahp = null;
 		Object verified = servletWebRequest.getRequest().getAttribute(io.reliza.ws.ProgrammaticAuthenticationFilter.PRINCIPAL_ATTRIBUTE);
 		if (verified instanceof AuthHeaderParse tokenAhp) {
-			return tokenAhp; // bearer access token, verified by the programmatic authentication filter
+			return tokenAhp; // a bearer or a Basic key credential, verified by the chain's filter on either lane (TPF-27, TPF-29)
 		}
 		String remoteIp = servletWebRequest.getRequest().getRemoteAddr();
 		if (null != headers && headers.getFirst(HttpHeaders.AUTHORIZATION) != null) {
@@ -140,7 +140,10 @@ public class AuthorizationService {
 	 * For key types that already populate {@code ahp.getOrgUuid()}
 	 * (ORGANIZATION/ORGANIZATION_RW), the context's {@code orgUuid()} matches
 	 * {@code ahp.getOrgUuid()}. For FREEFORM, the org is looked up from the
-	 * stored ApiKey row.
+	 * stored ApiKey row. A principal verified by the chain's filter on either
+	 * lane (ProgrammaticAuthenticationFilter on the programmatic chain,
+	 * LegacyGraphqlBasicFilter on /graphql) carries the row org for the
+	 * ORGANIZATION types and none otherwise, never an org read from the id text.
 	 */
 	public ProgrammaticAuthContext authenticateProgrammaticWithOrg (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = authenticateProgrammatic(headers, servletWebRequest);
@@ -731,11 +734,13 @@ public class AuthorizationService {
 	}
 
 	/**
-	 * Refuse a grant naming a BOARD object that is not a board of the organization. The user, team
-	 * and API key permission inputs call this before storing; a grant on a board nobody can resolve
-	 * would sit in the permission JSON covering nothing.
+	 * Refuse a grant naming a BOARD object that is not a board of the organization, or a PERSPECTIVE
+	 * object that is not a live perspective (real or product-derived) of the organization (TPF-15).
+	 * The user, team and API key permission inputs call this before storing; a grant on an object
+	 * nobody can resolve would sit in the permission JSON covering nothing.
 	 */
 	public void assertGrantObjectExists(UUID org, PermissionScope scope, UUID object) throws RelizaException {
+		if (PermissionScope.PERSPECTIVE == scope) { ossPerspectiveService.requireLivePerspective(org, object); return; }
 		if (PermissionScope.BOARD != scope) return;
 		boolean ours = null != object && null != org && agentBoardRepository.findById(object)
 				.map(AgentBoardData::dataFromRecord)
@@ -1041,8 +1046,7 @@ public class AuthorizationService {
 		String apiKey = ahp.getApiKey();
 		if (StringUtils.isNotEmpty(apiKey) || ahp.getVerifiedKeyUuid() != null) matchingKeyId = apiKeyService.isMatchingApiKey(ahp);
 		if (null == matchingKeyId) {
-			log.warn("SECURITY: programmatic auth failed for type={} obj={} keyId={} ip={}",
-					ahp.getType(), ahp.getObjUuid(), ahp.getApiKeyId(), ahp.getRemoteIp());
+			log.warn("SECURITY: programmatic auth failed for {} ip={}", ahp.canonicalId(), ahp.getRemoteIp());
 			try {
 				if (rt == RequestType.REST) {
 					response.sendError(HttpStatus.FORBIDDEN.value(), "You do not have permissions to this resource");

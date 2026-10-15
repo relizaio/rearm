@@ -52,8 +52,9 @@ import io.reliza.ws.oss.TestInitializer;
 
 /**
  * The board knows which head a review or test passed, and notices a PR moving past it (task
- * 3b97ccfd): the index names the heads, a pass must name every linked PR, and a DELIVERING task
- * whose PR moves past its tested head goes back to the role that passed it.
+ * 3b97ccfd): the index names the heads, a pass must name every linked PR still to land (task
+ * t20261010-033522-23606), and a DELIVERING task whose PR moves past its tested head goes back to
+ * the role that passed it.
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
@@ -300,6 +301,120 @@ public class AgentTestedHeadsIntegrationTest {
 		assertEquals("coder", rejected.getRole(), "a rejection names nothing and goes back as before");
 	}
 
+	// ---------- only a PR still to land needs a head (task t20261010-033522-23606) ----------
+
+	/**
+	 * The rearm-saas #799 shape: a PR closed unmerged and superseded by its replacement is not going to land, so the
+	 * tester names the replacement's head only. Before, the pass was refused until it named a head for the old PR.
+	 */
+	@Test
+	public void aPassNeedNotNameTheHeadOfASupersededPr() throws RelizaException {
+		Rig r = rig(true);
+		String old = newPrUrl();
+		String replacement = newPrUrl();
+		pr(r, old, PullRequestState.OPEN, A);
+		pr(r, replacement, PullRequestState.OPEN, B);
+		AgentTaskData t = coded(r, queuedCoder(r), old, replacement);
+		pr(r, old, PullRequestState.CLOSED, A);
+		agentTaskService.supersedePullRequest(t.getUuid(), old, replacement, "replaced", COORD, WU);
+
+		AgentTaskData d = testerSignsOff(r, t, SignOffOutcome.PASSED, report("PASSED", List.of(tested(replacement, B))));
+		assertEquals(TaskStatus.DELIVERING, d.getStatus());
+		assertEquals(List.of(replacement), agentDeliveryService.deliveryOf(d).units(AgentDeliveryService.Delivery.WAITING)
+				.stream().map(AgentDeliveryService.TaskPullRequest::url).toList(), "waiting on the replacement only");
+
+		pr(r, replacement, PullRequestState.MERGED, null);
+		assertEquals(TaskStatus.COMPLETED, reload(d).getStatus());
+	}
+
+	/**
+	 * A PR declared abandoned is not going to land either: the pass names the open one only, and goes to the
+	 * coordinator over the abandoned unit with the ALERT, as before.
+	 */
+	@Test
+	public void aPassNeedNotNameTheHeadOfAnAbandonedPr() throws RelizaException {
+		Rig r = rig(true);
+		String abandoned = newPrUrl();
+		String open = newPrUrl();
+		pr(r, abandoned, PullRequestState.OPEN, A);
+		pr(r, open, PullRequestState.OPEN, B);
+		AgentTaskData t = coded(r, queuedCoder(r), abandoned, open);
+		agentTaskService.declareDelivery(t.getUuid(), abandoned, null, AgentTaskData.DeliveryOutcome.ABANDONED, "dropped",
+				COORD, WU);
+
+		AgentTaskData back = testerSignsOff(r, t, SignOffOutcome.PASSED, report("PASSED", List.of(tested(open, B))));
+		assertEquals(SignOffOutcome.PASSED, back.getSignOffs().get(back.getSignOffs().size() - 1).outcome());
+		assertEquals(TaskStatus.AWAITING_COORDINATOR, back.getStatus(), "the abandoned unit still sends it to the coordinator");
+		assertEquals(1, alerts(r, "passed, but its delivery will not land: " + abandoned + " declared abandoned").size(),
+				agentBoardService.recentEvents(board(r).getUuid()).toString());
+	}
+
+	/**
+	 * A closed row nobody declared is not settled: reopened on its tracker it waits again, and with no head on record
+	 * an unchanged merge would deliver untested. So the pass still names it, and then goes to the coordinator as before.
+	 */
+	@Test
+	public void aPassStillNamesTheHeadOfAClosedPrNobodyDeclared() throws RelizaException {
+		Rig r = rig(true);
+		String closed = newPrUrl();
+		String open = newPrUrl();
+		pr(r, closed, PullRequestState.OPEN, A);
+		pr(r, open, PullRequestState.OPEN, B);
+		AgentTaskData t = coded(r, queuedCoder(r), closed, open);
+		pr(r, closed, PullRequestState.CLOSED, A);
+
+		agentTaskService.assign(t.getUuid(), board(r), r.session().getAgent(), r.session().getUuid(), WU);
+		ReleaseData onlyOpen = publishReport(r, reload(t), report("PASSED", List.of(tested(open, B))));
+		RelizaException e = assertThrows(RelizaException.class, () -> agentTaskService.signOff(t.getUuid(),
+				r.session().getUuid(), SignOffOutcome.PASSED, "tested", List.of(onlyOpen.getUuid()), WU));
+		assertTrue(e.getMessage().contains("say the head you tested for " + closed), e.getMessage());
+		assertTrue(e.getMessage().endsWith("; a superseded or abandoned PR needs none"), e.getMessage());
+
+		ReleaseData both = publishReport(r, reload(t), report("PASSED", List.of(tested(closed, A), tested(open, B))));
+		AgentTaskData back = agentTaskService.signOff(t.getUuid(), r.session().getUuid(), SignOffOutcome.PASSED, "tested",
+				List.of(both.getUuid()), WU);
+		assertEquals(TaskStatus.AWAITING_COORDINATOR, back.getStatus());
+		assertEquals(1, alerts(r, "closed without merging: " + closed).size(),
+				agentBoardService.recentEvents(board(r).getUuid()).toString());
+	}
+
+	/** Naming a superseded PR's head anyway is accepted: any named head must only be a linked PR's. */
+	@Test
+	public void aPassMayStillNameASupersededPrsHead() throws RelizaException {
+		Rig r = rig(true);
+		String old = newPrUrl();
+		String replacement = newPrUrl();
+		pr(r, old, PullRequestState.OPEN, A);
+		pr(r, replacement, PullRequestState.OPEN, B);
+		AgentTaskData t = coded(r, queuedCoder(r), old, replacement);
+		pr(r, old, PullRequestState.CLOSED, A);
+		agentTaskService.supersedePullRequest(t.getUuid(), old, replacement, "replaced", COORD, WU);
+
+		AgentTaskData d = testerSignsOff(r, t, SignOffOutcome.PASSED,
+				report("PASSED", List.of(tested(old, A), tested(replacement, B))));
+		assertEquals(TaskStatus.DELIVERING, d.getStatus());
+	}
+
+	/** Every PR that will land still needs its head, an open one and one already merged alike, and the refusal says what does not. */
+	@Test
+	public void aPassStillNamesEveryPrThatWillLand() throws RelizaException {
+		Rig r = rig(true);
+		String open = newPrUrl();
+		String merged = newPrUrl();
+		pr(r, open, PullRequestState.OPEN, A);
+		pr(r, merged, PullRequestState.OPEN, B);
+		AgentTaskData t = coded(r, queuedCoder(r), open, merged);
+		pr(r, merged, PullRequestState.MERGED, B);
+
+		agentTaskService.assign(t.getUuid(), board(r), r.session().getAgent(), r.session().getUuid(), WU);
+		ReleaseData onlyOpen = publishReport(r, reload(t), report("PASSED", List.of(tested(open, A))));
+		RelizaException e = assertThrows(RelizaException.class, () -> agentTaskService.signOff(t.getUuid(),
+				r.session().getUuid(), SignOffOutcome.PASSED, "tested", List.of(onlyOpen.getUuid()), WU));
+		assertEquals("A pass says what it tested: say the head you tested for " + merged + " (tested: [{pr, head}]) in the"
+				+ " BOARD_TEST_REPORT index; a superseded or abandoned PR needs none", e.getMessage());
+		assertEquals(TaskStatus.ASSIGNED, reload(t).getStatus(), "refused before anything is written");
+	}
+
 	// ---------- a DELIVERING task's PR moves (design §4.2) ----------
 
 	@Test
@@ -435,6 +550,138 @@ public class AgentTestedHeadsIntegrationTest {
 		agentDeliveryService.sweep(WU);
 		assertEquals(TaskStatus.QUEUED, reload(d).getStatus());
 		assertEquals("tester", reload(d).getRole());
+	}
+
+	// ---------- an unlink past the pass (task t20261010-033523-18839) ----------
+
+	/**
+	 * Past the pass a person may take an open PR out; the ALERT names the tested head that no longer counts, and the
+	 * task delivers on what is left.
+	 */
+	@Test
+	public void aPersonsUnlinkOfATestedOpenPrNamesTheHeadThatNoLongerCounts() throws RelizaException {
+		Rig r = rig(true);
+		String one = newPrUrl();
+		String two = newPrUrl();
+		pr(r, one, PullRequestState.OPEN, A);
+		pr(r, two, PullRequestState.OPEN, B);
+		AgentTaskData d = testerSignsOff(r, coded(r, queuedCoder(r), one, two), SignOffOutcome.PASSED,
+				report("PASSED", List.of(tested(one, A), tested(two, B))));
+		assertEquals(TaskStatus.DELIVERING, d.getStatus());
+
+		AgentActor person = AgentActor.ofUser(UUID.randomUUID(), "ops@acme.example");
+		AgentTaskData after = agentTaskService.unlinkPr(d.getUuid(), one, "split out", person, WU);
+		assertEquals(TaskStatus.DELIVERING, after.getStatus());
+		assertEquals(1, alerts(r, "PR " + one + " unlinked by ops@acme.example: split out; the tested head aaaaaaa no"
+				+ " longer counts").size(), agentBoardService.recentEvents(board(r).getUuid()).toString());
+		pr(r, two, PullRequestState.MERGED, null);
+		assertEquals(TaskStatus.COMPLETED, reload(d).getStatus());
+	}
+
+	/**
+	 * A reopen to the tester ends its pass: the task is no longer past it, so the only open PR may be unlinked, which
+	 * the live pass refused a moment before.
+	 */
+	@Test
+	public void aReturnedTaskUnlinksFreely() throws RelizaException {
+		Rig r = rig(true);
+		String url = newPrUrl();
+		AgentTaskData d = deliveringAtA(r, url);
+		RelizaException refused = assertThrows(RelizaException.class,
+				() -> agentTaskService.unlinkPr(d.getUuid(), url, null, COORD, WU));
+		assertTrue(refused.getMessage().contains("with no PR to deliver"), refused.getMessage());
+
+		AgentTaskData reopened = agentTaskService.reopen(d.getUuid(), "tester", "test it again elsewhere", COORD, WU);
+		assertEquals("tester", reopened.getRole());
+		AgentTaskData unlinked = agentTaskService.unlinkPr(d.getUuid(), url, "replaced", COORD, WU);
+		assertTrue(unlinked.getPrUrls().isEmpty());
+		assertEquals(reopened.getStatus(), unlinked.getStatus(), "an unlink routes nothing");
+	}
+
+	/**
+	 * A reopen to the coder leaves the tester's pass live, since a complete still counts it: a session may neither
+	 * take a tested open PR out nor the only PR; the coder closes or supersedes first, or a person unlinks.
+	 */
+	@Test
+	public void aReopenToTheCoderKeepsTheRules() throws RelizaException {
+		Rig r = rig(true);
+		String only = newPrUrl();
+		AgentTaskData single = deliveringAtA(r, only);
+		agentTaskService.reopen(single.getUuid(), "coder", "rework", COORD, WU);
+		RelizaException last = assertThrows(RelizaException.class,
+				() -> agentTaskService.unlinkPr(single.getUuid(), only, null, COORD, WU));
+		assertTrue(last.getMessage().contains("with no PR to deliver"), last.getMessage());
+
+		String one = newPrUrl();
+		String two = newPrUrl();
+		pr(r, one, PullRequestState.OPEN, A);
+		pr(r, two, PullRequestState.OPEN, B);
+		AgentTaskData d = testerSignsOff(r, coded(r, queuedCoder(r), one, two), SignOffOutcome.PASSED,
+				report("PASSED", List.of(tested(one, A), tested(two, B))));
+		assertEquals(TaskStatus.DELIVERING, d.getStatus());
+		AgentTaskData reworking = agentTaskService.reopen(d.getUuid(), "coder", "rework", COORD, WU);
+		assertEquals("coder", reworking.getRole());
+		RelizaException open = assertThrows(RelizaException.class,
+				() -> agentTaskService.unlinkPr(d.getUuid(), one, null, COORD, WU));
+		assertEquals(one + " is open and a pass names its head; close it unmerged, or supersede it, then unlink",
+				open.getMessage());
+
+		AgentActor person = AgentActor.ofUser(UUID.randomUUID(), "ops@acme.example");
+		assertEquals(List.of(two), agentTaskService.unlinkPr(d.getUuid(), one, "dropped", person, WU).getPrUrls(),
+				"a person may");
+	}
+
+	/** A later hop after the tester's pass, a reviewer's here, is still past it: a session may not take an open PR out. */
+	@Test
+	public void aLaterHopAfterTheTesterPassIsStillPastThePass() throws RelizaException {
+		Rig r = rig(true);
+		agentBoardService.upsertRoleConfig(board(r), new AgentBoardService.RoleConfigSpec("reviewer", "review", 40,
+				null, false, true, null, null, RoleNecessity.REQUIRED, null, List.of(),
+				List.of(new ProducedOutput(RearmSpecificationType.BOARD_REVIEW_ITEMS, InputScope.TASK, true)),
+				null, null), true, WU);
+		String one = newPrUrl();
+		String two = newPrUrl();
+		pr(r, one, PullRequestState.OPEN, A);
+		pr(r, two, PullRequestState.OPEN, B);
+		AgentTaskData tested = testerSignsOff(r, coded(r, queuedCoder(r), one, two), SignOffOutcome.PASSED,
+				report("PASSED", List.of(tested(one, A), tested(two, B))));
+		assertEquals("reviewer", tested.getRole());
+		agentTaskService.assign(tested.getUuid(), board(r), r.session().getAgent(), r.session().getUuid(), WU);
+		assertEquals(TaskStatus.ASSIGNED, reload(tested).getStatus());
+
+		RelizaException e = assertThrows(RelizaException.class,
+				() -> agentTaskService.unlinkPr(tested.getUuid(), one, null, COORD, WU));
+		assertEquals(one + " is open and a pass names its head; close it unmerged, or supersede it, then unlink",
+				e.getMessage());
+		assertEquals(2, reload(tested).getPrUrls().size());
+	}
+
+	/**
+	 * With no tester there is never a live tested pass; a task at the coordinator once its final role passed is past
+	 * it all the same, since a complete would accept it: its only PR stays, and a closed one is unlinked once an open
+	 * one remains to deliver.
+	 */
+	@Test
+	public void aTesterLessBoardIsPastThePassOnceItsFinalRolePassed() throws RelizaException {
+		Rig r = rigWithReviewer(false);
+		String closed = newPrUrl();
+		pr(r, closed, PullRequestState.OPEN, A);
+		AgentTaskData t = coded(r, queuedCoder(r), closed);
+		pr(r, closed, PullRequestState.CLOSED, A);
+		AgentTaskData back = reviewerSignsOff(r, t, SignOffOutcome.PASSED, review("PASSED", List.of(), null));
+		assertEquals(TaskStatus.AWAITING_COORDINATOR, back.getStatus());
+
+		RelizaException e = assertThrows(RelizaException.class,
+				() -> agentTaskService.unlinkPr(t.getUuid(), closed, null, COORD, WU));
+		assertTrue(e.getMessage().contains("with no PR to deliver"), e.getMessage());
+
+		String open = newPrUrl();
+		pr(r, open, PullRequestState.OPEN, B);
+		agentTaskService.linkPr(t.getUuid(), open, WU);
+		AgentTaskData unlinked = agentTaskService.unlinkPr(t.getUuid(), closed, "dropped", COORD, WU);
+		assertEquals(List.of(open), unlinked.getPrUrls());
+		AgentTaskData completing = agentTaskService.complete(t.getUuid(), null, COORD, WU);
+		assertEquals(TaskStatus.DELIVERING, completing.getStatus(), "waits on the open one");
 	}
 
 	// ---------- tested heads are the tester's; the verdict rule's PASS side (task 5ec48b02) ----------

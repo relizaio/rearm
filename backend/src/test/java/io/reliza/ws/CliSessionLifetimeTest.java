@@ -152,7 +152,10 @@ public class CliSessionLifetimeTest {
 	private Map<String, Object> token(String grant, String deviceCode, String refreshToken) {
 		MockHttpServletRequest req = new MockHttpServletRequest("POST", ProgrammaticTokenController.PATH);
 		req.setRemoteAddr("198.51.100.7");
-		Map<String, Object> body = tokenController.token(req, grant, null, null, deviceCode, refreshToken, null).getBody();
+		req.setParameter("grant_type", grant);
+		if (deviceCode != null) req.setParameter("device_code", deviceCode);
+		if (refreshToken != null) req.setParameter("refresh_token", refreshToken);
+		Map<String, Object> body = tokenController.token(req).getBody();
 		assertNotNull(body);
 		return body;
 	}

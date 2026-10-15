@@ -156,7 +156,11 @@ class OrientationPublishingContractTest {
 		// task 5ec48b02: a reviewer's heads are informative; the board holds the PRs to the tester's
 		String doc = section("publishing").replaceAll("\\s+", " ");
 		assertTrue(doc.contains("It is required on a tester's pass: a `BOARD_TEST_REPORT` that passes must name the head it tested"
-				+ " for every PR the task links"), "required on the tester's pass");
+				+ " for every linked PR that is still to land"), "required on the tester's pass");
+		// task t20261010-033522-23606: a PR that will not land needs no head, as the server counts it.
+		assertTrue(doc.contains("a superseded PR, or one declared abandoned, needs none (a closed PR nobody declared still"
+				+ " does)"), "only what will land");
+		assertFalse(doc.contains("for every PR the task links"), "the old wording");
 		assertTrue(doc.contains("A reviewer may name the heads it looked at; they are informative"), "optional for a reviewer");
 	}
 

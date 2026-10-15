@@ -19,7 +19,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -106,7 +105,7 @@ public class ReleaseScanSelfHealTest {
 				"incomplete scan must not stamp lastScanned (would evict from the self-heal finder)");
 		// And the observable consequence: the product is still picked up by the finder,
 		// so the every-minute sweep will retry it until the child scans.
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"product must remain eligible for FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE "
 				+ "so it can self-heal once the child is scanned");
 
@@ -144,7 +143,7 @@ public class ReleaseScanSelfHealTest {
 		// instead of waiting on a scan that will never come.
 		assertNotNull(lastScanned(after),
 				"non-scannable (REJECTED) release must settle: lastScanned stamped even with an unscanned BOM");
-		assertFalse(byUpdateFinderUuids().contains(rejected.getUuid()),
+		assertFalse(eligibleByUpdate(rejected.getUuid()),
 				"settled REJECTED release must leave the BY_UPDATE finder (no more head-squatting)");
 	}
 
@@ -201,7 +200,7 @@ public class ReleaseScanSelfHealTest {
 		assertNotNull(lastScanned(after),
 				"and it still SETTLES -- the lifecycle gate is unchanged, so an abandoned draft does not "
 				+ "squat in the finder waiting for a scan that will never come");
-		assertFalse(byUpdateFinderUuids().contains(r.getUuid()),
+		assertFalse(eligibleByUpdate(r.getUuid()),
 				"which means it leaves the finder pool, exactly as it did before this work");
 	}
 
@@ -210,7 +209,7 @@ public class ReleaseScanSelfHealTest {
 		Organization org = testInitializer.obtainOrganization();
 		Release child = saveScanPendingRelease(org.getUuid(), new ArrayList<>());
 		Release product = saveScanPendingRelease(org.getUuid(), parentReleasesOf(child.getUuid()));
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"pre-fence sanity: scan-pending product is finder-eligible");
 
 		releaseRepository.recordMetricsComputeIncomplete(product.getUuid(), 3600);
@@ -219,11 +218,11 @@ public class ReleaseScanSelfHealTest {
 		assertNotNull(fenced.getFlowControl(), "fence must be recorded on flow_control");
 		assertNotNull(fenced.getFlowControl().metricsComputeSkipUntil());
 		assertEquals(1, fenced.getFlowControl().metricsComputeFailureCount());
-		assertFalse(byUpdateFinderUuids().contains(product.getUuid()),
+		assertFalse(eligibleByUpdate(product.getUuid()),
 				"fenced release must not consume a finder slot while backing off");
 
 		releaseRepository.clearMetricsComputeBackoff(product.getUuid());
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"cleared fence must re-admit the release to the finder");
 	}
 
@@ -237,7 +236,7 @@ public class ReleaseScanSelfHealTest {
 		Release product = saveScanPendingRelease(org.getUuid(), parentReleasesOf(child.getUuid()));
 		// Parent is deep in backoff, e.g. its child took hours to scan.
 		releaseRepository.recordMetricsComputeIncomplete(product.getUuid(), 3600);
-		assertFalse(byUpdateFinderUuids().contains(product.getUuid()));
+		assertFalse(eligibleByUpdate(product.getUuid()));
 
 		releaseMetricsComputeService.computeReleaseMetricsOnRescan(
 				releaseRepository.findById(child.getUuid()).orElseThrow());
@@ -248,7 +247,7 @@ public class ReleaseScanSelfHealTest {
 		assertTrue(productAfter.getFlowControl() == null
 						|| productAfter.getFlowControl().metricsComputeSkipUntil() == null,
 				"child's firstScanned landing must lift the parent's fence (push, not poll)");
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"parent must be finder-eligible again so it heals on the next tick, not after its backoff");
 	}
 
@@ -438,9 +437,15 @@ public class ReleaseScanSelfHealTest {
 
 	// ---- helpers (local, mirroring ReleaseMetricsFinderQueryTest's fixture style) ----
 
-	private Set<UUID> byUpdateFinderUuids() {
-		return releaseRepository.findReleasesForMetricsComputeByUpdate(1000)
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
+	/**
+	 * Whether the BY_UPDATE finder's condition holds for this release. Not "is it in
+	 * findReleasesForMetricsComputeByUpdate(1000)": that returns only the 1000 OLDEST eligible
+	 * releases, so in a shared test database a freshly created release falls outside it once
+	 * other tests leave more than 1000 eligible rows -- a false negative for assertTrue, and an
+	 * assertFalse that passes without checking anything.
+	 */
+	private boolean eligibleByUpdate(UUID releaseUuid) {
+		return releaseRepository.isEligibleForMetricsComputeByUpdate(releaseUuid);
 	}
 
 	private static Object firstScanned(Release r) {

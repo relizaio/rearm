@@ -10,6 +10,7 @@ import java.util.concurrent.ThreadPoolExecutor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.service.CliSessionService;
@@ -72,6 +73,9 @@ public class App {
 
 	@Autowired
 	private CliSessionService cliSessionService;
+
+	@Autowired
+	private ApiKeyAccessService apiKeyAccessService;
 
 	@Autowired
 	private io.reliza.service.FederatedTrustRuleService federatedTrustRuleService;
@@ -196,33 +200,50 @@ public class App {
 	/**
 	 * Security for machine-to-machine paths that authenticate every request themselves:
 	 * the programmatic GraphQL endpoint ({@link ProgrammaticGraphQlConfig#PATH}, API key
-	 * checked inside the resolvers) and the webhook intake (HMAC-SHA256 via
+	 * checked inside the resolvers), the programmatic artifact downloads
+	 * ({@link ArtifactWs#PROGRAMMATIC_ARTIFACT_PATTERN}, key verified in the handler before any
+	 * lookup), the token, schema and device endpoints, and the webhook intake (HMAC-SHA256 via
 	 * X-Hub-Signature-256, verified by the controller before any state mutation; GitHub can
 	 * carry no CSRF cookie anyway). The chain is stateless: no session is created, no CSRF
 	 * token is required, and the OAuth2 resource server does not run (a key caller never sees
-	 * a bearer-token 401 page). This is also where an API-key authentication filter belongs
-	 * once programmatic authorization is reworked to put a principal in the security context.
+	 * a bearer-token 401 page).
 	 *
-	 * <p>Deliberately NOT here: the artifact download endpoints under /api/programmatic/v1,
-	 * which accept a user JWT as well as a key and therefore need the bearer-token filter of
-	 * the browser chain below. /graphql keeps that chain unchanged.
+	 * <p>{@link RateLimitingFilter} runs first on every path of this chain, in front of the
+	 * authentication filter, so a refused or flooding caller is counted before any credential is
+	 * verified (TPF-26).
+	 *
+	 * <p>{@link ProgrammaticAuthenticationFilter} runs on the GraphQL endpoint and on the artifact
+	 * downloads: it verifies a ReARM bearer access token (key exchange, CLI session, federated
+	 * exchange) and, since TPF-27, an HTTP Basic key credential too (deprecated, still admitted), so
+	 * the resolvers and the handlers on these paths only see verified keys. The artifact downloads take no IdP user JWT (they never served one, TPF-13): the
+	 * browser downloads on the manual pair /api/manual/v1/artifact/**, which stays on the browser
+	 * chain below with its bearer-token filter.
+	 *
+	 * <p>The legacy /graphql endpoint ({@link LegacyGraphqlBasicFilter#PATH}) stays on the browser chain below, where
+	 * {@link LegacyGraphqlBasicFilter} (TPF-29) runs after the limiter and verifies a Basic key credential with the same
+	 * {@link BasicKeyVerifier} as this chain, so the resolvers there see only verified keys too; the UI's IdP JWT and an
+	 * anonymous call pass it untouched.
 	 */
 	@Bean
 	@Order(1)
-	public SecurityFilterChain programmaticFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService) throws Exception {
+	public SecurityFilterChain programmaticFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService,
+			RateLimitingFilter rateLimitingFilter) throws Exception {
 		http
 			.securityMatcher(ProgrammaticGraphQlConfig.PATH, ProgrammaticTokenController.PATH, ProgrammaticSchemaController.PATH,
-					DeviceAuthorizationController.DEVICE_CODE_PATH, DeviceAuthorizationController.REVOKE_PATH, "/api/programmatic/v1/webhook/**")
+					DeviceAuthorizationController.DEVICE_CODE_PATH, DeviceAuthorizationController.REVOKE_PATH, "/api/programmatic/v1/webhook/**",
+					ArtifactWs.PROGRAMMATIC_ARTIFACT_PATTERN)
 			.csrf(c -> c.disable())
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-			// bearer access tokens are verified here; Basic still passes through to the resolvers (deprecated)
-			.addFilterBefore(new ProgrammaticAuthenticationFilter(apiTokenService, apiKeyService, cliSessionService, federatedTrustRuleService), AuthorizationFilter.class)
+			// bearer access tokens and Basic key credentials are verified here (TPF-27), every other credential is a 401
+			.addFilterBefore(new ProgrammaticAuthenticationFilter(apiTokenService, apiKeyService, apiKeyAccessService, cliSessionService, federatedTrustRuleService), AuthorizationFilter.class)
+			// TPF-26: every request on this chain is counted before any credential is verified (bearers by key, Basic by its canonical key id)
+			.addFilterBefore(rateLimitingFilter, ProgrammaticAuthenticationFilter.class)
 			.authorizeHttpRequests(authz -> authz.anyRequest().permitAll()); // per-operation auth in the resolvers
 		return http.build();
 	}
 
 	@Bean
-	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
+	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter, ApiKeyService apiKeyService) throws Exception {
 	  http
 	  .csrf(c -> c
 			.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
@@ -245,29 +266,34 @@ public class App {
 	  		if ("true".equalsIgnoreCase(relizaConfigProps.getEnableBetaTea())) {
 	  			authz
 		  				// .anyRequest().permitAll()
-		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
+		  				.requestMatchers(LegacyGraphqlBasicFilter.PATH).permitAll() // has granular per-query auth; Basic verified by LegacyGraphqlBasicFilter
 		  				.requestMatchers("/tea/**").permitAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/.well-known/tea/**").permitAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
 						.requestMatchers("/api/programmatic/v1/**").permitAll()
 						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
+						.requestMatchers(BrandingController.PATH + "/**").permitAll() // public branding the UI reads before login
 		  				.anyRequest().authenticated();
 	  		} else {
 	  			authz
 		  				// .anyRequest().permitAll()
-		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
+		  				.requestMatchers(LegacyGraphqlBasicFilter.PATH).permitAll() // has granular per-query auth; Basic verified by LegacyGraphqlBasicFilter
 		  				.requestMatchers("/tea/**").denyAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/.well-known/tea/**").denyAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
 						.requestMatchers("/api/programmatic/v1/**").permitAll()
 						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
+						.requestMatchers(BrandingController.PATH + "/**").permitAll() // public branding the UI reads before login
 		  				.anyRequest().authenticated();
 	  		}
 	  	});
     	// Place rate limiting after JWT auth so SecurityContext is populated
     	http.addFilterAfter(rateLimitingFilter, BearerTokenAuthenticationFilter.class);
+    	// TPF-29: a Basic key credential on /graphql is verified behind the limiter and before authorization, as on the
+    	// programmatic chain; the permitAll above and this filter's matcher read the same PATH constant
+    	http.addFilterAfter(new LegacyGraphqlBasicFilter(apiKeyService, apiKeyAccessService), RateLimitingFilter.class);
     	return http.build();
 	}
 
