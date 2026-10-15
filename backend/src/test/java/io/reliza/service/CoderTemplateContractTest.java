@@ -60,6 +60,9 @@ class CoderTemplateContractTest {
 		assertTrue(doc.contains("Push each fix to the PR's own head branch with `rearm agent task push <key> --session"
 				+ " <session>`: fast-forward only, never to the base, and it checks the remote head after the push."),
 				"coder-fix.md should name task push");
+		// task t20261010-033522-23606: a double quote in a commit message broke the rearm-actions templates (#799).
+		assertTrue(doc.contains("Commit messages carry no double quote; `task push` refuses one before it is pushed."),
+				"coder-fix.md should warn about the double quote");
 		assertFalse(doc.contains("Push each fix to the PR's own head branch. "), "the bare push sentence is replaced");
 	}
 

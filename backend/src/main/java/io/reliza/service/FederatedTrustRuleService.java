@@ -25,6 +25,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.FederatedContext;
 import io.reliza.common.EditedListValidation;
+import io.reliza.common.LogSafe;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey;
@@ -48,6 +49,7 @@ import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.FederatedTrustRuleRepository;
 import io.reliza.service.FederatedAssertionService.AssertionException;
+import io.reliza.service.FederatedAssertionService.Refusal;
 import io.reliza.service.FederatedAssertionService.VerifiedAssertion;
 import io.reliza.common.OAuthErrors;
 import io.reliza.service.FederatedMatching.IdentityClaims;
@@ -181,11 +183,28 @@ public class FederatedTrustRuleService {
 
 	// ---- exchange --------------------------------------------------------------------------
 
+	/**
+	 * A refused exchange: the OAuth error code and the wire text, plus what the token endpoint's one refusal line
+	 * writes (task TPF-31): the fixed-vocabulary reason, the issuer text as presented (null before it was read) and
+	 * the verified repository (null before the assertion verified).
+	 */
 	public static class ExchangeException extends Exception {
 		private static final long serialVersionUID = 1L;
 		private final String code;
-		public ExchangeException(String code, String message) { super(message); this.code = code; }
+		private final Refusal reason;
+		private final String issuer;
+		private final String identity;
+		public ExchangeException(String code, Refusal reason, String message, String issuer, String identity) {
+			super(message);
+			this.code = code;
+			this.reason = reason;
+			this.issuer = issuer;
+			this.identity = identity;
+		}
 		public String code() { return code; }
+		public Refusal reason() { return reason; }
+		public String issuer() { return issuer; }
+		public String identity() { return identity; }
 	}
 
 	/** What the token endpoint mints from: the key to act as, the rules that admitted the identity, and the claims kept. */
@@ -198,6 +217,9 @@ public class FederatedTrustRuleService {
 	 * templates, ids are checked against the pins, and only then is anything written: the
 	 * assertion id reserved, pins recorded, the identity row materialised, last use touched.
 	 * A refused exchange rolls every write back, so it leaves no trace beyond the log.
+	 * Every refusal before a rule admits the verified identity reads {@link #NOT_ACCEPTED} (task TPF-31): the
+	 * caller cannot tell an issuer no rule names from one whose assertion did not verify; the reason travels on the
+	 * exception to the token endpoint's one log line.
 	 */
 	@Transactional(rollbackFor = ExchangeException.class)
 	public Exchange exchange(String assertion, String clientId) throws ExchangeException {
@@ -205,50 +227,42 @@ public class FederatedTrustRuleService {
 		try {
 			issuer = assertionService.peekIssuer(assertion);
 		} catch (AssertionException e) {
-			throw new ExchangeException(OAuthErrors.INVALID_GRANT, e.getMessage());
+			throw new ExchangeException(OAuthErrors.INVALID_GRANT, e.reason(), e.getMessage(), null, null);
 		}
-		if (StringUtils.isBlank(issuer)) throw new ExchangeException(OAuthErrors.INVALID_GRANT, "assertion has no issuer");
+		if (StringUtils.isBlank(issuer)) throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.NO_ISSUER, "assertion has no issuer", null, null);
 		List<FederatedTrustRule> candidates = repository.findActiveByIssuer(issuer, Status.ACTIVE.name()).stream().filter(FederatedTrustRule::isUsable).toList();
-		if (candidates.isEmpty()) {
-			log.warn("SECURITY: federated assertion from untrusted issuer {} refused", issuer);
-			throw new ExchangeException(OAuthErrors.INVALID_GRANT, NO_MATCH);
-		}
+		if (candidates.isEmpty()) throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.UNTRUSTED_ISSUER, NOT_ACCEPTED, issuer, null);
 		Provider provider = candidates.get(0).getProvider();
 		VerifiedAssertion va;
 		try {
 			va = assertionService.verify(assertion, issuer, provider);
 		} catch (AssertionException e) {
-			throw new ExchangeException(OAuthErrors.INVALID_GRANT, e.getMessage());
+			// the service's own message stays server-side: a caller is not told that a rule names the issuer
+			throw new ExchangeException(OAuthErrors.INVALID_GRANT, e.reason(), NOT_ACCEPTED, issuer, null);
 		}
 		IdentityClaims id = va.identity();
 		List<FederatedTrustRule> matching = candidates.stream().filter(r -> FederatedMatching.matches(r.matcherOf(), id)).toList();
-		if (matching.isEmpty()) {
-			log.warn("SECURITY: federated identity {} ({}) matched no trust rule", id.repository(), issuer);
-			throw new ExchangeException(OAuthErrors.INVALID_GRANT, NO_MATCH);
-		}
+		if (matching.isEmpty()) throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.IDENTITY_UNMATCHED, NOT_ACCEPTED, issuer, id.repository());
 		Map<UUID, List<FederatedTrustRule>> byOrg = matching.stream().collect(Collectors.groupingBy(FederatedTrustRule::getOrg, LinkedHashMap::new, Collectors.toList()));
 		UUID org;
 		if (StringUtils.isNotBlank(clientId)) {
 			try {
 				org = UUID.fromString(clientId.trim());
 			} catch (IllegalArgumentException e) {
-				throw new ExchangeException(OAuthErrors.INVALID_CLIENT, "client_id must be the organization uuid");
+				throw new ExchangeException(OAuthErrors.INVALID_CLIENT, Refusal.CLIENT_ID_NOT_UUID, "client_id must be the organization uuid", issuer, id.repository());
 			}
-			if (!byOrg.containsKey(org)) {
-				log.warn("SECURITY: federated identity {} matched rules, but none of org {} named as client_id", id.repository(), org);
-				throw new ExchangeException(OAuthErrors.INVALID_GRANT, NO_MATCH);
-			}
+			if (!byOrg.containsKey(org)) throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.ORG_NOT_NAMED, NOT_ACCEPTED, issuer, id.repository());
 		} else if (byOrg.size() == 1) {
 			org = byOrg.keySet().iterator().next();
 		} else {
-			throw new ExchangeException(OAuthErrors.INVALID_REQUEST, "this identity is trusted by several organizations; pass client_id=<organization uuid>");
+			throw new ExchangeException(OAuthErrors.INVALID_REQUEST, Refusal.SEVERAL_ORGS, "this identity is trusted by several organizations; pass client_id=<organization uuid>", issuer, id.repository());
 		}
 		List<FederatedTrustRule> rules = byOrg.get(org);
 		// ---- checks: owner pins on the rules
 		for (FederatedTrustRule r : rules) {
 			if (r.getPinnedOwnerId() != null && !r.getPinnedOwnerId().equals(id.ownerId())) {
-				log.warn("SECURITY: federated owner id changed for rule {} ({} vs pinned {}); an admin must reset the pin", r.getUuid(), id.ownerId(), r.getPinnedOwnerId());
-				throw new ExchangeException(OAuthErrors.INVALID_GRANT, "the owner behind this identity changed since it was pinned; an administrator must reset the pin on rule " + r.getName());
+				log.warn("SECURITY: federated owner id changed for rule {} ({} vs pinned {}); an admin must reset the pin", r.getUuid(), LogSafe.text(id.ownerId()), LogSafe.text(r.getPinnedOwnerId()));
+				throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.OWNER_PIN, "the owner behind this identity changed since it was pinned; an administrator must reset the pin on rule " + r.getName(), issuer, id.repository());
 			}
 		}
 		// ---- checks: the principal
@@ -257,32 +271,22 @@ public class FederatedTrustRuleService {
 		List<FederatedTrustRule> admitted;
 		if (!keyBound.isEmpty()) {
 			Set<UUID> keys = keyBound.stream().map(r -> r.grantOf().getKeyUuid()).collect(Collectors.toCollection(LinkedHashSet::new));
-			if (keys.size() > 1) throw new ExchangeException(OAuthErrors.INVALID_REQUEST, "several key-bound rules match this identity and bind different keys");
+			if (keys.size() > 1) throw new ExchangeException(OAuthErrors.INVALID_REQUEST, Refusal.SEVERAL_KEYS, "several key-bound rules match this identity and bind different keys", issuer, id.repository());
 			UUID keyUuid = keys.iterator().next();
-			principal = apiKeyService.getApiKey(keyUuid).orElseThrow(() -> new ExchangeException(OAuthErrors.INVALID_GRANT, "the key bound by the rule is gone"));
+			principal = apiKeyService.getApiKey(keyUuid).orElseThrow(() -> new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.KEY_GONE, "the key bound by the rule is gone", issuer, id.repository()));
 			ApiKeyData akd = ApiKeyData.dataFromRecord(principal);
 			if (principal.getObjectType() != ApiTypeEnum.FREEFORM || akd.getStatus() != ApiKeyStatus.ACTIVE || !org.equals(principal.getOrg()))
-				throw new ExchangeException(OAuthErrors.INVALID_GRANT, "the key bound by the rule is not an active Free Form key of the organization");
+				throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.KEY_NOT_USABLE, "the key bound by the rule is not an active Free Form key of the organization", issuer, id.repository());
 			admitted = keyBound;
 		} else {
 			Optional<ApiKey> existing = apiKeyService.getFederatedIdentity(org, identityOf(id));
-			if (existing.isPresent()) {
-				ApiKeyData akd = ApiKeyData.dataFromRecord(existing.get());
-				// INACTIVE is the admin's kill switch and durable; REVOKED is the tombstone of a deleted row, which the
-				// rules re-materialise (trust comes from the rule, deleting a row only forgets its history)
-				if (akd.getStatus() == ApiKeyStatus.INACTIVE) throw new ExchangeException(OAuthErrors.INVALID_GRANT, "this repository's identity is disabled in the organization");
-				FederatedIdentity fi = akd.getFederation();
-				if (fi != null && fi.getRepositoryId() != null && !fi.getRepositoryId().equals(id.repositoryId())) {
-					log.warn("SECURITY: federated repository id changed for identity {} ({} vs pinned {})", existing.get().getUuid(), id.repositoryId(), fi.getRepositoryId());
-					throw new ExchangeException(OAuthErrors.INVALID_GRANT, "the repository behind this identity changed since it was pinned; an administrator must reset the pin");
-				}
-			}
+			if (existing.isPresent()) checkIdentity(existing.get(), id, issuer);
 			admitted = rules;
 		}
 		// ---- writes: everything checked out
 		if (assertionIds.reserve(issuer, va.jti(), ZonedDateTime.ofInstant(va.expiresAt(), java.time.ZoneOffset.UTC)) == 0) {
-			log.warn("SECURITY: federated assertion replayed (issuer {}, jti {})", issuer, va.jti());
-			throw new ExchangeException(OAuthErrors.INVALID_GRANT, "assertion already used");
+			log.warn("SECURITY: federated assertion replayed (issuer {}, jti {})", LogSafe.text(issuer), LogSafe.text(va.jti()));
+			throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.REPLAY, "assertion already used", issuer, id.repository());
 		}
 		try { assertionIds.purgeExpired(); } catch (RuntimeException e) { log.error("could not purge expired assertion ids", e); }
 		for (FederatedTrustRule r : rules) {
@@ -293,6 +297,8 @@ public class FederatedTrustRuleService {
 		}
 		if (principal == null) {
 			principal = apiKeyService.ensureFederatedIdentity(org, identityOf(id), WhoUpdated.getAutoWhoUpdated());
+			// again on the row as locked and re-read: a kill switch or a pin set by someone else since the check stands
+			checkIdentity(principal, id, issuer);
 		}
 		Instant clip = admitted.stream().map(FederatedTrustRule::getExpiresDate).filter(d -> d != null).map(ZonedDateTime::toInstant).min(Comparator.naturalOrder()).orElse(null);
 		for (FederatedTrustRule r : admitted) {
@@ -303,8 +309,29 @@ public class FederatedTrustRuleService {
 		return new Exchange(principal, admitted, ctx, clip);
 	}
 
-	/** One message for every "this token is not trusted here" outcome, so an unknown caller cannot probe which organizations trust an owner. */
-	static final String NO_MATCH = "no trust rule matches this identity";
+	/**
+	 * The one wire text of every refusal before a rule admits the verified identity (task TPF-31): an unknown issuer,
+	 * an assertion that does not verify against a trusted issuer (keys, signature, format or claims), an identity no
+	 * rule matches, an organization client_id names that does not trust it. A caller who holds no trusted identity
+	 * cannot tell from it whether any organization on this instance trusts an issuer or an owner; the reason is in the
+	 * token endpoint's log line.
+	 */
+	public static final String NOT_ACCEPTED = "assertion not accepted: no active trust rule names its issuer, or the assertion did not verify against that issuer (signature, keys or claims); ask the organization administrator to check the trust rule and the server log";
+
+	/**
+	 * The identity row's own refusals: INACTIVE is the admin's kill switch and durable (REVOKED is the tombstone of
+	 * a deleted row, which the rules re-materialise: trust comes from the rule, deleting a row only forgets its
+	 * history), and a pinned repository id must be the one presented.
+	 */
+	private static void checkIdentity(ApiKey identity, IdentityClaims id, String issuer) throws ExchangeException {
+		ApiKeyData akd = ApiKeyData.dataFromRecord(identity);
+		if (akd.getStatus() == ApiKeyStatus.INACTIVE) throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.IDENTITY_DISABLED, "this repository's identity is disabled in the organization", issuer, id.repository());
+		FederatedIdentity fi = akd.getFederation();
+		if (fi != null && fi.getRepositoryId() != null && !fi.getRepositoryId().equals(id.repositoryId())) {
+			log.warn("SECURITY: federated repository id changed for identity {} ({} vs pinned {})", identity.getUuid(), LogSafe.text(id.repositoryId()), LogSafe.text(fi.getRepositoryId()));
+			throw new ExchangeException(OAuthErrors.INVALID_GRANT, Refusal.REPOSITORY_PIN, "the repository behind this identity changed since it was pinned; an administrator must reset the pin", issuer, id.repository());
+		}
+	}
 
 	private static FederatedIdentity identityOf(IdentityClaims id) {
 		FederatedIdentity fi = new FederatedIdentity();

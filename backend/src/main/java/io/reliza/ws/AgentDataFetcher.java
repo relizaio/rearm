@@ -297,32 +297,17 @@ public class AgentDataFetcher {
 	}
 
 	/**
-	 * Field resolver: Agent.effectiveDisplayName — the label the UI
-	 * renders. Precedence (strongest last): name, then first bound
-	 * FREEFORM key note, then displayName. So an explicit displayName
-	 * wins; absent that, a note on a bound key gives a friendly label
-	 * for free; absent both, the registration name. No re-auth (parent
-	 * query already authorized).
+	 * Field resolver: Agent.effectiveDisplayName - the label the UI
+	 * renders. Precedence: displayName if non-blank, else the
+	 * registration name. A bound key's notes are the key's, not the
+	 * agent's, so they never stand in for the agent's name. No re-auth
+	 * (parent query already authorized).
 	 */
 	@DgsData(parentType = "Agent", field = "effectiveDisplayName")
 	public String agentEffectiveDisplayName(DgsDataFetchingEnvironment dfe) {
 		AgentData ad = dfe.getSource();
 		if (ad == null) return null;
-		if (StringUtils.isNotBlank(ad.getDisplayName())) return ad.getDisplayName();
-		if (ad.getAgentIdentity() != null) {
-			for (AgentIdentityCredential cred : agentIdentityService.listCredentials(ad.getAgentIdentity())) {
-				if (!AgentIdentityCredential.IdentityType.REARM_API_KEY.name().equals(cred.getIdentityType())) continue;
-				try {
-					var ak = apiKeyService.getApiKeyDto(UUID.fromString(cred.getIdentityValue()));
-					if (ak.isPresent() && StringUtils.isNotBlank(ak.get().getNotes())) {
-						return ak.get().getNotes();
-					}
-				} catch (IllegalArgumentException e) {
-					// non-uuid credential value — skip
-				}
-			}
-		}
-		return ad.getName();
+		return StringUtils.defaultIfBlank(ad.getDisplayName(), ad.getName());
 	}
 
 	/**
@@ -343,22 +328,30 @@ public class AgentDataFetcher {
 	}
 
 	/**
-	 * Field resolver: Agent.boundApiKeys — the FREEFORM key(s) bound to
-	 * this agent's identity. No re-auth: the parent agent query already
-	 * authorized org access.
+	 * Field resolver: Agent.boundApiKeys - the FREEFORM key(s) bound to
+	 * this agent's identity. No re-auth because the parent agent is
+	 * READ-gated, so the resolver hands out only what a READ member may
+	 * see of a key: the reference projection (uuid, org, type, declared
+	 * name), never notes, permissions or secret metadata.
 	 */
 	@DgsData(parentType = "Agent", field = "boundApiKeys")
 	public List<ApiKeyDto> agentBoundApiKeys(DgsDataFetchingEnvironment dfe) {
 		AgentData ad = dfe.getSource();
 		if (ad == null || ad.getAgentIdentity() == null) return List.of();
-		List<ApiKeyDto> keys = new java.util.ArrayList<>();
+		List<ApiKeyDto> keys = new ArrayList<>();
 		for (AgentIdentityCredential cred : agentIdentityService.listCredentials(ad.getAgentIdentity())) {
 			if (!AgentIdentityCredential.IdentityType.REARM_API_KEY.name().equals(cred.getIdentityType())) continue;
+			UUID keyUuid;
 			try {
-				apiKeyService.getApiKeyDto(UUID.fromString(cred.getIdentityValue())).ifPresent(keys::add);
+				keyUuid = UUID.fromString(cred.getIdentityValue());
 			} catch (IllegalArgumentException e) {
-				// non-uuid credential value (future credential types) — skip
+				// non-uuid credential value (future credential types) - skip
+				continue;
 			}
+			// a key of another org is never this agent's to show
+			apiKeyService.getApiKey(keyUuid)
+					.filter(ak -> ak.getOrg() != null && ak.getOrg().equals(ad.getOrg()))
+					.map(ApiKeyDto::referenceOf).ifPresent(keys::add);
 		}
 		return keys;
 	}
@@ -1106,14 +1099,16 @@ public class AgentDataFetcher {
 	private ProgKeyContext authorizeProgrammaticOrgWrite(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(
-				requestData.getHeaders(), servletWebRequest);
-		var ahp = authCtx.ahp();
-		UUID orgUuid = authCtx.orgUuid();
+		AuthHeaderParse ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(),
+				servletWebRequest);
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
 		if (!ahp.isRbacKey()) {
 			throw new AccessDeniedException("Only FREEFORM API keys are supported for agent operations in v1");
 		}
+		// TPF-20: verify the credential before the organisation is looked up, and take the org from
+		// the verified key row, never from the key id text: a forged Basic key id naming an
+		// __ORGANIZATION__ segment reads Not authorized whether that organisation exists or not.
+		UUID orgUuid = authorizationService.verifyProgrammaticKey(ahp).org();
 		if (orgUuid == null) throw new AccessDeniedException("Could not resolve org for key");
 
 		OrganizationData od = getOrganizationService.getOrganizationData(orgUuid)
@@ -1292,13 +1287,19 @@ public class AgentDataFetcher {
 			throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
-		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(
-				requestData.getHeaders(), servletWebRequest);
-		var ahp = authCtx.ahp();
+		AuthHeaderParse ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(),
+				servletWebRequest);
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
 		if (!ahp.isRbacKey()) {
 			throw new AccessDeniedException("Only FREEFORM API keys are supported for agent operations in v1");
 		}
+		// TPF-20: classify, verify, check the system state, then look up. The Basic lane reaches this
+		// helper unverified, so the credential is verified first (a forged key id or a wrong secret
+		// reads Not authorized whatever the uuid and the instance state), then the state, so a sealed
+		// or unlicensed instance answers a missing and an existing session alike. The original ahp is
+		// passed on below so the access row and the WhoUpdated stay as they were.
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.ESSENTIAL_READ);
 		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
 				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
 		OrganizationData od = getOrganizationService.getOrganizationData(sd.getOrg())

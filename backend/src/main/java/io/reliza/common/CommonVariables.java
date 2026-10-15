@@ -691,6 +691,27 @@ public class CommonVariables {
 		public boolean isRbacKey() {
 			return type == ApiTypeEnum.FREEFORM || type == ApiTypeEnum.USER || type == ApiTypeEnum.FEDERATED;
 		}
+
+		/** A stored key order is a uuid text; anything else in a presented order renders as {@code __ord__?}. */
+		private static final Pattern PLAIN_KEY_ORDER = Pattern.compile("[A-Za-z0-9-]{1,64}");
+
+		/**
+		 * The identity a credential-path log line writes, and the rate limiter's bucket for a presented key: the parsed
+		 * type and object uuid (an enum name and a canonical uuid, never the client's bytes), plus {@code __ord__} and the
+		 * key order only when the order is a plain token as stored orders are, else {@code __ord__?}; nothing after the
+		 * object for a null or empty order. Empty for a parse without a type or an object, so a malformed header logs no
+		 * id at all. For a principal built from a key row ({@link #fromVerifiedKey} and its siblings) it equals {@link #getApiKeyId()} for every
+		 * type a Basic can present; a FEDERATED principal, whose stored order is {@code provider:repository}, renders
+		 * {@code __ord__?}. The presented id text ({@link #getApiKeyId()} of a parsed header) is never logged: its order
+		 * part is free text that can carry line breaks. Never log this object itself either: its {@code toString()}
+		 * prints the secret and the id text.
+		 */
+		public String canonicalId() {
+			if (type == null || objUuid == null) return "";
+			String id = type + "__" + objUuid;
+			if (keyOrder == null || keyOrder.isEmpty()) return id;
+			return id + "__ord__" + (PLAIN_KEY_ORDER.matcher(keyOrder).matches() ? keyOrder : "?");
+		}
 		/** The access token came from a federated exchange (a FEDERATED identity row, or a Free Form key a rule binds to). */
 		public boolean isFederated() {
 			return federation != null;
@@ -745,8 +766,9 @@ public class CommonVariables {
 				// amplifier. Return an empty AHP so the caller treats the
 				// request as unauthenticated; DEBUG keeps the cause
 				// available without filling disk.
+				// the class name only: the message of UUID.fromString or ApiTypeEnum.valueOf quotes the client's text
 				log.debug("Malformed Basic Authorization header from {} — treating as unauthenticated. Cause: {}",
-						ipAddr, e.getMessage());
+						ipAddr, e.getClass().getSimpleName());
 				return AuthHeaderParse.builder().build();
 			}
 			return ahpBuilder.build();

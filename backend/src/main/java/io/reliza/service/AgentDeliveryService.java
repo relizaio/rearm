@@ -84,7 +84,7 @@ public class AgentDeliveryService {
 		DELIVERED,
 		/** A linked PR is open, or CI has not reported it yet -- never read as merged. */
 		WAITING,
-		/** A linked PR was closed without merging. */
+		/** A linked PR was closed without merging, or declared abandoned. */
 		BLOCKED,
 		/**
 		 * A linked PR declared superseded by its replacement (task RD3-13): neither pending nor blocked, as if
@@ -491,7 +491,7 @@ public class AgentDeliveryService {
 				.filter(StringUtils::isNotBlank).orElse(null);
 	}
 
-	private static String shortSha(String sha) {
+	static String shortSha(String sha) {
 		return null == sha ? "?" : sha.substring(0, Math.min(7, sha.length()));
 	}
 

@@ -47,6 +47,12 @@ class TesterTemplateContractTest {
 		// task 5ec48b02: required on the tester's pass only; a reviewer may name what it looked at.
 		assertTrue(template("tester.md").contains("Name the head you tested"), "tester.md");
 		assertTrue(template("tester.md").contains("the board refuses a PASS without it"), "tester.md");
+		// task t20261010-033522-23606: only a PR still to land needs a head, as the server counts it.
+		assertTrue(template("tester.md").contains("Name the head you tested for every linked PR that is still to land"
+				+ " (`tested`; `pullRequests[].unit` WAITING, DELIVERED, or BLOCKED without a declaration)"), "tester.md");
+		assertTrue(template("tester.md").contains("A superseded PR, or one declared abandoned, needs none, and naming one"
+				+ " anyway is accepted."), "tester.md");
+		assertFalse(template("tester.md").contains("for every PR the task links"), "tester.md");
 		String reviewer = template("reviewer.md");
 		assertTrue(reviewer.contains("You may name the PR heads you looked at in `tested`; the tester's pass is what"
 				+ " the board holds them to."), "reviewer.md");

@@ -53,7 +53,6 @@ import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -85,6 +84,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
+import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VariantData;
@@ -132,6 +132,7 @@ import io.reliza.service.IntegrationService;
 import io.reliza.service.IntegrationService.ComponentPurlToDtrackProject;
 import io.reliza.service.OpenVexService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SbomScoreService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.ComponentKindPolicy;
 import io.reliza.service.SharedReleaseService;
@@ -152,6 +153,8 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @DgsComponent
 public class ReleaseDatafetcher {
+
+	private static final String ARTIFACT_NOT_FOUND = "Artifact not found: ";
 	
 	@Autowired
 	private ReleaseService releaseService;
@@ -232,6 +235,9 @@ public class ReleaseDatafetcher {
 	private DownloadLogService downloadLogService;
 
 	@Autowired
+	private SbomScoreService sbomScoreService;
+
+	@Autowired
 	private io.reliza.service.PullRequestService pullRequestService;
 
 	@Autowired
@@ -246,13 +252,24 @@ public class ReleaseDatafetcher {
 	@Autowired
 	private VexImportService vexImportService;
 
-	@PreAuthorize("isAuthenticated()")
+	/**
+	 * Dual-lane: {@code release} is declared once (programmatic.graphqls) and the
+	 * same executor serves /graphql and /api/programmatic/graphql, so one fetcher
+	 * answers both. A Keycloak JWT in the security context is the user lane;
+	 * anything else is the key lane ({@link #getReleaseProgrammatic}). The
+	 * anonymous case is refused inside the key lane, which is why there is no
+	 * {@code @PreAuthorize} here: the programmatic chain never authenticates the
+	 * security context.
+	 */
 	@DgsData(parentType = "Query", field = "release")
 	public ReleaseData getRelease(
 			@InputArgument("releaseUuid") UUID releaseUuid,
-			@InputArgument("orgUuid") UUID org
+			@InputArgument("orgUuid") UUID org,
+			DgsDataFetchingEnvironment dfe
 			) throws RelizaException {
-		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		if (!(SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken auth)) {
+			return getReleaseProgrammatic(releaseUuid, org, dfe);
+		}
 		var oud = userService.getUserDataByAuth(auth);
 		
 		RelizaObject ro = null;
@@ -274,6 +291,37 @@ public class ReleaseDatafetcher {
 		
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseUuid, ros, CallType.READ);
 		return (ReleaseData) ro;
+	}
+
+	/**
+	 * Key lane of {@code Query.release}: a FREEFORM or USER key holding READ on
+	 * the release (RESOURCE at a scope that covers it). The system state is
+	 * checked before the lookup, and every refusal (no credentials, wrong
+	 * {@code orgUuid}, missing release, foreign release, no permission) is an
+	 * {@link AccessDeniedException}, answered as "Not authorized", so the lane
+	 * reveals nothing about which release uuids exist.
+	 */
+	private ReleaseData getReleaseProgrammatic(UUID releaseUuid, UUID orgArg,
+			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		var requestData = DgsContext.getRequestData(dfe);
+		if (!(requestData instanceof DgsWebMvcRequestData webRequestData)
+				|| !(webRequestData.getWebRequest() instanceof ServletWebRequest servletWebRequest)) {
+			throw new AccessDeniedException("Invalid authorization");
+		}
+		var authCtx = authorizationService.authenticateProgrammaticWithOrg(
+				webRequestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
+		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
+		authorizationService.validateSystemOperational(CallType.READ);
+		if (null != orgArg && !orgArg.equals(authCtx.orgUuid())) {
+			throw new AccessDeniedException("FreeForm key not authorized for this resource");
+		}
+		Optional<ReleaseData> ord = (null == releaseUuid) ? Optional.empty()
+				: sharedReleaseService.getReleaseData(releaseUuid);
+		if (ord.isEmpty()) throw new AccessDeniedException("FreeForm key not authorized for this resource");
+		authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.RESOURCE,
+				PermissionScope.RELEASE, releaseUuid, List.of(ord.get()), CallType.READ);
+		return ord.get();
 	}
 
 	/**
@@ -343,39 +391,40 @@ public class ReleaseDatafetcher {
 			@InputArgument("mediaType") BomMediaType mediaType,
 			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
 			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
-			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata,
+			@InputArgument("excludeFileComponents") Boolean excludeFileComponentsArg
 			) throws RelizaException, JacksonException{
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		
-		RelizaObject ro = null;
-		if (null != releaseUuid) {
-			var rlzOpt = sharedReleaseService.getReleaseData(releaseUuid);
-			if (rlzOpt.isPresent()) {
-				ro = rlzOpt.get();
-			}
-		}
-		
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid, List.of(ro), CallType.READ);
-		ReleaseData rd = (ReleaseData) ro;
-		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
-		if (null == mediaType) {
-			mediaType = BomMediaType.JSON;
-		}
-		log.debug("mediaType: {}", mediaType);
 		// Parsed ONCE, here at the boundary; nothing below this line sees a nullable Boolean.
 		// Both arguments absent is the pre-existing contract and must stay byte-identical --
 		// the CLI and every API consumer written before these arguments existed land here.
 		ExportMetadataOptions exportMetadata = ExportMetadataOptions
 				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
-		// Refused BEFORE the merge runs, and never silently downgraded to a stripped document:
-		// a caller who named the support disclosure and received an export without it cannot
-		// tell that from an export where nothing was attested.
-		supportInjectionService.assertExportMetadataRequestable(rd.getOrg(), exportMetadata);
+		// Two states only, null and false meaning the same: nothing but the caller decides.
+		boolean excludeFileComponents = Boolean.TRUE.equals(excludeFileComponentsArg);
+		ReleaseData rd = authorizeReleaseSbomRead(oud.get(), releaseUuid, exportMetadata);
+		return exportReleaseSbomLogged(rd, tldOnly, ignoreDev, excludeFileComponents, structure, belongsTo, mediaType,
+				excludeCoverageTypes, exportMetadata, WhoUpdated.getWhoUpdated(oud.get()));
+	}
+
+	/**
+	 * The export behind the checks, for the user field and its programmatic twin alike: the
+	 * download-log row, then the merged document. One body, so the two cannot drift.
+	 */
+	private String exportReleaseSbomLogged(ReleaseData rd, Boolean tldOnly, Boolean ignoreDev,
+			boolean excludeFileComponents, BomStructureType structure, ArtifactBelongsTo belongsTo, BomMediaType mediaType,
+			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes, ExportMetadataOptions exportMetadata,
+			WhoUpdated wu) throws RelizaException, JacksonException {
+		if (null == mediaType) {
+			mediaType = BomMediaType.JSON;
+		}
+		log.debug("mediaType: {}", mediaType);
 		DownloadConfig sbomConfig = DownloadConfig.builder()
-				.releaseUuid(releaseUuid)
+				.releaseUuid(rd.getUuid())
 				.tldOnly(tldOnly)
 				.ignoreDev(ignoreDev)
+				.excludeFileComponents(excludeFileComponents)
 				.structure(structure != null ? structure.name() : null)
 				.belongsTo(belongsTo != null ? belongsTo.name() : null)
 				.mediaType(mediaType.name())
@@ -389,10 +438,178 @@ public class ReleaseDatafetcher {
 				.includeInternalMetadata(exportMetadata.internalMetadata().toCallerInput())
 				.build();
 		downloadLogService.createDownloadLog(rd.getOrg(), DownloadType.SBOM_EXPORT,
-				DownloadSubjectType.RELEASE, releaseUuid, wu, sbomConfig);
-		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes, exportMetadata);
+				DownloadSubjectType.RELEASE, rd.getUuid(), wu, sbomConfig);
+		return releaseService.exportReleaseSbom(rd.getUuid(), tldOnly, ignoreDev, excludeFileComponents, belongsTo, structure, mediaType, rd.getOrg(), wu, excludeCoverageTypes, exportMetadata);
 	}
 	
+	/**
+	 * The readiness score of the merged release BOM the JSON export returns for the same
+	 * arguments, as the scoring engine's report string. Behind exactly the export's checks, since a
+	 * score names the components that fail; writes no download-log row, since the document never
+	 * leaves the server.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "releaseSbomScore")
+	public String releaseSbomScore(
+			@InputArgument("release") UUID releaseUuid,
+			@InputArgument("tldOnly") Boolean tldOnly,
+			@InputArgument("ignoreDev") Boolean ignoreDev,
+			@InputArgument("structure") BomStructureType structure,
+			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata,
+			@InputArgument("excludeFileComponents") Boolean excludeFileComponentsArg,
+			@InputArgument("profiles") List<String> profiles
+			) throws Exception {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		ExportMetadataOptions exportMetadata = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		// As for the export: two states only, parsed here.
+		boolean excludeFileComponents = Boolean.TRUE.equals(excludeFileComponentsArg);
+		ReleaseData rd = authorizeReleaseSbomRead(oud.get(), releaseUuid, exportMetadata);
+		return sbomScoreService.scoreRelease(rd, tldOnly, ignoreDev, excludeFileComponents,
+				belongsTo, structure, excludeCoverageTypes,
+				exportMetadata, WhoUpdated.getWhoUpdated(oud.get()), profiles);
+	}
+
+	/**
+	 * The checks in front of the merged release BOM, shared by the export and the score so the two
+	 * cannot drift: ARTIFACT_DOWNLOAD on the release, then the per-export metadata flags.
+	 *
+	 * <p>An unknown release is refused like one the caller may not read: the authorization sees no
+	 * object and answers {@code Not authorized}. The list is built null-tolerant on purpose;
+	 * {@code List.of(null)} threw before the check and surfaced as an internal error.
+	 *
+	 * <p>The flags are refused BEFORE the merge runs, and never silently downgraded to a stripped
+	 * document: a caller who named the support disclosure and received an export without it cannot
+	 * tell that from an export where nothing was attested.
+	 */
+	private ReleaseData authorizeReleaseSbomRead(UserData ud, UUID releaseUuid, ExportMetadataOptions exportMetadata)
+			throws RelizaException {
+		ReleaseData rd = null == releaseUuid ? null : sharedReleaseService.getReleaseData(releaseUuid).orElse(null);
+		authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.ARTIFACT_DOWNLOAD,
+				PermissionScope.RELEASE, releaseUuid, Collections.singletonList(rd), CallType.READ);
+		if (null == rd) {
+			// Only a global administrator gets here for a release that does not exist.
+			throw new RelizaException("Release not found");
+		}
+		supportInjectionService.assertExportMetadataRequestable(rd.getOrg(), exportMetadata);
+		return rd;
+	}
+
+	/**
+	 * {@code releaseSbomExport} for the programmatic endpoint (task SCORE-24): the same document,
+	 * download-log row and cache write, for a Free Form or personal key, its exchanged token, a CLI
+	 * login or a federated token. The release is named by uuid, or by component and version.
+	 */
+	@DgsData(parentType = "Mutation", field = "releaseSbomExportProgrammatic")
+	public String releaseSbomExportProgrammatic(DgsDataFetchingEnvironment dfe,
+			@InputArgument("release") UUID releaseUuid,
+			@InputArgument("componentId") String componentReference,
+			@InputArgument("version") String version,
+			@InputArgument("tldOnly") Boolean tldOnly,
+			@InputArgument("ignoreDev") Boolean ignoreDev,
+			@InputArgument("structure") BomStructureType structure,
+			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
+			@InputArgument("mediaType") BomMediaType mediaType,
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata,
+			@InputArgument("excludeFileComponents") Boolean excludeFileComponentsArg
+			) throws RelizaException, JacksonException {
+		ExportMetadataOptions exportMetadata = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		boolean excludeFileComponents = Boolean.TRUE.equals(excludeFileComponentsArg);
+		KeyReleaseSbomRead read = authorizeReleaseSbomReadByKey(dfe, releaseUuid, componentReference, version, exportMetadata);
+		return exportReleaseSbomLogged(read.release(), tldOnly, ignoreDev, excludeFileComponents, structure, belongsTo,
+				mediaType, excludeCoverageTypes, exportMetadata, read.whoUpdated());
+	}
+
+	/**
+	 * {@code releaseSbomScore} for the programmatic endpoint (task SCORE-24): the release named as
+	 * for {@link #releaseSbomExportProgrammatic}, behind the same checks; no download-log row, as
+	 * for the user field.
+	 */
+	@DgsData(parentType = "Query", field = "releaseSbomScoreProgrammatic")
+	public String releaseSbomScoreProgrammatic(DgsDataFetchingEnvironment dfe,
+			@InputArgument("release") UUID releaseUuid,
+			@InputArgument("componentId") String componentReference,
+			@InputArgument("version") String version,
+			@InputArgument("tldOnly") Boolean tldOnly,
+			@InputArgument("ignoreDev") Boolean ignoreDev,
+			@InputArgument("structure") BomStructureType structure,
+			@InputArgument("belongsTo") ArtifactBelongsTo belongsTo,
+			@InputArgument("excludeCoverageTypes") List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
+			@InputArgument("includeSupportMetadata") Boolean includeSupportMetadata,
+			@InputArgument("includeInternalMetadata") Boolean includeInternalMetadata,
+			@InputArgument("excludeFileComponents") Boolean excludeFileComponentsArg,
+			@InputArgument("profiles") List<String> profiles
+			) throws Exception {
+		ExportMetadataOptions exportMetadata = ExportMetadataOptions
+				.fromCallerInput(includeSupportMetadata, includeInternalMetadata);
+		boolean excludeFileComponents = Boolean.TRUE.equals(excludeFileComponentsArg);
+		KeyReleaseSbomRead read = authorizeReleaseSbomReadByKey(dfe, releaseUuid, componentReference, version, exportMetadata);
+		return sbomScoreService.scoreRelease(read.release(), tldOnly, ignoreDev, excludeFileComponents,
+				belongsTo, structure, excludeCoverageTypes, exportMetadata, read.whoUpdated(), profiles);
+	}
+
+	/** The release a key may read the merged SBOM of, and who the key acts as. */
+	private record KeyReleaseSbomRead(ReleaseData release, WhoUpdated whoUpdated) {}
+
+	static final String RELEASE_SELECTION_MESSAGE = "Name the release by release, or by componentId and version";
+
+	/**
+	 * {@link #authorizeReleaseSbomRead} for a programmatic caller: ARTIFACT_DOWNLOAD on the release
+	 * from the key's own grants (a CLI login or a personal key also within its person's), then the
+	 * metadata flags. Only Free Form, personal and federated credentials, verified before anything
+	 * else, pass; the legacy component and organization keys are refused.
+	 *
+	 * <p>An unknown release uuid is refused as one the key may not read. A version the component
+	 * does not have is "Release not found" only for a key that may download on that component;
+	 * any other key is refused the same way as for a release it may not read, so a key learns
+	 * nothing about another organization's (or another team's) versions.
+	 */
+	private KeyReleaseSbomRead authorizeReleaseSbomReadByKey(DgsDataFetchingEnvironment dfe, UUID releaseUuid,
+			String componentReference, String version, ExportMetadataOptions exportMetadata) throws RelizaException {
+		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
+		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
+		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
+		var ahp = authCtx.ahp();
+		if (null == ahp) throw new AccessDeniedException("Invalid authorization type");
+		// The credential first, then the system state (TPF-34), before anything is looked up by name:
+		// a Basic key reaches this resolver unverified (the filter verifies bearer tokens only), and the
+		// name lookup below answers differently for names that exist. Refuses the legacy key types too.
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
+		authorizationService.rbacKeyOfOrg(ahp, authCtx.orgUuid(), CallType.READ);
+		boolean byComponent = StringUtils.isNotBlank(componentReference);
+		boolean byVersion = StringUtils.isNotBlank(version);
+		if (null == releaseUuid ? !(byComponent && byVersion) : (byComponent || byVersion)) {
+			throw new RelizaException(RELEASE_SELECTION_MESSAGE);
+		}
+		ReleaseData rd;
+		if (null != releaseUuid) {
+			rd = sharedReleaseService.getReleaseData(releaseUuid).orElse(null);
+		} else {
+			UUID componentUuid = componentService.resolveComponentReference(componentReference, ahp, authCtx.orgUuid());
+			rd = releaseService.getReleaseDataByComponentAndVersion(componentUuid, version).orElse(null);
+			if (null == rd) {
+				ComponentData cd = getComponentService.getComponentData(componentUuid).orElse(null);
+				authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp, PermissionFunction.ARTIFACT_DOWNLOAD,
+						PermissionScope.COMPONENT, componentUuid, Collections.singletonList(cd), CallType.READ);
+				throw new RelizaException("Release not found");
+			}
+			releaseUuid = rd.getUuid();
+		}
+		FreeformKeyVerification verified = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(ahp,
+				PermissionFunction.ARTIFACT_DOWNLOAD, PermissionScope.RELEASE, releaseUuid,
+				Collections.singletonList(rd), CallType.READ);
+		supportInjectionService.assertExportMetadataRequestable(rd.getOrg(), exportMetadata);
+		return new KeyReleaseSbomRead(rd, verified.whoUpdated());
+	}
+
 	/**
 	 * Generate VDR with CE-compatible snapshot types (DATE, LIFECYCLE).
 	 * For approval-based snapshots (SaaS-only), use releaseVdrExportWithApproval mutation.
@@ -889,6 +1106,8 @@ public class ReleaseDatafetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
 
 		UUID componentId = null;
 		UUID orgId = null;
@@ -948,6 +1167,8 @@ public class ReleaseDatafetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
 
 		UUID orgId = null;
 		if (ahp.isRbacKey()) {
@@ -1095,6 +1316,8 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(authCtx.ahp());
+		authorizationService.validateSystemOperational(CallType.WRITE);
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
 		return createReleaseFromProgrammaticInput(progReleaseInput, authCtx, false);
 	}
@@ -1115,6 +1338,8 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(authCtx.ahp());
+		authorizationService.validateSystemOperational(CallType.WRITE);
 		List<Map<String, Object>> releaseInputs = dfe.getArgument("releases");
 		if (null == releaseInputs || releaseInputs.isEmpty()) {
 			throw new RelizaException("At least one release is required for addReleasesProgrammatic");
@@ -1201,12 +1426,13 @@ public class ReleaseDatafetcher {
 			// API key is WRITE on the perspective (FREEFORM keys), or any broader scope that
 			// covers it. Only real perspectives are accepted.
 			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
-			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid)
-					.orElseThrow(() -> new RelizaException("Perspective not found"));
-			if (pd.getType() != PerspectiveType.PERSPECTIVE) {
-				throw new RelizaException("Cannot create component in a product-derived perspective");
-			}
+			var pd = ossPerspectiveService.requireAssignablePerspective(authOrgUuid, perspectiveUuid);
 			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid).get();
+			if (ahp.isFederatedIdentity()) {
+				// same gate as the no-perspective branch below: own repository and a rule that allows creation
+				authorizationService.isFederatedKeyAuthorizedToCreateUnderVcs(
+						ahp, authOrgUuid, (String) progReleaseInput.get("vcsUri"), List.of(od));
+			}
 			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid,
@@ -1497,10 +1723,6 @@ public class ReleaseDatafetcher {
 		RelizaObject releaseRo = ord.isPresent() ? ord.get() : null;
 		ros.add(releaseRo);
 
-		if (null != inputArtifactUuid) {
-			ros.add(artifactService.getArtifactData(inputArtifactUuid).orElseThrow());
-		}
-
 		if (null != createArtifactInput.component()) {
 			ros.add(getComponentService.getComponentData(createArtifactInput.component()).orElseThrow());
 		}	
@@ -1517,6 +1739,10 @@ public class ReleaseDatafetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		ReleaseData rd = ord.get();
+
+		if (null != inputArtifactUuid) {
+			resolveReplaceableArtifact(oud.get(), rd, inputArtifactUuid);
+		}
 
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
 		OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).orElseThrow();
@@ -1665,12 +1891,41 @@ public class ReleaseDatafetcher {
 		// return releaseService.addArtifacts(ord.get(), addArtifactDto.getArtifacts(), wu);
 	}
 	
+	/**
+	 * The artifact a caller may replace in place through this mutation: one of the named
+	 * release's organization that the caller can write through its own owners, the
+	 * components of the releases holding it (the rule updateArtifactTags applies). An
+	 * artifact that is missing, of another organization, or held only by components the
+	 * caller cannot write reads "not found", with one message, before anything is written.
+	 * An artifact no release holds (an agent session artifact, a commit-scoped signature,
+	 * an inbound deliverable with no producing release) has no owner this mutation can
+	 * check and is refused the same way, global admin excepted, as updateArtifactTags
+	 * refuses it: in particular, session artifacts are governed by the AGENT permission
+	 * and must not become writable through RESOURCE.
+	 */
+	private ArtifactData resolveReplaceableArtifact(UserData ud, ReleaseData rd, UUID artifactUuid)
+			throws RelizaException {
+		ArtifactData ad = artifactService.getArtifactData(artifactUuid)
+				.filter(a -> rd.getOrg().equals(a.getOrg()))
+				.orElseThrow(() -> new RelizaException(ARTIFACT_NOT_FOUND + artifactUuid));
+		Set<UUID> components = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, rd.getOrg())
+				.stream().map(ReleaseData::getComponent).collect(Collectors.toSet());
+		boolean owned = components.isEmpty()
+				? ud.isGlobalAdmin()
+				: components.stream().anyMatch(c -> authorizationService.isUserAuthorizedForObject(ud,
+						PermissionFunction.RESOURCE, PermissionScope.COMPONENT, c, List.of(ad), CallType.WRITE));
+		if (!owned) throw new RelizaException(ARTIFACT_NOT_FOUND + artifactUuid);
+		return ad;
+	}
+
 	@DgsData(parentType = "Mutation", field = "addArtifactProgrammatic")
 	public ReleaseData addArtifactProg(DgsDataFetchingEnvironment dfe) throws RelizaException {		
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 		
 		Map<String, Object> addArtifactInput = dfe.getArgument("artifactInput");
 		String version = (String) addArtifactInput.get(CommonVariables.VERSION_FIELD);
@@ -1716,6 +1971,8 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Optional<ReleaseData> ord = Optional.empty();
 		ord = sharedReleaseService.getReleaseData(releaseId);

@@ -58,6 +58,16 @@ extend type Query {
 	and products, exactly one hit required (unknown or ambiguous names error).
 	"""
 	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
+	"""
+	Readiness score of the merged release BOM, as releaseSbomScore scores it for a signed-in user (task
+	SCORE-24). The release is named as for releaseSbomExportProgrammatic, behind the same checks; the
+	other arguments are releaseSbomScore's. A failed score is one error with extensions.code
+	SBOM_SCORE_ERROR and extensions.reason, as releaseSbomScore answers.
+	"""
+	releaseSbomScoreProgrammatic(release: ID, componentId: ID, version: String, tldOnly: Boolean, ignoreDev: Boolean,
+		structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, excludeCoverageTypes: [ArtifactCoverageType],
+		includeSupportMetadata: Boolean, includeInternalMetadata: Boolean, excludeFileComponents: Boolean,
+		profiles: [String!]!): String
 	getLatestReleaseProgrammaticCdx(release: GetLatestReleaseInput!): String
 	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
 	getInstanceRevisionCycloneDxExportProg(instanceUuid: ID, instanceUri: String, revision: Int!, namespace: String, stateType: InstanceStateType): String
@@ -318,6 +328,18 @@ extend type Mutation {
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
 	probeSbomProgrammatic(sbom: String!, componentUuid: ID, branchUuid: ID): SbomProbingRun
 	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
+	"""
+	The merged release SBOM as the Export Release BOM dialog downloads it (releaseSbomExport), for an
+	API key, an exchanged token or a CLI login (task SCORE-24). Name the release by release (uuid), or
+	by componentId (uuid, or with an organization-scoped key the unique name) and version; exactly one
+	of the two forms. Needs ARTIFACT_DOWNLOAD on the release; an unknown version is an error, never an
+	empty document. JSON and CSV come back as text, EXCEL as base64. Writes the merged BOM to the cache
+	on a miss and a download-log row, as the user export does.
+	"""
+	releaseSbomExportProgrammatic(release: ID, componentId: ID, version: String, tldOnly: Boolean, ignoreDev: Boolean,
+		structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType,
+		excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean,
+		includeInternalMetadata: Boolean, excludeFileComponents: Boolean): String
 	instData(instance: InstanceDataInput!): Object
 	# Report deployment failures from ReARM CD. Batched, idempotent per
 	# (namespace, deploymentName, fingerprint): a failure repeating on every
@@ -477,6 +499,8 @@ extend type Mutation {
 	  recorded, the task returns to the status it was parked from, and the action then runs. Until then every task
 	  verb is refused for every session, except agentTaskLinkPrProgrammatic (`task linkpr`), which is accepted,
 	  recorded on the decision (hold.linked) and posted as an INFO; it does not answer the question (task RD4-19).
+	  An unlink (agentTaskUnlinkPrProgrammatic, `task unlinkpr`, and the person's agentTaskUnlinkPr) is refused for
+	  everyone, a person included: release the hold first (task t20261010-033523-18839).
 	  The delivery sweep leaves the task alone. A DELIVERING task is parked only this way.
 	"""
 	agentTaskHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: String!, level: AgentTaskHoldLevel): AgentTask
@@ -493,7 +517,8 @@ extend type Mutation {
 	URL, or on a board delivering without PRs a branch or release; commit is the merged or pushed sha
 	(required for DELIVERED). The coordinator seat, or a session that worked this task in a role that
 	merges (PR_MERGE). A DELIVERING task then settles: completed once every unit is delivered, to the
-	coordinator when one is abandoned.
+	coordinator when one is abandoned. A PR declared superseded accepts no further declaration (task
+	t20261010-033522-23606): it is abandoned already, and its replacement is the unit to declare.
 	"""
 	agentTaskDeclareDeliveryProgrammatic(taskUuid: ID!, sessionUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
 	"""
@@ -503,6 +528,14 @@ extend type Mutation {
 	board's coordinator seat, or a key holding BOARD_WRITE on the board (task RD3-18).
 	"""
 	agentTaskSupersedePullRequestProgrammatic(taskUuid: ID!, sessionUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""
+	Unlink a PR that should never have counted (task t20261010-033523-18839): removed from the task's PRs, recorded
+	on unlinkedPrs (append-only), posted as an INFO. Refused for a merged or delivered PR, for the replacement another
+	PR was superseded by, on a task parked for the operator, and, past the pass (DELIVERING, a live tested pass, or at
+	the coordinator with every required role passed), when no PR would remain to deliver or (for a session) when the
+	PR is still open. Same gate as supersede. note is at most 4000 characters, on one line.
+	"""
+	agentTaskUnlinkPrProgrammatic(taskUuid: ID!, sessionUuid: ID!, prUrl: String!, note: String): AgentTask
 	"""
 	Hand a COORDINATOR-level hold to the operator (task c0a2134c): the level becomes OPERATOR, the
 	reason keeps what the hold said with yours after it, and the board ALERTs. For a judgement call
@@ -580,7 +613,9 @@ extend type Mutation {
 	# Bind a draft split child's tracker ref once its issue exists.
 	agentTaskBindExternalRefProgrammatic(taskUuid: ID!, externalRef: String!, sourceUrl: String): AgentTask
 	"""
-	Attach a delivering pull-request URL. On a task the coordinator seat parked for the operator it is accepted too,
+	Attach a delivering pull-request URL. The reverse is agentTaskUnlinkPrProgrammatic; linking a PR the task unlinked
+	stamps its unlinkedPrs row (relinkedBy, relinkedAt), and it comes back with its newest declaration (task
+	t20261010-033523-18839). On a task the coordinator seat parked for the operator it is accepted too,
 	recorded on the decision (hold.linked: the PR, the key's agent, the time) and posted as an INFO; it does not answer
 	the question or lift the hold (task RD4-19).
 	"""
@@ -686,6 +721,11 @@ extend type Mutation {
 	agentTaskDeclareDelivery(taskUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
 	"""A person declares a linked PR superseded by its replacement, as agentTaskSupersedePullRequestProgrammatic (task RD3-13). BOARD_WRITE."""
 	agentTaskSupersedePullRequest(taskUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""
+	A person unlinks a PR, as agentTaskUnlinkPrProgrammatic (task t20261010-033523-18839). PERSON_WRITE on the task; a
+	person may also unlink an open PR past the pass, with an ALERT.
+	"""
+	agentTaskUnlinkPr(taskUuid: ID!, prUrl: String!, note: String): AgentTask
 	"""Cancel a task from any state but COMPLETED. An agent working it finds it gone at its next call."""
 	agentTaskCancel(taskUuid: ID!, note: String): AgentTask
 	"""

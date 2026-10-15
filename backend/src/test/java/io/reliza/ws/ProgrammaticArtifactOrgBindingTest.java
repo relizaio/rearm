@@ -199,9 +199,9 @@ public class ProgrammaticArtifactOrgBindingTest {
 				null)), WU);
 		// secrets for the CLI's Basic-header path (same key rows)
 		String componentSecret = apiKeyService.setObjectApiKey(component.getUuid(), ApiTypeEnum.COMPONENT, org,
-				null, "binding test component key", WU);
+				null, "binding test component key", false, WU);
 		String orgSecret = apiKeyService.setObjectApiKey(org, ApiTypeEnum.ORGANIZATION_RW, org,
-				null, "binding test org key", WU);
+				null, "binding test org key", false, WU);
 		String freeformSecret = apiKeyService.addApiKeySecret(freeformKey.getUuid(), null, WU);
 		return new Tenant(org, component, branch, release, variant, deliverable, sce, componentKey, orgKey, freeformKey,
 				componentSecret, orgSecret, freeformSecret);

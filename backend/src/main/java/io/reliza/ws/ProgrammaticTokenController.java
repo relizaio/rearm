@@ -5,6 +5,7 @@
 package io.reliza.ws;
 
 import java.util.Base64;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -15,18 +16,20 @@ import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.RestController;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.model.ApiKey;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ApiKeyData.ApiKeySecret;
+import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.model.ApiKeyData.ApiKeyStatus;
 import io.reliza.model.CliSession;
+import io.reliza.common.LogSafe;
 import io.reliza.common.OAuthErrors;
+import io.reliza.common.OAuthQueryGuard;
 import io.reliza.service.CliSessionService;
 import io.reliza.service.FederatedTrustRuleService;
 import jakarta.servlet.http.HttpServletRequest;
@@ -38,7 +41,11 @@ import lombok.extern.slf4j.Slf4j;
  * {@code grant_type=client_credentials}, the key id and secret as HTTP Basic (or as
  * {@code client_id} / {@code client_secret} form fields for clients that cannot set the
  * header). Returns a one-hour bearer access token for the programmatic GraphQL endpoint.
- * No refresh tokens: a client holding its key simply exchanges again.
+ * No refresh tokens: a client holding its key simply exchanges again. Request parameters in the
+ * URL query string are refused with 400 invalid_request ({@link OAuthQueryGuard}), and so is a
+ * request that carries one of them more than once. The parameters are read by exact name through
+ * {@link OAuthQueryGuard#single}, the read the rate limiter makes, never through Spring's binder
+ * (task TPF-26): do not put a {@code @RequestParam} back on {@link #token}.
  */
 @RestController
 @Slf4j
@@ -51,20 +58,37 @@ public class ProgrammaticTokenController {
 
 	private final ApiKeyService apiKeyService;
 	private final ApiTokenService apiTokenService;
+	private final ApiKeyAccessService apiKeyAccessService;
 
-	public ProgrammaticTokenController(ApiKeyService apiKeyService, ApiTokenService apiTokenService) {
+	public ProgrammaticTokenController(ApiKeyService apiKeyService, ApiTokenService apiTokenService,
+			ApiKeyAccessService apiKeyAccessService) {
 		this.apiKeyService = apiKeyService;
 		this.apiTokenService = apiTokenService;
+		this.apiKeyAccessService = apiKeyAccessService;
 	}
 
 	@PostMapping(value = PATH, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<Map<String, Object>> token(HttpServletRequest request,
-			@RequestParam(value = "grant_type", required = false) String grantType,
-			@RequestParam(value = "client_id", required = false) String clientId,
-			@RequestParam(value = "client_secret", required = false) String clientSecret,
-			@RequestParam(value = "device_code", required = false) String deviceCode,
-			@RequestParam(value = "refresh_token", required = false) String refreshToken,
-			@RequestParam(value = "assertion", required = false) String assertion) {
+	public ResponseEntity<Map<String, Object>> token(HttpServletRequest request) {
+		// TPF-3: before anything else is read, refuse OAuth parameters in the URL query string (names only are logged and answered)
+		List<String> inQuery = OAuthQueryGuard.namesInQuery(request.getQueryString(), OAuthQueryGuard.TOKEN_REQUEST_PARAMETERS);
+		if (!inQuery.isEmpty()) {
+			log.warn("SECURITY: token request refused from {}: {} in the URL query string", request.getRemoteAddr(), inQuery);
+			return error(HttpStatus.BAD_REQUEST, OAuthErrors.INVALID_REQUEST, OAuthQueryGuard.BODY_ONLY_DESCRIPTION + "; in the query string: " + String.join(", ", inQuery));
+		}
+		// TPF-26: a parameter sent more than once is refused before anything is parsed (RFC 6749 section 3.2; names only)
+		List<String> repeated = OAuthQueryGuard.namesRepeated(request.getParameterMap(), OAuthQueryGuard.TOKEN_REQUEST_PARAMETERS);
+		if (!repeated.isEmpty()) {
+			log.warn("SECURITY: token request refused from {}: {} sent more than once", request.getRemoteAddr(), repeated);
+			return error(HttpStatus.BAD_REQUEST, OAuthErrors.INVALID_REQUEST, OAuthQueryGuard.ONCE_ONLY_DESCRIPTION + "; sent more than once: " + String.join(", ", repeated));
+		}
+		// TPF-26: read by exact name through the helper the rate limiter reads client_id with, so both read the same text
+		Map<String, String[]> params = request.getParameterMap();
+		String grantType = OAuthQueryGuard.single(params, "grant_type");
+		String clientId = OAuthQueryGuard.single(params, "client_id");
+		String clientSecret = OAuthQueryGuard.single(params, "client_secret");
+		String deviceCode = OAuthQueryGuard.single(params, "device_code");
+		String refreshToken = OAuthQueryGuard.single(params, "refresh_token");
+		String assertion = OAuthQueryGuard.single(params, "assertion");
 		if (DEVICE_CODE_GRANT.equals(grantType)) return deviceCodeGrant(request, deviceCode);
 		if (OAuthErrors.GRANT_REFRESH_TOKEN.equals(grantType)) return refreshGrant(request, refreshToken);
 		if (JWT_BEARER_GRANT.equals(grantType)) return jwtBearerGrant(request, assertion, clientId);
@@ -101,6 +125,8 @@ public class ProgrammaticTokenController {
 			return invalidClient("unknown API key secret");
 		}
 		String token = apiTokenService.issue(oak.get(), secret, ApiTokenService.AUD_PROGRAMMATIC);
+		// the exchange verified the key's secret: a use of the key, like a Basic credential in the filters
+		apiKeyAccessService.touchLastAccess(keyUuid);
 		log.info("Issued programmatic access token for key {} (org {}) from {}", keyUuid, oak.get().getOrg(), request.getRemoteAddr());
 		return ResponseEntity.ok()
 				.header(HttpHeaders.CACHE_CONTROL, "no-store")
@@ -118,7 +144,9 @@ public class ProgrammaticTokenController {
 	 * RFC 7523: an identity token from a trusted external issuer (GitHub Actions) is exchanged for
 	 * the usual one-hour access token. {@code client_id} is the ReARM organization uuid, needed only
 	 * when several organizations trust the same identity. Outcomes are 200 with an error member,
-	 * like the device flow, because ingresses in front of ReARM rewrite 4xx bodies.
+	 * like the device flow, because ingresses in front of ReARM rewrite 4xx bodies. Every refusal
+	 * before a rule admits the verified identity reads {@link FederatedTrustRuleService#NOT_ACCEPTED}
+	 * (task TPF-31); the reason is written to the log line below, never to the wire.
 	 */
 	private ResponseEntity<Map<String, Object>> jwtBearerGrant(HttpServletRequest request, String assertion, String clientId) {
 		if (StringUtils.isEmpty(assertion)) return softError(OAuthErrors.INVALID_REQUEST, "assertion is required");
@@ -126,7 +154,10 @@ public class ProgrammaticTokenController {
 		try {
 			ex = federatedTrustRuleService.exchange(assertion, clientId);
 		} catch (FederatedTrustRuleService.ExchangeException e) {
-			log.warn("SECURITY: federated identity exchange refused from {}: {}", request.getRemoteAddr(), e.getMessage());
+			// TPF-31: the one line of a refused exchange; the reason is the distinction the wire text no longer carries
+			// the address is request-derived too: forward-headers-strategy native makes it the X-Forwarded-For entry for an internal-range peer
+			log.warn("SECURITY: federated identity exchange refused from {}: {} (issuer {}, identity {})", LogSafe.text(request.getRemoteAddr()), e.reason(),
+					LogSafe.text(e.issuer()), LogSafe.text(e.identity()));
 			return softError(e.code(), e.getMessage());
 		}
 		String token = apiTokenService.issueForFederation(ex.principal(), ex.rules(), FederatedTrustRuleService.tokenClaimsOf(ex.context()),
@@ -176,7 +207,7 @@ public class ProgrammaticTokenController {
 		} catch (CliSessionService.SessionEnded e) {
 			return softError(OAuthErrors.INVALID_GRANT, e.getMessage());
 		}
-		if (or.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "unknown, expired or revoked refresh token, or the key behind the session is inactive; log in again");
+		if (or.isEmpty()) return softError(OAuthErrors.INVALID_GRANT, "unknown, expired or revoked refresh token, the key behind the session is inactive, or its user left the org or no longer owns or holds the key; log in again");
 		CliSession s = or.get().session();
 		Optional<ApiKey> oak = apiKeyService.getApiKey(s.getApiKey());
 		if (oak.isEmpty() || ApiKeyData.dataFromRecord(oak.get()).getStatus() != ApiKeyStatus.ACTIVE) {

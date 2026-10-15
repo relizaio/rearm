@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import org.junit.jupiter.api.Test;
 
 import graphql.GraphQLError;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
 
 /**
@@ -48,6 +49,20 @@ public class GraphQLExceptionHandlersTest {
 		assertTrue(err.getMessage().matches("Internal server error \\(ref [0-9a-f]{8}\\)"), err.getMessage());
 		assertFalse(err.getMessage().contains("blank"),
 				"the generic handler must not leak the underlying exception message");
+	}
+
+	/**
+	 * T-7 (SCORE-19, ADR-3): an export whose answer from rebom is over the read limit is a named
+	 * error with no extensions, never the opaque server error.
+	 */
+	@Test
+	public void rebomResponseTooLarge_isNamedExportError() {
+		GraphQLError err = handlers.handleRebomResponseTooLarge(
+				new RebomResponseTooLargeException(new IllegalStateException("cause text")));
+		assertEquals("Release SBOM export is too large to serve (limit 64 MB); "
+				+ "export with fewer components (top-level only)", err.getMessage());
+		assertEquals("BAD_REQUEST", String.valueOf(err.getErrorType()));
+		assertTrue(null == err.getExtensions() || err.getExtensions().isEmpty(), "no extensions");
 	}
 
 	/**

@@ -256,7 +256,7 @@ class ExportMetadataFlagsTest {
 	private static ReleaseService releaseServiceServing(String bomJson) {
 		ReleaseService svc = new ReleaseService(null) {
 			@Override
-			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev,
+			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, boolean excludeFileComponents,
 					ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu,
 					List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 				return BOM_ID;
@@ -306,7 +306,7 @@ class ExportMetadataFlagsTest {
 			ExportMetadataOptions options) throws Exception {
 		ReleaseService svc = releaseServiceServing(bomJson);
 		ReflectionTestUtils.setField(svc, "supportInjectionService", injectorFor(setting));
-		return svc.exportReleaseSbom(UUID.randomUUID(), false, false, null, BomStructureType.FLAT,
+		return svc.exportReleaseSbom(UUID.randomUUID(), false, false, false, null, BomStructureType.FLAT,
 				BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null, options);
 	}
 

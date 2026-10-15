@@ -80,6 +80,7 @@ import io.reliza.service.AgentAuditReadService.AgentBoardRevision;
 import io.reliza.service.AgentAuditReadService.AgentRoleConfigRevision;
 import io.reliza.service.AgentAuditReadService.AgentTaskRevision;
 import io.reliza.service.AgentBoardService;
+import io.reliza.service.AgentDeliveryService;
 import io.reliza.service.AgentIdentityService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;
@@ -91,6 +92,7 @@ import io.reliza.service.AgentTaskService;
 import io.reliza.service.AgentTaskService.WorkerAssignment;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.DeclarativeConfigService;
 import io.reliza.service.UserService;
@@ -123,7 +125,7 @@ public class AgentTaskDataFetcher {
 	@Autowired private AuthorizationService authorizationService;
 	@Autowired private AgentTaskInputService agentTaskInputService;
 	@Autowired private AgentSessionUsageService agentSessionUsageService;
-	@Autowired private io.reliza.service.AgentDeliveryService agentDeliveryService;
+	@Autowired private AgentDeliveryService agentDeliveryService;
 	@Autowired private GetSourceCodeEntryService getSourceCodeEntryService;
 	@Autowired private AgentDocumentService agentDocumentService;
 	@Autowired private VcsRepositoryService vcsRepositoryService;
@@ -191,6 +193,7 @@ public class AgentTaskDataFetcher {
 			Map.entry("agentTaskLinkReleaseProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskDeclareDeliveryProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskSupersedePullRequestProgrammatic", AGENT_VERB),
+			Map.entry("agentTaskUnlinkPrProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskBindExternalRefProgrammatic", AGENT_VERB),
 			Map.entry("agentBoardCoordinateProgrammatic", WRITE),
 			Map.entry("agentBoardCoordinatorPauseProgrammatic", WRITE),
@@ -445,6 +448,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Query", field = "agentTaskByKey")
 	public AgentTaskData agentTaskByKey(@InputArgument("orgUuid") UUID orgUuid, @InputArgument("key") String key,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		Optional<AgentTaskData> td = agentTaskService.resolveKey(orgUuid, key);
 		if (td.isEmpty()) {
 			// Nothing to read; still only a person may ask.
@@ -916,6 +920,7 @@ public class AgentTaskDataFetcher {
 
 	@DgsData(parentType = "Query", field = "agentBoard")
 	public AgentBoardData agentBoard(@InputArgument("uuid") UUID uuid, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(uuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + uuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -927,6 +932,7 @@ public class AgentTaskDataFetcher {
 	public AgentBoardService.EventPage agentBoardEvents(@InputArgument("boardUuid") UUID boardUuid,
 			@InputArgument("after") Long after, @InputArgument("since") ZonedDateTime since,
 			@InputArgument("limit") Integer limit, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -936,6 +942,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Query", field = "agentTasksByUuid")
 	public List<AgentTaskData> agentTasksByUuid(@InputArgument("taskUuids") List<UUID> taskUuids,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		List<AgentTaskData> found = agentTaskService.getTasksData(taskUuids);
 		// Read access per board among what was found (board-permissions.md §4.4); tasks on a board the
 		// person cannot read are absent, as unknown ones are. A credential that is not a person is
@@ -959,6 +966,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("status") String status, @InputArgument("changedSince") ZonedDateTime changedSince,
 			@InputArgument("group") String group, @InputArgument("tag") List<String> tags,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -1019,6 +1027,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentBoardGroupSet")
 	public GroupView agentBoardGroupSet(@InputArgument("boardUuid") UUID boardUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
+		personPreLookup(dfe, PERSON_CONFIGURE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
@@ -1030,6 +1039,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentBoardGroupDelete")
 	public Boolean agentBoardGroupDelete(@InputArgument("boardUuid") UUID boardUuid, @InputArgument("key") String key,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_CONFIGURE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
@@ -1061,6 +1071,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetGroup")
 	public AgentTaskData agentTaskSetGroup(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("group") String group,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1083,6 +1094,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetTags")
 	public AgentTaskData agentTaskSetTags(@InputArgument("taskUuid") UUID taskUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1281,6 +1293,7 @@ public class AgentTaskDataFetcher {
 	public List<AgentTaskRoleConfigData> agentTaskRoleConfigsOfBoard(
 			@InputArgument("boardUuid") UUID boardUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -1559,6 +1572,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("pause") Boolean pause,
 			@InputArgument("reason") String reason,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		// Ctx rather than the plain authorize: this used to record the literal "operator", so an
@@ -1585,6 +1599,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskSetStrength(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("requiredStrength") Double requiredStrength,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1716,6 +1731,28 @@ public class AgentTaskDataFetcher {
 				ctx.wu());
 	}
 
+	/**
+	 * Unlink a PR that should never have counted (task t20261010-033523-18839). The gate of a supersede: the session
+	 * holding the task in a role that pushes code (CODE_PUSH), the board's coordinator seat, or any key with
+	 * BOARD_WRITE on the board. The service holds the rules, a session's narrower ones past the pass included.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskUnlinkPrProgrammatic")
+	public AgentTaskData agentTaskUnlinkPrProgrammatic(@InputArgument("taskUuid") UUID taskUuid,
+			@InputArgument("sessionUuid") UUID sessionUuid, @InputArgument("prUrl") String prUrl,
+			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		ProgKeyContext ctx = authorizeProgrammaticOrg(dfe);
+		AgentTaskData td = requireOrgTask(ctx, taskUuid);
+		AgentBoardData board = requireOrgBoard(ctx, td.getBoard());
+		resolveCallingAgent(ctx, sessionUuid);
+		if (!holdsInRoleWith(td, board, sessionUuid, AgentTaskRoleConfigData.AgentCapability.CODE_PUSH)
+				&& !agentBoardService.isSeatHolder(board, sessionUuid) && !keyWritesBoard(ctx, board)) {
+			throw new AccessDeniedException("A PR is unlinked by the session holding this task in a role that pushes"
+					+ " code (CODE_PUSH), by the board's coordinator seat, or with a key holding BOARD_WRITE on the board;"
+					+ " this call is none of the three");
+		}
+		return agentTaskService.unlinkPr(taskUuid, prUrl, note, AgentActor.ofSession(sessionUuid), ctx.wu());
+	}
+
 	/** Refuse a caller whose key lacks {@code fn} on the board: the per-caller half of {@link #SEAT_OR_HOLDER}. */
 	private void requireKeyOnBoard(ProgKeyContext ctx, AgentBoardData board, PermissionFunction fn, CallType ct)
 			throws RelizaException {
@@ -1822,6 +1859,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("accept") Boolean accept,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1834,6 +1872,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("outcome") String outcome,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1854,6 +1893,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("reason") String reason,
 			@InputArgument("role") String role,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1876,6 +1916,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("answerAll") String answerAll,
 			@InputArgument("liftHold") Boolean liftHold,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1912,6 +1953,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskRegister")
 	public AgentTaskData agentTaskRegister(@InputArgument("boardUuid") UUID boardUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentBoardData board = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, board, PERSON_WRITE);
@@ -1932,6 +1974,7 @@ public class AgentTaskDataFetcher {
 	/** Commission an investigation as a person with BOARD_WRITE on the board (task RD4-12). */
 	@DgsData(parentType = "Mutation", field = "agentTaskCommission")
 	public AgentTaskData agentTaskCommission(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		Map<String, Object> input = dfe.getArgument("input");
 		UUID boardUuid = parseUuid((String) input.get("boardUuid"), "boardUuid");
 		if (boardUuid == null) throw new RelizaException("boardUuid is required");
@@ -1952,6 +1995,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("producesComponent") String producesComponentRaw,
 			@InputArgument("workLevel") Integer workLevel,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1973,6 +2017,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskOrder(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("orderIndex") Integer orderIndex,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1987,6 +2032,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetBudget")
 	public AgentTaskData agentTaskSetBudget(@InputArgument("taskUuid") UUID taskUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1998,6 +2044,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetWorkLevel")
 	public AgentTaskData agentTaskSetWorkLevel(@InputArgument("taskUuid") UUID taskUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2009,6 +2056,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskUnassign")
 	public AgentTaskData agentTaskUnassign(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("reason") String reason, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2020,6 +2068,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("note") String note,
 			@InputArgument("skipRequiredRoles") Boolean skipRequiredRoles,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2033,16 +2082,32 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskSupersedePullRequest(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("oldUrl") String oldUrl, @InputArgument("byUrl") String byUrl,
 			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
 		return agentTaskService.supersedePullRequest(taskUuid, oldUrl, byUrl, note, jc.actor(), jc.wu());
 	}
 
+	/**
+	 * A person unlinks a PR (task t20261010-033523-18839), as agentTaskUnlinkPrProgrammatic; past the pass a person
+	 * may also take an open PR out, with an ALERT. PERSON_WRITE on the task.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskUnlinkPr")
+	public AgentTaskData agentTaskUnlinkPr(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("prUrl") String prUrl,
+			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
+		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
+				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
+		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
+		return agentTaskService.unlinkPr(taskUuid, prUrl, note, jc.actor(), jc.wu());
+	}
+
 	@DgsData(parentType = "Mutation", field = "agentTaskDeclareDelivery")
 	public AgentTaskData agentTaskDeclareDelivery(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("unit") String unit,
 			@InputArgument("commit") String commit, @InputArgument("outcome") String outcome,
 			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2054,6 +2119,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskCancel(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2075,6 +2141,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskDecideReviewItems(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("specification") String specification,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2182,6 +2249,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskRequireHumanReview(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("value") Boolean value,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2234,8 +2302,9 @@ public class AgentTaskDataFetcher {
 		String spec = dfe.getArgument("specification");
 		String task = dfe.getArgument("task");
 		String component = dfe.getArgument("component");
+		String role = dfe.getArgument("role");
 		return agentDocumentService.resolveDocumentPath(bd, RearmSpecificationType.valueOf(spec),
-				null == task ? null : UUID.fromString(task), null == component ? null : UUID.fromString(component));
+				null == task ? null : UUID.fromString(task), null == component ? null : UUID.fromString(component), role);
 	}
 
 	/** One of a board's document series, as AgentBoardDocumentComponent. */
@@ -2692,16 +2761,18 @@ public class AgentTaskDataFetcher {
 	}
 
 	/**
-	 * The personal key a person's call on the programmatic endpoint came with: a USER key, not
-	 * federated, whose CLI actor (when there is one) is its owner, in this organization. Anything
-	 * else is not a person and is refused with {@link #PERSON_ONLY}.
+	 * The personal key a person's call on the programmatic endpoint came with, verified: a USER
+	 * key, not federated, whose CLI actor (when there is one) is its owner. Anything else is not a
+	 * person and is refused with {@link #PERSON_ONLY} on what it is, before any key row is read.
+	 * Then the key itself is verified (the secret of a Basic credential, the key ACTIVE, the owner
+	 * an active member of the key's organization), so a credential that does not verify is refused
+	 * with an AccessDeniedException ("Not authorized" on the wire) whatever the call names. The
+	 * returned org is the verified key row's.
 	 */
-	private io.reliza.common.CommonVariables.AuthHeaderParse personalKey(DgsDataFetchingEnvironment dfe, UUID orgUuid)
-			throws RelizaException {
+	private ProgrammaticAuthContext personalCredential(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
-		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(
+		var ahp = authorizationService.authenticateProgrammatic(
 				requestData.getHeaders(), (ServletWebRequest) requestData.getWebRequest());
-		var ahp = authCtx.ahp();
 		if (null == ahp || ahp.getType() != ApiTypeEnum.USER || ahp.isFederated()) {
 			throw new RelizaException(PERSON_ONLY);
 		}
@@ -2710,10 +2781,35 @@ public class AgentTaskDataFetcher {
 		if (null != ahp.getActorUser() && !ahp.getActorUser().equals(ahp.getObjUuid())) {
 			throw new RelizaException(PERSON_ONLY);
 		}
-		if (!orgUuid.equals(authCtx.orgUuid())) {
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
+		return new ProgrammaticAuthContext(ahp, vk.org());
+	}
+
+	/**
+	 * The verified personal key of {@link #personalCredential}, in this organization: a key of
+	 * another organization is refused.
+	 */
+	private io.reliza.common.CommonVariables.AuthHeaderParse personalKey(DgsDataFetchingEnvironment dfe, UUID orgUuid)
+			throws RelizaException {
+		var ctx = personalCredential(dfe);
+		if (!orgUuid.equals(ctx.orgUuid())) {
 			throw new AccessDeniedException("The key is not in this board's organization");
 		}
-		return ahp;
+		return ctx.ahp();
+	}
+
+	/**
+	 * The first statement of every person field that looks a board or task up on the programmatic
+	 * endpoint: the credential is classified and verified, then the system state checked with the
+	 * gate's own call type, all before the lookup, so neither a non-person, nor a credential that
+	 * does not verify, nor anyone while the instance is sealed or unlicensed learns whether the uuid
+	 * exists. A browser JWT keeps its order. Never call it inside a catch of AccessDeniedException
+	 * ({@link #personReads}): its refusal must reach the caller.
+	 */
+	private void personPreLookup(DgsDataFetchingEnvironment dfe, BoardGate gate) throws RelizaException {
+		if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken) return;
+		personalCredential(dfe);
+		authorizationService.validateSystemOperational(gate.callType());
 	}
 
 	/** What a person's board read needs (board-permissions.md §4.2). */
@@ -3145,11 +3241,12 @@ public class AgentTaskDataFetcher {
 	 * One linked PR as the board sees it; {@code state} is null when CI never reported the URL.
 	 * {@code headSce} is the row's newest commit, resolved to a sha only when {@code head} is read.
 	 * {@code base} is where the task's newest round found the PR's target branch (task RD4-2), counted from only
-	 * when {@code baseMovedBy} is read; null for a PR not in play.
+	 * when {@code baseMovedBy} is read; null for a PR not in play. {@code unit} is how delivery counts the PR now,
+	 * {@link AgentDeliveryService.TaskPullRequest#unit()} (task t20261010-033522-23606).
 	 */
 	public record TaskPullRequestView(String url, String state, String targetBranch,
 			java.time.ZonedDateTime mergedDate, boolean registered, UUID headSce, AgentTaskData.Delivery declaration,
-			AgentTaskData.BaseHead base) {}
+			AgentTaskData.BaseHead base, AgentDeliveryService.Delivery unit) {}
 
 	/**
 	 * The task's linked PRs (task 9af9d722). Batched: every task in one read hands its match keys to
@@ -3163,17 +3260,18 @@ public class AgentTaskDataFetcher {
 		}
 		org.dataloader.DataLoader<TaskPrKey, java.util.Optional<io.reliza.model.PullRequestData>> loader =
 				dfe.getDataLoader("taskPullRequestLoader");
-		List<TaskPrKey> keys = io.reliza.service.AgentDeliveryService.matchKeys(td).stream()
+		List<TaskPrKey> keys = AgentDeliveryService.matchKeys(td).stream()
 				.map(k -> new TaskPrKey(td.getOrg(), k)).toList();
 		return loader.loadMany(keys).thenApply(rows -> {
 			Map<String, io.reliza.model.PullRequestData> byKey = new LinkedHashMap<>();
 			for (int i = 0; i < keys.size(); i++) {
 				if (rows.get(i).isPresent()) byKey.put(keys.get(i).key(), rows.get(i).get());
 			}
-			return io.reliza.service.AgentDeliveryService.pullRequestsOf(td, byKey).stream()
+			return AgentDeliveryService.pullRequestsOf(td, byKey).stream()
 					.map(pr -> new TaskPullRequestView(pr.url(), null == pr.state() ? null : pr.state().name(),
 							pr.targetBranch(), pr.mergedDate(), pr.registered(), pr.headSce(), pr.declaration(),
-							pr.registered() ? io.reliza.service.AgentDeliveryService.roundBase(td, pr.url()) : null))
+							pr.registered() ? AgentDeliveryService.roundBase(td, pr.url()) : null,
+							pr.unit()))
 					.toList();
 		});
 	}
@@ -3202,7 +3300,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "AgentTask", field = "testedHeads")
 	public List<BoardReviewItemIndex.TestedHead> taskTestedHeads(DgsDataFetchingEnvironment dfe) {
 		AgentTaskData td = dfe.getSource();
-		return agentDeliveryService.testedOf(td).map(io.reliza.service.AgentDeliveryService.Tested::heads).orElse(List.of());
+		return agentDeliveryService.testedOf(td).map(AgentDeliveryService.Tested::heads).orElse(List.of());
 	}
 
 	/** A linked PR's match key within its org. */
@@ -3212,7 +3310,7 @@ public class AgentTaskDataFetcher {
 	@com.netflix.graphql.dgs.DgsDataLoader(name = "taskPullRequestLoader")
 	public static class TaskPullRequestBatchLoader implements org.dataloader.BatchLoader<TaskPrKey,
 			java.util.Optional<io.reliza.model.PullRequestData>> {
-		@Autowired private io.reliza.service.AgentDeliveryService agentDeliveryService;
+		@Autowired private AgentDeliveryService agentDeliveryService;
 
 		@Override
 		public java.util.concurrent.CompletionStage<List<java.util.Optional<io.reliza.model.PullRequestData>>> load(

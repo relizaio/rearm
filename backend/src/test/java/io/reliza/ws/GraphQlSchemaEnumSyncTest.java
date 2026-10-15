@@ -63,6 +63,7 @@ import io.reliza.model.VersionAssignment;
 import io.reliza.model.dto.notifications.EvaluationMode;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.tea.TeaCollectionUpdateReasonType;
+import io.reliza.service.AgentDeliveryService;
 import io.reliza.service.BoardAgentsService;
 import io.reliza.service.DeclarativeConfigService;
 import io.reliza.service.SyntheticEventTemplates;
@@ -142,6 +143,7 @@ class GraphQlSchemaEnumSyncTest {
 			entry("AgentCommissionIntake", AgentTaskRoleConfigData.CommissionIntake.class),
 			entry("AgentDeliveryMode", AgentBoardData.DeliveryMode.class),
 			entry("AgentDeliveryOutcome", AgentTaskData.DeliveryOutcome.class),
+			entry("AgentDeliveryUnit", AgentDeliveryService.Delivery.class),
 			entry("AgentHumanGate", AgentTaskRoleConfigData.HumanGate.class),
 			entry("AgentInputKind", AgentTaskInput.InputKind.class),
 			entry("AgentInputResolution", AgentTaskInput.InputResolution.class),

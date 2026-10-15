@@ -74,6 +74,22 @@ public class OssPerspectiveService {
 	}
 
 	/**
+	 * The perspective an object of {@code orgUuid} may be attached to. Part of ReARM Pro only: CE has no
+	 * perspectives, so every uuid is "Perspective not found", the answer Pro gives for a missing one.
+	 */
+	public PerspectiveData requireAssignablePerspective(UUID orgUuid, UUID perspectiveUuid) throws RelizaException {
+		return requireLivePerspective(orgUuid, perspectiveUuid);
+	}
+
+	/**
+	 * The perspective a grant of {@code orgUuid} may name. Part of ReARM Pro only: CE has no perspectives,
+	 * so every uuid is "Perspective not found", the answer Pro gives for a missing one.
+	 */
+	public PerspectiveData requireLivePerspective(UUID orgUuid, UUID perspectiveUuid) throws RelizaException {
+		throw new RelizaException("Perspective not found: " + perspectiveUuid);
+	}
+
+	/**
 	 * The organization's active real perspectives (not PRODUCT components).
 	 * Part of ReARM Pro only — CE has no real perspectives, so this is empty.
 	 */

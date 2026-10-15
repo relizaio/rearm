@@ -20,6 +20,9 @@ import java.util.UUID;
 import java.util.function.Predicate;
 import java.util.stream.Stream;
 
+import com.github.packageurl.MalformedPackageURLException;
+import com.github.packageurl.PackageURL;
+
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -111,6 +114,20 @@ public final class SupportBomInjector {
 	static final String PROP_DISCLOSURE = "reliza:support:disclosure";
 	static final String DISCLOSURE_CURRENT_STATE = "derived-non-attested-current-state";
 	/**
+	 * How many component nodes of a disclosed document could not be identified: no purl, no
+	 * purl-shaped bom-ref and no cpe, so no support fact can ever be matched to them (SCORE-12
+	 * ADR-7). Stamped beside {@link #PROP_DISCLOSURE} only when the marker is
+	 * {@link #DISCLOSURE_CURRENT_STATE}, so an absent support property can be told apart from
+	 * "this component cannot be looked up at all".
+	 */
+	static final String PROP_UNIDENTIFIED = "reliza:support:unidentifiedComponents";
+	/**
+	 * How many component nodes of a disclosed document were identified but carry no support
+	 * statement, because nobody assessed them (or the attestation was withdrawn). Same stamping
+	 * rule as {@link #PROP_UNIDENTIFIED}.
+	 */
+	static final String PROP_UNASSESSED = "reliza:support:unassessedComponents";
+	/**
 	 * The marker for a document we swept but did not inject into. A distinct value because
 	 * the two say different things and a reader acts on the difference: CURRENT_STATE means
 	 * "the support properties here were produced by current-state derivation", so an absent
@@ -153,6 +170,53 @@ public final class SupportBomInjector {
 	 */
 	private static final Set<String> DISCLOSURE_PREFIXES =
 			Set.of(RELIZA_SUPPORT_PREFIX, RELIZA_DEVICE_PREFIX);
+	/**
+	 * rebom's record on a merged release BOM that file components were left out of it, and how
+	 * many (SCORE-11, design ADR-5): written at merge time into {@code metadata.properties} when
+	 * the export asked for {@code excludeFileComponents}.
+	 */
+	static final String FILE_COMPONENTS_EXCLUDED_PROPERTY = "reliza:export:fileComponentsExcluded";
+	/**
+	 * rebom's record on a merged release BOM that dependency references resolving to no
+	 * component or service were dropped from it, and how many (SCORE-14, design ADR-3): written
+	 * at merge time into {@code metadata.properties}, only when something was dropped.
+	 */
+	static final String DANGLING_REFS_DROPPED_PROPERTY = "reliza:export:danglingRefsDropped";
+	/**
+	 * rebom's marker on a component of a merged product BOM that stands for a component release
+	 * ReARM holds no SBOM for (SCORE-15, design ADR-3): its value says why, and the document's
+	 * {@code compositions} state that component's dependencies unknown.
+	 */
+	static final String SBOM_MISSING_PROPERTY = "reliza:sbom:missing";
+	/**
+	 * rebom's record on a merged product BOM of how many components carry
+	 * {@link #SBOM_MISSING_PROPERTY} (SCORE-15, design ADR-3): written at merge time into
+	 * {@code metadata.properties}, only when there is one.
+	 */
+	static final String COMPONENTS_WITHOUT_SBOM_PROPERTY = "reliza:export:componentsWithoutSbom";
+	/**
+	 * Reliza-namespaced properties that describe the served document itself and so survive the
+	 * internal-metadata strip, by exact name. Not a prefix: the strip's rule stays "every reliza
+	 * property nobody named is internal", and this names one.
+	 *
+	 * <p>{@link #FILE_COMPONENTS_EXCLUDED_PROPERTY} is here because it is the only thing in the
+	 * file that says components were left out of it. Stripping it from an export that asked to
+	 * leave out file components -- and the Export Release BOM dialog sends
+	 * {@code includeInternalMetadata=false} by default -- would hand the reader a document that
+	 * silently lacks part of the product's inventory, which is the opposite of what an internal
+	 * strip is for.
+	 *
+	 * <p>{@link #DANGLING_REFS_DROPPED_PROPERTY} is here for the same reason (SCORE-14 ADR-6): it
+	 * says the served document lacks part of its inputs' dependency graph. rebom's
+	 * {@code reliza:export:bomRefsDeduplicated} is not: a fold loses nothing.
+	 *
+	 * <p>{@link #SBOM_MISSING_PROPERTY} and {@link #COMPONENTS_WITHOUT_SBOM_PROPERTY} are here
+	 * because they ARE the explicitly identified unknown (SCORE-15 ADR-3, CISA 2026): without
+	 * them a reader cannot tell a component release ReARM holds no SBOM for from one whose SBOM
+	 * lists nothing. The first sits on components, which the strip walks as well.
+	 */
+	private static final Set<String> DOCUMENT_RECORD_PROPERTIES = Set.of(FILE_COMPONENTS_EXCLUDED_PROPERTY,
+			DANGLING_REFS_DROPPED_PROPERTY, SBOM_MISSING_PROPERTY, COMPONENTS_WITHOUT_SBOM_PROPERTY);
 	/**
 	 * The document-level attestation block (CycloneDX 1.6+), server-owned exactly like the
 	 * reliza namespaces above -- and NOT reachable by the property sweep, which walks property
@@ -303,8 +367,14 @@ public final class SupportBomInjector {
 
 	/**
 	 * Identity key of a component node: the preserving-canonical purl (byte-compatible with
-	 * how rebom persists {@code sbom_components.canonical_purl}), else the raw cpe, else null
-	 * (a component with neither cannot match a stored row).
+	 * how rebom persists {@code sbom_components.canonical_purl}), else a purl written only in the
+	 * {@code bom-ref} canonicalised the same way, else the raw cpe, else null (a component with
+	 * none of them cannot match a stored row).
+	 *
+	 * <p>The bom-ref step exists for tools that put a component's purl in its bom-ref and leave
+	 * the purl field empty (Trivy does this for Go's {@code stdlib}). Only a bom-ref that parses
+	 * as a purl is a key: any other bom-ref is a per-document label, never an identity
+	 * (SCORE-12 ADR-6, ADR-10). The purl field always wins over the bom-ref.
 	 */
 	public static String componentKey(JsonNode component) {
 		if (component == null || !component.isObject()) {
@@ -312,14 +382,18 @@ public final class SupportBomInjector {
 		}
 		JsonNode purl = component.get("purl");
 		if (purl != null && purl.isTextual() && !purl.asText().isBlank()) {
-			try {
-				String canonical = Utils.canonicalizePurlPreservingEncoding(purl.asText());
-				if (canonical != null) {
-					return canonical;
-				}
-				// A non-pkg / unparseable purl yields null -- fall through to cpe.
-			} catch (RuntimeException malformed) {
-				// fall through to cpe
+			String canonical = canonicalPurlOrNull(purl.asText());
+			if (canonical != null) {
+				return canonical;
+			}
+			// A non-pkg / unparseable purl falls through to the bom-ref, then cpe.
+		}
+		JsonNode bomRef = component.get(FIELD_BOM_REF);
+		if (bomRef != null && bomRef.isTextual() && bomRef.asText().startsWith("pkg:")
+				&& parsesAsPurl(bomRef.asText())) {
+			String canonical = canonicalPurlOrNull(bomRef.asText());
+			if (canonical != null) {
+				return canonical;
 			}
 		}
 		JsonNode cpe = component.get("cpe");
@@ -327,6 +401,29 @@ public final class SupportBomInjector {
 			return cpe.asText();
 		}
 		return null;
+	}
+
+	private static String canonicalPurlOrNull(String purl) {
+		try {
+			return Utils.canonicalizePurlPreservingEncoding(purl);
+		} catch (RuntimeException malformed) {
+			return null;
+		}
+	}
+
+	/**
+	 * The parse {@code SupportInjectionService.resolveSupportFactsForBom} applies to a key, so a
+	 * bom-ref is a key only when the facts lookup could read it. {@code +} (Debian versions,
+	 * {@code g++}) is encoded first exactly as the lookup encodes it, so the two parses cannot
+	 * disagree.
+	 */
+	private static boolean parsesAsPurl(String candidate) {
+		try {
+			new PackageURL(candidate.replace("+", "%2B"));
+			return true;
+		} catch (MalformedPackageURLException notAPurl) {
+			return false;
+		}
 	}
 
 	/**
@@ -449,9 +546,34 @@ public final class SupportBomInjector {
 			}
 		}
 		// Exactly one disclosure marker (the global sweep already removed any forged one).
-		addProperty(properties(metaObj), PROP_DISCLOSURE, DISCLOSURE_CURRENT_STATE);
+		ArrayNode metaProps = properties(metaObj);
+		addProperty(metaProps, PROP_DISCLOSURE, DISCLOSURE_CURRENT_STATE);
+		stampComponentCounts((ObjectNode) bom, metaProps, factsByKey);
 		emitDeclarations((ObjectNode) bom, factsByKey, declarationContext);
 		return bom;
+	}
+
+	/**
+	 * The two count properties of a disclosed document (SCORE-12 ADR-7), written once each, also
+	 * when 0. The walk is the one {@link #collectKeys} makes, and it counts component NODES, not
+	 * distinct keys: two nodes with the same purl count twice, as they do in a score's total.
+	 * "Assessed" means {@link #applyToComponent} writes a support statement on the node, so the
+	 * counts explain exactly the nodes that carry none.
+	 */
+	private static void stampComponentCounts(ObjectNode bom, ArrayNode metaProps,
+			Map<String, ComponentSupportFacts> factsByKey) {
+		int unidentified = 0;
+		int unassessed = 0;
+		for (ObjectNode component : collectComponentNodes(bom)) {
+			String key = componentKey(component);
+			if (key == null) {
+				unidentified++;
+			} else if (emittableSupport(factsByKey.get(key)) == null) {
+				unassessed++;
+			}
+		}
+		addProperty(metaProps, PROP_UNIDENTIFIED, Integer.toString(unidentified));
+		addProperty(metaProps, PROP_UNASSESSED, Integer.toString(unassessed));
 	}
 
 	/**
@@ -964,6 +1086,17 @@ public final class SupportBomInjector {
 	 * <ul>
 	 *   <li><b>{@code reliza:support:*} and {@code reliza:device:*}</b> -- the disclosure. Governed
 	 *       by the other flag, which is the whole point of having two.</li>
+	 *   <li><b>{@code reliza:export:fileComponentsExcluded}</b> -- the record that the export left
+	 *       file components out ({@link #DOCUMENT_RECORD_PROPERTIES}). It describes the document
+	 *       the reader holds, not ReARM's working state.</li>
+	 *   <li><b>{@code reliza:export:danglingRefsDropped}</b> -- the record that the merge dropped
+	 *       dependency references that resolved to nothing ({@link #DOCUMENT_RECORD_PROPERTIES}),
+	 *       for the same reason.</li>
+	 *   <li><b>{@code reliza:sbom:missing}</b> on a component and
+	 *       {@code reliza:export:componentsWithoutSbom} on the document -- the components the
+	 *       product merge lists for component releases without an SBOM, and their number
+	 *       ({@link #DOCUMENT_RECORD_PROPERTIES}): what makes their unknown dependencies
+	 *       explicit.</li>
 	 *   <li><b>{@code reliza:bomref:*} bom-refs and the {@code reliza:claim:} /
 	 *       {@code reliza:evidence:} / {@code reliza:assessor:} refs inside
 	 *       {@code declarations}</b> -- these are reference IDENTIFIERS, not properties, and they
@@ -1000,9 +1133,10 @@ public final class SupportBomInjector {
 		return bom;
 	}
 
-	/** Ours, and not part of the support disclosure. */
+	/** Ours, and neither part of the support disclosure nor a record of what the document is. */
 	private static boolean isInternalMarker(String propertyName) {
-		if (!propertyName.startsWith(RELIZA_NAMESPACE_PREFIX)) {
+		if (!propertyName.startsWith(RELIZA_NAMESPACE_PREFIX)
+				|| DOCUMENT_RECORD_PROPERTIES.contains(propertyName)) {
 			return false;
 		}
 		return DISCLOSURE_PREFIXES.stream().noneMatch(propertyName::startsWith);
@@ -1021,14 +1155,14 @@ public final class SupportBomInjector {
 		}
 	}
 
-	private static void applyToComponent(ObjectNode component, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
-			DeviceLifecycle device) {
-		// reliza:support:* was already stripped tree-wide by stripReservedEverywhere; here we
-		// only (re)write on a component we actually attest.
-		String key = componentKey(component);
-		ComponentSupportFacts facts = key == null ? null : factsByKey.get(key);
+	/**
+	 * The attestation {@link #applyToComponent} writes for these facts, or null when it writes
+	 * nothing. Shared with {@link #stampComponentCounts} so the unassessed count and the
+	 * properties on the components cannot disagree.
+	 */
+	private static SupportData emittableSupport(ComponentSupportFacts facts) {
 		if (facts == null || facts.support() == null) {
-			return;
+			return null;
 		}
 		SupportData support = facts.support();
 		// A WITHDRAWN attestation is retracted: it must not be re-emitted as a live claim.
@@ -1036,7 +1170,7 @@ public final class SupportBomInjector {
 		// but the served BOM says nothing, which reads as "not assessed". That is the honest
 		// degradation: the alternative is publishing a claim the manufacturer has taken back.
 		if (SupportState.WITHDRAWN == support.state()) {
-			return;
+			return null;
 		}
 		// Emit for an attestation carrying NO dates and NO level -- "assessed, nothing
 		// published" -- which the previous shape could not even store. The row's existence
@@ -1059,7 +1193,16 @@ public final class SupportBomInjector {
 		boolean hasAnythingToSay = !support.milestones().isEmpty()
 				|| support.levelOfSupport() != null
 				|| support.assessedAt() != null;
-		if (!hasAnythingToSay) {
+		return hasAnythingToSay ? support : null;
+	}
+
+	private static void applyToComponent(ObjectNode component, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
+			DeviceLifecycle device) {
+		// reliza:support:* was already stripped tree-wide by stripReservedEverywhere; here we
+		// only (re)write on a component we actually attest.
+		String key = componentKey(component);
+		SupportData support = emittableSupport(key == null ? null : factsByKey.get(key));
+		if (support == null) {
 			return;
 		}
 		SupportMilestoneFact eogsM = support.milestones().get(SupportMilestoneType.END_OF_GUARANTEED_SUPPORT);

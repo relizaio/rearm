@@ -187,6 +187,8 @@ public class DeliverableDataFetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 		
 		Map<String, Object> addDeliverablesInputMap = dfe.getArgument("deliverables");
 		String version = (String) addDeliverablesInputMap.get(CommonVariables.VERSION_FIELD);

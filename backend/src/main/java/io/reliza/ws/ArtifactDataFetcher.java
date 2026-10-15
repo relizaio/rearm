@@ -40,6 +40,7 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.service.ArtifactDownloadAccessService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BranchService;
@@ -50,6 +51,7 @@ import io.reliza.service.RebomService;
 import io.reliza.service.RebomService.EnrichmentTriggerResult;
 import io.reliza.service.ReleaseMetricsComputeService;
 import io.reliza.service.RiskSummaryCalculator;
+import io.reliza.service.SbomScoreService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -91,6 +93,12 @@ public class ArtifactDataFetcher {
 
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private ArtifactDownloadAccessService artifactDownloadAccessService;
+
+	@Autowired
+	private SbomScoreService sbomScoreService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -119,6 +127,37 @@ public class ArtifactDataFetcher {
 		return oad.get();
 	}
 	
+	/**
+	 * The readiness score of one SBOM artifact's document, as the scoring engine's report string.
+	 * Behind exactly the manual download endpoint's checks, in its order: an unknown artifact,
+	 * then authorization, then the version. Whether the artifact is scorable is decided only after
+	 * authorization, so a refused caller learns nothing about it. Writes nothing.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "artifactSbomScore")
+	public String artifactSbomScore(
+			@InputArgument("artifact") UUID artifactUuid,
+			@InputArgument("raw") Boolean raw,
+			@InputArgument("version") Integer version,
+			@InputArgument("profiles") List<String> profiles) throws Exception {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<ArtifactData> latestOad = artifactService.getArtifactData(artifactUuid);
+		if (latestOad.isEmpty()) {
+			throw new RelizaException("Artifact not found");
+		}
+		ArtifactData ad = latestOad.get();
+		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ad.getOrg());
+		Set<UUID> components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+		artifactDownloadAccessService.authorizeUserDownload(oud.get(), ad, components);
+		Optional<ArtifactData> oad = (null == version) ? latestOad
+				: artifactService.getArtifactDataByVersion(artifactUuid, version);
+		if (oad.isEmpty()) {
+			throw new RelizaException("Artifact version not found");
+		}
+		return sbomScoreService.scoreArtifact(oad.get(), releases, Boolean.TRUE.equals(raw), profiles);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifactVersionHistory")
 	public List<ArtifactData> getArtifactVersionHistory(@InputArgument("artifactUuid") String artifactUuidStr) throws RelizaException {

@@ -55,6 +55,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.UserWebDto;
+import io.reliza.service.BrandedEmailText.EmailText;
 import io.reliza.repositories.UserRepository;
 import io.reliza.ws.RelizaConfigProps;
 import jakarta.servlet.http.HttpServletResponse;
@@ -67,6 +68,9 @@ public class UserService {
 	
 	@Autowired
     private EmailService emailService;
+
+	@Autowired
+	private BrandingService brandingService;
 	
 	@Autowired
 	private EncryptionService encryptionService;
@@ -656,6 +660,7 @@ public class UserService {
 			if (removed) {
 				ud.revokeAllOrgPermissions(orgUuid);
 				userGroupService.removeUserFromAllGroupsInOrg(userUuid, orgUuid, wu);
+				apiKeyService.releaseHeldKeysInOrg(userUuid, orgUuid, wu);
 				apiKeyService.revokeUserKeysInOrg(userUuid, orgUuid, wu);
 			}
 			componentService.handleRemoveUserFromTriggers(orgUuid, userUuid, wu);
@@ -715,10 +720,8 @@ public class UserService {
 				// send email to old address if it's valid that a new one is provided
 				EmailValidator ev = EmailValidator.getInstance(false);
 				if (ev.isValid(oldEmail)) {
-					String emailSubject = "This email address was requested to be replaced with a new one on ReARM";
-					String contentStr = "Our records indicate that you requested to replace this email with a new one in ReARM."
-							+ "If you didn't do it, please contact us at info@reliza.io as soon as possible.";
-					emailService.sendEmail(List.of(oldEmail), emailSubject, "text/html", contentStr);
+					EmailText notice = BrandedEmailText.emailChangeNotice(brandingService.current().values());
+					emailService.sendEmail(List.of(oldEmail), notice.subject(), "text/html", notice.body());
 				}
 				// if email address changed, require verification
 				User u = getUser(ud.getUuid()).get();
@@ -796,12 +799,9 @@ public class UserService {
 		}
 		if (StringUtils.isEmpty(email)) email = ud.getEmail();
 		// send email to user
-		String emailSubject = "Verify your email on ReARM";
-		String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri()
-			+ "/verifyEmail/" 
-			+ urlSafeKey + "\">this link</a> to verify your email on ReARM. "
-			+ "Note that the link will be valid only within the next 48 hours.";
-		boolean sentEmail = emailService.sendEmail(List.of(email), emailSubject, "text/html", contentStr);
+		EmailText verify = BrandedEmailText.verifyEmail(brandingService.current().values(),
+				relizaConfigProps.getBaseuri(), urlSafeKey);
+		boolean sentEmail = emailService.sendEmail(List.of(email), verify.subject(), "text/html", verify.body());
 		if (!sentEmail) {
 			throw new RelizaException("Internal error sending email"); 
 		} else {
@@ -1051,14 +1051,9 @@ public class UserService {
 	}
 
 	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, UUID userUuid, PermissionType permissionType) {
-		String adminEmailSub = "New user joined the organizaiton " + od.getName() + " on ReARM at " + relizaConfigProps.getBaseuri();
-		String adminEmailContent = "A new user with the uuid " + userUuid + 
-		" joined the organization "+ od.getName() 
-		+ " on ReARM with permission: " + permissionType.toString() + ".";
-		if (PermissionType.NONE == permissionType) {
-			adminEmailContent += "\n\nPlease open Organization Settings view in ReARM and assign permissions for this user.";
-		}
-		sendEmailToOrgAdmins(adminEmailSub, adminEmailContent, od.getUuid());
+		EmailText joined = BrandedEmailText.userJoinedNotice(brandingService.current().values(), od.getName(),
+				relizaConfigProps.getBaseuri(), userUuid, permissionType);
+		sendEmailToOrgAdmins(joined.subject(), joined.body(), od.getUuid());
 	}
 	
 	private void sendEmailToOrgAdmins(String subject, String content, UUID orgUuid) {

@@ -686,9 +686,10 @@ type DeclaredApiKey {
 	name: String
 	type: ApiTypeEnum
 	status: ApiKeyStatus
+	"An org admin's kill switch holds the key off: only an org admin can re-activate it, not its owner, holder or an org writer"
 	adminDisabled: Boolean
 	notes: String
-	"""Always null here, as on ApiKey: a denial's reason is at the end of notes."""
+	"""DENIED requests: the administrator's reason, empty when none; null otherwise and on requests denied before it existed."""
 	deniedReason: String
 	permissions: ApiKeyPermissionsSpec
 	secretExpiresDays: Int
@@ -731,20 +732,25 @@ type ApiKey {
 	keyOrder: String
 	lastUpdatedBy: ID
 	createdBy: ID
+	"""
+	When a credential of this key last verified (bearer, Basic or a client_credentials exchange); it lags by up
+	to one scheduler tick. A verified credential that a later permission check refuses still counts.
+	Null if never used.
+	"""
 	accessDate: DateTime
 	createdDate: DateTime
 	notes: String
 	"""
-	The reason an administrator gave when denying this request, on a server that keeps it apart from the
-	notes. Always null here: this server ends a denied request's notes in 'Denied' (after ' | ' when the
-	request had a note), then ': <reason>' when one was given, and clients read the reason there.
+	The reason an administrator gave when denying this request: empty when none was given; null unless
+	status is DENIED; null on requests denied before this field existed, whose notes end in the legacy
+	'Denied' tail, with the reason after 'Denied: ' when one was given.
 	"""
 	deniedReason: String
 	status: ApiKeyStatus
 	secrets: [ApiKeySecretInfo!]
 	"FREEFORM keys: the user who requested the key and the only one who may mint or regenerate its secrets"
 	holder: ID
-	"Deactivated by an org admin: the owner or holder cannot re-activate it, only an admin can"
+	"An org admin's kill switch holds the key off: only an org admin can re-activate it, not its owner, holder or an org writer"
 	adminDisabled: Boolean
 	"MANUAL, or CLI_SESSION for a personal key a CLI browser login created for its session (deleted with the session)"
 	origin: ApiKeyOrigin
@@ -2714,6 +2720,8 @@ enum SpecificationType {
 	TEST_PLAN
 	GLOSSARY
 	DECISION_RECORD
+	"""Threat model: the assets, trust boundaries and threats the system is designed against, and their mitigations."""
+	THREAT_MODEL
 	"""One review round of one task. Task-scoped: one component per board target holds every task's rounds."""
 	BOARD_REVIEW_ITEMS
 	"""One test run of one task. Task-scoped, like BOARD_REVIEW_ITEMS."""
@@ -3118,9 +3126,7 @@ type Agent {
 	"""
 	displayName: String
 	"""
-	Resolved label the UI should render. Precedence (strongest last):
-	name → first bound FREEFORM key note → displayName. I.e.
-	displayName if set, else the note on a bound FREEFORM key, else name.
+	Resolved label the UI should render: displayName if non-blank, else name.
 	Read-only -- set displayName to override.
 	"""
 	effectiveDisplayName: String
@@ -3179,6 +3185,8 @@ type Agent {
 	FREEFORM API keys bound to this agent's identity
 	(agent_identity_credentials of type REARM_API_KEY). These are the
 	keys an agent runtime authenticates with to drive this agent.
+	Only uuid, org, type and declaredName are populated here; the full
+	record is apiKeys (org admin) or myApiKeys (own keys).
 	"""
 	boundApiKeys: [ApiKey]
 }
@@ -3805,11 +3813,13 @@ type AgentBoard {
 	The repository path a new document of this type would take, relative to the repository root,
 	with every placeholder filled and the board's documentsRoot in front: {key} = the task's key
 	(RD-42), {round} = the task's next round of this type, {type} = lower case, {component} = the
-	component's name slugged. task is required for task-scoped types, component for
-	component-scoped ones. The release records the path actually used; this is what the CLI uses
-	when no --file is given.
+	component's name slugged, {role} = the publishing role's name slugged. task is required for
+	task-scoped types, component for component-scoped ones. role names the publishing role for a
+	template with {role}, and must be one of the board's roles; without it {role} is the role of the
+	session holding the task, so an advisory round names its role. The release records the path
+	actually used; this is what the CLI uses when no --file is given.
 	"""
-	documentPath(specification: SpecificationType!, task: ID, component: ID): String
+	documentPath(specification: SpecificationType!, task: ID, component: ID, role: String): String
 	"""
 	Every type's template after overrides and scope defaults, without the root: the built-in index
 	types per task; at TASK scope ARCHITECTURE under design/{key}/architecture-{round}.md,
@@ -4903,6 +4913,8 @@ type AgentTask {
 	A task completes when every one has merged; registered false means CI never reported the URL.
 	"""
 	pullRequests: [AgentTaskPullRequest]
+	"""PRs taken off the task (task t20261010-033523-18839), oldest first; append-only, a relink stamps the row."""
+	unlinkedPrs: [AgentTaskUnlinkedPr]
 	"""
 	The PR heads the newest passing BOARD_TEST_REPORT round covered, one per linked PR (task 3b97ccfd): merge
 	at these. A review's heads are informative and not read here (task 5ec48b02). Empty when no passing
@@ -5141,7 +5153,7 @@ input AgentBoardInput {
 	documentsRepo: String
 	"""
 	Per-type path templates inside documentsRepo, keyed by SpecificationType.
-	Placeholders: {key}, {round}, {type}, {component}; {task} is read as {key}.
+	Placeholders: {key}, {round}, {type}, {component}, {role}; {task} is read as {key}.
 	Omitted types use the defaults by scope. Null leaves the existing map unchanged.
 	"""
 	documentPaths: Object
@@ -6318,6 +6330,13 @@ type AgentTaskPullRequest {
 	baseMovedBy: Int
 	"""The newest declaration for this PR, when one was recorded (task 18c5c293)."""
 	declaration: AgentTaskDelivery
+	"""
+	How delivery counts this PR now (task t20261010-033522-23606): WAITING, DELIVERED, BLOCKED (closed unmerged or
+	declared abandoned) or SUPERSEDED. A passing test report names a head for each linked PR except a SUPERSEDED
+	one or one declared abandoned.
+	On a board whose delivery.mode is NONE, delivery does not wait on PRs at all; this is the PR's own reading.
+	"""
+	unit: AgentDeliveryUnit
 }
 
 """
@@ -6334,6 +6353,9 @@ named in supersededBy; delivery counts the replacement. Declared with agentTaskS
 through agentTaskDeclareDelivery.
 """
 enum AgentDeliveryOutcome { DELIVERED ABANDONED SUPERSEDED }
+
+"""How delivery counts a linked PR (task t20261010-033522-23606); see AgentTaskPullRequest.unit."""
+enum AgentDeliveryUnit { DELIVERED WAITING BLOCKED SUPERSEDED }
 
 type AgentDeliveryPolicy {
 	mode: AgentDeliveryMode
@@ -6397,6 +6419,19 @@ type AgentTaskDelivery {
 	note: String
 	"""For SUPERSEDED, the linked PR that replaces the unit (task RD3-13)."""
 	supersededBy: String
+}
+
+"""A linked PR taken off its task (task t20261010-033523-18839): a mistaken link, or the superseded half of a pair."""
+type AgentTaskUnlinkedPr {
+	"""The PR as the task linked it."""
+	url: String
+	by: AgentActor
+	at: DateTime
+	"""Why, on one line; null when none was given."""
+	note: String
+	"""Who linked it again, as a link records it (the linking key's agent); null until relinked."""
+	relinkedBy: String
+	relinkedAt: DateTime
 }
 
 """A completed task sent back to a role."""
@@ -6746,4 +6781,32 @@ input TaskGroupInput {
 	dependsOn: [String]
 	defaultWorkLevel: Int
 	status: AgentTaskGroupStatus
+}
+
+# ---------------------------------------------------------------------
+# Merged release SBOM export options (task SCORE-24): shared by the user
+# fields releaseSbomExport / releaseSbomScore and their programmatic twins.
+# ---------------------------------------------------------------------
+
+enum ArtifactBelongsToEnum {
+	DELIVERABLE
+	RELEASE
+	SCE
+}
+
+enum ArtifactCoverageType {
+	DEV
+	TEST
+	BUILD_TIME
+}
+
+enum BomMediaType {
+	JSON
+	CSV
+	EXCEL
+}
+
+enum BomStructureType {
+	FLAT
+	HIERARCHICAL
 }
