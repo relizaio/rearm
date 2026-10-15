@@ -1271,6 +1271,14 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                         </n-space>
                     </n-form>
                 </div>
+                <!-- SCORE-42: the organization's default declared licence, written on the SBOM nodes
+                     ReARM makes. Its own block and its own documents, not fields of the form above:
+                     the CE mirror lacks them, and the form's mutation response must stay valid there.
+                     Hidden for the session once the panel's read is refused as schema drift. -->
+                <div v-if="declaredLicenseSupported" class="adminSettingsBlock mt-4" data-testid="org-default-license-block">
+                    <OrgDeclaredLicensePanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markDeclaredLicenseUnsupported" />
+                </div>
+                <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="org-default-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
                 <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
                      because both decide what an export carries. Its own block, not a field of the
                      form above: four mutations of its own and no Save. Hidden for the session once
@@ -1406,6 +1414,8 @@ import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
+import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
+import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
 import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
 import OrgIntegrations from './OrgIntegrations.vue'
@@ -3838,6 +3848,18 @@ const sbomSigningSupported: ComputedRef<boolean> = computed((): boolean =>
 
 function markSbomSigningUnsupported () {
     store.commit('SET_SBOM_SIGNING_SUPPORTED', false)
+}
+
+/**
+ * Whether this backend offers the declared licence (SCORE-42). Any of the three surfaces
+ * (this panel, a component's settings, a release's Meta tab) latches it false for the session
+ * when its own read is refused as schema drift; a failed request does not.
+ */
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function markDeclaredLicenseUnsupported () {
+    store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
 }
 
 const supportInjectionEnabled: Ref<boolean> = ref(false)

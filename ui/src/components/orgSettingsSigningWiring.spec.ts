@@ -79,7 +79,7 @@ describe('OrgSettings: the SBOM export signing section', () => {
         expect(directive(pane, 'if')).toBe('isOrgAdmin')
     })
 
-    it('follows the Support disclosure export block, as the first element after the settings form', () => {
+    it('follows the Support disclosure export block and the declared licence default after the settings form', () => {
         const order = documentOrder()
         const node = block[0][block[0].length - 1]
         const support = find((n) => text(n).includes('Support disclosure export'))
@@ -92,7 +92,13 @@ describe('OrgSettings: the SBOM export signing section', () => {
         const formAt = save[0].findIndex((n: any) => n.tag === 'n-form')
         const formBlock = save[0][formAt - 1]
         const siblings = elementChildren(save[0][formAt - 2])
-        expect(siblings[siblings.indexOf(formBlock) + 1]).toBe(node)
+        // SCORE-42 put the declared licence default (its block and its v-else note) between the
+        // form and this section: the form, the licence default, signing, the default view.
+        const license = byTestId('org-default-license-block')[0]
+        const licenseNote = byTestId('org-default-license-unsupported')[0]
+        expect(siblings[siblings.indexOf(formBlock) + 1]).toBe(license[license.length - 1])
+        expect(siblings[siblings.indexOf(formBlock) + 2]).toBe(licenseNote[licenseNote.length - 1])
+        expect(siblings[siblings.indexOf(formBlock) + 3]).toBe(node)
         // Not inside the form: it has its own mutations and no Save.
         expect(block[0].some((n: any) => n.tag === 'n-form')).toBe(false)
     })
