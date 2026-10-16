@@ -18,7 +18,7 @@ vi.mock('@/utils/commonFunctions', () => ({ default: { parseGraphQLError: (m: st
 
 const { default: Panel } = await import('./SbomSigningKeysPanel.vue')
 const { GENERATE_SBOM_SIGNING_KEY, IMPORT_SBOM_SIGNING_KEY, REVOKE_SBOM_SIGNING_KEY, SBOM_SIGNING_KEYS } = await import('@/utils/sbomSigningQueries')
-const { REVOKE_CONFIRM, ROTATE_CONFIRM, dateCell, jwksUrl } = await import('@/utils/sbomSigningKeys')
+const { PUBLIC_KEYS_NOTE, REVOKE_CONFIRM, ROTATE_CONFIRM, dateCell } = await import('@/utils/sbomSigningKeys')
 
 const ORG = '11111111-2222-3333-4444-555555555555'
 const JWK = '{"kty":"OKP","crv":"Ed25519","x":"11qYAYKxCrfVS_7TyWQHOg7hcvPapiMlrwIaaPcHURo"}'
@@ -75,7 +75,9 @@ describe('SbomSigningKeysPanel', () => {
         expect((w.find('[data-testid="sbom-signing-current-pem"] textarea').element as HTMLTextAreaElement).value).toBe(PEM)
         expect(w.find('[data-testid="sbom-signing-no-key"]').exists()).toBe(false)
 
-        expect(w.find('[data-testid="sbom-signing-jwks-url"]').text()).toBe(jwksUrl(window.location.origin, ORG))
+        // the public JWKS is withdrawn for now: no URL is shown, a note says it is upcoming experimental functionality
+        expect(w.find('[data-testid="sbom-signing-jwks-url"]').exists()).toBe(false)
+        expect(w.find('[data-testid="sbom-signing-public-keys-note"]').text()).toContain(PUBLIC_KEYS_NOTE)
 
         const rows = w.find('[data-testid="sbom-signing-others"]').findAll('tbody tr')
         expect(rows).toHaveLength(2)
@@ -98,7 +100,8 @@ describe('SbomSigningKeysPanel', () => {
         expect(w.find('[data-testid="sbom-signing-no-key"]').text()).toBe('No current key: exports are not signed.')
         expect(w.find('[data-testid="sbom-signing-current"]').exists()).toBe(false)
         expect(w.find('[data-testid="sbom-signing-others"]').exists()).toBe(false)
-        expect(w.find('[data-testid="sbom-signing-jwks-url"]').exists()).toBe(true)
+        expect(w.find('[data-testid="sbom-signing-jwks-url"]').exists()).toBe(false)
+        expect(w.find('[data-testid="sbom-signing-public-keys-note"]').exists()).toBe(true)
         expect(w.find('[data-testid="sbom-signing-generate"]').text()).toBe('Generate key')
         w.unmount()
     })

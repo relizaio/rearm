@@ -33,12 +33,7 @@
                 </div>
                 <div v-else data-testid="sbom-signing-no-key">{{ NO_KEY_TEXT }}</div>
 
-                <div class="sbom-signing-row mt-2" data-testid="sbom-signing-jwks">
-                    <span>JWKS URL:</span>
-                    <code data-testid="sbom-signing-jwks-url">{{ publicJwksUrl }}</code>
-                    <n-icon class="clickable" size="18" title="Copy JWKS URL" @click="copy(publicJwksUrl, 'JWKS URL')"><Clipboard /></n-icon>
-                </div>
-                <div class="text-muted" data-testid="sbom-signing-jwks-hint">{{ JWKS_HINT }} <code>{{ JWKS_VERIFY_COMMAND }}</code>.</div>
+                <div class="text-muted mt-2" data-testid="sbom-signing-public-keys-note"><em>Experimental:</em> {{ PUBLIC_KEYS_NOTE }}</div>
 
                 <n-space v-if="canManage" class="mt-2" data-testid="sbom-signing-actions">
                     <n-button type="primary" :disabled="busy" data-testid="sbom-signing-generate" @click="generate">{{ generateLabel(!!current) }}</n-button>
@@ -72,7 +67,7 @@
 
 <script lang="ts" setup>
 // Organization settings, "SBOM export signing" (SCORE-35, design 3.2 to 3.4): the CURRENT key,
-// the JWKS URL, the RETIRED and REVOKED keys, and Generate (Rotate) / Import / Revoke. Its own
+// a note that the public JWKS is not published yet, the RETIRED and REVOKED keys, and Generate (Rotate) / Import / Revoke. Its own
 // component so the section mounts in a test; OrgSettings gates it on org ADMIN and latches the
 // schema-drift flag from the `unsupported` event of the list query here.
 import { computed, h, ref, watch } from 'vue'
@@ -84,8 +79,8 @@ import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { GENERATE_SBOM_SIGNING_KEY, IMPORT_SBOM_SIGNING_KEY, REVOKE_SBOM_SIGNING_KEY, SBOM_SIGNING_KEYS } from '@/utils/sbomSigningQueries'
 import {
-    IMPORT_HINT, JWKS_HINT, JWKS_VERIFY_COMMAND, NO_KEY_TEXT, REVOKE_CONFIRM, ROTATE_CONFIRM, SECTION_INTRO, SECTION_TITLE,
-    dateCell, generateLabel, isSbomSigningUnsupported, jwksUrl, splitKeys,
+    IMPORT_HINT, NO_KEY_TEXT, PUBLIC_KEYS_NOTE, REVOKE_CONFIRM, ROTATE_CONFIRM, SECTION_INTRO, SECTION_TITLE,
+    dateCell, generateLabel, isSbomSigningUnsupported, splitKeys,
 } from '@/utils/sbomSigningKeys'
 import type { SbomSigningKey } from '@/utils/sbomSigningKeys'
 
@@ -108,7 +103,6 @@ const importError = ref('')
 const split = computed(() => splitKeys(keys.value))
 const current = computed((): SbomSigningKey | null => split.value.current)
 const others = computed((): SbomSigningKey[] => split.value.others)
-const publicJwksUrl = computed((): string => jwksUrl(window.location.origin, props.orgUuid))
 
 const messageOf = (e: any): string => commonFunctions.parseGraphQLError(e?.message || String(e))
 

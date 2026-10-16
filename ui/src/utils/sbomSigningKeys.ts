@@ -26,6 +26,12 @@ export const SECTION_INTRO = 'Merged CycloneDX JSON exports of this organization
 export const NO_KEY_TEXT = 'No current key: exports are not signed.'
 export const JWKS_HINT = 'Public, no account needed; every key with its status. Consumers verify with'
 export const JWKS_VERIFY_COMMAND = 'rearm bomutils verify-signature --key <this file>'
+/**
+ * Shown where the public JWKS URL used to be: the public key endpoint is withdrawn for now (rearm-saas #892),
+ * so the UI does not advertise it. jwksUrl and JWKS_HINT stay for when it returns.
+ */
+export const PUBLIC_KEYS_NOTE = 'Publishing the organization\'s public signing keys at a public URL (JWKS), so consumers can'
+    + ' verify signed exports without an account, is upcoming experimental functionality and is not available yet.'
 export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.'
 
 /** The confirm before Generate replaces a CURRENT key (Swal.fire options). */
