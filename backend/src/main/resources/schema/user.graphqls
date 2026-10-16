@@ -127,6 +127,32 @@ type Query {
 	releasesNeedingMyApproval(orgUuid: ID!): [ReleasePendingApproval!]
 	artifactReleases(artUuid: ID!): [Release]
 	artifactBomLatestVersion(artUuid: ID!): String
+	"""
+	Readiness score of the merged release BOM that releaseSbomExport returns as JSON for the same
+	arguments: the scoring engine's report, verbatim, as a JSON string. Needs ARTIFACT_DOWNLOAD on
+	the release, as the export does. Profiles are passed to the scoring service unchanged. A score
+	that cannot be made is an error with extensions.code SBOM_SCORE_ERROR and extensions.reason.
+	Writes no download-log entry and stores no report; with options never exported before it
+	creates the same stored merged BOM an export creates. excludeFileComponents as for
+	releaseSbomExport: leave components of type file out of the merged BOM (CISA 2026 Coverage);
+	null or false keeps them; the document then carries reliza:export:fileComponentsExcluded. The
+	engine scores the filtered document, so its report says skipFiles false and componentsSkipped 0.
+	includeSupportMetadata - omitted: support metadata is included when the organization's support
+	disclosure is ENABLED. true: refused unless ENABLED. false: never included.
+	includeInternalMetadata - omitted or true: ReARM's provenance markers are kept; false: stripped.
+	"""
+	releaseSbomScore(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType,
+		belongsTo: ArtifactBelongsToEnum, excludeCoverageTypes: [ArtifactCoverageType],
+		includeSupportMetadata: Boolean, includeInternalMetadata: Boolean,
+		excludeFileComponents: Boolean,
+		profiles: [String!]!): String
+	"""
+	Readiness score of one SBOM artifact's document as the download serves it with no optional
+	parameter (raw: the uploaded document): the scoring engine's report, verbatim, as a JSON string.
+	Needs ARTIFACT_DOWNLOAD as the download does. Only artifacts of type BOM with a stored SBOM are
+	scorable. Errors as for releaseSbomScore. Writes nothing.
+	"""
+	artifactSbomScore(artifact: ID!, raw: Boolean, version: Int, profiles: [String!]!): String
 	# Deliverables
 	deliverable(deliverable: ID!): Deliverable
 	listDeliverablesByComponent(componentUuid: ID!): [Deliverable]
@@ -835,9 +861,9 @@ type Mutation {
 	resetFederatedIdentityPin(apiKeyUuid: ID!): ApiKey
 	"Write user asks admins for a FREEFORM key: created at once as REQUESTED with the caller as holder and the proposed permissions; unusable until approved"
 	requestFreeformApiKey(orgUuid: ID!, notes: String, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
-	"Admin approves (ACTIVE, still without a secret) or denies (DENIED, reason appended to notes) a REQUESTED key"
+	"Admin approves (ACTIVE, still without a secret) or denies (DENIED, the reason kept in deniedReason, at most 256 characters; notes stay as written) a REQUESTED key"
 	resolveApiKeyRequest(apiKeyUuid: ID!, approve: Boolean!, reason: String): ApiKey
-	"Admin reassigns or clears (null) the holder of a FREEFORM key; the holder must be a member of the org"
+	"Admin reassigns or clears (null) the holder of a FREEFORM key; the holder must be a member of the org. A change of holder revokes the key's active CLI sessions."
 	setApiKeyHolder(apiKeyUuid: ID!, holder: ID): ApiKey
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
@@ -916,7 +942,19 @@ type Mutation {
 	addArtifactManual(artifactInput: CreateArtifactInput, artifactUuid: ID): Release
 
 	addOutboundDeliverablesManual(deliverables: AddDeliverableInput!): Boolean
-	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean, includeInternalMetadata: Boolean): String
+	"""
+	The merged release BOM. excludeFileComponents leaves components of type file out of the merged
+	BOM (CISA 2026 Coverage allows an SBOM to exclude non-code files); null or false keeps them. The
+	document then carries the metadata property reliza:export:fileComponentsExcluded with the number
+	left out.
+	includeSupportMetadata - omitted: support metadata is included when the organization's support
+	disclosure is ENABLED. true: refused unless ENABLED. false: never included.
+	includeInternalMetadata - omitted or true: ReARM's provenance markers are kept; false: stripped.
+	A JSON export with support metadata carries `reliza:support:disclosure`,
+	`reliza:support:unidentifiedComponents` and `reliza:support:unassessedComponents` in
+	metadata.properties.
+	"""
+	releaseSbomExport(release: ID!, tldOnly: Boolean, ignoreDev: Boolean, structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType, excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean, includeInternalMetadata: Boolean, excludeFileComponents: Boolean): String
 	releaseVdrExport(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 	releaseVdrExportWithApproval(release: ID!, includeSuppressed: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum, targetApproval: String): String
 	"""
@@ -1000,9 +1038,9 @@ type Mutation {
 	with a message.
 	"""
 	deleteApiKey(apiKeyUuid: ID!): Boolean
-	"""Add the second secret of a key id (rotation). Org admin. Returns the new secret once."""
+	"""Add the second secret of a key id (rotation). Returns the new secret once. A personal key's owner; a held Free Form key's holder; any other key, an unheld Free Form key included: an org admin."""
 	addApiKeySecret(apiKeyUuid: ID!, expiresDate: DateTime): ApiKeyForUser
-	"""Replace one secret in place; tokens exchanged with the old one stop working. Org admin. Returns the new secret once."""
+	"""Replace one secret in place; tokens exchanged with the old one stop working. Returns the new secret once. A personal key's owner; a held Free Form key's holder; any other key, an unheld Free Form key included: an org admin."""
 	regenerateApiKeySecret(apiKeyUuid: ID!, slot: Int!, expiresDate: DateTime): ApiKeyForUser
 	"Set or clear (null) the expiry of one secret"
 	setApiKeySecretExpiry(apiKeyUuid: ID!, slot: Int!, expiresDate: DateTime): ApiKey
@@ -1010,9 +1048,10 @@ type Mutation {
 	setApiKeySecretActive(apiKeyUuid: ID!, slot: Int!, active: Boolean!): ApiKey
 	"Remove one secret for good; the slot frees up and tokens exchanged with it stop working"
 	deleteApiKeySecret(apiKeyUuid: ID!, slot: Int!): ApiKey
-	"""Kill switch for the whole key id. Org admin."""
+	"""Kill switch for the whole key id. Org write access, or the key's owner or holder; an org admin's deactivation holds until an org admin re-activates the key, and anyone else's re-activation is refused."""
 	setApiKeyStatus(apiKeyUuid: ID!, status: ApiKeyStatus!): ApiKey
 	triggerReleasecompletionfinalizer(release: ID!): Boolean
+	"Org admin removes a member from the org. Free Form keys the member held in this org lose their holder, their key requests there (waiting or denied) are withdrawn, and their active CLI sessions on keys of this org are revoked."
 	removeUser(org: ID!, user: ID!): Boolean
 
 
@@ -1666,18 +1705,6 @@ input ApprovalRoleInput {
 	displayView: String
 }
 
-enum ArtifactBelongsToEnum {
-	DELIVERABLE
-	RELEASE
-	SCE
-}
-
-enum ArtifactCoverageType {
-	DEV
-	TEST
-	BUILD_TIME
-}
-
 type ArtifactWithAttribution {
 	purl: String!
 	name: String
@@ -1702,17 +1729,6 @@ type BearIntegration {
 	uri: String
 	configured: Boolean!
 	skipPatterns: [String]
-}
-
-enum BomMediaType {
-    JSON
-    CSV
-    EXCEL
-}
-
-enum BomStructureType{
-	FLAT
-	HIERARCHICAL
 }
 
 input BranchInput {

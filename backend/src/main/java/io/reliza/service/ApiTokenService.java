@@ -327,7 +327,8 @@ public class ApiTokenService {
 					c.getStringClaim("fp"), slot, c.getJWTID(), c.getExpirationTime().toInstant(),
 					sid == null ? null : UUID.fromString(sid), act == null ? null : UUID.fromString(act), rules, fed));
 		} catch (Exception e) {
-			log.debug("API token rejected: {}", e.getMessage());
+			// the class name only: the parse messages quote the token text, read before the MAC check
+			log.debug("API token rejected: {}", e.getClass().getSimpleName());
 			return Optional.empty();
 		}
 	}

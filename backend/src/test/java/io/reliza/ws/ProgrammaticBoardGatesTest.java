@@ -36,7 +36,7 @@ class ProgrammaticBoardGatesTest {
 	@Test
 	void everyProgrammaticFieldIsClassifiedAndNothingElseIs() {
 		Set<String> fields = programmaticFields();
-		assertEquals(44, fields.size(), fields.toString());
+		assertEquals(45, fields.size(), fields.toString());
 		assertEquals(fields, new TreeSet<>(AgentTaskDataFetcher.PROGRAMMATIC_BOARD_GATES.keySet()),
 				"the gate map and the fetcher's programmatic fields must be the same set");
 	}

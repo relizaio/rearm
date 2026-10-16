@@ -30,4 +30,7 @@ serial number.
 The refusal names the serial number and both versions, and applies to `rearm addrelease --rebuild`
 and to any `rearm addartifact` that re-uses an existing serial. It exists because a stored raw SBOM
 is immutable: ReARM keeps the bytes it was given as the record of what was actually uploaded and
-scanned, so a second upload claiming the same identity cannot replace them.
+scanned, so a second upload claiming the same identity cannot replace them. A higher version of a
+serialNumber that another component of the organization uploaded first is refused too, with a
+message saying it belongs to another component; see
+[Which component may supersede an uploaded SBOM](../workflows/exporting-compliance-artifacts#which-component-may-supersede-an-uploaded-sbom).

@@ -300,9 +300,17 @@ as the seat, or any `BOARD_WRITE` key declares it: `rearm agent task
 supersedepr <key> --session <uuid> --old <closed pr> --by <replacement pr>`;
 delivery then counts the replacement only. If CI never reported the old PR
 closed and the tracker cannot be read, declare it abandoned first and then
-declare the supersede; an abandoned unit accepts one. A closed PR nobody replaced:
+declare the supersede; an abandoned unit accepts one. The other way round is
+refused: a superseded PR is not marked abandoned (it already is) or declared
+merged. A closed PR nobody replaced:
 park the task for the operator with a question naming the PR and the options,
-and leave the call to the operator. A PR that shows unregistered means the repository's CI is not
+and leave the call to the operator. A PR linked by mistake, or the superseded
+half of a pair, is unlinked by the same three: `rearm agent task unlinkpr <key>
+--session <uuid> --pr <pr> --note '<why>'`. It is refused for a merged or
+delivered PR, for a replacement (unlink the superseded one first), on a task
+parked for the operator, and past the pass whenever it would leave nothing to
+deliver or take an open PR out; only a person takes an open PR out then.
+A PR that shows unregistered means the repository's CI is not
 reporting: merge by hand and complete the task yourself.
 
 After a merge on a board whose PRs are not registered here, or whose

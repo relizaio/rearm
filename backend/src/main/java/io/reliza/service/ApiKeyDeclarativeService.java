@@ -4,6 +4,8 @@
 
 package io.reliza.service;
 
+import java.lang.Character.UnicodeScript;
+import java.text.Normalizer;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Comparator;
@@ -77,9 +79,47 @@ public class ApiKeyDeclarativeService {
 	/** The longest life a declared secret expiry gives: ten years. */
 	static final int MAX_SECRET_EXPIRES_DAYS = 3650;
 
+	/** Why a newly assigned name with a character that draws nothing, or stray whitespace, is refused; the code point and its place follow. */
+	static final String INVISIBLE_NAME = "a key's name has no control, invisible or bidirectional characters and no doubled or edge whitespace";
+
+	/** Why a newly assigned name not in NFC form is refused: two spellings of one name would be two keys. */
+	static final String NOT_NFC_NAME = "a key's name must be in Unicode normalization form NFC (normalize it first)";
+
+	/** Unicode 16 Default_Ignorable_Code_Point, as [first, last] ranges: code points that draw nothing. */
+	private static final int[][] DEFAULT_IGNORABLE = {
+			{0x00AD, 0x00AD}, {0x034F, 0x034F}, {0x061C, 0x061C}, {0x115F, 0x1160}, {0x17B4, 0x17B5}, {0x180B, 0x180F},
+			{0x200B, 0x200F}, {0x202A, 0x202E}, {0x2060, 0x206F}, {0x3164, 0x3164}, {0xFE00, 0xFE0F}, {0xFEFF, 0xFEFF},
+			{0xFFA0, 0xFFA0}, {0xFFF0, 0xFFF8}, {0x1BCA0, 0x1BCA3}, {0x1D173, 0x1D17A}, {0xE0000, 0xE0FFF}};
+
+	/** Blanks that are not default-ignorable but draw nothing all the same: the blank Braille pattern, the null notehead. */
+	private static final Set<Integer> BLANKS = Set.of(0x2800, 0x1D159);
+
+	/** Scripts whose shaping uses the zero-width joiner and non-joiner. */
+	private static final Set<UnicodeScript> JOINING_SCRIPTS = EnumSet.of(UnicodeScript.ARABIC, UnicodeScript.SYRIAC,
+			UnicodeScript.NKO, UnicodeScript.MONGOLIAN, UnicodeScript.DEVANAGARI, UnicodeScript.BENGALI, UnicodeScript.GURMUKHI,
+			UnicodeScript.GUJARATI, UnicodeScript.ORIYA, UnicodeScript.TAMIL, UnicodeScript.TELUGU, UnicodeScript.KANNADA,
+			UnicodeScript.MALAYALAM, UnicodeScript.SINHALA, UnicodeScript.MYANMAR, UnicodeScript.KHMER, UnicodeScript.TIBETAN,
+			UnicodeScript.LAO);
+
+	/** Zero-width non-joiner. */
+	private static final int ZWNJ = 0x200C;
+	/** Zero-width joiner. */
+	private static final int ZWJ = 0x200D;
+	/** Variation selector 15: show as text. */
+	private static final int TEXT_PRESENTATION = 0xFE0E;
+	/** Variation selector 16: show as emoji. */
+	private static final int EMOJI_PRESENTATION = 0xFE0F;
+	/** Combining enclosing keycap. */
+	private static final int KEYCAP = 0x20E3;
+	/** The waving black flag that a tag sequence turns into a subdivision flag. */
+	private static final int BLACK_FLAG = 0x1F3F4;
+	/** The cancel tag that ends a tag sequence. */
+	private static final int CANCEL_TAG = 0xE007F;
+
 	@Autowired private ApiKeyService apiKeyService;
 	@Autowired private DeclarativeConfigService declarativeConfigService;
 	@Autowired private GetOrganizationService getOrganizationService;
+	@Autowired private AuthorizationService authorizationService;
 
 	/**
 	 * Who declares, mints or archives (task RD3-11), as a check of what it may give a key: {@link #excess} lists
@@ -186,6 +226,10 @@ public class ApiKeyDeclarativeService {
 				String nameProblem = nameProblem(name);
 				if (null != nameProblem) { result.add(error(name, nameProblem)); continue; }
 				Optional<ApiKey> cur = apiKeyService.findByDeclaredName(orgUuid, name);
+				if (cur.isEmpty()) {
+					String invisible = invisibleNameProblem(name);
+					if (null != invisible) { result.add(error(name, invisible)); continue; }
+				}
 				result.add(declarativeConfigService.entry(dryRun, () -> cur.isEmpty()
 						? createKey(orgUuid, k, dryRun, prov, caller, wu)
 						: updateKey(orgUuid, cur.get(), k, dryRun, prov, caller, wu)));
@@ -235,12 +279,15 @@ public class ApiKeyDeclarativeService {
 		String problem = settingsProblem(k);
 		if (null != problem) return error(name, problem);
 		List<PermissionDto> perms = has(k, "permissions", k.getPermissions()) ? permissionsOf(orgUuid, k.getPermissions()) : List.of();
+		// TPF-15: grant objects (PERSPECTIVE, BOARD) must be live objects of the caller's organization,
+		// before the strength check and the dry-run return.
+		authorizationService.assertGrantObjectsExist(orgUuid, perms);
 		List<String> excess = caller.excess(perms);
 		if (!excess.isEmpty()) return error(name, strongerThanCaller("declare", excess));
 		List<String> fields = declaredFields(k);
 		if (dryRun) return Change.of(DeclarativeKind.API_KEYS, name, Action.CREATE, fields, null);
 		ApiKey ak = apiKeyService.createObjectApiKey(orgUuid, ApiTypeEnum.FREEFORM, orgUuid, UUID.randomUUID().toString(), null, wu);
-		apiKeyService.writeDeclaredSettings(ak.getUuid(), settings(k, prov, perms), wu);
+		apiKeyService.writeDeclaredSettings(ak.getUuid(), settings(k, prov, perms, caller), wu);
 		return Change.of(DeclarativeKind.API_KEYS, name, Action.CREATE, fields, null);
 	}
 
@@ -256,12 +303,13 @@ public class ApiKeyDeclarativeService {
 		List<String> fields = new ArrayList<>();
 		if (has(k, "permissions", k.getPermissions())) {
 			perms = permissionsOf(orgUuid, k.getPermissions());
+			authorizationService.assertGrantObjectsExist(orgUuid, perms);
 			if (!permissionKeys(perms).equals(permissionKeys(current))) fields.add("permissions");
 		}
-		if (has(k, "notes", k.getNotes()) && !Objects.equals(StringUtils.isBlank(k.getNotes()) ? null : k.getNotes(),
-				StringUtils.isBlank(akd.getNotes()) ? null : akd.getNotes())) fields.add("notes");
+		if (has(k, "notes", k.getNotes()) && !Objects.equals(ApiKeyService.normalizeNotes(k.getNotes()),
+				ApiKeyService.normalizeNotes(akd.getNotes()))) fields.add("notes");
 		if (has(k, "status", k.getStatus()) && null != k.getStatus() && k.getStatus() != akd.getStatus()) {
-			if (k.getStatus() == ApiKeyStatus.ACTIVE && akd.isAdminDisabled() && !caller.orgAdmin()) {
+			if (k.getStatus() == ApiKeyStatus.ACTIVE && akd.isSwitchedOffByAdmin() && !caller.orgAdmin()) {
 				return error(name, "this key was disabled by an organization administrator; only an administrator can re-enable it");
 			}
 			fields.add("status");
@@ -276,17 +324,18 @@ public class ApiKeyDeclarativeService {
 		List<String> excess = caller.excess(perms);
 		if (!excess.isEmpty()) return error(name, strongerThanCaller("change", excess));
 		if (dryRun) return Change.of(DeclarativeKind.API_KEYS, name, Action.UPDATE, fields, null);
-		apiKeyService.writeDeclaredSettings(ak.getUuid(), settings(k, prov, perms), wu);
+		apiKeyService.writeDeclaredSettings(ak.getUuid(), settings(k, prov, perms, caller), wu);
 		return Change.of(DeclarativeKind.API_KEYS, name, Action.UPDATE, fields, null);
 	}
 
-	private ApiKeyService.DeclaredSettings settings(ApiKeySpecDto k, DeclarativeProvenance prov, List<PermissionDto> perms) {
+	private ApiKeyService.DeclaredSettings settings(ApiKeySpecDto k, DeclarativeProvenance prov, List<PermissionDto> perms,
+			Caller caller) {
 		Set<String> set = new HashSet<>();
 		for (String f : List.of("notes", "status", "permissions", "secretExpiresDays", "sessionMaxMinutes")) {
 			if (has(k, f, valueOf(k, f))) set.add(f);
 		}
 		return new ApiKeyService.DeclaredSettings(k.getName(), prov, set, k.getNotes(), k.getStatus(), perms,
-				k.getSecretExpiresDays(), k.getSessionMaxMinutes());
+				k.getSecretExpiresDays(), k.getSessionMaxMinutes(), caller.orgAdmin());
 	}
 
 	private static Object valueOf(ApiKeySpecDto k, String field) {
@@ -320,6 +369,8 @@ public class ApiKeyDeclarativeService {
 		if (null != k.getStatus() && k.getStatus() != ApiKeyStatus.ACTIVE && k.getStatus() != ApiKeyStatus.INACTIVE) {
 			return "status is ACTIVE or INACTIVE";
 		}
+		String notesProblem = ApiKeyService.notesProblem(k.getNotes());
+		if (null != notesProblem) return notesProblem;
 		return null;
 	}
 
@@ -330,6 +381,86 @@ public class ApiKeyDeclarativeService {
 		if (name.length() > MAX_NAME) return "a key's name is at most " + MAX_NAME + " characters";
 		if (name.chars().anyMatch(Character::isISOControl)) return "a key's name has no control characters";
 		return null;
+	}
+
+	/**
+	 * Why a name about to be assigned cannot be, or null. Names are identity, so a name is refused, not cleaned,
+	 * when it is not in NFC form (two spellings of one name would be two keys) or when a code point in it draws
+	 * nothing: controls, format and bidirectional characters, separators, private-use and unassigned code points,
+	 * Unicode's default-ignorable code points (zero-width characters, variation selectors, fillers, tags), the
+	 * blanks, a space other than U+0020, and a space at an edge or doubled. Default-ignorables keep their job in
+	 * emoji and in scripts that need them: a zero-width joiner in an emoji sequence, a joiner or non-joiner inside
+	 * one Arabic, Indic or Southeast Asian script, a presentation selector that changes how a pictograph shows,
+	 * VS16 on a keycap, and tags in a complete flag sequence. A combining mark needs a base that draws. The refusal
+	 * names the code point and its place, counted in code points from 1. Checked only where a name is assigned: a
+	 * key that already has such a name is still found by it.
+	 */
+	static String invisibleNameProblem(String name) {
+		if (!Normalizer.isNormalized(name, Normalizer.Form.NFC)) return NOT_NFC_NAME;
+		int[] cps = name.codePoints().toArray();
+		for (int i = 0; i < cps.length; i++) {
+			if (!drawsInName(cps, i)) return INVISIBLE_NAME + String.format(" (U+%04X at code point %d)", cps[i], i + 1);
+		}
+		return null;
+	}
+
+	/** Whether the code point at {@code i} is a visible part of the name. */
+	private static boolean drawsInName(int[] cps, int i) {
+		int cp = cps[i];
+		int before = i > 0 ? cps[i - 1] : -1;
+		int after = i + 1 < cps.length ? cps[i + 1] : -1;
+		if (cp == ' ') return before >= 0 && after >= 0 && before != ' ';
+		if (cp == ZWJ && endsEmoji(before) && Character.isExtendedPictographic(after)) return true;
+		if ((cp == ZWJ || cp == ZWNJ) && after >= 0) {
+			UnicodeScript script = scriptBefore(cps, i);
+			if (JOINING_SCRIPTS.contains(script) && script == UnicodeScript.of(after)) return true;
+		}
+		// a presentation selector only where it changes something; VS16 also on a keycap base
+		if (cp == EMOJI_PRESENTATION) {
+			return (Character.isExtendedPictographic(before) && !Character.isEmojiPresentation(before))
+					|| (isKeycapBase(before) && after == KEYCAP);
+		}
+		if (cp == TEXT_PRESENTATION) return Character.isExtendedPictographic(before) && Character.isEmojiPresentation(before);
+		if (cp == KEYCAP) return before == EMOJI_PRESENTATION || isKeycapBase(before);
+		if (isTag(cp)) return (before == BLACK_FLAG || isTag(before)) && (isTag(after) || after == CANCEL_TAG);
+		if (cp == CANCEL_TAG) return isTag(before);
+		if (isDefaultIgnorable(cp) || BLANKS.contains(cp)) return false;
+		return switch (Character.getType(cp)) {
+			case Character.CONTROL, Character.FORMAT, Character.LINE_SEPARATOR, Character.PARAGRAPH_SEPARATOR,
+					Character.SURROGATE, Character.PRIVATE_USE, Character.UNASSIGNED, Character.SPACE_SEPARATOR -> false;
+			case Character.NON_SPACING_MARK, Character.ENCLOSING_MARK -> before >= 0 && before != ' ' && !isDefaultIgnorable(before);
+			default -> true;
+		};
+	}
+
+	/** Whether an emoji sequence can go on after this code point: a pictograph, its VS16 or its skin tone. */
+	private static boolean endsEmoji(int cp) {
+		return Character.isExtendedPictographic(cp) || cp == EMOJI_PRESENTATION || Character.isEmojiModifier(cp);
+	}
+
+	/** The script of the text before {@code i}, past combining marks of no script of their own; null at the start. */
+	private static UnicodeScript scriptBefore(int[] cps, int i) {
+		for (int j = i - 1; j >= 0; j--) {
+			UnicodeScript script = UnicodeScript.of(cps[j]);
+			if (script != UnicodeScript.INHERITED) return script;
+		}
+		return null;
+	}
+
+	private static boolean isDefaultIgnorable(int cp) {
+		for (int[] range : DEFAULT_IGNORABLE) {
+			if (cp >= range[0] && cp <= range[1]) return true;
+		}
+		return false;
+	}
+
+	private static boolean isKeycapBase(int cp) {
+		return (cp >= '0' && cp <= '9') || cp == '#' || cp == '*';
+	}
+
+	/** A tag character of an emoji tag sequence (the cancel tag that ends one is CANCEL_TAG). */
+	private static boolean isTag(int cp) {
+		return cp >= 0xE0020 && cp < CANCEL_TAG;
 	}
 
 	static String typeRefusal(ApiTypeEnum type) {
@@ -441,7 +572,7 @@ public class ApiKeyDeclarativeService {
 		k.setName(akd.getDeclaredName());
 		k.setType(ak.getObjectType());
 		k.setPermissions(permissionsSpecOf(ak.getOrg(), currentPermissions(ak, akd)));
-		k.setNotes(StringUtils.isBlank(akd.getNotes()) ? null : akd.getNotes());
+		k.setNotes(ApiKeyService.normalizeNotes(akd.getNotes()));
 		k.setStatus(akd.getStatus());
 		k.setSecretExpiresDays(akd.getSecretExpiresDays());
 		k.setSessionMaxMinutes(akd.getSessionMaxMinutes());
@@ -482,7 +613,7 @@ public class ApiKeyDeclarativeService {
 			ZonedDateTime lastUsedDate) {}
 
 	/** A key as the provider and `rearm apikey list` read it: its declaration, its identity and its secrets' metadata. */
-	public record KeyView(UUID uuid, String keyId, String name, ApiTypeEnum type, ApiKeyStatus status, boolean adminDisabled, String notes, KeyPermissionsSpecDto permissions,
+	public record KeyView(UUID uuid, String keyId, String name, ApiTypeEnum type, ApiKeyStatus status, boolean adminDisabled, String notes, String deniedReason, KeyPermissionsSpecDto permissions,
 			Integer secretExpiresDays, Integer sessionMaxMinutes, List<SecretSlot> secretSlots,
 			DeclarativeProvenance declarative) {}
 
@@ -504,7 +635,8 @@ public class ApiKeyDeclarativeService {
 		List<SecretSlot> slots = akd.effectiveSecrets(ak.getApiKey()).stream()
 				.map(x -> new SecretSlot(x.getSlot(), x.isActive(), x.getCreatedDate(), x.getExpiresDate(), x.getLastUsedDate()))
 				.sorted(Comparator.comparingInt(SecretSlot::slot)).toList();
-		return new KeyView(ak.getUuid(), ApiKeyService.keyIdOf(ak), akd.getDeclaredName(), ak.getObjectType(), akd.getStatus(), akd.isAdminDisabled(), akd.getNotes(),
+		return new KeyView(ak.getUuid(), ApiKeyService.keyIdOf(ak), akd.getDeclaredName(), ak.getObjectType(), akd.getStatus(), akd.isSwitchedOffByAdmin(),
+				ApiKeyService.normalizeNotes(akd.getNotes()), akd.getDeniedReason(),
 				ak.getObjectType() == ApiTypeEnum.FREEFORM || ak.getObjectType() == ApiTypeEnum.USER
 						? permissionsSpecOf(ak.getOrg(), currentPermissions(ak, akd)) : null,
 				akd.getSecretExpiresDays(), akd.getSessionMaxMinutes(), slots, akd.getDeclarative());
@@ -540,10 +672,13 @@ public class ApiKeyDeclarativeService {
 	 * uuid, must be one a file may declare, and no stronger than the caller; the expiry follows the key's
 	 * secretExpiresDays.
 	 */
+	@Transactional(rollbackFor = RelizaException.class)
 	public MintedSecret mintSecret(UUID orgUuid, String key, int slot, boolean rotate, Caller caller, WhoUpdated wu)
 			throws RelizaException {
 		if (slot < 1 || slot > ApiKeyData.MAX_SECRETS) throw new RelizaException("A key's secret slot is 1 or " + ApiKeyData.MAX_SECRETS);
-		ApiKey ak = resolveKey(orgUuid, key);
+		// decided on the row locked here, the row the mint then writes: a holder set meanwhile stops the mint
+		ApiKey ak = apiKeyService.getApiKeyWriteLocked(resolveKey(orgUuid, key).getUuid())
+				.orElseThrow(() -> new RelizaException("API key not found"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 		if (!DECLARABLE.contains(ak.getObjectType())) {
 			throw new RelizaException("secrets are minted here for FREEFORM keys; this is a " + ak.getObjectType() + " key");
@@ -612,6 +747,8 @@ public class ApiKeyDeclarativeService {
 		}
 		String problem = nameProblem(name);
 		if (null != problem) throw new RelizaException(problem);
+		String invisible = name.equals(akd.getDeclaredName()) ? null : invisibleNameProblem(name);
+		if (null != invisible) throw new RelizaException(invisible);
 		Optional<ApiKey> other = apiKeyService.findByDeclaredName(orgUuid, name).filter(k -> !k.getUuid().equals(keyUuid));
 		if (other.isPresent()) throw new RelizaException("another key is declared as " + name);
 		return apiKeyService.setDeclaredName(keyUuid, name, wu);

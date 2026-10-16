@@ -81,9 +81,7 @@ describe('scoreBomProbe over HTTP', () => {
         await response.arrayBuffer();
     }, LARGE_BODY_TIMEOUT_MS);
 
-    // Same gate as I-0 of bom-score.test.ts: the CLI with bomutils score is pinned for
-    // linux/amd64 only until the repin (SCORE-4 design 3.7). Only this case needs the CLI.
-    it.skipIf(process.arch !== 'x64')('HT-5 returns the report verbatim over HTTP', async () => {
+    it('HT-5 returns the report verbatim over HTTP', async () => {
         const bom = fs.readFileSync(path.join(FIXTURES, 'full.cdx.json'), 'utf8');
         const profiles = ['cisa-2026', 'ntia-2021', 'fda'];
 

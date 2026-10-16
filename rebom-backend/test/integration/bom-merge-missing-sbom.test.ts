@@ -161,8 +161,7 @@ describe('product merge with a component release that has no SBOM', () => {
         expect(property(bom, COMPONENTS_WITHOUT_SBOM_PROPERTY)).toStrictEqual([]);
     });
 
-    // T-12: the image pins a CLI with `bomutils score` for linux/amd64 only (SCORE-4 design 3.7).
-    it.skipIf(process.arch !== 'x64')('scores the merge the same with and without the unknown composition, which no check reads (T-12)', async () => {
+    it('scores the merge the same with and without the unknown composition, which no check reads (T-12)', async () => {
         const bom = await productMerge(await twoInputs(), [httpd({ purl: 'pkg:oci/httpd@2.4.68' })]);
         expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [HTTPD] }]);
         const withoutComposition = structuredClone(bom);

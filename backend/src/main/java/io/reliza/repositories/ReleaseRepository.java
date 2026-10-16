@@ -291,13 +291,18 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * predicate is spelled identically to the finder's first condition so the
 	 * V73 partial index serves it -- the count is pool-sized, not table-sized.
 	 */
-	@Query(value = """
-			SELECT count(*) FROM rearm.releases
-			WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
-			  AND (flow_control->>'metricsComputeSkipUntil' IS NULL
-			       OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-			""", nativeQuery = true)
+	@Query(value = VariableQueries.COUNT_RELEASES_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE, nativeQuery = true)
 	long countReleasesEligibleForMetricsCompute();
+
+	/**
+	 * Whether one release is eligible for the BY_UPDATE metrics compute: the finder's exact
+	 * condition, for a single row. The finder itself returns only the oldest {@code limit}
+	 * eligible releases, so "is X in findReleasesForMetricsComputeByUpdate(n)" stops answering
+	 * "is X eligible" as soon as more than n other releases are -- which a shared test database
+	 * reaches. Ask this instead.
+	 */
+	@Query(value = VariableQueries.IS_RELEASE_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE, nativeQuery = true)
+	boolean isEligibleForMetricsComputeByUpdate(UUID uuid);
 
 	
 	@Query(

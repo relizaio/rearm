@@ -34,7 +34,6 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -231,8 +230,10 @@ public class ComponentDataFetcher {
 		RelizaObject ro = opd.isPresent() ? opd.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.COMPONENT, componentUuid, List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		boolean byAdmin = authorizationService.isUserAuthorizedForObject(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
+				opd.get().getOrg(), List.of(ro), CallType.ADMIN);
 		
-		String apiKey = apiKeyService.setObjectApiKey(opd.get().getUuid(), ApiTypeEnum.COMPONENT, null, null, null, wu);
+		String apiKey = apiKeyService.setObjectApiKey(opd.get().getUuid(), ApiTypeEnum.COMPONENT, null, null, null, byAdmin, wu);
 		
 		ApiKeyForUserDto retKey = ApiKeyForUserDto.builder()
 				.apiKey(apiKey)
@@ -252,6 +253,8 @@ public class ComponentDataFetcher {
 		var ahp = authCtx.ahp();
 		UUID authOrgUuid = authCtx.orgUuid();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
 
@@ -305,12 +308,13 @@ public class ComponentDataFetcher {
 			// API key is WRITE on the perspective (FREEFORM keys), or ORGANIZATION_RW which
 			// covers the perspective implicitly. Only real perspectives are accepted.
 			if (authOrgUuid == null) throw new AccessDeniedException("Invalid authorization type");
-			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid)
-					.orElseThrow(() -> new RelizaException("Perspective not found"));
-			if (pd.getType() != PerspectiveType.PERSPECTIVE) {
-				throw new RelizaException("Cannot create component in a product-derived perspective");
-			}
+			var pd = ossPerspectiveService.requireAssignablePerspective(authOrgUuid, perspectiveUuid);
 			OrganizationData od = getOrganizationService.getOrganizationData(authOrgUuid).get();
+			if (ahp.isFederatedIdentity()) {
+				// same gate as the no-perspective branch below: own repository and a rule that allows creation
+				authorizationService.isFederatedKeyAuthorizedToCreateUnderVcs(
+						ahp, authOrgUuid, (String) getNewVersionInput.get("vcsUri"), List.of(od));
+			}
 			if (ahp.isRbacKey()) {
 				FreeformKeyVerification fkv = authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 						ahp, PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid,
@@ -471,6 +475,8 @@ public class ComponentDataFetcher {
 		// authCtx so both key types work.
 		UUID orgUuid = authCtx.orgUuid();
 		if (null == ahp || null == orgUuid) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
 		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
@@ -559,7 +565,8 @@ public class ComponentDataFetcher {
 			ComponentDto componentDto = Utils.OM.convertValue(componentData, ComponentDto.class);
 			if (null != cpd.getIncludeApi() && cpd.getIncludeApi()) {
 				String apiKeyId = ApiTypeEnum.COMPONENT.toString() + "__" + componentData.getUuid().toString();
-				String apiKey = apiKeyService.setObjectApiKey(componentData.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, ar.getWhoUpdated());
+				// a new component has no key row yet, so there is no administrator's kill switch to keep
+				String apiKey = apiKeyService.setObjectApiKey(componentData.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, false, ar.getWhoUpdated());
 				componentDto.setApiKeyId(apiKeyId);
 				componentDto.setApiKey(apiKey);
 			}

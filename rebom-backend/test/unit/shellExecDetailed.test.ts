@@ -40,11 +40,12 @@ describe('shellExecDetailed', () => {
     });
 
     it('H-4 kills the process at the timeout and resolves after it closed', async () => {
+        // 3 s timeout: an emulated node start is about 1 s (SCORE-7 design round 3, ADR-9)
         const started = Date.now();
         const r = await shellExecDetailed(NODE,
-            ['-e', 'process.stdout.write(String(process.pid)); setTimeout(() => {}, 10000)'],
-            { timeoutMs: 200, maxStdoutBytes: 1000 });
-        expect(Date.now() - started).toBeLessThan(2000);
+            ['-e', 'process.stdout.write(String(process.pid)); setTimeout(() => {}, 60000)'],
+            { timeoutMs: 3000, maxStdoutBytes: 1000 });
+        expect(Date.now() - started).toBeLessThan(10000);
         expect(r.timedOut).toBe(true);
         expect(r.signal).toBe('SIGKILL');
         expect(r.code).toBeNull();

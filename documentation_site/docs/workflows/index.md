@@ -15,6 +15,7 @@ sidebarDepth: 2
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
 - [Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring)
+- [Signing exported SBOMs](./signing-exported-sboms)
 - [Pull Requests](./pull-requests)
 - [Committers & Commit Signing](./committers)
 

@@ -1,0 +1,2 @@
+name,version,purl
+alpha,1.0.0,pkg:npm/alpha@1.0.0

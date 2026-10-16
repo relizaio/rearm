@@ -60,6 +60,9 @@ import { useStore } from 'vuex'
 import { NIcon, NCheckbox, NModal, NDataTable } from 'naive-ui'
 import SideBySide from '@/components/SideBySide.vue'
 import { Eye, Download, LayoutColumns } from '@vicons/tabler'
+import { releaseActorLabel } from '@/utils/actorLabel'
+import { useOrgKeyRefs } from '@/utils/useOrgKeyRefs'
+import commonFunctions from '@/utils/commonFunctions'
 const props = defineProps<{
     instanceUuid: String,
     history: Array,
@@ -74,20 +77,13 @@ const comparisonCheckboxes: Ref<any> = ref({})
 const instance: ComputedRef<any> = computed((): any => {
     return store.getters.instanceById(props.instanceUuid, -1)
 })
-const parsedHistory: Ref<any[]> = ref([])
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key actor reads as a key label; loaded for admins only
+const { orgKeys, load: loadOrgKeys } = useOrgKeyRefs((org) => store.dispatch('fetchApiKeyRefsOfOrg', org))
 const revisionsToCompare: Ref<any[]> = ref([])
 
 const showRevisionComparisonModal = ref(false)
 
-const displayUser = function (userId: string) {
-    let displayRes = userId
-    let user = users.value.find(u => (u.uuid === userId))
-    if (user) {
-        displayRes = user.name
-    }
-    return displayRes
-}
 
 const handleComparison = function (revision: any) {
     if (revisionsToCompare.value.length > 1) revisionsToCompare.value = []
@@ -164,28 +160,33 @@ function formatChangeType(raw: any): string {
     return s
 }
 
-const onCreate = async function () {
-    // get users
-    users.value = store.getters.allUsers
-    // parse history — supports both the legacy axios shape (h.instance,
-    // h.dateActual, h.lastUpdatedBy, h.type) and the new GraphQL shape
-    // (h.instanceUuid, h.date, h.updatedBy, h.changeType) so the same
-    // table renders both Plan and Actual history.
-    props.history.forEach((h: any) => {
-        const instanceField = h.instanceUuid || h.instance
-        const dateField = h.date || h.dateActual
-        const updatedByUuid = h.updatedBy || h.lastUpdatedBy
-        const rawType = h.changeType || h.type
-        const parsedHist: any = {
-            instance: instanceField,
-            uuid: h.uuid,
-            revision: h.revision,
-            date: dateField ? (new Date(dateField)).toLocaleString('en-CA') : '',
-            updatedBy: updatedByUuid ? displayUser(updatedByUuid) : (h.updateType || 'system'),
-            type: formatChangeType(rawType)
-        }
-        parsedHistory.value.push(parsedHist)
-    })
+// The rows, relabelled as the users and keys arrive. Supports both the legacy axios shape (h.instance,
+// h.dateActual, h.lastUpdatedBy, h.type, and createdType for the update type) and the GraphQL shape
+// (h.instanceUuid, h.date, h.updatedBy, h.changeType, h.updateType), so the same table renders both Plan and
+// Actual history.
+const parsedHistory: ComputedRef<any[]> = computed((): any[] => ((props.history || []) as any[]).map((h: any) => {
+    const updatedByUuid = h.updatedBy || h.lastUpdatedBy
+    const updateType = h.updateType ?? h.createdType
+    const dateField = h.date || h.dateActual
+    return {
+        instance: h.instanceUuid || h.instance,
+        uuid: h.uuid,
+        revision: h.revision,
+        date: dateField ? (new Date(dateField)).toLocaleString('en-CA') : '',
+        updatedBy: releaseActorLabel(updatedByUuid, updateType, users.value, orgKeys.value) || updateType || 'System',
+        updatedByUuid,
+        type: formatChangeType(h.changeType || h.type)
+    }
+}))
+
+const onCreate = function () {
+    const org = props.orgProp as string
+    const myuser = store.getters.myuser
+    // not awaited: the rows show at once and relabel when the users and keys arrive; the store's users, the
+    // org's when this sits in the instances page, name people meanwhile
+    users.value = store.getters.allUsers || []
+    store.dispatch('fetchUsers', org).then((fetched: any[]) => { users.value = fetched || [] }).catch((err: any) => console.error(err))
+    loadOrgKeys(org, commonFunctions.isAdmin(org, myuser) || !!myuser?.isGlobalAdmin)
 }
 const historyFields: any = [
     {
@@ -225,7 +226,7 @@ const historyFields: any = [
     {
         key: 'updated_by',
         title: 'Updated By',
-        render: (row: any) => row.updatedBy
+        render: (row: any) => h('span', { title: row.updatedByUuid || '' }, row.updatedBy)
     },
     {
         key: 'type',
@@ -271,7 +272,7 @@ const historyFields: any = [
     },
 ]
 
-await onCreate()
+onCreate()
 
 </script>
 

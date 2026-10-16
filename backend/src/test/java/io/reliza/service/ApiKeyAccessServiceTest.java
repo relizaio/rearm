@@ -109,4 +109,15 @@ class ApiKeyAccessServiceTest {
 		verify(accessRepository, never()).save(any(ApiKeyAccess.class));
 		assertEquals(1, service.flushPendingLastAccessTouches());
 	}
+
+	@Test
+	void touchLastAccessIsFlushedOnceEvenWhenTouchedTwice() {
+		service.touchLastAccess(keyUuid);
+		service.touchLastAccess(keyUuid);
+		verifyNoMoreInteractions(apiKeyRepository);
+
+		assertEquals(1, service.flushPendingLastAccessTouches());
+		verify(apiKeyRepository, times(1)).touchLastAccessDateIfNewer(eq(keyUuid), any(ZonedDateTime.class));
+		verifyNoMoreInteractions(accessRepository);
+	}
 }

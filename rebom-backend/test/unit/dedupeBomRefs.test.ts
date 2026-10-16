@@ -1,8 +1,11 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { logger } from '../../src/logger';
 import {
     dedupeBomRefs,
-    BOM_REFS_DEDUPLICATED_PROPERTY
+    BOM_REFS_DEDUPLICATED_PROPERTY,
+    DROPPED_LICENSE_PROPERTY
 } from '../../src/services/bom/bomProcessingService';
+import validateBom from '../../src/validateBom';
 
 /**
  * SCORE-13: a merged BOM folds the components that share one bom-ref into the first
@@ -40,6 +43,24 @@ function allRefs(bom: any): string[] {
     const walk = (list: any[] = []): string[] => list.flatMap((c: any) => [c['bom-ref'], ...walk(c.components)]);
     return [bom.metadata.component?.['bom-ref'], ...walk(bom.metadata.component?.components), ...walk(bom.components)]
         .filter((r: any) => r !== undefined);
+}
+
+/** A minimal CycloneDX 1.6 document whose one component carries `licenses` (no key when undefined). */
+function wrapped(licenses: any[] | undefined): any {
+    return {
+        bomFormat: 'CycloneDX', specVersion: '1.6', version: 1,
+        components: [{ type: 'library', name: 'app', 'bom-ref': X, ...(licenses === undefined ? {} : { licenses }) }]
+    };
+}
+
+/** Folds a survivor carrying `survivor` licenses with a nested copy carrying `duplicate`. */
+function foldLicenses(survivor: any[] | undefined, duplicate: any[] | undefined): { bom: any, survivorList: any } {
+    const first = lib(X, survivor === undefined ? {} : { licenses: survivor });
+    const copy = lib(X, duplicate === undefined ? {} : { licenses: duplicate });
+    const { bom, count } = dedupeBomRefs(doc([first, lib('A', { components: [copy] })]));
+    expect(count).toBe(1);
+    expect(allRefs(bom).filter(r => r === X)).toHaveLength(1);
+    return { bom, survivorList: first.licenses };
 }
 
 describe('dedupeBomRefs', () => {
@@ -280,7 +301,7 @@ describe('dedupeBomRefs', () => {
         expect(marker(bom)).toStrictEqual([]);
     });
 
-    it('fills empty survivor fields, never overwrites set ones, and unions lists survivor first (T-7)', () => {
+    it('fills empty survivor fields, never overwrites set ones, and unions lists survivor first (T-7; SCORE-40 T-9: an expression survivor keeps its licenses whole)', async () => {
         const survivor = {
             type: 'library', name: 'app', 'bom-ref': X,
             version: '1.0.0',
@@ -292,7 +313,7 @@ describe('dedupeBomRefs', () => {
             externalReferences: [{ type: 'vcs', url: 'https://example.com/a' }, { type: 'website', url: 'https://example.com' }],
             properties: [{ name: 'p', value: '1' }, { name: 'q', value: '1' }],
             tags: ['t1', 't2'],
-            licenses: [{ expression: 'Apache-2.0 OR MIT' }, { license: { name: 'Custom' } }]
+            licenses: [{ expression: 'Apache-2.0 OR MIT' }]
         };
         const duplicate = {
             type: 'framework', name: 'other', 'bom-ref': X,
@@ -330,17 +351,230 @@ describe('dedupeBomRefs', () => {
             ],
             properties: [{ name: 'p', value: '1' }, { name: 'q', value: '1' }, { name: 'p', value: '2' }, { name: 'r', value: '1' }],
             tags: ['t1', 't2', 't3', 't4'],
-            licenses: [
-                { expression: 'Apache-2.0 OR MIT' },
-                { license: { name: 'Custom' } },
-                { license: { id: 'MIT' } },
-                { license: { id: 'BSD-3-Clause' } }
-            ],
+            licenses: [{ expression: 'Apache-2.0 OR MIT' }],
             publisher: 'Example Publisher',
             cpe: 'cpe:2.3:a:example:app:1.0.0:*:*:*:*:*:*:*',
             scope: 'required'
         });
         expect(bom.components.slice(1)).toStrictEqual([lib('A', { components: [] }), lib('B')]);
+        await expect(validateBom(wrapped(bom.components[0].licenses))).resolves.toBeTruthy();
+    });
+
+    /**
+     * SCORE-40 T-9 (ADR-6): the fold matrix. A licenses array stays homogeneous: an absent or empty
+     * survivor list takes the duplicate's whole (here, where dedupeBomRefs folds, an empty list is
+     * absent; merge-boms holds it, design T-10); when either list holds an expression entry the
+     * survivor's list stands whole, the same object; otherwise the two license lists are unioned by
+     * id or name, survivor first. One case per pair of survivor and duplicate kind.
+     */
+    describe('licence fold matrix (SCORE-40 T-9)', () => {
+        let info: ReturnType<typeof vi.spyOn>;
+
+        beforeEach(() => {
+            info = vi.spyOn(logger, 'info').mockImplementation(() => undefined as any);
+        });
+
+        afterEach(() => {
+            info.mockRestore();
+        });
+
+        // The design's values, a fresh copy on every call (the X of the design, not the bom-ref constant X).
+        const LISTS: Record<string, () => any[] | undefined> = {
+            absent: () => undefined,
+            '[]': () => [],
+            L: () => [{ license: { id: 'MIT' } }],
+            L2: () => [{ license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }],
+            X: () => [{ expression: 'MIT OR Apache-2.0' }],
+            X2: () => [{ expression: 'BSD-3-Clause OR MIT' }],
+            N: () => [{ expression: 'NOASSERTION' }]
+        };
+        const list = (name: string): any[] => LISTS[name]() as any[];
+        // [survivor, duplicate, the survivor's licenses after the fold (undefined: no key), the survivor's own array]
+        const CELLS: [string, string, any[] | undefined, boolean][] = [
+            ['absent', 'absent', undefined, false],
+            ['absent', 'L2', list('L2'), false],
+            ['absent', 'X2', list('X2'), false],
+            ['absent', 'N', list('N'), false],
+            ['[]', 'L2', list('L2'), false],
+            // SCORE-40 round 4 (ADR-6 line 1): where dedupeBomRefs folds, an empty survivor list is absent
+            ['[]', 'X2', list('X2'), false],
+            ['[]', 'N', list('N'), false],
+            ['[]', 'absent', [], true],
+            ['L', 'absent', list('L'), true],
+            ['L', '[]', list('L'), true],
+            ['L', 'L2', [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }, { license: { name: 'Custom' } }], false],
+            ['L', 'X2', list('L'), true],
+            ['L', 'N', list('L'), true],
+            ['X', 'absent', list('X'), true],
+            ['X', 'L2', list('X'), true],
+            ['X', 'X2', list('X'), true],
+            ['X', 'N', list('X'), true],
+            ['N', 'absent', list('N'), true],
+            ['N', 'L2', list('N'), true],
+            ['N', 'X2', list('N'), true],
+            ['N', 'N', list('N'), true]
+        ];
+
+        // SCORE-44 T-1 (ADR-2): the cells whose fold drops a real listed expression record it on the survivor
+        const RECORDING = new Set(['L|X2', 'X|X2', 'N|X2']);
+
+        for (const [survivor, duplicate, expected, same] of CELLS) {
+            const records = RECORDING.has(`${survivor}|${duplicate}`);
+            it(`survivor ${survivor}, duplicate ${duplicate}: ${expected === undefined ? 'no licenses key' : JSON.stringify(expected)}${same ? ', the same array' : ''}${records ? ', the dropped expression recorded' : ', no record'}`, async () => {
+                const { bom, survivorList } = foldLicenses(LISTS[survivor](), LISTS[duplicate]());
+                const folded = bom.components[0];
+                // an empty survivor loses nothing here: no licence line (ADR-6 line 1, ADR-9)
+                if (survivor === '[]') {
+                    expect(info.mock.calls.filter((call: any[]) => JSON.stringify(call).includes('licen'))).toStrictEqual([]);
+                }
+
+                if (expected === undefined) {
+                    expect(folded).not.toHaveProperty('licenses');
+                } else {
+                    expect(folded.licenses).toEqual(expected);
+                }
+                if (same) expect(folded.licenses).toBe(survivorList);
+                if (records) {
+                    expect(folded.properties).toStrictEqual([{ name: DROPPED_LICENSE_PROPERTY, value: 'BSD-3-Clause OR MIT' }]);
+                    await expect(validateBom(bom)).resolves.toBeTruthy();
+                } else {
+                    expect(folded).not.toHaveProperty('properties');
+                }
+                await expect(validateBom(wrapped(folded.licenses))).resolves.toBeTruthy();
+            });
+        }
+
+        /**
+         * SCORE-44 T-1 (ADR-1, ADR-2 site 1): the de-dup fold records each distinct listed expression
+         * it drops as reliza:license:dropped on the survivor, after the duplicate's own properties
+         * (a lower merge's records) are unioned; nothing for an identical expression, NOASSERTION or
+         * NONE.
+         */
+        describe('records the listed expression the fold dropped (SCORE-44 T-1)', () => {
+            const X2_TEXT = 'BSD-3-Clause OR MIT';
+            const X3_TEXT = 'GPL-2.0-only WITH Classpath-exception-2.0';
+            const P = (value: string) => ({ name: DROPPED_LICENSE_PROPERTY, value });
+            const OTHER = () => ({ name: 'cdx:other', value: 'kept' });
+
+            /** Folds the survivor `first` with each of `copies`, each nested under its own parent. */
+            function fold(first: any, ...copies: any[]): any {
+                const parents = copies.map((copy, i) => lib(`P${i}`, { components: [copy] }));
+                const { bom, count } = dedupeBomRefs(doc([first, ...parents]));
+                expect(count).toBe(copies.length);
+                expect(allRefs(bom).filter(r => r === X)).toHaveLength(1);
+                return bom;
+            }
+
+            it('survivor X, duplicate X: no record', () => {
+                const bom = foldLicenses(list('X'), list('X')).bom;
+
+                expect(bom.components[0]).not.toHaveProperty('properties');
+            });
+
+            it('survivor L, duplicate NONE or a spaced lower-case NOASSERTION: no record', () => {
+                expect(foldLicenses(list('L'), [{ expression: 'NONE' }]).bom.components[0]).not.toHaveProperty('properties');
+                expect(foldLicenses(list('L'), [{ expression: ' noassertion ' }]).bom.components[0]).not.toHaveProperty('properties');
+            });
+
+            it('appends after the survivor\'s own properties, in a new array, leaving the input\'s array as it was', async () => {
+                const own = [OTHER()];
+                const bom = fold(lib(X, { licenses: list('L'), properties: own }), lib(X, { licenses: list('X2') }));
+
+                expect(bom.components[0].properties).toStrictEqual([OTHER(), P(X2_TEXT)]);
+                expect(bom.components[0].properties).not.toBe(own);
+                expect(own).toStrictEqual([OTHER()]);
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+
+            it('a record the duplicate carries from a lower merge comes first, then the fold\'s', async () => {
+                const bom = fold(lib(X, { licenses: list('L') }), lib(X, { licenses: list('X2'), properties: [P(X3_TEXT)] }));
+
+                expect(bom.components[0].properties).toStrictEqual([P(X3_TEXT), P(X2_TEXT)]);
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+
+            it('a duplicate that already records the expression it loses carries it once', () => {
+                const bom = fold(lib(X, { licenses: list('L') }), lib(X, { licenses: list('X2'), properties: [P(X2_TEXT)] }));
+
+                expect(bom.components[0].properties).toStrictEqual([P(X2_TEXT)]);
+            });
+
+            it('three holders of one bom-ref, L then X2 then X3: both expressions, in fold order', async () => {
+                const bom = fold(lib(X, { licenses: list('L') }), lib(X, { licenses: list('X2') }), lib(X, { licenses: [{ expression: X3_TEXT }] }));
+
+                expect(bom.components[0].licenses).toStrictEqual(list('L'));
+                expect(bom.components[0].properties).toStrictEqual([P(X2_TEXT), P(X3_TEXT)]);
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+
+            it('L then X2 then X2: recorded once', () => {
+                const bom = fold(lib(X, { licenses: list('L') }), lib(X, { licenses: list('X2') }), lib(X, { licenses: list('X2') }));
+
+                expect(bom.components[0].properties).toStrictEqual([P(X2_TEXT)]);
+            });
+
+            const rootDoc = (component: any) => doc([component], {
+                metadata: { component: { type: 'application', name: 'root', 'bom-ref': X, licenses: list('L') } }
+            });
+
+            it('the root is the survivor: the root records it and the component is folded away', async () => {
+                const { bom } = dedupeBomRefs(rootDoc(lib(X, { licenses: list('X2') })));
+
+                expect(bom.metadata.component.licenses).toStrictEqual(list('L'));
+                expect(bom.metadata.component.properties).toStrictEqual([P(X2_TEXT)]);
+                expect(bom.components).toStrictEqual([]);
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+
+            it('the root folds a component that carries a CLI-path record: that record, then the fold\'s', async () => {
+                const { bom } = dedupeBomRefs(rootDoc(lib(X, { licenses: list('X2'), properties: [P(X3_TEXT)] })));
+
+                expect(bom.metadata.component.properties).toStrictEqual([P(X3_TEXT), P(X2_TEXT)]);
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+
+            it('a CycloneDX 1.6 document whose component repeats the name validates', async () => {
+                const bom = wrapped(list('L'));
+                bom.components[0].properties = [P(X2_TEXT), P(X3_TEXT)];
+
+                await expect(validateBom(bom)).resolves.toBeTruthy();
+            });
+        });
+
+        it('survivor absent, duplicate []: an empty duplicate changes nothing, no licenses on the survivor', async () => {
+            const { bom } = foldLicenses(undefined, []);
+
+            expect(bom.components[0].licenses).toBeUndefined();
+            expect(JSON.parse(JSON.stringify(bom.components[0]))).not.toHaveProperty('licenses');
+            await expect(validateBom(wrapped(undefined))).resolves.toBeTruthy();
+        });
+
+        it('reads a single-id expression as an id, so it unions with a duplicate id', async () => {
+            const { bom } = foldLicenses([{ expression: 'MIT' }], [{ license: { id: 'Apache-2.0' } }]);
+
+            expect(bom.components[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }]);
+            await expect(validateBom(wrapped(bom.components[0].licenses))).resolves.toBeTruthy();
+        });
+
+        it('two license lists with nothing to add: the survivor list stands, the same array', async () => {
+            const { bom, survivorList } = foldLicenses(list('L'), list('L'));
+
+            expect(bom.components[0].licenses).toStrictEqual(list('L'));
+            expect(bom.components[0].licenses).toBe(survivorList);
+        });
+
+        it('adds no id or name the survivor already holds: a de-dup by key, not a drop', async () => {
+            const { bom } = foldLicenses(
+                [{ license: { name: 'Custom' } }],
+                [{ license: { id: 'MIT' } }, { license: { name: 'Custom' } }, { license: { id: 'BSD-3-Clause' } }]);
+
+            expect(bom.components[0].licenses).toStrictEqual([
+                { license: { name: 'Custom' } },
+                { license: { id: 'MIT' } },
+                { license: { id: 'BSD-3-Clause' } }
+            ]);
+            await expect(validateBom(wrapped(bom.components[0].licenses))).resolves.toBeTruthy();
+        });
     });
 
     it('unions externalReferences by type and url together, so one url under two types stays twice (ADR-4)', () => {
@@ -481,7 +715,7 @@ describe('dedupeBomRefs', () => {
         expect(v14.components[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
     });
 
-    it('unions a named license by acknowledgement and still folds a repeated expression (TPF-56)', () => {
+    it('keeps the survivor list whole when an expression is present, whatever the acknowledgements (SCORE-40 ADR-6 over TPF-56)', () => {
         const components = [
             lib('L', { licenses: [
                 { license: { name: 'Custom', acknowledgement: 'declared' } },
@@ -494,10 +728,12 @@ describe('dedupeBomRefs', () => {
         ];
         const { bom } = dedupeBomRefs(doc(components));
 
+        // An expression on either side: CycloneDX 1.6 cannot union an expression with anything, so the survivor's
+        // list stands whole and the duplicate's is dropped (logged, since its concluded Custom is a different entry
+        // under TPF-56's acknowledgement-aware key). The expression text repeats, so nothing is recorded as dropped.
         expect(bom.components[0].licenses).toStrictEqual([
             { license: { name: 'Custom', acknowledgement: 'declared' } },
-            { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' },
-            { license: { name: 'Custom', acknowledgement: 'concluded' } }
+            { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' }
         ]);
     });
 });
