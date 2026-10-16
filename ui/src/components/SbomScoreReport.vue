@@ -7,6 +7,7 @@
             </span>
             <n-text depth="3" class="sbom-score-engine">{{ report.engine.name }} {{ report.engine.version }}</n-text>
         </div>
+        <div v-if="signatureLine" class="sbom-score-signature" data-testid="sbom-score-signature">{{ signatureLine }}</div>
         <n-tabs v-model:value="activeProfile" type="segment" data-testid="sbom-score-tabs">
             <n-tab-pane v-for="profile in report.profiles" :key="profile.key" :name="profile.key" :tab="profile.title">
                 <div class="sbom-score-profile" :data-testid="`sbom-score-profile-${profile.key}`">
@@ -59,12 +60,16 @@ import { computed, h, ref, watch } from 'vue'
 import type { DataTableColumns } from 'naive-ui'
 import { NCollapse, NCollapseItem, NDataTable, NTabPane, NTabs, NTag, NText } from 'naive-ui'
 import { orderChecks, summaryLine } from '@/utils/sbomScore'
+import { scoreSignatureLine } from '@/utils/sbomSigning'
 import type { SbomScoreCheck, SbomScoreReport, SbomScoreStatus, SbomScoreVerdict } from '@/utils/sbomScore'
 
 const props = defineProps<{ report: SbomScoreReport }>()
 
 const activeProfile = ref<string | undefined>(props.report.profiles[0]?.key)
 watch(() => props.report, r => { activeProfile.value = r.profiles[0]?.key })
+
+// SCORE-35: the root signature as the engine read it (input.signature), when the report has one.
+const signatureLine = computed((): string | null => scoreSignatureLine(props.report.input.signature))
 
 const skippedText = computed((): string => {
     const skipped = props.report.input.componentsSkipped
@@ -178,6 +183,10 @@ const columns: DataTableColumns<SbomScoreCheck> = [
 }
 .sbom-score-engine {
     font-size: 12px;
+}
+.sbom-score-signature {
+    margin: -4px 0 8px;
+    font-size: 13px;
 }
 .sbom-score-verdict-line {
     display: flex;

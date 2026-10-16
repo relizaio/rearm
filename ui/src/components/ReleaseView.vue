@@ -246,7 +246,7 @@
                                         <QuestionCircle20Regular />
                                     </n-icon>
                                 </template>
-                                Keeps ReARM's own markers (reliza:* properties other than support) in the export; off removes them. With either setting, what your SBOM generator wrote, build paths included, is exported as uploaded, and metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
+                                Keeps ReARM's own markers (reliza:* properties other than support) in the export; off removes them. The signing record (reliza:export:signed) stays: it describes the file. With either setting, what your SBOM generator wrote, build paths included, is exported as uploaded, and metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
                             </n-tooltip>
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
@@ -372,6 +372,8 @@
                             </n-button>
                         </n-spin>
                     </n-space>
+                    <!-- SCORE-35: whether the file just exported is signed, read from that file. -->
+                    <div v-if="exportSigningLine" data-testid="export-signing-status" style="font-size: 12px; margin-top: 6px; max-width: 620px;">{{ exportSigningLine }}</div>
                 </n-form>
                 <n-form v-if="exportBomType === 'OBOM'">
                     <h3>Format: CycloneDX 1.6 (JSON)</h3>
@@ -1907,6 +1909,43 @@
                                 {{ deviceWindowError }}
                             </n-alert>
                         </div>
+                        <!-- SCORE-42: the licence ReARM declares on this release's SBOM node. On the
+                             Meta tab because every release has one (the Support tab is product-only).
+                             The effective line comes first, so an override shows what it displaces.
+                             State and loading live in useReleaseDeclaredLicense (reset and fenced on
+                             navigation); hidden while not loaded for THIS release, and the unsupported
+                             note only when the server cannot answer (schema drift). -->
+                        <div v-if="declaredLicenseSupported && releaseLicenseLoaded" data-testid="release-license-block">
+                            <h3 class="mt-3">Declared licence for this release</h3>
+                            <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                {{ RELEASE_INTRO }}
+                            </n-alert>
+                            <div data-testid="release-license-effective" style="margin-bottom: 8px;">
+                                {{ effectiveLicenseLine(releaseLicenseEffective) }}<template v-if="releaseLicenseEffective?.url">, text at
+                                    <a v-if="licenseUrlHref(releaseLicenseEffective.url)" :href="licenseUrlHref(releaseLicenseEffective.url) ?? undefined"
+                                        target="_blank" rel="noopener noreferrer">{{ releaseLicenseEffective.url }}</a>
+                                    <span v-else>{{ releaseLicenseEffective.url }}</span></template>
+                            </div>
+                            <div class="text-muted" style="font-size: 12px;">Licence expression for this release</div>
+                            <n-space align="end" style="margin-bottom: 8px;">
+                                <n-input v-model:value="releaseLicense" :placeholder="RELEASE_PLACEHOLDER"
+                                    :disabled="!isWritable || savingReleaseLicense" style="width: 360px;"
+                                    data-testid="release-license-override"
+                                    @update:value="releaseLicenseError = null" />
+                                <n-button v-if="isWritable" size="small" type="primary" data-testid="release-license-save"
+                                    :disabled="!releaseLicenseDirty || savingReleaseLicense" :loading="savingReleaseLicense"
+                                    @click="saveReleaseLicense(false)">Save licence</n-button>
+                                <n-button v-if="isWritable && releaseLicenseIsOverridden" size="small" data-testid="release-license-clear"
+                                    :disabled="savingReleaseLicense"
+                                    @click="saveReleaseLicense(true)">Clear</n-button>
+                            </n-space>
+                            <div class="text-muted" style="font-size: 12px; max-width: 720px; margin-bottom: 8px;">{{ EXPRESSION_HINT }}</div>
+                            <n-alert v-if="releaseLicenseError" type="error" :show-icon="true" data-testid="release-license-error"
+                                style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                                {{ releaseLicenseError }}
+                            </n-alert>
+                        </div>
+                        <div v-if="!declaredLicenseSupported" class="text-muted mt-3" data-testid="release-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
                             <n-data-table :columns="releaseTagsFields" :data="updatedRelease.tags" class="table-hover" />
@@ -2223,9 +2262,14 @@ import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
+import { useReleaseDeclaredLicense } from '@/utils/useReleaseDeclaredLicense'
+import { EXPRESSION_HINT, RELEASE_CLEARED, RELEASE_INTRO, RELEASE_PLACEHOLDER, RELEASE_SAVED, UNSUPPORTED_NOTE,
+    effectiveLicenseLine, licenseUrlHref } from '@/utils/declaredLicense'
 import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
 import { useReleaseSbomScore } from '@/utils/useReleaseSbomScore'
+import { exportSigningLine as signingLineFor, signatureStatus } from '@/utils/sbomSigning'
+import type { ExportMediaType, SignedStatus } from '@/utils/sbomSigning'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
 import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, X } from '@vicons/tabler'
@@ -2420,6 +2464,31 @@ const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean 
 /** The org-level default, shown read-only so the author sees what an override replaces. */
 const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
     (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+
+/**
+ * The declared licence for this release (SCORE-42, design ADR-4 and ADR-8). Its state is the
+ * composable's, which resets and fences it across releases: this view is reused on navigation.
+ */
+const releaseLicenseState = useReleaseDeclaredLicense(graphqlClient as any, {
+    onUnsupported: () => store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+})
+const releaseLicense = releaseLicenseState.override
+const releaseLicenseBaseline = releaseLicenseState.baseline
+const releaseLicenseEffective = releaseLicenseState.effective
+const releaseLicenseLoaded = releaseLicenseState.loaded
+const savingReleaseLicense = releaseLicenseState.saving
+const releaseLicenseError = releaseLicenseState.error
+const releaseLicenseDirty = releaseLicenseState.dirty
+const releaseLicenseIsOverridden = releaseLicenseState.isOverridden
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+async function saveReleaseLicense (clear: boolean) {
+    const outcome = await releaseLicenseState.save(clear)
+    // Worded from the refreshed baseline, which the composable maps to saved or cleared.
+    if (outcome === 'saved') notify('success', 'Saved', RELEASE_SAVED)
+    else if (outcome === 'cleared') notify('success', 'Saved', RELEASE_CLEARED)
+}
 
 function seedReleaseNarrative () {
     // UNDEFINED means the query did not ask; NULL means the server says there is no
@@ -2727,6 +2796,9 @@ onMounted(async () => {
     // treat re-typing it as a change.
     seedDeviceWindow()
     seedReleaseNarrative()
+    // Not awaited, and it never rejects: keys, the Dependency-Track flag and polling never wait
+    // on the licence block.
+    void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -3332,6 +3404,9 @@ async function goToRelease (uuid: string) {
     // reason: a coverage response for the previous release would caption this one with the
     // old disclosure count. Clearing the ref alone only handles the synchronous case.
     sbomCoverageState.reset()
+    // The licence block's too: its effective line, override and baseline are the previous
+    // release's, and its fence drops a response for that release still in flight.
+    releaseLicenseState.reset()
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
@@ -3349,6 +3424,7 @@ async function goToRelease (uuid: string) {
         await fetchRelease()
         seedDeviceWindow()
         seedReleaseNarrative()
+        void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -3530,6 +3606,8 @@ function openExportModal () {
     fileComponentsSwitch.reset()
     // A reopened dialog starts without a score: the last one may be of other options.
     releaseSbomScore.reset()
+    // Nor a signing line: it describes a file this dialog exported, and none is exported yet.
+    lastExportSigning.value = null
     // The switch follows the release organization's export state; ask for it now when neither
     // the SBOM list nor the Support tab has yet. Not awaited: the dialog opens in the checking
     // state and flips when the answer lands.
@@ -6067,6 +6145,13 @@ const releaseSbomScoreOptionsChanged = releaseSbomScore.optionsChanged
 const releaseSbomScoreButtonDisabled = releaseSbomScore.buttonDisabled
 const scoreReleaseSbom = releaseSbomScore.score
 
+// SCORE-35: whether the last exported file is signed, read from the file itself (design 3.5).
+// Null until this dialog exports: before an export the dialog says nothing about signing.
+const lastExportSigning: Ref<SignedStatus | null> = ref(null)
+const lastExportMediaType: Ref<ExportMediaType> = ref('JSON')
+const exportSigningLine: ComputedRef<string | null> = computed((): string | null =>
+    lastExportSigning.value ? signingLineFor(lastExportSigning.value, lastExportMediaType.value) : null)
+
 async function loadReleaseSbomScore (signal: AbortSignal): Promise<string> {
     const resp: any = await graphqlClient.query({
         query: graphqlQueries.ReleaseSbomScoreGql,
@@ -6113,6 +6198,8 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
     // their own handler (exportSupportDocument), so nothing can reach here asking for one.
     // Keeping unreachable redirects would leave two entry points for one document and invite
     // the next reader to add a third.
+    // The signing line describes the file of this export, so the last one's goes first.
+    lastExportSigning.value = null
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
@@ -6158,6 +6245,10 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const gqlResp: any = attempt.data
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
+        // SCORE-35: the status line reads the document received, before any re-serialisation.
+        // CSV and EXCEL carry no stamp; the line says signing applies to JSON only.
+        lastExportMediaType.value = mediaType as ExportMediaType
+        lastExportSigning.value = mediaType === 'JSON' ? signatureStatus(exportContent) : { kind: 'UNSTAMPED' }
         if (mediaType === 'JSON') {
             if (typeof exportContent !== 'string') {
                 exportContent = JSON.stringify(exportContent, null, 2)

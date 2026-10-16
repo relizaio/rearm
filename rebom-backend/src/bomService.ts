@@ -12,6 +12,7 @@
  * - bomProcessingService: BOM transformations
  * - bomMergeService: Merge operations
  * - bomAddService: Add/store operations
+ * - bomLineageService: serialNumber lineage ownership
  * - bomScoreService: Stateless SBOM scoring (rearm bomutils score)
  * - bomMapper: Data Object Pattern
  */
@@ -75,6 +76,12 @@ export {
 export {
   addBom
 } from './services/bom/bomAddService';
+
+// serialNumber lineage ownership (SCORE-45)
+export {
+  setBomLineageOwners,
+  bomLineage
+} from './services/bom/bomLineageService';
 
 // Scoring (stateless)
 export {

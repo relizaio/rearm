@@ -147,6 +147,22 @@ export class BomVersionConflictError extends Error {
     }
 }
 
+/**
+ * An upload names a serialNumber whose lineage belongs to another component of
+ * the organization (SCORE-45). The owner is never part of the error: the
+ * serialNumber is the caller's own input, the owner is not.
+ */
+export class BomLineageOwnerError extends Error {
+    constructor(
+        message: string,
+        public serialNumber: string
+    ) {
+        super(message);
+        this.name = 'BomLineageOwnerError';
+        Error.captureStackTrace(this, this.constructor);
+    }
+}
+
 export class BomDataIntegrityError extends Error {
     constructor(
         message: string,
@@ -202,6 +218,7 @@ export const ERROR_CODES = {
     OCI_STORAGE_ERROR: 'OCI_STORAGE_ERROR',
     BOM_DATA_INTEGRITY_ERROR: 'BOM_DATA_INTEGRITY_ERROR',
     BOM_VERSION_CONFLICT: 'BOM_VERSION_CONFLICT',
+    BOM_LINEAGE_OWNER_MISMATCH: 'BOM_LINEAGE_OWNER_MISMATCH',
     BOM_SCORE_ERROR: 'BOM_SCORE_ERROR',
     INTERNAL_ERROR: 'INTERNAL_ERROR',
 } as const;
@@ -305,6 +322,18 @@ export function toGraphQLError(error: Error): {
                     storedVersion: error.storedVersion,
                     newVersion: error.newVersion,
                     existingUuid: error.existingUuid,
+                },
+            },
+        };
+    }
+
+    if (error instanceof BomLineageOwnerError) {
+        return {
+            message: error.message,
+            extensions: {
+                code: ERROR_CODES.BOM_LINEAGE_OWNER_MISMATCH,
+                details: {
+                    serialNumber: error.serialNumber,
                 },
             },
         };

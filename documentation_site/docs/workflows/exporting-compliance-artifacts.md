@@ -73,6 +73,116 @@ still has nothing to export. From the ReARM release after 26.10.52 on; product e
 before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
 property and the `compositions` entry are in the CycloneDX JSON only.
 
+### What the nodes ReARM makes carry
+
+ReARM writes three kinds of node into an export itself: a component release's own node (the root
+of its merged SBOM), a product's root, and the placeholders of component releases without an SBOM
+(see [Component releases without an SBOM](#component-releases-without-an-sbom)). Everything else in
+an export is what was uploaded, and ReARM never replaces uploaded data.
+
+**Supplier.** A node ReARM makes names as supplier the publisher of the release's deliverable when
+one is recorded, else the component's **Supplier**, else the organization for its own (INTERNAL)
+software, else nobody (EXTERNAL software). The root of an uploaded SBOM takes the same rule when it
+is uploaded, and keeps a supplier its generator wrote. When a change of the component's supplier
+shows, as the field states it:
+
+> Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set. A root
+> uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM (a new
+> serialNumber) uploaded to a release made after the change carries the new value in that release's
+> export. An identical file is answered with the stored row, unchanged.
+
+**Hashes.** A release's node carries the hashes of the release's one hashed outbound deliverable
+when the deliverable's purl type agrees with the node's, and none otherwise. The root of an SBOM
+attached to a source code entry carries its commit in `pedigree.commits`, not as a hash.
+
+**Declared licence.** A licence can be declared at three levels: on a release, on its component, and
+as the organization default. The first level that declares one, in that order, is the licence on the
+release's node and on its placeholder in a product; a licence URL comes only from the level that won,
+and a release that declares its own licence carries no URL. A value is an SPDX licence expression:
+ids from the [SPDX licence list](https://spdx.org/licenses/) in any case (stored in the list's
+casing, `apache-2.0` becomes `Apache-2.0`), a trailing `+`, `LicenseRef-` followed by letters,
+digits, dots and hyphens for a licence that is not on the list, the operators `AND`, `OR` and `WITH`
+in upper case, and parentheses, at most 512 characters. `NOASSERTION`, `NONE`, `DocumentRef-` and
+licence names are refused. The export writes it as follows:
+
+- a single SPDX id:
+
+  ```json
+  "licenses": [{ "license": { "id": "Apache-2.0" } }]
+  ```
+
+- a single `LicenseRef-` id with a URL:
+
+  ```json
+  "licenses": [{ "license": { "name": "LicenseRef-Acme-Commercial", "url": "https://example.com/licence.txt" } }]
+  ```
+
+- anything else (a compound expression, or a `LicenseRef-` id without a URL), with no URL:
+
+  ```json
+  "licenses": [{ "expression": "MIT OR Apache-2.0" }]
+  ```
+
+On a product export, a component release's declared licence stands on its node; licence ids that
+another uploaded SBOM lists for the same purl appear beside it, while a listed expression or
+`NOASSERTION` does not. A root whose generator wrote licences, `NOASSERTION` included, keeps them.
+ReARM never reads a LICENSE file or an artifact to find a licence.
+
+**When a change shows.** A release's own exports show a change at their next request. A change of
+a release's licence also rebuilds the product exports above it. A change of the organization default
+or of a component does not: a product exported before it serves its stored export until something
+rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
+regenerates merged exports). Likewise a release exported before an upload keeps serving its stored
+export until a product above it is rebuilt or the release's declared facts change.
+
+**Where to set them.** In the UI: **Organization Settings**, **Admin Settings**, **Default declared
+licence** (organization administrators); a component's settings, **Declared licence and supplier**;
+a release's **Meta** tab, **Declared licence for this release**. On the API:
+`updateOrganizationSettings` (`defaultLicenseExpression`, `defaultLicenseUrl`); `updateComponent`,
+`createComponent` and `createComponentProgrammatic` (`licenseExpression`, `licenseUrl`,
+`supplierName`); `updateRelease` and `addReleaseProgrammatic` (`licenseExpression`). The ReARM CLI
+and the Terraform provider gain them in a later release.
+
+**What still fails.** The scoring check Component License still fails on the root of an uploaded
+SBOM whose generator wrote no licence, which is the release's own software in an SBOM attached to
+the release or to a deliverable: the declared licence is not written there. See
+[Reading the report](./sbom-scoring#reading-the-report).
+
+### Listed licences a merge dropped
+
+When an SBOM in a product lists one of the product's component releases with a licence expression
+and the merge keeps another licence on that node (the licence the release declares, or the licence
+its own SBOM carries), the node records each dropped expression as a property
+`reliza:license:dropped`, one entry per expression, with the text as the listing wrote it. Nothing
+is recorded for `NOASSERTION`, `NONE` or an expression the node still holds. Licence ids are not
+recorded: they are merged beside kept ids or names, and dropped beside a kept expression, where only
+the server log names them. The property stays in the export when internal metadata is left out, and
+is inside the signed document. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request.
+
+### Which component may supersede an uploaded SBOM
+
+A CycloneDX `serialNumber` identifies one SBOM lineage within your organization. Uploading the same
+`serialNumber` with a higher `version` makes that version the one ReARM reads for every release that
+holds the `serialNumber`; whether a stored export shows it follows
+[When a change shows](#what-the-nodes-rearm-makes-carry). From the ReARM release after 26.10.52 on,
+a lineage belongs to the component whose release first uploaded it, and only releases of that
+component can supersede it with a higher version. An upload of a higher version to a release of
+another component is refused, whoever uploads it and whatever their permissions, with the error code
+`SBOM_SERIAL_NUMBER_OWNED_BY_OTHER_COMPONENT` and a message that tells the uploader to generate an
+SBOM with its own `serialNumber`; the message never names the owning component. An SPDX document
+uploaded as the next version of a stored SBOM follows the same rule. When the target release already
+exists, the refusal is recorded on it as a `GUARD` update event; a refused `rearm addrelease` creates
+no release and records nothing. An identical file uploaded again is not a new version and is answered
+with the stored document, as before. Lineages stored before this release are assigned to their
+component at the first start of the upgraded server. A `serialNumber` that several components had
+uploaded before the upgrade is left without an owner: the first of those components to upload a
+higher version becomes its owner, and an organization admin can reassign it at any time. Organization
+admins read the owner of a lineage with the `sbomLineageOwner` query and move a lineage to another
+component (a component re-created under a new identifier, or a `serialNumber` shared by mistake) with
+the `reassignSbomLineageOwner` mutation; both take the organization and the `serialNumber`, with or
+without the `urn:uuid:` prefix.
+
 ### Scoring the export
 
 Beside **Export**, **Score** checks the document the export would give you, with the same content options,
@@ -88,6 +198,14 @@ other options, **Leave out file components** included, apply to the score as to 
 The `fda` support checks (level of support and end of support) do not judge files, cryptographic
 assets, data, machine-learning models or devices: those components are not software packages a
 supplier supports, and the report says how many it skipped.
+
+### Signing the export
+
+When the organization has an SBOM signing key, every CycloneDX JSON export is signed with it: the
+document carries a root JSF `signature` and the property `reliza:export:signed` `true`; without a
+key it says `false` and why, in `reliza:export:unsignedReason`. After an export the dialog shows
+one line saying whether the file you received is signed, and CSV and Excel exports carry no
+signature. See [Signing exported SBOMs](./signing-exported-sboms).
 
 ## Per-export metadata options
 
@@ -184,6 +302,11 @@ not complete.
 the components that stand for component releases ReARM holds no SBOM for, and count them (see
 [Component releases without an SBOM](#component-releases-without-an-sbom)). Without them a reader
 could not tell a release without an SBOM from one whose SBOM lists nothing.
+
+**Not removed either: the signing record.** `reliza:export:signed`, with
+`reliza:export:signatureKeyId` on a signed export or `reliza:export:unsignedReason` on an unsigned
+one, says whether the file is signed (see [Signing exported SBOMs](./signing-exported-sboms)). It
+is part of the signed content and describes the document you hold, so it stays with either setting.
 
 **With both switches off, no other `reliza:` property remains**, not even the
 `reliza:support:disclosure` marker, which is withheld when a caller sends

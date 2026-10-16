@@ -6,6 +6,7 @@
 
 import { graphqlErrorsOf, httpStatusOf, isSchemaDriftError } from './graphqlDriftFallback'
 import commonFunctions from './commonFunctions'
+import type { SignatureReportInput } from './sbomSigning'
 
 // Types mirror rearm-cli internal/bomscore/report.go and check.go, names as in the JSON.
 export type SbomScoreStatus = 'PASS' | 'FAIL' | 'NOT_ASSESSED' | 'ERROR'
@@ -42,7 +43,8 @@ export interface SbomScoreReport {
     reportVersion: 1
     engine: { name: string, version: string }
     // componentsSkipped and options arrive with SCORE-10; optional so older reports parse.
-    input: { format: string, specVersion: string, serialization: string, components: number, componentsSkipped?: number, sha256: string }
+    // signature: rearm-cli SCORE-34; absent from reports made before it.
+    input: { format: string, specVersion: string, serialization: string, components: number, componentsSkipped?: number, sha256: string, signature?: SignatureReportInput }
     options?: { skipFiles?: boolean }
     profiles: SbomScoreProfile[]
     structure: { checks: SbomScoreCheck[] }

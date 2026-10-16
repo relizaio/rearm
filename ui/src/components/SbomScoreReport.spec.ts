@@ -119,6 +119,20 @@ describe('SbomScoreReport', () => {
         w.unmount()
     })
 
+    // T-27 (SCORE-35, design 3.6): the root signature as the engine read it, under the format line.
+    it('showsTheSignatureLineOnlyWhenTheReportHasOne', () => {
+        const w = mountReport('signature')
+        const line = w.find('[data-testid="sbom-score-signature"]')
+        expect(line.exists()).toBe(true)
+        expect(line.text()).toBe('Signature: Ed25519, key 00000000-0000-4000-8000-000000000001, present, not verified (no key given)')
+        // Under the header, not inside it.
+        expect(w.find('[data-testid="sbom-score-header"]').element.nextElementSibling).toBe(line.element)
+        w.unmount()
+        const plain = mountReport('fda.cdx')
+        expect(plain.find('[data-testid="sbom-score-signature"]').exists()).toBe(false)
+        plain.unmount()
+    })
+
     // T-11
     it('says how many file components were skipped (SCORE-10), and only then', () => {
         const skipped = mountReport('skip-files')
