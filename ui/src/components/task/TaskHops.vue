@@ -38,19 +38,18 @@
                     </div>
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
-                <!-- The design checkpoint's one row (task SPLIT-8), in the words of its phase. -->
+                <!-- The design checkpoint's one row (task SPLIT-8), in the words of its phase. The tag, role and time are the
+                     row's own children, as in the branches above, so the row's flex gap spaces them (T-40). -->
                 <template v-else-if="e.kind === 'checkpoint'">
-                    <span data-testid="hop-checkpoint">
-                        <n-tag size="tiny" :bordered="false" :type="e.phase === 'waiting' ? 'warning' : 'default'">design checkpoint</n-tag>
-                        <span class="hist__role">before {{ e.rec.beforeRole }}</span>
-                        <span class="hist__time"><agent-time :at="e.rec.reachedAt"/> · <template
-                            v-if="e.phase === 'waiting'">waiting for the coordinator</template><template
-                            v-else-if="e.phase === 'ahead'">now with {{ roleAhead(task) }}</template><template
-                            v-else-if="e.phase === 'closed'">closed from the checkpoint</template><template
-                            v-else-if="e.phase === 'lapsed'">not settled; the task went on to {{ roleAhead(task) }}</template><template
-                            v-else>{{ e.phase === 'split' ? 'split' : 'sent on' }}<template v-if="e.rec.settledBy"> by <actor-ref
-                            :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template></span>
-                    </span>
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-checkpoint" :type="e.phase === 'waiting' ? 'warning' : 'default'">design checkpoint</n-tag>
+                    <span class="hist__role">before {{ e.rec.beforeRole }}</span>
+                    <span class="hist__time"><agent-time :at="e.rec.reachedAt"/> · <template
+                        v-if="e.phase === 'waiting'">waiting for the coordinator</template><template
+                        v-else-if="e.phase === 'ahead'">now with {{ roleAhead(task) }}</template><template
+                        v-else-if="e.phase === 'closed'">closed from the checkpoint</template><template
+                        v-else-if="e.phase === 'lapsed'">not settled; the task went on to {{ roleAhead(task) }}</template><template
+                        v-else>{{ e.phase === 'split' ? 'split' : 'sent on' }}<template v-if="e.rec.settledBy"> by <actor-ref
+                        :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template></span>
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
                 <template v-else>

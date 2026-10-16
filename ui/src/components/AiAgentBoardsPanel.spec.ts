@@ -527,5 +527,6 @@ describe('the role form: coordinator checkpoint', () => {
         expect(inactive).toBeGreaterThan(checkpoint)
         const line = source.slice(source.lastIndexOf('\n', checkpoint), checkpoint)
         expect(line).toContain('r.coordinatorCheckpoint ? h(NTag')
+        expect(line).toContain("type: 'warning'")
     })
 })

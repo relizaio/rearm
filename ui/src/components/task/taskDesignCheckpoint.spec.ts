@@ -4,6 +4,8 @@
 // row say the phase checkpointPhase reads, so a PENDING record says "at the checkpoint" only while the task waits
 // there, and the row of a PENDING record is the last line.
 import { describe, expect, it, vi } from 'vitest'
+import { readFileSync } from 'fs'
+import { join } from 'path'
 import { mount } from '@vue/test-utils'
 import { NTag } from 'naive-ui'
 import TaskTitle from './TaskTitle.vue'
@@ -21,7 +23,7 @@ const chip = (task: any) => mount(TaskTitle, { props: { task } }).find('[data-te
 // The tag's type is a prop naive-ui turns into colours, not a class.
 const chipType = (task: any) => mount(TaskTitle, { props: { task } }).findAllComponents(NTag)
     .find((t: any) => t.attributes('data-testid') === 'checkpoint-chip')?.props('type')
-const rowTagType = (w: any) => w.find('[data-testid="hop-checkpoint"]').findComponent(NTag).props('type')
+const rowTagType = (w: any) => w.findAllComponents(NTag).find((t: any) => t.attributes('data-testid') === 'hop-checkpoint')?.props('type')
 const hops = (task: any) => mount(TaskHops, { props: { task, agentNames: {} } })
 
 describe('the header\'s checkpoint chip', () => {
@@ -61,10 +63,26 @@ describe('the header\'s checkpoint chip', () => {
 
 describe('the hop log\'s checkpoint row', () => {
     const rows = (w: any) => w.findAll('.hist__row')
-    const row = (w: any) => w.find('[data-testid="hop-checkpoint"]')
+    // The checkpoint's hop row: the .hist__row whose tag carries the testid.
+    const row = (w: any) => rows(w).find((r: any) => r.find('[data-testid="hop-checkpoint"]').exists()) ?? w.find('[data-testid="hop-checkpoint"]')
 
     it('has no row without a record', () => {
         expect(row(hops(richTask())).exists()).toBe(false)
+    })
+
+    it('keeps the tag, the role and the time as the row\'s own children, as a sign-off row does (T-40)', () => {
+        const w = hops(richTask({ status: 'ASSIGNED', role: 'coder', assignment: { role: 'coder' }, designCheckpoint: rec() }))
+        const r = row(w)
+        const children = Array.from(r.element.children) as Element[]
+        const tag = children.findIndex(c => c.getAttribute('data-testid') === 'hop-checkpoint')
+        const role = children.findIndex(c => c.classList.contains('hist__role'))
+        const time = children.findIndex(c => c.classList.contains('hist__time'))
+        expect(tag).toBeGreaterThan(-1)
+        expect(role).toBe(tag + 1)
+        expect(time).toBe(role + 1)
+        expect(children[role].textContent).toBe('before coder')
+        const signoff = rows(w)[0].element as Element
+        expect(signoff.querySelector(':scope > .hist__time')).not.toBeNull()
     })
 
     it('waits for the coordinator, in warning, as the last line', () => {
@@ -86,7 +104,8 @@ describe('the hop log\'s checkpoint row', () => {
             designCheckpoint: rec(),
         })
         const w = hops(task)
-        expect(rows(w).at(-1).find('[data-testid="hop-checkpoint"]').text()).toContain('now with architect')
+        expect(rows(w).at(-1).find('[data-testid="hop-checkpoint"]').exists()).toBe(true)
+        expect(rows(w).at(-1).text()).toContain('now with architect')
     })
 
     it('says closed from the checkpoint, in default colour, on a COMPLETED task', () => {
@@ -118,5 +137,22 @@ describe('the hop log\'s checkpoint row', () => {
         expect(row(anon).text()).not.toContain('sent on by')
         const split = hops(richTask({ status: 'QUEUED', designCheckpoint: rec({ state: 'SPLIT', settledBy: by, note: '2 children: X-1, X-2' }) }))
         expect(row(split).text()).toContain('split by rhythm@example.org')
+    })
+})
+
+// What the chip and the row read must be selected, or a real task shows neither while every mount above is green.
+describe('the store\'s selections', () => {
+    const store = readFileSync(join(process.cwd(), 'src/store.ts'), 'utf8')
+
+    it('selects the record on every task query', () => {
+        const start = store.indexOf('const AGENT_TASK_SELECTION = `')
+        const selection = store.slice(start, store.indexOf('`', start + 'const AGENT_TASK_SELECTION = `'.length))
+        expect(selection).toContain('designCheckpoint { reachedAt afterRole beforeRole design state settledBy { kind uuid name } settledAt note }')
+    })
+
+    it('selects the flag on the three role queries, not on presets', () => {
+        expect(store.match(/^\s*coordinatorCheckpoint$/gm)).toHaveLength(3)
+        const presets = store.slice(store.indexOf('agentTaskRolePresetsOfOrg'))
+        expect(presets.slice(0, presets.indexOf('`', presets.indexOf('`') + 1))).not.toContain('coordinatorCheckpoint')
     })
 })
