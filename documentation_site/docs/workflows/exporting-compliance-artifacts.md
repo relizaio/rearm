@@ -160,6 +160,29 @@ the server log names them. The property stays in the export when internal metada
 is inside the signed document. From the ReARM release after 26.10.52 on; product exports cached
 before it are rebuilt on their next request.
 
+### Which component may supersede an uploaded SBOM
+
+A CycloneDX `serialNumber` identifies one SBOM lineage within your organization. Uploading the same
+`serialNumber` with a higher `version` makes that version the one ReARM reads for every release that
+holds the `serialNumber`; whether a stored export shows it follows
+[When a change shows](#what-the-nodes-rearm-makes-carry). From the ReARM release after 26.10.52 on,
+a lineage belongs to the component whose release first uploaded it, and only releases of that
+component can supersede it with a higher version. An upload of a higher version to a release of
+another component is refused, whoever uploads it and whatever their permissions, with the error code
+`SBOM_SERIAL_NUMBER_OWNED_BY_OTHER_COMPONENT` and a message that tells the uploader to generate an
+SBOM with its own `serialNumber`; the message never names the owning component. An SPDX document
+uploaded as the next version of a stored SBOM follows the same rule. When the target release already
+exists, the refusal is recorded on it as a `GUARD` update event; a refused `rearm addrelease` creates
+no release and records nothing. An identical file uploaded again is not a new version and is answered
+with the stored document, as before. Lineages stored before this release are assigned to their
+component at the first start of the upgraded server. A `serialNumber` that several components had
+uploaded before the upgrade is left without an owner: the first of those components to upload a
+higher version becomes its owner, and an organization admin can reassign it at any time. Organization
+admins read the owner of a lineage with the `sbomLineageOwner` query and move a lineage to another
+component (a component re-created under a new identifier, or a `serialNumber` shared by mistake) with
+the `reassignSbomLineageOwner` mutation; both take the organization and the `serialNumber`, with or
+without the `urn:uuid:` prefix.
+
 ### Scoring the export
 
 Beside **Export**, **Score** checks the document the export would give you, with the same content options,
