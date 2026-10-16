@@ -3,6 +3,7 @@
 // drawer cannot drift apart on how a time, a duration or a task's label reads.
 import { statusWord, triggerWord } from './agentWords'
 import { investigationRequiredRoles, isInvestigation } from './agentInvestigation'
+import { checkpointPhase, compareHopTimes } from './agentTaskLabels'
 
 const pad = (n: number) => String(n).padStart(2, '0')
 
@@ -125,16 +126,32 @@ export function missingRequiredRoles (task: any, roles: any[] | null | undefined
         })
 }
 
-export type HopEntry = { kind: 'signoff' | 'return', rec: any, at: string | null }
+export type HopEntry = {
+    kind: 'signoff' | 'return' | 'checkpoint', rec: any, at: string | null, phase?: ReturnType<typeof checkpointPhase>
+}
 
-/** Sign-offs and returns interleaved chronologically -- the task's hop log. */
+/**
+ * Sign-offs and returns interleaved chronologically -- the task's hop log -- and the design checkpoint's
+ * one row (task SPLIT-8). A settled record sits at its reachedAt, after the design hops and before the
+ * next role's; a PENDING one is the last line: a record reached again keeps its first reachedAt, which
+ * precedes the redesign hops it now follows. Its time is picked with the sort's own comparator, and the
+ * sort is stable, so on a tie the row pushed last stays last.
+ */
 export function hopHistory (task: any): HopEntry[] {
     if (!task) return []
     const rows: HopEntry[] = [
         ...(task.signOffs ?? []).map((rec: any) => ({ kind: 'signoff' as const, rec, at: rec.signedOffAt })),
         ...(task.returns ?? []).map((rec: any) => ({ kind: 'return' as const, rec, at: rec.returnedAt })),
     ]
-    return rows.sort((a, b) => String(a.at ?? '').localeCompare(String(b.at ?? '')))
+    const rec = task.designCheckpoint
+    if (rec) {
+        let at: string | null = rec.reachedAt ?? null
+        if (rec.state === 'PENDING') {
+            for (const r of rows) if (compareHopTimes(r.at, at) > 0) at = r.at
+        }
+        rows.push({ kind: 'checkpoint', rec, at, phase: checkpointPhase(task) })
+    }
+    return rows.sort((a, b) => compareHopTimes(a.at, b.at))
 }
 
 /** The route of a task's page. */

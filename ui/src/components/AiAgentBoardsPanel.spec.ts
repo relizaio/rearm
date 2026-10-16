@@ -488,3 +488,44 @@ describe('the kanban: more-lanes hint', () => {
     })
 })
 
+// The coordinator checkpoint flag in the role form (task SPLIT-8, T-18 a): beside blind review for an agentic role,
+// seeded false, sent null for a HUMAN role; the preset form has none; the roles table shows a 'checkpoint' flag.
+describe('the role form: coordinator checkpoint', () => {
+    it('binds the checkbox inside the agentic flags, after blind review and before active', () => {
+        const field = template.indexOf('data-testid="role-coordinator-checkpoint"')
+        expect(field).toBeGreaterThan(-1)
+        const tag = template.lastIndexOf('<n-checkbox', field)
+        expect(template.slice(tag, field)).toContain('v-model:checked="editingRole.coordinatorCheckpoint"')
+        const space = template.lastIndexOf('<n-space :size="18" v-if="editingRole.kind !== \'HUMAN\'">', field)
+        expect(space).toBeGreaterThan(-1)
+        expect(template.indexOf('</n-space>', space)).toBeGreaterThan(field)
+        expect(template.indexOf('editingRole.blindReview', space)).toBeLessThan(field)
+        expect(template.indexOf('editingRole.active', space)).toBeGreaterThan(field)
+    })
+
+    it('seeds a new role false and sends the flag, null for a HUMAN role', () => {
+        const add = source.slice(source.indexOf('function startAddRole'), source.indexOf('async function saveRole'))
+        expect(add).toContain('blindReview: false, coordinatorCheckpoint: false')
+        const save = source.slice(source.indexOf('async function saveRole'), source.indexOf('const presetColumns'))
+        expect(save).toContain("coordinatorCheckpoint: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.coordinatorCheckpoint,")
+    })
+
+    it('leaves the preset form without it', () => {
+        expect(template).not.toContain('editingPreset.coordinatorCheckpoint')
+        const savePreset = source.slice(source.indexOf('async function savePreset'))
+        expect(savePreset.slice(0, savePreset.indexOf('\n}\n'))).not.toContain('coordinatorCheckpoint')
+        const startPreset = source.slice(source.indexOf('function startAddPreset'), source.indexOf('async function savePreset'))
+        expect(startPreset).not.toContain('coordinatorCheckpoint')
+    })
+
+    it('shows a checkpoint flag in the roles table, after blind and before inactive', () => {
+        const blind = source.indexOf("() => 'blind'")
+        const checkpoint = source.indexOf("() => 'checkpoint'")
+        const inactive = source.indexOf("() => 'inactive'")
+        expect(blind).toBeGreaterThan(-1)
+        expect(checkpoint).toBeGreaterThan(blind)
+        expect(inactive).toBeGreaterThan(checkpoint)
+        const line = source.slice(source.lastIndexOf('\n', checkpoint), checkpoint)
+        expect(line).toContain('r.coordinatorCheckpoint ? h(NTag')
+    })
+})

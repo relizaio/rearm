@@ -756,6 +756,14 @@
                             The session in this role reads its task without the earlier hops' notes, sessions and
                             agents: it reviews the work, not the worker's account of it.
                         </n-tooltip>
+                        <!-- The design checkpoint (task SPLIT-5): the operator's, one role per board; the server refuses a second. -->
+                        <n-tooltip trigger="hover">
+                            <template #trigger>
+                                <n-checkbox v-model:checked="editingRole.coordinatorCheckpoint" data-testid="role-coordinator-checkpoint">coordinator checkpoint</n-checkbox>
+                            </template>
+                            Before this role is queued on a task's design the task stops at the coordinator, which
+                            reads the reviewed design and splits the task or sends it on. One role per board.
+                        </n-tooltip>
                         <n-checkbox v-model:checked="editingRole.active">active</n-checkbox>
                     </n-space>
                     <n-checkbox v-else v-model:checked="editingRole.active">active</n-checkbox>
@@ -1643,6 +1651,7 @@ const roleColumns: DataTableColumns<any> = [
         render: (r: any) => h('span', {}, [
             r.requireDistinctAgent ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'distinct agent' }) : null,
             r.blindReview ? h(NTag, { size: 'tiny', bordered: false, type: 'info', style: 'margin-left:4px' }, { default: () => 'blind' }) : null,
+            r.coordinatorCheckpoint ? h(NTag, { size: 'tiny', bordered: false, type: 'warning', style: 'margin-left:4px' }, { default: () => 'checkpoint' }) : null,
             !r.active ? h(NTag, { size: 'tiny', bordered: false, style: 'margin-left:4px' }, { default: () => 'inactive' }) : null,
         ]),
     },
@@ -1931,7 +1940,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null), commissions: commissionsDraftOf(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, coordinatorCheckpoint: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null), commissions: commissionsDraftOf(null) }
 }
 
 async function saveRole () {
@@ -1949,6 +1958,7 @@ async function saveRole () {
                 orderIndex: editingRole.value.orderIndex ?? 0,
                 requireDistinctAgent: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.requireDistinctAgent,
                 blindReview: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.blindReview,
+                coordinatorCheckpoint: editingRole.value.kind === 'HUMAN' ? null : !!editingRole.value.coordinatorCheckpoint,
                 active: !!editingRole.value.active,
                 requiredCapabilities: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.requiredCapabilities ?? []),
                 wipLimit: editingRole.value.kind === 'HUMAN' ? null : (editingRole.value.wipLimit ?? 0),
