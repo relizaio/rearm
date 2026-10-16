@@ -55,6 +55,9 @@ public class DownloadLogData extends RelizaDataParent implements RelizaObject {
 		// SBOM-specific
 		private Boolean tldOnly;
 		private Boolean ignoreDev;
+		// SBOM_EXPORT: whether components of type file were left out (SCORE-11). The parsed
+		// value, never null on rows written since: absent and false mean the same here.
+		private Boolean excludeFileComponents;
 		private String structure;
 		private String belongsTo;
 		private String mediaType;

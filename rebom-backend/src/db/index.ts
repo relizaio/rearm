@@ -1,2 +1,2 @@
 export { pool } from './pool';
-export { runQuery } from './query';
+export { runQuery, withTransaction, mapDatabaseError, type TxClient } from './query';

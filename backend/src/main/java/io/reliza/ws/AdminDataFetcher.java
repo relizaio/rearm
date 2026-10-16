@@ -27,6 +27,9 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.BrandedEmailText;
+import io.reliza.service.BrandedEmailText.EmailText;
+import io.reliza.service.BrandingService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.LicenseStatus;
 import io.reliza.service.ReleaseFinalizerService;
@@ -59,6 +62,9 @@ public class AdminDataFetcher {
 
 	@Autowired
 	private io.reliza.service.EmailService emailService;
+
+	@Autowired
+	private BrandingService brandingService;
 
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
@@ -147,9 +153,7 @@ public class AdminDataFetcher {
 		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
 		
 		String email = oud.get().getEmail();
-		String subject = "Test Email from ReARM";
-		String content = "This is a test email sent from ReARM to verify your email configuration. If you received this email, your email settings are working correctly.";
-		
-		return emailService.sendEmail(java.util.List.of(email), subject, "text/html", content);
+		EmailText test = BrandedEmailText.testEmail(brandingService.current().values());
+		return emailService.sendEmail(List.of(email), test.subject(), "text/html", test.body());
 	}
 }

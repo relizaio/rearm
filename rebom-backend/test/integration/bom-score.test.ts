@@ -30,10 +30,10 @@ function fixture(name: string): string {
     return fs.readFileSync(path.join(FIXTURES, name), 'utf8');
 }
 
-// I-0: the image pins the CLI with `bomutils score` for linux/amd64 only until the
-// repin to a released zip (SCORE-4 design 3.7); arm64 keeps CLI 26.07.9, which has
-// no score command. On x64 nothing is skipped: a CLI without the command fails here.
-describe.skipIf(process.arch !== 'x64')('scoreBomProbe with the real rearm CLI', () => {
+// I-0: the image carries the released rearm CLI with `bomutils score` on every
+// architecture it is built for (SCORE-7), so nothing is skipped: a CLI without the
+// command fails this suite on any of them.
+describe('scoreBomProbe with the real rearm CLI', () => {
     const server = new ApolloServer({ typeDefs, resolvers });
     let mkdtempSpy: ReturnType<typeof vi.spyOn>;
     let poolQuerySpy: ReturnType<typeof vi.spyOn>;
@@ -138,7 +138,7 @@ describe.skipIf(process.arch !== 'x64')('scoreBomProbe with the real rearm CLI',
     // engine before SCORE-10/SCORE-20 and the pinned one, so an old pin fails here.
     it('T-3 fda support checks skip the non-package component types', async () => {
         const report = JSON.parse(await scored(fixture('full.types.cdx.json'), ['fda']));
-        expect(report.engine.version.startsWith('2026-10-sbom-score.')).toBe(true);
+        expect(report.engine.version).toMatch(/^\d+\.\d+\.\d+$/);
         expect(report.input.components).toBe(6);
         expect(report.input.componentsSkipped).toBe(0);
         expect(report.profiles[0].key).toBe('fda');

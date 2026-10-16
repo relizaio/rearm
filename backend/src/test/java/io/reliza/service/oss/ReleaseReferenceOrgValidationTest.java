@@ -500,12 +500,16 @@ public class ReleaseReferenceOrgValidationTest {
 
 	@Test
 	public void validateReleaseReferencesRefusesANullOrgAsUserInput() throws RelizaException {
-		// No org on a fresh create that sets references: a RelizaException, not a 500.
+		// No org on a fresh create that sets references: a RelizaException, not a 500. Since TPF-5 a
+		// create on a branch takes the branch's org when none is given, so the foreign entry is refused
+		// as not found in that org (validateReleaseReferences' own null-org refusal is now reached only
+		// by a branchless create).
 		Rig a = rig();
 		Rig b = rig();
 		UUID foreign = sce(b);
-		assertThrows(RelizaException.class, () -> ossReleaseService.createRelease(releaseDto(a, "1.0.0")
+		RelizaException re = assertThrows(RelizaException.class, () -> ossReleaseService.createRelease(releaseDto(a, "1.0.0")
 				.org(null).sourceCodeEntry(foreign).build(), WU));
+		assertTrue(re.getMessage().endsWith("[" + foreign + "]"), re.getMessage());
 	}
 
 	// ---------------- the refusal does not reveal which uuid exists elsewhere ----------------

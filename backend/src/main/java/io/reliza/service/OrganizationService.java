@@ -51,6 +51,7 @@ import io.reliza.common.SidPurlUtils;
 import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
+import io.reliza.model.BrandingPreset;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
@@ -65,6 +66,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.service.BrandedEmailText.EmailText;
 import io.reliza.repositories.OrganizationRepository;
 import io.reliza.ws.RelizaConfigProps;
 
@@ -83,6 +85,9 @@ public class OrganizationService {
 	
 	@Autowired
     private EmailService emailService;
+
+	@Autowired
+	private BrandingService brandingService;
 	
 	@Autowired
 	@Lazy
@@ -529,14 +534,12 @@ public class OrganizationService {
 			od.addInvitee(secret, type, userEmail, wu.getLastUpdatedBy());
 			Organization o = saveOrganization(getOrganizationService.getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
 			String orgName = od.getName();
-			String emailSubject = "You are invited to join organization " + orgName + " on ReARM";
-			String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri() + "/joinOrganization/" 
-					+ urlSafeKey + "\">the link </a> to join organization. The link is valid for 48 hours. Note that by clicking the link you are also accepting ReARM cookie and privacy policies.";
-			emailService.sendEmail(List.of(userEmail), emailSubject, "text/html", contentStr);
-			String admingEmailSub = "New user invited to join the organizaiton " + orgName + " on ReARM";
-			String adminEmailContent = "Admin user with uuid = " + wu.getLastUpdatedBy() + " invited a new user to join the organization " + orgName + " on ReARM with permission: " + type.toString() + ". Check pending invitations for details.";
+			BrandingPreset branding = brandingService.current().values();
+			EmailText invite = BrandedEmailText.invite(branding, relizaConfigProps.getBaseuri(), orgName, urlSafeKey);
+			emailService.sendEmail(List.of(userEmail), invite.subject(), "text/html", invite.body());
+			EmailText adminNotice = BrandedEmailText.adminInviteNotice(branding, orgName, wu.getLastUpdatedBy(), type);
 			var adminEmails = userService.listOrgAdminUsersDataByOrg(od.getUuid()).stream().map(admin -> admin.getEmail()).toList();
-			emailService.sendEmail(adminEmails, admingEmailSub, "text/html", adminEmailContent);
+			emailService.sendEmail(adminEmails, adminNotice.subject(), "text/html", adminNotice.body());
 			od = OrganizationData.orgDataFromDbRecord(o);
 		} catch (Exception e) {
 			log.error("Exception when inviting user to organization", e);

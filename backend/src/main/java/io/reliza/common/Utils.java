@@ -977,26 +977,26 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.07.4";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.10.6";
 
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "6d17397b4a43772ce716ae65522a9b26f26e0c4ca9ce0b1ba7e2e4a2717e91ca";
-    private static final String REARM_CD_HELM_VERSION = "0.3.22";
-    private static final String REARM_CD_HELM_COMMIT = "35504f0b07bc905c3450b92318253182e7428390";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.22 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "8d1825784337425a9bd2b1de19114801379c73e6f438f50e53fedd0d407c058e";
+    private static final String REARM_CD_HELM_VERSION = "0.4.3";
+    private static final String REARM_CD_HELM_COMMIT = "8a8636ee218446909717f4f63f194be83ac0de51";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.4.3 [skip ci]";
 
-    public static final String REARM_CD_CONTAINER_DIGEST = "2cb74272852a4922a52536197e1f5c8399a87fd37afa481c43396dee91073ca2";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.48";
-    public static final String REARM_CD_CONTAINER_COMMIT = "16184724dd87351839f0bcef53d01b181eebd852";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "rearm-cd: bump go deps, rearm-cli 26.07.2, kubectl 1.35.6, helm 4.2.3, kubeseal 0.38.4, base images (#5)";
+    public static final String REARM_CD_CONTAINER_DIGEST = "303487e09f20934d2de4de6cead9dfee4f4012c43f971527edf80f140cff1fa2";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.10.1";
+    public static final String REARM_CD_CONTAINER_COMMIT = "bedb97aa6a7a54e78c26cdf4606f52eb03bcb1cc";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "chore(rearm-cd): trigger build";
 
     // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
     // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.
     public static final String REARM_WATCHER_CONTAINER_NAME = "registry.relizahub.com/library/rearm-watcher-app";
-    public static final String REARM_WATCHER_CONTAINER_DIGEST = "90606bb8920e43bdf3ebaf90e37f8235a97f9fb874efb1e4b1df8bbda1a74756";
-    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.07.0";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT = "21ec41d85f3febcd03468ed37f7c7cfce12480d1";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "watcher: rearm-cli 26.07.2, kubectl 1.35.6 (#4)";
+    public static final String REARM_WATCHER_CONTAINER_DIGEST = "34f40f6e6bc456c2f057208272cc022c7fc9f3c1294a8fa4b45fc96400566485";
+    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.07.1";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT = "3e4b747021dc9d0c05fe39fb3495b6a10c39c599";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "fix: CVE sweep of rearm-cd and rearm-watcher images -- Go 1.26.9, Alpine 3.24.2, kubectl 1.35.9, helm 4.3.0, kubeseal 0.40.0, rearm-cli 26.10.2 (#12)";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);

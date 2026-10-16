@@ -1068,14 +1068,31 @@ public class ReleaseMetricsComputeService {
 	 * The release's child releases that are scanned, in order. A child that is not (a board's
 	 * document round, task RD4-11) never gets a firstScanned, so counting it would hold every
 	 * product composed of one in "Scan pending" for ever.
+	 *
+	 * A child that does not resolve in the product's organization (another org's release on a
+	 * legacy row, or a deleted one; task TPF-6) is left out of the rollup and named in one WARN,
+	 * instead of throwing out of the metrics pass on every attempt. The lookup is the same
+	 * org-scoped read as before (own org or the external-components org), so no row of another
+	 * organization is read.
 	 */
 	private List<ReleaseData> scannedChildrenOf(ReleaseData rd) {
 		var parents = rd.getParentReleases();
 		if (parents == null || parents.isEmpty()) return List.of();
 		List<ReleaseData> out = new ArrayList<>();
+		List<UUID> skipped = new ArrayList<>();
 		for (var p : parents) {
-			ReleaseData child = sharedReleaseService.getReleaseData(p.getRelease(), rd.getOrg()).get();
-			if (componentKindPolicy.isScannableRelease(child)) out.add(child);
+			UUID childUuid = null == p ? null : p.getRelease();
+			Optional<ReleaseData> child = null == childUuid ? Optional.empty()
+					: sharedReleaseService.getReleaseData(childUuid, rd.getOrg());
+			if (child.isEmpty()) {
+				skipped.add(childUuid);
+				continue;
+			}
+			if (componentKindPolicy.isScannableRelease(child.get())) out.add(child.get());
+		}
+		if (!skipped.isEmpty()) {
+			log.warn("Product release {} of org {}: {} of {} parent release(s) not found in this organization, left out of the metrics rollup: {}",
+					rd.getUuid(), rd.getOrg(), skipped.size(), parents.size(), skipped);
 		}
 		return out;
 	}

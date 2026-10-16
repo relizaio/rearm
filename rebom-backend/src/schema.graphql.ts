@@ -26,6 +26,9 @@ const typeDefs = gql`
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
     scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
+    # The ownership record of a serialNumber lineage (SCORE-45), or null when none exists. The
+    # serialNumber may be given with or without its urn:uuid: prefix.
+    bomLineage(org: ID!, serialNumber: ID!): BomLineage
   }
 
   type Mutation {
@@ -46,6 +49,47 @@ const typeDefs = gql`
     the signature blob; the trust store is authoritative.
     """
     verifySignature(input: VerifySignatureInput!): VerifySignatureResult!
+    # Set the owners of serialNumber lineages (SCORE-45), each entry in its own transaction, in
+    # input order; at most 500 entries, every one validated before any write. CLAIM_IF_UNOWNED
+    # never overwrites an owner (the backfill); REASSIGN sets it unconditionally (the admin remedy).
+    setBomLineageOwners(org: ID!, entries: [BomLineageOwnerInput!]!, mode: BomLineageOwnerMode!, actor: String): [BomLineageOwnerResult!]!
+  }
+
+  input BomLineageOwnerInput {
+    serialNumber: ID!
+    ownerComponent: ID!
+  }
+
+  enum BomLineageOwnerMode {
+    CLAIM_IF_UNOWNED
+    REASSIGN
+  }
+
+  enum BomLineageOwnerOutcome {
+    SET
+    UNCHANGED_SAME_OWNER
+    REFUSED_OWNED_BY_OTHER
+    NO_SUCH_LINEAGE
+  }
+
+  type BomLineageOwnerResult {
+    # As given in the entry.
+    serialNumber: ID!
+    outcome: BomLineageOwnerOutcome!
+    # The owner now stored, for SET and UNCHANGED_SAME_OWNER only.
+    ownerComponent: ID
+  }
+
+  type BomLineage {
+    # Canonical form, with the urn:uuid: prefix.
+    serialNumber: ID!
+    # Null when the lineage is unowned.
+    ownerComponent: ID
+    claimedAt: DateTime
+    # UPLOAD, BACKFILL or REASSIGN.
+    claimedVia: String
+    # The actor setBomLineageOwners received; null for an upload claim.
+    claimedBy: String
   }
 
   input VerifySignatureInput {
@@ -309,8 +353,23 @@ input RebomOptions {
     name: String
     group: String
     version: String
+    # The attachment's reference: the commit of a source code entry, the digest of a deliverable.
+    # With belongsTo DELIVERABLE an upload's root without hashes gets the digest as one when it
+    # reads as a SHA-1, SHA-256 or SHA-512 value; with belongsTo SCE a root without pedigree
+    # commits gets the commit as pedigree.commits[].uid, never as a hash (a commit id addresses a
+    # commit object, not the root's bytes); any other belongsTo fills nothing from it.
     hash: String
     belongsTo: String
+    # The supplier ReARM names for the root of this upload: the deliverable's publisher or the
+    # organization for its own software; absent for third-party software. Filled into the root
+    # where it names no supplier; stored with the row.
+    supplierName: String
+    # The component of the organization that owns this document's serialNumber lineage
+    # (SCORE-45): ReARM sets it from the target release's component on every upload and merge.
+    # Absent for a caller with no component context. An upload that names an owner is refused
+    # when the lineage belongs to another component, and claims the lineage when it is unowned;
+    # an upload that names none neither checks nor claims (legacy behaviour).
+    ownerComponent: ID
     tldOnly: Boolean
     structure: String
     notes: String
@@ -338,11 +397,39 @@ input RebomOptions {
     # placeholder component with the property reliza:sbom:missing, a direct dependency of the
     # merged root, and the document states their dependencies unknown (compositions). Not stored.
     missingSbomComponents: [MissingSbomComponentInput!]
+    # Merge only: what ReARM holds about the release the merged root describes. Filled into the
+    # root where it names no supplier, carries no hashes or carries no license of its own; never
+    # replaces a value.
+    # Derived by ReARM at generation time, not part of the options it matches stored merges on.
+    releaseNode: ReleaseNodeFactsInput
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 
+  # The release a merged root describes. supplierName: the organization's name. hashes: the digest
+  # records of the release's deliverable when it has exactly one deliverable with digests, else
+  # none (several deliverables have no single set of bytes). Either may be absent.
+  input ReleaseNodeFactsInput {
+    supplierName: String
+    hashes: [BomHashInput!]
+    # The license ReARM declares for the release's software: an SPDX license expression
+    # (Apache-2.0, MIT OR GPL-2.0-only, LicenseRef-Acme-Commercial for a proprietary license),
+    # as rearm-saas canonicalised it. Written as the root's licenses where the root has none.
+    licenseExpression: String
+    # Where the text of the license is. Carried only beside a single LicenseRef- expression,
+    # in the named CycloneDX form; CycloneDX cannot carry a url beside an expression.
+    licenseUrl: String
+  }
+
+  # One CycloneDX hashes[] entry. alg: a CycloneDX hash algorithm (SHA-256, SHA-512, ...);
+  # content: the hex value. An entry the CycloneDX schema refuses is left out.
+  input BomHashInput {
+    alg: String!
+    content: String!
+  }
+
   # A component release ReARM holds no SBOM for. reason: NO_SBOM_ARTIFACT or COVERAGE_EXCLUDED.
-  # purl only when ReARM records one; it is never made up.
+  # purl only when ReARM records one; it is never made up. hashes: the digests of its one
+  # deliverable, by the rule of ReleaseNodeFactsInput.hashes.
   input MissingSbomComponentInput {
     releaseUuid: String!
     name: String!
@@ -351,6 +438,10 @@ input RebomOptions {
     supplierName: String
     group: String
     purl: String
+    hashes: [BomHashInput!]
+    # licenseExpression, licenseUrl: as on ReleaseNodeFactsInput, written as the placeholder's licenses.
+    licenseExpression: String
+    licenseUrl: String
     reason: String!
   }
 

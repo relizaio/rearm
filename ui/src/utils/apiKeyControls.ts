@@ -6,7 +6,7 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
-import { apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId, splitDeniedNotes } from '@/utils/apiKeyLabel'
+import { apiKeyDeniedReason, apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId } from '@/utils/apiKeyLabel'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -27,7 +27,6 @@ export interface ApiKeyControlOptions {
     siblings?: () => any[]
 }
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
-function deniedReason (row: any): string { return splitDeniedNotes(row.notes)?.reason ?? '' }
 
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
@@ -142,7 +141,10 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const statusCell = (row: any) => {
         if (row.status === 'REQUESTED' || row.status === 'DENIED') {
             const kids: any[] = [h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error', style: 'margin-right: 6px;' }, { default: () => row.status })]
-            if (row.status === 'DENIED') kids.push(h('span', { class: 'subtle' }, deniedReason(row) ? `reason: ${deniedReason(row)}` : 'no reason given'))
+            if (row.status === 'DENIED') {
+                const reason = apiKeyDeniedReason(row)
+                kids.push(h('span', { class: 'subtle' }, reason ? `reason: ${reason}` : 'no reason given'))
+            }
             return h('div', { style: WRAP_ROW }, kids)
         }
         const inactive = row.status === 'INACTIVE'

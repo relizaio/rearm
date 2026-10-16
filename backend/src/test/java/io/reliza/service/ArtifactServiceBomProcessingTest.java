@@ -290,7 +290,7 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithUrnPrefix_ExtractsCorrectly() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), null, null, null, null, null, null, null
         );
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
@@ -306,7 +306,7 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithoutUrnPrefix_ExtractsCorrectly() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             testBomUuid.toString(), null, null, null, null, null, null, null
         );
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
@@ -322,7 +322,7 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithInvalidUuid_ThrowsException() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "invalid-uuid", null, null, null, null, null, null, null
         );
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
@@ -359,7 +359,7 @@ public class ArtifactServiceBomProcessingTest {
         
         String bomDigest = "abc123def456";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), bomDigest, null, null, null, null, null, null
         );
         OASResponseDto bomDto = new OASResponseDto();
@@ -394,7 +394,7 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
         OASResponseDto bomDto = new OASResponseDto();
@@ -425,7 +425,7 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
         OASResponseDto bomDto = new OASResponseDto();
@@ -455,7 +455,7 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
         );
         OASResponseDto bomDto = new OASResponseDto();
@@ -489,7 +489,7 @@ public class ArtifactServiceBomProcessingTest {
         
         String bomVersion = "2";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, bomVersion
         );
         
@@ -522,7 +522,7 @@ public class ArtifactServiceBomProcessingTest {
         String bomDigest = "rearm-digest-123";
         String originalFileDigest = "original-digest-456";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), bomDigest, originalFileDigest, 
             1024L, "application/spdx+json", null, null, "1"
         );
@@ -574,7 +574,7 @@ public class ArtifactServiceBomProcessingTest {
         String originalDigest = "original-digest-789";
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", originalDigest, 
             originalSize, originalMediaType, null, null, "1"
         );

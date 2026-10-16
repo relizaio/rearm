@@ -93,6 +93,7 @@ public class CliSessionDataFetcher {
 				throw new RelizaException("Invalid approvals sent");
 		}
 		AuthorizationService.ClampedPermissions clamped = authorizationService.clampToOwner(ud, orgUuid, permissionType, requested);
+		createNotes = ApiKeyService.checkedNotes(createNotes);
 		return cliSessionService.approveWithNewKey(userCode, ud, orgUuid, createNotes, clamped.orgType(), clamped.permissions(),
 				maxMinutes, WhoUpdated.getWhoUpdated(ud));
 	}

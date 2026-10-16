@@ -214,6 +214,19 @@ const storeObject : any = {
              * would reject.
              */
             supportInjectionSupported: true,
+            /**
+             * False once the organization settings section "SBOM export signing" had its key
+             * list refused as schema drift: a backend without SBOM signing (a CE mirror before
+             * its sync). Latched for the session, like the flag above; a reload clears it.
+             */
+            sbomSigningSupported: true,
+            /**
+             * False once a read of the declared licence (organization default, component or
+             * release, SCORE-42) was refused as schema drift: a backend without the fields (a CE
+             * mirror before its sync). Latched for the session, like the flags above; a reload
+             * clears it. A failed request does not set it.
+             */
+            declaredLicenseSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -444,6 +457,12 @@ const storeObject : any = {
         },
         SET_SUPPORT_INJECTION_SUPPORTED (state : any, supported : boolean) {
             state.supportInjectionSupported = supported
+        },
+        SET_SBOM_SIGNING_SUPPORTED (state : any, supported : boolean) {
+            state.sbomSigningSupported = supported
+        },
+        SET_DECLARED_LICENSE_SUPPORTED (state : any, supported : boolean) {
+            state.declaredLicenseSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -2429,6 +2448,30 @@ const storeObject : any = {
             })
             context.commit('SET_USERS', response.data.users)
             return response.data.users
+        },
+        // The org's keys, enough to label a key actor (task t20261013-072815-31687). The server answers
+        // org admins only and the caller asks only as one; a failure leaves the short-id labels, no notification.
+        async fetchApiKeyRefsOfOrg (context: any, orgUuid: string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query apiKeyRefsOfOrg($orgUuid: ID!) {
+                            apiKeys(orgUuid: $orgUuid) {
+                                uuid
+                                type
+                                declaredName
+                                notes
+                                status
+                            }
+                        }`,
+                    variables: { orgUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return response.data?.apiKeys || []
+            } catch (err) {
+                console.error(err)
+                return []
+            }
         },
         async updateUserName (context: any, name: string) {
             const response = await graphqlClient.mutate({

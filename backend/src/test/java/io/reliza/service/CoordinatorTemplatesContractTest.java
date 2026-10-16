@@ -238,10 +238,25 @@ class CoordinatorTemplatesContractTest {
 		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
 			String doc = template(name);
 			assertTrue(doc.contains(paragraph), name + " should carry the current replaced-PR paragraph");
+			// task t20261010-033522-23606: the server refuses a declaration over a superseded PR.
+			assertTrue(doc.contains(paragraph + " The other way round is refused: a superseded PR is not marked abandoned"
+					+ " (it already is) or declared merged."), name + " should say a superseded PR takes no declaration");
 			assertTrue(doc.contains(noReplacement), name + " should keep the sentence for a PR with no replacement");
 			assertTrue(doc.indexOf(noReplacement) > doc.indexOf(paragraph), name + ": the --abandoned sentence follows the paragraph");
 			assertTrue(doc.contains("A PR that shows unregistered means the repository's CI is not reporting"), name);
 			assertFalse(doc.contains("the coder holding the task links the replacement"), name + " still names only the coder");
+		}
+	}
+
+	/** Task t20261010-033523-18839: a PR linked by mistake, or the superseded half of a pair, is unlinked. */
+	@Test
+	void aMistakenOrSupersededPrIsUnlinkedInBothCoordinatorTemplates() throws IOException {
+		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
+			String doc = template(name);
+			assertTrue(doc.contains("A PR linked by mistake, or the superseded half of a pair, is unlinked by the same three:"
+					+ " `rearm agent task unlinkpr <key> --session <uuid> --pr <pr> --note '<why>'`."), name);
+			assertTrue(doc.contains("past the pass whenever it would leave nothing to deliver or take an open PR out; only a"
+					+ " person takes an open PR out then."), name);
 		}
 	}
 

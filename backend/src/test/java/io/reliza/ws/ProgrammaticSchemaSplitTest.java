@@ -19,7 +19,6 @@ import graphql.language.FieldDefinition;
 import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.OperationDefinition;
-import graphql.parser.Parser;
 import graphql.schema.idl.SchemaParser;
 import graphql.schema.idl.TypeDefinitionRegistry;
 
@@ -57,7 +56,7 @@ public class ProgrammaticSchemaSplitTest {
 			assertTrue(overlap.isEmpty(), root + " fields declared in both files: " + overlap);
 		}
 		// shared file must not declare root types at all
-		Document shared = new Parser().parseDocument(read("schema/schema.graphqls"));
+		Document shared = ProgrammaticSchemaRegistry.parseSdl(read("schema/schema.graphqls"));
 		for (Definition<?> d : shared.getDefinitions()) {
 			if (d instanceof ObjectTypeDefinition o) {
 				assertFalse("Query".equals(o.getName()) || "Mutation".equals(o.getName()), "root types belong to user.graphqls");
@@ -102,7 +101,7 @@ public class ProgrammaticSchemaSplitTest {
 		TypeDefinitionRegistry reg = new SchemaParser().parse(bundle);
 		// every type referenced by the bundle is defined in it (plus built-in scalars)
 		Set<String> builtins = Set.of("String", "Int", "Float", "Boolean", "ID");
-		Document doc = new Parser().parseDocument(bundle);
+		Document doc = ProgrammaticSchemaRegistry.parseSdl(bundle);
 		for (Definition<?> d : doc.getDefinitions()) {
 			if (d instanceof ObjectTypeDefinition o) {
 				for (FieldDefinition f : o.getFieldDefinitions()) {
@@ -145,7 +144,7 @@ public class ProgrammaticSchemaSplitTest {
 	}
 
 	private static Map<String, Set<String>> baseRootFields(String sdl) {
-		Document doc = new Parser().parseDocument(sdl);
+		Document doc = ProgrammaticSchemaRegistry.parseSdl(sdl);
 		Map<String, Set<String>> out = new java.util.HashMap<>();
 		for (Definition<?> d : doc.getDefinitions()) {
 			if (d instanceof ObjectTypeDefinition o && !(d instanceof ObjectTypeExtensionDefinition)

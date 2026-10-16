@@ -75,6 +75,13 @@ public class ShippedDefaultResolutionTest {
 	}
 
 	@Test
+	public void theBrandingPresetIsEmptyWithItsVariableAbsent() throws IOException {
+		// Empty means the Reliza branding (BrandingService). A default written into the yaml would
+		// brand every installation that set nothing.
+		assertEquals("", environmentFromApplicationYaml().getProperty("relizaprops.brandingPreset"));
+	}
+
+	@Test
 	public void anOperatorOverrideIsWhatWins() throws IOException {
 		// Supplied as a property source rather than by setting a system property: the comparison is
 		// against the RESOLVED value whatever route the override takes, and a test that mutates

@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -646,6 +647,27 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	}
 
 	/**
+	 * A linked PR taken off the task (task t20261010-033523-18839): a mistaken link, or the superseded half of a
+	 * pair. Append-only; nothing removes a row. A relink stamps the newest row for the URL.
+	 *
+	 * @param url the PR as the task linked it
+	 * @param by who unlinked it: a session or a person
+	 * @param note why, whitespace collapsed to one line; null when none was given
+	 * @param relinkedBy who linked it again, as a link records it (the linking key's agent); null until relinked
+	 * @param relinkedAt when it was linked again; null until relinked
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record UnlinkedPr(String url, AgentActor by, ZonedDateTime at, String note, String relinkedBy,
+			ZonedDateTime relinkedAt) implements Serializable {
+		private static final long serialVersionUID = 20261010L;
+
+		/** This row, stamped as linked again. */
+		public UnlinkedPr withRelinked(String relinker, ZonedDateTime when) {
+			return new UnlinkedPr(url, by, at, note, relinker, when);
+		}
+	}
+
+	/**
 	 * A PR's state as its tracker reported it (task RD3-20): OPEN, CLOSED (without merging) or MERGED, where it
 	 * was read, and when.
 	 */
@@ -1145,6 +1167,13 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	private List<String> prUrls = new ArrayList<>();
 
 	/**
+	 * PRs taken off {@link #prUrls} (task t20261010-033523-18839). Append-only; nothing removes a row. A relink
+	 * stamps the newest row for the URL.
+	 */
+	@JsonProperty
+	private List<UnlinkedPr> unlinkedPrs = new ArrayList<>();
+
+	/**
 	 * The component this task produces: a document component when the task writes a
 	 * specification, the implementation component when it writes code. Null while the work
 	 * is still about something that does not exist yet -- the decomposition task that will
@@ -1259,6 +1288,21 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	public void addPrUrl(String prUrl) {
 		if (this.prUrls == null) this.prUrls = new ArrayList<>();
 		if (prUrl != null && !this.prUrls.contains(prUrl)) this.prUrls.add(prUrl);
+	}
+
+	/**
+	 * Remove every linked spelling the predicate accepts (task t20261010-033523-18839). The caller matches by the
+	 * board's match key, which lives in the service layer: links may differ in case or a trailing slash.
+	 *
+	 * @return whether any was removed
+	 */
+	public boolean removePrUrl(Predicate<String> matches) {
+		return null != this.prUrls && this.prUrls.removeIf(matches);
+	}
+
+	public void addUnlinkedPr(UnlinkedPr unlinked) {
+		if (this.unlinkedPrs == null) this.unlinkedPrs = new ArrayList<>();
+		if (unlinked != null) this.unlinkedPrs.add(unlinked);
 	}
 
 	public void addRelease(UUID release) {

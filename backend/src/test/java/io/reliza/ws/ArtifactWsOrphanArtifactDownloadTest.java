@@ -4,12 +4,13 @@
 package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
@@ -35,14 +37,21 @@ import org.springframework.web.context.request.ServletWebRequest;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
+import io.reliza.model.DownloadLogData.DownloadSubjectType;
+import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.model.WhoUpdated;
+import io.reliza.service.ArtifactDownloadAccessService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.DownloadLogService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
@@ -87,6 +96,10 @@ class ArtifactWsOrphanArtifactDownloadTest {
 		ReflectionTestUtils.setField(ws, "sharedArtifactService", sharedArtifactService);
 		ReflectionTestUtils.setField(ws, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(ws, "authorizationService", authorizationService);
+		// The user rule lives in the shared service the score query uses too; wired to the same mock.
+		ArtifactDownloadAccessService access = new ArtifactDownloadAccessService();
+		ReflectionTestUtils.setField(access, "authorizationService", authorizationService);
+		ReflectionTestUtils.setField(ws, "artifactDownloadAccessService", access);
 		ReflectionTestUtils.setField(ws, "userService", userService);
 		ReflectionTestUtils.setField(ws, "downloadLogService", downloadLogService);
 		ReflectionTestUtils.setField(ws, "supportInjectionService", mock(SupportInjectionService.class));
@@ -98,7 +111,24 @@ class ArtifactWsOrphanArtifactDownloadTest {
 		SecurityContextHolder.setContext(ctx);
 		when(sharedArtifactService.downloadRawArtifact(any())).thenReturn(Mono.empty());
 		when(sharedArtifactService.downloadArtifact(any(), any(), any())).thenReturn(Mono.empty());
+		when(request.getRequest()).thenReturn(new MockHttpServletRequest());
+		when(authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(any(), any(), any(), any(), anyCollection(), any()))
+			.thenReturn(KEY);
+		when(authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(any(), any(), any(), anySet(), anyCollection()))
+			.thenReturn(KEY);
 	}
+
+	/** A programmatic caller whose key verifies; the verified principal is the parse itself, as for a bearer token. */
+	private AuthHeaderParse verifiedKey() {
+		AuthHeaderParse ahp = mock(AuthHeaderParse.class);
+		when(authorizationService.authenticateProgrammatic(any(), any())).thenReturn(ahp);
+		when(authorizationService.verifyProgrammaticKey(ahp)).thenReturn(new VerifiedProgrammaticKey(ahp, org));
+		return ahp;
+	}
+
+	/** What an authorized key's check returns: the attribution its download is logged under. */
+	private static final FreeformKeyVerification KEY = new FreeformKeyVerification(
+		WhoUpdated.getApiWhoUpdated(UUID.randomUUID(), "127.0.0.1"), UUID.randomUUID(), UUID.randomUUID());
 
 	@AfterEach
 	void clearContext() {
@@ -158,15 +188,15 @@ class ArtifactWsOrphanArtifactDownloadTest {
 		verify(authorizationService, never()).isUserAuthorizedForObjectGraphQL(any(), any(), any(), any(), anyCollection(), any());
 	}
 
-	/** A user without org-scope ARTIFACT_DOWNLOAD is still refused, before anything is served or logged. */
+	/** A user without org-scope ARTIFACT_DOWNLOAD is still refused (a returned 403), before anything is served or logged. */
 	@Test
 	void aRefusalAtOrganizationScopeServesAndLogsNothing() throws Exception {
 		ArtifactData ad = artifact(List.of());
 		when(authorizationService.isUserAuthorizedForObjectGraphQL(any(), any(), any(), any(), anyCollection(), any()))
 			.thenThrow(new AccessDeniedException("Forbidden"));
 
-		assertThrows(AccessDeniedException.class,
-			() -> ws.downloadRawArtifact(headers, ad.getUuid(), null, request, null, response));
+		assertEquals(HttpStatus.FORBIDDEN,
+			ws.downloadRawArtifact(headers, ad.getUuid(), null, request, null, response).block().getStatusCode());
 
 		verify(sharedArtifactService, never()).downloadRawArtifact(any());
 		verify(downloadLogService, never()).createDownloadLog(any(), any(), any(), any(), any(), any());
@@ -175,8 +205,7 @@ class ArtifactWsOrphanArtifactDownloadTest {
 	@Test
 	void anApiKeyGetsTheSameOrganizationScopeRuleForASessionArtifact() throws Exception {
 		ArtifactData ad = artifact(List.of());
-		AuthHeaderParse ahp = mock(AuthHeaderParse.class);
-		when(authorizationService.authenticateProgrammatic(any(), any())).thenReturn(ahp);
+		AuthHeaderParse ahp = verifiedKey();
 
 		ws.downloadRawArtifactProgrammatic(headers, ad.getUuid(), null, request, response);
 
@@ -189,8 +218,7 @@ class ArtifactWsOrphanArtifactDownloadTest {
 	void anApiKeyKeepsThePerComponentCheckForAnArtifactOnARelease() throws Exception {
 		UUID component = UUID.randomUUID();
 		ArtifactData ad = artifact(List.of(releaseOfComponent(component)));
-		AuthHeaderParse ahp = mock(AuthHeaderParse.class);
-		when(authorizationService.authenticateProgrammatic(any(), any())).thenReturn(ahp);
+		AuthHeaderParse ahp = verifiedKey();
 
 		ws.downloadArtifactProgrammatic(headers, ad.getUuid(), null, null, null, null, request, response);
 
@@ -198,46 +226,80 @@ class ArtifactWsOrphanArtifactDownloadTest {
 			PermissionScope.COMPONENT, Set.of(component), List.of(ad));
 	}
 
-	/** An API key without org-scope ARTIFACT_DOWNLOAD is refused too, before anything is served. */
+	/**
+	 * An API key without org-scope ARTIFACT_DOWNLOAD is refused too, before anything is served or
+	 * logged -- with a returned 403 (TPF-12; SCORE-17 ADR-4), no longer a thrown refusal that the browser
+	 * chain's /error answered as a 401.
+	 */
 	@Test
 	void anApiKeyWithoutOrganizationScopeDownloadIsRefused() throws Exception {
 		ArtifactData ad = artifact(List.of());
-		when(authorizationService.authenticateProgrammatic(any(), any())).thenReturn(mock(AuthHeaderParse.class));
+		verifiedKey();
 		when(authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(any(), any(), any(), any(), anyCollection(), any()))
 			.thenThrow(new AccessDeniedException("FreeForm key not authorized for this resource"));
 
-		assertThrows(AccessDeniedException.class,
-			() -> ws.downloadRawArtifactProgrammatic(headers, ad.getUuid(), null, request, response));
+		var result = ws.downloadRawArtifactProgrammatic(headers, ad.getUuid(), null, request, response).block();
 
+		assertEquals(HttpStatus.FORBIDDEN, result.getStatusCode());
+		assertNull(result.getBody(), "nothing about the refusal is told to the caller");
 		verify(sharedArtifactService, never()).downloadRawArtifact(any());
+		verify(downloadLogService, never()).createDownloadLog(any(), any(), any(), any(), any(), any());
+	}
+
+	/** T-12: the per-component refusal of a key is a 403 too, on the augmented download, and nothing is served. */
+	@Test
+	void anApiKeyRefusedOnEveryComponentGetsA403() throws Exception {
+		ArtifactData ad = artifact(List.of(releaseOfComponent(UUID.randomUUID())));
+		verifiedKey();
+		when(authorizationService.isFreeformKeyAuthorizedForAnyObjectGraphQL(any(), any(), any(), anySet(), anyCollection()))
+			.thenThrow(new AccessDeniedException("FreeForm key not authorized for this resource"));
+
+		var result = ws.downloadArtifactProgrammatic(headers, ad.getUuid(), null, null, null, null, request, response).block();
+
+		assertEquals(HttpStatus.FORBIDDEN, result.getStatusCode());
+		verifyNoInteractions(sharedArtifactService);
+		verify(downloadLogService, never()).createDownloadLog(any(), any(), any(), any(), any(), any());
+	}
+
+	/** A sealed system or an invalid licence is not the caller's fault: 503, not a refusal of the key. */
+	@Test
+	void aSystemThatIsNotOperationalAnswers503() throws Exception {
+		ArtifactData ad = artifact(List.of());
+		verifiedKey();
+		when(authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(any(), any(), any(), any(), anyCollection(), any()))
+			.thenThrow(new RelizaException("System is sealed. Please unseal the system first."));
+
+		var result = ws.downloadRawArtifactProgrammatic(headers, ad.getUuid(), null, request, response).block();
+
+		assertEquals(HttpStatus.SERVICE_UNAVAILABLE, result.getStatusCode());
+		verifyNoInteractions(sharedArtifactService);
+	}
+
+	/** A key's download is logged like a person's, under the attribution its check returned. */
+	@Test
+	void aKeyDownloadIsLoggedUnderTheKeysAttribution() throws Exception {
+		ArtifactData ad = artifact(List.of());
+		verifiedKey();
+
+		ws.downloadRawArtifactProgrammatic(headers, ad.getUuid(), null, request, response);
+		ws.downloadArtifactProgrammatic(headers, ad.getUuid(), null, null, null, null, request, response);
+
+		verify(downloadLogService).createDownloadLog(eq(org), eq(DownloadType.RAW_ARTIFACT_DOWNLOAD),
+			eq(DownloadSubjectType.ARTIFACT), eq(ad.getUuid()), same(KEY.whoUpdated()), any());
+		verify(downloadLogService).createDownloadLog(eq(org), eq(DownloadType.ARTIFACT_DOWNLOAD),
+			eq(DownloadSubjectType.ARTIFACT), eq(ad.getUuid()), same(KEY.whoUpdated()), any());
 	}
 
 	/**
-	 * An unknown uuid is a 404 on every endpoint and consults no authorization at all. It was a 500
-	 * on all four; returned rather than thrown, so an API-key caller gets the 404 too.
+	 * An unknown version of an artifact the caller may download is a 404, answered only after
+	 * authorization. (An unknown artifact is a 403 now: ArtifactWsAuthenticationOrderTest.)
 	 */
-	@Test
-	void anUnknownArtifactIsNotFound() throws Exception {
-		UUID unknown = UUID.randomUUID();
-		when(artifactService.getArtifactData(unknown)).thenReturn(Optional.empty());
-
-		for (var result : List.of(
-				ws.downloadRawArtifact(headers, unknown, null, request, null, response),
-				ws.downloadArtifact(headers, unknown, null, null, null, null, request, null, response),
-				ws.downloadRawArtifactProgrammatic(headers, unknown, null, request, response),
-				ws.downloadArtifactProgrammatic(headers, unknown, null, null, null, null, request, response))) {
-			assertEquals(HttpStatus.NOT_FOUND, result.block().getStatusCode());
-		}
-		verifyNoInteractions(authorizationService);
-	}
-
-	/** So is an unknown version of an artifact the caller may download. */
 	@Test
 	void anUnknownVersionIsNotFound() throws Exception {
 		ArtifactData ad = artifact(List.of());
 		when(artifactService.getArtifactDataByVersion(ad.getUuid(), 99)).thenReturn(Optional.empty());
 
-		when(authorizationService.authenticateProgrammatic(any(), any())).thenReturn(mock(AuthHeaderParse.class));
+		verifiedKey();
 
 		assertEquals(HttpStatus.NOT_FOUND,
 			ws.downloadRawArtifact(headers, ad.getUuid(), 99, request, null, response).block().getStatusCode());

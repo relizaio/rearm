@@ -28,9 +28,11 @@ the next hop needs to know which cases failed and how badly it matters.
 }
 ```
 
-Name the head you tested for every PR the task links (`tested`); the board
-refuses a PASS without it, and sends the task back to you if a PR moves past it
-before it merges.
+Name the head you tested for every linked PR that is still to land (`tested`;
+`pullRequests[].unit` WAITING, DELIVERED, or BLOCKED without a declaration); the
+board refuses a PASS without it, and sends the task back to you if a PR moves
+past it before it merges. A superseded PR, or one declared abandoned, needs
+none, and naming one anyway is accepted.
 
 One entry per **failed** case. The assertion output goes in the markdown under
 that id's heading, not in the index.

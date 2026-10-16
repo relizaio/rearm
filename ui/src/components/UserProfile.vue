@@ -416,7 +416,7 @@ watch(orgOptions, (opts) => {
 async function loadMyKeys () {
     try {
         const resp: any = await graphqlClient.query({
-            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes declaredName status holder adminDisabled sessionMaxMinutes
+            query: gql`query myApiKeys { myApiKeys { uuid org object type keyOrder createdDate accessDate notes deniedReason declaredName status holder adminDisabled sessionMaxMinutes
                 secrets { slot active createdDate lastUsedDate expiresDate }
                 permissions { permissions { org scope object type meta approvals functions } } } }`,
             fetchPolicy: 'network-only'

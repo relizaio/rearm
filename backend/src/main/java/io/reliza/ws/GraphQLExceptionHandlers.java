@@ -3,6 +3,8 @@
 */
 package io.reliza.ws;
 
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.ConversionFailedException;
@@ -21,7 +23,10 @@ import graphql.schema.DataFetchingEnvironment;
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
 import io.reliza.exceptions.ActionRefusedException;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.SbomScoreException;
+import io.reliza.service.RebomService;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PessimisticLockException;
@@ -30,6 +35,10 @@ import jakarta.persistence.PessimisticLockException;
 @Component
 public class GraphQLExceptionHandlers {
     private static final Logger log = LoggerFactory.getLogger(GraphQLExceptionHandlers.class);
+
+    static final String EXPORT_TOO_LARGE_MESSAGE =
+            "Release SBOM export is too large to serve (limit " + RebomService.REBOM_RESPONSE_LIMIT_MB
+            + " MB); export with fewer components (top-level only)";
 
     private GraphQLError safeError(String message) {
         return GraphqlErrorBuilder.newError().message(message).build();
@@ -72,6 +81,33 @@ public class GraphQLExceptionHandlers {
         return GraphqlErrorBuilder.newError()
                 .message(ex.getMessage())
                 .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * An answer from rebom too large to read: on an export, the document cannot be served from this
+     * buffer, and the user can only make it smaller. The score path never gets here: it answers
+     * {@code INPUT_TOO_LARGE} itself.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleRebomResponseTooLarge(RebomResponseTooLargeException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(EXPORT_TOO_LARGE_MESSAGE)
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * A score that could not be made. The only handler that sets {@code code}/{@code reason}
+     * extensions (the server-error handlers set only {@code ref}): the caller decides on
+     * {@code extensions.reason}, and the message is shown to a person as it is.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleSbomScore(SbomScoreException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(Map.of("code", SbomScoreException.ERROR_CODE, "reason", ex.getReason().name()))
                 .build();
     }
 

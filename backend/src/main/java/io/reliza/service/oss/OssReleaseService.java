@@ -1807,7 +1807,17 @@ public class OssReleaseService {
 			} else if (bdOpt.isEmpty()) {
 				throw new RelizaException("Could not locate branch when creating release for branch = " + releaseDto.getBranch());
 			} else if (!bdOpt.get().getComponent().equals(releaseDto.getComponent())) {
-				throw new RelizaException("Component and branch mismatch for component = " + releaseDto.getComponent() 
+				throw new RelizaException("Component and branch mismatch for component = " + releaseDto.getComponent()
+					+ " and branch = " + releaseDto.getBranch());
+			}
+			// The organization the references are validated against, and the release recorded under, is
+			// the branch's: a caller passing another organization (a global admin on the manual lane) is
+			// refused here, before anything is read by component or minted. A null org cannot be another
+			// organization's, so it is filled from the branch as the component is above.
+			if (null == releaseDto.getOrg()) {
+				releaseDto.setOrg(bdOpt.get().getOrg());
+			} else if (!bdOpt.get().getOrg().equals(releaseDto.getOrg())) {
+				throw new RelizaException("Organization and branch mismatch for org = " + releaseDto.getOrg()
 					+ " and branch = " + releaseDto.getBranch());
 			}
 		}

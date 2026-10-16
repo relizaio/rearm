@@ -542,7 +542,8 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 	 * Where each document type lands inside {@link #documentsRepo}, as path templates.
 	 *
 	 * <p>Placeholders: {@code {key}} (the task's key, RD-42), {@code {round}}, {@code {type}} (lower
-	 * case), {@code {component}} (slugged component name). {@code {task}} is gone
+	 * case), {@code {component}} (slugged component name), {@code {role}} (slugged name of the
+	 * publishing role, so two roles producing one type write apart). {@code {task}} is gone
 	 * (board-documents.md D11): a stored template still carrying it reads as {@code {key}}
 	 * ({@link #normaliseDocumentPaths}). The board's documents root goes in front of whatever a
 	 * template resolves to ({@link #documentsRoot}). Empty means the

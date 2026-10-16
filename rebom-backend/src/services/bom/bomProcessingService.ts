@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent } from '../../types';
+import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -423,8 +423,97 @@ function licenseKey(entry: any, specVersion?: string): string {
   return `json:${JSON.stringify(entry)}`
 }
 
-const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, specVersion?: string) => any> = {
-  licenses: (s, d, v) => unionByKey(s, d, (e) => licenseKey(e, v), (list) => normalizeLicenses(list, v) || []),
+/** Whether a `licenses` entry is an `expression` entry. */
+function isExpressionEntry(entry: any): boolean {
+  return !!entry && typeof entry === 'object' && 'expression' in entry
+}
+
+/** Whether a `licenses` list holds an `expression` entry. */
+function hasExpressionEntry(list: any[]): boolean {
+  return list.some(isExpressionEntry)
+}
+
+/**
+ * SCORE-40 ADR-9: whether a fold that keeps `kept` and drops `dropped` loses an entry, that is
+ * whether `dropped` holds an entry whose licenseKey (expression text, else id, else name) no entry
+ * of `kept` has. A fold line is logged only then: an expression beside the same expression loses
+ * nothing.
+ */
+function losesLicenseEntry(kept: any[], dropped: any[], specVersion?: string): boolean {
+  const keys = new Set(kept.map((e: any) => licenseKey(e, specVersion)))
+  return dropped.some((entry: any) => !keys.has(licenseKey(entry, specVersion)))
+}
+
+/** The expression texts that assert no licence (SCORE-44 ADR-2): a fold that drops one loses nothing. */
+const NO_LICENSE_ASSERTED = new Set(['NOASSERTION', 'NONE'])
+
+/**
+ * SCORE-44 ADR-2: the listed licence expressions a fold that keeps `kept` and drops `dropped` loses,
+ * both lists as the fold compared them. The `expression` entries of `dropped`, in order, whose
+ * licenseKey no entry of `kept` has, leaving out NOASSERTION and NONE (trimmed, any case), each
+ * distinct text once. Ids and names are never returned. A non-array on either side returns none.
+ */
+export function droppedLicenseExpressions(kept: any, dropped: any, specVersion?: string): string[] {
+  if (!Array.isArray(kept) || !Array.isArray(dropped)) return []
+  const keys = new Set(kept.map((e: any) => licenseKey(e, specVersion)))
+  const out: string[] = []
+  for (const entry of dropped) {
+    if (!isExpressionEntry(entry) || typeof entry.expression !== 'string') continue
+    if (keys.has(licenseKey(entry, specVersion))) continue
+    if (NO_LICENSE_ASSERTED.has(entry.expression.trim().toUpperCase())) continue
+    if (!out.includes(entry.expression)) out.push(entry.expression)
+  }
+  return out
+}
+
+/**
+ * SCORE-44 ADR-1: records on a component each dropped licence expression it does not record yet,
+ * as a DROPPED_LICENSE_PROPERTY entry with the text as the value, appended after its properties in
+ * the given order. Always writes a new `properties` array, never into the one it found: a list a
+ * de-dup fold took from a duplicate is the duplicate's own object. Returns the number appended; a
+ * non-object component or no expression is a no-op.
+ */
+export function recordDroppedLicenses(component: any, expressions: string[]): number {
+  if (!component || typeof component !== 'object' || Array.isArray(component)) return 0
+  if (!Array.isArray(expressions) || expressions.length === 0) return 0
+  const found = Array.isArray(component.properties) ? component.properties : []
+  const recorded = new Set(found.filter((p: any) => p?.name === DROPPED_LICENSE_PROPERTY).map((p: any) => p.value))
+  const added: any[] = []
+  for (const expression of expressions) {
+    if (typeof expression !== 'string' || recorded.has(expression)) continue
+    recorded.add(expression)
+    added.push({ name: DROPPED_LICENSE_PROPERTY, value: expression })
+  }
+  if (added.length > 0) component.properties = [...found, ...added]
+  return added.length
+}
+
+/**
+ * SCORE-40 ADR-6: two `licenses` lists folded into one. Both are normalised first, so a
+ * single-id expression counts as an id. An empty or absent survivor list takes the duplicate's
+ * whole; when either list holds an `expression` entry the survivor's list stands whole, the same
+ * object, and the duplicate's is dropped (CycloneDX 1.6 cannot union an expression with
+ * anything), logged when the duplicate held an entry the survivor lacks (ADR-9); otherwise the two
+ * are unioned by expression, id or name, survivor first. `dropped` holds the listed expressions
+ * the fold lost (SCORE-44 ADR-2), for the caller to record on the survivor.
+ */
+function foldLicenseLists(survivor: any, duplicate: any, ref?: string, specVersion?: string): { licenses: any, dropped: string[] } {
+  if (!Array.isArray(duplicate) || duplicate.length === 0) return { licenses: survivor, dropped: [] }
+  if (isEmptyValue(survivor)) return { licenses: duplicate, dropped: [] }
+  if (!Array.isArray(survivor)) return { licenses: survivor, dropped: [] }
+  const kept = normalizeLicenses(survivor, specVersion) || []
+  const added = normalizeLicenses(duplicate, specVersion) || []
+  if (hasExpressionEntry(kept) || hasExpressionEntry(added)) {
+    if (losesLicenseEntry(kept, added, specVersion)) {
+      logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
+    }
+    return { licenses: survivor, dropped: droppedLicenseExpressions(kept, added, specVersion) }
+  }
+  const union = unionByKey(kept, added, (e: any) => licenseKey(e, specVersion))
+  return { licenses: union === kept ? survivor : union, dropped: [] }
+}
+
+const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> = {
   hashes: (s, d) => unionByKey(s, d, (h) => `${h?.alg}`),
   externalReferences: (s, d) => unionByKey(s, d, (r) => `${r?.type}\u0000${r?.url}`),
   properties: (s, d) => unionByKey(s, d, (p) => `${p?.name}\u0000${p?.value}`),
@@ -434,19 +523,28 @@ const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any, specVers
 /**
  * SCORE-13 ADR-4: the survivor wins, nothing is dropped. A field the survivor lacks or has empty
  * is taken from the duplicate; a non-empty survivor value is never overwritten. The
- * identity lists are unioned, survivor first. The duplicate's `type` is dropped and its
+ * identity lists are unioned, survivor first; the one exception is a `licenses` list
+ * beside an expression, which the survivor keeps whole (SCORE-40 ADR-6), recording each listed
+ * expression it loses (SCORE-44 ADR-2). The duplicate's `type` is dropped and its
  * `components` are hoisted by the caller.
  */
 function mergeDuplicateInto(survivor: any, duplicate: any, specVersion?: string): void {
+  let dropped: string[] = []
   for (const key of Object.keys(duplicate)) {
     if (DEDUP_SKIPPED_FIELDS.has(key)) continue
     const union = DEDUP_LIST_UNIONS[key]
-    if (union) {
-      survivor[key] = union(survivor[key], duplicate[key], specVersion)
+    if (key === 'licenses') {
+      const fold = foldLicenseLists(survivor.licenses, duplicate.licenses, bomRefOf(survivor), specVersion)
+      survivor.licenses = fold.licenses
+      dropped = fold.dropped
+    } else if (union) {
+      survivor[key] = union(survivor[key], duplicate[key])
     } else if (isEmptyValue(survivor[key]) && !isEmptyValue(duplicate[key])) {
       survivor[key] = duplicate[key]
     }
   }
+  // After the duplicate's own properties, which may carry records of a lower merge, are unioned.
+  recordDroppedLicenses(survivor, dropped)
 }
 
 function hasRepeatedBomRef(bom: any): boolean {
@@ -818,6 +916,14 @@ export function dropDanglingRefs(bom: any): DanglingRefsResult {
 export const SBOM_MISSING_PROPERTY = 'reliza:sbom:missing'
 
 /**
+ * Property a merged component carries once per distinct listed licence expression a fold dropped
+ * in favour of the licence kept on that node (SCORE-44 ADR-1): the value is the expression text
+ * as the input listed it. Never written for NOASSERTION, NONE or an expression the node still
+ * holds; licence ids and names a fold drops are not recorded.
+ */
+export const DROPPED_LICENSE_PROPERTY = 'reliza:license:dropped'
+
+/**
  * Metadata property a merged BOM carries when it lists placeholder components (SCORE-15 ADR-3):
  * how many, as a decimal string. Absent means every component release of the merge had an SBOM.
  */
@@ -838,8 +944,9 @@ export function placeholderBomRef(releaseUuid: string): string {
  * ADR-2): `metadata.component` describes the release with the bom-ref placeholderBomRef(uuid)
  * and the SBOM_MISSING_PROPERTY marker, `components` is empty and the one dependency entry has
  * an empty `dependsOn`, like every other input root. merge-boms then makes it a component of the
- * merged document and a direct dependency of the merged root. `group`, `supplier` and `purl` are
- * left out when ReARM sent none: a purl is never made up. Nothing is stored for these inputs.
+ * merged document and a direct dependency of the merged root. `group`, `supplier`, `purl`,
+ * `hashes` (SCORE-30 ADR-3) and `licenses` (SCORE-40 ADR-4, declaredLicenses) are left out when
+ * ReARM sent none: a purl or a license is never made up. Nothing is stored for these inputs.
  */
 export function placeholderBomObjects(list: MissingSbomComponent[] | null | undefined): any[] {
   if (!Array.isArray(list)) return []
@@ -849,6 +956,10 @@ export function placeholderBomObjects(list: MissingSbomComponent[] | null | unde
     if (missing.group) component.group = missing.group
     if (missing.supplierName) component.supplier = { name: missing.supplierName }
     if (missing.purl) component.purl = missing.purl
+    const hashes = cycloneDxHashes(missing.hashes)
+    if (hashes.length) component.hashes = hashes
+    const licenses = declaredLicenses(missing.licenseExpression, missing.licenseUrl)
+    if (licenses) component.licenses = licenses
     component['bom-ref'] = ref
     component.properties = [{ name: SBOM_MISSING_PROPERTY, value: missing.reason }]
     return {
@@ -859,6 +970,200 @@ export function placeholderBomObjects(list: MissingSbomComponent[] | null | unde
       dependencies: [{ ref, dependsOn: [] }]
     }
   })
+}
+
+/** The CycloneDX 1.6 `hash-alg` names; a hash under any other name fails schema validation. */
+const CYCLONEDX_HASH_ALGS = new Set(['MD5', 'SHA-1', 'SHA-256', 'SHA-384', 'SHA-512', 'SHA3-256', 'SHA3-384',
+  'SHA3-512', 'BLAKE2b-256', 'BLAKE2b-384', 'BLAKE2b-512', 'BLAKE3'])
+
+/** The CycloneDX 1.6 `hash-content` pattern. */
+const CYCLONEDX_HASH_CONTENT = /^([a-fA-F0-9]{32}|[a-fA-F0-9]{40}|[a-fA-F0-9]{64}|[a-fA-F0-9]{96}|[a-fA-F0-9]{128})$/
+
+/**
+ * The entries of `list` a CycloneDX 1.6 document can carry, as plain `{ alg, content }` objects in
+ * the order given (SCORE-30 ADR-7). ReARM sends the digest records it holds as recorded; one whose
+ * algorithm or value the schema refuses is left out and logged, since stored as is it would fail
+ * the merged document's validation and with it the whole export.
+ */
+function cycloneDxHashes(list: BomHash[] | null | undefined): BomHash[] {
+  if (!Array.isArray(list)) return []
+  const kept: BomHash[] = []
+  for (const h of list) {
+    const alg = typeof h?.alg === 'string' ? h.alg.trim() : ''
+    const content = typeof h?.content === 'string' ? h.content.trim() : ''
+    if (!alg || !content) continue
+    if (!CYCLONEDX_HASH_ALGS.has(alg) || !CYCLONEDX_HASH_CONTENT.test(content)) {
+      logger.info({ alg }, 'a release digest CycloneDX cannot carry was left out')
+      continue
+    }
+    kept.push({ alg, content })
+  }
+  return kept
+}
+
+/** One SPDX `LicenseRef-` term alone: no operator, no parenthesis, no `+` (SCORE-40 ADR-2). */
+const SINGLE_LICENSE_REF = /^LicenseRef-[A-Za-z0-9.-]+$/
+
+/**
+ * The CycloneDX 1.6 `licenses` a node carries for the license ReARM declares (SCORE-40 ADR-2):
+ * - `expression` not a string or blank after trimming: undefined, nothing to write;
+ * - exactly one `LicenseRef-` term with a non-blank `url`: the named form
+ *   `[{ license: { name: expression, url } }]`, the one place the url is carried;
+ * - anything else: `normalizeLicenses([{ expression }])`, which is `[{ license: { id } }]` for one
+ *   SPDX list id (in the list's casing) and `[{ expression }]` for the rest (a compound, a `+` or
+ *   `WITH` form, a parenthesised one, a LicenseRef without a url); the url is dropped, CycloneDX
+ *   cannot carry one beside an expression.
+ * Both values are trimmed and written as sent otherwise: rearm-saas validates them. A fresh array
+ * on every call.
+ */
+export function declaredLicenses(expression: string | null | undefined, url: string | null | undefined): any[] | undefined {
+  const value = typeof expression === 'string' ? expression.trim() : ''
+  const link = typeof url === 'string' ? url.trim() : ''
+  if (value === '') {
+    if (link !== '') logger.debug({ url: link }, 'a license url without a license expression was left out')
+    return undefined
+  }
+  if (link !== '' && SINGLE_LICENSE_REF.test(value)) return [{ license: { name: value, url: link } }]
+  return normalizeLicenses([{ expression: value }])
+}
+
+/** Whether a component names its supplier: a `supplier` object with a non-blank `name`. */
+function hasSupplierName(component: any): boolean {
+  const name = component?.supplier?.name
+  return typeof name === 'string' && name.trim() !== ''
+}
+
+/** Whether a component carries at least one hash. */
+function hasHashes(component: any): boolean {
+  return Array.isArray(component?.hashes) && component.hashes.length > 0
+}
+
+/**
+ * Whether a component carries a license: a non-empty `licenses` array. An entry asserting
+ * NOASSERTION or NONE counts: it is the generator's statement, not ReARM's to replace.
+ */
+function hasLicenses(component: any): boolean {
+  return Array.isArray(component?.licenses) && component.licenses.length > 0
+}
+
+/** `component.supplier` with `name` set, keeping any other supplier field already there. */
+function withSupplierName(component: any, name: string): any {
+  const supplier = component.supplier && typeof component.supplier === 'object' ? component.supplier : {}
+  return { ...supplier, name }
+}
+
+/** Algorithms an attachment reference names by prefix, and the hex length each must have. */
+const REFERENCE_PREFIX_ALGS: Record<string, { alg: string, length: number }> = {
+  sha1: { alg: 'SHA-1', length: 40 },
+  sha256: { alg: 'SHA-256', length: 64 },
+  sha512: { alg: 'SHA-512', length: 128 }
+}
+
+const HEX = /^[0-9a-fA-F]+$/
+
+/**
+ * The hash a deliverable reference stands for (SCORE-30 ADR-4): the `hash` ReARM stores with an
+ * upload attached to a deliverable, its digest. An optional prefix
+ * `sha1:`, `sha256:` or `sha512:` (any case) names the algorithm, and the rest must be hex of its
+ * length (40, 64, 128); without one, 40 hex characters are SHA-1, 64 SHA-256 and 128 SHA-512.
+ * Anything else (a short value, a tag, another algorithm) has no hash: undefined. The content is
+ * the hex lower-cased; surrounding whitespace is ignored.
+ */
+export function hashFromReference(ref: string | null | undefined): BomHash | undefined {
+  if (typeof ref !== 'string') return undefined
+  let hex = ref.trim()
+  let named: { alg: string, length: number } | undefined
+  const colon = hex.indexOf(':')
+  if (colon >= 0) {
+    named = REFERENCE_PREFIX_ALGS[hex.substring(0, colon).toLowerCase()]
+    if (!named) return undefined
+    hex = hex.substring(colon + 1)
+  } else {
+    named = Object.values(REFERENCE_PREFIX_ALGS).find(a => a.length === hex.length)
+  }
+  if (!named || hex.length !== named.length || !HEX.test(hex)) return undefined
+  return { alg: named.alg, content: hex.toLowerCase() }
+}
+
+/**
+ * The attachment facts rebom stores with every upload (the flat row meta) that its root is filled
+ * from: the supplier ReARM names for it, what it is attached to and the attachment's reference.
+ */
+export type RecordMetaFacts = Partial<Pick<RebomOptions, 'supplierName' | 'belongsTo' | 'hash'>>
+
+/** Whether a component's pedigree lists at least one commit. */
+function hasPedigreeCommits(component: any): boolean {
+  return Array.isArray(component?.pedigree?.commits) && component.pedigree.commits.length > 0
+}
+
+/**
+ * Fills the root of an uploaded document from the facts ReARM stored with it (SCORE-30 ADR-4,
+ * ADR-6, ADR-12), each only where the root carries none:
+ * - `supplier.name` = `supplierName`, the supplier ReARM decided for the upload; a row without
+ *   it (every row stored before the field) gets no supplier, and `group` is never read;
+ * - `belongsTo` DELIVERABLE (any case): `hashes` = the deliverable digest the reference stands
+ *   for (hashFromReference), when it parses;
+ * - `belongsTo` SCE: `pedigree.commits` = [{ uid: reference }], the source commit, other pedigree
+ *   members kept; a commit id addresses a commit object, not the root's bytes, so no `hashes`;
+ * - any other `belongsTo` (RELEASE, AGENT_SESSION, none): neither, whatever `hash` holds.
+ * A value the root already carries always stands; `licenses` is never touched. Returns a copy when
+ * something was filled, else the input itself; the input is never changed.
+ */
+export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | undefined): any {
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || !meta) return bom
+  const supplierName = typeof meta.supplierName === 'string' ? meta.supplierName.trim() : ''
+  const belongsTo = normalizeArtifactBelongsTo(meta.belongsTo)
+  const reference = typeof meta.hash === 'string' ? meta.hash.trim() : ''
+  const hash = belongsTo === ArtifactBelongsTo.DELIVERABLE ? hashFromReference(reference) : undefined
+  const fillSupplier = supplierName !== '' && !hasSupplierName(root)
+  const fillHashes = hash !== undefined && !hasHashes(root)
+  const fillCommit = belongsTo === ArtifactBelongsTo.SCE && reference !== '' && !hasPedigreeCommits(root)
+  if (!fillSupplier && !fillHashes && !fillCommit) return bom
+  const component = { ...root }
+  if (fillSupplier) component.supplier = withSupplierName(root, supplierName)
+  if (fillHashes) component.hashes = [hash]
+  if (fillCommit) {
+    const pedigree = root.pedigree && typeof root.pedigree === 'object' ? root.pedigree : {}
+    component.pedigree = { ...pedigree, commits: [{ uid: reference }] }
+  }
+  return { ...bom, metadata: { ...bom.metadata, component } }
+}
+
+export type ReleaseNodeFillResult = {
+  bom: any,
+  filled: { supplier: boolean, hashes: boolean, licenses: boolean }
+}
+
+/**
+ * Fills the merged root, the node that describes the release itself, from what ReARM holds about
+ * the release (SCORE-30 ADR-1, ADR-7; SCORE-40 ADR-3): `supplier.name` from `facts.supplierName`,
+ * `hashes` from `facts.hashes` (those CycloneDX can carry, in order) and `licenses` from
+ * `facts.licenseExpression` and `facts.licenseUrl` (declaredLicenses), each only when the root has
+ * none (ADR-6): runs after dedupeBomRefs, so an uploaded copy of the root collapsed into it has
+ * already given it its own. A license the root carries, NOASSERTION or NONE included, stands.
+ * Writes no marker property. With no facts, or nothing to fill, the input comes back unchanged;
+ * otherwise a copy, the input untouched.
+ */
+export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undefined): ReleaseNodeFillResult {
+  const none = { bom, filled: { supplier: false, hashes: false, licenses: false } }
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || !facts) return none
+  const supplierName = typeof facts.supplierName === 'string' ? facts.supplierName.trim() : ''
+  const hashes = cycloneDxHashes(facts.hashes)
+  const licenses = declaredLicenses(facts.licenseExpression, facts.licenseUrl)
+  const supplier = supplierName !== '' && !hasSupplierName(root)
+  const fillHashes = hashes.length > 0 && !hasHashes(root)
+  const fillLicenses = licenses !== undefined && !hasLicenses(root)
+  if (!supplier && !fillHashes && !fillLicenses) return none
+  const component = { ...root }
+  if (supplier) component.supplier = withSupplierName(root, supplierName)
+  if (fillHashes) component.hashes = hashes
+  if (fillLicenses) component.licenses = licenses
+  return {
+    bom: { ...bom, metadata: { ...bom.metadata, component } },
+    filled: { supplier, hashes: fillHashes, licenses: fillLicenses }
+  }
 }
 
 export type UnknownCompositionsResult = {
@@ -950,8 +1255,11 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
       }
     }
     const type = (origPurlParsed && origPurlParsed.type && origPurlParsed.type !== "container" && origPurlParsed.type !== "application") ? origPurlParsed.type : 'generic'
-    const namespace = (origPurlParsed && (origPurlParsed.namespace || type === 'oci')) ? origPurlParsed.namespace : encodeURIComponent(rebomOverride.group)
-    const name = (origPurlParsed && origPurlParsed.name && origPurlParsed.name !== 'app' && origPurlParsed.name !== '.') ? origPurlParsed.name : encodeURIComponent(rebomOverride.name)
+    // Raw segments in, one encoding out: PackageURL.toString() percent-encodes the namespace
+    // and the name, and fromString() above decodes them, so pre-encoding here would encode
+    // twice (a space read %2520).
+    const namespace = (origPurlParsed && (origPurlParsed.namespace || type === 'oci')) ? origPurlParsed.namespace : rebomOverride.group
+    const name = (origPurlParsed && origPurlParsed.name && origPurlParsed.name !== 'app' && origPurlParsed.name !== '.') ? origPurlParsed.name : rebomOverride.name
 
     const version = rebomOverride.version
     const qualifiers = (origPurlParsed && origPurlParsed.qualifiers) ? origPurlParsed.qualifiers : {}
@@ -983,6 +1291,66 @@ export function establishPurl(origPurl: string | undefined, rebomOverride: Rebom
   return purlStr || ''
 }
 
+/**
+ * True when a parsed purl segment is the raw value encoded one time too many: the segment as
+ * parsed (decoded once) is not the raw value, and decoding it once more gives the raw value.
+ */
+function isDoubleEncodedSegment(parsed: string | undefined | null, raw: unknown): boolean {
+  if (typeof raw !== 'string' || !raw || typeof parsed !== 'string' || parsed === raw) return false
+  try {
+    return decodeURIComponent(parsed) === raw
+  } catch {
+    return false
+  }
+}
+
+/**
+ * Repairs the root purl an upload stored before the purl fix (establishPurl percent-encoded
+ * group and name before PackageURL encoded them again, so a space read %2520). The raw truth
+ * sits beside the purl: augmentBomWithComponentContext writes `group` and `name` raw on
+ * metadata.component. Each segment is judged on its own and rebuilt from the raw value; the
+ * old string is then replaced wherever it references the root (purl, bom-ref, dependencies
+ * ref and dependsOn). Idempotent, a no-op on a single-encoded root, and never throws: anything
+ * it cannot read is returned as it came.
+ */
+export function repairDoubleEncodedRoot(bom: any): any {
+  const root = bom?.metadata?.component
+  const oldPurl = root?.purl
+  if (!root || typeof oldPurl !== 'string' || !oldPurl) return bom
+  try {
+    const parsed = PackageURL.fromString(oldPurl)
+    const namespaceDoubled = isDoubleEncodedSegment(parsed.namespace, root.group)
+    const nameDoubled = isDoubleEncodedSegment(parsed.name, root.name)
+    if (!namespaceDoubled && !nameDoubled) return bom
+    const newPurl = new PackageURL(
+      parsed.type,
+      namespaceDoubled ? root.group : parsed.namespace,
+      nameDoubled ? root.name : parsed.name,
+      parsed.version,
+      parsed.qualifiers,
+      parsed.subpath
+    ).toString()
+    if (newPurl === oldPurl) return bom
+    const swap = (ref: any) => (ref === oldPurl ? newPurl : ref)
+    const component = { ...root, purl: newPurl }
+    if (root['bom-ref'] === oldPurl) component['bom-ref'] = newPurl
+    const repaired: any = { ...bom, metadata: { ...bom.metadata, component } }
+    if (Array.isArray(bom.dependencies)) {
+      repaired.dependencies = bom.dependencies.map((dep: any) => {
+        if (!dep || typeof dep !== 'object') return dep
+        const out = { ...dep, ref: swap(dep.ref) }
+        if (Array.isArray(dep.dependsOn)) out.dependsOn = dep.dependsOn.map(swap)
+        return out
+      })
+    }
+    logger.debug({ oldPurl, newPurl }, 'repaired a double-encoded root purl')
+    return repaired
+  } catch (e: any) {
+    logger.warn({ purl: oldPurl, err: e?.message }, 'root purl repair skipped')
+    return bom
+  }
+}
+
 export function computeRootDepIndex(bom: any): number {
   const rootComponentPurl: string = bom.metadata?.component?.["bom-ref"]
   if (!rootComponentPurl) {
@@ -1010,7 +1378,9 @@ export function computeRootDepIndex(bom: any): number {
 
 /**
  * Augments a BOM's root component with release/component context.
- * Adds: name, version, group, purl, authors, supplier, timestamp.
+ * Adds: name, version, group, purl, authors, supplier, timestamp; and on the root the supplier
+ * ReARM names for the upload, the deliverable digest or the source commit where it carries none
+ * (fillRootFromRecordMeta, SCORE-30).
  * 
  * This augmentation adds component metadata to the BOM's root component,
  * making it clear which release/component this BOM belongs to.
@@ -1055,11 +1425,13 @@ export function augmentBomWithComponentContext(bom: any, componentDetails: Rebom
   const newDependencies = [...dependenciesArray];
   if (rootdepIndex > -1) newDependencies[rootdepIndex]['ref'] = newPurl;
 
-  return {
+  // The root's supplier, deliverable digest or source commit from the facts the upload came
+  // with (SCORE-30 ADR-4, ADR-12), where the generator wrote none.
+  return fillRootFromRecordMeta({
     ...bom,
     metadata: newMetadata,
     dependencies: newDependencies
-  };
+  }, componentDetails);
 }
 
 /**
@@ -1413,6 +1785,157 @@ export function normalizeLicensesInBom(bom: any): any {
     bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses, specVersion);
   }
   return bom;
+}
+
+/**
+ * SCORE-40 ADR-6: settles the `licenses` arrays a fold left mixed, so the document passes the
+ * CycloneDX 1.6 `oneOf` (a list of `license` objects, or exactly one `expression`). rearm-cli
+ * merge-boms folds components of one purl survivor first: it appends the duplicate's `license`
+ * entries to the survivor's list and drops the duplicate's `expression` entries, so a survivor
+ * holding an expression ends up with a mixed array. Walks `metadata.component` and
+ * `components[]` at every depth (not `services[]`). On an array of more than one entry that holds
+ * an `expression` entry: when the first entry (the survivor's) is an expression, the array
+ * becomes that one entry; otherwise its `expression` entries are removed and the `license`
+ * entries stay in order. Every other value is left as it is, the same object. Changes the
+ * document in place, logs each node it changed, and returns the number of nodes changed. The
+ * arrays it meets are mixed (the CLI never appends an expression), so a settle always loses an
+ * entry the kept list lacks and ADR-9 never withholds its line. Each expression a settle drops
+ * is recorded on the node (SCORE-44 ADR-2); the pinned CLI never appends one, so that is a
+ * hand-built node's case.
+ */
+export function settleLicenseFolds(bom: any): number {
+  if (!bom || typeof bom !== 'object') return 0
+  let count = 0
+  const settle = (component: any) => {
+    if (!component || typeof component !== 'object') return
+    const licenses = component.licenses
+    if (Array.isArray(licenses) && licenses.length > 1 && licenses.some(isExpressionEntry)) {
+      const kept = isExpressionEntry(licenses[0]) ? [licenses[0]] : licenses.filter((entry: any) => !isExpressionEntry(entry))
+      const dropped = licenses.filter((entry: any) => !kept.includes(entry))
+      logger.info({ bomRef: component['bom-ref'], kept, dropped }, 'license fold settled: the survivor licenses stand')
+      component.licenses = kept
+      recordDroppedLicenses(component, droppedLicenseExpressions(kept, dropped))
+      count++
+    }
+    if (Array.isArray(component.components)) component.components.forEach(settle)
+  }
+  settle(bom.metadata?.component)
+  if (Array.isArray(bom.components)) bom.components.forEach(settle)
+  if (count > 0) logger.info(`license fold settle: ${count} licenses arrays a fold left mixed settled`)
+  return count
+}
+
+/**
+ * One fold logListedLicenseDrops logged (SCORE-44 ADR-2): the survivor's merge-boms key and bom-ref,
+ * the lists the line names, and the listed expressions the fold loses (droppedLicenseExpressions
+ * over the normalised lists; may be empty, for a dropped NOASSERTION the line still reports).
+ */
+export interface ListedLicenseDrop {
+  key: string
+  bomRef: any
+  kept: any[]
+  dropped: any[]
+  expressions: string[]
+}
+
+/** The key rearm-cli merge-boms folds a component by: its purl, else its bom-ref, else none. */
+function mergeBomsKey(component: any): string {
+  if (typeof component?.purl === 'string' && component.purl !== '') return component.purl
+  if (typeof component?.['bom-ref'] === 'string') return component['bom-ref']
+  return ''
+}
+
+/** A license entry's key in the merge-boms union: its id, else its name; none for an expression. */
+function mergeBomsLicenseKey(entry: any): string {
+  return entry?.license ? (entry.license.id || entry.license.name || '') : ''
+}
+
+/**
+ * SCORE-40 ADR-8: logs, from the inputs alone and before rearm-cli merge-boms runs under FLAT, the
+ * listed licences the CLI will drop. The CLI keys every input's `metadata.component` (a later root
+ * of a key replaces an earlier one), then every input's top-level `components[]` in input order, by
+ * purl else bom-ref; a component whose key is taken folds into the holder, which survives. A
+ * survivor without a `licenses` array takes the component's whole; otherwise the component's
+ * `license` entries it lacks by id or name are appended and every `expression` entry is skipped.
+ * So a folded component whose `licenses` holds an `expression` entry, beside a survivor holding a
+ * `licenses` array, loses it: one info line per such component, with the survivor's bom-ref, the
+ * survivor's licenses as the CLI holds them at that fold, and the component's, unless that list
+ * already holds the expression by key (ADR-9: nothing is lost). Reads the inputs only and returns
+ * one ListedLicenseDrop per line logged (SCORE-44 ADR-2), for recordListedLicenseDrops.
+ */
+export function logListedLicenseDrops(bomObjects: any[]): ListedLicenseDrop[] {
+  const drops: ListedLicenseDrop[] = []
+  if (!Array.isArray(bomObjects)) return drops
+  const survivors = new Map<string, { bomRef: any, licenses: any }>()
+  for (const bom of bomObjects) {
+    const root = bom?.metadata?.component
+    const key = mergeBomsKey(root)
+    if (key !== '') survivors.set(key, { bomRef: root['bom-ref'], licenses: root.licenses })
+  }
+  for (const bom of bomObjects) {
+    if (!Array.isArray(bom?.components)) continue
+    for (const component of bom.components) {
+      const key = mergeBomsKey(component)
+      if (key === '') continue
+      const survivor = survivors.get(key)
+      if (!survivor) {
+        survivors.set(key, { bomRef: component['bom-ref'], licenses: component.licenses })
+        continue
+      }
+      const listed = component.licenses
+      if (!Array.isArray(listed)) continue
+      if (!Array.isArray(survivor.licenses)) {
+        survivor.licenses = listed
+        continue
+      }
+      // The CLI drops the listed expression entries; ADR-9: logged only when one is not already kept.
+      if (losesLicenseEntry(survivor.licenses, listed.filter(isExpressionEntry))) {
+        logger.info({ bomRef: survivor.bomRef, kept: survivor.licenses, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
+        drops.push({
+          key,
+          bomRef: survivor.bomRef,
+          kept: survivor.licenses,
+          dropped: listed,
+          expressions: droppedLicenseExpressions(normalizeLicenses(survivor.licenses), normalizeLicenses(listed))
+        })
+      }
+      const seen = new Set(survivor.licenses.map(mergeBomsLicenseKey).filter((k: string) => k !== ''))
+      const added = listed.filter((entry: any) => {
+        const k = mergeBomsLicenseKey(entry)
+        if (k === '' || seen.has(k)) return false
+        seen.add(k)
+        return true
+      })
+      if (added.length > 0) survivor.licenses = [...survivor.licenses, ...added]
+    }
+  }
+  return drops
+}
+
+/**
+ * SCORE-44 ADR-2 site 3: records on the merged document the listed expressions merge-boms dropped,
+ * as logListedLicenseDrops predicted them from the inputs. merge-boms writes every FLAT survivor as
+ * a top-level component, so each drop's node is the first top-level component of its key (never
+ * `metadata.component`, which the CLI writes fresh, nor a nested copy of the key). Only the
+ * expressions the node's served `licenses` lacks by key are recorded, so a CLI that kept one leaves
+ * no record; a key no top-level component carries records nothing. Returns the number of
+ * properties added.
+ */
+export function recordListedLicenseDrops(bom: any, drops: ListedLicenseDrop[]): number {
+  if (!Array.isArray(drops) || drops.length === 0) return 0
+  const top: any[] = Array.isArray(bom?.components) ? bom.components : []
+  let count = 0
+  for (const drop of drops) {
+    if (drop.expressions.length === 0) continue
+    const node = top.find((component: any) => component && typeof component === 'object' && mergeBomsKey(component) === drop.key)
+    if (!node) {
+      logger.info({ key: drop.key, expressions: drop.expressions }, 'merge-boms left no top-level component of the key: the dropped licence expression is not recorded')
+      continue
+    }
+    const served = new Set((Array.isArray(node.licenses) ? node.licenses : []).map(licenseKey))
+    count += recordDroppedLicenses(node, drop.expressions.filter((expression: string) => !served.has(licenseKey({ expression }))))
+  }
+  return count
 }
 
 function extractComponentIdentity(components: any[]): any[] {

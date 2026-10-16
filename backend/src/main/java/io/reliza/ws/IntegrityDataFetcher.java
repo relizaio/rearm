@@ -296,12 +296,12 @@ public class IntegrityDataFetcher {
 		String note = dfe.getArgument("note");
 		UUID sessionUuid = UUID.fromString((String) dfe.getArgument("session"));
 
-		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
-				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
 		// The session is the actor, so the key has to own it. Without this check any agent key in
 		// the organization could file claims in another agent's name, which would leave the
 		// record saying something untrue -- the one thing an attestation must not do.
 		WhoUpdated wu = authorizeProgrammaticSession(dfe, sessionUuid);
+		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
+				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
 		if (sd.getStatus() != null && !"OPEN".equals(sd.getStatus().name())) {
 			throw new RelizaException("Session " + sessionUuid + " is " + sd.getStatus()
 					+ "; file the attestation under an open session");
@@ -318,11 +318,11 @@ public class IntegrityDataFetcher {
 		UUID lockUuid = UUID.fromString((String) dfe.getArgument("lockUuid"));
 		String reason = dfe.getArgument("reason");
 		UUID sessionUuid = UUID.fromString((String) dfe.getArgument("session"));
-		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
-				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
 		// Named for the same reason attest names it: the LOCK_RELEASE row is the durable record
 		// of who released the lock, and "some key in the org" is not an answer.
 		WhoUpdated wu = authorizeProgrammaticSession(dfe, sessionUuid);
+		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
+				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
 		UUID orgUuid = sd.getOrg();
 		Located located = componentLockService.locate(orgUuid, lockUuid)
 				.orElseThrow(() -> new RelizaException("Lock not found: " + lockUuid));
@@ -459,6 +459,7 @@ public class IntegrityDataFetcher {
 		var ahp = authCtx.ahp();
 		if (ahp == null) throw new AccessDeniedException("Invalid authorization");
 		if (!ahp.isRbacKey()) throw new AccessDeniedException("An RBAC key is required for this operation");
+		authorizationService.verifyProgrammaticKey(ahp);
 		authorizeProgrammaticAgent(dfe, authCtx.orgUuid());
 		return authorizationService.assertFreeformKeyOwnsSession(ahp, sessionUuid).whoUpdated();
 	}

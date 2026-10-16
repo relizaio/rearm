@@ -37,10 +37,13 @@ public class ApiKeyDto {
 	private String keyOrder;
 	private String registryRobotLogin;
 	private String notes;
+	/** DENIED keys: the administrator's reason, empty when none; null otherwise and on keys denied before it existed. */
+	private String deniedReason;
 	private io.reliza.model.ApiKeyData.ApiKeyStatus status;
 	private java.util.List<io.reliza.model.ApiKeyData.ApiKeySecret> secrets;
 	private UUID holder;
-	private boolean adminDisabled;
+	/** Whether an org admin's kill switch holds the key off. Boxed so a projection that omits it (referenceOf) reads null, not false. */
+	private Boolean adminDisabled;
 	private io.reliza.model.ApiKeyData.ApiKeyOrigin origin;
 	private io.reliza.model.FederatedIdentity federation;
 	private Integer sessionMaxMinutes;
@@ -70,18 +73,37 @@ public class ApiKeyDto {
 							.createdDate(ak.getCreatedDate())
 							// .registryRobotLogin(akData.getRegistryRobotLogin())
 							.notes(akData.getNotes())
+							.deniedReason(akData.getDeniedReason())
 							.status(akData.getStatus())
 							.holder(akData.getHolder())
-							.adminDisabled(akData.isAdminDisabled())
+							.adminDisabled(akData.isSwitchedOffByAdmin())
 							.origin(akData.getOrigin())
 							.federation(akData.getFederation())
 							.sessionMaxMinutes(akData.getSessionMaxMinutes())
 							.declaredName(akData.getDeclaredName())
 							.declarative(akData.getDeclarative())
 							.secretExpiresDays(akData.getSecretExpiresDays())
+							.accessDate(ak.getLastAccessDate())
 							.secrets(akData.effectiveSecrets(ak.getApiKey()).stream()
 									.map(x -> new io.reliza.model.ApiKeyData.ApiKeySecret(x.getSlot(), null, x.isActive(), x.getCreatedDate(), x.getLastUsedDate(), x.getExpiresDate()))
 									.toList()) // hashes never leave the server
+							.build();
+	}
+
+	/**
+	 * What a non-admin reader of an agent may see of the key bound to it:
+	 * uuid, org, type and declared name. Everything else (notes, denied
+	 * reason, permissions, keyOrder, holder, secret metadata, access date) stays
+	 * null; the full record is {@code apiKeys} (org admin) or
+	 * {@code myApiKeys} (own keys).
+	 */
+	public static ApiKeyDto referenceOf(ApiKey ak) {
+		ApiKeyData akData = ApiKeyData.dataFromRecord(ak);
+		return ApiKeyDto.builder()
+							.uuid(akData.getUuid())
+							.org(akData.getOrg())
+							.type(ak.getObjectType())
+							.declaredName(akData.getDeclaredName())
 							.build();
 	}
 }

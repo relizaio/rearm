@@ -47,6 +47,8 @@ public enum RearmSpecificationType {
 	GLOSSARY,
 	/** A recorded architectural decision (ADR) and its rationale. */
 	DECISION_RECORD,
+	/** Threat model: the assets, trust boundaries and threats the system is designed against, and their mitigations. */
+	THREAT_MODEL,
 	/**
 	 * One review round of one task: the review items a reviewer hop produced.
 	 *

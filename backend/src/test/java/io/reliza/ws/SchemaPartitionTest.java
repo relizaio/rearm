@@ -28,7 +28,6 @@ import graphql.language.ObjectTypeDefinition;
 import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.TypeDefinition;
 import graphql.language.UnionTypeDefinition;
-import graphql.parser.Parser;
 
 /**
  * Which surface each declared type belongs to.
@@ -52,7 +51,8 @@ public class SchemaPartitionTest {
 	}
 
 	private static Document parse(String resource) throws IOException {
-		return new Parser().parseDocument(new String(
+		// The SDL options, as production uses: the default parser cancels past 15,000 tokens.
+		return ProgrammaticSchemaRegistry.parseSdl(new String(
 				new ClassPathResource(resource).getInputStream().readAllBytes(), StandardCharsets.UTF_8));
 	}
 

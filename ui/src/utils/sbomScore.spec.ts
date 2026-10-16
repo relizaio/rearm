@@ -50,6 +50,15 @@ describe('parseSbomScoreReport', () => {
         expect(report.input.componentsSkipped).toBe(3)
     })
 
+    // T-27 (SCORE-35): rearm-cli SCORE-34's input.signature, absent from older reports.
+    it('keepsTheInputSignatureField', () => {
+        expect(parseSbomScoreReport(fixtureText('signature')).input.signature).toEqual({
+            present: true, wellFormed: true, algorithm: 'Ed25519', keyId: '00000000-0000-4000-8000-000000000001',
+            verification: 'NOT_REQUESTED', detail: '',
+        })
+        expect(parseSbomScoreReport(fixtureText('fda.cdx')).input.signature).toBeUndefined()
+    })
+
     it('keeps unknown extra fields and ignores them', () => {
         const raw = JSON.parse(fixtureText('fda.cdx'))
         raw.futureField = { a: 1 }

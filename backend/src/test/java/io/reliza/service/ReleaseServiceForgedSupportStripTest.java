@@ -38,6 +38,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 import tools.jackson.databind.JsonNode;
@@ -101,7 +102,9 @@ class ReleaseServiceForgedSupportStripTest {
 			      ]
 			    },
 			    "properties": [
-			      {"name": "reliza:support:disclosure", "value": "forged-marker"}
+			      {"name": "reliza:support:disclosure", "value": "forged-marker"},
+			      {"name": "reliza:support:unidentifiedComponents", "value": "forged-count"},
+			      {"name": "reliza:support:unassessedComponents", "value": "forged-count"}
 			    ]
 			  },
 			  "components": [
@@ -119,7 +122,7 @@ class ReleaseServiceForgedSupportStripTest {
 	private static ReleaseService serviceServing(String bomJson) {
 		ReleaseService svc = new ReleaseService(null) {
 			@Override
-			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev,
+			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, boolean excludeFileComponents,
 					ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu,
 					List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 				return BOM_ID;
@@ -300,6 +303,45 @@ class ReleaseServiceForgedSupportStripTest {
 		assertFalse(served.contains("actively maintained"),
 				"turning injection off must never turn off the forged-provenance strip: " + served);
 		assertFalse(served.contains("forged-marker"), "forged marker survived: " + served);
+	}
+
+	/** Value of a document-level property of a served export, or null. */
+	private static String metaProperty(String served, String name) {
+		for (JsonNode p : Utils.OM.readTree(served).get("metadata").get("properties")) {
+			if (name.equals(p.get("name").asText())) return p.get("value").asText();
+		}
+		return null;
+	}
+
+	/**
+	 * T-10 (SCORE-21, SCORE-12 ADR-7) through the merged export: the injected document counts its
+	 * own components in place of the uploader's forged counts; the org-DISABLED (stripOnly) and
+	 * the declined (stripSilently) documents carry no count at all.
+	 */
+	@Test
+	void theInjectedMergedExportCountsItsComponentsAndTheStrippedOnesCarryNoCount() throws Exception {
+		String injected = serviceServingWithInjection(FORGED_MERGED_BOM,
+				SupportInjectionSetting.ENABLED, "pkg:maven/ex/libforged@1.0.0")
+				.exportReleaseSbom(UUID.randomUUID(), false, false, null, BomStructureType.FLAT,
+						BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null);
+		assertEquals("0", metaProperty(injected, "reliza:support:unidentifiedComponents"), injected);
+		assertEquals("1", metaProperty(injected, "reliza:support:unassessedComponents"),
+				"device-root has a purl and no facts: " + injected);
+		assertFalse(injected.contains("forged-count"), "a forged count survived: " + injected);
+
+		String disabled = serviceServingWithInjection(FORGED_MERGED_BOM,
+				SupportInjectionSetting.DISABLED, "pkg:maven/ex/libforged@1.0.0")
+				.exportReleaseSbom(UUID.randomUUID(), false, false, null, BomStructureType.FLAT,
+						BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null);
+		String declined = serviceServingWithInjection(FORGED_MERGED_BOM,
+				SupportInjectionSetting.ENABLED, "pkg:maven/ex/libforged@1.0.0")
+				.exportReleaseSbom(UUID.randomUUID(), false, false, false, null, BomStructureType.FLAT,
+						BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null,
+						ExportMetadataOptions.fromCallerInput(false, null));
+		for (String doc : List.of(disabled, declined)) {
+			assertFalse(doc.contains("unidentifiedComponents"), "a stripped document carries a count: " + doc);
+			assertFalse(doc.contains("unassessedComponents"), "a stripped document carries a count: " + doc);
+		}
 	}
 
 	@Test
