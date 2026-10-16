@@ -6,11 +6,9 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import io.reliza.model.tea.TeaComponent;
-import java.time.OffsetDateTime;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
-import org.springframework.format.annotation.DateTimeFormat;
 import org.springframework.lang.Nullable;
 import org.openapitools.jackson.nullable.JsonNullable;
 import java.time.OffsetDateTime;
@@ -28,17 +26,12 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "paginated-component-response", description = "A paginated response containing TEA Components")
 @JsonTypeName("paginated-component-response")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaPaginatedComponentResponse {
 
-  @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  private OffsetDateTime timestamp;
+  private Boolean hasNext = false;
 
-  private Long pageStartIndex = 0l;
-
-  private Long pageSize = 100l;
-
-  private Long totalResults;
+  private String nextPageToken;
 
   @Valid
   private List<@Valid TeaComponent> results = new ArrayList<>();
@@ -50,95 +43,52 @@ public class TeaPaginatedComponentResponse {
   /**
    * Constructor with only required parameters
    */
-  public TeaPaginatedComponentResponse(OffsetDateTime timestamp, Long pageStartIndex, Long pageSize, Long totalResults) {
-    this.timestamp = timestamp;
-    this.pageStartIndex = pageStartIndex;
-    this.pageSize = pageSize;
-    this.totalResults = totalResults;
+  public TeaPaginatedComponentResponse(Boolean hasNext, String nextPageToken, List<@Valid TeaComponent> results) {
+    this.hasNext = hasNext;
+    this.nextPageToken = nextPageToken;
+    this.results = results;
   }
 
-  public TeaPaginatedComponentResponse timestamp(OffsetDateTime timestamp) {
-    this.timestamp = timestamp;
+  public TeaPaginatedComponentResponse hasNext(Boolean hasNext) {
+    this.hasNext = hasNext;
     return this;
   }
 
   /**
-   * Get timestamp
-   * @return timestamp
-   */
-  @NotNull @Valid 
-  @Schema(name = "timestamp", example = "2024-03-20T15:30:00Z", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("timestamp")
-  public OffsetDateTime getTimestamp() {
-    return timestamp;
-  }
-
-  @JsonProperty("timestamp")
-  public void setTimestamp(OffsetDateTime timestamp) {
-    this.timestamp = timestamp;
-  }
-
-  public TeaPaginatedComponentResponse pageStartIndex(Long pageStartIndex) {
-    this.pageStartIndex = pageStartIndex;
-    return this;
-  }
-
-  /**
-   * Get pageStartIndex
-   * @return pageStartIndex
+   * A flag (to aid clients) to know whether there is a next page of results to fetch.   `nextPageToken` will always be supplied, hence this hint is included to aid clients. 
+   * @return hasNext
    */
   @NotNull 
-  @Schema(name = "pageStartIndex", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("pageStartIndex")
-  public Long getPageStartIndex() {
-    return pageStartIndex;
+  @Schema(name = "hasNext", description = "A flag (to aid clients) to know whether there is a next page of results to fetch.   `nextPageToken` will always be supplied, hence this hint is included to aid clients. ", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("hasNext")
+  public Boolean getHasNext() {
+    return hasNext;
   }
 
-  @JsonProperty("pageStartIndex")
-  public void setPageStartIndex(Long pageStartIndex) {
-    this.pageStartIndex = pageStartIndex;
+  @JsonProperty("hasNext")
+  public void setHasNext(Boolean hasNext) {
+    this.hasNext = hasNext;
   }
 
-  public TeaPaginatedComponentResponse pageSize(Long pageSize) {
-    this.pageSize = pageSize;
+  public TeaPaginatedComponentResponse nextPageToken(String nextPageToken) {
+    this.nextPageToken = nextPageToken;
     return this;
   }
 
   /**
-   * Get pageSize
-   * @return pageSize
+   * A token that can be used in a following request to retrieve the next page or results.  It must always be supplied in responses. 
+   * @return nextPageToken
    */
   @NotNull 
-  @Schema(name = "pageSize", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("pageSize")
-  public Long getPageSize() {
-    return pageSize;
+  @Schema(name = "nextPageToken", description = "A token that can be used in a following request to retrieve the next page or results.  It must always be supplied in responses. ", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("nextPageToken")
+  public String getNextPageToken() {
+    return nextPageToken;
   }
 
-  @JsonProperty("pageSize")
-  public void setPageSize(Long pageSize) {
-    this.pageSize = pageSize;
-  }
-
-  public TeaPaginatedComponentResponse totalResults(Long totalResults) {
-    this.totalResults = totalResults;
-    return this;
-  }
-
-  /**
-   * Get totalResults
-   * @return totalResults
-   */
-  @NotNull 
-  @Schema(name = "totalResults", requiredMode = Schema.RequiredMode.REQUIRED)
-  @JsonProperty("totalResults")
-  public Long getTotalResults() {
-    return totalResults;
-  }
-
-  @JsonProperty("totalResults")
-  public void setTotalResults(Long totalResults) {
-    this.totalResults = totalResults;
+  @JsonProperty("nextPageToken")
+  public void setNextPageToken(String nextPageToken) {
+    this.nextPageToken = nextPageToken;
   }
 
   public TeaPaginatedComponentResponse results(List<@Valid TeaComponent> results) {
@@ -158,8 +108,8 @@ public class TeaPaginatedComponentResponse {
    * Get results
    * @return results
    */
-  @Valid 
-  @Schema(name = "results", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "results", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("results")
   public List<@Valid TeaComponent> getResults() {
     return results;
@@ -179,26 +129,22 @@ public class TeaPaginatedComponentResponse {
       return false;
     }
     TeaPaginatedComponentResponse paginatedComponentResponse = (TeaPaginatedComponentResponse) o;
-    return Objects.equals(this.timestamp, paginatedComponentResponse.timestamp) &&
-        Objects.equals(this.pageStartIndex, paginatedComponentResponse.pageStartIndex) &&
-        Objects.equals(this.pageSize, paginatedComponentResponse.pageSize) &&
-        Objects.equals(this.totalResults, paginatedComponentResponse.totalResults) &&
+    return Objects.equals(this.hasNext, paginatedComponentResponse.hasNext) &&
+        Objects.equals(this.nextPageToken, paginatedComponentResponse.nextPageToken) &&
         Objects.equals(this.results, paginatedComponentResponse.results);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(timestamp, pageStartIndex, pageSize, totalResults, results);
+    return Objects.hash(hasNext, nextPageToken, results);
   }
 
   @Override
   public String toString() {
     StringBuilder sb = new StringBuilder();
     sb.append("class TeaPaginatedComponentResponse {\n");
-    sb.append("    timestamp: ").append(toIndentedString(timestamp)).append("\n");
-    sb.append("    pageStartIndex: ").append(toIndentedString(pageStartIndex)).append("\n");
-    sb.append("    pageSize: ").append(toIndentedString(pageSize)).append("\n");
-    sb.append("    totalResults: ").append(toIndentedString(totalResults)).append("\n");
+    sb.append("    hasNext: ").append(toIndentedString(hasNext)).append("\n");
+    sb.append("    nextPageToken: ").append(toIndentedString(nextPageToken)).append("\n");
     sb.append("    results: ").append(toIndentedString(results)).append("\n");
     sb.append("}");
     return sb.toString();

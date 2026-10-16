@@ -5,9 +5,11 @@
  */
 package io.reliza.ws.tea;
 
+import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCollection;
 import io.reliza.model.tea.TeaErrorResponse;
+import io.reliza.model.tea.TeaPaginatedCollectionResponse;
 import io.reliza.model.tea.TeaProductRelease;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
@@ -37,7 +39,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-06-03T01:14:38.691100265Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "CLE", description = "the CLE API")
 public interface ProductReleaseApi {
@@ -164,7 +166,11 @@ public interface ProductReleaseApi {
      * Get the TEA Collections belonging to the TEA Product Release
      *
      * @param uuid UUID of TEA Product Release in the TEA server (required)
-     * @return Requested TEA Collection found and returned (status code 200)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque token used to retrieve the next page of results.  This should be copied exactly from the &#x60;nextPageToken&#x60; field of a previous response.  (optional)
+     * @param sortField The field by which to sort the results. (optional, default to version)
+     * @param sortOrder The direction of the sort. (optional, default to asc)
+     * @return A paginated response containing TEA Collections (status code 200)
      *         or Request was Invalid (status code 400)
      *         or Object requested by identifier not found (status code 404)
      */
@@ -173,8 +179,8 @@ public interface ProductReleaseApi {
         description = "Get the TEA Collections belonging to the TEA Product Release",
         tags = { "TEA Product Release" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
-                @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaCollection.class)))
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Collections", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedCollectionResponse.class))
             }),
             @ApiResponse(responseCode = "400", description = "Request was Invalid"),
             @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
@@ -191,13 +197,17 @@ public interface ProductReleaseApi {
         value = ProductReleaseApi.PATH_GET_COLLECTIONS_BY_PRODUCT_RELEASE_ID,
         produces = { "application/json" }
     )
-    default ResponseEntity<List<TeaCollection>> getCollectionsByProductReleaseId(
-        @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    default ResponseEntity<TeaPaginatedCollectionResponse> getCollectionsByProductReleaseId(
+        @Parameter(name = "uuid", description = "UUID of TEA Product Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.  This should be copied exactly from the `nextPageToken` field of a previous response. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "version") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }, { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] } ]";
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }, { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

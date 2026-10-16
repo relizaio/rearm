@@ -8,14 +8,18 @@ import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
+import org.springframework.lang.Nullable;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RequestParam;
 
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaComponent;
+import io.reliza.model.tea.TeaPaginatedComponentReleaseResponse;
 import io.reliza.model.tea.TeaRelease;
+import jakarta.validation.Valid;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
@@ -57,16 +61,27 @@ public class ComponentApiController implements ComponentApi {
     
     
     @Override
-    public ResponseEntity<List<TeaRelease>> getReleasesByComponentId(
-            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    public ResponseEntity<TeaPaginatedComponentReleaseResponse> getReleasesByComponentId(
+            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+            @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+            @Parameter(name = "pageToken", description = "An opaque token used to retrieve the next page of results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+            @Parameter(name = "sortField", description = "The field by which to sort the results.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+            @Parameter(name = "sortOrder", description = "The direction of the sort.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
         ) {
     		var ocd = getComponentService.getComponentData(uuid);
     		if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
 	        	return ResponseEntity.notFound().build();
 	        } else {
-	    		var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
+	    		long size = TeaPaginationUtil.effectiveSize(pageSize);
+	    		long offset = TeaPaginationUtil.decodeOffset(pageToken);
+	    		var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, (int) (size + 1), (int) offset);
 	    		var teaReleases = releases.stream().map(rd -> teaTransformerService.transformReleaseToTea(rd)).toList();
-	    		return ResponseEntity.ok(teaReleases);
+	    		var page = TeaPaginationUtil.fromOverfetch(teaReleases, offset, size);
+	    		TeaPaginatedComponentReleaseResponse resp = new TeaPaginatedComponentReleaseResponse();
+	    		resp.setResults(page.items());
+	    		resp.setHasNext(page.hasNext());
+	    		resp.setNextPageToken(page.nextPageToken());
+	    		return ResponseEntity.ok(resp);
 	        }
 
         }
