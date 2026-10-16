@@ -9,6 +9,7 @@ import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
+import { withExpectedRevision } from '@/utils/componentRevision'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
@@ -1275,10 +1276,13 @@ const storeObject : any = {
                     : null,
                 clearOwner: component.clearOwner || false
             }
+            // TPF-62: the revision the settings form was read at, when the caller sends one; the
+            // server then refuses the save if the component changed since. Never sent as null.
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
                 variables: {
-                    'component': compUpdObject
+                    'component': withExpectedRevision(compUpdObject,
+                        typeof component.expectedRevision === 'number' ? component.expectedRevision : null)
                 }
             })
             context.commit('ADD_UPDATE_COMPONENT', data.data.updateComponent)

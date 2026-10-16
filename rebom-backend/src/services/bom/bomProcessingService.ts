@@ -398,10 +398,28 @@ function unionByKey(survivor: any, duplicate: any, keyOf: (entry: any) => string
   return added.length ? [...survivor, ...added] : survivor
 }
 
-function licenseKey(entry: any): string {
+/**
+ * The license-object fields that make two entries with one id (or name) different entries of a list, per CycloneDX
+ * version: `bom-ref` from 1.5, `acknowledgement` from 1.6 (TPF-56 architecture 3.2). The same rows as
+ * EXPRESSION_FIELDS_KEPT_ON_LICENSE today, kept apart on purpose: that list may grow (TPF-55 5.3), this one must not.
+ */
+const LICENSE_DISTINGUISHING_FIELDS = new Map<string, readonly string[]>([
+  ['1.5', ['bom-ref']],
+  ['1.6', ['acknowledgement', 'bom-ref']],
+  ['1.7', ['acknowledgement', 'bom-ref']],
+]);
+
+/** `<acknowledgement>\u0000<bom-ref>` of a license object; a part is blank unless the version defines the field and the value is a string. */
+function licenseDiscriminator(license: any, specVersion?: string): string {
+  const fields = typeof specVersion === 'string' ? LICENSE_DISTINGUISHING_FIELDS.get(specVersion) : undefined;
+  const part = (field: string) => (fields?.includes(field) && typeof license?.[field] === 'string') ? license[field] : '';
+  return `${part('acknowledgement')}\u0000${part('bom-ref')}`;
+}
+
+function licenseKey(entry: any, specVersion?: string): string {
   if (typeof entry?.expression === 'string') return `expression:${entry.expression}`
-  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}`
-  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}`
+  if (typeof entry?.license?.id === 'string') return `id:${entry.license.id}\u0000${licenseDiscriminator(entry.license, specVersion)}`
+  if (typeof entry?.license?.name === 'string') return `name:${entry.license.name}\u0000${licenseDiscriminator(entry.license, specVersion)}`
   return `json:${JSON.stringify(entry)}`
 }
 
@@ -421,9 +439,9 @@ function hasExpressionEntry(list: any[]): boolean {
  * of `kept` has. A fold line is logged only then: an expression beside the same expression loses
  * nothing.
  */
-function losesLicenseEntry(kept: any[], dropped: any[]): boolean {
-  const keys = new Set(kept.map(licenseKey))
-  return dropped.some((entry: any) => !keys.has(licenseKey(entry)))
+function losesLicenseEntry(kept: any[], dropped: any[], specVersion?: string): boolean {
+  const keys = new Set(kept.map((e: any) => licenseKey(e, specVersion)))
+  return dropped.some((entry: any) => !keys.has(licenseKey(entry, specVersion)))
 }
 
 /** The expression texts that assert no licence (SCORE-44 ADR-2): a fold that drops one loses nothing. */
@@ -435,13 +453,13 @@ const NO_LICENSE_ASSERTED = new Set(['NOASSERTION', 'NONE'])
  * licenseKey no entry of `kept` has, leaving out NOASSERTION and NONE (trimmed, any case), each
  * distinct text once. Ids and names are never returned. A non-array on either side returns none.
  */
-export function droppedLicenseExpressions(kept: any, dropped: any): string[] {
+export function droppedLicenseExpressions(kept: any, dropped: any, specVersion?: string): string[] {
   if (!Array.isArray(kept) || !Array.isArray(dropped)) return []
-  const keys = new Set(kept.map(licenseKey))
+  const keys = new Set(kept.map((e: any) => licenseKey(e, specVersion)))
   const out: string[] = []
   for (const entry of dropped) {
     if (!isExpressionEntry(entry) || typeof entry.expression !== 'string') continue
-    if (keys.has(licenseKey(entry))) continue
+    if (keys.has(licenseKey(entry, specVersion))) continue
     if (NO_LICENSE_ASSERTED.has(entry.expression.trim().toUpperCase())) continue
     if (!out.includes(entry.expression)) out.push(entry.expression)
   }
@@ -479,19 +497,19 @@ export function recordDroppedLicenses(component: any, expressions: string[]): nu
  * are unioned by expression, id or name, survivor first. `dropped` holds the listed expressions
  * the fold lost (SCORE-44 ADR-2), for the caller to record on the survivor.
  */
-function foldLicenseLists(survivor: any, duplicate: any, ref?: string): { licenses: any, dropped: string[] } {
+function foldLicenseLists(survivor: any, duplicate: any, ref?: string, specVersion?: string): { licenses: any, dropped: string[] } {
   if (!Array.isArray(duplicate) || duplicate.length === 0) return { licenses: survivor, dropped: [] }
   if (isEmptyValue(survivor)) return { licenses: duplicate, dropped: [] }
   if (!Array.isArray(survivor)) return { licenses: survivor, dropped: [] }
-  const kept = normalizeLicenses(survivor) || []
-  const added = normalizeLicenses(duplicate) || []
+  const kept = normalizeLicenses(survivor, specVersion) || []
+  const added = normalizeLicenses(duplicate, specVersion) || []
   if (hasExpressionEntry(kept) || hasExpressionEntry(added)) {
-    if (losesLicenseEntry(kept, added)) {
+    if (losesLicenseEntry(kept, added, specVersion)) {
       logger.info({ bomRef: ref, kept: survivor, dropped: duplicate }, 'bom-ref de-dup: an expression cannot be unioned, the survivor licenses stand')
     }
-    return { licenses: survivor, dropped: droppedLicenseExpressions(kept, added) }
+    return { licenses: survivor, dropped: droppedLicenseExpressions(kept, added, specVersion) }
   }
-  const union = unionByKey(kept, added, licenseKey)
+  const union = unionByKey(kept, added, (e: any) => licenseKey(e, specVersion))
   return { licenses: union === kept ? survivor : union, dropped: [] }
 }
 
@@ -510,13 +528,13 @@ const DEDUP_LIST_UNIONS: Record<string, (survivor: any, duplicate: any) => any> 
  * expression it loses (SCORE-44 ADR-2). The duplicate's `type` is dropped and its
  * `components` are hoisted by the caller.
  */
-function mergeDuplicateInto(survivor: any, duplicate: any): void {
+function mergeDuplicateInto(survivor: any, duplicate: any, specVersion?: string): void {
   let dropped: string[] = []
   for (const key of Object.keys(duplicate)) {
     if (DEDUP_SKIPPED_FIELDS.has(key)) continue
     const union = DEDUP_LIST_UNIONS[key]
     if (key === 'licenses') {
-      const fold = foldLicenseLists(survivor.licenses, duplicate.licenses, bomRefOf(survivor))
+      const fold = foldLicenseLists(survivor.licenses, duplicate.licenses, bomRefOf(survivor), specVersion)
       survivor.licenses = fold.licenses
       dropped = fold.dropped
     } else if (union) {
@@ -557,7 +575,7 @@ function hasRepeatedBomRef(bom: any): boolean {
  * has been walked) and walked in turn, so a duplicate nested in a duplicate is found too.
  * Works on shallow copies: the input is never changed.
  */
-function dedupeComponentTree(root: any, components: any): { root: any, components: any, count: number } {
+function dedupeComponentTree(root: any, components: any, specVersion?: string): { root: any, components: any, count: number } {
   const survivors = new Map<string, any>()
   // A survivor whose children are being walked, with the children of its duplicates
   // found meanwhile, appended once the current list is done.
@@ -589,7 +607,7 @@ function dedupeComponentTree(root: any, components: any): { root: any, component
     const survivor = ref ? survivors.get(ref) : undefined
     if (survivor) {
       count++
-      mergeDuplicateInto(survivor, component)
+      mergeDuplicateInto(survivor, component, specVersion)
       if (Array.isArray(component.components) && component.components.length) fill(survivor, component.components)
       return
     }
@@ -691,7 +709,7 @@ function affectedVersionKey(v: any): string {
 export function dedupeBomRefs(bom: any): BomRefDedupResult {
   if (!bom || typeof bom !== 'object' || !hasRepeatedBomRef(bom)) return { bom, count: 0 }
 
-  const tree = dedupeComponentTree(bom.metadata?.component, bom.components)
+  const tree = dedupeComponentTree(bom.metadata?.component, bom.components, bom.specVersion)
   const out: any = { ...bom }
   if (bom.components !== undefined) out.components = tree.components
 
@@ -1659,13 +1677,39 @@ export function augmentBomForStorage(bom: any, componentDetails: RebomOptions, l
  *
  * Convert any expression that resolves to a known SPDX id via fixupSpdxId
  * (retried with whitespace-to-dash for the npm variant) into a license
- * object, then dedupe by `license.id`. We deliberately do NOT touch
+ * object, then drop an entry whose id, acknowledgement and bom-ref (the
+ * latter two where the BOM's version defines them; see
+ * LICENSE_DISTINGUISHING_FIELDS) repeat an earlier entry's. The rewritten
+ * license object keeps the expression entry's fields that the CycloneDX
+ * schema of the BOM's version
+ * (`specVersion`) defines the same way on both objects, with a value that
+ * schema accepts (`bom-ref` from 1.5, `acknowledgement` from 1.6; see
+ * EXPRESSION_FIELDS_KEPT_ON_LICENSE), and drops the rest; with no version or
+ * an unknown one it keeps none. We deliberately do NOT touch
  * compound expressions ("MIT OR Apache-2.0"), do NOT dedupe by `name`
  * (freeform — siblings may differ in url/text), and do NOT try to reconcile
  * mixed expression+license arrays beyond what dedupe-by-id resolves.
  * Anything ambiguous falls through to validation as before.
  */
-export function normalizeLicenses(licenses: any): any[] | undefined {
+/**
+ * Fields a single-id expression keeps when normalizeLicenses rewrites it into a license object: the fields the
+ * CycloneDX schema of the BOM's version defines, with the same definition, on both the expression entry and the
+ * license object (TPF-55 architecture 3.2). 1.4 and older, an unknown version and no version keep none.
+ */
+const EXPRESSION_FIELDS_KEPT_ON_LICENSE = new Map<string, readonly string[]>([
+  ['1.5', ['bom-ref']],
+  ['1.6', ['acknowledgement', 'bom-ref']],
+  ['1.7', ['acknowledgement', 'bom-ref']],
+]);
+
+/** A value the license object's schema accepts: refType is a non-empty string, the acknowledgement an enum value. */
+function isKeepableLicenseField(field: string, value: unknown): boolean {
+  if (field === 'bom-ref') return typeof value === 'string' && value.length > 0;
+  if (field === 'acknowledgement') return value === 'declared' || value === 'concluded';
+  return false;
+}
+
+export function normalizeLicenses(licenses: any, specVersion?: string): any[] | undefined {
   if (!Array.isArray(licenses) || licenses.length === 0) return licenses;
 
   const converted = licenses.map((entry: any) => {
@@ -1674,7 +1718,14 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
       if (typeof entry.expression === 'string') {
         const expr = entry.expression;
         const fixedId = CDXSpdx.fixupSpdxId(expr) ?? CDXSpdx.fixupSpdxId(expr.replace(/\s+/g, '-'));
-        if (fixedId) return { license: { id: fixedId } };
+        if (fixedId) {
+          const license: any = { id: fixedId };
+          const kept = typeof specVersion === 'string' ? EXPRESSION_FIELDS_KEPT_ON_LICENSE.get(specVersion) : undefined;
+          for (const field of kept ?? []) {
+            if (isKeepableLicenseField(field, entry[field])) license[field] = entry[field];
+          }
+          return { license };
+        }
         return entry;
       }
       // license.id must be a recognized SPDX id — Dependency-Track strict-validates
@@ -1696,13 +1747,13 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
     return entry;
   });
 
-  const seenIds = new Set<string>();
+  const seen = new Set<string>();
   const out: any[] = [];
   for (const entry of converted) {
-    const id = entry?.license?.id;
-    if (typeof id === 'string') {
-      if (seenIds.has(id)) continue;
-      seenIds.add(id);
+    if (typeof entry?.license?.id === 'string') {
+      const key = licenseKey(entry, specVersion);
+      if (seen.has(key)) continue;
+      seen.add(key);
     }
     out.push(entry);
   }
@@ -1711,12 +1762,13 @@ export function normalizeLicenses(licenses: any): any[] | undefined {
 
 export function normalizeLicensesInBom(bom: any): any {
   if (!bom || typeof bom !== 'object') return bom;
+  const specVersion = bom.specVersion;
 
   const walkComponents = (comps: any) => {
     if (!Array.isArray(comps)) return;
     for (const c of comps) {
       if (!c || typeof c !== 'object') continue;
-      if (c.licenses) c.licenses = normalizeLicenses(c.licenses);
+      if (c.licenses) c.licenses = normalizeLicenses(c.licenses, specVersion);
       if (c.components) walkComponents(c.components);
     }
   };
@@ -1725,12 +1777,12 @@ export function normalizeLicensesInBom(bom: any): any {
   walkComponents(bom.services);
   if (bom.metadata?.component) {
     if (bom.metadata.component.licenses) {
-      bom.metadata.component.licenses = normalizeLicenses(bom.metadata.component.licenses);
+      bom.metadata.component.licenses = normalizeLicenses(bom.metadata.component.licenses, specVersion);
     }
     walkComponents(bom.metadata.component.components);
   }
   if (bom.metadata?.licenses) {
-    bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses);
+    bom.metadata.licenses = normalizeLicenses(bom.metadata.licenses, specVersion);
   }
   return bom;
 }

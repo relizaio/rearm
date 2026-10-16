@@ -15,8 +15,8 @@ CLI browser login) see [Programmatic Access](../configure/programmatic-access).
 
 ::: tip Available in both ReARM Community Edition and ReARM Pro
 Federated identity is part of the shared ReARM codebase and works on both editions. The only
-differences are in the optional extra permissions of a trust rule, see
-[Edition differences](#edition-differences).
+differences are in the optional extra permissions of a trust rule and in how much the answer to a
+refused exchange says, see [Edition differences](#edition-differences).
 :::
 
 ## How it works
@@ -164,6 +164,10 @@ The trust rule form is the same on both editions, with these exceptions:
   ReARM Community Edition.
 - **Perspectives** are a ReARM Pro feature, so a `Perspective` extra permission, and creating a
   component into a perspective, only apply on ReARM Pro.
+
+A refused exchange is answered differently too: ReARM Pro gives one answer, `assertion not
+accepted`, to every exchange that no trust rule admits and writes the cause to its server log;
+ReARM Community Edition names the cause in the answer. See [Troubleshooting](#troubleshooting).
 
 ## Part 2: GitHub configuration
 
@@ -466,8 +470,8 @@ Instead of the flag, `REARM_AUTH: github-oidc` in the environment does the same;
 `REARM_ORG`) names the organization when several trust the repository.
 
 `rearm whoami --auth github-oidc` performs one exchange and prints the key id, the organization and
-the repository the job acts as, or the reason the exchange was refused. It is a quick first step
-when setting up a new rule.
+the repository the job acts as, or ReARM's answer when the exchange is refused. It is a quick first
+step when setting up a new rule.
 
 ## Identities, pinning and revocation
 
@@ -486,7 +490,7 @@ its VCS URI, the pinned ids, the last run and when it was last used.
 
 ## Troubleshooting
 
-When an exchange is refused, the CLI prints the reason from ReARM in this form:
+When an exchange is refused, the CLI prints ReARM's answer in this form:
 
 ```
 Error: identity token refused (<code>: <reason>); check the trust rule in ReARM and, if several organizations trust this repository, pass --org
@@ -515,16 +519,34 @@ Error: rearm: API key id and secret are required
 That message says nothing about the identity token, which is why setting the mode explicitly is
 recommended.
 
-**No matching trust rule**
+**Assertion not accepted**
 
 ```
-identity token refused (invalid_grant: no trust rule matches this identity)
+identity token refused (invalid_grant: assertion not accepted: no active trust rule names its issuer, or the assertion did not verify against that issuer (signature, keys or claims); ask the organization administrator to check the trust rule and the server log)
 ```
 
-ReARM gives this one answer for every "not trusted here" outcome. Check that a rule is active and
-not expired, and that its owner, repositories, refs, environments, workflow files, events and
-subject globs all admit this run (note the [pull request ref](#create-a-trust-rule)). The same
-answer comes when `rearm_org` / `--org` names an organization whose rules do not match.
+ReARM gives this one answer to every exchange that no trust rule admits: an issuer that no active,
+unexpired rule names, an identity token that does not verify (signature, keys, expiry, audience or
+another claim), an identity that no rule matches, and a `rearm_org` / `--org` that names an
+organization whose rules do not match. The answer does not say which. The cause is in the ReARM
+server log, which whoever runs the instance can read, on a line of this form:
+
+```
+SECURITY: federated identity exchange refused from <address>: <reason> (issuer <issuer>, identity <repository>)
+```
+
+| Reason in the log | What to check |
+|---|---|
+| `UNTRUSTED_ISSUER` | No active, unexpired rule names this issuer. Check that the rule exists, is active and has not expired; on GitHub Enterprise Server, that its **Issuer** is exactly the issuer on the log line. |
+| `IDENTITY_UNMATCHED` | A rule names the issuer, but none admits this run. Check the rule's owner, repositories, refs, environments, workflow files, events and subject globs (note the [pull request ref](#create-a-trust-rule)). |
+| `ORG_NOT_NAMED` | `rearm_org` / `--org` names an organization whose rules do not admit this run. Correct the uuid, or leave it out when only one organization trusts the repository. |
+| `AUDIENCE` | The identity token was requested for another URL than the instance's base URI. Set `rearm_api_url` / `-u` to exactly that URL, not an alias host name. |
+| `AUDIENCE_NOT_CONFIGURED` | The instance has no base URI configured; whoever runs it must set one. |
+| Any other reason | The identity token itself was not accepted: its signature or format (`NOT_VERIFIED`), its expiry or another claim, or the issuer's keys could not be fetched (`KEYS_UNAVAILABLE`, which comes with an ERROR line naming the failure). Run the job again; if it persists, check the issuer on the rule. |
+
+ReARM Community Edition answers these cases with a more specific text instead, for example
+`invalid_grant: no trust rule matches this identity` or
+`invalid_grant: audience must be https://rearm.example.com`; the checks are the same.
 
 **Several organizations trust the repository**
 
@@ -534,15 +556,6 @@ identity token refused (invalid_request: this identity is trusted by several org
 
 Set `rearm_org` (CLI `--org`, or `REARM_ORG`) to the uuid of the organization the workflow should
 act in. On the docker and helm actions, the mirror uses `rearm_mirror_org`.
-
-**Wrong ReARM URL (audience)**
-
-```
-identity token refused (invalid_grant: audience must be https://rearm.example.com)
-```
-
-The identity token is requested for the URL given in `rearm_api_url` / `-u`, and ReARM accepts only
-its own configured base URI. Use exactly that URL, not an alias host name.
 
 **An old CLI without `--auth github-oidc`**
 

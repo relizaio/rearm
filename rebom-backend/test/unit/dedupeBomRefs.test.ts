@@ -663,4 +663,77 @@ describe('dedupeBomRefs', () => {
             { name: BOM_REFS_DEDUPLICATED_PROPERTY, value: '1' }
         ]);
     });
+
+    it('unions a rewritten license keeping acknowledgement and bom-ref for the BOM version (TPF-55)', () => {
+        const components = () => [
+            lib('L', { licenses: [{ license: { id: 'Apache-2.0' } }] }),
+            lib('A', { components: [lib('L', { licenses: [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }] })] })
+        ];
+        const v16 = dedupeBomRefs(doc(components())).bom;
+        const v15 = dedupeBomRefs(doc(components(), { specVersion: '1.5' })).bom;
+
+        expect(v16.components[0].licenses).toStrictEqual([
+            { license: { id: 'Apache-2.0' } },
+            { license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }
+        ]);
+        expect(v15.components[0].licenses).toStrictEqual([
+            { license: { id: 'Apache-2.0' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-1' } }
+        ]);
+    });
+
+    it('unions a declared and a concluded license and two bom-refs with one id, per version (TPF-56)', () => {
+        const v16 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT', acknowledgement: 'declared' } }] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { id: 'MIT', acknowledgement: 'concluded' } },
+                { license: { id: 'MIT', acknowledgement: 'declared' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+            ] })] })
+        ])).bom;
+        const v15 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT', 'bom-ref': 'lic-a' } }] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { id: 'MIT', 'bom-ref': 'lic-b' } },
+                { license: { id: 'MIT', 'bom-ref': 'lic-a' } }
+            ] })] })
+        ], { specVersion: '1.5' })).bom;
+        const v14 = dedupeBomRefs(doc([
+            lib('L', { licenses: [{ license: { id: 'MIT' } }] }),
+            lib('A', { components: [lib('L', { licenses: [{ license: { id: 'MIT', 'bom-ref': 'lic-b' } }] })] })
+        ], { specVersion: '1.4' })).bom;
+
+        expect(v16.components[0].licenses).toStrictEqual([
+            { license: { id: 'MIT', acknowledgement: 'declared' } },
+            { license: { id: 'MIT', acknowledgement: 'concluded' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+        ]);
+        expect(v15.components[0].licenses).toStrictEqual([
+            { license: { id: 'MIT', 'bom-ref': 'lic-a' } },
+            { license: { id: 'MIT', 'bom-ref': 'lic-b' } }
+        ]);
+        expect(v14.components[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+    });
+
+    it('keeps the survivor list whole when an expression is present, whatever the acknowledgements (SCORE-40 ADR-6 over TPF-56)', () => {
+        const components = [
+            lib('L', { licenses: [
+                { license: { name: 'Custom', acknowledgement: 'declared' } },
+                { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' }
+            ] }),
+            lib('A', { components: [lib('L', { licenses: [
+                { license: { name: 'Custom', acknowledgement: 'concluded' } },
+                { expression: 'MIT OR Apache-2.0', acknowledgement: 'concluded' }
+            ] })] })
+        ];
+        const { bom } = dedupeBomRefs(doc(components));
+
+        // An expression on either side: CycloneDX 1.6 cannot union an expression with anything, so the survivor's
+        // list stands whole and the duplicate's is dropped (logged, since its concluded Custom is a different entry
+        // under TPF-56's acknowledgement-aware key). The expression text repeats, so nothing is recorded as dropped.
+        expect(bom.components[0].licenses).toStrictEqual([
+            { license: { name: 'Custom', acknowledgement: 'declared' } },
+            { expression: 'MIT OR Apache-2.0', acknowledgement: 'declared' }
+        ]);
+    });
 });

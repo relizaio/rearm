@@ -76,6 +76,43 @@ describe('BOM CRUD Operations', () => {
         expect(retrieved.components.length).toBeGreaterThanOrEqual(2); // lodash, express (may have more after dedup)
     });
 
+    it('keeps acknowledgement and bom-ref on a rewritten single-id license of a stored 1.7 upload (TPF-55)', async () => {
+        const serialNumber = generateSerialNumber();
+        createdSerialNumbers.push(serialNumber);
+        const bom = {
+            bomFormat: 'CycloneDX', specVersion: '1.7', serialNumber, version: 1,
+            metadata: {
+                timestamp: '2026-05-11T00:00:00Z',
+                component: { type: 'application', name: 'tpf55-app', version: '1.0.0', 'bom-ref': 'tpf55-app' }
+            },
+            components: [{
+                type: 'library', name: 'tpf55-lib', version: '1.0.0', 'bom-ref': 'pkg:npm/tpf55-lib@1.0.0',
+                purl: 'pkg:npm/tpf55-lib@1.0.0',
+                licenses: [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }]
+            }],
+            dependencies: [{ ref: 'tpf55-app', dependsOn: ['pkg:npm/tpf55-lib@1.0.0'] }]
+        };
+
+        const created = await BomService.addBom({
+            bomInput: {
+                format: 'CYCLONEDX' as const,
+                bom,
+                org: TEST_ORG_UUID,
+                rebomOptions: createTestRebomOptions({
+                    serialNumber,
+                    name: 'tpf55-app',
+                    group: 'com.test',
+                    version: '1.0.0'
+                })
+            }
+        });
+
+        const retrieved = await BomService.findBomObjectById(created.uuid, TEST_ORG_UUID) as any;
+        expect(retrieved.specVersion).toBe('1.6');
+        const lib = retrieved.components.find((c: any) => c.name === 'tpf55-lib');
+        expect(lib.licenses).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
+    });
+
     it('should detect duplicate BOMs', async () => {
         // Load fixture and update serialNumber
         const bomContent = loadFixture('cyclonedx-simple.json');

@@ -61,12 +61,6 @@ server {
 
     location /tea {
         proxy_pass http://backend;
-        # TEA is a machine API: its 404 is a structured TeaErrorResponse
-        # (OBJECT_UNKNOWN) that clients are specified to read. The server-level
-        # proxy_intercept_errors swaps upstream error bodies for the branded
-        # static pages, which turned every TEA error into 132 bytes of HTML and
-        # made backend faults indistinguishable from edge ones while debugging.
-        proxy_intercept_errors off;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host            $host;
@@ -80,8 +74,6 @@ server {
 
     location /.well-known/tea {
         proxy_pass http://backend;
-        # Same rationale as /tea above -- keep upstream JSON intact.
-        proxy_intercept_errors off;
         proxy_http_version 1.1;
         proxy_set_header Connection "";
         proxy_set_header Host            $host;
@@ -186,9 +178,14 @@ server {
         proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
     }
 
-    # redirect server error pages to the static pages while intercepting proxy errors
-    #
-    proxy_intercept_errors on;
+    # Upstream answers pass through as sent on every proxied location: status, headers and body.
+    # Clients read them: the API's JSON errors and the token endpoint's OAuth errors, Retry-After on
+    # a 429, TEA's TeaErrorResponse, Keycloak's own error pages and JSON (TPF-49). The pages below are
+    # for nginx's own errors only: an upstream it cannot reach or that does not answer in time (502,
+    # 504: the server-down page) and a request nginx refuses itself (400, 405, 408, 413, 414 ...).
+    # Never set proxy_intercept_errors on, here or in a location, and never give a location an
+    # error_page of its own: it would replace these inherited lines and lose the server-down page.
+    proxy_intercept_errors off;
     error_page  401              /error_pages/401.html;
     error_page  402              /error_pages/402.html;
     error_page  403              /error_pages/403.html;

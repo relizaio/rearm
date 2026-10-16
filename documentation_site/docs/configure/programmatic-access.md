@@ -30,13 +30,14 @@ works everywhere it used to. This page covers what is new alongside it:
 ## Edition differences
 
 Everything on this page behaves the same on both editions, except for the objects a permission can
-point at:
+point at and the answer to a refused federated exchange:
 
 | Where | ReARM Pro | ReARM CE |
 |---|---|---|
 | Permissions on Free Form and personal keys, and on the key a CLI login creates | Per-perspective permissions, instance and cluster permissions, and the DevOps Read / DevOps Write functions | Not offered: CE has no perspectives, instances or clusters to grant on, and does not show the DevOps functions |
 | Federated trust rules, extra static permissions | Scopes `Component / Product`, `Perspective` and `Instance / Cluster` | `Instance / Cluster` is hidden. `Perspective` is listed, but there is nothing to select in it, because CE has no perspectives |
 | Creating a component into a perspective (`perspective` input, `--perspective`) | Supported | Not applicable: CE has no perspectives |
+| A federated exchange that no trust rule admits (an unknown issuer, an identity token that does not verify, no rule matching the identity) | One answer, `invalid_grant` `assertion not accepted: ...`; the cause is in the server log | The answer names the cause, for example `no trust rule matches this identity` |
 
 ## Managing keys in the UI
 
@@ -403,9 +404,12 @@ same repository, which would otherwise be ambiguous.
 For end-to-end sample pipelines with the ReARM GitHub Actions and a troubleshooting list, see
 [Federated (Keyless) Login from GitHub Actions](../integrations/githubActionsFederated).
 
-`rearm whoami --auth github-oidc` reports which key and repository the job is acting as. A refused
-exchange names the reason: no trust rule matches, several organizations match, or the repository
-was renamed since its identity was pinned.
+`rearm whoami --auth github-oidc` reports which key and repository the job is acting as, or ReARM's
+answer when the exchange is refused. When several organizations match, or the repository was
+renamed since its identity was pinned, the answer says so. Every exchange that no trust rule admits
+(an unknown issuer, an identity token that does not verify, no rule matching the repository) gets
+one answer, `assertion not accepted`, and the cause is in the ReARM server log; ReARM CE names it
+in the answer. See [Troubleshooting](../integrations/githubActionsFederated#troubleshooting).
 
 ### Identities, pinning and revocation
 

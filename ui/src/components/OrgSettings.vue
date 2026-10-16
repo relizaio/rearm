@@ -1390,6 +1390,7 @@ import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -2722,26 +2723,9 @@ async function addComponentToPerspective() {
     
     processingMode.value = true
     try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedComponentToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
-            }
-        })
+        const added = await addPerspectiveToComponent(graphqlClient, selectedComponentToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Component added to perspective successfully')
             showAddComponentToPerspectiveModal.value = false
             selectedComponentToAdd.value = ''
@@ -2764,26 +2748,9 @@ async function addProductToPerspective() {
     
     processingMode.value = true
     try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedProductToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
-            }
-        })
+        const added = await addPerspectiveToComponent(graphqlClient, selectedProductToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Product added to perspective successfully')
             showAddProductToPerspectiveModal.value = false
             selectedProductToAdd.value = ''

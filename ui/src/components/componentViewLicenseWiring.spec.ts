@@ -139,7 +139,9 @@ describe('ComponentView: the declared licence and supplier block', () => {
         expect(device).toBeGreaterThan(0)
         expect(license).toBeGreaterThan(device)
         expect(modal).toBeGreaterThan(license)
-        const deviceClass = body('async function saveDeviceClass')
+        // TPF-62 moved the device-class save's body into submitDeviceClass (saveDeviceClass sends the page's revision)
+        const deviceClass = body('async function submitDeviceClass')
+        expect(deviceClass.indexOf('await loadDeviceWindow()')).toBeGreaterThan(-1)
         expect(deviceClass.indexOf('loadComponentLicense()')).toBeGreaterThan(deviceClass.indexOf('await loadDeviceWindow()'))
     })
 
@@ -149,6 +151,8 @@ describe('ComponentView: the declared licence and supplier block', () => {
         expect(save).toMatch(/mutation: UPDATE_COMPONENT_DECLARED_LICENSE/)
         expect(save).toMatch(/componentLicenseError\.value = commonFunctions\.extractGraphQLErrorMessage\(e\)/)
         expect(save).toMatch(/notify\('success', 'Saved', COMPONENT_SAVED\)/)
+        // a licence save is a write of the component row: counted as the page's own write (TPF-61/62)
+        expect(save.indexOf('ownComponentWrite()')).toBeGreaterThan(save.indexOf('mutation: UPDATE_COMPONENT_DECLARED_LICENSE'))
     })
 
     it('stays out of the core settings save, its dirty check and its reset', () => {
