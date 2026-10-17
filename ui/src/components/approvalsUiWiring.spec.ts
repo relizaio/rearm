@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { withoutHtmlComments } from '@/utils/specText'
 
 /**
  * Wiring guard for the approvals UI gaps: a sole admin could not give themselves an approval role,
@@ -9,8 +10,7 @@ import { fileURLToPath } from 'url'
  * approvalEntryInput.spec.ts; this checks the components use it.
  */
 function source (file: string): string {
-    return readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
-        .replace(/<!--[\s\S]*?-->/g, '')
+    return withoutHtmlComments(readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8'))
 }
 
 describe('OrgSettings own row', () => {

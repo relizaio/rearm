@@ -16,5 +16,24 @@ package io.reliza.model;
  */
 public enum GuardedAction {
 	/** Moving a release forward through its lifecycle, however the move was requested. */
-	RELEASE_PROMOTION
+	RELEASE_PROMOTION(java.util.Set.of("targetLifecycle", "actor")),
+	/**
+	 * Recording approvals on a release, from a person or an API key (task 3204c981). The
+	 * expression sees {@code action.approvals}, the entries being set in this call.
+	 */
+	RELEASE_APPROVAL(java.util.Set.of("approvals", "actor"));
+
+	private final java.util.Set<String> actionKeys;
+
+	GuardedAction(java.util.Set<String> actionKeys) {
+		this.actionKeys = actionKeys;
+	}
+
+	/**
+	 * The {@code action.*} keys a guard of this action is evaluated with. A guard reading another
+	 * action's key fails closed on every call, so the key is refused when the guard is saved.
+	 */
+	public java.util.Set<String> actionKeys() {
+		return actionKeys;
+	}
 }

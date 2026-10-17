@@ -44,7 +44,8 @@
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
-                    <task-pull-requests :task="task" :can-operate="canReopen" @declare-delivery="declareDelivery" @supersede="supersedePr"/>
+                    <task-pull-requests :task="task" :can-operate="canReopen" @declare-delivery="declareDelivery" @supersede="supersedePr"
+                                        @unlink="unlinkPr"/>
                 </div>
             </div>
         </template>
@@ -146,7 +147,7 @@ watch(taskUuid, load, { immediate: true })
 const {
     humanReview, humanSignOff, liftHold, answerQuestions, authorizeTask, orderTask,
     completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, setBudget, setWorkLevel,
-    setGroup, setTags, declareDelivery, unassign, supersedePr, commission,
+    setGroup, setTags, declareDelivery, unassign, supersedePr, unlinkPr, commission,
 } = useAgentTaskActions(async () => { await load() })
 
 // A review item's element chip opens the element under its document (elements.md §8).

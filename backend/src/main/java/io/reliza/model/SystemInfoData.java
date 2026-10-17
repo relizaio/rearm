@@ -47,6 +47,13 @@ public class SystemInfoData extends RelizaDataParent{
 	
     private boolean systemSealed = true;
 	private EncProps encryption;
+	/**
+	 * Marks the one-time model-catalogue sweep as done: the fold of duplicate rows and the 1.6 to
+	 * 2.0 card conversion. A flag rather than a migration because both steps are per-org
+	 * application logic over jsonb, and neither is expressible as DDL.
+	 */
+	private ZonedDateTime modelCatalogueSweepAt;
+
 	private String sendGridKey;
 	private String fromEmail;
 	private SmtpProps smtpProps;

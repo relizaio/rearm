@@ -75,8 +75,7 @@ public class FindingDimV3BackfillProfileTest {
 		Component component = componentService.createComponent(
 				"prof_" + UUID.randomUUID(), orgUuid, ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID release = ossReleaseService.createRelease(io.reliza.model.dto.ReleaseDto.builder()
 				.component(component.getUuid()).branch(branch.getUuid()).org(orgUuid)
 				.status(io.reliza.model.ReleaseData.ReleaseStatus.ACTIVE)

@@ -78,6 +78,7 @@ public class NotificationInboxFormatter {
                 case APPROVAL_REQUESTED -> renderApprovalRequested(event);
                 case APPROVAL_RESOLVED -> renderApprovalResolved(event);
                 case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
+                case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> renderAgentBoard(event);
             };
         } catch (Exception e) {
             // Defence in depth: never let a single malformed event break
@@ -267,6 +268,13 @@ public class NotificationInboxFormatter {
             appendFact(desc, "Resolved by " + p.resolvedByName());
         }
         return new InboxRendering(title, desc.length() == 0 ? null : desc.toString());
+    }
+
+    private InboxRendering renderAgentBoard(NotificationOutboxEvent event) {
+        io.reliza.model.dto.notifications.AgentBoardEventPayload p = AgentBoardRenderSupport.payload(event);
+        if (p == null) return new InboxRendering(event.getEventType().name(), null);
+        return new InboxRendering(AgentBoardRenderSupport.headline(event.getEventType(), p),
+                AgentBoardRenderSupport.body(p));
     }
 
     private InboxRendering renderInstanceDeployment(NotificationOutboxEvent event) {

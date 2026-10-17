@@ -6,3 +6,4 @@ export * from './bomMergeService';
 export * from './bomAddService';
 export * from './bomSearchService';
 export * from './bomDiffService';
+export * from './bomScoreService';

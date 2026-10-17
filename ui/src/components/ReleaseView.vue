@@ -10,6 +10,7 @@
                 v-model:show="showExportSBOMModal"
                 title='Export Release BOM'
                 preset="dialog"
+                :style="releaseSbomScoreShown ? 'width: 90%; max-width: 1100px' : undefined"
                 :show-icon="false" >
                 <n-form-item label="Select BOM Type">
                     <n-radio-group v-model:value="exportBomType" name="xBomType">
@@ -197,13 +198,18 @@
                          do not move.
 
                          HOW MANY SWITCHES SHOW IS NOT FIXED. Support is offered only when the
-                         organization publishes attestations, so this form shows one control or
-                         two and nothing below it may say "these two". -->
-                    <!-- ABSENT, not disabled, when the organization does not publish support
-                         attestations. A switch that cannot be moved is a question the operator
-                         has no way to answer; the organization setting is where that decision
-                         is made, and it is not made here. Operator decision 2026-09-22. -->
-                    <n-form-item v-if="orgSupportInjectionEnabled">
+                         server offers the option, so this form shows one control or two and
+                         nothing below it may say "these two". -->
+                    <!-- DISABLED WITH A HINT, not absent, when the organization does not publish
+                         support attestations: the reader sees that the option exists and where
+                         it is turned on. A disabled switch still sends null (the organization
+                         default), so the server refusal of an explicit true stays unreachable
+                         from here. Supersedes the 2026-09-22 "absent, not disabled" decision:
+                         SCORE-12 round 1 D-2 / round 2 ADR-2, operator input of 2026-10-07.
+                         The gate reads the RELEASE organization's supportExportState, never the
+                         organization selected in the header: SCORE-21 round 2 ADR-11, after
+                         run 1 T-1. Unknown (checking, failed) is disabled too, with its own hint. -->
+                    <n-form-item v-if="orgSupportInjectionSupported">
                         <span style="display: inline-flex; align-items: center;">
                             Include support metadata:
                             <n-tooltip trigger="hover" style="max-width: 380px;">
@@ -215,16 +221,17 @@
                                 Adds the support attestations (status, party, dates, justification) to each component as reliza:support:* properties, for FDA premarket submissions.
                             </n-tooltip>
                         </span>
-                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"/>
+                        <n-switch style="margin-left: 5px;" v-model:value="includeSupportMetadata"
+                            :disabled="!orgSupportInjectionEnabled" data-testid="export-include-support-metadata"/>
                     </n-form-item>
-                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one. The operator
-                         ruled that an organization which does not publish attestations gets no
-                         switch and no explanation -- the settings screen is where that is
-                         decided, and it is reachable. A backend that does not declare the
-                         setting at all is different: there is nothing the operator can go and
-                         change, so an unexplained missing control is just a missing control.
-                         This is the hint the "absent, not disabled" change removed without
-                         meaning to. -->
+                    <div v-if="exportSupportHint" data-testid="export-support-hint"
+                        style="color: #999; font-size: 12px; margin-top: -8px; margin-bottom: 10px; max-width: 620px;">
+                        {{ exportSupportHint }}
+                    </div>
+                    <!-- The CE SYNC-LAG case, which is NOT the org-disabled one above: a backend
+                         that does not declare the setting at all has nothing the operator can go
+                         and change, so the switch is absent and this says why. The two hints
+                         never show together. -->
                     <div v-if="!orgSupportInjectionSupported"
                         style="color: #999; font-size: 12px; margin-bottom: 10px; max-width: 620px;">
                         This server does not offer the support-metadata disclosure yet, so that
@@ -239,7 +246,7 @@
                                         <QuestionCircle20Regular />
                                     </n-icon>
                                 </template>
-                                Keeps ReARM's own markers (reliza:* properties other than support, the rearm tool entry under metadata.tools) in the export. Off produces a BOM with only the manufacturer's own content.
+                                Keeps ReARM's own markers (reliza:* properties other than support) in the export; off removes them. The signing record (reliza:export:signed) stays: it describes the file. With either setting, what your SBOM generator wrote, build paths included, is exported as uploaded, and metadata.tools names ReARM, with its version, beside the tools that produced the SBOMs.
                             </n-tooltip>
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="includeInternalMetadata"/>
@@ -277,6 +284,30 @@
                         </span>
                         <n-switch style="margin-left: 5px;" v-model:value="ignoreDev"/>
                     </n-form-item>
+                    <!-- SCORE-11. Beside the other filters that shape WHICH COMPONENTS the BOM
+                         lists, not among the metadata switches: unlike those it changes CSV and
+                         EXCEL too (rebom stores the filtered merge and renders all three from it),
+                         so the "inert for this format" line above must not read as covering it.
+                         Disabled, not hidden, on a server without it: the operator asked for a
+                         document this server cannot make, and the reason is worth showing. -->
+                    <n-form-item>
+                        <span style="display: inline-flex; align-items: center;">
+                            Leave out file components:
+                            <n-tooltip trigger="hover" style="max-width: 380px;">
+                                <template #trigger>
+                                    <n-icon size="16" style="margin-left: 4px;">
+                                        <QuestionCircle20Regular />
+                                    </n-icon>
+                                </template>
+                                <span v-if="exportFileSwitchAvailable">
+                                    Drops components of type file (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out.
+                                </span>
+                                <span v-else>Not available on this server.</span>
+                            </n-tooltip>
+                        </span>
+                        <n-switch style="margin-left: 5px;" data-testid="export-exclude-file-components"
+                            v-model:value="excludeFileComponents" :disabled="!exportFileSwitchAvailable"/>
+                    </n-form-item>
                     <n-form-item>
                         <div style="width: 100%;">
                             <div style="display: inline-flex; align-items: center;">
@@ -312,14 +343,37 @@
                             </div>
                         </div>
                     </n-form-item>
-                    <n-spin :show="bomExportPending" small style="margin-top: 5px;">
-                        <n-button type="success" 
-                            :disabled="bomExportPending"
-                            @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
-                            <span v-if="bomExportPending" class="ml-2">Exporting...</span>
-                            <span v-else>Export</span>
-                        </n-button>
-                    </n-spin>
+                    <n-space :size="8" style="margin-top: 5px;">
+                        <!-- SCORE-6: scores the document Export gives for the same options. Beside
+                             Export, no permission gate of its own: the backend checks the same
+                             download permission the export needs. -->
+                        <n-spin :show="sbomScorePending" small>
+                            <n-tooltip trigger="hover" :disabled="!releaseSbomScoreDisabled">
+                                <template #trigger>
+                                    <span>
+                                        <n-button type="default"
+                                            data-testid="release-sbom-score"
+                                            :disabled="releaseSbomScoreButtonDisabled"
+                                            @click="scoreReleaseSbom">
+                                            <span v-if="sbomScorePending" class="ml-2">Scoring...</span>
+                                            <span v-else>Score</span>
+                                        </n-button>
+                                    </span>
+                                </template>
+                                Scoring applies to SBOM exports in JSON
+                            </n-tooltip>
+                        </n-spin>
+                        <n-spin :show="bomExportPending" small>
+                            <n-button type="success" 
+                                :disabled="bomExportPending"
+                                @click="exportReleaseSbom(tldOnly, ignoreDev, selectedBomStructureType, selectedRebomType, selectedSbomMediaType)">
+                                <span v-if="bomExportPending" class="ml-2">Exporting...</span>
+                                <span v-else>Export</span>
+                            </n-button>
+                        </n-spin>
+                    </n-space>
+                    <!-- SCORE-35: whether the file just exported is signed, read from that file. -->
+                    <div v-if="exportSigningLine" data-testid="export-signing-status" style="font-size: 12px; margin-top: 6px; max-width: 620px;">{{ exportSigningLine }}</div>
                 </n-form>
                 <n-form v-if="exportBomType === 'OBOM'">
                     <h3>Format: CycloneDX 1.6 (JSON)</h3>
@@ -637,6 +691,21 @@
                         <span v-else>Export</span>
                     </n-button>
                 </n-form>
+                <!-- SCORE-6: the export score, outside the SBOM-only form so another BOM type
+                     hides it (v-show) instead of unmounting it: back on SBOM the same report is
+                     there and nothing is sent again (D-10). -->
+                <div v-if="sbomScoreRequested" v-show="releaseSbomScoreShown" style="margin-top: 12px;">
+                    <div v-if="releaseSbomScoreOptionsChanged" data-testid="release-sbom-score-stale"
+                        style="color: #999; font-size: 12px; margin-bottom: 6px;">
+                        Options changed; score again
+                    </div>
+                    <sbom-score-panel
+                        :key="sbomScoreRun"
+                        v-model:pending="sbomScorePending"
+                        :load="loadReleaseSbomScore"
+                        file-kind="release"
+                        :file-id="updatedRelease.uuid" />
+                </div>
             </n-modal>
             <n-modal
                 v-model:show="bulkModalOpen"
@@ -1011,6 +1080,21 @@
                     Download
                 </n-button>
             </n-modal>
+            <n-modal
+                v-model:show="showSbomScoreModal"
+                :title="`SBOM score: ${sbomScoreArtifact?.displayIdentifier || sbomScoreArtifact?.uuid || ''}`"
+                preset="dialog"
+                style="width: 90%; max-width: 1100px"
+                :show-icon="false" >
+                <div style="color: #999; font-size: 12px; margin-bottom: 8px;">Scored: augmented document, latest version</div>
+                <sbom-score-panel
+                    v-if="showSbomScoreModal && sbomScoreArtifact"
+                    :key="sbomScoreArtifactRun"
+                    v-model:pending="sbomArtifactScorePending"
+                    :load="loadArtifactSbomScore"
+                    file-kind="artifact"
+                    :file-id="sbomScoreArtifact.uuid" />
+            </n-modal>
             <div v-if="release && release.componentDetails">
                 <n-grid :cols="7">
                     <n-gi span="4">
@@ -1037,7 +1121,7 @@
                             </template>
                             <div><strong>Previous release on this {{ words.branch }}</strong></div>
                             <div>{{ release.previousRelease.version }}</div>
-                            <div>Lifecycle: {{ release.previousRelease.lifecycle }}</div>
+                            <div>Lifecycle: {{ lifecycleLabel(release.previousRelease.lifecycle) }}</div>
                             <div v-if="release.previousRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.previousRelease.createdDate) }}</div>
                         </n-tooltip>
                         <n-tooltip v-if="release.nextRelease" trigger="hover">
@@ -1046,7 +1130,7 @@
                             </template>
                             <div><strong>Next release on this {{ words.branch }}</strong></div>
                             <div>{{ release.nextRelease.version }}</div>
-                            <div>Lifecycle: {{ release.nextRelease.lifecycle }}</div>
+                            <div>Lifecycle: {{ lifecycleLabel(release.nextRelease.lifecycle) }}</div>
                             <div v-if="release.nextRelease.createdDate">Created: {{ commonFunctions.dateDisplay(release.nextRelease.createdDate) }}</div>
                         </n-tooltip>
                         <n-tooltip trigger="hover">
@@ -1183,7 +1267,7 @@
                                 </n-dropdown>
                             </span>
                             <span v-if="!canUpdateLifecycle">
-                                <n-tag type="success">{{ updatedRelease.lifecycle }}</n-tag>
+                                <n-tag type="success">{{ lifecycleLabel(updatedRelease.lifecycle) }}</n-tag>
                             </span>
                         </span>
                     </n-gi>
@@ -1872,6 +1956,43 @@
                                 {{ deviceWindowError }}
                             </n-alert>
                         </div>
+                        <!-- SCORE-42: the licence ReARM declares on this release's SBOM node. On the
+                             Meta tab because every release has one (the Support tab is product-only).
+                             The effective line comes first, so an override shows what it displaces.
+                             State and loading live in useReleaseDeclaredLicense (reset and fenced on
+                             navigation); hidden while not loaded for THIS release, and the unsupported
+                             note only when the server cannot answer (schema drift). -->
+                        <div v-if="declaredLicenseSupported && releaseLicenseLoaded" data-testid="release-license-block">
+                            <h3 class="mt-3">Declared licence for this release</h3>
+                            <n-alert type="default" :show-icon="false" style="font-size: 12px; margin-bottom: 10px; max-width: 720px;">
+                                {{ RELEASE_INTRO }}
+                            </n-alert>
+                            <div data-testid="release-license-effective" style="margin-bottom: 8px;">
+                                {{ effectiveLicenseLine(releaseLicenseEffective) }}<template v-if="releaseLicenseEffective?.url">, text at
+                                    <a v-if="licenseUrlHref(releaseLicenseEffective.url)" :href="licenseUrlHref(releaseLicenseEffective.url) ?? undefined"
+                                        target="_blank" rel="noopener noreferrer">{{ releaseLicenseEffective.url }}</a>
+                                    <span v-else>{{ releaseLicenseEffective.url }}</span></template>
+                            </div>
+                            <div class="text-muted" style="font-size: 12px;">Licence expression for this release</div>
+                            <n-space align="end" style="margin-bottom: 8px;">
+                                <n-input v-model:value="releaseLicense" :placeholder="RELEASE_PLACEHOLDER"
+                                    :disabled="!isWritable || savingReleaseLicense" style="width: 360px;"
+                                    data-testid="release-license-override"
+                                    @update:value="releaseLicenseError = null" />
+                                <n-button v-if="isWritable" size="small" type="primary" data-testid="release-license-save"
+                                    :disabled="!releaseLicenseDirty || savingReleaseLicense" :loading="savingReleaseLicense"
+                                    @click="saveReleaseLicense(false)">Save licence</n-button>
+                                <n-button v-if="isWritable && releaseLicenseIsOverridden" size="small" data-testid="release-license-clear"
+                                    :disabled="savingReleaseLicense"
+                                    @click="saveReleaseLicense(true)">Clear</n-button>
+                            </n-space>
+                            <div class="text-muted" style="font-size: 12px; max-width: 720px; margin-bottom: 8px;">{{ EXPRESSION_HINT }}</div>
+                            <n-alert v-if="releaseLicenseError" type="error" :show-icon="true" data-testid="release-license-error"
+                                style="font-size: 12px; max-width: 720px; margin-bottom: 10px;">
+                                {{ releaseLicenseError }}
+                            </n-alert>
+                        </div>
+                        <div v-if="!declaredLicenseSupported" class="text-muted mt-3" data-testid="release-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
                         <div>
                             <h3 class="mt-3">Tags</h3>
                             <n-data-table :columns="releaseTagsFields" :data="updatedRelease.tags" class="table-hover" />
@@ -2147,12 +2268,15 @@ import {
     verdictType,
 } from '@/utils/agentDocuments'
 import { outcomeWord, specWord } from '@/utils/agentWords'
+import { releaseActorLabel } from '@/utils/actorLabel'
+import { useOrgKeyRefs } from '@/utils/useOrgKeyRefs'
 import ChangelogView from '@/components/ChangelogView.vue'
 import ComponentBranchesTable from '@/components/ComponentBranchesTable.vue'
 import CreateArtifact from '@/components/CreateArtifact.vue'
 import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
+import SbomScorePanel from '@/components/SbomScorePanel.vue'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
 import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
 import gql from 'graphql-tag'
@@ -2165,10 +2289,11 @@ import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
-import { supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
-import { exportWithMetadataFallback, supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { supportMetadataArg } from '@/utils/exportMetadataFallback'
+import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
+import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
@@ -2188,10 +2313,17 @@ import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
 import { setSbomComponentSupportVars } from '@/utils/setSbomComponentSupport'
 import { useReleaseSupportCoverage } from '@/utils/useReleaseSupportCoverage'
+import { useReleaseDeclaredLicense } from '@/utils/useReleaseDeclaredLicense'
+import { EXPRESSION_HINT, RELEASE_CLEARED, RELEASE_INTRO, RELEASE_PLACEHOLDER, RELEASE_SAVED, UNSUPPORTED_NOTE,
+    effectiveLicenseLine, licenseUrlHref } from '@/utils/declaredLicense'
+import { useExportSupportSwitch } from '@/utils/useExportSupportSwitch'
 import { useSbomComponentsPaging } from '@/utils/useSbomComponentsPaging'
+import { useReleaseSbomScore } from '@/utils/useReleaseSbomScore'
+import { exportSigningLine as signingLineFor, signatureStatus } from '@/utils/sbomSigning'
+import type { ExportMediaType, SignedStatus } from '@/utils/sbomSigning'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, EyeOff, GitCompare, Link, Tag, Trash, Refresh, WorldUpload, X } from '@vicons/tabler'
+import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, EyeOff, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, WorldUpload, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
@@ -2215,6 +2347,7 @@ import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStat
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
+import { lifecycleLabel } from '@/utils/lifecycle'
 import { PackageURL } from 'packageurl-js'
 
 const route = useRoute()    
@@ -2241,6 +2374,8 @@ const myorg: ComputedRef<any> = computed((): any => store.getters.myorg)
 const featureSetLabel = computed(() => myorg.value?.terminology?.featureSetLabel || 'Feature Set')
 
 const users: Ref<any[]> = ref([])
+// the org's keys, so a key actor in the history reads as a key label; loaded with the History tab, for admins only
+const { orgKeys, load: loadOrgKeyRefs } = useOrgKeyRefs((org) => store.dispatch('fetchApiKeyRefsOfOrg', org))
 const acollections: Ref<any[]> = ref([])
 const combinedHistoryEvents: Ref<any[]> = ref([])
 
@@ -2248,6 +2383,11 @@ async function loadUsers() {
     if (release.value && release.value.orgDetails && release.value.orgDetails.uuid) {
         users.value = await store.dispatch('fetchUsers', release.value.orgDetails.uuid)
     }
+}
+
+// The server's apiKeys gate is ADMIN (or a global admin); anyone else keeps the short-id label.
+async function loadOrgKeys() {
+    await loadOrgKeyRefs(release.value?.orgDetails?.uuid, isOrgAdmin.value || !!store.getters.myuser?.isGlobalAdmin)
 }
 
 async function loadAcollections() {
@@ -2375,6 +2515,31 @@ const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean 
 /** The org-level default, shown read-only so the author sees what an override replaces. */
 const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
     (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+
+/**
+ * The declared licence for this release (SCORE-42, design ADR-4 and ADR-8). Its state is the
+ * composable's, which resets and fences it across releases: this view is reused on navigation.
+ */
+const releaseLicenseState = useReleaseDeclaredLicense(graphqlClient as any, {
+    onUnsupported: () => store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+})
+const releaseLicense = releaseLicenseState.override
+const releaseLicenseBaseline = releaseLicenseState.baseline
+const releaseLicenseEffective = releaseLicenseState.effective
+const releaseLicenseLoaded = releaseLicenseState.loaded
+const savingReleaseLicense = releaseLicenseState.saving
+const releaseLicenseError = releaseLicenseState.error
+const releaseLicenseDirty = releaseLicenseState.dirty
+const releaseLicenseIsOverridden = releaseLicenseState.isOverridden
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+async function saveReleaseLicense (clear: boolean) {
+    const outcome = await releaseLicenseState.save(clear)
+    // Worded from the refreshed baseline, which the composable maps to saved or cleared.
+    if (outcome === 'saved') notify('success', 'Saved', RELEASE_SAVED)
+    else if (outcome === 'cleared') notify('success', 'Saved', RELEASE_CLEARED)
+}
 
 function seedReleaseNarrative () {
     // UNDEFINED means the query did not ask; NULL means the server says there is no
@@ -2592,14 +2757,22 @@ function buildCombinedHistory() {
     combinedHistoryEvents.value = events
 }
 
+// labels are computed once per actor until the users or the keys change: a history table renders many rows
+const actorLabels = computed(() => {
+    void users.value
+    void orgKeys.value
+    return new Map<string, string>()
+})
+
 function resolveUserById(uuid: string, createdType?: string): string {
-    if (createdType === 'AUTO') return 'System'
-    if (!uuid || !users.value.length) return uuid
-    const user = users.value.find((u: any) => u.uuid === uuid)
-    if (user) {
-        return user.email ? `${user.name} <${user.email}>` : user.name
+    const cache = actorLabels.value
+    const cacheKey = (createdType ?? '') + ':' + uuid
+    let label = cache.get(cacheKey)
+    if (label === undefined) {
+        label = releaseActorLabel(uuid, createdType, users.value, orgKeys.value)
+        cache.set(cacheKey, label)
     }
-    return "API Key ID: " + uuid
+    return label
 }
 
 const copyToClipboard = async function (text: string) {
@@ -2674,6 +2847,9 @@ onMounted(async () => {
     // treat re-typing it as a change.
     seedDeviceWindow()
     seedReleaseNarrative()
+    // Not awaited, and it never rejects: keys, the Dependency-Track flag and polling never wait
+    // on the licence block.
+    void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
     await fetchReleaseKeys()
     await loadDtrackConfigured()
     if (hasPendingStatuses()) ensureStatusPolling()
@@ -3282,6 +3458,9 @@ async function goToRelease (uuid: string) {
     // reason: a coverage response for the previous release would caption this one with the
     // old disclosure count. Clearing the ref alone only handles the synchronous case.
     sbomCoverageState.reset()
+    // The licence block's too: its effective line, override and baseline are the previous
+    // release's, and its fence drops a response for that release still in flight.
+    releaseLicenseState.reset()
     sbomGraphLoaded.value = false
     sbomGraphByUuid.value = {}
     sbomGraphDirty.value = true
@@ -3299,6 +3478,7 @@ async function goToRelease (uuid: string) {
         await fetchRelease()
         seedDeviceWindow()
         seedReleaseNarrative()
+        void releaseLicenseState.load(updatedRelease.value.uuid, updatedRelease.value.org || updatedRelease.value.orgDetails?.uuid)
         await fetchReleaseKeys()
     } finally {
         isLoading.value = false
@@ -3393,19 +3573,33 @@ const supportExportFormats: ComputedRef<SupportExportFormat[]> = computed(
     (): SupportExportFormat[] => supportExportFormatsFor(isProductReleaseForStatement.value))
 
 /**
- * Whether this organization has support metadata turned on for exports.
+ * The export dialog's support switch, run in utils/useExportSupportSwitch: whether it moves,
+ * which hint sits under it, and the coverage load when the dialog opens before anything asked.
  *
- * Read through supportInjectionFromSettings, the same helper the organization settings screen
- * reads its own toggle back with, so the two cannot disagree about what a missing or unknown
- * value means. On a backend that does not declare the setting it reads false, which is the
- * safe direction: the switch is not offered rather than offering a disclosure the server will
- * not produce.
- *
- * This is the ONLY gate on whether the support switch is rendered at all, and on whether the
- * argument is sent. It is deliberately NOT the switch's default value -- see openExportModal.
+ * The RELEASE organization decides, through sbomComponentSupportCoverage(orgUuid, releaseUuid)
+ * .supportExportState -- the predicate the server gates the export with, for this release --
+ * never the organization selected in the header (SCORE-21 round 2 ADR-11, after run 1 T-1:
+ * a release of another organization showed "off" over a file that carried the disclosure).
+ * Getters, because sbomCoverageState is set up further down.
  */
-const orgSupportInjectionEnabled: ComputedRef<boolean> = computed((): boolean =>
-    orgSupportInjectionSupported.value && supportInjectionFromSettings(store.getters.myorg?.settings))
+const exportSupportSwitch = useExportSupportSwitch({
+    supported: (): boolean => orgSupportInjectionSupported.value,
+    coverage: () => sbomCoverage.value,
+    loading: (): boolean => sbomCoverageLoading.value,
+    load: (): Promise<void> => loadSbomCoverage()
+})
+
+/**
+ * Whether the switch can be moved: the server offers the option and the release organization's
+ * export state (exportSupportSwitch.exportState: ENABLED, DISABLED, or UNKNOWN for no coverage
+ * yet, a failed request or the retired PARTIAL) is ENABLED. Gates the switch's :disabled and,
+ * through supportMetadataArg, whether its value is sent at all (null otherwise). It is
+ * deliberately NOT the switch's default value -- see openExportModal.
+ */
+const orgSupportInjectionEnabled: ComputedRef<boolean> = exportSupportSwitch.offered
+
+/** The one hint under the switch: off, checking, could not determine, or none. */
+const exportSupportHint: ComputedRef<string | null> = exportSupportSwitch.hint
 
 /**
  * Whether this BACKEND declares the setting at all -- the third state, which the store already
@@ -3431,6 +3625,13 @@ const includeInternalMetadata: Ref<boolean> = ref(false)
 const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
 
 /**
+ * "Leave out file components" (SCORE-11): the switch, its availability on this server, the export
+ * document it sends and its refusal latch, in utils/useFileComponentsSwitch so a test can run them.
+ */
+const fileComponentsSwitch = useFileComponentsSwitch(exportMetadataArgsUnsupported)
+const { excludeFileComponents, exportFileSwitchAvailable, excludeFileComponentsRequested } = fileComponentsSwitch
+
+/**
  * Whether the two metadata options can change the file the operator is about to get.
  *
  * They are still SENT and still validated for CSV and EXCEL, but rebom renders those two from a
@@ -3439,8 +3640,9 @@ const exportMetadataArgsUnsupported: Ref<boolean> = ref(false)
  * over a file they do not move.
  *
  * <p>The validation that goes with them is now an API-only path: this form cannot ask for a
- * disclosure the organization has disabled, because the switch is not rendered on such an org
- * and supportMetadataArg sends null rather than true. A script still can, and is still refused.
+ * disclosure the organization has disabled, because the switch is disabled unless the release's
+ * organization answers ENABLED and supportMetadataArg then sends null rather than true. A
+ * script still can, and is still refused.
  *
  * <p>Named for the two options COLLECTIVELY and worded the same way, because how many of them
  * render is not fixed -- see the support switch's v-if.
@@ -3455,6 +3657,15 @@ function openExportModal () {
     // OFF over a file that carries the attestations anyway would be the worst of both.
     includeSupportMetadata.value = false
     includeInternalMetadata.value = false
+    fileComponentsSwitch.reset()
+    // A reopened dialog starts without a score: the last one may be of other options.
+    releaseSbomScore.reset()
+    // Nor a signing line: it describes a file this dialog exported, and none is exported yet.
+    lastExportSigning.value = null
+    // The switch follows the release organization's export state; ask for it now when neither
+    // the SBOM list nor the Support tab has yet. Not awaited: the dialog opens in the checking
+    // state and flips when the answer lands.
+    exportSupportSwitch.loadIfUnknown()
     showExportSBOMModal.value = true
 }
 
@@ -3935,7 +4146,7 @@ async function reevaluateTriggers () {
         await fetchRelease()
         const withheld = newGuardNote(guardsBefore, after)
         if (after?.lifecycle && after.lifecycle !== before) {
-            notify('success', 'Re-evaluated', `Lifecycle moved to ${after.lifecycle}.`)
+            notify('success', 'Re-evaluated', `Lifecycle moved to ${lifecycleLabel(after.lifecycle)}.`)
         } else if (withheld) {
             notify('warning', 'Still withheld', withheld, 0)
         } else {
@@ -6129,21 +6340,84 @@ async function exportSupportDocument () {
 }
 
 /**
- * The release BOM export, in two shapes.
- *
- * FULL carries the per-export metadata flags; CORE is the document every backend has always
- * accepted. Written out as two constants rather than built by string concatenation so both
- * are parsed at module load and validate-graphql.mjs can see them.
+ * SBOM readiness score of the export (SCORE-6). The content options are the export's own, mapped
+ * by buildReleaseScoreVariables exactly as exportReleaseSbom maps them; the two metadata switches
+ * are not sent, so the score follows the organization setting (SCORE-12 ADR-3). Each click
+ * mounts a fresh SbomScorePanel (sbomScoreRun is its key), which runs the query, owns the 185 s
+ * abort and shows the report or the error in this dialog.
+ * The snapshot, the options-changed line and the disabled state live in useReleaseSbomScore.
  */
-const SBOM_EXPORT_WITH_METADATA_FLAGS = gql`
-    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType], $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean) {
-        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes, includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata)
-    }`
+const releaseSbomScoreDisabled: ComputedRef<boolean> = computed((): boolean =>
+    exportBomType.value !== 'SBOM' || selectedSbomMediaType.value !== 'JSON')
 
-const SBOM_EXPORT_CORE = gql`
-    mutation releaseSbomExport($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType, $belongsTo: ArtifactBelongsToEnum, $mediaType: BomMediaType, $excludeCoverageTypes: [ArtifactCoverageType]) {
-        releaseSbomExport(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure, belongsTo: $belongsTo, mediaType: $mediaType, excludeCoverageTypes: $excludeCoverageTypes)
-    }`
+function currentReleaseScoreVariables (): Record<string, any> {
+    return buildReleaseScoreVariables({
+        release: updatedRelease.value.uuid,
+        tldOnly: tldOnly.value,
+        ignoreDev: ignoreDev.value,
+        selectedBomStructureType: selectedBomStructureType.value,
+        selectedRebomType: selectedRebomType.value,
+        computedExcludeCoverageTypes: computedExcludeCoverageTypes.value,
+        exportMetadataArgsUnsupported: exportMetadataArgsUnsupported.value,
+        excludeFileComponents: excludeFileComponentsRequested.value
+    })
+}
+
+const releaseSbomScore = useReleaseSbomScore({
+    variables: currentReleaseScoreVariables,
+    formDisabled: () => releaseSbomScoreDisabled.value,
+    sbomForm: () => exportBomType.value === 'SBOM'
+})
+const sbomScoreRequested = releaseSbomScore.requested
+const releaseSbomScoreShown = releaseSbomScore.shown
+const sbomScorePending = releaseSbomScore.pending
+const sbomScoreRun = releaseSbomScore.run
+const releaseSbomScoreOptionsChanged = releaseSbomScore.optionsChanged
+const releaseSbomScoreButtonDisabled = releaseSbomScore.buttonDisabled
+const scoreReleaseSbom = releaseSbomScore.score
+
+// SCORE-35: whether the last exported file is signed, read from the file itself (design 3.5).
+// Null until this dialog exports: before an export the dialog says nothing about signing.
+const lastExportSigning: Ref<SignedStatus | null> = ref(null)
+const lastExportMediaType: Ref<ExportMediaType> = ref('JSON')
+const exportSigningLine: ComputedRef<string | null> = computed((): string | null =>
+    lastExportSigning.value ? signingLineFor(lastExportSigning.value, lastExportMediaType.value) : null)
+
+async function loadReleaseSbomScore (signal: AbortSignal): Promise<string> {
+    const resp: any = await graphqlClient.query({
+        query: graphqlQueries.ReleaseSbomScoreGql,
+        variables: releaseSbomScore.scoredVariables(),
+        fetchPolicy: 'no-cache',
+        context: { fetchOptions: { signal } }
+    })
+    return resp.data?.releaseSbomScore
+}
+
+/**
+ * The score of one BOM artifact (SCORE-6), offered beside its Download icon: the augmented
+ * document, latest version (design D-11). The dialog scores on open and drops the report on close.
+ */
+const showSbomScoreModal: Ref<boolean> = ref(false)
+const sbomScoreArtifact: Ref<any> = ref(null)
+const sbomArtifactScorePending: Ref<boolean> = ref(false)
+const sbomScoreArtifactRun: Ref<number> = ref(0)
+
+function openSbomScoreModal (artifact: any) {
+    if (sbomArtifactScorePending.value) return
+    sbomScoreArtifact.value = artifact
+    sbomScoreArtifactRun.value++
+    showSbomScoreModal.value = true
+}
+
+async function loadArtifactSbomScore (signal: AbortSignal): Promise<string> {
+    const resp: any = await graphqlClient.query({
+        query: graphqlQueries.ArtifactSbomScoreGql,
+        variables: { artifact: sbomScoreArtifact.value.uuid, raw: false, profiles: [...SBOM_SCORE_PROFILES] },
+        fetchPolicy: 'no-cache',
+        context: { fetchOptions: { signal } }
+    })
+    return resp.data?.artifactSbomScore
+}
 
 function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {
     return graphqlClient.mutate({ mutation, variables, fetchPolicy: 'no-cache' })
@@ -6155,6 +6429,8 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
     // their own handler (exportSupportDocument), so nothing can reach here asking for one.
     // Keeping unreachable redirects would leave two entry points for one document and invite
     // the next reader to add a third.
+    // The signing line describes the file of this export, so the last one's goes first.
+    lastExportSigning.value = null
     try {
         bomExportPending.value = true
         const excludeCoverageTypes = computedExcludeCoverageTypes.value.length > 0 ? computedExcludeCoverageTypes.value : null
@@ -6170,18 +6446,21 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         // The retry rule lives in utils/exportMetadataFallback so it can be RUN -- including
         // the case that matters most, that the server's deliberate refusal is NOT retried
         // into the flagless document the refusal exists to prevent.
-        const attempt = await exportWithMetadataFallback({
-            runFull: () => runSbomExport(SBOM_EXPORT_WITH_METADATA_FLAGS, {
-                ...baseVariables,
-                // Three outcomes, and the no-switch one must be NULL rather than false --
-                // the rule and the reason live in utils/exportMetadataFallback so they can
-                // be run, because nothing in the unit suite mounts this component.
-                includeSupportMetadata: supportMetadataArg(
-                    orgSupportInjectionEnabled.value, includeSupportMetadata.value),
-                includeInternalMetadata: includeInternalMetadata.value
-            }),
-            runCore: () => runSbomExport(SBOM_EXPORT_CORE, baseVariables),
-            flagsUnsupported: exportMetadataArgsUnsupported.value,
+        const fullVariables: Record<string, any> = {
+            ...baseVariables,
+            // Three outcomes, and the no-switch one must be NULL rather than false --
+            // the rule and the reason live in utils/exportMetadataFallback so they can
+            // be run, because nothing in the unit suite mounts this component.
+            includeSupportMetadata: supportMetadataArg(
+                orgSupportInjectionEnabled.value, includeSupportMetadata.value),
+            includeInternalMetadata: includeInternalMetadata.value
+        }
+        // Which document goes with the file switch on or off, and that a switched export is
+        // never retried without it, are in utils/useFileComponentsSwitch.
+        const attempt = await fileComponentsSwitch.exportReleaseSbom({
+            run: runSbomExport,
+            baseVariables,
+            fullVariables,
             isDriftError: isSchemaDriftError
         })
         if (attempt.justDiscovered) {
@@ -6197,6 +6476,10 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         const gqlResp: any = attempt.data
         let blobType = mediaType === 'JSON' ? 'application/json' : mediaType === 'EXCEL' ? 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' : 'text/csv'
         let exportContent = gqlResp.data.releaseSbomExport
+        // SCORE-35: the status line reads the document received, before any re-serialisation.
+        // CSV and EXCEL carry no stamp; the line says signing applies to JSON only.
+        lastExportMediaType.value = mediaType as ExportMediaType
+        lastExportSigning.value = mediaType === 'JSON' ? signatureStatus(exportContent) : { kind: 'UNSTAMPED' }
         if (mediaType === 'JSON') {
             if (typeof exportContent !== 'string') {
                 exportContent = JSON.stringify(exportContent, null, 2)
@@ -6218,6 +6501,11 @@ async function exportReleaseSbom (tldOnly: boolean, ignoreDev: boolean, selected
         link.click()
         notify('info', 'Processing Download', 'Your artifact is being downloaded...')
     } catch (err: any) {
+        if (fileComponentsSwitch.latchRefusal(err)) {
+            // This server cannot leave the files out; nothing was exported. Say why.
+            Swal.fire('Error!', err.message, 'error')
+            return
+        }
         Swal.fire(
             'Error!',
             commonFunctions.parseGraphQLError(err.message),
@@ -6954,7 +7242,8 @@ const releaseHistoryFields = computed(() => [
         title: 'Updated By',
         render(row: any) {
             if (row.wu) {
-                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
+                // the full uuid stays reachable: a key label shows only its short id
+                return h('span', { title: row.wu.lastUpdatedBy }, resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType))
             }
         }
     },
@@ -7075,7 +7364,8 @@ const approvalHistoryFields = computed(() => [
         title: 'Updated By',
         render(row: any) {
             if (row.wu) {
-                return resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType)
+                // the full uuid stays reachable: a key label shows only its short id
+                return h('span', { title: row.wu.lastUpdatedBy }, resolveUserById(row.wu.lastUpdatedBy, row.wu.createdType))
             }
         }
     },
@@ -7712,6 +8002,22 @@ function renderDtrackPill (row: any): any {
     return h(NTag, { type: 'warning', size: 'small', round: true, title: 'Awaiting Dependency-Track submission' }, () => 'Scan pending')
 }
 
+/**
+ * The Download icon and, for a downloadable BOM, the Score SBOM icon beside it (SCORE-6). One
+ * helper for both artifact tables so their rows cannot drift; the score follows exactly the
+ * download's condition plus type BOM, and the backend enforces the download permission.
+ */
+function renderArtifactActionIcons (row: any): any[] {
+    const els: any[] = []
+    const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
+    if (!isDownloadable) return els
+    els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+    if (row.type === 'BOM') {
+        els.push(h(NIcon, { title: 'Score SBOM', class: 'icons clickable', size: 25, 'data-testid': 'artifact-sbom-score', onClick: () => openSbomScoreModal(row) }, () => h(ReportAnalytics)))
+    }
+    return els
+}
+
 const artifactsTableFields: DataTableColumns<any> = [
     { key: 'type', title: 'Type', render: renderArtifactTypeColumn },
     { key: 'artBelongsTo', title: 'Belongs To', render: renderArtifactBelongsToColumn },
@@ -7723,9 +8029,7 @@ const artifactsTableFields: DataTableColumns<any> = [
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            let els: any[] = renderArtifactActionIcons(row)
             els.push(h(NIcon, { title: 'Upload New Artifact Version', class: 'icons clickable', size: 25, onClick: () => uploadNewBomVersion(row) }, () => h(Edit)))
             if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
             renderArtifactDtrackActions(row, els)
@@ -7769,9 +8073,7 @@ const underlyingArtifactsTableFields: DataTableColumns<any> = [
         key: 'actions',
         title: 'Actions',
         render: (row: any) => {
-            let els: any[] = []
-            const isDownloadable = row.tags.find((t: any) => t.key === 'downloadableArtifact' && t.value === "true")
-            if (isDownloadable) els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
+            let els: any[] = renderArtifactActionIcons(row)
             if (isWritable.value) els.push(h(NIcon, { title: 'Edit Artifact Tags', class: 'icons clickable', size: 25, onClick: () => openEditArtifactTagsModal(row) }, () => h(Tag)))
             renderArtifactDtrackActions(row, els)
             if (!els.length) els.push(h('span', 'N/A'))
@@ -8683,7 +8985,7 @@ async function handleTabSwitch(tabName: string) {
     if (tabName === "compare") {
         await fetchReleases()
     } else if (tabName === "history") {
-        await Promise.all([loadUsers(), loadAcollections()])
+        await Promise.all([loadUsers(), loadOrgKeys(), loadAcollections()])
     } else if (tabName === "underlyingArtifacts" && isProductRelease.value) {
         await fetchProductArtifacts()
     } else if (tabName === "bomComponents") {

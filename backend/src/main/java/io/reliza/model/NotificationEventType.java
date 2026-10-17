@@ -61,7 +61,27 @@ public enum NotificationEventType {
 	 * email-digest batching -- since {@code isActionable()} is decided per event
 	 * type, not per item.
 	 */
-	INSTANCE_DEPLOYMENT_FAILED;
+	INSTANCE_DEPLOYMENT_FAILED,
+	/**
+	 * An agent board posted an ALERT, or was locked (task 82880ea6, gaps §1.1): exhaustion,
+	 * budget, a stale pass, a coordinator escalation, a return that needs a decision. Deduplicated
+	 * on the message, so the same alert twice inside the dedup window is one notification.
+	 */
+	AGENT_BOARD_ALERT,
+	/**
+	 * A board task was held for a person: a human gate, an OPERATOR hold (by routing or by a
+	 * person), or a question nobody on the board can answer.
+	 */
+	AGENT_TASK_NEEDS_PERSON,
+	/** A hop returned its task for any reason but its session closing. */
+	AGENT_TASK_RETURNED,
+	/** A task has waited on a person longer than its board's humanQueueAgeMinutes. */
+	AGENT_TASK_QUEUE_AGE,
+	/**
+	 * An agent session will be closed by the idle sweep within the warning lead (task 6e7fe6fe):
+	 * any call with its session id, or a touch, keeps it open.
+	 */
+	AGENT_SESSION_IDLE_WARNING;
 
 	/**
 	 * Actionable events ask a specific person to do something now, so they
@@ -70,7 +90,9 @@ public enum NotificationEventType {
 	 */
 	public boolean isActionable () {
 		return this == APPROVAL_REQUESTED || this == APPROVAL_RESOLVED
-				|| this == INSTANCE_DEPLOYMENT_FAILED;
+				|| this == INSTANCE_DEPLOYMENT_FAILED
+				|| this == AGENT_TASK_NEEDS_PERSON || this == AGENT_TASK_QUEUE_AGE
+				|| this == AGENT_SESSION_IDLE_WARNING;
 	}
 
 	/**
@@ -95,6 +117,14 @@ public enum NotificationEventType {
 	public boolean carriesAffectedComponents() {
 		return this != VEX_STATE_CHANGED
 				&& this != INSTANCE_DEPLOYMENT_CHANGED
-				&& this != INSTANCE_DEPLOYMENT_FAILED;
+				&& this != INSTANCE_DEPLOYMENT_FAILED
+				&& !isAgentBoardEvent();
+	}
+
+	/** The agent-board family: org-scoped, no releases, read through the board and task in the payload. */
+	public boolean isAgentBoardEvent() {
+		return this == AGENT_BOARD_ALERT || this == AGENT_TASK_NEEDS_PERSON
+				|| this == AGENT_TASK_RETURNED || this == AGENT_TASK_QUEUE_AGE
+				|| this == AGENT_SESSION_IDLE_WARNING;
 	}
 }

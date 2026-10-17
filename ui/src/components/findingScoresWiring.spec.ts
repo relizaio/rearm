@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { withoutComments } from '@/utils/specText'
 
 /**
  * Wiring guard for the per-finding scores and the release header pills. Scope
@@ -15,10 +16,7 @@ import { fileURLToPath } from 'url'
  * modal on their column.
  */
 function source (file: string): string {
-    return readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    return withoutComments(readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8'))
 }
 
 const importBlockOf = (code: string) => (code.match(/^import\s[^;]*?\sfrom\s+'[^']+'/gms) || []).join('\n')

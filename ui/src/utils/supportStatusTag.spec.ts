@@ -14,6 +14,8 @@ describe('supportTag', () => {
     it('maps each status the backend can actually return', () => {
         expect(supportTag('SECURITY_ONLY')).toEqual({ type: 'warning', label: 'Security only' })
         expect(supportTag('END_OF_SUPPORT')).toEqual({ type: 'error', label: 'End of support' })
+        expect(supportTag('WITHIN_SUPPORT_WINDOW'))
+            .toEqual({ type: 'default', label: 'Within support window' })
         expect(supportTag('UNKNOWN')).toEqual({ type: 'default', label: 'Unknown' })
     })
 
@@ -54,9 +56,9 @@ describe('supportTag', () => {
 
     // Pins the set itself. Adding a value here without adding it on the backend, or vice
     // versa, should be a deliberate edit rather than something noticed in production.
-    it('knows exactly the three statuses derive() can produce', () => {
+    it('knows exactly the four statuses derive() can produce', () => {
         expect(Object.keys(SUPPORT_TAG).sort())
-            .toEqual(['END_OF_SUPPORT', 'SECURITY_ONLY', 'UNKNOWN'])
+            .toEqual(['END_OF_SUPPORT', 'SECURITY_ONLY', 'UNKNOWN', 'WITHIN_SUPPORT_WINDOW'])
     })
 })
 

@@ -29,6 +29,8 @@ import graphql.language.OperationDefinition;
 import graphql.language.Selection;
 import graphql.language.SelectionSet;
 import graphql.parser.Parser;
+import graphql.parser.ParserEnvironment;
+import graphql.parser.ParserOptions;
 
 /**
  * Knows which root fields belong to the programmatic (API-key) half of the schema.
@@ -149,9 +151,22 @@ public class ProgrammaticSchemaRegistry {
 		return b;
 	}
 
+	/**
+	 * Parses schema text the server ships itself -- schema.graphqls, programmatic.graphqls and the
+	 * bundle built from them -- with graphql-java's SDL parser options. The default options are for
+	 * untrusted query documents and cancel the parse past 15,000 grammar tokens, a denial-of-service
+	 * guard: the shared schema alone is at about three quarters of that, and the bundle passed it
+	 * (ParseCancelled, which broke the build). Client documents ({@link #rootSelection}) keep the
+	 * default, capped options.
+	 */
+	static Document parseSdl(String sdl) {
+		return new Parser().parseDocument(ParserEnvironment.newParserEnvironment()
+				.document(sdl).parserOptions(ParserOptions.getDefaultSdlParserOptions()).build());
+	}
+
 	static String buildBundle(String sharedSdl, String programmaticSdl) {
-		Document shared = new Parser().parseDocument(sharedSdl);
-		Document prog = new Parser().parseDocument(programmaticSdl);
+		Document shared = parseSdl(sharedSdl);
+		Document prog = parseSdl(programmaticSdl);
 		Map<String, List<Definition<?>>> byName = new java.util.HashMap<>();
 		List<graphql.language.DirectiveDefinition> directives = new java.util.ArrayList<>();
 		// BOTH documents. A type declared in programmatic.graphqls is part of the programmatic
@@ -234,7 +249,7 @@ public class ProgrammaticSchemaRegistry {
 
 	/** Field names declared on {@code extend type Query} / {@code extend type Mutation} in an SDL string. */
 	static Map<String, Set<String>> rootFieldsOfExtensions(String sdl) {
-		Document doc = new Parser().parseDocument(sdl);
+		Document doc = parseSdl(sdl);
 		Map<String, Set<String>> out = new java.util.HashMap<>();
 		for (Definition<?> d : doc.getDefinitions()) {
 			if (d instanceof ObjectTypeExtensionDefinition ext && ("Query".equals(ext.getName()) || "Mutation".equals(ext.getName()))) {

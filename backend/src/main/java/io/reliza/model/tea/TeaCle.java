@@ -2,6 +2,7 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -27,6 +28,9 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "cle", description = "Common Lifecycle Enumeration (CLE) object based on ECMA-428 TC54 TG3 CLE Specification v1.0.0. Contains lifecycle events and optional reusable definitions for a component or product. ")
 @JsonTypeName("cle")
+// no "definitions": null when there are none. Re-apply after any TEA bump;
+// TeaCleDocumentSchemaTest is the tripwire.
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCle {
 

@@ -15,6 +15,7 @@ import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Agent;
 import jakarta.persistence.LockModeType;
+import org.springframework.data.jpa.repository.Modifying;
 
 public interface AgentRepository extends CrudRepository<Agent, UUID> {
 
@@ -54,4 +55,15 @@ public interface AgentRepository extends CrudRepository<Agent, UUID> {
 			+ "ORDER BY a.created_date ASC",
 			nativeQuery = true)
 	List<Agent> findByRootAgent(@Param("rootUuidAsString") String rootUuidAsString);
+
+	/**
+	 * Re-point agents at a surviving catalogue row. Part of the fold: every reference moves
+	 * before the folded row is deleted, in the same transaction, so nothing is ever left naming
+	 * a model that is gone.
+	 */
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agents SET record_data = jsonb_set(record_data, '{model}', to_jsonb(cast(:into as text))) "
+			+ "WHERE record_data->>'model' = :from", nativeQuery = true)
+	int repointModel(@Param("from") String from, @Param("into") String into);
 }

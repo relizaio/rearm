@@ -41,12 +41,15 @@ export function createTestRebomOptions(overrides: any = {}): any {
         rootComponentMergeMode: overrides.rootComponentMergeMode,
         tldOnly: overrides.tldOnly !== undefined ? overrides.tldOnly : false,
         ignoreDev: overrides.ignoreDev !== undefined ? overrides.ignoreDev : false,
+        excludeFileComponents: overrides.excludeFileComponents,
+        mergeVersion: overrides.mergeVersion,
         storage: 'oci', // Always use OCI storage for tests
         mod: overrides.mod || 'raw',
         bomState: overrides.bomState || 'raw',
         stripBom: overrides.stripBom || 'false',
         belongsTo: overrides.belongsTo || '',
         hash: overrides.hash,
+        supplierName: overrides.supplierName,
         originalFileDigest: overrides.originalFileDigest,
         originalFileSize: overrides.originalFileSize,
         originalMediaType: overrides.originalMediaType,
@@ -81,9 +84,24 @@ export async function cleanupTestBoms(pool: any, serialNumbers: string[]): Promi
     if (serialNumbers.length === 0) return;
     
     const placeholders = serialNumbers.map((_, i) => `$${i + 1}`).join(',');
+    // The SPDX rows behind converted BOMs first: the subquery needs the boms rows.
+    await pool.query(
+        `DELETE FROM rebom.spdx_boms WHERE uuid IN (SELECT source_spdx_uuid FROM rebom.boms WHERE meta->>'serialNumber' IN (${placeholders}))`,
+        serialNumbers
+    );
     await pool.query(
         `DELETE FROM rebom.boms WHERE meta->>'serialNumber' IN (${placeholders})`,
         serialNumbers
+    );
+    // Lineage rows are keyed by the canonical (urn:uuid:) form; delete both forms.
+    const bothForms = Array.from(new Set(serialNumbers.flatMap(sn => {
+        const bare = sn.replace('urn:uuid:', '');
+        return [bare, `urn:uuid:${bare}`];
+    })));
+    const lineagePlaceholders = bothForms.map((_, i) => `$${i + 1}`).join(',');
+    await pool.query(
+        `DELETE FROM rebom.bom_lineage WHERE serial_number IN (${lineagePlaceholders})`,
+        bothForms
     );
 }
 

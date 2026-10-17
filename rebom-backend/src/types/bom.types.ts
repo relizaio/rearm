@@ -44,6 +44,8 @@ export type BomMetaDto = {
     createdDate: Date,
     lastUpdatedDate: Date,
     ignoreDev?: boolean,
+    excludeFileComponents?: boolean,
+    mergeVersion?: number,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,
     enrichmentError?: string,
@@ -59,6 +61,55 @@ export type BomInput = {
         org: string,
         existingSerialNumber?: string,
     }
+}
+
+/** Why ReARM holds no SBOM for a component release of a product merge (SCORE-15 ADR-2). */
+export enum MissingSbomReason {
+    // the release has no SBOM artifact
+    NO_SBOM_ARTIFACT = 'NO_SBOM_ARTIFACT',
+    // every SBOM artifact it has was left out by the export's coverage filter
+    COVERAGE_EXCLUDED = 'COVERAGE_EXCLUDED'
+}
+
+/** One CycloneDX `hashes[]` entry: `alg` a CycloneDX hash algorithm name, `content` its hex value. */
+export type BomHash = {
+    alg: string,
+    content: string
+}
+
+/**
+ * What ReARM holds about the release a merged root describes (SCORE-30 ADR-7): its supplier, the
+ * organization's name, and the digests of its one deliverable. Either may be absent; ReARM sends
+ * nothing it does not hold.
+ */
+export type ReleaseNodeFacts = {
+    supplierName?: string | null,
+    hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null
+}
+
+/**
+ * A component release of a product merge that has no SBOM (SCORE-15 ADR-2), as ReARM describes
+ * it. purl is absent when ReARM records none; hashes are the digests of its one deliverable
+ * (SCORE-30 ADR-3), absent otherwise.
+ */
+export type MissingSbomComponent = {
+    releaseUuid: string,
+    name: string,
+    version: string,
+    type: string,
+    supplierName?: string | null,
+    group?: string | null,
+    purl?: string | null,
+    hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null,
+    reason: MissingSbomReason
 }
 
 export enum RootComponentMergeMode {
@@ -97,6 +148,15 @@ export type RebomOptions = {
     version: string,
     belongsTo: string,
     hash?: string,
+    // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
+    // publisher or the organization; absent for third-party software and on older rows.
+    supplierName?: string,
+    // The component of the organization that owns this document's serialNumber lineage
+    // (SCORE-45): ReARM sets it from the target release's component on every upload and merge.
+    // Absent for a caller with no component context. An upload that names an owner is refused
+    // when the lineage belongs to another component, and claims the lineage when it is unowned;
+    // an upload that names none neither checks nor claims (legacy behaviour).
+    ownerComponent?: string | null,
     notes: string,
     tldOnly: boolean,
     structure: string,
@@ -136,6 +196,20 @@ export type RebomOptions = {
     purl?: string,
     rootComponentMergeMode?: RootComponentMergeMode,
     ignoreDev?: boolean,
+    // Merge only: components of type file were left out of the merged BOM (SCORE-11).
+    // Part of the merge options, so of the cache key ReARM matches stored merges on.
+    excludeFileComponents?: boolean,
+    // Merge only: the caller's merge rule version (SCORE-13), stored verbatim, part of the
+    // merge options ReARM matches stored merges on. rebom does not interpret it.
+    mergeVersion?: number,
+    // Merge only: the component releases of a product merge ReARM holds no SBOM for (SCORE-15).
+    // Each becomes a placeholder component with unknown dependencies. Not stored with the row.
+    missingSbomComponents?: MissingSbomComponent[],
+    // Merge only: what ReARM holds about the release the merged root describes (SCORE-30), filled
+    // into the root where it has no supplier or hashes of its own. Derived by ReARM from the
+    // release at generation time, like missingSbomComponents: not part of the options ReARM
+    // matches stored merges on.
+    releaseNode?: ReleaseNodeFacts | null,
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate
@@ -170,5 +244,54 @@ export type BomSearch = {
 }
 
 export type BomFormat = 'CYCLONEDX' | 'SPDX';
+
+/** How a serialNumber lineage got its current owner (rebom.bom_lineage.claimed_via, SCORE-45). */
+export enum BomLineageClaimedVia {
+    UPLOAD = 'UPLOAD',
+    BACKFILL = 'BACKFILL',
+    REASSIGN = 'REASSIGN'
+}
+
+export enum BomLineageOwnerMode {
+    CLAIM_IF_UNOWNED = 'CLAIM_IF_UNOWNED',
+    REASSIGN = 'REASSIGN'
+}
+
+export enum BomLineageOwnerOutcome {
+    SET = 'SET',
+    UNCHANGED_SAME_OWNER = 'UNCHANGED_SAME_OWNER',
+    REFUSED_OWNED_BY_OTHER = 'REFUSED_OWNED_BY_OTHER',
+    NO_SUCH_LINEAGE = 'NO_SUCH_LINEAGE'
+}
+
+/** A row of rebom.bom_lineage as the database returns it. */
+export type BomLineageRecord = {
+    organization: string,
+    serial_number: string,
+    owner_component: string | null,
+    claimed_at: Date | null,
+    claimed_via: BomLineageClaimedVia | null,
+    claimed_by: string | null,
+    created_date: Date
+}
+
+export type BomLineageOwnerEntry = {
+    serialNumber: string,
+    ownerComponent: string
+}
+
+export type BomLineageOwnerResult = {
+    serialNumber: string,
+    outcome: BomLineageOwnerOutcome,
+    ownerComponent?: string | null
+}
+
+export type BomLineageDto = {
+    serialNumber: string,
+    ownerComponent: string | null,
+    claimedAt: Date | null,
+    claimedVia: BomLineageClaimedVia | null,
+    claimedBy: string | null
+}
 
 export const HIERARCHICHAL = 'hierarchical'

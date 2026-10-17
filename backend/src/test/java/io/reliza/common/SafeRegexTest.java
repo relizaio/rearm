@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.regex.Pattern;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.Timeout;
 
 import io.reliza.common.SafeRegex.MatchResult;
+import io.reliza.exceptions.RelizaException;
 
 /**
  * A stored regex is matched under a step budget, so a catastrophically backtracking pattern fails
@@ -120,5 +122,33 @@ class SafeRegexTest {
 	@Test
 	void aPatternThatDoesNotCompileIsReportedNotThrown() {
 		assertEquals(MatchResult.INVALID_PATTERN, SafeRegex.matches("frontend-(", "frontend-web"));
+	}
+
+	@Test
+	void validateAcceptsAnOrdinaryPatternUpToTheCap() throws RelizaException {
+		SafeRegex.validate("frontend-.*", "Rule 'web' namePattern");
+		SafeRegex.validate("a".repeat(SafeRegex.MAX_PATTERN_LENGTH), "Rule 'web' namePattern");
+	}
+
+	@Test
+	void validateRefusesABlankPattern() {
+		assertEquals("Rule 'web' namePattern is blank", assertThrows(RelizaException.class,
+				() -> SafeRegex.validate("  ", "Rule 'web' namePattern")).getMessage());
+		assertEquals("Rule 'web' namePattern is blank", assertThrows(RelizaException.class,
+				() -> SafeRegex.validate(null, "Rule 'web' namePattern")).getMessage());
+	}
+
+	@Test
+	void validateRefusesAPatternOverTheCap() {
+		RelizaException e = assertThrows(RelizaException.class,
+				() -> SafeRegex.validate("a".repeat(SafeRegex.MAX_PATTERN_LENGTH + 1), "Rule 'web' namePattern"));
+		assertEquals("Rule 'web' namePattern exceeds " + SafeRegex.MAX_PATTERN_LENGTH + " characters", e.getMessage());
+	}
+
+	@Test
+	void validateRefusesAPatternThatDoesNotCompile() {
+		RelizaException e = assertThrows(RelizaException.class,
+				() -> SafeRegex.validate("frontend-(", "Rule 'web' namePattern"));
+		assertTrue(e.getMessage().startsWith("Rule 'web' namePattern is not a valid regex: "), e.getMessage());
 	}
 }

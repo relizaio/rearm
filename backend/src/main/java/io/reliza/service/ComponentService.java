@@ -24,6 +24,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables;
@@ -384,7 +385,33 @@ public class ComponentService {
 		return createComponent(cpd, wu);
 	}
 	
+	/**
+	 * Create a component of any kind but BOARD_DOCUMENT. A BOARD_DOCUMENT component is a board's document series
+	 * (board-documents.md D1): only the board makes one, through {@link #createBoardDocumentComponent},
+	 * so a catalog file, the provider or a form cannot create one that belongs to no board.
+	 */
 	public Component createComponent (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
+		refuseDocumentKind(cpd.getKind());
+		return createComponentOfKind(cpd, wu);
+	}
+
+	/** The refusal for BOARD_DOCUMENT on create, before anything is written (task fceb1e57 T-5). */
+	public static void refuseDocumentKind(ComponentKind kind) throws RelizaException {
+		if (ComponentKind.BOARD_DOCUMENT == kind) {
+			throw new RelizaException("Boards set the BOARD_DOCUMENT kind: a component cannot be created with it; "
+					+ "a board creates its own document components when it publishes");
+		}
+	}
+
+	/** A board's document component: the one path that creates kind BOARD_DOCUMENT. */
+	Component createBoardDocumentComponent (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
+		if (ComponentKind.BOARD_DOCUMENT != cpd.getKind()) {
+			throw new IllegalArgumentException("createBoardDocumentComponent makes BOARD_DOCUMENT components only");
+		}
+		return createComponentOfKind(cpd, wu);
+	}
+
+	private Component createComponentOfKind (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
 		Component p = new Component();
 		
 		// Validate component name
@@ -507,6 +534,12 @@ public class ComponentService {
 				cd.setRepoPath(cdto.getRepoPath());
 			}
 			if (null != cdto.getKind()) {
+				// BOARD_DOCUMENT marks a board's document series (board-documents.md D1): only the board that
+				// creates the component sets it, and nothing turns one kind into the other afterwards.
+				if (cdto.getKind() != cd.getKind()
+						&& (ComponentKind.BOARD_DOCUMENT == cdto.getKind() || ComponentKind.BOARD_DOCUMENT == cd.getKind())) {
+					throw new RelizaException("Boards set the BOARD_DOCUMENT kind: a component's kind cannot be changed to or from it");
+				}
 				cd.setKind(cdto.getKind());
 			}
 			if (null != cdto.getAuthentication()) {
@@ -648,27 +681,43 @@ public class ComponentService {
 		return comp;
 	}
 	
+	/**
+	 * {@link #handleRemoveUserFromTriggers} in a transaction of its own, for a caller whose own
+	 * write must not depend on it (deactivating a user). Joining the caller's transaction, a
+	 * RuntimeException here -- one component of the org that cannot be saved -- would mark that
+	 * transaction rollback-only even if the caller catches it, and its commit would fail. Here it
+	 * rolls back this org's scrub alone. Call it on the Spring proxy, from another bean: a call
+	 * from inside this class would run in the caller's transaction.
+	 */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public void handleRemoveUserFromTriggersInNewTransaction (UUID org, UUID user, final WhoUpdated wu) {
+		handleRemoveUserFromTriggers(org, user, wu);
+	}
+
 	@Transactional
 	public void handleRemoveUserFromTriggers (UUID org, UUID user, final WhoUpdated wu) {
 		var comps = listComponentDataByOrganization(org, ComponentType.ANY);
 		comps.forEach(cd -> {
 			if (null != cd.getOutputTriggers() && !cd.getOutputTriggers().isEmpty()) {
-				cd.getOutputTriggers().forEach(t -> {
-					if (null != t.getUsers() && !t.getUsers().isEmpty()) {
+				boolean touched = false;
+				for (var t : cd.getOutputTriggers()) {
+					if (null != t.getUsers() && t.getUsers().contains(user)) {
 						LinkedHashSet<UUID> cleanedUsers = new LinkedHashSet<>(t.getUsers());
-						if (cleanedUsers.contains(user)) {
-							cleanedUsers.remove(user);
-							t.setUsers(cleanedUsers);
-							Component c = getComponentService.getComponent(cd.getUuid()).get();
-							Map<String,Object> recordData = Utils.dataToRecord(cd);
-							try {
-								saveComponent (c, recordData, wu);
-							} catch (RelizaException e) {
-								log.error("Error updating triggers on user delete for comp = " + c.getUuid(), e);
-							} 
-						}
+						cleanedUsers.remove(user);
+						t.setUsers(cleanedUsers);
+						touched = true;
 					}
-				});
+				}
+				// one save per component, however many of its actions held the user
+				if (touched) {
+					Component c = getComponentService.getComponent(cd.getUuid()).get();
+					Map<String,Object> recordData = Utils.dataToRecord(cd);
+					try {
+						saveComponent (c, recordData, wu);
+					} catch (RelizaException e) {
+						log.error("Error updating triggers on user delete for comp = " + c.getUuid(), e);
+					}
+				}
 			}
 		});
 	}

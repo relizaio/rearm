@@ -39,6 +39,8 @@ const PUBLICATION_DOCS = {
 // The org TEA table's name read of an archived component (TEA-9) selects only long-standing
 // Component fields, so it validates on CE too; it is sent only from the TEA tab, which the gate hides.
 const COMPONENT_NAME_READ = graphqlQueries.TeaComponentNameGql
+// The members dialog's stored-perspectives read (TEA-16): long-standing fields only, sent only behind the gate.
+const COMPONENT_PERSPECTIVES_READ = graphqlQueries.TeaComponentPerspectivesGql
 
 const ceServesTea = () => Boolean(ceSchema.getQueryType()?.getFields().teaProfileEditorView)
 
@@ -58,7 +60,7 @@ describe('TEA profile documents and the edition gate', () => {
         expect(valid.every(v => v === ceServesTea())).toBe(true)
     })
 
-    it('lists the seven TEA-profile documents beside the component name read: eight TEA documents', () => {
+    it('lists the seven TEA-profile documents beside the two component reads: nine TEA documents', () => {
         expect(Object.keys(DOCS)).toHaveLength(7)
         expect(DOCS.TeaMembershipExposureChangeGql).toBeDefined()
     })
@@ -68,13 +70,14 @@ describe('TEA profile documents and the edition gate', () => {
     })
 
     it.runIf(proSchema)('every TEA document validates against the Pro schema', () => {
-        for (const [name, doc] of Object.entries({ ...DOCS, TeaComponentNameGql: COMPONENT_NAME_READ })) {
+        for (const [name, doc] of Object.entries({ ...DOCS, TeaComponentNameGql: COMPONENT_NAME_READ, TeaComponentPerspectivesGql: COMPONENT_PERSPECTIVES_READ })) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
     })
 
-    it('the component name read of the org TEA table validates on CE as well', () => {
+    it('the component reads of the org TEA table and the members dialog validate on CE as well', () => {
         expect(validate(ceSchema, COMPONENT_NAME_READ).map(e => e.message)).toEqual([])
+        expect(validate(ceSchema, COMPONENT_PERSPECTIVES_READ).map(e => e.message)).toEqual([])
     })
 })
 

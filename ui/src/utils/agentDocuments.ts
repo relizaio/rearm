@@ -304,9 +304,10 @@ export const INDEX_DOCUMENT_TYPES = ['BOARD_REVIEW_ITEMS', 'BOARD_TEST_REPORT', 
 
 /**
  * The placeholders a path template takes (board-documents.md §3): the task's key (RD-42), the round,
- * the type in lower case and the component slugged. {task} is gone; the server reads it as {key}.
+ * the type in lower case, the component slugged and the publishing role slugged. {task} is gone; the
+ * server reads it as {key}.
  */
-export const PATH_PLACEHOLDERS = ['{key}', '{round}', '{type}', '{component}']
+export const PATH_PLACEHOLDERS = ['{key}', '{round}', '{type}', '{component}', '{role}']
 
 /**
  * The note beside the templates about where the board's documents sit (AgentBoard.documentsRoot):

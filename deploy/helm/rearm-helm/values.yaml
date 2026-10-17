@@ -23,12 +23,12 @@ rebom_postgres_port: "5432"
 traefik_crd_api_version: traefik.containo.us/v1alpha1
 
 image:
-  backEndImage: registry.relizahub.com/library/rearm-backend:26.08.12@sha256:ad4c424c12bfb901ded5e7b51b7c56485d6965c9d1edc7baa941e7d1353162f2
-  uiImage: registry.relizahub.com/library/rearm-ui:26.08.26@sha256:9f063bf29f8065d36aee4c742fac2cbb6ac50ce630e5b829414db93195332837
-  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.08.1@sha256:40bf777d5e8945f4cc1df65f0a9aa9620a77dab3a204540cf157d9b803b0c780
-  keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.06.2@sha256:09141e5e609f49d5692b0115314fbc738f17db9f5708658dfd3da5e809d99c75
+  backEndImage: registry.relizahub.com/library/rearm-backend:26.10.2@sha256:4d0eb94e1ea1dd2e0b18ffcfbfb1bffb41dc9846b88d778c866bf5f58c4628ea
+  uiImage: registry.relizahub.com/library/rearm-ui:26.10.11@sha256:67e5a0643b17eab939dc0bf8d7cf70dfd4b6f86a39d512d206e15a8953af6caf
+  ociArtifactImage: registry.relizahub.com/library/rearm-oci-artifact-service:26.08.2@sha256:2a0ac5ab1b92ab8378d869374706b8782172583a43a49a0e8c61fc8179011522
+  keycloakImage: registry.relizahub.com/library/rearm-keycloak:26.10.1@sha256:7b251e0e6a305d39c1802f40ed2d387b70fcb6ee938cf17d70dee54cd472d893
   postgresImage: registry.relizahub.com/library/rearm-postgres:0.1.6@sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee
-  rebomBackend: registry.relizahub.com/library/rebom-backend:0.23.2@sha256:d7f3749c545452f0a045fa4c5ef3baf2d3790be16575959d3a70781030c2ac69
+  rebomBackend: registry.relizahub.com/library/rebom-backend:0.24.4@sha256:4482f8f578bc54670f6db99d3f403e9dd41a4f3adb89dc0a3e0d88ad528b80fc
   flywayImage: docker.io/redgate/flyway:11.20.3-alpine@sha256:52cdd559dc8ae38a17b56615e3c7137d9b01470271112525b40373de470bb005
   zotImage: ghcr.io/project-zot/zot-minimal:v2.1.18@sha256:892f2a5a63dd99bdf85320fee5448506119328a6d5e1a2d14d4db876be595236
   htpasswdImage: docker.io/library/httpd:2.4.68-alpine3.24@sha256:1b766f17b84026429b7cb243317b142921b24432336e798bc881c43f45ed9567
@@ -196,8 +196,8 @@ postgresql:
   image:
     registry: registry.relizahub.com
     repository: library/rearm-postgres
-    tag: "0.1.0"
-    digest: "sha256:b15503aa3dbd5c3c1c9519ba1f2ce5c1c0e322132fb6f666ecc5780157f123c3"
+    tag: "0.1.6"
+    digest: "sha256:7c3d99ee4d4bbfb9a784f4e35e653aea07ebdf4ce32cd90f85fd888e717612ee"
     ## Specify a imagePullPolicy
     ## Defaults to 'Always' if image tag is 'latest', else set to 'IfNotPresent'
     ## ref: https://kubernetes.io/docs/user-guide/images/#pre-pulling-images

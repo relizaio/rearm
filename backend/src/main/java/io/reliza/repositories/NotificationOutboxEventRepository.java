@@ -18,6 +18,13 @@ import io.reliza.model.NotificationOutboxStatus;
 
 public interface NotificationOutboxEventRepository extends CrudRepository<NotificationOutboxEvent, UUID> {
 
+	/** Whether an event with this key was ever written; the partial dedup index serves it. */
+	boolean existsByDedupKey(String dedupKey);
+
+	long countByDedupKey(String dedupKey);
+
+	boolean existsByDedupKeyAndOccurredAtAfter(String dedupKey, ZonedDateTime after);
+
 	/**
 	 * Outbox worker's hot query. Pulls the next batch of PENDING events that
 	 * are due, ordered by occurrence time. The worker calls this inside the

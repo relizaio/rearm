@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.StatusEnum;
+import lombok.extern.slf4j.Slf4j;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
@@ -25,11 +26,13 @@ import io.reliza.model.Branch;
 import io.reliza.model.Component;
 import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
+import io.reliza.model.tracker.TrackerProvider;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.BranchRepository;
 import io.reliza.repositories.ComponentRepository;
 import io.reliza.repositories.VcsRepositoryRepository;
 
+@Slf4j
 @Service
 public class VcsRepositoryService {
 	
@@ -70,6 +73,16 @@ public class VcsRepositoryService {
 		return vcsData;
 	}
 	
+	/**
+	 * The VCS repository's data only if it belongs to {@code org}. Empty when either
+	 * argument is null, the repository does not exist, or it lives in another
+	 * organization, so callers refuse a missing and a foreign repository alike.
+	 */
+	public Optional<VcsRepositoryData> getVcsRepositoryData (UUID uuid, UUID org) {
+		if (null == org) return Optional.empty();
+		return getVcsRepositoryData(uuid).filter(vrd -> org.equals(vrd.getOrg()));
+	}
+
 	@Transactional
 	public Optional<VcsRepository> getVcsRepositoryWriteLocked (UUID uuid) {
 		return repository.findByIdWriteLocked(uuid);
@@ -82,9 +95,44 @@ public class VcsRepositoryService {
 	 * @param uri VCS repository URI
 	 * @return Optional of VcsRepository
 	 */
+	/**
+	 * One repository row for one repository, case included.
+	 *
+	 * <p>Byte-equal first, which is the indexed path and the common case. On a miss, and only when
+	 * the host is one that resolves owner and repository case-insensitively (GitHub and friends,
+	 * per {@link TrackerProvider}), look again folding case.
+	 *
+	 * <p>Without that second look, {@code github.com/Acme/Widget} and {@code github.com/acme/widget}
+	 * are two rows: a board source typed in lower case would mint a duplicate of the row a push
+	 * created with capitals, and the documents-repository check would then compare against the
+	 * wrong one. The row's stored URI is never rewritten -- this changes lookup, not storage.
+	 *
+	 * <p>Where several rows already match, the oldest wins and the duplicates are logged: merging
+	 * them is an operator action, and silently picking a different one each time would be worse
+	 * than either.
+	 */
 	private Optional<VcsRepository> findVcsRepositoryByOrgAndUri(UUID orgUuid, String uri) {
 		String normalizedUri = Utils.normalizeVcsUri(uri);
-		return repository.findByOrgAndUri(orgUuid.toString(), normalizedUri);
+		Optional<VcsRepository> exact = repository.findByOrgAndUri(orgUuid.toString(), normalizedUri);
+		if (exact.isPresent() || !hostFoldsCase(normalizedUri)) return exact;
+		List<VcsRepository> folded = repository.findByOrgAndUriFoldingCase(orgUuid.toString(), normalizedUri);
+		if (folded.isEmpty()) return Optional.empty();
+		if (folded.size() > 1) {
+			log.error("Organization {} has {} repository rows differing only by case for {}: {}."
+					+ " Using the oldest; merging them is an operator action.",
+					orgUuid, folded.size(), normalizedUri,
+					folded.stream().map(r -> VcsRepositoryData.dataFromRecord(r).getUri()).toList());
+		}
+		return Optional.of(folded.get(0));
+	}
+
+	/** Whether this URI's host is one the tracker enum knows to be case-insensitive. */
+	private static boolean hostFoldsCase(String normalizedUri) {
+		if (StringUtils.isBlank(normalizedUri)) return false;
+		String canonical = Utils.canonicalVcsUri(normalizedUri);
+		int slash = canonical.indexOf('/');
+		String host = slash > 0 ? canonical.substring(0, slash) : canonical;
+		return TrackerProvider.byHost(host).foldsProjectCase();
 	}
 	
 	/**
@@ -100,7 +148,11 @@ public class VcsRepositoryService {
 		// misses the row the create path finds. That split is what minted a new
 		// component per CI run against the same VCS row (30+ observed in prod):
 		// resolution never found the VCS, creation always did.
-		uri = Utils.cleanVcsUri(Utils.normalizeVcsUri(uri));
+		// One canonicaliser for every registration path. The two-step form handled http, https
+		// and the scp-style colon but not ssh:// or git://, so the same repository registered from
+		// a board, from CI and from an agent's remote could land under different keys -- and the
+		// uuid-pointer design depends on all of them converging on one row.
+		uri = Utils.canonicalVcsUri(uri);
 		Optional<VcsRepositoryData> vcsData = Optional.empty();
 		Optional<VcsRepository> vr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (vr.isPresent()) {
@@ -117,7 +169,11 @@ public class VcsRepositoryService {
 		// createIfMissing re-inserted the same cleaned URI and collided with the
 		// org+uri unique index -- durably poisoning the org's row now that
 		// provisionVcsRepository commits via REQUIRES_NEW.
-		uri = Utils.cleanVcsUri(Utils.normalizeVcsUri(uri));
+		// One canonicaliser for every registration path. The two-step form handled http, https
+		// and the scp-style colon but not ssh:// or git://, so the same repository registered from
+		// a board, from CI and from an agent's remote could land under different keys -- and the
+		// uuid-pointer design depends on all of them converging on one row.
+		uri = Utils.canonicalVcsUri(uri);
 		Optional<VcsRepository> ovr = findVcsRepositoryByOrgAndUri(orgUuid, uri);
 		if (ovr.isEmpty() && createIfMissing) {
 			String vcsName = (displayName != null && !displayName.isEmpty()) ? displayName : Utils.deriveVcsNameFromUri(uri);

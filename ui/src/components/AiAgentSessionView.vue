@@ -2,7 +2,7 @@
     <div class="aiAgentSessionView" v-if="session">
         <n-breadcrumb separator="›" class="crumbs">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
-            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agent.name }}</n-breadcrumb-item>
+            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agentDisplayLabel(agent) }}</n-breadcrumb-item>
             <n-breadcrumb-item>Session {{ sessionShortLabel }}</n-breadcrumb-item>
         </n-breadcrumb>
         <div class="hero">
@@ -31,7 +31,7 @@
                 <span :style="{ background: agent.color || '#888', color: 'white', padding: '0 4px', borderRadius: '4px', marginRight: '4px' }">
                     {{ agent.iconKind || '◆' }}
                 </span>
-                {{ agent.name }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
+                {{ agentOwnName(agent) }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
             </a>
             <template v-if="session.primaryModel">
                 <span class="dim">·</span>
@@ -134,7 +134,10 @@
                         </template>
                         <span v-else class="dim">—</span>
                     </n-descriptions-item>
-                    <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item label="API key">
+                        <code v-if="session.apiKey" :title="session.apiKey">{{ sessionKeyLabel }}</code>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Started"><agent-time :at="session.startedAt"/></n-descriptions-item>
                     <n-descriptions-item label="Closed"><agent-time :at="session.closedAt"/></n-descriptions-item>
                     <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
@@ -229,9 +232,11 @@ import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
+import { agentDisplayLabel, agentOwnName } from '@/utils/agentSessionLabel'
 import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 import { lifecycleWord } from '@/utils/agentWords'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import AgentTime from './AgentTime.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
@@ -391,6 +396,9 @@ const assertionTip = computed<string>(() =>
 onMounted(load)
 
 const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
+// the session's key as a label from the agent's bound keys; a personal key, or a session whose agent is
+// gone, reads by its short id, the full uuid in the tooltip
+const sessionKeyLabel = computed(() => apiKeyLabelOf(session.value?.apiKey, agent.value?.boundApiKeys ?? []))
 const closing = ref(false)
 const closeReasonInput = ref('')
 // The org's boards the reader sees, with their myPermissions: read only when they decide whether a

@@ -30,6 +30,30 @@ export type GraphqlErrorKind = 'validation' | 'network' | 'other'
 // A validation error's body can be JSON (errors[]) OR stripped to an opaque
 // page by an edge proxy / WAF -- in which case the only surviving signal is
 // the HTTP status.
+function errorContainers (err: any): any[] {
+    return [err, err.networkError, err.cause, err.response].filter(Boolean)
+}
+
+// The GraphQL errors[] entries an Apollo error carries, across the shapes above, with their
+// extensions (code, classification, reason ...). Empty for a transport failure or an opaque body.
+export function graphqlErrorsOf (err: any): any[] {
+    const out: any[] = []
+    if (!err) return out
+    for (const c of errorContainers(err)) {
+        if (Array.isArray(c.errors)) out.push(...c.errors)
+        if (Array.isArray(c.graphQLErrors)) out.push(...c.graphQLErrors)
+        if (Array.isArray(c.result?.errors)) out.push(...c.result.errors)
+        // Some links hand back the raw body as text; try to recover errors[].
+        if (typeof c.bodyText === 'string') {
+            try {
+                const parsed = JSON.parse(c.bodyText)
+                if (Array.isArray(parsed?.errors)) out.push(...parsed.errors)
+            } catch { /* opaque (e.g. WAF HTML) -- status is the only signal */ }
+        }
+    }
+    return out
+}
+
 function collectErrorSignals (err: any): { messages: string[], classifications: string[], statusCode?: number } {
     const messages: string[] = []
     const classifications: string[] = []
@@ -37,28 +61,14 @@ function collectErrorSignals (err: any): { messages: string[], classifications: 
     if (!err) return { messages, classifications, statusCode }
     if (typeof err.message === 'string') messages.push(err.message)
 
-    const containers = [err, err.networkError, err.cause, err.response].filter(Boolean)
-    const gqlErrorArrays: any[] = []
-    for (const c of containers) {
+    for (const c of errorContainers(err)) {
         if (typeof c.statusCode === 'number') statusCode ??= c.statusCode
         else if (typeof c.status === 'number') statusCode ??= c.status
-        if (Array.isArray(c.errors)) gqlErrorArrays.push(c.errors)
-        if (Array.isArray(c.graphQLErrors)) gqlErrorArrays.push(c.graphQLErrors)
-        if (Array.isArray(c.result?.errors)) gqlErrorArrays.push(c.result.errors)
-        // Some links hand back the raw body as text; try to recover errors[].
-        if (typeof c.bodyText === 'string') {
-            try {
-                const parsed = JSON.parse(c.bodyText)
-                if (Array.isArray(parsed?.errors)) gqlErrorArrays.push(parsed.errors)
-            } catch { /* opaque (e.g. WAF HTML) -- status is the only signal */ }
-        }
     }
-    for (const arr of gqlErrorArrays) {
-        for (const e of arr) {
-            if (typeof e?.message === 'string') messages.push(e.message)
-            const cls = e?.extensions?.classification
-            if (typeof cls === 'string') classifications.push(cls)
-        }
+    for (const e of graphqlErrorsOf(err)) {
+        if (typeof e?.message === 'string') messages.push(e.message)
+        const cls = e?.extensions?.classification
+        if (typeof cls === 'string') classifications.push(cls)
     }
     return { messages, classifications, statusCode }
 }

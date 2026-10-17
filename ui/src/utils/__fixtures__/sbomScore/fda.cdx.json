@@ -1,0 +1,237 @@
+{
+  "reportVersion": 1,
+  "engine": {
+    "name": "rearm-cli",
+    "version": "test"
+  },
+  "input": {
+    "format": "CycloneDX",
+    "specVersion": "1.6",
+    "serialization": "json",
+    "components": 4,
+    "sha256": "d2524d6cb111f820b89e1ae5a6383d47134cff53228aa2f65da33bee3d2ba28c"
+  },
+  "profiles": [
+    {
+      "key": "fda",
+      "title": "FDA Premarket SBOM (2026)",
+      "source": {
+        "title": "FDA, \"Cybersecurity in Medical Devices: Quality Management System Considerations and Content of Premarket Submissions\", section V.A.4(b)",
+        "version": "",
+        "date": "2026-02-03",
+        "url": "https://www.fda.gov/media/119933/download"
+      },
+      "verdict": "READY",
+      "score": 100,
+      "summary": {
+        "pass": 10,
+        "fail": 0,
+        "notAssessed": 1,
+        "errors": 0
+      },
+      "checks": [
+        {
+          "id": "fda.baseline.author-name",
+          "title": "Author Name",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Author Name",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.timestamp",
+          "title": "Timestamp",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Timestamp",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.supplier-name",
+          "title": "Supplier Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Supplier Name",
+          "remedy": "run rearm bomutils enrich, or ask the supplier",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.component-name",
+          "title": "Component Name",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Component Name",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.version-string",
+          "title": "Version String",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Version String",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.component-hash",
+          "title": "Component Hash",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Component Hash",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.unique-identifier",
+          "title": "Unique Identifier",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Unique Identifier",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.baseline.relationship",
+          "title": "Relationship",
+          "level": "REQUIRED",
+          "scope": "DOCUMENT",
+          "status": "PASS",
+          "passed": 1,
+          "total": 1,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b); NTIA Framing 2nd ed. 2.2, Relationship",
+          "remedy": "",
+          "note": ""
+        },
+        {
+          "id": "fda.component.support-level",
+          "title": "Software level of support",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "assess support for the component in ReARM and export with support metadata",
+          "note": ""
+        },
+        {
+          "id": "fda.component.end-of-support",
+          "title": "End-of-support date",
+          "level": "REQUIRED",
+          "scope": "COMPONENT",
+          "status": "PASS",
+          "passed": 4,
+          "total": 4,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "assess support for the component in ReARM and export with support metadata",
+          "note": ""
+        },
+        {
+          "id": "fda.document.vulnerabilities",
+          "title": "Known vulnerabilities and their assessment",
+          "level": "INFO",
+          "scope": "DOCUMENT",
+          "status": "NOT_ASSESSED",
+          "passed": 0,
+          "total": 0,
+          "failing": [],
+          "failingTruncated": false,
+          "ref": "V.A.4(b)",
+          "remedy": "",
+          "note": "delivered as VDR/VEX with the submission, not in the SBOM"
+        }
+      ]
+    }
+  ],
+  "structure": {
+    "checks": [
+      {
+        "id": "structure.purl-valid",
+        "title": "Package URLs parse",
+        "level": "INFO",
+        "scope": "COMPONENT",
+        "status": "PASS",
+        "passed": 4,
+        "total": 4,
+        "failing": [],
+        "failingTruncated": false,
+        "ref": "purl specification",
+        "remedy": "",
+        "note": ""
+      },
+      {
+        "id": "structure.refs-resolve",
+        "title": "Dependency references resolve",
+        "level": "INFO",
+        "scope": "DOCUMENT",
+        "status": "PASS",
+        "passed": 1,
+        "total": 1,
+        "failing": [],
+        "failingTruncated": false,
+        "ref": "CycloneDX dependencies, bom-ref",
+        "remedy": "",
+        "note": ""
+      },
+      {
+        "id": "structure.no-orphans",
+        "title": "Every component is in the dependency graph",
+        "level": "INFO",
+        "scope": "COMPONENT",
+        "status": "PASS",
+        "passed": 4,
+        "total": 4,
+        "failing": [],
+        "failingTruncated": false,
+        "ref": "CycloneDX dependencies",
+        "remedy": "",
+        "note": ""
+      }
+    ]
+  },
+  "errors": []
+}

@@ -12,6 +12,8 @@
  * - bomProcessingService: BOM transformations
  * - bomMergeService: Merge operations
  * - bomAddService: Add/store operations
+ * - bomLineageService: serialNumber lineage ownership
+ * - bomScoreService: Stateless SBOM scoring (rearm bomutils score)
  * - bomMapper: Data Object Pattern
  */
 
@@ -48,6 +50,9 @@ export {
   overrideRootComponent, // @deprecated - use augmentBomWithComponentContext
   extractTldFromBom,
   extractDevFilteredBom,
+  extractFileFilteredBom,
+  carryServices,
+  dropDanglingRefs,
   establishPurl,
   computeRootDepIndex,
   createRebomToolObject,
@@ -71,6 +76,17 @@ export {
 export {
   addBom
 } from './services/bom/bomAddService';
+
+// serialNumber lineage ownership (SCORE-45)
+export {
+  setBomLineageOwners,
+  bomLineage
+} from './services/bom/bomLineageService';
+
+// Scoring (stateless)
+export {
+  scoreBom
+} from './services/bom/bomScoreService';
 
 // Data Mapper
 export { BomMapper } from './services/bom/bomMapper';

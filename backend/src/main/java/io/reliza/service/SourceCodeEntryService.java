@@ -28,6 +28,7 @@ import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.TxUtils;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.TableName;
 
 import io.reliza.common.Utils;
@@ -37,7 +38,6 @@ import io.reliza.model.BranchData;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
-import io.reliza.model.VcsRepository;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.BranchDto;
@@ -108,6 +108,8 @@ public class SourceCodeEntryService {
 
 	private final SourceCodeEntryRepository repository;
 	
+	private static final String NO_BRANCH_VCS_MESSAGE = "Branch does not have linked VCS repository and no VCS data provided";
+
 	SourceCodeEntryService(SourceCodeEntryRepository repository) {
 	    this.repository = repository;
 	}
@@ -124,16 +126,40 @@ public class SourceCodeEntryService {
 				return null;
 			
 			BranchData bd = obd.get();
+			// The caller names the org it writes for (the one it authorized: release create and
+			// CycloneDX import both set it from their own branch/component), and the branch must
+			// be in it. The org is never derived from the branch, which a client may have chosen.
+			UUID sceOrg = sceDto.getOrganizationUuid();
+			if (null == sceOrg || !sceOrg.equals(bd.getOrg())) {
+				log.error("SECURITY: source code entry for org {} submitted on branch {} of another org",
+						sceOrg, bd.getUuid());
+				throw new RelizaException(CommonVariables.SCE_NOT_RESOLVABLE_MESSAGE);
+			}
 			// check vs branch vcs and warn if doesn't match
 			UUID vcsUuidFromBranch = bd.getVcs();
 			// Read-only lookup. SCE-level dedup that previously relied on this
 			// pessimistic lock is now enforced by the V26 unique index on
 			// source_code_entries (vcs, commit), with catch-and-recover in the
 			// routine handling the race for the loser.
-			Optional<VcsRepository> ovr = vcsRepositoryService.getVcsRepository(vcsUuidFromBranch);
+			// Org-scoped: a branch whose stored vcs is missing or belongs to another org
+			// (written before updateBranch checked it) is treated as having no usable
+			// repository, so the (vcs, commit) lookup below can only ever land on this
+			// org's repository.
+			Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(vcsUuidFromBranch, sceOrg);
+			if (null != vcsUuidFromBranch && ovrd.isEmpty()) {
+				log.warn("LEGACY-REF: branch {} in org {} links vcs {} that is missing or outside the org; not using it",
+						bd.getUuid(), sceOrg, vcsUuidFromBranch);
+			}
 			String vcsUri = sceDto.getUri();
+			// Every refusal happens before anything is written: RelizaException is checked, so
+			// a refusal after provisioning a repository or relinking the branch would commit
+			// them. Find the repository this build would land on without creating it, and refuse
+			// now if another org owns the entry for this commit there. The routine repeats the
+			// check under the row lock for a concurrent create.
+			UUID targetVcs = landingVcs(ovrd.map(VcsRepositoryData::getUuid).orElse(null), sceOrg, vcsUri);
+			requireNoForeignSce(targetVcs, sceDto.getCommit(), sceOrg);
 			UUID resolvedVcsUuid;
-			if (StringUtils.isNotEmpty(vcsUri) && ovr.isPresent() && !Utils.uriEquals(vcsUri, VcsRepositoryData.dataFromRecord(ovr.get()).getUri())) {
+			if (StringUtils.isNotEmpty(vcsUri) && ovrd.isPresent() && !Utils.uriEquals(vcsUri, ovrd.get().getUri())) {
 				// Deliberately a warn, not an error. uriEquals equates the common
 				// spellings of one repository (scheme, git@/user@, .git, scp colon),
 				// but URI forms it cannot reconcile are legitimately in flight on
@@ -144,15 +170,15 @@ public class SourceCodeEntryService {
 				// SCE binds to the branch's linked repository either way; the warn
 				// makes a genuine cross-repo submission visible in logs.
 				log.warn("Supplied VCS URI '{}' does not match branch {} linked VCS repository '{}' - binding SCE for commit {} to the branch's repository",
-						vcsUri, bd.getUuid(), VcsRepositoryData.dataFromRecord(ovr.get()).getUri(), sceDto.getCommit());
-				resolvedVcsUuid = ovr.get().getUuid();
-			} else if (ovr.isEmpty() && StringUtils.isNotEmpty(vcsUri) && null != vcsType) {	// branch does not have vcs repo set
+						vcsUri, bd.getUuid(), ovrd.get().getUri(), sceDto.getCommit());
+				resolvedVcsUuid = ovrd.get().getUuid();
+			} else if (ovrd.isEmpty() && StringUtils.isNotEmpty(vcsUri) && null != vcsType) {	// branch does not have a usable vcs repo
 				// Create/commit the VCS repo in its own REQUIRES_NEW tx so it is
 				// visible to the routine's REQUIRES_NEW createSourceCodeEntry lookup
 				// -- creating it inline in this outer tx left the row invisible to
 				// the inner tx and NPE'd the auto-VCS addrelease path (PR #217).
 				resolvedVcsUuid = vcsRepositoryService.provisionVcsRepository(
-						sceDto.getOrganizationUuid(), vcsUri, vcsType, wu);
+						sceOrg, vcsUri, vcsType, wu);
 				// Link the repo to the branch in THIS outer tx, not the REQUIRES_NEW
 				// one above. The branch row may be write-locked or freshly inserted
 				// by the outer tx (unarchive-on-addrelease, branch auto-create), so
@@ -164,13 +190,20 @@ public class SourceCodeEntryService {
 											.vcsBranch(sceDto.getVcsBranch())
 											.build();
 				branchService.updateBranch(branchDto, wu);
-			} else if (ovr.isEmpty() && null == bd.getVcs()) {
+			} else if (ovrd.isEmpty() && null == bd.getVcs()) {
 				// fail if no vcs data is provided and branch does not have vcs linked already
-				throw new RelizaException("Branch does not have linked VCS repository and no VCS data provided");
+				throw new RelizaException(NO_BRANCH_VCS_MESSAGE);
+			} else if (ovrd.isEmpty()) {
+				// The branch links a repository that is missing or another org's, and the
+				// request lacks the uri and type needed to relink it. One message for both.
+				// ERROR: this fails a customer build until they supply the VCS data.
+				log.error("LEGACY-REF: branch {} in org {} links vcs {} that is missing or outside the org and the request has no VCS uri and type to relink it; build refused",
+						bd.getUuid(), sceOrg, vcsUuidFromBranch);
+				throw new RelizaException(CommonVariables.BRANCH_VCS_UNUSABLE_MESSAGE);
 			} else {
 				// branch already carries a (matching) VCS, or the supplied uri
 				// matched the existing one -- use the row resolved off the branch.
-				resolvedVcsUuid = ovr.get().getUuid();
+				resolvedVcsUuid = ovrd.get().getUuid();
 			}
 
 			// construct source code entry itself
@@ -184,7 +217,8 @@ public class SourceCodeEntryService {
 	@Transactional
 	private Optional<SourceCodeEntry> populateSourceCodeEntryByVcsAndCommitRoutine (SceDto sceDto, boolean createIfMissing, WhoUpdated wu) throws RelizaException {
 		Optional<SourceCodeEntry> osce = repository.findByCommitAndVcs(sceDto.getCommit(), sceDto.getVcs().toString());
-		if (osce.isEmpty() && createIfMissing) {
+		if (osce.isEmpty() && !createIfMissing) return Optional.empty();
+		if (osce.isEmpty()) {
 			log.debug("osce is empty creating new ...");
 			try {
 				// The create runs REQUIRES_NEW (createSourceCodeEntryTx via the
@@ -211,6 +245,7 @@ public class SourceCodeEntryService {
 		var sce = repository.findByIdWriteLocked(osce.get().getUuid()).orElseThrow();
 		log.debug("Existing sce found, updating ...: {}", sce);
 		SourceCodeEntryData existingSceData = SourceCodeEntryData.dataFromRecord(sce);
+		requireSceOwnedBy(sce, sceDto.getOrganizationUuid(), sceDto.getCommit());
 		SourceCodeEntryData sced = SourceCodeEntryData.scEntryDataFactory(sceDto);
 		// Preserve commit metadata that an earlier addrelease populated when
 		// the current caller didn't supply a value. Two consumers
@@ -272,6 +307,103 @@ public class SourceCodeEntryService {
 			scheduleRecordCommit(mergeResolvedSession, mergedSce.getUuid(), wu);
 		}
 		return Optional.of(mergedSce);
+	}
+
+	/**
+	 * Read-only check of a whole build before any of its commits is recorded: refuses it when
+	 * any commit would land on an entry {@code bd}'s org does not own, or when the branch has no
+	 * usable repository and the first commit does not supply a uri and type to link one (the
+	 * write path's refusals, in its order). Each commit is recorded on
+	 * its own (repository provisioning and entry creation commit in their own transactions, and
+	 * RelizaException is checked, so it does not roll the rest back), so a refusal found at a
+	 * later commit would leave the earlier commits, a branch relink and uploaded artifacts behind.
+	 * The per-commit check in populateSourceCodeEntryByVcsAndCommit stays, for a concurrent
+	 * create.
+	 *
+	 * @param sces the build's entries in the order they will be recorded; nulls are skipped
+	 */
+	public void requireBuildRecordable(BranchData bd, List<SceDto> sces) throws RelizaException {
+		UUID org = bd.getOrg();
+		UUID branchVcs = vcsRepositoryService.getVcsRepositoryData(bd.getVcs(), org)
+				.map(VcsRepositoryData::getUuid).orElse(null);
+		boolean linked = null != branchVcs;
+		for (SceDto sceDto : sces) {
+			if (null == sceDto) continue;
+			UUID targetVcs = linked ? branchVcs : landingVcs(null, org, sceDto.getUri());
+			requireNoForeignSce(targetVcs, sceDto.getCommit(), org);
+			boolean relinks = StringUtils.isNotEmpty(sceDto.getUri()) && null != sceDto.getType();
+			if (!linked && !relinks && StringUtils.isNotEmpty(sceDto.getCommit())) {
+				throw new RelizaException(null == bd.getVcs() ? NO_BRANCH_VCS_MESSAGE
+						: CommonVariables.BRANCH_VCS_UNUSABLE_MESSAGE);
+			}
+			if (!linked && relinks) {
+				// this commit links the branch to the repository at its uri (an existing one, or a
+				// new and so empty one), and the later commits land there
+				branchVcs = targetVcs;
+				linked = true;
+			}
+		}
+	}
+
+	/**
+	 * The repository a commit is recorded on for {@code org}, without creating it: the branch's
+	 * usable repository, else the org's repository at {@code vcsUri}; null when neither exists yet.
+	 */
+	private UUID landingVcs(UUID usableBranchVcs, UUID org, String vcsUri) {
+		UUID targetVcs = usableBranchVcs;
+		if (null == targetVcs && StringUtils.isNotEmpty(vcsUri)) {
+			targetVcs = vcsRepositoryService.getVcsRepositoryDataByUri(org, vcsUri)
+					.map(VcsRepositoryData::getUuid).orElse(null);
+		}
+		return targetVcs;
+	}
+
+	/** Refuses when the entry for {@code commit} on {@code vcs} exists and {@code org} does not own it. */
+	private void requireNoForeignSce(UUID vcs, String commit, UUID org) throws RelizaException {
+		if (null != vcs && StringUtils.isNotEmpty(commit)) {
+			Optional<SourceCodeEntry> existing = repository.findByCommitAndVcs(commit, vcs.toString());
+			if (existing.isPresent()) {
+				requireSceOwnedBy(existing.get(), org, commit);
+			}
+		}
+	}
+
+	/**
+	 * Refuses to merge into or re-home an existing entry owned by another org.
+	 *
+	 * <p>The (vcs, commit) key is unique across orgs and the caller's vcs is its own org's
+	 * (checked by populateSourceCodeEntryByVcsAndCommit), so an existing entry owned by another
+	 * org can only be a stored cross-org row: one created through a branch that pointed at this
+	 * org's repository before updateBranch checked the reference. Merging would hand that org's
+	 * artifacts to the caller, and saving would re-home the entry away from it. A second entry
+	 * cannot be created for the same (vcs, commit), and silently dropping the commit from the
+	 * release would lose data, so the build is refused. Ownership is decided by
+	 * GetSourceCodeEntryService.belongsTo, the write rule for entries.
+	 */
+	private void requireSceOwnedBy(SourceCodeEntry sce, UUID org, String commit) throws RelizaException {
+		if (!getSourceCodeEntryService.belongsTo(SourceCodeEntryData.dataFromRecord(sce), org)) {
+			log.error("SECURITY: source code entry {} for commit {} belongs to another org; refusing to merge into it for org {}",
+					sce.getUuid(), commit, org);
+			throw new RelizaException(CommonVariables.SCE_NOT_RESOLVABLE_MESSAGE);
+		}
+	}
+
+	/**
+	 * Read-only: the commit message stored for {@code commit} on the branch's own-org
+	 * repository, if this org has recorded it. Never writes and never throws for a missing,
+	 * foreign or legacy reference -- those read as "no message".
+	 *
+	 * @param bd the authorized branch the caller is versioning
+	 */
+	public Optional<String> findStoredCommitMessage(BranchData bd, String commit) {
+		if (null == bd || StringUtils.isEmpty(commit)) return Optional.empty();
+		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(bd.getVcs(), bd.getOrg());
+		if (ovrd.isEmpty()) return Optional.empty();
+		return repository.findByCommitAndVcs(commit, ovrd.get().getUuid().toString())
+				.map(SourceCodeEntryData::dataFromRecord)
+				.filter(sced -> getSourceCodeEntryService.belongsTo(sced, bd.getOrg()))
+				.map(SourceCodeEntryData::getCommitMessage)
+				.filter(StringUtils::isNotEmpty);
 	}
 
 	/**
@@ -627,13 +759,17 @@ public class SourceCodeEntryService {
 		sce = (SourceCodeEntry) WhoUpdated.injectWhoUpdatedData(sce, wu);
 		sce = repository.save(sce);
 		SourceCodeEntryData sced = SourceCodeEntryData.dataFromRecord(sce);
+		// a legacy entry stored without an org resolves its releases in its branch's org
+		UUID owner = getSourceCodeEntryService.ownerOrg(sced);
 		Set<UUID> affectedReleases = new HashSet<>();
-		var sceReleases = sharedReleaseService.findReleasesBySce(sce.getUuid(), sced.getOrg());
-		sceReleases.forEach(r -> affectedReleases.add(r.getUuid()));
-		sced.getArtifacts().forEach(a -> {
-			var releases = sharedReleaseService.findReleasesByReleaseArtifact(a.artifactUuid(), sced.getOrg());
-			releases.forEach(r -> affectedReleases.add(r.getUuid()));
-		});
+		if (null != owner) {
+			var sceReleases = sharedReleaseService.findReleasesBySce(sce.getUuid(), owner);
+			sceReleases.forEach(r -> affectedReleases.add(r.getUuid()));
+			sced.getArtifacts().forEach(a -> {
+				var releases = sharedReleaseService.findReleasesByReleaseArtifact(a.artifactUuid(), owner);
+				releases.forEach(r -> affectedReleases.add(r.getUuid()));
+			});
+		}
 		affectedReleases.forEach(r -> acollectionService.resolveReleaseCollection(r, wu));
 		return sce;
 	}
@@ -673,9 +809,12 @@ public class SourceCodeEntryService {
 	 * 
 	 * @param sceMap {@code Map<String, Object>} object representing a SourceCodeEntryInput
 	 * @param commits {@code List<Map<String, Object>>} commits list object
+	 * @param rejectedCommits commits of previously rejected releases, skipped
+	 * @param bd the authorized branch being versioned; the stored-message lookup is scoped to it
 	 * @return {@code ActionEnum} the largest action parsed from commit message contents, or null if no valid commit message is present in SCE.
 	 */
-	public ActionEnum getBumpActionFromSourceCodeEntryInput(SceDto sceMap, List<SceDto> commits, Set<String> rejectedCommits) throws RelizaException{
+	public ActionEnum getBumpActionFromSourceCodeEntryInput(SceDto sceMap, List<SceDto> commits, Set<String> rejectedCommits,
+			BranchData bd) throws RelizaException{
 		// make sure all commit messages use System line seperator for newlines
 		// this can be removed once versioning library updated to at least commit db5c3387a1a1b31d0f248cac82251ba3f4783638
 		if (sceMap != null && StringUtils.isNotEmpty(sceMap.getCommitMessage())) {
@@ -685,12 +824,13 @@ public class SourceCodeEntryService {
 		// If SCE specifies a commit but no commitMessage, try and find matching commit in repo
 		if (sceMap != null && StringUtils.isNotEmpty(sceMap.getCommit()) 
 				&& null != sceMap.getVcs() && StringUtils.isEmpty(sceMap.getCommitMessage())) {
-			// Convert sceMap to sceDto and transfer to sourceCodeEntry service to check if commit exists in repo already
-			Optional<SourceCodeEntryData> osced = Optional.empty();
-			osced = populateSourceCodeEntryByVcsAndCommit(sceMap, false, WhoUpdated.getAutoWhoUpdated());
-			if (osced.isPresent() && StringUtils.isNotEmpty(osced.get().getCommitMessage())) {
-				String commitMessage = osced.get().getCommitMessage();
-				sceMap.setCommitMessage(commitMessage);
+			// Read-only lookup on the authorized branch's own repository. The input's
+			// branch, vcs and org are the client's and are not used: this used to run the
+			// write path with them, merging into (and reading the message of) whatever
+			// entry they named.
+			Optional<String> storedMessage = findStoredCommitMessage(bd, sceMap.getCommit());
+			if (storedMessage.isPresent()) {
+				sceMap.setCommitMessage(storedMessage.get());
 			} else {
 				// if commit message not found, null sceMap so we don't try to parse non-existent commit message field
 				sceMap = null;

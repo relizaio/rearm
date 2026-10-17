@@ -17,11 +17,13 @@ import org.springframework.security.oauth2.jwt.Jwt;
 import org.springframework.security.oauth2.jwt.JwtDecoder;
 import org.springframework.security.oauth2.jwt.JwtDecoders;
 import org.springframework.security.oauth2.jwt.JwtException;
+import org.springframework.security.oauth2.jwt.JwtValidationException;
 import org.springframework.stereotype.Service;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
 
+import io.reliza.common.LogSafe;
 import io.reliza.model.FederatedTrustRule.Provider;
 import io.reliza.service.FederatedMatching.IdentityClaims;
 import io.reliza.ws.RelizaConfigProps;
@@ -39,9 +41,71 @@ public class FederatedAssertionService {
 
 	static final Duration MAX_ASSERTION_LIFETIME = Duration.ofHours(24);
 
+	/**
+	 * Why a federated assertion or its exchange was refused, one name per refusal site (task TPF-31). The token
+	 * endpoint answers every refusal before a rule admits the verified identity with one text and writes this name,
+	 * a fixed vocabulary, to its one log line: the name is the distinction the wire no longer carries.
+	 */
+	public enum Refusal {
+		/** {@link #peekIssuer}: the assertion does not parse. */
+		MALFORMED,
+		/** The exchange: the assertion parses but names no issuer. */
+		NO_ISSUER,
+		/** The exchange: no active, usable rule names the presented issuer text. */
+		UNTRUSTED_ISSUER,
+		/** {@link #verify}: this instance has no base URI, so no audience can be required. */
+		AUDIENCE_NOT_CONFIGURED,
+		/** {@link #verify}: key discovery for a stored issuer failed. */
+		KEYS_UNAVAILABLE,
+		/** {@link #verify}: the decoder refused the token for anything but a claim validator (signature, key, header, format, a JWK fetch inside decode, a token whose Jwt cannot be built). */
+		NOT_VERIFIED,
+		/** {@link #verify}: the decoder's claim validators (expiry, not-before, issuer) refused the token after its signature. */
+		CLAIMS_INVALID,
+		/** {@link #verify}: the decoded issuer is not the trusted one. */
+		ISSUER_MISMATCH,
+		/** {@link #verify}: the audience is not this instance's base URI. */
+		AUDIENCE,
+		/** {@link #verify}: no expiry. */
+		NO_EXPIRY,
+		/** {@link #verify}: the expiry lies further ahead than the longest lifetime accepted. */
+		LIFETIME,
+		/** {@link #verify}: no token id. */
+		NO_ID,
+		/** {@link #verify}: no repository or owner. */
+		NO_REPOSITORY,
+		/** {@link #verify}: no repository or owner ids. */
+		NO_REPOSITORY_IDS,
+		/** {@link #verify}: called without an assertion or an issuer (not reachable from the exchange). */
+		ARGUMENTS,
+		/** The exchange: the verified identity matches no rule naming the issuer. */
+		IDENTITY_UNMATCHED,
+		/** The exchange: the verified identity matches rules, but none of the organization client_id names. */
+		ORG_NOT_NAMED,
+		/** The exchange: client_id is not an organization uuid. */
+		CLIENT_ID_NOT_UUID,
+		/** The exchange: several organizations trust the identity and client_id names none. */
+		SEVERAL_ORGS,
+		/** The exchange: the owner id differs from a rule's pin. */
+		OWNER_PIN,
+		/** The exchange: several key-bound rules bind different keys. */
+		SEVERAL_KEYS,
+		/** The exchange: the key a rule binds is gone. */
+		KEY_GONE,
+		/** The exchange: the key a rule binds is not an active Free Form key of the organization. */
+		KEY_NOT_USABLE,
+		/** The exchange: the identity row is disabled. */
+		IDENTITY_DISABLED,
+		/** The exchange: the repository id differs from the identity row's pin. */
+		REPOSITORY_PIN,
+		/** The exchange: the assertion id was already used. */
+		REPLAY
+	}
+
 	public static class AssertionException extends Exception {
 		private static final long serialVersionUID = 1L;
-		public AssertionException(String message) { super(message); }
+		private final Refusal reason;
+		public AssertionException(Refusal reason, String message) { super(message); this.reason = reason; }
+		public Refusal reason() { return reason; }
 	}
 
 	public record VerifiedAssertion(IdentityClaims identity, Map<String, Object> claims, Instant expiresAt, String jti) {}
@@ -72,51 +136,68 @@ public class FederatedAssertionService {
 		try {
 			return com.nimbusds.jwt.JWTParser.parse(assertion).getJWTClaimsSet().getIssuer();
 		} catch (Exception e) {
-			throw new AssertionException("malformed assertion");
+			throw new AssertionException(Refusal.MALFORMED, "malformed assertion");
 		}
+	}
+
+	/**
+	 * The wire and log text of a decoder refusal, from a fixed vocabulary: a validator refusal (expiry, issuer or
+	 * audience claims) or anything else (signature, key, header or format). The library's own message is built from
+	 * the token before its signature is checked, so it is never passed on.
+	 */
+	static String reasonOf(JwtException e) {
+		return e instanceof JwtValidationException
+				? "assertion rejected: claims not valid (expiry, issuer or audience)"
+				: "assertion rejected: signature, key or format not accepted";
+	}
+
+	/** The fixed-vocabulary reason of a decoder refusal, split as {@link #reasonOf} splits the sentence: by the class the decoder throws. */
+	static Refusal refusalOf(JwtException e) {
+		return e instanceof JwtValidationException ? Refusal.CLAIMS_INVALID : Refusal.NOT_VERIFIED;
 	}
 
 	/**
 	 * Full verification against a trusted issuer. {@code provider} decides how the claims are read.
 	 */
 	public VerifiedAssertion verify(String assertion, String issuer, Provider provider) throws AssertionException {
-		if (StringUtils.isBlank(assertion) || StringUtils.isBlank(issuer)) throw new AssertionException("assertion and issuer are required");
+		if (StringUtils.isBlank(assertion) || StringUtils.isBlank(issuer)) throw new AssertionException(Refusal.ARGUMENTS, "assertion and issuer are required");
 		String audience = expectedAudience();
 		if (StringUtils.isBlank(audience)) {
 			log.error("federated identity exchange refused: relizaprops.baseuri is not configured, so no audience can be required");
-			throw new AssertionException("this instance has no base URI configured for federated identities");
+			throw new AssertionException(Refusal.AUDIENCE_NOT_CONFIGURED, "this instance has no base URI configured for federated identities");
 		}
 		JwtDecoder decoder;
 		try {
 			decoder = decoders.get(issuer, decoderFactory);
 		} catch (RuntimeException e) {
-			log.error("cannot set up key discovery for federated issuer {}", issuer, e);
-			throw new AssertionException("issuer keys unavailable");
+			log.error("cannot set up key discovery for federated issuer {}", LogSafe.text(issuer), e);
+			throw new AssertionException(Refusal.KEYS_UNAVAILABLE, "issuer keys unavailable");
 		}
 		Jwt jwt;
 		try {
 			jwt = decoder.decode(assertion);
 		} catch (JwtException e) {
-			log.warn("SECURITY: federated assertion from issuer {} rejected: {}", issuer, e.getMessage());
-			throw new AssertionException("assertion rejected: " + e.getMessage());
+			// the library's message is built from the token (its header, before the signature): never logged, never sent;
+			// the token endpoint's one refusal line writes the reason (TPF-31)
+			throw new AssertionException(refusalOf(e), reasonOf(e));
 		}
-		if (!issuer.equals(jwt.getIssuer() == null ? null : jwt.getIssuer().toString())) throw new AssertionException("issuer mismatch");
+		if (!issuer.equals(jwt.getIssuer() == null ? null : jwt.getIssuer().toString())) throw new AssertionException(Refusal.ISSUER_MISMATCH, "issuer mismatch");
 		List<String> aud = jwt.getAudience();
 		if (aud == null || aud.stream().noneMatch(a -> a != null && a.replaceAll("/+$", "").equalsIgnoreCase(audience))) {
-			throw new AssertionException("audience must be " + audience);
+			throw new AssertionException(Refusal.AUDIENCE, "audience must be " + audience);
 		}
 		Instant exp = jwt.getExpiresAt();
-		if (exp == null) throw new AssertionException("assertion has no expiry");
-		if (exp.isAfter(Instant.now().plus(MAX_ASSERTION_LIFETIME))) throw new AssertionException("assertion lifetime is implausibly long");
+		if (exp == null) throw new AssertionException(Refusal.NO_EXPIRY, "assertion has no expiry");
+		if (exp.isAfter(Instant.now().plus(MAX_ASSERTION_LIFETIME))) throw new AssertionException(Refusal.LIFETIME, "assertion lifetime is implausibly long");
 		String jti = jwt.getId();
-		if (StringUtils.isBlank(jti)) throw new AssertionException("assertion has no id");
+		if (StringUtils.isBlank(jti)) throw new AssertionException(Refusal.NO_ID, "assertion has no id");
 		Map<String, Object> claims = jwt.getClaims();
 		IdentityClaims identity = switch (provider) {
 			case GITHUB_ACTIONS -> FederatedMatching.fromGitHub(issuer, claims);
 		};
-		if (identity.repository() == null || identity.owner() == null) throw new AssertionException("assertion names no repository");
+		if (identity.repository() == null || identity.owner() == null) throw new AssertionException(Refusal.NO_REPOSITORY, "assertion names no repository");
 		// the ids are what the pins compare; a token without them cannot be pinned or checked, so it is not accepted
-		if (StringUtils.isBlank(identity.repositoryId()) || StringUtils.isBlank(identity.ownerId())) throw new AssertionException("assertion carries no repository and owner ids");
+		if (StringUtils.isBlank(identity.repositoryId()) || StringUtils.isBlank(identity.ownerId())) throw new AssertionException(Refusal.NO_REPOSITORY_IDS, "assertion carries no repository and owner ids");
 		return new VerifiedAssertion(identity, claims, exp, jti);
 	}
 

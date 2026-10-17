@@ -52,8 +52,10 @@ import io.reliza.model.dto.ApiKeyDto;
 import io.reliza.model.dto.ApiKeyForUserDto;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.BrandingService;
 import io.reliza.service.CdxImportService;
 import io.reliza.service.CdxImportService.ImportComponentResult;
+import io.reliza.service.CliSessionService;
 import io.reliza.service.FindingChangeEventBackfillService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
@@ -65,12 +67,20 @@ import lombok.extern.slf4j.Slf4j;
 @Slf4j
 @DgsComponent
 public class OrganizationDataFetcher {
+
+	/** Upper bound on the findings priority scale; see updateOrganizationSettings. */
 	
 	@Autowired
 	private ApiKeyService apiKeyService;
+
+	@Autowired
+	private io.reliza.service.ApiKeyDeclarativeService apiKeyDeclarativeService;
 	
 	@Autowired
 	private AuthorizationService authorizationService;
+
+	@Autowired
+	private BrandingService brandingService;
 	
 	@Autowired
 	private GetOrganizationService getOrganizationService;
@@ -216,9 +226,11 @@ public class OrganizationDataFetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		String apiKey = null;
 		String keyId = null;
+		notes = ApiKeyService.checkedNotes(notes);
 		if (keyType == ApiTypeEnum.FREEFORM || keyType == ApiTypeEnum.ORGANIZATION || keyType == ApiTypeEnum.ORGANIZATION_RW) {
 			String keyOrder = UUID.randomUUID().toString();
-			apiKey = apiKeyService.setObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, wu);
+			// gated on org ADMIN above, so the caller administers the org
+			apiKey = apiKeyService.setObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, true, wu);
 			keyId = keyType.toString() + "__" + od.get().getUuid().toString() + "__ord__" + keyOrder;
 		} else {
 			throw new RelizaException("Unsupported Key type for this location");
@@ -252,6 +264,7 @@ public class OrganizationDataFetcher {
 		}
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		String keyOrder = UUID.randomUUID().toString();
+		notes = ApiKeyService.checkedNotes(notes);
 		return ApiKeyDto.fromApiKey(apiKeyService.createObjectApiKey(od.get().getUuid(), keyType, od.get().getUuid(), keyOrder, notes, wu));
 	}
 
@@ -263,14 +276,13 @@ public class OrganizationDataFetcher {
 		return authorizeKeyOwnerOr(apiKeyUuid, ct, true);
 	}
 
-	/** True when the caller is the owner of a USER key or the holder of a FREEFORM key. */
+	/**
+	 * True when the caller is the owner of a USER key or the holder of a FREEFORM key and a member of its org
+	 * (global admins excepted): a former member still named holder keeps no say over the org's keys. The rule
+	 * a CLI session on the key must meet too.
+	 */
 	private static boolean isOwnerOrHolder(UserData ud, ApiKey ak) {
-		if (ak.getObjectType() == ApiTypeEnum.USER) return ud.getUuid().equals(ak.getObjectUuid());
-		if (ak.getObjectType() == ApiTypeEnum.FREEFORM) {
-			UUID holder = ApiKeyData.dataFromRecord(ak).getHolder();
-			return holder != null && holder.equals(ud.getUuid());
-		}
-		return false;
+		return CliSessionService.backs(ud, ak, ApiKeyData.dataFromRecord(ak));
 	}
 
 	private WhoUpdated authorizeKeyOwnerOr(UUID apiKeyUuid, CallType ct, boolean holderMayAct) throws RelizaException {
@@ -282,26 +294,27 @@ public class OrganizationDataFetcher {
 			authorizationService.validateSystemOperational(CallType.WRITE);
 			return WhoUpdated.getWhoUpdated(oud.get());
 		}
-		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(apiKeyUuid);
-		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
+		if (oak.isEmpty()) throw new RelizaException("API key not found");
+		RelizaObject ro = ApiKeyData.dataFromRecord(oak.get());
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
-				ro != null ? ro.getOrg() : null, List.of(ro), ct);
+				ro.getOrg(), List.of(ro), ct);
 		return WhoUpdated.getWhoUpdated(oud.get());
 	}
 
-	/** Whether the caller passes the org-level gate for this key on their own account (as opposed to the owner / holder shortcut). */
-	private boolean hasOrgWriteOnKey(UUID apiKeyUuid) throws RelizaException {
+	/**
+	 * Whether the caller administers the key's org on their own account (as opposed to the owner / holder shortcut
+	 * or org write access): the bar for the kill switch.
+	 */
+	private boolean hasOrgAdminOnKey(UUID apiKeyUuid) {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(apiKeyUuid);
-		RelizaObject ro = oakd.isPresent() ? oakd.get() : null;
-		try {
-			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION,
-					ro != null ? ro.getOrg() : null, List.of(ro), CallType.WRITE);
-			return true;
-		} catch (org.springframework.security.access.AccessDeniedException e) {
-			return false;
-		}
+		return hasOrgAccessOnKey(oud.get(), apiKeyService.getApiKeyData(apiKeyUuid).orElse(null), CallType.ADMIN);
+	}
+
+	/** Whether the user clears the given level on the key's org on their own account; false for a key that is gone. */
+	private boolean hasOrgAccessOnKey(UserData ud, ApiKeyData akd, CallType ct) {
+		return akd != null && authorizationService.isUserAuthorizedForObject(ud, PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, akd.getOrg(), List.<RelizaObject>of(akd), ct);
 	}
 
 	/** Secret lifecycle mutations: owner of a USER key, holder of a FREEFORM key, or write access on the key's org. */
@@ -310,25 +323,33 @@ public class OrganizationDataFetcher {
 	}
 
 	/**
-	 * Minting returns cleartext, so on a held FREEFORM key only the holder may do it; admins keep
-	 * retire / delete / deactivate. Requests and denied keys cannot be minted at all.
+	 * Minting returns cleartext: a personal key's owner mints it, a held FREEFORM key's holder mints it, and any
+	 * other key (an unheld FREEFORM key, whose uuid every reader of its agent sees, or an org-level key) needs an org
+	 * admin; admins keep retire / delete / deactivate. Requests and denied keys cannot be minted at all. The org gate
+	 * runs first on the unlocked row, so an outsider is refused before anything is locked; the rest is decided on
+	 * the row locked next, the row the mint then writes, so a holder replaced meanwhile gets nothing. Callers run in
+	 * a transaction.
 	 */
 	private WhoUpdated authorizeKeyMinter(UUID apiKeyUuid) throws RelizaException {
+		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
-		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		ApiKey ak = apiKeyService.getApiKeyWriteLocked(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 		if (akd.getStatus() != ApiKeyData.ApiKeyStatus.ACTIVE && akd.getStatus() != ApiKeyData.ApiKeyStatus.INACTIVE) {
 			throw new RelizaException("This key is a request; it can be minted once an admin approves it");
 		}
-		if (ak.getObjectType() == ApiTypeEnum.FREEFORM && akd.getHolder() != null && !akd.getHolder().equals(oud.get().getUuid())) {
-			throw new RelizaException("Only the holder of this key may mint its secrets");
+		if (ak.getObjectType() == ApiTypeEnum.USER) {
+			// a personal key acts as its owner and is attributed to them: nobody else, admins included, may hold a secret for it
+			if (!oud.get().getUuid().equals(ak.getObjectUuid())) throw new RelizaException("Only the owner of a personal key may mint its secrets");
+		} else if (ak.getObjectType() == ApiTypeEnum.FREEFORM && akd.getHolder() != null) {
+			if (!akd.getHolder().equals(oud.get().getUuid())) throw new RelizaException("Only the holder of this key may mint its secrets");
+		} else if (!hasOrgAccessOnKey(oud.get(), akd, CallType.ADMIN)) {
+			throw new RelizaException(ak.getObjectType() == ApiTypeEnum.FREEFORM
+					? "Only an organization administrator may mint secrets for a Free Form key that has no holder"
+					: "Only an organization administrator may mint secrets for this key");
 		}
-		// a personal key acts as its owner and is attributed to them: nobody else, admins included, may hold a secret for it
-		if (ak.getObjectType() == ApiTypeEnum.USER && !oud.get().getUuid().equals(ak.getObjectUuid())) {
-			throw new RelizaException("Only the owner of a personal key may mint its secrets");
-		}
-		return authorizeKeyAdmin(apiKeyUuid);
+		return wu;
 	}
 
 	private static ZonedDateTime futureOrNull(ZonedDateTime expiresDate) throws RelizaException {
@@ -366,12 +387,14 @@ public class OrganizationDataFetcher {
 		}
 		List<PermissionDto> convertedPermissions = permissions == null ? List.of() : permissions.stream()
 				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		authorizationService.assertGrantObjectsExist(orgUuid, convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(p.approvals(), od.get())) {
 				throw new RuntimeException("Invalid approvals sent");
 			}
 		}
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		notes = ApiKeyService.checkedNotes(notes);
 		return ApiKeyDto.fromApiKey(apiKeyService.requestFreeformApiKey(oud.get().getUuid(), orgUuid, notes,
 				permissionType == null ? PermissionType.NONE : permissionType, convertedPermissions, wu));
 	}
@@ -413,6 +436,7 @@ public class OrganizationDataFetcher {
 			throw new RelizaException("Not a member of this organization");
 		}
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		notes = ApiKeyService.checkedNotes(notes);
 		return ApiKeyDto.fromApiKey(apiKeyService.createObjectApiKey(oud.get().getUuid(), ApiTypeEnum.USER, orgUuid, UUID.randomUUID().toString(), notes, wu));
 	}
 
@@ -433,6 +457,7 @@ public class OrganizationDataFetcher {
 				.authorizationHeader("Basic " + HttpHeaders.encodeBasicAuth(keyId, cleartext, StandardCharsets.UTF_8)).build();
 	}
 
+	@Transactional(rollbackFor = RelizaException.class)
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "addApiKeySecret")
 	public ApiKeyForUserDto addApiKeySecret(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
@@ -441,6 +466,7 @@ public class OrganizationDataFetcher {
 		return keyForUser(apiKeyUuid, apiKeyService.addApiKeySecret(apiKeyUuid, futureOrNull(expiresDate), wu));
 	}
 
+	@Transactional(rollbackFor = RelizaException.class)
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "regenerateApiKeySecret")
 	public ApiKeyForUserDto regenerateApiKeySecret(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
@@ -472,7 +498,7 @@ public class OrganizationDataFetcher {
 	public ApiKeyDto setApiKeyStatus(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("status") ApiKeyData.ApiKeyStatus status) throws RelizaException {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
 		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
-		return apiKeyService.setApiKeyStatus(apiKeyUuid, status, hasOrgWriteOnKey(apiKeyUuid), wu);
+		return apiKeyService.setApiKeyStatus(apiKeyUuid, status, hasOrgAdminOnKey(apiKeyUuid), wu);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -503,7 +529,8 @@ public class OrganizationDataFetcher {
 			WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 			userService.removeUserFromOrg(org, user, wu);
 		} catch (Exception e) {
-			throw new AccessDeniedException("Error removing user from organization, please contact support at info@reliza.io");
+			throw new AccessDeniedException("Error removing user from organization, please contact support at "
+					+ brandingService.current().values().supportEmail());
 		}
 		return true;
 	}
@@ -549,9 +576,8 @@ public class OrganizationDataFetcher {
 				(List<String>) ignoreViolation.get("operationalViolationRegexIgnore") : null;
 		
 		// Validate regex patterns
-		validateRegexPatterns(licenseViolationRegexIgnore, "licenseViolationRegexIgnore");
-		validateRegexPatterns(securityViolationRegexIgnore, "securityViolationRegexIgnore");
-		validateRegexPatterns(operationalViolationRegexIgnore, "operationalViolationRegexIgnore");
+		OrganizationService.validateIgnoreViolation(licenseViolationRegexIgnore, securityViolationRegexIgnore,
+				operationalViolationRegexIgnore, odIgnore.map(OrganizationData::getIgnoreViolation).orElse(null));
 		
 		return organizationService.updateIgnoreViolation(orgUuid, licenseViolationRegexIgnore, 
 				securityViolationRegexIgnore, operationalViolationRegexIgnore, wu);
@@ -659,6 +685,7 @@ public class OrganizationDataFetcher {
 		OrganizationData od = getOrganizationService.getOrganizationData(oakd.get().getOrg()).get();
 		List<PermissionDto> convertedPermissions = permissions.stream()
 				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		authorizationService.assertGrantObjectsExist(od.getUuid(), convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty()) {
 				if (!Utils.isSanitizedApprovalsSent(p.approvals(), od)) {
@@ -678,10 +705,13 @@ public class OrganizationDataFetcher {
 
 	/**
 	 * Edit just the {@code notes} field on an API key. Admin auth on
-	 * the key's owning org -- same gate as setPermissionsOnFreeformApiKey
+	 * the key's owning org -- same org gate as setPermissionsOnFreeformApiKey
 	 * -- so a notes-only edit doesn't require the caller to round-trip
 	 * the full permissions list. Works for any key type, not only
-	 * FREEFORM (notes is a generic field on api_keys recordData).
+	 * FREEFORM (notes is a generic field on api_keys recordData). A denied
+	 * request's note is the admin's alone: its holder may not rewrite it,
+	 * so a note cannot pose as the reason on a key denied before
+	 * deniedReason existed, whose reason is read from the notes.
 	 */
 	@Transactional
 	@PreAuthorize("isAuthenticated()")
@@ -690,21 +720,35 @@ public class OrganizationDataFetcher {
 			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
 			@InputArgument("notes") String notes
 		) throws RelizaException {
-		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
+		Optional<ApiKeyData> oakd = apiKeyService.getApiKeyData(apiKeyUuid);
+		boolean holderMayEdit = oakd.isEmpty() || oakd.get().getStatus() != ApiKeyData.ApiKeyStatus.DENIED;
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, holderMayEdit);
 		return apiKeyService.setNotesOnApiKey(apiKeyUuid, notes, wu);
 	}
 
-	private void validateRegexPatterns(List<String> patterns, String fieldName) throws RelizaException {
-		if (patterns == null) {
-			return;
-		}
-		for (String pattern : patterns) {
-			try {
-				java.util.regex.Pattern.compile(pattern);
-			} catch (java.util.regex.PatternSyntaxException e) {
-				throw new RelizaException("Invalid regex pattern in " + fieldName + ": " + pattern + " - " + e.getMessage());
-			}
-		}
+	/**
+	 * Declare a key made by hand under a name, or release its name with null (task RD3-11): the next apply of an
+	 * API_KEYS file naming it updates this key rather than creating another. An organization administrator's.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "declareApiKey")
+	public ApiKeyDto declareApiKey(@InputArgument("apiKeyUuid") UUID apiKeyUuid, @InputArgument("name") String name)
+			throws RelizaException {
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		UUID org = apiKeyService.getApiKey(apiKeyUuid).map(ApiKey::getOrg).orElseThrow(() -> new RelizaException("API key not found"));
+		return ApiKeyDto.fromApiKey(apiKeyDeclarativeService.declare(org, apiKeyUuid, name, wu));
 	}
-	
+
+	/** The device-login session bound of a key (task RD3-7): an org admin's, or the key's owner or holder's. */
+	@Transactional
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeySessionMaxMinutes")
+	public ApiKeyDto setApiKeySessionMaxMinutes(
+			@InputArgument("apiKeyUuid") UUID apiKeyUuid,
+			@InputArgument("sessionMaxMinutes") Integer sessionMaxMinutes
+		) throws RelizaException {
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN);
+		return apiKeyService.setSessionMaxMinutesOnApiKey(apiKeyUuid, sessionMaxMinutes, wu);
+	}
+
 }

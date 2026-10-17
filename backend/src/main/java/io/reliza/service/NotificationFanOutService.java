@@ -470,6 +470,28 @@ public class NotificationFanOutService {
             insertTargetedDeliveries(event);
         }
 
+        // Board events reach the PEOPLE who can act on the board
+        // (board-permissions.md D14, architecture round 2 of 5c70990d). An
+        // event about a board carries the produce-time snapshot of its
+        // BOARD_WRITE holders; each gets a personal inbox row, with or
+        // without a subscription. The subscription matrix below still runs
+        // for it as for any event: its routes all end at org channels --
+        // Slack, Teams, webhooks, email to fixed addresses, a team's or a
+        // group's channels -- which are sinks the operator chose, not
+        // people, so they keep board events. No route type resolves to
+        // users, so no person outside the snapshot is reached through it;
+        // the inbox shows a channel delivery (no target user) to org
+        // admins only, and board events name no release for the
+        // perspective and component arms to match.
+        if (event.getEventType().isAgentBoardEvent()) {
+            List<UUID> boardTargets = boardTargets(event);
+            if (null != boardTargets) {
+                int written = writeTargetedRows(event, boardTargets);
+                log.info("Wrote {} targeted board deliveries for outbox event {} ({})",
+                        written, event.getUuid(), event.getEventType());
+            }
+        }
+
         // Resolve-marks-read (Phase 4a): once a request fully resolves,
         // its targeted inbox rows are auto-read for every recipient —
         // "someone needs to act" stops being actionable the moment the
@@ -1136,9 +1158,37 @@ public class NotificationFanOutService {
         if (payload == null || payload.targetUsers() == null || payload.targetUsers().isEmpty()) {
             return;
         }
+        int written = writeTargetedRows(event, payload.targetUsers());
+        log.info("Wrote {} targeted approval-request deliveries for outbox event {}",
+                written, event.getUuid());
+    }
+
+    /**
+     * The recipient snapshot an event about a board carries (board-permissions.md D14); null when it
+     * carries none -- a session event, or one written before the snapshot existed -- so the
+     * subscription matrix routes it as before. An empty snapshot is a snapshot: nobody receives it.
+     */
+    private List<UUID> boardTargets(NotificationOutboxEvent event) {
+        try {
+            io.reliza.model.dto.notifications.AgentBoardEventPayload p = Utils.OM.convertValue(event.getRecordData(),
+                    io.reliza.model.dto.notifications.AgentBoardEventPayload.class);
+            return null == p || null == p.board() ? null : p.targetUsers();
+        } catch (Exception e) {
+            log.error("Unparseable board payload on event {}; routing it through the subscriptions",
+                    event.getUuid(), e);
+            return null;
+        }
+    }
+
+    /**
+     * One personal inbox row per recipient, born SENT: there is no channel to transmit to, so the
+     * channel worker never touches them; they are visible through the inbox's {@code target_user} arm.
+     * Returns how many were written (a recipient named twice gets one).
+     */
+    private int writeTargetedRows(NotificationOutboxEvent event, java.util.Collection<UUID> targetUsers) {
         ZonedDateTime now = ZonedDateTime.now();
         Set<UUID> seen = new HashSet<>();
-        for (UUID targetUser : payload.targetUsers()) {
+        for (UUID targetUser : targetUsers) {
             if (targetUser == null || !seen.add(targetUser)) continue;
             NotificationDelivery delivery = new NotificationDelivery();
             delivery.setOrg(event.getOrg());
@@ -1154,8 +1204,7 @@ public class NotificationFanOutService {
             delivery.setRecordData(new HashMap<>());
             deliveryRepo.save(delivery);
         }
-        log.info("Wrote {} targeted approval-request deliveries for outbox event {}",
-                seen.size(), event.getUuid());
+        return seen.size();
     }
 
     /**
@@ -1467,6 +1516,11 @@ public class NotificationFanOutService {
                     InstanceDeploymentChangedPayload p = Utils.OM.convertValue(
                             event.getRecordData(), InstanceDeploymentChangedPayload.class);
                     return p != null ? p.severity() : null;
+                }
+                // Board events carry no severity of their own; a fixed one per kind keeps a
+                // route's minimum-severity gate from dropping them all (task 82880ea6).
+                case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> {
+                    return AgentBoardRenderSupport.severity(event.getEventType());
                 }
             }
         } catch (Exception e) {

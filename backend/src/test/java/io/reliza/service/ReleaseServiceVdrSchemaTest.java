@@ -6,12 +6,15 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
 
 import org.cyclonedx.Version;
@@ -31,6 +34,9 @@ import org.junit.jupiter.api.Test;
 import io.reliza.common.Utils;
 import io.reliza.model.VdrMetadataProperty;
 import io.reliza.model.VdrSnapshotType;
+import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
+import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 
 /**
  * Structural guardrail that every VDR document shape emitted by {@link ReleaseService#generateVdrInternal}
@@ -298,6 +304,124 @@ public class ReleaseServiceVdrSchemaTest {
 
 		bom.setVulnerabilities(List.of(vuln("CVE-2024-0005", purl, analysis)));
 		assertSchemaValid(bom);
+	}
+
+	// ---- Enriched entries, built by the exporter's own enrichment helpers ----
+
+	/** A record as the drain stores it: DT's markdown references blob, aliases, cwes, dates. */
+	private static VulnerabilityRecordData enrichedRecord() {
+		VulnerabilityRecordData r = new VulnerabilityRecordData();
+		r.setPrimaryVulnId("CVE-2021-23369");
+		r.setAliases(new LinkedHashSet<>(List.of("CVE-2021-23369", "GHSA-f2jv-r9rf-7988", "SNYK-JS-HANDLEBARS-1056767")));
+		r.setDescription("Remote code execution when compiling untrusted templates.");
+		r.setCwes(new LinkedHashSet<>(List.of("CWE-94")));
+		r.setReferences("* [https://nvd.nist.gov/vuln/detail/CVE-2021-23369](https://nvd.nist.gov/vuln/detail/CVE-2021-23369)\n"
+				+ "* [Fix commit](https://github.com/handlebars-lang/handlebars.js/commit/b6d3de7)\n"
+				+ "* [https://security-tracker.debian.org/tracker/CVE-2021-23369](https://security-tracker.debian.org/tracker/CVE-2021-23369)\n");
+		r.setPublished(ZonedDateTime.parse("2021-04-12T14:15:00Z"));
+		r.setUpdated(ZonedDateTime.parse("2024-11-21T05:51:00Z"));
+		return r;
+	}
+
+	/** A finding's entry the way buildVdrVulnerabilityEntry assembles it, with PR I's affected ranges. */
+	private static Vulnerability enrichedEntry(String vulnId, String purl, VulnerabilityRecordData record) throws Exception {
+		Vulnerability v = new Vulnerability();
+		v.setBomRef(UUID.randomUUID().toString());
+		v.setId(vulnId);
+		ReleaseService.setVulnerabilityCommonFields(v, new VulnerabilityDto(purl, vulnId, VulnerabilitySeverity.HIGH,
+				Set.of(), Set.of(), Set.of(), null, null, null, null, null, null, null, null, null));
+		ReleaseService.applyVulnerabilityEnrichmentFromRecord(v, record);
+		Vulnerability.Affect affect = new Vulnerability.Affect();
+		affect.setRef(purl);
+		affect.setVersions(ReleaseService.affectedVersions(purl, ReleaseServiceVdrAffectedVersionsTest.rangesOf(
+				ReleaseServiceVdrAffectedVersionsTest.DT5_SHAPES, "GITHUB/GHSA-f2jv-r9rf-7988"), vulnId));
+		v.setAffects(List.of(affect));
+		return v;
+	}
+
+	private static Bom enrichedVdr() throws Exception {
+		Bom bom = newBaseBom(null, null, null);
+		String purl = "pkg:npm/handlebars@4.0.5";
+		bom.setComponents(List.of(libraryComponent(purl)));
+		VulnerabilityRecordData record = enrichedRecord();
+		// the same record reached through the CVE and through its GHSA alias
+		bom.setVulnerabilities(List.of(enrichedEntry("CVE-2021-23369", purl, record),
+				enrichedEntry("GHSA-f2jv-r9rf-7988", purl, record)));
+		return bom;
+	}
+
+	@Test
+	void enrichedVdr_withAdvisoriesAliasesAndRanges_isSchemaValid() throws Exception {
+		Bom bom = enrichedVdr();
+		Vulnerability cve = bom.getVulnerabilities().get(0);
+		assertEquals(3, cve.getAdvisories().size(), "every reference URL is an advisory");
+		assertEquals(List.of("GHSA-f2jv-r9rf-7988", "SNYK-JS-HANDLEBARS-1056767"),
+				cve.getReferences().stream().map(Vulnerability.Reference::getId).toList(),
+				"references are the other ids, never the entry's own id");
+		assertFalse(cve.getAffects().get(0).getVersions().isEmpty(), "sanity: the fixture carries ranges");
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void enrichedCdxVex_isSchemaValid() throws Exception {
+		// the CycloneDX VEX is the VDR transformed in place: same advisories and references
+		Bom bom = enrichedVdr();
+		Vulnerability.Analysis analysis = new Vulnerability.Analysis();
+		analysis.setState(Vulnerability.Analysis.State.NOT_AFFECTED);
+		analysis.setJustification(Vulnerability.Analysis.Justification.CODE_NOT_REACHABLE);
+		bom.getVulnerabilities().forEach(v -> v.setAnalysis(analysis));
+		ReleaseService.transformVdrBomToCdxVex(bom, FIXED_RELEASE, Boolean.FALSE, null, null, null, Boolean.FALSE);
+		assertEquals(2, bom.getVulnerabilities().size());
+		assertFalse(bom.getVulnerabilities().get(1).getAdvisories().isEmpty());
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void anAdvisoryIsTitledOnlyWhenItsLinkTextIsMoreThanTheUrl() {
+		List<Vulnerability.Advisory> advisories = ReleaseService.advisoriesOf(enrichedRecord().getReferences());
+		assertEquals("https://nvd.nist.gov/vuln/detail/CVE-2021-23369", advisories.get(0).getUrl());
+		assertNull(advisories.get(0).getTitle());
+		assertEquals("Fix commit", advisories.get(1).getTitle());
+		assertTrue(ReleaseService.advisoriesOf(null).isEmpty());
+	}
+
+	@Test
+	void aLinkThatIsNotAUriIsLeftOut_soOneBadLinkCannotInvalidateTheDocument() throws Exception {
+		VulnerabilityRecordData record = enrichedRecord();
+		record.setReferences(record.getReferences() + "* [notes](https://example.com/release notes)\n");
+		assertEquals(3, ReleaseService.advisoriesOf(record.getReferences()).size(), "the link with a space is dropped");
+		Bom bom = newBaseBom(null, null, null);
+		String purl = "pkg:npm/handlebars@4.0.5";
+		bom.setComponents(List.of(libraryComponent(purl)));
+		bom.setVulnerabilities(List.of(enrichedEntry("CVE-2021-23369", purl, record)));
+		assertSchemaValid(bom);
+	}
+
+	@Test
+	void anAliasReferenceNamesTheSourceThatPublishesIt() {
+		List<Vulnerability.Reference> refs = ReleaseService.aliasReferences("GHSA-f2jv-r9rf-7988", enrichedRecord());
+		assertEquals("CVE-2021-23369", refs.get(0).getId());
+		assertEquals("NVD", refs.get(0).getSource().getName());
+		assertEquals("https://nvd.nist.gov/vuln/detail/CVE-2021-23369", refs.get(0).getSource().getUrl());
+		assertEquals("SNYK-JS-HANDLEBARS-1056767", refs.get(1).getId());
+		assertEquals(2, refs.size(), "the entry's own GHSA is not a reference to itself");
+		assertEquals(2, ReleaseService.aliasReferences("GHSA-F2JV-R9RF-7988", enrichedRecord()).size(),
+				"nor under another casing");
+	}
+
+	@Test
+	void aUrlAsAReferenceIsSchemaInvalid_whichIsWhyUrlsAreAdvisories() throws Exception {
+		// the shape every enriched VDR had: references[] = {id: <url>}, no source
+		Bom bom = newBaseBom(null, null, null);
+		String purl = "pkg:npm/handlebars@4.0.5";
+		bom.setComponents(List.of(libraryComponent(purl)));
+		Vulnerability v = vuln("CVE-2021-23369", purl, null);
+		Vulnerability.Reference urlRef = new Vulnerability.Reference();
+		urlRef.setId("https://nvd.nist.gov/vuln/detail/CVE-2021-23369");
+		v.setReferences(List.of(urlRef));
+		bom.setVulnerabilities(List.of(v));
+		String json = BomGeneratorFactory.createJson(Version.VERSION_16, bom).toJsonString();
+		assertFalse(new JsonParser().validate(json.getBytes(StandardCharsets.UTF_8), Version.VERSION_16).isEmpty());
 	}
 
 	// ---- Negative fixture: prove the validator is real ----

@@ -1,0 +1,32 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:0b7c2b1e-1f6e-4a55-9f0a-000000000015",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "name": "app",
+      "version": "1.0.0",
+      "bom-ref": "pkg:npm/app@1.0.0",
+      "purl": "pkg:npm/app@1.0.0"
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "name": "a",
+      "version": "1.0.0",
+      "purl": "pkg:npm/a@1.0.0",
+      "bom-ref": "pkg:npm/a@1.0.0"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:npm/app@1.0.0",
+      "dependsOn": [
+        "pkg:npm/a@1.0.0"
+      ]
+    }
+  ]
+}

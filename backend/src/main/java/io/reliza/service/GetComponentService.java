@@ -80,6 +80,14 @@ public class GetComponentService {
 		return proj;
 	}
 	
+	/**
+	 * {@link #getComponentData(UUID)} only when the component belongs to {@code org}: a missing
+	 * component and another organization's (the shared external one included) both come back empty.
+	 */
+	public Optional<ComponentData> getComponentData (UUID uuid, UUID org) {
+		return getComponentData(uuid).filter(cd -> null != org && org.equals(cd.getOrg()));
+	}
+
 	public Optional<ComponentData> getComponentDataByBranch (UUID branchUuid) {
 		Optional<ComponentData> opd = Optional.empty();
 		Optional<Component> proj = getComponentByBranch(branchUuid);

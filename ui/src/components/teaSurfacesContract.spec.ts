@@ -56,11 +56,11 @@ describe('TEA surfaces contract', () => {
         expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
     })
 
-    it('graphqlQueries holds the eight TEA documents', () => {
+    it('graphqlQueries holds the nine TEA documents', () => {
         const q = src('../utils/graphqlQueries.ts')
         const docs = ['TEA_PROFILE_EDITOR_VIEW', 'TEA_PROFILES_OF_ORG', 'TEA_ORG_DISCOVERY', 'SAVE_TEA_PROFILE', 'DELETE_TEA_PROFILE',
-            'TEA_PROFILE_EXPOSURE_CHANGE', 'TEA_COMPONENT_NAME', 'TEA_MEMBERSHIP_EXPOSURE_CHANGE']
-        expect(docs).toHaveLength(8)
+            'TEA_PROFILE_EXPOSURE_CHANGE', 'TEA_COMPONENT_NAME', 'TEA_MEMBERSHIP_EXPOSURE_CHANGE', 'TEA_COMPONENT_PERSPECTIVES']
+        expect(docs).toHaveLength(9)
         for (const doc of docs) {
             expect(q).toContain('const ' + doc + ' = gql`')
         }
@@ -69,14 +69,14 @@ describe('TEA surfaces contract', () => {
         expect(q).toContain('teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile)')
         expect(q).toContain('teaMembershipExposureChange(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids)')
         expect(q).toContain('TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,')
+        expect(q).toContain('TeaComponentPerspectivesGql: TEA_COMPONENT_PERSPECTIVES,')
     })
 
-    // TEA-9 round 2 (design 3.11): the three UI writes of setPerspectivesOnComponent confirm on the
-    // membership dry-run of exactly the list they send, before they send it.
+    // TEA-9 round 2 (design 3.11): the UI write of setPerspectivesOnComponent confirms on the
+    // membership dry-run of exactly the list it sends, before it sends it. The OrgSettings members
+    // dialog adds through main's addPerspectiveToComponent since the main merge (TEA-16): see below.
     const MEMBERSHIP_WRITES: [string, string][] = [
         ['ComponentView.vue', 'async function savePerspectives'],
-        ['OrgSettings.vue', 'async function addComponentToPerspective'],
-        ['OrgSettings.vue', 'async function addProductToPerspective'],
     ]
     it.each(MEMBERSHIP_WRITES)('%s %s queries the membership dry-run and confirms before setPerspectivesOnComponent', (file, fn) => {
         const f = src(file)
@@ -100,22 +100,58 @@ describe('TEA surfaces contract', () => {
         expect(delta).toBeLessThan(confirm)
     })
 
+    // TEA-16: main's one-membership add, with TEA-9's dry-run on the list the add produces (the stored
+    // perspectives, read fresh, plus the selected one) in one helper in front of the add.
+    it('OrgSettings confirms on the membership dry-run of the list the add produces, read fresh, before addPerspectiveToComponent', () => {
+        const os = src('OrgSettings.vue')
+        const hStart = os.indexOf('async function confirmTeaMembershipAdd (')
+        expect(hStart).toBeGreaterThan(0)
+        const helper = os.slice(hStart, os.indexOf('\n}\n', hStart))
+        const gate = helper.indexOf('if (!teaProfilesAvailable(')
+        const stored = helper.indexOf('graphqlQueries.TeaComponentPerspectivesGql')
+        const dryRun = helper.indexOf('graphqlQueries.TeaMembershipExposureChangeGql')
+        const confirm = helper.indexOf('teaConfirmBeforeMembership(')
+        const delta = helper.indexOf('teaMembershipDelta(')
+        const swal = helper.indexOf("Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true")
+        const answer = helper.indexOf('return !!answer?.isConfirmed')
+        expect(gate).toBeGreaterThan(0)
+        expect(stored).toBeGreaterThan(gate)
+        expect(helper.slice(stored, dryRun)).toContain("fetchPolicy: 'no-cache'")
+        expect(helper.slice(stored, dryRun)).toContain('const current: any[] = storedResp.data.component?.perspectiveDetails ?? []')
+        expect(dryRun).toBeGreaterThan(stored)
+        expect(helper.slice(dryRun, confirm)).toContain("fetchPolicy: 'no-cache'")
+        expect(delta).toBeGreaterThan(dryRun)
+        expect(delta).toBeLessThan(confirm)
+        expect(swal).toBeGreaterThan(confirm)
+        expect(answer).toBeGreaterThan(swal)
+        for (const [fn, sel, word] of [['addComponentToPerspective', 'selectedComponentToAdd', 'component'],
+            ['addProductToPerspective', 'selectedProductToAdd', 'product']]) {
+            const start = os.indexOf('async function ' + fn + '(')
+            expect(start).toBeGreaterThan(0)
+            const body = os.slice(start, os.indexOf('\n}\n', start))
+            const ask = body.indexOf('if (!(await confirmTeaMembershipAdd(' + sel + ".value, '" + word + "'))) return")
+            expect(ask, fn).toBeGreaterThan(0)
+            expect(ask, fn).toBeLessThan(body.indexOf('await addPerspectiveToComponent(graphqlClient,'))
+        }
+    })
+
     it('the membership dry-run sends exactly the list each write sends', () => {
         const cv = src('ComponentView.vue')
         const save = cv.slice(cv.indexOf('async function savePerspectives('), cv.indexOf('\nfunction resetPerspectives'))
         expect(save).toContain('variables: { componentUuid: componentUuid, perspectiveUuids: selectedPerspectives.value }')
         expect(save).toContain('perspectiveUuids: selectedPerspectives.value\n')
         expect(save).toContain("isComponent.value ? 'component' : 'product'")
+        // OrgSettings (TEA-16): the helper reads the component being added and asks about the list
+        // the add produces, the stored perspectives plus the selected one.
         const os = src('OrgSettings.vue')
-        for (const [fn, sel, word] of [['addComponentToPerspective', 'selectedComponentToAdd', 'component'],
-            ['addProductToPerspective', 'selectedProductToAdd', 'product']]) {
-            const start = os.indexOf('async function ' + fn + '(')
-            const body = os.slice(start, os.indexOf('\n}\n', start))
-            expect(body).toContain('const perspectiveUuids = [selectedPerspectiveUuid.value]')
-            expect(body).toContain('variables: { componentUuid: ' + sel + '.value, perspectiveUuids }')
-            expect(body).toMatch(/componentUuid: \w+\.value,\s+perspectiveUuids\s+\}/)
-            expect(body).toContain("delta.names, '" + word + "')")
-        }
+        const hStart = os.indexOf('async function confirmTeaMembershipAdd (')
+        const helper = os.slice(hStart, os.indexOf('\n}\n', hStart))
+        expect(helper).toContain('variables: { componentUuid }')
+        expect(helper).toContain('variables: { componentUuid, perspectiveUuids: afterAdd }')
+        const afterAddLine = helper.split('\n').find(l => l.includes('const afterAdd: string[] = [...current.map('))
+        expect(afterAddLine).toBeDefined()
+        expect(afterAddLine).toContain('selectedPerspectiveUuid.value]')
+        expect(helper).toContain('teaMembershipDelta(afterAdd, current, perspectives.value)')
     })
 
     it('ComponentView tells the TEA editor whether the component is archived (TEA-9)', () => {

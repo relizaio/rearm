@@ -52,7 +52,7 @@ describe('ApiKeyPermissionsModal: EXTERNAL keys', () => {
 
     it('edits the grants of an external key: lead line, no Device Login tab, the editor in externalKey mode', async () => {
         const w = await open('EXTERNAL')
-        expect(document.body.textContent).toContain('Grants of external key k-external')
+        expect(document.body.textContent).toContain('Grants of external key External \u00B7 k-extern')
         expect(document.body.textContent).toContain('Read-only access to what is published on TEA. Pick the organization, '
             + 'or the perspectives, products and components the outside party may read.')
         expect(tabs(w)).toEqual(['Permissions', 'Notes'])
@@ -66,7 +66,7 @@ describe('ApiKeyPermissionsModal: EXTERNAL keys', () => {
 
     it('keeps the usual editor for a Free Form key', async () => {
         const w = await open('FREEFORM')
-        expect(document.body.textContent).toContain('Edit key k-freeform')
+        expect(document.body.textContent).toContain('Edit key Free Form \u00B7 k-freefo')
         expect(document.body.textContent).not.toContain('Read-only access to what is published on TEA')
         expect(tabs(w)).toEqual(['Permissions', 'Device Login', 'Notes'])
         expect(w.findComponent(ScopedPermissions).props('externalKey')).toBe(false)

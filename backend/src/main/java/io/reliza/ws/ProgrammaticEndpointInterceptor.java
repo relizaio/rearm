@@ -19,6 +19,7 @@ import graphql.ExecutionResult;
 import graphql.ExecutionResultImpl;
 import graphql.GraphqlErrorBuilder;
 import graphql.language.OperationDefinition;
+import io.reliza.common.LogSafe;
 import io.reliza.ws.ProgrammaticSchemaRegistry.RootSelection;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -56,7 +57,7 @@ public class ProgrammaticEndpointInterceptor implements WebGraphQlInterceptor {
 			return chain.next(request);
 		}
 		log.warn("Programmatic endpoint refused non-programmatic root field(s) {} ({} {})", refused,
-				sel.get().operation(), request.getOperationName());
+				sel.get().operation(), LogSafe.text(request.getOperationName()));
 		ExecutionResult result = ExecutionResultImpl.newExecutionResult()
 				.addError(GraphqlErrorBuilder.newError()
 						.message("Not available on the programmatic endpoint: " + String.join(", ", refused)

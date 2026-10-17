@@ -1,8 +1,9 @@
 import { logger } from '../../logger';
-import { BomDto, BomRecord, RebomOptions, BomInput } from '../../types';
+import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, establishPurl, attachRebomToolToBom, normalizeLicensesInBom } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 
@@ -10,8 +11,36 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
   try {
     let mergedBom = null
     const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    // Component releases without an SBOM join as synthetic inputs, after the per-input
+    // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
+    // them and lists them in the root's dependencies like every other input.
+    bomObjs.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
+    // merge-boms carries the inputs' dependency entries but not their services; put the
+    // services back first, so a service-vs-component bom-ref clash is settled before the
+    // de-dup keys components by bom-ref. In the top-level-only export only the services a
+    // surviving dependency entry names are carried.
+    if (mergedBom) mergedBom = carryServices(mergedBom, bomObjs, { referencedOnly: rebomOptions.tldOnly === true }).bom
+    // Before the file filter: the filter keys what it drops by bom-ref and assumes one
+    // component per ref, and a hoisted subtree can hold file components it has to see.
+    if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
+    // After the de-dup: an uploaded copy of the root collapsed into it has already given the
+    // root its own supplier, hashes and licenses, which the release's facts never replace
+    // (SCORE-30 ADR-6, SCORE-40 ADR-3).
+    if (mergedBom) mergedBom = fillReleaseNode(mergedBom, rebomOptions.releaseNode).bom
+    if (mergedBom && rebomOptions.excludeFileComponents === true) {
+      // On the merged graph, not per input: merge-boms re-roots the inputs, and the
+      // splice has to run on the graph the root actually has. The inputs of a product
+      // merge are themselves filtered merges, so what they already left out is added to
+      // the count this merge writes.
+      const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
+      mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
+    }
+    // A check on the final graph, after every pass that may repair a reference.
+    if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
+    // After it: adds no dependency ref, and describes the placeholders that survived.
+    if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
     return mergedBom
   } catch (e) {
     logger.error({ err: e }, "Error During merge")
@@ -72,6 +101,10 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     // The forEach + async pattern was also broken (doesn't actually await)
     
     const purl = establishPurl(undefined, rebomOptions)
+    // merge-boms folds by purl or bom-ref under FLAT (any structure but HIERARCHICAL) and drops a
+    // listed expression beside the survivor's licences without a word: name it here (SCORE-40 ADR-8),
+    // and keep what it names for the record on the merged node (SCORE-44 ADR-2).
+    const drops = rebomOptions.structure !== BomStructure.HIERARCHICAL ? logListedLicenseDrops(bomObjects) : []
     bomPaths = await createTmpFiles(bomObjects)
     const command = ['bomutils', 'merge-boms']
     
@@ -120,11 +153,16 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     if (!jsonObj.metadata.tools.components) {
       jsonObj.metadata.tools.components = [];
     }
+    // The merge writes fresh metadata: keep the tools that produced the inputs, and when.
+    mergeToolsFromInputs(jsonObj, bomObjects)
+    mergeLifecyclesFromInputs(jsonObj, bomObjects)
     
     const processedBom = await processBomObj(jsonObj)
     if (!processedBom) {
       throw new Error('BOM processing failed - processBomObj returned null')
     }
+    // On the CLI's output, before the validation and before the de-dup of mergeBoms (SCORE-44 ADR-2).
+    recordListedLicenseDrops(processedBom, drops)
     await validateBom(processedBom)
     
     // Attach rebom tool to the merged BOM (idempotent - won't duplicate if already present)
@@ -191,6 +229,9 @@ async function processBomObj(bom: any): Promise<any> {
   })
 
   normalizeLicensesInBom(processedBom);
+  // Before the validation: a license fold of merge-boms can leave an expression beside the
+  // duplicate's license entries, which CycloneDX 1.6 refuses; the survivor's stand (SCORE-40 ADR-6).
+  settleLicenseFolds(processedBom);
 
   // NOTE: rearm-cli 26.01.12+ bomutils merge-boms now handles dependency deduplication.
   // This is lightweight defensive validation for BOMs from other sources or legacy versions.

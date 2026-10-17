@@ -53,8 +53,159 @@ Exports the merged SBOM for the release. Options:
 | **Media Type** | `JSON`, `CSV`, or `Excel` |
 | **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
 | **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
+| **Leave out file components** | Drops components of type `file` (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out in the metadata property `reliza:export:fileComponentsExcluded`; it applies to every media type. On the API: `releaseSbomExport(excludeFileComponents: true)` |
 
 Click **Export** to download the file.
+
+### Component releases without an SBOM
+
+Component releases of a product that have no SBOM (or whose SBOMs are all excluded by the coverage
+filter) appear in the product export as components with the property `reliza:sbom:missing`,
+listed in the root's dependencies, and a `compositions` entry with `aggregate: unknown` states that
+their own dependencies are unknown. `reliza:export:componentsWithoutSbom` on the document counts
+them. Such a component's bom-ref is `urn:rearm:release:<release uuid>`; the property's value says
+why ReARM holds no SBOM for it: `NO_SBOM_ARTIFACT` (none was uploaded) or `COVERAGE_EXCLUDED` (every
+SBOM it has was left out by **Exclude coverage types**). It carries the release's purl when the
+release records one, and none otherwise. A component release's first SBOM, or a replaced SBOM,
+rebuilds the merged exports of every product above it, nested products included, so a placeholder
+leaves the product export once its release has an SBOM. A product none of whose component releases has an SBOM
+still has nothing to export. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request. CSV and Excel list these components as rows too; the
+property and the `compositions` entry are in the CycloneDX JSON only.
+
+### What the nodes ReARM makes carry
+
+ReARM writes three kinds of node into an export itself: a component release's own node (the root
+of its merged SBOM), a product's root, and the placeholders of component releases without an SBOM
+(see [Component releases without an SBOM](#component-releases-without-an-sbom)). Everything else in
+an export is what was uploaded, and ReARM never replaces uploaded data.
+
+**Supplier.** A node ReARM makes names as supplier the publisher of the release's deliverable when
+one is recorded, else the component's **Supplier**, else the organization for its own (INTERNAL)
+software, else nobody (EXTERNAL software). The root of an uploaded SBOM takes the same rule when it
+is uploaded, and keeps a supplier its generator wrote. When a change of the component's supplier
+shows, as the field states it:
+
+> Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set. A root
+> uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM (a new
+> serialNumber) uploaded to a release made after the change carries the new value in that release's
+> export. An identical file is answered with the stored row, unchanged.
+
+**Hashes.** A release's node carries the hashes of the release's one hashed outbound deliverable
+when the deliverable's purl type agrees with the node's, and none otherwise. The root of an SBOM
+attached to a source code entry carries its commit in `pedigree.commits`, not as a hash.
+
+**Declared licence.** A licence can be declared at three levels: on a release, on its component, and
+as the organization default. The first level that declares one, in that order, is the licence on the
+release's node and on its placeholder in a product; a licence URL comes only from the level that won,
+and a release that declares its own licence carries no URL. A value is an SPDX licence expression:
+ids from the [SPDX licence list](https://spdx.org/licenses/) in any case (stored in the list's
+casing, `apache-2.0` becomes `Apache-2.0`), a trailing `+`, `LicenseRef-` followed by letters,
+digits, dots and hyphens for a licence that is not on the list, the operators `AND`, `OR` and `WITH`
+in upper case, and parentheses, at most 512 characters. `NOASSERTION`, `NONE`, `DocumentRef-` and
+licence names are refused. The export writes it as follows:
+
+- a single SPDX id:
+
+  ```json
+  "licenses": [{ "license": { "id": "Apache-2.0" } }]
+  ```
+
+- a single `LicenseRef-` id with a URL:
+
+  ```json
+  "licenses": [{ "license": { "name": "LicenseRef-Acme-Commercial", "url": "https://example.com/licence.txt" } }]
+  ```
+
+- anything else (a compound expression, or a `LicenseRef-` id without a URL), with no URL:
+
+  ```json
+  "licenses": [{ "expression": "MIT OR Apache-2.0" }]
+  ```
+
+On a product export, a component release's declared licence stands on its node; licence ids that
+another uploaded SBOM lists for the same purl appear beside it, while a listed expression or
+`NOASSERTION` does not. A root whose generator wrote licences, `NOASSERTION` included, keeps them.
+ReARM never reads a LICENSE file or an artifact to find a licence.
+
+**When a change shows.** A release's own exports show a change at their next request. A change of
+a release's licence also rebuilds the product exports above it. A change of the organization default
+or of a component does not: a product exported before it serves its stored export until something
+rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
+regenerates merged exports). Likewise a release exported before an upload keeps serving its stored
+export until a product above it is rebuilt or the release's declared facts change.
+
+**Where to set them.** In the UI: **Organization Settings**, **Admin Settings**, **Default declared
+licence** (organization administrators); a component's settings, **Declared licence and supplier**;
+a release's **Meta** tab, **Declared licence for this release**. On the API:
+`updateOrganizationSettings` (`defaultLicenseExpression`, `defaultLicenseUrl`); `updateComponent`,
+`createComponent` and `createComponentProgrammatic` (`licenseExpression`, `licenseUrl`,
+`supplierName`); `updateRelease` and `addReleaseProgrammatic` (`licenseExpression`). The ReARM CLI
+and the Terraform provider gain them in a later release.
+
+**What still fails.** The scoring check Component License still fails on the root of an uploaded
+SBOM whose generator wrote no licence, which is the release's own software in an SBOM attached to
+the release or to a deliverable: the declared licence is not written there. See
+[Reading the report](./sbom-scoring#reading-the-report).
+
+### Listed licences a merge dropped
+
+When an SBOM in a product lists one of the product's component releases with a licence expression
+and the merge keeps another licence on that node (the licence the release declares, or the licence
+its own SBOM carries), the node records each dropped expression as a property
+`reliza:license:dropped`, one entry per expression, with the text as the listing wrote it. Nothing
+is recorded for `NOASSERTION`, `NONE` or an expression the node still holds. Licence ids are not
+recorded: they are merged beside kept ids or names, and dropped beside a kept expression, where only
+the server log names them. The property stays in the export when internal metadata is left out, and
+is inside the signed document. From the ReARM release after 26.10.52 on; product exports cached
+before it are rebuilt on their next request.
+
+### Which component may supersede an uploaded SBOM
+
+A CycloneDX `serialNumber` identifies one SBOM lineage within your organization. Uploading the same
+`serialNumber` with a higher `version` makes that version the one ReARM reads for every release that
+holds the `serialNumber`; whether a stored export shows it follows
+[When a change shows](#what-the-nodes-rearm-makes-carry). From the ReARM release after 26.10.52 on,
+a lineage belongs to the component whose release first uploaded it, and only releases of that
+component can supersede it with a higher version. An upload of a higher version to a release of
+another component is refused, whoever uploads it and whatever their permissions, with the error code
+`SBOM_SERIAL_NUMBER_OWNED_BY_OTHER_COMPONENT` and a message that tells the uploader to generate an
+SBOM with its own `serialNumber`; the message never names the owning component. An SPDX document
+uploaded as the next version of a stored SBOM follows the same rule. When the target release already
+exists, the refusal is recorded on it as a `GUARD` update event; a refused `rearm addrelease` creates
+no release and records nothing. An identical file uploaded again is not a new version and is answered
+with the stored document, as before. Lineages stored before this release are assigned to their
+component at the first start of the upgraded server. A `serialNumber` that several components had
+uploaded before the upgrade is left without an owner: the first of those components to upload a
+higher version becomes its owner, and an organization admin can reassign it at any time. Organization
+admins read the owner of a lineage with the `sbomLineageOwner` query and move a lineage to another
+component (a component re-created under a new identifier, or a `serialNumber` shared by mistake) with
+the `reassignSbomLineageOwner` mutation; both take the organization and the `serialNumber`, with or
+without the `urn:uuid:` prefix.
+
+### Scoring the export
+
+Beside **Export**, **Score** checks the document the export would give you, with the same content options,
+against the CISA 2026 minimum elements and the FDA premarket SBOM expectations, and shows the
+report in the same dialog. It applies to the CycloneDX 1.6 (JSON) format. See
+[Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring).
+
+The score ignores the two metadata switches (**Include support metadata** and **Include internal
+metadata**): it scores the document the organization setting gives, with the support facts
+included when the organization's support disclosure is ENABLED and ReARM's markers kept. The
+other options, **Leave out file components** included, apply to the score as to the export.
+
+The `fda` support checks (level of support and end of support) do not judge files, cryptographic
+assets, data, machine-learning models or devices: those components are not software packages a
+supplier supports, and the report says how many it skipped.
+
+### Signing the export
+
+When the organization has an SBOM signing key, every CycloneDX JSON export is signed with it: the
+document carries a root JSF `signature` and the property `reliza:export:signed` `true`; without a
+key it says `false` and why, in `reliza:export:unsignedReason`. After an export the dialog shows
+one line saying whether the file you received is signed, and CSV and Excel exports carry no
+signature. See [Signing exported SBOMs](./signing-exported-sboms).
 
 ## Per-export metadata options
 
@@ -80,10 +231,16 @@ Every caller written before these arguments existed -- including `rearm-cli` -- 
 
 ### Include support metadata
 
-**Shown only when your organization publishes support attestations**, and **off by default**.
-The organization setting says the disclosure is *allowed*; it does not say every download wants
-it, so each export opts in. When the organization setting is off the switch is absent rather
-than greyed out -- the place to change that is Organization Settings, not the export dialog.
+**Shown whenever the server offers the option**, and **off by default**. The organization
+setting says the disclosure is *allowed*; it does not say every download wants it, so each export
+opts in. The switch follows the setting of the organization that **owns the release**, which may
+differ from the organization selected in the header. When that setting is off the switch is
+**greyed out**, with a hint that support disclosure is off for this organization and that an
+organization admin turns it on in **Organization Settings -> Support disclosure export**. While
+ReARM checks the setting, or when it cannot, the switch is greyed out and the export follows the
+organization setting. A greyed-out switch sends nothing, so the organization setting decides. A
+server that does not offer the option at all (a ReARM CE installation before its next sync) shows
+no switch, and says so.
 
 | Setting | Effect |
 |---|---|
@@ -111,7 +268,23 @@ What "ReARM's own markers" means, precisely:
 | Removed when off | Note |
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
-| The `io.reliza` / `ReARM` entry under `metadata.tools` | Other producers' tool entries -- your scanner, your build system -- are your toolchain and are left alone |
+
+**Not removed: what your SBOM generator wrote.** It is your content, and this setting does not
+touch it. Component properties (including cdxgen's `SrcFile`, `ResolvedUrl` and similar working
+data, prefixed `internal:` from cdxgen 13), component evidence and cdxgen's npm registry analysis
+are exported as uploaded, in merged release exports and single-artifact downloads alike.
+Formulation, annotations and services also appear in a **single-artifact download**. A **merged
+release export** leaves those three sections out, with either setting: the merge does not
+carry them over from its inputs. Build-machine paths in particular are not
+removed: if an SBOM must not disclose them, remove them before you upload it (for cdxgen, see its
+options for excluding evidence and formulation).
+
+**Always kept: `metadata.tools`.** ReARM's own entry (`io.reliza` / `rearm`) names the ReARM
+version that produced the export (the deployment's ReARM version; `26.08.95` when the deployment
+does not set one), and stays with both settings: ReARM generated the merged
+document and wrote any support disclosure in it, so a reader needs to see it among the tools.
+The tools that produced the SBOMs you uploaded -- your SBOM generator, your build plugin, your
+scanner -- are carried into merged and aggregated exports beside it.
 
 **Not removed**, because they are the disclosure rather than provenance about ReARM:
 `reliza:support:*`, `reliza:device:*` (the device's own 524B support window), and the
@@ -119,9 +292,27 @@ What "ReARM's own markers" means, precisely:
 `declarations` block points at. Those are governed by the other switch, and when it is off they
 are already gone.
 
-**With both switches off, nothing of ReARM's remains** -- not one `reliza:` property. That
-includes the `reliza:support:disclosure` marker, which is withheld when a caller sends
-`includeSupportMetadata: false`.
+**Not removed either: `reliza:export:fileComponentsExcluded`.** It is on the document only when
+**Leave out file components** was on, and it is the file's own record that file components were
+left out of it, and how many. It describes the document you hold rather than ReARM's working
+state, so a reader of an export with internal metadata off can still tell that the inventory is
+not complete.
+
+**Not removed either: `reliza:sbom:missing` and `reliza:export:componentsWithoutSbom`.** They mark
+the components that stand for component releases ReARM holds no SBOM for, and count them (see
+[Component releases without an SBOM](#component-releases-without-an-sbom)). Without them a reader
+could not tell a release without an SBOM from one whose SBOM lists nothing.
+
+**Not removed either: the signing record.** `reliza:export:signed`, with
+`reliza:export:signatureKeyId` on a signed export or `reliza:export:unsignedReason` on an unsigned
+one, says whether the file is signed (see [Signing exported SBOMs](./signing-exported-sboms)). It
+is part of the signed content and describes the document you hold, so it stays with either setting.
+
+**With both switches off, no other `reliza:` property remains**, not even the
+`reliza:support:disclosure` marker, which is withheld when a caller sends
+`includeSupportMetadata: false`. What remains of ReARM is its entry under `metadata.tools` and,
+where rebom recorded one, the top-level `bom` external reference to the document as uploaded
+("Source document as uploaded by the producer", a `urn:cdx:` BOM-Link to ReARM's stored copy).
 
 That marker exists to disambiguate an *absent* support property: "we hold no attestation for
 this component" versus "this document asserts nothing about support". The ambiguity is only real
@@ -216,6 +407,19 @@ requested it declined the support disclosure**. When the marker is there it has 
 | `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
 | *no marker at all* | The requester asked for a document without the support disclosure (`includeSupportMetadata: false`), so there is no support statement for a marker to qualify. Also the case for the raw download |
 
+With `derived-non-attested-current-state` the document also carries two counts in
+`metadata.properties`, as decimal strings, written even when 0. A component is identified when it
+has a purl, or a purl-shaped `bom-ref` (some tools, Trivy for Go's `stdlib` for example, put the
+purl only there), or a cpe. Every component node is counted, nested ones and `metadata.component`
+included.
+
+| Property | Meaning |
+|---|---|
+| `reliza:support:unidentifiedComponents` | How many components could not be identified, so no support fact can be matched to them |
+| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn) |
+
+Neither appears with `provenance-stripped-no-disclosure` or without a marker.
+
 Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
 when it does, and reading the third as either is how they conclude the server made a claim it did
 not. The values are deliberately distinct so that absence and silence cannot be confused.
@@ -227,7 +431,9 @@ it is not, because the person holding the file is the one who asked for it that 
 stripped identically -- only the statement differs.
 
 Note that the export modal now defaults the support switch **off**, so a document downloaded from
-the UI without touching it is the declined case and carries no marker. Scripted callers that omit
+the UI without touching it is the declined case and carries no marker. When the release's
+organization setting is off the switch is greyed out and sends nothing, so that document is marked
+`provenance-stripped-no-disclosure`. Scripted callers that omit
 the argument are unaffected: omission means "the organization decides" and is marked as before.
 
 Support facts are **derived current state, not a frozen attestation**: they are computed when the

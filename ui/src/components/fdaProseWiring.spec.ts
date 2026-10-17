@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
 import { FDA_PROSE_FIELDS } from '@/utils/fdaProseInput'
+import { escapeRegExp } from '@/utils/specText'
 
 /**
  * Import and wiring assertions for the FDA prose form and the device support window.
@@ -95,7 +96,7 @@ describe('the device support window is wired into ReleaseView', () => {
         ['formatSupportWindow', '@/utils/supportWindowDisplay']
     ])('imports %s from %s', (symbol, module) => {
         expect(releaseView).toMatch(new RegExp(
-            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${module.replace(/\//g, '\\/')}'`))
+            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
     })
 
     it.each([

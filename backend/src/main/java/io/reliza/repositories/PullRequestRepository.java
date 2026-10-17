@@ -43,6 +43,21 @@ public interface PullRequestRepository extends CrudRepository<PullRequest, UUID>
 	List<PullRequest> findByOrg(@Param("orgUuidAsString") String orgUuidAsString);
 
 	/**
+	 * The org's PRs whose endpoint, normalised the way the board matches linked PR URLs, is one of
+	 * {@code keys}: query and fragment dropped, then a trailing {@code .git} and slashes, all
+	 * lower-cased. The caller passes keys normalised the same way and makes the exact match on the few
+	 * rows this returns -- rather than loading the org's whole PR table per task (9af9d722 T-1).
+	 */
+	@Query(value = "SELECT * FROM rearm.pull_requests pr "
+			+ "WHERE pr.record_data->>'org' = :orgUuidAsString "
+			+ "AND lower(regexp_replace(regexp_replace(pr.record_data->>'endpoint', '[?#].*$', ''), "
+			+ "'(\\.git)?/*$', '')) IN (:keys) "
+			+ "ORDER BY pr.created_date DESC",
+			nativeQuery = true)
+	List<PullRequest> findByOrgAndEndpointKeys(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("keys") java.util.Collection<String> keys);
+
+	/**
 	 * Same as {@link #findByOrg} but narrowed to the supplied state names.
 	 * Caller filters via the GraphQL {@code states} arg — the default UI
 	 * load passes {@code [OPEN]} so terminal-state PRs aren't fetched

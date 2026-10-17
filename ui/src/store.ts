@@ -9,6 +9,7 @@ import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
+import { withExpectedRevision } from '@/utils/componentRevision'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
@@ -213,6 +214,19 @@ const storeObject : any = {
              * would reject.
              */
             supportInjectionSupported: true,
+            /**
+             * False once the organization settings section "SBOM export signing" had its key
+             * list refused as schema drift: a backend without SBOM signing (a CE mirror before
+             * its sync). Latched for the session, like the flag above; a reload clears it.
+             */
+            sbomSigningSupported: true,
+            /**
+             * False once a read of the declared licence (organization default, component or
+             * release, SCORE-42) was refused as schema drift: a backend without the fields (a CE
+             * mirror before its sync). Latched for the session, like the flags above; a reload
+             * clears it. A failed request does not set it.
+             */
+            declaredLicenseSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -443,6 +457,12 @@ const storeObject : any = {
         },
         SET_SUPPORT_INJECTION_SUPPORTED (state : any, supported : boolean) {
             state.supportInjectionSupported = supported
+        },
+        SET_SBOM_SIGNING_SUPPORTED (state : any, supported : boolean) {
+            state.sbomSigningSupported = supported
+        },
+        SET_DECLARED_LICENSE_SUPPORTED (state : any, supported : boolean) {
+            state.declaredLicenseSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -1256,10 +1276,13 @@ const storeObject : any = {
                     : null,
                 clearOwner: component.clearOwner || false
             }
+            // TPF-62: the revision the settings form was read at, when the caller sends one; the
+            // server then refuses the save if the component changed since. Never sent as null.
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
                 variables: {
-                    'component': compUpdObject
+                    'component': withExpectedRevision(compUpdObject,
+                        typeof component.expectedRevision === 'number' ? component.expectedRevision : null)
                 }
             })
             context.commit('ADD_UPDATE_COMPONENT', data.data.updateComponent)
@@ -2426,6 +2449,30 @@ const storeObject : any = {
             context.commit('SET_USERS', response.data.users)
             return response.data.users
         },
+        // The org's keys, enough to label a key actor (task t20261013-072815-31687). The server answers
+        // org admins only and the caller asks only as one; a failure leaves the short-id labels, no notification.
+        async fetchApiKeyRefsOfOrg (context: any, orgUuid: string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query apiKeyRefsOfOrg($orgUuid: ID!) {
+                            apiKeys(orgUuid: $orgUuid) {
+                                uuid
+                                type
+                                declaredName
+                                notes
+                                status
+                            }
+                        }`,
+                    variables: { orgUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return response.data?.apiKeys || []
+            } catch (err) {
+                console.error(err)
+                return []
+            }
+        },
         async updateUserName (context: any, name: string) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
@@ -2636,7 +2683,6 @@ const storeObject : any = {
                             org
                             name
                             displayName
-                            effectiveDisplayName
                             iconKind
                             color
                             notes
@@ -2685,9 +2731,7 @@ const storeObject : any = {
                             boundApiKeys {
                                 uuid
                                 type
-                                object
-                                keyOrder
-                                notes
+                                declaredName
                             }
                         }
                     }`,
@@ -2876,7 +2920,8 @@ const storeObject : any = {
                         agentTask(uuid: $uuid) {
                             ${AGENT_TASK_SELECTION}
                             testedHeads { pr head }
-                            pullRequests { url head }
+                            pullRequests { url head unit }
+                            unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
                         }
                     }`,
                 variables: { uuid },
@@ -3436,6 +3481,23 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskSupersedePullRequest
+        },
+        /**
+         * A person unlinks a PR that should never have counted (task t20261010-033523-18839, t20261010-033525-24393):
+         * a mistaken link, or the superseded half of a pair. Recorded on unlinkedPrs. BOARD_WRITE.
+         */
+        async agentTaskUnlinkPr (context: any, payload: { taskUuid: string, prUrl: string, note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskUnlinkPr($taskUuid: ID!, $prUrl: String!, $note: String) {
+                        agentTaskUnlinkPr(taskUuid: $taskUuid, prUrl: $prUrl, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskUnlinkPr
         },
         /** A task's work level, a rung of the board's ladder (task RD3-6); null clears it to the default (RD2-1). BOARD_WRITE. */
         async agentTaskSetWorkLevel (context: any, payload: { taskUuid: string, workLevel: number | null }) {
