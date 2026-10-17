@@ -110,22 +110,35 @@ public class SourceCodeEntryDataFetcher {
 		SourceCodeEntryData sced = dfe.getSource();
 		List<ArtifactWebDto> artList = new LinkedList<>();
 		int missing = 0;
-		if (null != sced.getArtifacts()) {
+		int foreign = 0;
+		if (null != sced.getArtifacts() && !sced.getArtifacts().isEmpty()) {
+			// Scoped to the entry's owner (GetSourceCodeEntryService.ownerOrg, the one definition
+			// of the entry's org this class uses); an entry with no known owner shows none.
+			UUID org = getSourceCodeEntryService.ownerOrg(sced);
 			for (SCEArtifact scea : sced.getArtifacts()) {
 				// Skip a dangling artifact reference rather than .get()-throwing
 				// on the missing row, which surfaced as a SERVICE_ERROR that
 				// failed the whole enclosing release query.
 				var oad = artifactService.getArtifactData(scea.artifactUuid());
-				if (oad.isPresent()) {
-					artList.add(ArtifactWebDto.fromData(oad.get(), scea.componentUuid()));
-				} else {
+				if (oad.isEmpty()) {
 					missing++;
+				} else if (null == org || !org.equals(oad.get().getOrg())) {
+					// Another org's artifact merged into this entry before the merge
+					// checked ownership, or any artifact of an entry with no known
+					// owner: not this entry's to show.
+					foreign++;
+				} else {
+					artList.add(ArtifactWebDto.fromData(oad.get(), scea.componentUuid()));
 				}
 			}
 		}
 		if (missing > 0) {
 			log.warn("Source code entry {} references {} missing artifact(s); omitted from artifactDetails",
 					sced.getUuid(), missing);
+		}
+		if (foreign > 0) {
+			log.warn("LEGACY-REF: source code entry {} references {} artifact(s) outside its organization; omitted from artifactDetails",
+					sced.getUuid(), foreign);
 		}
 		return artList;
 	}
@@ -136,7 +149,9 @@ public class SourceCodeEntryDataFetcher {
 		SourceCodeEntryData sced = dfe.getSource();
 		UUID vcsRepo = sced.getVcs();
 		if (null != vcsRepo) {
-			ovrd = vcsRepositoryService.getVcsRepositoryData(vcsRepo);
+			// Scoped to the entry's owner: a stored reference to another org's repository, or
+			// an entry with no known owner, resolves to null.
+			ovrd = vcsRepositoryService.getVcsRepositoryData(vcsRepo, getSourceCodeEntryService.ownerOrg(sced));
 		}
 		return ovrd;
 	}
@@ -146,11 +161,26 @@ public class SourceCodeEntryDataFetcher {
 	 * is this commit. Used by the agent-session view to render a
 	 * commit→release jump-off; usually 0 or 1 entry per SCE, but the
 	 * field is a list to cover rebuilds against the same commit.
+	 *
+	 * <p>Scoped to the entry's owner ({@link GetSourceCodeEntryService#ownerOrg}: its org, or
+	 * its branch's for a legacy entry stored without one; none when neither is known), like
+	 * artifactDetails and vcsRepository. Every field that hands out a
+	 * SourceCodeEntry is itself org-scoped: Query.sourceCodeEntry authorizes
+	 * the entry, and the Release, IntermediateFailedRelease and PullRequest
+	 * commit fields read through GetSourceCodeEntryService
+	 * .getReferenceableSceDataList, which returns only entries of the
+	 * parent's own org or of the shared external-components org. So the
+	 * entry's org here is either one the caller reached legitimately or the
+	 * external org -- whose releases are public by design (the org-scoped
+	 * release lookup admits them for every org) -- and never another
+	 * customer's org to pivot into.
 	 */
 	@DgsData(parentType = "SourceCodeEntry", field = "releases")
 	public List<ReleaseData> releasesOfSourceCodeEntry(DgsDataFetchingEnvironment dfe) {
 		SourceCodeEntryData sced = dfe.getSource();
-		if (sced == null || sced.getUuid() == null || sced.getOrg() == null) return List.of();
-		return sharedReleaseService.findReleaseDatasBySce(sced.getUuid(), sced.getOrg());
+		if (sced == null || sced.getUuid() == null) return List.of();
+		UUID org = getSourceCodeEntryService.ownerOrg(sced);
+		if (null == org) return List.of();
+		return sharedReleaseService.findReleaseDatasBySce(sced.getUuid(), org);
 	}
 }

@@ -20,7 +20,7 @@
                 The repository id is pinned on first use, so a renamed or recreated repository is refused until the pin is reset. Deactivating a row refuses that repository alone and holds
                 until an admin activates it again; deleting a row only forgets its history, the next run from that repository materialises it again as long as a rule trusts it.
             </p>
-            <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" class="table-hover"></n-data-table>
+            <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" :row-key="(row: any) => row.uuid" :pagination="identitiesPagination" class="table-hover"></n-data-table>
         </div>
 
         <n-modal preset="dialog" :show-icon="false" style="width: 85%;" :show="showEditor" @update:show="(v: boolean) => { if (!v) showEditor = false }">
@@ -72,7 +72,7 @@
                     </n-radio-group>
                     <div v-if="form.grant.type === 'KEY'">
                         <n-form-item label="Free Form key of this organization to act as (its permissions and attribution)">
-                            <n-select v-model:value="form.grant.keyUuid" :options="keyOptions" placeholder="Choose a key" filterable />
+                            <n-select v-model:value="form.grant.keyUuid" :options="keyOptions" :fallback-option="keyFallbackOption" placeholder="Choose a key" filterable />
                         </n-form-item>
                     </div>
                     <div v-else>
@@ -153,6 +153,8 @@ import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import { apiKeyIdsColumn } from '../utils/apiKeyControls'
 import { editionPermissionFunctions } from '@/utils/teaProfile'
+import { apiKeyPagination } from '@/utils/apiKeyTable'
+import { actAsKeyLabel, actAsKeyLabelOf } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     orgUuid: string
@@ -167,6 +169,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits(['changed'])
 const store = useStore()
+const identitiesPagination = apiKeyPagination()
 
 const rules = ref<any[]>([])
 const loading = ref(false)
@@ -206,8 +209,7 @@ function matcherSummary (m: any): { main: string, constraints: string[] } {
     return { main: `${m?.owner || '?'} / ${repos}`, constraints }
 }
 function keyLabel (uuid: string): string {
-    const k = props.freeFormKeys.find((x: any) => x.uuid === uuid)
-    return k ? (k.notes || k.uuid) : (uuid || '?')
+    return actAsKeyLabelOf(uuid, props.freeFormKeys)
 }
 function grantSummary (g: any): string {
     if (!g) return ''
@@ -228,7 +230,8 @@ async function setStatus (row: any, status: string) {
     } catch (e: any) { fail(e) }
 }
 async function deleteRule (row: any) {
-    const r = await Swal.fire({ title: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
+    // titleText: a rule name is user text, and Swal renders title as HTML
+    const r = await Swal.fire({ titleText: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
     if (!r.value) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation deleteFederatedTrustRule($uuid: ID!) { deleteFederatedTrustRule(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
@@ -361,7 +364,9 @@ const scopeOptions = computed(() => {
     if (installationType.value !== 'OSS') o.push({ label: 'Instance / Cluster', value: 'INSTANCE' })
     return o
 })
-const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: `${k.notes || '(no notes)'} · ${k.uuid.slice(0, 8)}`, value: k.uuid })))
+const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: actAsKeyLabel(k, props.freeFormKeys), value: k.uuid })))
+// a rule whose key is gone still opens in the editor: its value reads as the Grant column says, not a bare uuid
+const keyFallbackOption = (value: string | number) => ({ label: keyLabel(String(value)), value })
 function objectOptions (scope: string) {
     if (scope === 'PERSPECTIVE') return perspectives.value.map((p: any) => ({ label: p.name, value: p.uuid }))
     if (scope === 'INSTANCE') {

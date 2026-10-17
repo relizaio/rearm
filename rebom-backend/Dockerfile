@@ -2,6 +2,11 @@ FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e
 
 ARG TARGETARCH
 ARG TARGETOS
+# The rearm CLI release rebom runs (bomutils merge-boms, bomutils score). To move to a newer
+# release: change this value and the rearm zip line of tools.amd64.sha256 and tools.arm64.sha256
+# (hashes from <cdn>/rearm-download/<version>/sha256sums.txt, SCORE-7 design 3.5). The two engine
+# checks in the tools RUN fail the build on a zip without `bomutils score` or with an older engine.
+ARG REARM_CLI_VERSION=26.10.8
 
 # Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
 RUN apk add postgresql postgresql-contrib unzip wget
@@ -23,21 +28,28 @@ WORKDIR /app
 
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
-RUN if [ "$TARGETARCH" = "amd64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.9/rearm-26.07.9-linux-amd64.zip ;\
-        unzip rearm-26.07.9-linux-amd64.zip ;\
+COPY test/fixtures/score/full.types.cdx.json /tmp/engine-check.cdx.json
+RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
+    unzip rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
+    if [ "$TARGETARCH" = "amd64" ]; then \
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-linux-musl-x64 ;\
         mv cyclonedx-linux-musl-x64 /usr/local/bin/cyclonedx-cli ;\
     elif [ "$TARGETARCH" = "arm64" ]; then \
-        wget https://d7ge14utcyki8.cloudfront.net/rearm-download/26.07.9/rearm-26.07.9-linux-arm64.zip ;\
-        unzip rearm-26.07.9-linux-arm64.zip ;\
         wget https://github.com/CycloneDX/cyclonedx-cli/releases/download/v0.32.0/cyclonedx-${TARGETOS}-${TARGETARCH} ;\
         mv cyclonedx-${TARGETOS}-${TARGETARCH} /usr/local/bin/cyclonedx-cli ;\
     fi && \
     sha256sum -c /tmp/tools.sha256 && \
     mv rearm /usr/local/bin/rearm && \
     chmod +x /usr/local/bin/rearm && \
-    chmod +x /usr/local/bin/cyclonedx-cli
+    chmod +x /usr/local/bin/cyclonedx-cli && \
+    rearm bomutils score --help | grep -q -- '--profile' && \
+    rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json | grep -q '"skippedTypes"' && \
+    rm -f /tmp/engine-check.cdx.json
+
+# cyclonedx-cli has no musl build for arm64 (v0.32.0 publishes cyclonedx-linux-musl-x64 and
+# cyclonedx-linux-musl-arm only); the arm64 pin is the glibc build and needs gcompat on alpine
+# (SCORE-7 design round 3, ADR-8). Nothing is installed on amd64.
+RUN if [ "$TARGETARCH" = "arm64" ]; then apk add --no-cache gcompat; fi
 
 COPY package*.json ./
 RUN npm ci --ignore-scripts
@@ -79,12 +91,15 @@ RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
 # any layer, that finding class is gone structurally, not just until the next
 # npm release. Runtime deps stay installable via apk (gpg / ssh-keygen for
 # signature verification, ICU for cyclonedx-cli); libstdc++ is for node itself.
-FROM alpine:3.24@sha256:28bd5fe8b56d1bd048e5babf5b10710ebe0bae67db86916198a6eec434943f8b AS deliverable
+# On arm64 only, gcompat lets the glibc-linked cyclonedx-cli start on musl (no musl
+# arm64 build exists; SCORE-7 design round 3, ADR-8).
+FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS deliverable
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
+ARG TARGETARCH
 
 COPY --from=builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder /usr/local/bin/cyclonedx-cli /usr/local/bin/
@@ -100,6 +115,7 @@ RUN apk add --no-cache \
     icu-libs \
     openssh-keygen \
     gnupg && \
+    if [ "$TARGETARCH" = "arm64" ]; then apk add --no-cache gcompat; fi && \
     mkdir /app && echo "version=$VERSION" > /app/version && echo "commit=$GIT_COMMIT" >> /app/version && echo "branch=$GIT_BRANCH" >> /app/version
 
 WORKDIR /app

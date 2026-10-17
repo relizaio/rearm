@@ -59,7 +59,13 @@ public class ComponentLockService {
 	public enum LockedOperation {
 		VERSION_ASSIGNMENT("assign a version"),
 		RELEASE_CREATION("create a release"),
-		RELEASE_CONTENT("change release content");
+		RELEASE_CONTENT("change release content"),
+		/**
+		 * Close a board hop. A lock on the documents repository stops work being SIGNED OFF, not
+		 * only released, so the hop that hits the lock is the one that can report it -- rather
+		 * than the lock surfacing later at an unrelated release.
+		 */
+		TASK_SIGN_OFF("sign off a task");
 
 		private final String phrase;
 

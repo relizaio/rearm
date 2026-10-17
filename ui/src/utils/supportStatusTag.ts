@@ -9,13 +9,13 @@ export type SupportTagType = 'default' | 'success' | 'warning' | 'error'
 /**
  * The support statuses the backend can actually return.
  *
- * THREE, not the six members of the Java enum. ACTIVELY_SUPPORTED, END_OF_LIFE and
+ * FOUR, not the seven members of the Java enum. ACTIVELY_SUPPORTED, END_OF_LIFE and
  * ABANDONED are @Deprecated there and never produced by SupportStatus.derive(): the first
  * and last are ATTESTED levels rather than derived states (see LevelOfSupport), and
  * end-of-life was redefined as end of SALE, which is not a support state at all. Listing
  * them would claim this UI can render values the server cannot send.
  */
-export type LiveSupportStatus = 'SECURITY_ONLY' | 'END_OF_SUPPORT' | 'UNKNOWN'
+export type LiveSupportStatus = 'SECURITY_ONLY' | 'END_OF_SUPPORT' | 'WITHIN_SUPPORT_WINDOW' | 'UNKNOWN'
 
 export const SUPPORT_TAG: Record<LiveSupportStatus, { type: SupportTagType, label: string }> = {
     // Derived, not guaranteed: the dates say guaranteed support has lapsed but full support
@@ -23,6 +23,9 @@ export const SUPPORT_TAG: Record<LiveSupportStatus, { type: SupportTagType, labe
     // will be provided.
     SECURITY_ONLY: { type: 'warning', label: 'Security only' },
     END_OF_SUPPORT: { type: 'error', label: 'End of support' },
+    // Dates are on record and none has passed yet. Not green: the dates say nothing about
+    // whether anyone maintains the component today -- that is the attested level of support.
+    WITHIN_SUPPORT_WINDOW: { type: 'default', label: 'Within support window' },
     UNKNOWN: { type: 'default', label: 'Unknown' }
 }
 

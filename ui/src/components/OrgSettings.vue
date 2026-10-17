@@ -697,14 +697,14 @@
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
                             <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
-                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1800"
-                                class="table-hover">
+                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1200"
+                                :row-key="dataTableRowKey" :pagination="keyRequestsPagination" class="table-hover" data-testid="key-requests-table">
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="2560"
-                                class="table-hover">
+                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1420"
+                                :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
                                 title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
@@ -714,8 +714,8 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="2200"
-                                class="table-hover">
+                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1310"
+                                :row-key="dataTableRowKey" :pagination="userKeysPagination" class="table-hover" data-testid="user-keys-table">
                             </n-data-table>
                         </div>
                     </n-tab-pane>
@@ -723,8 +723,8 @@
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="2200"
-                                class="table-hover">
+                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1400"
+                                :row-key="dataTableRowKey" :pagination="scopedKeysPagination" class="table-hover" data-testid="scoped-keys-table">
                             </n-data-table>
                             <n-modal
                                 preset="dialog"
@@ -732,7 +732,7 @@
                                 style="width: 90%;"
                                 v-model:show="showOrgSettingsProgPermissionsModal">
                                 <n-card size="huge"
-                                    :title="'Set approval permissions for key: ' + selectedKey.uuid" :bordered="false" role="dialog"
+                                    :title="'Set approval permissions for key: ' + apiKeyLabelOf(selectedKey.uuid, programmaticAccessKeys)" :bordered="false" role="dialog"
                                     aria-modal="true">
 
                                     <n-form>
@@ -763,10 +763,10 @@
                         <ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />
                     </n-tab-pane>
                 </n-tabs>
-                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
-                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :sibling-keys="programmaticAccessKeys" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
-                    <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
+                    <template #header>CLI sessions on key {{ keySessionsKey ? keyLabelOf(keySessionsKey) : '' }}</template>
                     <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
                     <n-data-table :columns="keySessionFields" :data="keySessions" class="table-hover"></n-data-table>
                 </n-modal>
@@ -1295,6 +1295,24 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                         </n-space>
                     </n-form>
                 </div>
+                <!-- SCORE-42: the organization's default declared licence, written on the SBOM nodes
+                     ReARM makes. Its own block and its own documents, not fields of the form above:
+                     the CE mirror lacks them, and the form's mutation response must stay valid there.
+                     Hidden for the session once the panel's read is refused as schema drift. -->
+                <div v-if="declaredLicenseSupported" class="adminSettingsBlock mt-4" data-testid="org-default-license-block">
+                    <OrgDeclaredLicensePanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markDeclaredLicenseUnsupported" />
+                </div>
+                <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="org-default-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
+                <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
+                     because both decide what an export carries. Its own block, not a field of the
+                     form above: four mutations of its own and no Save. Hidden for the session once
+                     the panel's list query is refused as schema drift (a CE mirror before its sync). -->
+                <div v-if="sbomSigningSupported" class="adminSettingsBlock mt-4" data-testid="sbom-signing-block">
+                    <SbomSigningKeysPanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markSbomSigningUnsupported" />
+                </div>
+                <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">
+                    This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.
+                </div>
                 <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
                     <h5>Default View</h5>
                     <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
@@ -1401,9 +1419,10 @@ import { useRoute, useRouter, RouterLink } from 'vue-router'
 import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
-import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import commonFunctions from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -1428,7 +1447,11 @@ import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import ExternalKeysPanel from './ExternalKeysPanel.vue'
-import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn } from '../utils/apiKeyControls'
+import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
+import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
+import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
+import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
+import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
@@ -1443,6 +1466,8 @@ import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
+import { agentDisplayLabel } from '@/utils/agentSessionLabel'
+import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
 
 const route = useRoute()
 const router = useRouter()
@@ -1933,9 +1958,14 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 
 // ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
-const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
-const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 170, render: apiKeyControls.statusCell }
-const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 470, render: apiKeyControls.secretsCell }
+const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value, siblings: () => programmaticAccessKeys.value })
+const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 110, render: apiKeyControls.statusCell }
+const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 280, render: apiKeyControls.secretsCell }
+// one client-side pager per key table, so each keeps its own page across reloads
+const keyRequestsPagination = apiKeyPagination()
+const freeFormKeysPagination = apiKeyPagination()
+const userKeysPagination = apiKeyPagination()
+const scopedKeysPagination = apiKeyPagination()
 
 // ---- declared names (task RD3-11): the name an API_KEYS file knows a key by, and the apply that last wrote it ----
 const showDeclareModal = ref(false)
@@ -1952,7 +1982,7 @@ async function releaseKeyName (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const apiKeyDeclaredColumn = {
-    key: 'declaredName', width: 260, title: 'Declared As',
+    key: 'declaredName', width: 170, title: 'Declared As',
     render: (row: any) => {
         const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
         if (row.declarative) {
@@ -1973,7 +2003,7 @@ const apiKeyDeclaredColumn = {
                 default: () => `Release the name ${row.declaredName}? The next API_KEYS apply naming it creates a new key instead of updating this one.`
             }))
         }
-        if (actions.length) lines.push(h('div', { style: 'display: flex; align-items: center; white-space: nowrap; margin-top: 3px;' }, actions))
+        if (actions.length) lines.push(h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px; margin-top: 3px;' }, actions))
         return h('div', lines)
     }
 }
@@ -1985,34 +2015,19 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
         created = resp.data.createOrgApiKey
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
     loadProgrammaticAccessKeys(false)
-    const r = await Swal.fire({ title: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    const r = await Swal.fire({ titleText: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
     if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
 }
 
 const programmaticAccessFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    {
-        key: 'createdDate',
-        width: 180,
-        title: 'Created'
-    },
-    {
-        key: 'accessDate',
-        width: 180,
-        title: 'Last Accessed'
-    },
-    {
-        key: 'updatedByName',
-        width: 150,
-        title: 'Updated By'
-    },
+    ...apiKeyLeadColumns('scoped', () => programmaticAccessKeys.value),
+    apiKeyActivityColumn(),
     {
         key: 'object',
-        width: 220,
+        width: 140,
         title: 'Object',
         render: (row: any) => {
-            let el = h('div')
+            let el = h('span', row.object_val || '')
             if (row.type === 'COMPONENT') {
                 el = h(
                     RouterLink,
@@ -2033,7 +2048,7 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     {
         key: 'resolvedApprovals',
-        width: 160,
+        width: 100,
         title: 'Approvals',
         render: (row: any) => {
             let el = h('div')
@@ -2050,7 +2065,7 @@ const programmaticAccessFields: Ref<any> = ref([
     apiKeySecretsColumn,
     {
         key: 'notes',
-        width: 180,
+        width: 120,
         title: 'Notes'
     },
     {
@@ -2079,7 +2094,7 @@ const programmaticAccessFields: Ref<any> = ref([
                         title: 'Delete Key',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => deleteKey(row.uuid)
+                        onClick: () => deleteKey(row)
                     }, { default: () => h(Trash) }
                 ))
             }
@@ -2092,25 +2107,10 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
+    ...apiKeyLeadColumns('freeForm', () => programmaticAccessKeys.value),
+    apiKeyActivityColumn(),
     {
-        key: 'createdDate',
-        width: 180,
-        title: 'Created'
-    },
-    {
-        key: 'accessDate',
-        width: 180,
-        title: 'Last Accessed'
-    },
-    {
-        key: 'updatedByName',
-        width: 150,
-        title: 'Updated By'
-    },
-    {
-        key: 'holderName', width: 200, title: 'Holder',
+        key: 'holderName', width: 110, title: 'Holder',
         render: (row: any) => {
             if (!row.holder) return h('span', { class: 'text-muted' }, '—')
             const kids: any[] = [h('span', row.holderName)]
@@ -2122,13 +2122,13 @@ const freeFormKeyFields: Ref<any> = ref([
     apiKeySecretsColumn,
     {
         key: 'notes',
-        width: 180,
+        width: 110,
         title: 'Notes'
     },
     apiKeyDeclaredColumn,
     {
         key: 'boundAgents',
-        width: 200,
+        width: 130,
         title: 'Bound Agent(s)',
         render: (row: any) => {
             const agents = row.boundAgents || []
@@ -2140,8 +2140,8 @@ const freeFormKeyFields: Ref<any> = ref([
                 if (idx > 0) links.push(h('span', ', '))
                 links.push(h(
                     RouterLink,
-                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } } },
-                    { default: () => a.effectiveDisplayName || a.name || a.uuid }
+                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } }, title: row.declaredName ? 'key: ' + cleanLabelText(row.declaredName) : undefined },
+                    { default: () => agentDisplayLabel(a) }
                 ))
             })
             return h('div', links)
@@ -2172,7 +2172,7 @@ const freeFormKeyFields: Ref<any> = ref([
                         title: 'Delete Key',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => deleteKey(row.uuid)
+                        onClick: () => deleteKey(row)
                     }, { default: () => h(Trash) }
                 ))
             }
@@ -2181,21 +2181,19 @@ const freeFormKeyFields: Ref<any> = ref([
     }
 ])
 const userKeyFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    { key: 'ownerName', width: 200, title: 'Owner' },
-    { key: 'createdDate', width: 180, title: 'Created' },
-    { key: 'accessDate', width: 180, title: 'Last Accessed' },
+    ...apiKeyLeadColumns('user', () => programmaticAccessKeys.value),
+    { key: 'ownerName', width: 140, title: 'Owner' },
+    apiKeyActivityColumn(),
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
-        key: 'ceiling', width: 160, title: 'Ceiling',
+        key: 'ceiling', width: 120, title: 'Ceiling',
         render: (row: any) => {
             const n = (row.permissions?.permissions || []).length
             return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
         }
     },
-    { key: 'notes', width: 180, title: 'Notes' },
+    { key: 'notes', width: 130, title: 'Notes' },
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -2203,7 +2201,7 @@ const userKeyFields: Ref<any> = ref([
             if (isOrgAdmin.value) {
                 els.push(h(NIcon, { title: 'Set Permission Ceiling For Key', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) }))
                 els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
-                els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
+                els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row) }, { default: () => h(Trash) }))
             }
             return h('div', els)
         }
@@ -2788,6 +2786,31 @@ const availableProductsOptions: ComputedRef<SelectOption[]> = computed(() => {
         }))
 })
 
+// TEA-9's PUBLIC confirmation on main's one-membership add (TEA-16): the dry-run asks about the list
+// the add produces, the component's stored perspectives plus the one being added, which is the list
+// the server gate evaluates. The stored perspectives are read here: the dialog fills the store with
+// ComponentShortData, which carries none. true when the add may go ahead.
+async function confirmTeaMembershipAdd (componentUuid: string, scopeWord: 'component' | 'product'): Promise<boolean> {
+    if (!teaProfilesAvailable(myUser.value.installationType)) return true
+    const storedResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaComponentPerspectivesGql,
+        variables: { componentUuid },
+        fetchPolicy: 'no-cache'
+    })
+    const current: any[] = storedResp.data.component?.perspectiveDetails ?? []
+    const afterAdd: string[] = [...current.map((p: any) => p.uuid).filter((u: string) => u !== selectedPerspectiveUuid.value), selectedPerspectiveUuid.value]
+    const exposureResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaMembershipExposureChangeGql,
+        variables: { componentUuid, perspectiveUuids: afterAdd },
+        fetchPolicy: 'no-cache'
+    })
+    const delta = teaMembershipDelta(afterAdd, current, perspectives.value)
+    const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added, delta.removed, delta.names, scopeWord)
+    if (!confirm) return true
+    const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return !!answer?.isConfirmed
+}
+
 async function addComponentToPerspective() {
     if (!selectedComponentToAdd.value) {
         notify('error', 'Error', 'Please select a component')
@@ -2796,44 +2819,10 @@ async function addComponentToPerspective() {
     
     processingMode.value = true
     try {
-        // The list the mutation sends: it replaces the component's perspectives (design TEA-9 section 5).
-        const perspectiveUuids = [selectedPerspectiveUuid.value]
-        // TEA-9: confirm on the server's dry-run of exactly that list when it makes the component PUBLIC.
-        if (teaProfilesAvailable(myUser.value.installationType)) {
-            const exposureResp: any = await graphqlClient.query({
-                query: graphqlQueries.TeaMembershipExposureChangeGql,
-                variables: { componentUuid: selectedComponentToAdd.value, perspectiveUuids },
-                fetchPolicy: 'no-cache'
-            })
-            const delta = teaMembershipDelta(perspectiveUuids,
-                store.getters.componentById(selectedComponentToAdd.value)?.perspectiveDetails, perspectives.value)
-            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
-                delta.removed, delta.names, 'component')
-            if (confirm) {
-                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
-                if (!answer?.isConfirmed) return
-            }
-        }
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedComponentToAdd.value,
-                perspectiveUuids
-            }
-        })
+        if (!(await confirmTeaMembershipAdd(selectedComponentToAdd.value, 'component'))) return
+        const added = await addPerspectiveToComponent(graphqlClient, selectedComponentToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Component added to perspective successfully')
             showAddComponentToPerspectiveModal.value = false
             selectedComponentToAdd.value = ''
@@ -2856,44 +2845,10 @@ async function addProductToPerspective() {
     
     processingMode.value = true
     try {
-        // The list the mutation sends: it replaces the product's perspectives (design TEA-9 section 5).
-        const perspectiveUuids = [selectedPerspectiveUuid.value]
-        // TEA-9: confirm on the server's dry-run of exactly that list when it makes the product PUBLIC.
-        if (teaProfilesAvailable(myUser.value.installationType)) {
-            const exposureResp: any = await graphqlClient.query({
-                query: graphqlQueries.TeaMembershipExposureChangeGql,
-                variables: { componentUuid: selectedProductToAdd.value, perspectiveUuids },
-                fetchPolicy: 'no-cache'
-            })
-            const delta = teaMembershipDelta(perspectiveUuids,
-                store.getters.componentById(selectedProductToAdd.value)?.perspectiveDetails, perspectives.value)
-            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
-                delta.removed, delta.names, 'product')
-            if (confirm) {
-                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
-                if (!answer?.isConfirmed) return
-            }
-        }
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedProductToAdd.value,
-                perspectiveUuids
-            }
-        })
+        if (!(await confirmTeaMembershipAdd(selectedProductToAdd.value, 'product'))) return
+        const added = await addPerspectiveToComponent(graphqlClient, selectedProductToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Product added to perspective successfully')
             showAddProductToPerspectiveModal.value = false
             selectedProductToAdd.value = ''
@@ -3023,7 +2978,7 @@ function cancelEditPerspective() {
 
 async function deletePerspective(perspective: any) {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive perspective "${perspective.name}"?`,
+        titleText: `Are you sure you want to archive perspective "${perspective.name}"?`,
         text: 'If you proceed, the perspective will be archived.',
         icon: 'warning',
         showCancelButton: true,
@@ -3948,6 +3903,30 @@ const proseBaseline: Record<string, string> = {}
 const supportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
     store.state.supportInjectionSupported !== false)
 
+/**
+ * Whether this backend offers SBOM export signing (SCORE-35). The "SBOM export signing" panel
+ * probes it with its own list query and reports a schema-drift refusal through `unsupported`;
+ * the store keeps the answer for the session, as it does supportInjectionSupported.
+ */
+const sbomSigningSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.sbomSigningSupported !== false)
+
+function markSbomSigningUnsupported () {
+    store.commit('SET_SBOM_SIGNING_SUPPORTED', false)
+}
+
+/**
+ * Whether this backend offers the declared licence (SCORE-42). Any of the three surfaces
+ * (this panel, a component's settings, a release's Meta tab) latches it false for the session
+ * when its own read is refused as schema drift; a failed request does not.
+ */
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function markDeclaredLicenseUnsupported () {
+    store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+}
+
 const supportInjectionEnabled: Ref<boolean> = ref(false)
 const supportInjectionBaseline: Ref<boolean> = ref(false)
 
@@ -4119,39 +4098,8 @@ async function saveOrgSettings() {
 // D-Track / base-integration / BEAR / CI-integration mutations all moved to
 // OrgIntegrations.vue (the Integrations tab owns its own data layer now).
 
-async function deleteKey(uuid: string) {
-    const onSwalConfirm = async function () {
-        let isSuccess = false
-        try {
-            const resp = await graphqlClient.mutate({
-                mutation: gql`
-                        mutation deleteApiKey($apiKeyUuid: ID!) {
-                            deleteApiKey(apiKeyUuid: $apiKeyUuid)
-                        }`,
-                variables: {
-                    'apiKeyUuid': uuid
-                }
-            })
-            if (resp.data && resp.data.deleteApiKey) isSuccess = true
-        } catch (error: any) {
-            console.error(error)
-        }
-        if (!isSuccess) {
-            Swal.fire(
-                'Error!',
-                'Error when deleting api key.',
-                'error'
-            )
-        }
-        loadProgrammaticAccessKeys(false)
-    }
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete the API Key with Internal ID ${uuid}?`,
-        successTitle: 'Deleted!',
-        successText: `The API Key with Internal ID ${uuid} has been deleted.`,
-        dismissText: 'The API Key remains active.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
+function deleteKey (row: any) {
+    return apiKeyControls.deleteApiKey(row, (row.status === 'REQUESTED' || row.status === 'DENIED' ? 'the request ' : 'the key ') + keyLabelOf(row))
 }
 function editKey(uuid: string) {
     const key = programmaticAccessKeys.value.filter((k: any) => (k.uuid === uuid))
@@ -4784,6 +4732,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    deniedReason
                                     status
                                     holder
                                     adminDisabled
@@ -4796,7 +4745,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     boundAgents {
                                         uuid
                                         name
-                                        effectiveDisplayName
+                                        displayName
                                     }
                                     permissions {
                                         permissions {
@@ -4878,8 +4827,11 @@ async function loadInvitedUsers(useCache: boolean) {
 
 function formatValuesForApiKeys (apiKeyEntry: any) {
     const updEntry = Object.assign({}, apiKeyEntry)
-    updEntry['createdDate'] = (new Date(apiKeyEntry['createdDate'])).toLocaleString('en-CA')
-    updEntry['accessDate'] = apiKeyEntry['accessDate']? (new Date(apiKeyEntry['accessDate'])).toLocaleString('en-CA') : 'Never'
+    // the raw instant, kept for sorting newest first (createdDate below becomes display text)
+    updEntry['createdDateIso'] = apiKeyEntry['createdDate'] || ''
+    // to the minute in 24h form (2026-10-06, 13:55): short enough to sit on one line of the Activity column
+    updEntry['createdDate'] = fmtKeyDate(apiKeyEntry['createdDate'])
+    updEntry['accessDate'] = apiKeyEntry['accessDate'] ? fmtKeyDate(apiKeyEntry['accessDate']) : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
         const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
         updEntry['updatedByName'] = updater['name'] || updater['email'] || ''
@@ -4893,7 +4845,7 @@ async function removeUser(userUuid: string) {
     let userDisplay = users.value.find(u => (u.uuid === userUuid)).name
     if (!userDisplay) userDisplay = users.value.find(u => (u.uuid === userUuid)).email
     const swalResult = await Swal.fire({
-        title: 'Are you sure you want to remove the user ' + userDisplay + '?',
+        titleText: 'Are you sure you want to remove the user ' + userDisplay + '?',
         text: 'If you proceed, this user will not be able to access this organization, until reinvited.',
         icon: 'warning',
         showCancelButton: true,
@@ -4932,7 +4884,7 @@ async function inactivateUser(userUuid: string) {
     const user = users.value.find(u => u.uuid === userUuid)
     const userDisplay = user?.name || user?.email || userUuid
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to inactivate the user ${userDisplay}?`,
+        titleText: `Are you sure you want to inactivate the user ${userDisplay}?`,
         text: 'If you proceed, this user will be inactivated and will no longer be able to access the system.',
         icon: 'warning',
         showCancelButton: true,
@@ -4966,7 +4918,7 @@ async function reactivateUser(userUuid: string) {
     const user = users.value.find(u => u.uuid === userUuid)
     const userDisplay = user?.name || user?.email || userUuid
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to reactivate the user ${userDisplay}?`,
+        titleText: `Are you sure you want to reactivate the user ${userDisplay}?`,
         text: 'If you proceed, this user will be reactivated and will regain access to the system.',
         icon: 'warning',
         showCancelButton: true,
@@ -5078,15 +5030,8 @@ async function updateKeyPermissions() {
             fetchPolicy: 'no-cache'
         })
 
-        const updatedApiKey = response.data.setApprovalsOnApiKey
-        formatValuesForApiKeys(updatedApiKey)
-        let updated: boolean = false
-        for (let i = 0; i < programmaticAccessKeys.value.length && !updated; i++) {
-            if (programmaticAccessKeys.value[i].uuid === updatedApiKey.uuid) {
-                programmaticAccessKeys.value[i] = updatedApiKey
-                updated = true
-            }
-        }
+        // reload rather than splice the mutation's row in: it carries a subset of the fields, unformatted
+        await loadProgrammaticAccessKeys(false)
         showOrgSettingsProgPermissionsModal.value = false
         notify('success', 'Created', 'Saved key permissions successfully!')
     } catch (e: any) {
@@ -5338,7 +5283,7 @@ const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
     // nor an EXTERNAL key (the External Keys sub-tab, which reads them itself)
     return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED' && k.type !== 'EXTERNAL').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
-            accesKey.object_val = store.getters.orgById(accesKey.object).name
+            accesKey.object_val = store.getters.orgById(accesKey.object)?.name || 'Organization'
         } else if (accesKey.type === 'COMPONENT') {
             var proj = store.getters.componentById(accesKey.object)
             if (proj) {
@@ -5356,11 +5301,16 @@ const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
             } else {
                 accesKey.object_val = 'Archived Instance'
             }
+        } else if (accesKey.type === 'CLUSTER') {
+            const cluster = store.getters.instanceById(accesKey.object, -1)
+            accesKey.object_val = cluster ? (cluster.name || cluster.uri) : 'Archived Cluster'
+        } else if (accesKey.type === 'APPROVAL') {
+            accesKey.object_val = store.getters.orgById(accesKey.object)?.name || 'Organization'
         } else if (accesKey.type === 'USER' || accesKey.type === 'REGISTRY_USER') {
             accesKey.object_val = accesKey.updatedByName
         }
         return accesKey
-    })
+    }).sort(byNewestKey)
 })
 const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // Don't re-run formatValuesForApiKeys — load-time format already
@@ -5370,8 +5320,12 @@ const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // updatedByName is also already resolved at load time. The
     // computed exists only so the table re-renders if the underlying
     // ref mutates (post-edit reload).
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder)
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder).sort(byNewestKey)
 })
+/** A key named in a dialog or modal header: type word, name and short id, unique among the org's keys. */
+function keyLabelOf (row: any): string {
+    return apiKeyLabel(row, { withType: true, siblings: programmaticAccessKeys.value })
+}
 function withHolder (k: any) {
     if (!k.holder) return Object.assign({}, k, { holderName: '', holderLeft: false })
     const u = users.value.find((x: any) => x.uuid === k.holder)
@@ -5381,15 +5335,18 @@ const computedFederatedIdentities: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'FEDERATED')
 })
 const computedKeyRequests: ComputedRef<any> = computed((): any => {
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder).sort(byNewestKey)
 })
 async function resolveKeyRequest (row: any, approve: boolean) {
+    // every request is for a Free Form key, so the request is named without the type word
+    const request = apiKeyLabel(row, { siblings: programmaticAccessKeys.value })
+    const from = row.holderLeft ? ' from a former member' : (row.holderName ? ` from ${row.holderName}` : '')
     let reason: string | null = null
     if (approve) {
-        const r = await Swal.fire({ title: 'Approve this request?', text: 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
+        const r = await Swal.fire({ title: 'Approve this request?', text: `Request ${request}${from}. ` + 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
         if (!r.value) return
     } else {
-        const r = await Swal.fire({ title: 'Deny this request?', input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${request}${from}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', inputAttributes: { maxlength: '256' }, showCancelButton: true, confirmButtonText: 'Deny' })
         if (!r.isConfirmed) return
         reason = r.value || null
     }
@@ -5400,8 +5357,9 @@ async function resolveKeyRequest (row: any, approve: boolean) {
 }
 async function reassignHolder (row: any) {
     const options: Record<string, string> = { '': '(no holder: admins mint the secrets)' }
-    for (const u of users.value) options[u.uuid] = u.name ? `${u.name} (${u.email})` : u.email
-    const r = await Swal.fire({ title: 'Holder of this key', text: 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
+    // SweetAlert2 renders select option labels as HTML; names and emails are user text
+    for (const u of users.value) options[u.uuid] = escapeHtml(u.name ? `${u.name} (${u.email})` : u.email)
+    const r = await Swal.fire({ title: 'Holder of this key', text: `Key ${keyLabelOf(row)}. ` + 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
     if (!r.isConfirmed) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation setApiKeyHolder($apiKeyUuid: ID!, $holder: ID) { setApiKeyHolder(apiKeyUuid: $apiKeyUuid, holder: $holder) { uuid holder } }`, variables: { apiKeyUuid: row.uuid, holder: r.value || null }, fetchPolicy: 'no-cache' })
@@ -5409,13 +5367,12 @@ async function reassignHolder (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const keyRequestFields: Ref<any> = ref([
-    apiKeyTypeColumn,
-    apiKeyIdsColumn(),
-    { key: 'holderName', width: 200, title: 'Requested By' },
-    { key: 'createdDate', width: 180, title: 'Requested' },
-    { key: 'status', width: 120, title: 'Status', render: apiKeyControls.statusCell },
-    { key: 'proposed', width: 150, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
-    { key: 'notes', width: 260, title: 'Purpose / Notes' },
+    ...apiKeyLeadColumns('keyRequests', () => programmaticAccessKeys.value),
+    { key: 'holderName', width: 150, title: 'Requested By' },
+    { key: 'createdDate', width: 130, title: 'Requested' },
+    { key: 'status', width: 140, title: 'Status', render: apiKeyControls.statusCell },
+    { key: 'proposed', width: 120, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
+    { key: 'notes', width: 220, title: 'Purpose / Notes' },
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -5424,8 +5381,8 @@ const keyRequestFields: Ref<any> = ref([
                 els.push(h(NButton, { size: 'tiny', type: 'primary', style: 'margin: 0 4px;', onClick: () => resolveKeyRequest(row, true) }, { default: () => 'Approve' }))
                 els.push(h(NButton, { size: 'tiny', type: 'warning', style: 'margin-right: 4px;', onClick: () => resolveKeyRequest(row, false) }, { default: () => 'Deny' }))
             }
-            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
-            return h('div', { style: 'display: flex; align-items: center;' }, els)
+            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row) }, { default: () => h(Trash) }))
+            return h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;' }, els)
         }
     }
 ])
@@ -5433,7 +5390,7 @@ const computedUserKeys: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'USER').map((k: any) => {
         const owner = users.value.find((u: any) => u.uuid === k.object)
         return Object.assign({}, k, { ownerName: owner ? (owner.name || owner.email) : 'Unknown user' })
-    })
+    }).sort(byNewestKey)
 })
 const imageRegistry: ComputedRef<any> = computed((): any => {
     let content = '### OCI Container Images (Suitable for Docker and Helm):\n'

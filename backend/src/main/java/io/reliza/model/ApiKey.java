@@ -71,11 +71,13 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 	@Column(nullable = true)
 	private UUID createdBy;
 
-	// Denormalised "most recent authenticated use" timestamp; bumped inline
-	// from ApiKeyAccessService whenever a new audit row is written. Lets the
-	// per-org dashboard query read latest-access without scanning the
-	// api_key_access audit table (which grows unboundedly with traffic).
-	@Column(nullable = true)
+	// Denormalised "most recent verified use" timestamp. Every verified credential touches
+	// ApiKeyAccessService's in-memory accumulator, and the scheduler flushes it through the guarded
+	// native ApiKeyRepository.touchLastAccessDateIfNewer, the only writer: read-only to JPA, so a
+	// full-entity save of a key loaded earlier never puts back an older value. Lets the key lists
+	// read the latest access without scanning the api_key_access audit table (which grows
+	// unboundedly with traffic).
+	@Column(nullable = true, insertable = false, updatable = false)
 	private ZonedDateTime lastAccessDate;
 
 	@Type(JsonBinaryType.class)

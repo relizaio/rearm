@@ -5,6 +5,7 @@ package io.reliza.service;
 
 import java.util.Collections;
 import java.util.HashSet;
+import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.Set;
@@ -142,6 +143,15 @@ public class ReleaseVersionService {
 			));
 		}
 
+		if (!getNewVersionDto.onlyVersion() && (null != getNewVersionDto.sourceCodeEntry() || null != getNewVersionDto.commits())) {
+			// The build's commits are recorded after the version is assigned: refuse a build that
+			// cannot be recorded before the version pin or the version assignment is written.
+			List<SceDto> toRecord = new LinkedList<>();
+			if (null != getNewVersionDto.commits()) toRecord.addAll(getNewVersionDto.commits());
+			toRecord.add(getNewVersionDto.sourceCodeEntry());
+			sourceCodeEntryService.requireBuildRecordable(bd, toRecord);
+		}
+
 		versionAssignmentService.checkAndUpdateVersionPinOnBranch(pd, bd, getNewVersionDto.versionSchema(), wu);
 
 		ActionEnum bumpAction = getBumpAction(getNewVersionDto.action(), getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), bd, pd);
@@ -208,7 +218,7 @@ public class ReleaseVersionService {
 									.stream()
 							).collect(Collectors.toSet());
 				}
-				bumpAction = sourceCodeEntryService.getBumpActionFromSourceCodeEntryInput(sourceCodeEntry, commits, rejectedCommits);
+				bumpAction = sourceCodeEntryService.getBumpActionFromSourceCodeEntryInput(sourceCodeEntry, commits, rejectedCommits, bd);
 			} catch (IllegalArgumentException e) {
 				// bad to catch unchecked exceptions??
 				log.warn("Exception on resolving bump action from commit message. Defaulting to ActionEnum.Bump",commits);

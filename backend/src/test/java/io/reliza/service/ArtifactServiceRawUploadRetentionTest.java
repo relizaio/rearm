@@ -379,7 +379,7 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setOriginalSize(709L);
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", 709L, "application/json",
             null, null, "1");
@@ -503,7 +503,7 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
 
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", rebomReportedSize, "application/json",
             null, null, "1");

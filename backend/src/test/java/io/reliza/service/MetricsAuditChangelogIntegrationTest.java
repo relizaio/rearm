@@ -88,8 +88,7 @@ public class MetricsAuditChangelogIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 
 		ZonedDateTime windowFrom = ZonedDateTime.now().minusMinutes(5);
 

@@ -14,7 +14,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
@@ -54,6 +57,9 @@ public class AgentService {
 
 	@Autowired
 	private AuditService auditService;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	private final AgentRepository repository;
 
@@ -135,7 +141,7 @@ public class AgentService {
 	 * the V40 unique index; the loser catches the violation and re-reads
 	 * the winning row.
 	 */
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentData findOrRegisterRootAgent(UUID orgUuid, UUID agentIdentityUuid, String name,
 			UUID modelOntologyUuid, String iconKind, String color, WhoUpdated wu) throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("Agent requires an org");
@@ -165,7 +171,11 @@ public class AgentService {
 		Agent a = new Agent();
 		Map<String, Object> recordData = Utils.dataToRecord(seed);
 		try {
-			Agent saved = save(a, recordData, wu);
+			// In a transaction of its own, so the unique-index violation of a lost race surfaces
+			// here, at that transaction's commit, and rolls back only the speculative insert. In
+			// the caller's transaction it surfaced at the caller's commit, after this catch, and
+			// the loser failed instead of returning the winner (gaps §1.11).
+			Agent saved = insertAlone(() -> save(a, recordData, wu));
 			log.info("Auto-registered ROOT Agent uuid={} name='{}' identity={} model={} org={}",
 					saved.getUuid(), name, agentIdentityUuid, modelOntologyUuid, orgUuid);
 			return AgentData.dataFromRecord(saved);
@@ -185,6 +195,13 @@ public class AgentService {
 		}
 	}
 
+	/** Run one speculative insert in a transaction of its own; its commit is where a race loses. */
+	private <T> T insertAlone(java.util.function.Supplier<T> insert) {
+		TransactionTemplate tt = new TransactionTemplate(transactionManager);
+		tt.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+		return tt.execute(status -> insert.get());
+	}
+
 	/**
 	 * Spawn a SUB agent under {@code parentUuid}. Resolves the parent
 	 * to its owning root, creates the new SUB row with
@@ -201,7 +218,7 @@ public class AgentService {
 	 * If {@code name} collides with another agent under the same
 	 * identity, throws — within one identity, names must be unique.
 	 */
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentData spawnSubAgent(UUID parentUuid, String name, UUID modelOntologyOverride,
 			String iconKind, String color, WhoUpdated wu) throws RelizaException {
 		if (parentUuid == null) throw new RelizaException("spawnSubAgent requires parentUuid");
@@ -262,7 +279,7 @@ public class AgentService {
 	 * {@link #spawnSubAgent}; model retargeting goes through a
 	 * dedicated mutation when needed (v1 has no such mutation).
 	 */
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentData updateAgent(UUID agentUuid, String name, String iconKind, String color,
 			String notes, AgentStatus status, WhoUpdated wu) throws RelizaException {
 		Agent a = repository.findByIdWriteLocked(agentUuid)
@@ -282,7 +299,7 @@ public class AgentService {
 	 * runtime resolution key stays intact, so re-resolution and the
 	 * (org, agentIdentity, lower(name)) index are unaffected.
 	 */
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentData setDisplayName(UUID agentUuid, String displayName, WhoUpdated wu) throws RelizaException {
 		Agent a = repository.findByIdWriteLocked(agentUuid)
 				.orElseThrow(() -> new RelizaException("Agent not found: " + agentUuid));
@@ -291,7 +308,7 @@ public class AgentService {
 		return saveData(ad, wu);
 	}
 
-	@Transactional
+	@Transactional(rollbackFor = RelizaException.class)
 	public AgentData saveData(AgentData ad, WhoUpdated wu) {
 		Agent a = repository.findById(ad.getUuid())
 				.orElseGet(() -> {

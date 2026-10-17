@@ -28,6 +28,8 @@ import com.sendgrid.helpers.mail.objects.Email;
 import com.sendgrid.helpers.mail.objects.Personalization;
 
 import io.reliza.model.SystemInfoData.EmailSendType;
+import io.reliza.model.SystemInfoData.SmtpProps;
+import io.reliza.service.BrandingService.ResolvedBranding;
 
 @Service
 public class EmailService {
@@ -36,6 +38,17 @@ public class EmailService {
 		
 	@Autowired
 	SystemInfoService systemInfoService;
+
+	@Autowired
+	BrandingService brandingService;
+
+	/**
+	 * The SMTP sender's display name: the one the admin set in the SMTP settings, else the
+	 * branding's. The admin's explicit setting is the more specific choice, so it wins.
+	 */
+	static String senderName(SmtpProps smtpProps, ResolvedBranding branding) {
+		return StringUtils.isNotEmpty(smtpProps.fromName()) ? smtpProps.fromName() : branding.values().emailSenderName();
+	}
 	
 	public boolean sendEmail(Collection<String> toEmails, String subject, String contentType, String contentStr) {
 		boolean isSuccess = true;
@@ -70,8 +83,7 @@ public class EmailService {
 			if (smtpProps.isSsl()) props.put("mail.smtp.ssl.enable", "true");
 			MimeMessage message = mailSender.createMimeMessage();
 			MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-			String fromName = StringUtils.isNotEmpty(smtpProps.fromName()) ? smtpProps.fromName() : "ReARM - Do Not Reply";
-			helper.setFrom(systemInfoService.getFromEmail(), fromName);
+			helper.setFrom(systemInfoService.getFromEmail(), senderName(smtpProps, brandingService.current()));
 			helper.setTo(toEmails.toArray(new String[0]));
 			helper.setSubject(subject);
 			helper.setText(contentStr, "text/html".equalsIgnoreCase(contentType));
@@ -159,8 +171,7 @@ public class EmailService {
 			// multipart/alternative envelope, and setText(plain, html)
 			// places both bodies under it.
 			MimeMessageHelper helper = new MimeMessageHelper(message, true, "UTF-8");
-			String fromName = StringUtils.isNotEmpty(smtpProps.fromName()) ? smtpProps.fromName() : "ReARM - Do Not Reply";
-			helper.setFrom(systemInfoService.getFromEmail(), fromName);
+			helper.setFrom(systemInfoService.getFromEmail(), senderName(smtpProps, brandingService.current()));
 			helper.setTo(toEmails.toArray(new String[0]));
 			helper.setSubject(subject);
 			helper.setText(plainTextBody, htmlBody);

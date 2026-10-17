@@ -3,8 +3,11 @@
 */
 package io.reliza.ws;
 
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.core.convert.ConversionFailedException;
 import org.springframework.dao.DataAccessException;
 import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.security.access.AccessDeniedException;
@@ -15,11 +18,15 @@ import org.springframework.graphql.data.method.annotation.GraphQlExceptionHandle
 import graphql.ErrorClassification;
 import graphql.GraphqlErrorBuilder;
 import graphql.GraphQLError;
+import graphql.schema.DataFetchingEnvironment;
 
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
 import io.reliza.exceptions.ActionRefusedException;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.SbomScoreException;
+import io.reliza.service.RebomService;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PessimisticLockException;
@@ -29,8 +36,33 @@ import jakarta.persistence.PessimisticLockException;
 public class GraphQLExceptionHandlers {
     private static final Logger log = LoggerFactory.getLogger(GraphQLExceptionHandlers.class);
 
+    static final String EXPORT_TOO_LARGE_MESSAGE =
+            "Release SBOM export is too large to serve (limit " + RebomService.REBOM_RESPONSE_LIMIT_MB
+            + " MB); export with fewer components (top-level only)";
+
     private GraphQLError safeError(String message) {
         return GraphqlErrorBuilder.newError().message(message).build();
+    }
+
+    /**
+     * A server-side fault: the client gets the generic message plus a short reference, and the
+     * full exception is logged under the same reference. The client still learns nothing about
+     * the cause (no exception text reaches it), but a user can quote "ref 3f9a1c2e" and the log
+     * line is one search away. Before, "Internal server error" could only be matched to its
+     * stack by timestamp.
+     */
+    private GraphQLError serverError(String message, String logMessage, Throwable ex) {
+        String ref = newErrorRef();
+        log.error("{} [ref {}]", logMessage, ref, ex);
+        return GraphqlErrorBuilder.newError()
+                .message(message + " (ref " + ref + ")")
+                .extensions(java.util.Map.of("ref", ref))
+                .build();
+    }
+
+    /** 8 hex characters: enough to find one line in a day of logs, short enough to read out. */
+    static String newErrorRef() {
+        return String.format("%08x", java.util.concurrent.ThreadLocalRandom.current().nextInt());
     }
 
     @GraphQlExceptionHandler
@@ -49,6 +81,33 @@ public class GraphQLExceptionHandlers {
         return GraphqlErrorBuilder.newError()
                 .message(ex.getMessage())
                 .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * An answer from rebom too large to read: on an export, the document cannot be served from this
+     * buffer, and the user can only make it smaller. The score path never gets here: it answers
+     * {@code INPUT_TOO_LARGE} itself.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleRebomResponseTooLarge(RebomResponseTooLargeException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(EXPORT_TOO_LARGE_MESSAGE)
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * A score that could not be made. The only handler that sets {@code code}/{@code reason}
+     * extensions (the server-error handlers set only {@code ref}): the caller decides on
+     * {@code extensions.reason}, and the message is shown to a person as it is.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleSbomScore(SbomScoreException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(Map.of("code", SbomScoreException.ERROR_CODE, "reason", ex.getReason().name()))
                 .build();
     }
 
@@ -80,14 +139,12 @@ public class GraphQLExceptionHandlers {
 
     @GraphQlExceptionHandler
     public GraphQLError handleDataAccess(DataAccessException ex) {
-        log.error("Data access error", ex);
-        return safeError("Database error");
+        return serverError("Database error", "Data access error", ex);
     }
 
     @GraphQlExceptionHandler
     public GraphQLError handlePersistence(PersistenceException ex) {
-        log.error("Persistence error", ex);
-        return safeError("Database error");
+        return serverError("Database error", "Persistence error", ex);
     }
 
     @GraphQlExceptionHandler
@@ -102,9 +159,61 @@ public class GraphQLExceptionHandlers {
         return safeError("Resource is busy, please retry");
     }
 
+    /**
+     * An argument that is not a uuid where one goes -- a board's name given to board show, say (task
+     * RD3-3). DGS converts an ID argument declared as UUID with Spring's converter, which throws this
+     * before the fetcher runs; it used to surface as "Internal server error". Now it names the
+     * argument: "boardUuid: not a uuid". Any other failed conversion stays a server error.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleConversion(ConversionFailedException ex, DataFetchingEnvironment env) {
+        if (null != ex.getTargetType() && java.util.UUID.class.equals(ex.getTargetType().getType())) {
+            return notAUuid(env, ex.getValue());
+        }
+        return serverError("Internal server error", "Unhandled server error", ex);
+    }
+
+    /**
+     * The same refusal when a fetcher takes the uuid as a string and parses it itself: UUID.fromString's
+     * IllegalArgumentException. Any other IllegalArgumentException stays a server error.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleIllegalArgument(IllegalArgumentException ex, DataFetchingEnvironment env) {
+        String m = ex.getMessage();
+        if (null != m && (m.startsWith(INVALID_UUID) || m.startsWith("UUID string too large"))) {
+            return notAUuid(env, m.startsWith(INVALID_UUID) ? m.substring(INVALID_UUID.length()) : null);
+        }
+        return serverError("Internal server error", "Unhandled server error", ex);
+    }
+
+    private static final String INVALID_UUID = "Invalid UUID string: ";
+
+    /** "boardUuid: not a uuid", the argument found by its value; "input.board: …" inside an input object. */
+    private GraphQLError notAUuid(DataFetchingEnvironment env, Object value) {
+        String where = null == env || null == value ? null : argumentHolding(env.getArguments(), value, "");
+        return GraphqlErrorBuilder.newError()
+                .message((null == where ? "an argument" : where) + ": not a uuid")
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    private static String argumentHolding(java.util.Map<String, Object> args, Object value, String prefix) {
+        if (null == args) return null;
+        for (java.util.Map.Entry<String, Object> e : args.entrySet()) {
+            Object v = e.getValue();
+            if (value.equals(v)) return prefix + e.getKey();
+            if (v instanceof java.util.Collection<?> c && c.contains(value)) return prefix + e.getKey();
+            if (v instanceof java.util.Map<?, ?> m) {
+                @SuppressWarnings("unchecked")
+                String inner = argumentHolding((java.util.Map<String, Object>) m, value, prefix + e.getKey() + ".");
+                if (null != inner) return inner;
+            }
+        }
+        return null;
+    }
+
     @GraphQlExceptionHandler
     public GraphQLError handleGeneric(Exception ex) {
-        log.error("Unhandled server error", ex);
-        return safeError("Internal server error");
+        return serverError("Internal server error", "Unhandled server error", ex);
     }
 }

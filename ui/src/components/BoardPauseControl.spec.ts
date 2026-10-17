@@ -18,6 +18,9 @@ const paused = { pause: { level: 'OPERATOR', reason: 'release freeze', pausedBy:
     pausedAt: '2026-09-27T10:00:00Z' } }
 
 describe('the operator pause', () => {
+    // happy-dom has no window.prompt, and vitest 5 refuses to spy on a missing property. Give it one so
+    // the spy can show the browser prompt is never used.
+    if (typeof window.prompt !== 'function') window.prompt = () => null
     const prompt = vi.spyOn(window, 'prompt')
     afterEach(() => prompt.mockClear())
 

@@ -19,7 +19,7 @@
                         <span v-else>{{ r.componentName }}</span>
                     </td>
                     <td>{{ r.latest }}</td>
-                    <td>{{ r.lifecycle }}</td>
+                    <td>{{ lifecycleLabel(r.lifecycle) }}</td>
                     <td>{{ r.roundsCount }}</td>
                     <td>{{ r.openReviewItems ?? '—' }}</td>
                     <!-- The task page's summary, the verdict by the same rule beside it (RD2-24). -->
@@ -38,6 +38,7 @@
 import { computed } from 'vue'
 import { RouterLink } from 'vue-router'
 import { documentSeriesRows } from '@/utils/agentDocumentsView'
+import { lifecycleLabel } from '@/utils/lifecycle'
 
 const props = defineProps<{
     /** AgentBoard.documentSeries */

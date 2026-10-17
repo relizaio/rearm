@@ -37,6 +37,7 @@ import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.model.BranchData;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.DeliverableService;
@@ -135,6 +136,8 @@ public class OssReleaseDatafetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
 
 		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
 		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
@@ -177,7 +180,7 @@ public class OssReleaseDatafetcher {
 		// (the same shape that authorises VERSION_FEATURESET) authorises
 		// the read here too. Other key types continue through the legacy
 		// supportedApiTypes path.
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isRbacKey()) {
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 					ro.getUuid(), List.of(ro), CallType.READ);
@@ -191,6 +194,15 @@ public class OssReleaseDatafetcher {
 		
 		if (StringUtils.isNotEmpty(branch)) {
 			branch = Utils.cleanBranch(branch);
+		}
+		// An omitted branch means the base branch: a product's base feature set, which is what
+		// nearly every "latest product release" caller wants, and a component's base branch, its
+		// main line. It used to stay null, which failed in the branch lookup as "Internal server
+		// error" (Pro #788).
+		UUID baseBranchOwner = null != productUuid ? productUuid : componentUuid;
+		if (StringUtils.isEmpty(branch) && null != baseBranchOwner) {
+			branch = branchService.getBaseBranchOfComponent(baseBranchOwner)
+					.map(bb -> BranchData.branchDataFromDbRecord(bb).getName()).orElse(branch);
 		}
 			
 		try {

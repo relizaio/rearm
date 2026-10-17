@@ -28,6 +28,40 @@ export interface ExportFallbackInput {
     flagsUnsupported: boolean
     /** Classifier for "the server rejected the DOCUMENT", normally isSchemaDriftError. */
     isDriftError: (err: any) => boolean
+    /**
+     * The operator asked for file components to be left out (SCORE-11), and `runFull` is the
+     * document that says so. There is no flagless equivalent of that request: see
+     * FileSwitchUnsupportedError.
+     */
+    excludeFileComponents?: boolean
+}
+
+/**
+ * The server cannot leave file components out of an export: it rejected the document carrying
+ * excludeFileComponents as schema drift, or it already proved it takes no per-export options.
+ *
+ * <p>NEVER RETRIED AS THE CORE DOCUMENT. That document would export exactly the file components
+ * the operator asked to leave out, and the downloaded file would not say so -- the same shape of
+ * failure as retrying a refused support disclosure. The caller latches, disables the switch and
+ * tells the operator; exporting with the files is then their decision, not ours.
+ */
+export class FileSwitchUnsupportedError extends Error {
+    /** The server's rejection, when there was one. */
+    readonly rejection: any
+    constructor (rejection?: any) {
+        super('This server cannot leave file components out of the export yet. Turn off "Leave out file components" to export with them.')
+        this.name = 'FileSwitchUnsupportedError'
+        this.rejection = rejection
+    }
+}
+
+/**
+ * Whether the "Leave out file components" switch can be offered: not on a server that rejected
+ * the switch itself, and not on one that rejected the per-export metadata options either, since
+ * a server without those predates the switch too.
+ */
+export function fileSwitchAvailable (metadataArgsUnsupported: boolean, fileSwitchUnsupported: boolean): boolean {
+    return !metadataArgsUnsupported && !fileSwitchUnsupported
 }
 
 /**
@@ -54,7 +88,10 @@ export interface ExportFallbackInput {
 export async function exportWithMetadataFallback (
     input: ExportFallbackInput
 ): Promise<ExportFallbackResult> {
-    const { runFull, runCore, flagsUnsupported, isDriftError } = input
+    const { runFull, runCore, flagsUnsupported, isDriftError, excludeFileComponents } = input
+    if (excludeFileComponents && flagsUnsupported) {
+        throw new FileSwitchUnsupportedError()
+    }
     if (flagsUnsupported) {
         return { data: await runCore(), usedCore: true, justDiscovered: false }
     }
@@ -62,6 +99,7 @@ export async function exportWithMetadataFallback (
         return { data: await runFull(), usedCore: false, justDiscovered: false }
     } catch (err: any) {
         if (!isDriftError(err)) throw err
+        if (excludeFileComponents) throw new FileSwitchUnsupportedError(err)
         // If THIS fails too, it was never about the arguments: let the real error surface
         // rather than reporting "metadata options ignored" over an unrelated fault.
         const data = await runCore()

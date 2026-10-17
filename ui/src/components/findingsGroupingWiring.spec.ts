@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { readFileSync } from 'fs'
 import { fileURLToPath } from 'url'
+import { withoutComments } from '@/utils/specText'
 
 /**
  * Wiring guard for the group-by-component view in VulnerabilityModal.vue. Scope
@@ -14,10 +15,7 @@ import { fileURLToPath } from 'url'
  * inside the flat table, and the grouped view would group rows the flat table
  * hides.
  */
-const code = readFileSync(fileURLToPath(new URL('./VulnerabilityModal.vue', import.meta.url)), 'utf8')
-    .replace(/<!--[\s\S]*?-->/g, '')
-    .replace(/\/\*[\s\S]*?\*\//g, '')
-    .replace(/(^|[^:])\/\/.*$/gm, '$1')
+const code = withoutComments(readFileSync(fileURLToPath(new URL('./VulnerabilityModal.vue', import.meta.url)), 'utf8'))
 
 const importBlock = (code.match(/^import\s[^;]*?\sfrom\s+'[^']+'/gms) || []).join('\n')
 

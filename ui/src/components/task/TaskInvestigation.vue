@@ -10,7 +10,7 @@
                 <span class="deplab">report</span>
                 <span v-if="report">
                     <code>{{ report.document?.path }}</code>
-                    round {{ report.document?.round ?? '?' }} · {{ report.lifecycle }}
+                    round {{ report.document?.round ?? '?' }} · {{ lifecycleLabel(report.lifecycle) }}
                     <span v-if="task.investigation.report === report.uuid"> · delivered</span>
                 </span>
                 <span v-else class="holdmeta" style="margin-top: 0">not published yet</span>
@@ -41,6 +41,7 @@ import { computed } from 'vue'
 import AgentTime from '../AgentTime.vue'
 import { investigationLines, isInvestigation, reportOf } from '@/utils/agentInvestigation'
 import { ts } from '@/utils/agentTaskFormat'
+import { lifecycleLabel } from '@/utils/lifecycle'
 
 const props = defineProps<{ task: any, tasks?: any[] }>()
 const investigation = computed(() => isInvestigation(props.task) ? props.task.investigation : null)

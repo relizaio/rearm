@@ -38,6 +38,10 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	
 	public static final String DEFAULT_FEATURE_SET_LABEL = "Feature Set";
 	public static final int MAX_TERMINOLOGY_LENGTH = 50;
+	/** Priority levels a review item index may use when the org has not set its own. */
+	public static final int DEFAULT_REVIEW_ITEM_PRIORITY_LEVELS = 3;
+	/** Upper bound on {@code reviewItemPriorityLevels}; the lower bound is 1. Enforced on every settings write. */
+	public static final int MAX_REVIEW_ITEM_PRIORITY_LEVELS = 10;
 	
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -153,6 +157,14 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		@JsonProperty
 		private Integer notificationRetentionDays;
+
+		/**
+		 * Hours an agent session may go without a call before the idle sweep closes it (task
+		 * 6e7fe6fe). Null is {@link #AGENT_SESSION_IDLE_CLOSE_HOURS_DEFAULT}; bounded at update time.
+		 * A session holding a task or a coordinator seat is given twice this.
+		 */
+		@JsonProperty
+		private Integer agentSessionIdleCloseHours;
 		/**
 		 * How many of a branch's recent releases the {@code branch.*} rule variables look back
 		 * over. All lifecycles count -- a rejected release holds exactly the commits those rules
@@ -209,6 +221,18 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		public static final int NOTIFICATION_RETENTION_DAYS_MIN = 14;
 		public static final int NOTIFICATION_RETENTION_DAYS_MAX = 730;
 
+		public static final int AGENT_SESSION_IDLE_CLOSE_HOURS_DEFAULT = 24;
+		public static final int AGENT_SESSION_IDLE_CLOSE_HOURS_MIN = 1;
+		public static final int AGENT_SESSION_IDLE_CLOSE_HOURS_MAX = 720;
+
+		/** @return the configured idle window in hours, or 24 when unset. */
+		@JsonIgnore
+		public int getAgentSessionIdleCloseHoursOrDefault() {
+			return agentSessionIdleCloseHours != null
+					? Math.max(AGENT_SESSION_IDLE_CLOSE_HOURS_MIN, agentSessionIdleCloseHours)
+					: AGENT_SESSION_IDLE_CLOSE_HOURS_DEFAULT;
+		}
+
 		/**
 		 * Org-level "watchers" lever for the component notification audience.
 		 * When true, read-only ({@code >= READ_ONLY}) component members are also
@@ -254,6 +278,20 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		 */
 		@JsonProperty
 		private Integer findingChangeRetentionDays;
+
+		/**
+		 * How many priority levels a review item index may use, 1 being highest. Default
+		 * {@link #DEFAULT_REVIEW_ITEM_PRIORITY_LEVELS}, bounded 1..{@link #MAX_REVIEW_ITEM_PRIORITY_LEVELS}.
+		 *
+		 * <p>A per-org setting rather than a fixed enum so an org that wants five levels does not
+		 * need a schema change. Validated at PUBLISH only: lowering the count later leaves
+		 * historical indexes carrying priorities above it, and every reader treats such a value as
+		 * a plain integer rather than refusing the document. Refusing to read history because a
+		 * setting moved would lose the review items, which is worse than a group labelled 4 on a
+		 * three-level board.
+		 */
+		@JsonProperty
+		private Integer reviewItemPriorityLevels;
 
 		// The pre-v3 (v1/v2) backfill watermark fields that used to live here
 		// (findingChangeBackfillCompletedAt/VocabVersion, findingChangeV2Backfill*) were
@@ -568,6 +606,18 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private List<GlobalTeamAssignmentRule> globalTeamAssignmentRules = new LinkedList<>();
+
+	/**
+	 * Every task-key prefix any board of the organization has held (board-documents.md D9), with
+	 * the board that claimed it. Claimed under the org's AGENT_TASK_PREFIXES advisory lock and never
+	 * removed -- not when the board renames its prefix, is archived or is deleted -- so a key once
+	 * printed names one task for good.
+	 */
+	@JsonProperty
+	private Map<String, TaskPrefixClaim> agentTaskPrefixes = new java.util.LinkedHashMap<>();
+
+	/** Which board holds a task-key prefix, and since when. */
+	public static record TaskPrefixClaim(UUID board, ZonedDateTime claimedAt) implements java.io.Serializable {}
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;

@@ -673,6 +673,19 @@ query TeaComponentName($componentUuid: ID!) {
     }
 }`
 
+// The members dialog's stored-perspectives read (TEA-16): the dry-run before an add asks about the
+// stored list plus the one being added. Long-standing fields only, valid on CE and Pro.
+const TEA_COMPONENT_PERSPECTIVES = gql`
+query TeaComponentPerspectives($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) {
+        uuid
+        perspectiveDetails {
+            uuid
+            name
+        }
+    }
+}`
+
 const DELETE_TEA_PROFILE = gql`
 mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
     deleteTeaProfile(org: $org, scope: $scope, object: $object)
@@ -956,6 +969,25 @@ const RELEASE_COLLECTION_DATA = `
     }
     
 `
+// SBOM readiness score (SCORE-6): the scoring engine's report as a JSON string, or one error
+// with extensions.code SBOM_SCORE_ERROR and extensions.reason. Queries, always sent no-cache.
+// The release one takes exactly the export's shaping arguments, so it scores what Export gives.
+const RELEASE_SBOM_SCORE_GQL = gql`
+query releaseSbomScore($release: ID!, $tldOnly: Boolean, $ignoreDev: Boolean, $structure: BomStructureType,
+    $belongsTo: ArtifactBelongsToEnum, $excludeCoverageTypes: [ArtifactCoverageType],
+    $includeSupportMetadata: Boolean, $includeInternalMetadata: Boolean, $excludeFileComponents: Boolean,
+    $profiles: [String!]!) {
+    releaseSbomScore(release: $release, tldOnly: $tldOnly, ignoreDev: $ignoreDev, structure: $structure,
+        belongsTo: $belongsTo, excludeCoverageTypes: $excludeCoverageTypes,
+        includeSupportMetadata: $includeSupportMetadata, includeInternalMetadata: $includeInternalMetadata,
+        excludeFileComponents: $excludeFileComponents, profiles: $profiles)
+}`
+
+const ARTIFACT_SBOM_SCORE_GQL = gql`
+query artifactSbomScore($artifact: ID!, $raw: Boolean, $version: Int, $profiles: [String!]!) {
+    artifactSbomScore(artifact: $artifact, raw: $raw, version: $version, profiles: $profiles)
+}`
+
 const ARTIFACT_DETAIL_DATA = `
     uuid
     displayIdentifier
@@ -2262,6 +2294,7 @@ export default {
     TeaProfileExposureChangeGql: TEA_PROFILE_EXPOSURE_CHANGE,
     TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,
     TeaComponentNameGql: TEA_COMPONENT_NAME,
+    TeaComponentPerspectivesGql: TEA_COMPONENT_PERSPECTIVES,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
@@ -2297,4 +2330,6 @@ export default {
     LatestReleasesOfComponentGql: LATEST_RELEASES_OF_COMPONENT_GQL,
     FeatureSetsUsingComponentGql: FEATURE_SETS_USING_COMPONENT_GQL,
     FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
+    ReleaseSbomScoreGql: RELEASE_SBOM_SCORE_GQL,
+    ArtifactSbomScoreGql: ARTIFACT_SBOM_SCORE_GQL,
 }

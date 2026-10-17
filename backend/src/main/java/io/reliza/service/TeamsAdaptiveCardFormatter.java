@@ -103,6 +103,7 @@ public class TeamsAdaptiveCardFormatter {
             case APPROVAL_REQUESTED -> renderApprovalRequested(event);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
+            case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> renderAgentBoard(event);
         };
     }
 
@@ -525,6 +526,18 @@ public class TeamsAdaptiveCardFormatter {
                     webBaseUri + "/release/show/" + r.releaseUuid()));
         }
         return List.of();
+    }
+
+    /** A board notification: the headline, the board's own words, and a link to the task page. */
+    private Map<String, Object> renderAgentBoard(NotificationOutboxEvent event) {
+        io.reliza.model.dto.notifications.AgentBoardEventPayload p = AgentBoardRenderSupport.payload(event);
+        if (p == null) return fallbackCard(event);
+        List<Map<String, Object>> body = new ArrayList<>();
+        body.add(textBlock(AgentBoardRenderSupport.headline(event.getEventType(), p), "Medium", "Bolder", "Default"));
+        String text = AgentBoardRenderSupport.body(p);
+        if (StringUtils.isNotBlank(text)) body.add(textBlock(text, "Default", "Default", "Default"));
+        String url = AgentBoardRenderSupport.url(webBaseUri, p);
+        return adaptiveCard(body, url == null ? List.of() : List.of(openUrlAction("Open in ReARM", url)));
     }
 
     private Map<String, Object> fallbackCard(NotificationOutboxEvent event) {

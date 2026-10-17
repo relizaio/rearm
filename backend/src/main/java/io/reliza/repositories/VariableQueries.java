@@ -18,12 +18,6 @@ class VariableQueries {
 				ORDER BY aka.api_key_uuid, aka.access_date DESC
 		 		""";
 	
-	 protected static final String FIND_API_KEY_ACCESS_BY_ORGANIZATION_KEY_ID = """
-		 		SELECT DISTINCT ON (aka.api_key_uuid) aka.* FROM rearm.api_key_access aka
-				where aka.org = :orgUuid and aka.api_key_uuid = :keyUuid 
-				ORDER BY aka.api_key_uuid, aka.access_date DESC
-		 		""";
-	 
 	 protected static final String COUNT_KEY_ACCESS_BY_KEY_ID = """
 		 		SELECT COUNT(aka.*) FROM rearm.api_key_access aka
 				where aka.api_key_uuid = :keyUuid
@@ -31,8 +25,13 @@ class VariableQueries {
 	 
 	 /** API Key **/
  
-	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE ((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
-			+ "(ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER')) AND ak.uuid = :uuid";
+	/** A key row is live while it has a legacy secret column or a status other than REVOKED (registry robot rows always); a deleted key is not. */
+	protected static final String API_KEY_LIVE = "((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
+			+ "(ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER'))";
+
+	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE " + API_KEY_LIVE + " AND ak.uuid = :uuid";
+
+	protected static final String LOCK_API_KEY_LIVENESS = "SELECT " + API_KEY_LIVE + " FROM rearm.api_keys ak WHERE ak.uuid = :uuid FOR UPDATE";
 
 	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
@@ -62,6 +61,9 @@ class VariableQueries {
 	protected static final String FIND_USER_API_KEY_BY_USER_ID_AND_ORG = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :userUuid and ak.object_type = 'USER' and ak.org = :orgUuid";
 	
+	protected static final String FIND_HELD_API_KEYS_BY_USER_AND_ORG = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
+			+ "ak.object_type = 'FREEFORM' and ak.org = :orgUuid and ak.record_data->>'holder' = cast(:userUuid as varchar)";
+
 	protected static final String FIND_USER_API_KEYS_BY_USER = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "((ak.object_uuid = :userUuid and ak.object_type = 'USER') or ak.record_data->>'holder' = cast(:userUuid as varchar))";
 	
@@ -891,14 +893,27 @@ class VariableQueries {
 	// reword one without the other: a mismatch silently degrades this finder back
 	// to a whole-table walk (the fence condition is deliberately NOT part of the
 	// index predicate; now() is not immutable).
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
-		SELECT * FROM rearm.releases
-			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
+	//
+	// The eligibility condition is defined ONCE, here, and composed into the finder, the
+	// backlog count (ReleaseRepository#countReleasesEligibleForMetricsCompute) and the
+	// per-release check (ReleaseRepository#isEligibleForMetricsComputeByUpdate), so the three
+	// cannot drift apart -- and none of them can drift from the index predicate above.
+	protected static final String METRICS_COMPUTE_BY_UPDATE_ELIGIBLE = """
+		last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
 			   AND (flow_control->>'metricsComputeSkipUntil' IS NULL
 			        OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-			 ORDER BY last_updated_date ASC
-			 LIMIT :limit
 		""";
+
+	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT * FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE
+		+ " ORDER BY last_updated_date ASC LIMIT :limit";
+
+	protected static final String IS_RELEASE_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT EXISTS (SELECT 1 FROM rearm.releases WHERE uuid = :uuid AND ("
+		+ METRICS_COMPUTE_BY_UPDATE_ELIGIBLE + "))";
+
+	protected static final String COUNT_RELEASES_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT count(*) FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE;
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
 		WITH
@@ -1124,6 +1139,19 @@ class VariableQueries {
 			+ " where sce.record_data->>'" + CommonVariables.COMMIT_FIELD + "' = :commit and"
 			+ " sce.record_data->>'vcs' = :vcsUuidAsString";
 
+	/**
+	 * The newest source code entry on a repository's branch (task RD4-2): what a hop records as its PR's base.
+	 * The leading {@code vcs} expression of the (vcs, commit) unique index narrows it to the repository.
+	 */
+	protected static final String FIND_NEWEST_SCE_ON_VCS_BRANCH = "select * from rearm.source_code_entries sce"
+			+ " where sce.record_data->>'vcs' = :vcsUuidAsString and sce.record_data->>'"
+			+ CommonVariables.VCS_BRANCH_FIELD + "' = :vcsBranch order by sce.created_date desc limit 1";
+
+	/** How many source code entries ReARM recorded on a repository's branch after an instant (task RD4-2). */
+	protected static final String COUNT_SCES_ON_VCS_BRANCH_AFTER = "select count(*) from rearm.source_code_entries sce"
+			+ " where sce.record_data->>'vcs' = :vcsUuidAsString and sce.record_data->>'"
+			+ CommonVariables.VCS_BRANCH_FIELD + "' = :vcsBranch and sce.created_date > :after";
+
 	protected static final String FIND_SCE_BY_COMMITS_AND_VCS = "select * from rearm.source_code_entries sce"
 			+ " where sce.record_data->>'" + CommonVariables.COMMIT_FIELD + "' in (:commits) and"
 			+ " sce.record_data->>'vcs' = :vcsUuidAsString";
@@ -1154,6 +1182,25 @@ class VariableQueries {
 	protected static final String FIND_VCS_REPOS_BY_ORG = "select * from rearm.vcs_repositories v"
 			+ " where v.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
 			+ " and (v.record_data->>'status' != 'ARCHIVED' or v.record_data->>'status' is null)";
+
+	/**
+	 * Case-insensitive variant of the lookup below, used only after the byte-equal one misses and
+	 * only when the host is one the tracker enum knows to resolve case-insensitively.
+	 *
+	 * <p>Ordered so a caller can take the oldest of several: two rows differing only by case
+	 * already exist on any instance that saw both spellings, and merging them is an operator
+	 * action. The org predicate is the leading column of the existing unique index, so this stays
+	 * an index scan over one org's repositories.
+	 */
+	protected static final String FIND_VCS_REPOS_BY_ORG_AND_URI_FOLDED = """
+			select * from rearm.vcs_repositories v
+			where v.record_data->>'org' = :orgUuidAsString and
+			(lower(v.record_data->>'uri') = lower(:uri)
+			 or lower(v.record_data->>'uri') = 'https://' || lower(:uri)
+			 or lower(v.record_data->>'uri') = 'http://' || lower(:uri))
+			and (v.record_data->>'status' != 'ARCHIVED' or v.record_data->>'status' is null)
+			order by v.record_data->>'createdDate' asc
+			""";
 
 	protected static final String FIND_VCS_REPO_BY_ORG_AND_URI = """
 			select * from rearm.vcs_repositories v

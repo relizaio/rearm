@@ -295,7 +295,9 @@ class SyntheticEventServiceTest {
                 // if such a template were added without a payload mapping here.
                 case RELEASE_CREATED, RELEASE_LIFECYCLE_CHANGED, RELEASE_BOM_DIFF,
                         APPROVAL_REQUESTED, APPROVAL_RESOLVED,
-                        INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED ->
+                        INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED,
+                        AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE,
+                        AGENT_SESSION_IDLE_WARNING ->
                         throw new IllegalStateException(
                                 "No synthetic template maps " + SyntheticEventTemplates.eventTypeOf(t));
             };

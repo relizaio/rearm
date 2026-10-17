@@ -4,9 +4,11 @@
 
 package io.reliza.model.tea;
 
+import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.databind.JsonNode;
 
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -26,6 +28,19 @@ public class Rebom {
         String hash,
         Boolean tldOnly,
         Boolean ignoreDev,
+        // Merge only: leave components of type file out of the merged BOM (SCORE-11). Part of
+        // the merged-BOM cache key. Null when off and then never serialised, so a request
+        // without it reaches rebom, and is stored on the release, exactly as before it existed.
+        @JsonInclude(JsonInclude.Include.NON_NULL) Boolean excludeFileComponents,
+        // Merge only: the merge rule version a stored merge was built with (SCORE-13,
+        // ReleaseService.MERGE_VERSION). Part of the merged-BOM cache key, so merges stored
+        // under older rules (null) are rebuilt on their next request. Null is never serialised.
+        @JsonInclude(JsonInclude.Include.NON_NULL) Integer mergeVersion,
+        // Product merge only: the component releases that yielded no BOM (SCORE-15 ADR-1). rebom
+        // lists each as a placeholder component with unknown dependencies. Derived from the
+        // release graph at generation time like the BOM ids, so NOT part of the merged-BOM cache
+        // key and never on a stored ReleaseBom row. Null when empty, and then never serialised.
+        @JsonInclude(JsonInclude.Include.NON_NULL) List<MissingSbomComponent> missingSbomComponents,
         BomStructureType structure,
         String notes,
         StripBom stripBom,
@@ -40,36 +55,90 @@ public class Rebom {
     ) {
         // create opts
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
-            this(name, group, version, belongsTo, hash, tldOnly, false, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, tldOnly, false, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
-            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl, RootComponentMergeMode rootComponentMergeMode) {
-            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null);
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null);
+        }
+
+        public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, Boolean excludeFileComponents, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl, RootComponentMergeMode rootComponentMergeMode) {
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure, RootComponentMergeMode rootComponentMergeMode) {
-            this(null, null,  null, belongsTo, null, tldOnly, false, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", rootComponentMergeMode, null);
+            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", rootComponentMergeMode, null);
         }
         public RebomOptions() {
-            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, false, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, false, null, null, null, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
     
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom, String purl) {
-            this(name, group,  version, belongsTo, hash, false, false, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, false, false, null, null, null, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
         // merge opts
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure) {
-            this(null, null,  null, belongsTo, null, tldOnly, false, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure) {
-            this(null, null,  null, belongsTo, null, tldOnly, ignoreDev, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
         }
+
+        public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, Boolean excludeFileComponents, BomStructureType structure) {
+            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, excludeFileComponents, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+        }
+
+        /** The same options, for a merge built under merge rule version {@code mergeVersion}. */
+        public RebomOptions withMergeVersion(Integer mergeVersion) {
+            return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
+                    mergeVersion, missingSbomComponents, structure, notes, stripBom, serialNumber, bomDigest,
+                    originalFileDigest, originalFileSize, originalMediaType, purl, rootComponentMergeMode, bomVersion);
+        }
+
+        /**
+         * The same options, listing {@code missing} as the component releases without a BOM; an
+         * empty or null list is carried as null, so the request keeps the shape it had before.
+         */
+        public RebomOptions withMissingSbomComponents(List<MissingSbomComponent> missing) {
+            return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
+                    mergeVersion, null == missing || missing.isEmpty() ? null : List.copyOf(missing), structure, notes,
+                    stripBom, serialNumber, bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl,
+                    rootComponentMergeMode, bomVersion);
+        }
+    }
+
+    /**
+     * A component release of a product that yielded no BOM, as rebom lists it in the product's
+     * merged BOM (SCORE-15 ADR-2): a component with the bom-ref {@code urn:rearm:release:<releaseUuid>},
+     * the property {@code reliza:sbom:missing = reason} and unknown dependencies. {@code purl} is
+     * null when the release records none; it is never made up.
+     */
+    public record MissingSbomComponent(
+        String releaseUuid,
+        String name,
+        String version,
+        String type,
+        String supplierName,
+        String group,
+        String purl,
+        MissingSbomReason reason
+    ) {}
+
+    /**
+     * Why a product's component release yields no BOM to the product's merge (SCORE-15 ADR-2); rebom
+     * writes the name as the value of the component's {@code reliza:sbom:missing} property.
+     */
+    public enum MissingSbomReason {
+        /** The release has no BOM artifact of the requested kind. */
+        NO_SBOM_ARTIFACT,
+        /** The release has BOM artifacts, and the export's coverage filter left every one out. */
+        COVERAGE_EXCLUDED
     }
 
     public record RebomResponse(

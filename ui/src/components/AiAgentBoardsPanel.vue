@@ -542,7 +542,9 @@
                     </n-input>
                     <n-text depth="3" style="font-size: 11.5px;">
                         Placeholders: <template v-for="p in PATH_PLACEHOLDERS" :key="p"><code>{{ p }}</code> </template>
-                        (<code>{task}</code> is read as <code>{key}</code>, the task's key). Blank
+                        (<code>{task}</code> is read as <code>{key}</code>, the task's key;
+                        <code>{role}</code> is the publishing role, so two roles producing one type,
+                        such as two reviewers, write to separate folders). Blank
                         uses the default shown, which the server picks by scope: per task for a type
                         a role produces per task, else one file per component.
                         <template v-if="documentsRootNote(editingBoard.documentsRoot)">

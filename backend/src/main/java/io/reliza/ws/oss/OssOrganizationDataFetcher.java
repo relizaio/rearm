@@ -98,6 +98,7 @@ public class OssOrganizationDataFetcher {
 		try {
 			List<PermissionDto> convertedPermissions = permissions.stream()
 					.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+			authorizationService.assertGrantObjectsExist(orgUuid, convertedPermissions);
 			UserData ud = userService.setUserPermissions(userUuid, orgUuid, Optional.of(permissionType), convertedPermissions, wu);
 			retUserData = UserData.convertUserDataToOrgUserData(ud, orgUuid);
 		} catch (RelizaException re) {

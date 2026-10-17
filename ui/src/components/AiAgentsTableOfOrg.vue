@@ -32,6 +32,7 @@ import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
 import { NBreadcrumb, NBreadcrumbItem, NDataTable, NIcon, NSpin, NTag, NTooltip, DataTableColumns } from 'naive-ui'
 import { Info20Regular } from '@vicons/fluent'
+import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 
 const store = useStore()
 const route = useRoute()
@@ -115,8 +116,8 @@ const columns: DataTableColumns<any> = [
     {
         title: 'Name',
         key: 'name',
-        sorter: 'default',
-        render: (row: any) => h('span', { class: 'name-text' }, row.name),
+        sorter: (a: any, b: any) => agentDisplayLabel(a).localeCompare(agentDisplayLabel(b)),
+        render: (row: any) => h('span', { class: 'name-text' }, agentDisplayLabel(row)),
     },
     {
         title: 'Model',

@@ -12,7 +12,6 @@ import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
-import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -56,6 +55,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.UserWebDto;
+import io.reliza.service.BrandedEmailText.EmailText;
 import io.reliza.repositories.UserRepository;
 import io.reliza.ws.RelizaConfigProps;
 import jakarta.servlet.http.HttpServletResponse;
@@ -68,6 +68,9 @@ public class UserService {
 	
 	@Autowired
     private EmailService emailService;
+
+	@Autowired
+	private BrandingService brandingService;
 	
 	@Autowired
 	private EncryptionService encryptionService;
@@ -657,6 +660,7 @@ public class UserService {
 			if (removed) {
 				ud.revokeAllOrgPermissions(orgUuid);
 				userGroupService.removeUserFromAllGroupsInOrg(userUuid, orgUuid, wu);
+				apiKeyService.releaseHeldKeysInOrg(userUuid, orgUuid, wu);
 				apiKeyService.revokeUserKeysInOrg(userUuid, orgUuid, wu);
 			}
 			componentService.handleRemoveUserFromTriggers(orgUuid, userUuid, wu);
@@ -674,6 +678,23 @@ public class UserService {
 			
 			// save user
 			User saved = saveUser(ou.get(), Utils.dataToRecord(ud), wu);
+			// An inactive user is no longer an org member for the actions
+			// users-in-org check, so scrub them from component actions the same
+			// way removeUserFromOrg does, in every org they belong to. Best effort,
+			// after the deactivation is saved: a failed component save must never
+			// undo or fail the deactivation, so each org's scrub runs and commits in
+			// a transaction of its own (the caller, inactivateUser, holds one; a
+			// failure inside it would mark it rollback-only). If the caller's
+			// transaction rolls back after this, the user stays ACTIVE but scrubbed:
+			// they get no more action emails until re-added. reactivateUser does not
+			// restore it.
+			for (UUID orgUuid : ud.getOrganizations()) {
+				try {
+					componentService.handleRemoveUserFromTriggersInNewTransaction(orgUuid, userUuid, wu);
+				} catch (Exception e) {
+					log.error("Error removing deactivated user = " + userUuid + " from component actions in org = " + orgUuid, e);
+				}
+			}
 			return UserData.dataFromRecord(saved);
 		}
 		return null;
@@ -699,10 +720,8 @@ public class UserService {
 				// send email to old address if it's valid that a new one is provided
 				EmailValidator ev = EmailValidator.getInstance(false);
 				if (ev.isValid(oldEmail)) {
-					String emailSubject = "This email address was requested to be replaced with a new one on ReARM";
-					String contentStr = "Our records indicate that you requested to replace this email with a new one in ReARM."
-							+ "If you didn't do it, please contact us at info@reliza.io as soon as possible.";
-					emailService.sendEmail(List.of(oldEmail), emailSubject, "text/html", contentStr);
+					EmailText notice = BrandedEmailText.emailChangeNotice(brandingService.current().values());
+					emailService.sendEmail(List.of(oldEmail), notice.subject(), "text/html", notice.body());
 				}
 				// if email address changed, require verification
 				User u = getUser(ud.getUuid()).get();
@@ -780,12 +799,9 @@ public class UserService {
 		}
 		if (StringUtils.isEmpty(email)) email = ud.getEmail();
 		// send email to user
-		String emailSubject = "Verify your email on ReARM";
-		String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri()
-			+ "/verifyEmail/" 
-			+ urlSafeKey + "\">this link</a> to verify your email on ReARM. "
-			+ "Note that the link will be valid only within the next 48 hours.";
-		boolean sentEmail = emailService.sendEmail(List.of(email), emailSubject, "text/html", contentStr);
+		EmailText verify = BrandedEmailText.verifyEmail(brandingService.current().values(),
+				relizaConfigProps.getBaseuri(), urlSafeKey);
+		boolean sentEmail = emailService.sendEmail(List.of(email), verify.subject(), "text/html", verify.body());
 		if (!sentEmail) {
 			throw new RelizaException("Internal error sending email"); 
 		} else {
@@ -1000,26 +1016,44 @@ public class UserService {
 		}
 		return it;
 	}
-	
+
+	/** Deployment-wide UI home dashboard default (relizaprops.default-dashboard): BOARDS or APP; anything else resolves to APP. */
+	public String getDefaultDashboard() {
+		return "BOARDS".equalsIgnoreCase(relizaConfigProps.getDefaultDashboard()) ? "BOARDS" : "APP";
+	}
+
 	public boolean sendEmailToUsers(UUID org, Collection<UUID> users,
 			String subject, String contentType, String contentStr) {
-		Set<UUID> distinctUserUuids = new HashSet<>(users);
-		Set<String> emails = distinctUserUuids
-			.stream()
-			.map(du -> getUserDataWithOrg(du, org).get().getEmail(org))
-			.collect(Collectors.toSet());
+		Set<String> emails = activeRecipientEmails(org, users);
+		if (emails.isEmpty()) {
+			log.debug("No active recipients in org = {}, not sending '{}'", org, subject);
+			return true;
+		}
 		return emailService.sendEmail(emails, subject, contentType, contentStr);
 	}
 
-	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, UUID userUuid, PermissionType permissionType) {
-		String adminEmailSub = "New user joined the organizaiton " + od.getName() + " on ReARM at " + relizaConfigProps.getBaseuri();
-		String adminEmailContent = "A new user with the uuid " + userUuid + 
-		" joined the organization "+ od.getName() 
-		+ " on ReARM with permission: " + permissionType.toString() + ".";
-		if (PermissionType.NONE == permissionType) {
-			adminEmailContent += "\n\nPlease open Organization Settings view in ReARM and assign permissions for this user.";
+	/**
+	 * The org emails of those {@code users} who are active members of {@code org}. Others are
+	 * skipped, not an error: an action may still hold a user deactivated or removed before
+	 * deactivation scrubbed actions, and one such user must not stop the email to the rest.
+	 */
+	public Set<String> activeRecipientEmails(UUID org, Collection<UUID> users) {
+		Set<String> emails = new LinkedHashSet<>();
+		for (UUID user : new LinkedHashSet<>(users)) {
+			Optional<UserData> member = getUserDataWithOrg(user, org);
+			if (member.isPresent()) {
+				emails.add(member.get().getEmail(org));
+			} else {
+				log.debug("Skipping action email recipient = {}: not an active member of org = {}", user, org);
+			}
 		}
-		sendEmailToOrgAdmins(adminEmailSub, adminEmailContent, od.getUuid());
+		return emails;
+	}
+
+	public void sendEmailToOrgAdminsOnUserJoined(OrganizationData od, UUID userUuid, PermissionType permissionType) {
+		EmailText joined = BrandedEmailText.userJoinedNotice(brandingService.current().values(), od.getName(),
+				relizaConfigProps.getBaseuri(), userUuid, permissionType);
+		sendEmailToOrgAdmins(joined.subject(), joined.body(), od.getUuid());
 	}
 	
 	private void sendEmailToOrgAdmins(String subject, String content, UUID orgUuid) {

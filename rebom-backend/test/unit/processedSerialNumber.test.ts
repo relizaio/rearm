@@ -9,7 +9,8 @@ const pushToOci = vi.fn(async (tag: string, bom: any) => {
     return { ociRepositoryName: 'rebom-artifacts-2026-09', fileSHA256Digest: `digest-of-${tag}`, originalSize: 10 };
 });
 
-vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {} }));
+vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {},
+    withTransaction: async (fn: any) => fn({ query: (...a: any[]) => runQuery.apply(null, a as any) }) }));
 vi.mock('../../src/logger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
@@ -17,6 +18,14 @@ const bomById = vi.fn(async (_id: string) => [] as any[]);
 vi.mock('../../src/bomRepository', () => ({
     allBomsBySerialNumber: vi.fn(async () => [] as any[]),
     bomById: (...a: any[]) => bomById.apply(null, a as any)
+}));
+// The lineage pre-check sees no lineage, the claim writes nothing and the
+// in-transaction version re-check sees no row (SCORE-46 T-12).
+vi.mock('../../src/bomLineageRepository', async (importOriginal) => ({
+    ...(await importOriginal<any>()),
+    find: vi.fn(async () => null),
+    claimInTransaction: vi.fn(async () => undefined),
+    latestStoredVersion: vi.fn(async () => null)
 }));
 vi.mock('../../src/services/oci', async (importOriginal) => {
     const actual: any = await importOriginal();

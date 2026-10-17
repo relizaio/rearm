@@ -52,6 +52,20 @@ public interface CliSessionRepository extends JpaRepository<CliSession, UUID> {
 	@Query(value = "SELECT COUNT(*) FROM rearm.cli_sessions WHERE api_key = :apiKey AND status = 'ACTIVE' AND uuid <> :except", nativeQuery = true)
 	long countOtherActiveByApiKey(@Param("apiKey") UUID apiKey, @Param("except") UUID except);
 
+	/** A session acts as its key: deleting the key revokes the key's active sessions. */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.cli_sessions SET status = 'REVOKED', revoked_date = now() WHERE api_key = :apiKey AND status = 'ACTIVE'",
+			nativeQuery = true)
+	int revokeActiveByApiKey(@Param("apiKey") UUID apiKey);
+
+	/** A member removed from an org loses their sessions on that org's keys. */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.cli_sessions SET status = 'REVOKED', revoked_date = now() WHERE \"user\" = :user AND org = :org AND status = 'ACTIVE'",
+			nativeQuery = true)
+	int revokeActiveByUserAndOrg(@Param("user") UUID user, @Param("org") UUID org);
+
 	/** Usage bookkeeping, at most once a minute per session so a busy CLI does not write on every call. */
 	@Transactional
 	@Modifying

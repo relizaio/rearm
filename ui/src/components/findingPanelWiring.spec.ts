@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { readFileSync, readdirSync, statSync } from 'fs'
 import { join, relative } from 'path'
 import { fileURLToPath } from 'url'
+import { withoutComments } from '@/utils/specText'
 
 /**
  * Wiring guard for the vulnerability details panel hosts. Scope is deliberately
@@ -20,10 +21,7 @@ import { fileURLToPath } from 'url'
 const srcDir = fileURLToPath(new URL('..', import.meta.url))
 
 function code (relPath: string): string {
-    return readFileSync(join(srcDir, relPath), 'utf8')
-        .replace(/<!--[\s\S]*?-->/g, '')
-        .replace(/\/\*[\s\S]*?\*\//g, '')
-        .replace(/(^|[^:])\/\/.*$/gm, '$1')
+    return withoutComments(readFileSync(join(srcDir, relPath), 'utf8'))
 }
 
 /** Every .vue / .ts source under src, specs excluded, as paths relative to src. */

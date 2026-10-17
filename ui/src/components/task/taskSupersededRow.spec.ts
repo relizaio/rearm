@@ -46,6 +46,9 @@ describe('a superseded PR', () => {
         expect(link.classes()).toContain('struck')
         expect(rows[0].text()).toContain('superseded by #694')
         expect(rows[0].find('[data-testid="declare-merge"]').exists()).toBe(false)
+        // A superseded PR is abandoned already (task t20261010-033522-23606): the server refuses the declaration.
+        expect(rows[0].find('[data-testid="mark-abandoned"]').exists()).toBe(false)
+        expect(rows[1].find('[data-testid="mark-abandoned"]').exists()).toBe(true)
         expect(rows[1].find('a').classes()).not.toContain('struck')
         expect(rows[1].find('[data-testid="declare-merge"]').exists()).toBe(true)
     })

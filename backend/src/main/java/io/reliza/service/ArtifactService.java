@@ -10,6 +10,7 @@ import java.time.ZonedDateTime;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
 import java.util.LinkedList;
@@ -357,19 +358,7 @@ public class ArtifactService {
 		}else {
 			a = oa.get();
 		}
-		if(null == artifactDto.getType())
-			throw new RelizaException("Artifact must have type!");
-		validateCoverageTypeTags(artifactDto.getTags());
-		// EXTERNALLY-stored artifacts must carry at least one
-		// downloadLink — without bytes in our blob store AND no link to
-		// jump to, the row is unreachable end-to-end. Catch the bad
-		// state at write time so the UI never has to render an
-		// "external (no link)" placeholder.
-		if (artifactDto.getStoredIn() == ArtifactData.StoredIn.EXTERNALLY
-				&& (artifactDto.getDownloadLinks() == null || artifactDto.getDownloadLinks().isEmpty())) {
-			throw new RelizaException(
-					"Artifact with storedIn=EXTERNALLY must carry at least one downloadLink");
-		}
+		validateArtifactFields(artifactDto);
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
 		// IN-PLACE re-upload: this row already existed, so a fresh artifactDataFactory product would
 		// take its empty metrics straight over the column and wipe the findings. That is the SAME
@@ -595,15 +584,61 @@ public class ArtifactService {
 		artMap.remove("artifacts");
 		MultipartFile file = (MultipartFile) artMap.get("file");
 		artMap.remove("file");
-		if(!artMap.containsKey("storedIn") || StringUtils.isEmpty((String)artMap.get("storedIn"))){
-			artMap.put("storedIn", "REARM");
-		}
-		ArtifactDto artDto = Utils.OM.convertValue(artMap, ArtifactDto.class);
+		ArtifactDto artDto = uploadDtoOf(artMap);
 		artDto.setArtifacts(artifactsOfThisArtifact);
 		artDto.setOrg(od.getOrg());
 		RebomOptions updRebomOptions = new RebomOptions(rebomOptions.name(), rebomOptions.group(), rebomOptions.version(), rebomOptions.belongsTo(),
 				rebomOptions.hash(), artDto.getStripBom(), rebomOptions.purl());
 		return uploadArtifact(artDto, file.getResource(), updRebomOptions, wu);
+	}
+
+	/** The field rules every stored artifact meets: a type, known coverage tags, a link when stored externally. */
+	private void validateArtifactFields(ArtifactDto artifactDto) throws RelizaException {
+		if(null == artifactDto.getType())
+			throw new RelizaException("Artifact must have type!");
+		validateCoverageTypeTags(artifactDto.getTags());
+		// EXTERNALLY-stored artifacts must carry at least one
+		// downloadLink -- without bytes in our blob store AND no link to
+		// jump to, the row is unreachable end-to-end. Catch the bad
+		// state at write time so the UI never has to render an
+		// "external (no link)" placeholder.
+		if (artifactDto.getStoredIn() == ArtifactData.StoredIn.EXTERNALLY
+				&& (artifactDto.getDownloadLinks() == null || artifactDto.getDownloadLinks().isEmpty())) {
+			throw new RelizaException(
+					"Artifact with storedIn=EXTERNALLY must carry at least one downloadLink");
+		}
+	}
+
+	/** The DTO an upload-list entry becomes: file and nested artifacts aside, stored in ReARM unless it says otherwise. */
+	static ArtifactDto uploadDtoOf(Map<String, Object> artMap) {
+		Map<String, Object> dtoMap = new HashMap<>(artMap);
+		dtoMap.remove("artifacts");
+		dtoMap.remove("file");
+		if (!dtoMap.containsKey("storedIn") || StringUtils.isEmpty((String) dtoMap.get("storedIn"))) {
+			dtoMap.put("storedIn", StoredIn.REARM.name());
+		}
+		return Utils.OM.convertValue(dtoMap, ArtifactDto.class);
+	}
+
+	/**
+	 * The cheap refusals {@link #uploadListOfArtifacts} would raise for this entry (and its nested
+	 * artifacts), checked without uploading, writing or reading the file, so a caller writing
+	 * several parts can refuse a bad input before its first part is stored: a file present, the
+	 * digest scopes a caller may declare, and the stored-artifact field rules. Checks that need the
+	 * file content (format resolution, BOM spec version) stay in {@link #uploadArtifact}. Throws
+	 * what the upload would.
+	 */
+	@SuppressWarnings("unchecked")
+	public void validateUploadInput(Map<String, Object> artMap) throws RelizaException {
+		if (artMap.get("artifacts") instanceof List<?> nested) {
+			for (Object n : nested) validateUploadInput((Map<String, Object>) n);
+		}
+		if (!(artMap.get("file") instanceof MultipartFile)) {
+			throw new RelizaException("Every artifact in this upload needs a file: " + artMap.get("displayIdentifier"));
+		}
+		ArtifactDto artDto = uploadDtoOf(artMap);
+		Utils.rejectServerDerivedDigestScopes(artDto.getDigestRecords());
+		validateArtifactFields(artDto);
 	}
 
 	@Transactional

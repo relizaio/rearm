@@ -2,6 +2,7 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -23,6 +24,9 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "cle-support-definition", description = "A support policy definition from CLE")
 @JsonTypeName("cle-support-definition")
+// no "url": null when there is none. Re-apply after any TEA bump;
+// TeaCleDocumentSchemaTest is the tripwire.
+@JsonInclude(JsonInclude.Include.NON_NULL)
 @Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
 public class TeaCleSupportDefinition {
 

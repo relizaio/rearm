@@ -27,6 +27,7 @@ For details about the taxonomy, refer to the official CycloneDX Taxonomy Reposit
 | `reliza:componentMetadata` | Namespace for additional component metadat properties |
 | `reliza:support` | Namespace for per-component software support disclosure (level of support, end-of-support dates and their provenance) |
 | `reliza:device` | Namespace for the enclosing device release's own lifecycle dates |
+| `reliza:export` | Namespace for document-level records of how an exported BOM was produced |
 
 
 ## reliza:rearmImport Namespace Taxonomy
@@ -71,8 +72,10 @@ uploaded: ReARM does not alter it and does not claim to have authored anything i
 
 Unless stated otherwise, each property MUST occur at most once per component and is
 placed in `components[].properties`. Two exceptions are noted in the table:
-`reliza:support:disclosure` is written once per document in `metadata.properties`, and
-the `reliza:device:*` pair is written on `metadata.component`.
+`reliza:support:disclosure` and the two component counts
+(`reliza:support:unidentifiedComponents`, `reliza:support:unassessedComponents`) are written
+once per document in `metadata.properties`, and the `reliza:device:*` pair is written on
+`metadata.component`.
 
 The **Since** column says which build emits a property, so a reader can tell what their
 own version produces. "unreleased" means it is in the ReARM source but has not reached a
@@ -91,12 +94,14 @@ CE release yet; those arrive together at the next source sync.
 | `reliza:support:levelOfSupport` | The manufacturer's ATTESTED claim about what the component's upstream maintainer is doing. **The value is FDA's phrase verbatim and lowercase -- `actively maintained`, `no longer maintained`, `abandoned` -- NOT an enum name.** Match on those strings; there is no `ACTIVELY_MAINTAINED` on the wire. Absent when nobody has attested a level. Never emitted without `reliza:support:assessedAt` | unreleased; reaches CE at the next sync |
 | `reliza:support:assessedAt` | When a human assessed this component, as an RFC-3339 UTC instant. Caller-supplied, so it may precede the moment the assessment was recorded. Also emitted on its own, with no level, to record that a component WAS assessed and no upstream dates were found | unreleased; reaches CE at the next sync |
 | `reliza:support:justification` | The manufacturer's stated BASIS for the claim -- what they checked and what they found. Required by ReARM before a negative level (`no longer maintained`, `abandoned`) may be recorded, so a claim about a third party's project always ships with its evidence. Also carries the reason no upstream dates could be found, which is the whole disclosure for a component whose upstream publishes none | unreleased; reaches CE at the next sync |
-| `reliza:support:status` | DERIVED, never attested: the support state the recorded dates entail as of the moment the BOM was served. Known values: `SECURITY_ONLY`, `END_OF_SUPPORT`, `UNKNOWN`. See the note on derived values below | CE 26.08.95 |
+| `reliza:support:status` | DERIVED, never attested: the support state the recorded dates entail as of the moment the BOM was served. Known values: `SECURITY_ONLY`, `END_OF_SUPPORT`, `WITHIN_SUPPORT_WINDOW` (an end-of-support or end-of-guaranteed-support date is on record and none has passed yet; this says nothing about whether the component is maintained today), `UNKNOWN` (neither date is on record; an end-of-life date alone, which means end of sale, derives nothing). See the note on derived values below | CE 26.08.95; `WITHIN_SUPPORT_WINDOW` unreleased, reaches CE at the next sync |
 | `reliza:support:party` | Whether the organisation serving the BOM is the FIRST party for this component's support facts (its own software) or a THIRD party describing a component it does not control. Known values: `FIRST_PARTY`, `THIRD_PARTY` | unreleased; reaches CE at the next sync |
 | `reliza:support:source:<milestone>` | Provenance of one milestone's date, where `<milestone>` is `endOfGuaranteedSupport`, `endOfSupport` or `endOfLife`. Known values: `MANUAL` (a human recorded it), `SUPPLIER` (from a supplier-provided BOM), `ENRICHED` (machine-gathered). Per milestone, because one component's dates can come from different places | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
 | `reliza:support:lastAssessed:<milestone>` | When that milestone's date was last assessed, as an RFC-3339 UTC instant. Per milestone, same reasoning | suffixed form unreleased; reaches CE at the next sync; unsuffixed in CE 26.08.95 |
 | `reliza:support:deviceSupportRisk` | DERIVED: whether the component's end-of-support falls before the enclosing device release's own end-of-support. Known values: `OK`, `EOS_BEFORE_DEVICE`, `UNKNOWN`. Emitted only for a product/device release | unreleased; reaches CE at the next sync |
 | `reliza:support:disclosure` | Document-level marker in `metadata.properties` (NOT on `metadata.component`, where the `reliza:device:*` pair goes), describing how the support properties in this BOM were produced. Known values: `derived-non-attested-current-state` (support properties in this document were derived from recorded dates at serve time; a component with none means no date is recorded for it) and `provenance-stripped-no-disclosure` (server-owned properties were removed so nothing here is an uploader's forged claim, but NOTHING was disclosed either -- absence of a support property says nothing about what is recorded; emitted on the SPDX-augmented download and the JSON release SBOM export). TWO KINDS OF DOCUMENT CARRY NO MARKER: the raw download, which is served as uploaded and makes no claim about its contents, and any export whose caller passed `includeSupportMetadata=false`, because the marker qualifies a support statement and a caller who declined the disclosure is not making one. Both are still SWEPT -- the sweep is the anti-spoofing control, the marker is a statement about it. Do not read the second value as the first, and do not read an ABSENT marker as either | first value CE 26.08.95; second unreleased, reaches CE at the next sync |
+| `reliza:support:unidentifiedComponents` | Document-level, in `metadata.properties`, written only beside `reliza:support:disclosure` = `derived-non-attested-current-state` (never with the second value, never without a marker). The number of component nodes in this document, as a decimal string, that could not be identified, so no support fact can be matched to them. Identified = purl, or a purl-shaped bom-ref, or cpe. Counts every node in `components[]` at any depth and `metadata.component`, so two nodes with the same purl count twice. `0` is written too | unreleased; reaches CE at the next sync |
+| `reliza:support:unassessedComponents` | Document-level, in `metadata.properties`, written only beside `reliza:support:disclosure` = `derived-non-attested-current-state`. The number of component nodes in this document, as a decimal string, that were identified but carry no support property because nobody has assessed them (or the assessment was withdrawn). Identified = purl, or a purl-shaped bom-ref, or cpe. Same node walk as `reliza:support:unidentifiedComponents`; `0` is written too | unreleased; reaches CE at the next sync |
 
 ### A note for renderer authors
 
@@ -181,6 +186,27 @@ product/device release that declares at least one of them.
 |----------|-------------|-------|
 | `reliza:device:endOfSupport` | The device release's end-of-support date (ISO-8601 `YYYY-MM-DD`) | unreleased; reaches CE at the next sync |
 | `reliza:device:endOfLife` | The device release's end-of-life date (ISO-8601 `YYYY-MM-DD`) | unreleased; reaches CE at the next sync |
+
+## reliza:export Namespace Taxonomy
+
+Document-level records, in `metadata.properties`, of what an export option did to the
+document. They describe the document a reader holds, so the "include internal metadata"
+option does not remove them.
+
+| Property | Description | Since |
+|----------|-------------|-------|
+| `reliza:export:fileComponentsExcluded` | Written by the merge of a release BOM exported with "Leave out file components" (`excludeFileComponents: true`): the number of components of CycloneDX type `file` left out of this document, as a decimal string. `0` means the option was on and nothing matched; an ABSENT property means the option was off and nothing was left out. On a product release it adds what the component merges it was made from had already left out | unreleased; reaches CE at the next sync |
+| `reliza:export:danglingRefsDropped` | Written by the merge of a release BOM when `dependencies[]` named bom-refs that resolve to no component or service of the document: the number of dependency entries and `dependsOn`/`provides` items dropped for it, as a decimal string. ABSENT means every reference resolved and nothing was dropped. Counts this document's merge only, not what the merges it was made from dropped | unreleased; reaches CE at the next sync |
+| `reliza:export:componentsWithoutSbom` | Written by the merge of a product release BOM when it lists component releases ReARM holds no SBOM for: the number of components carrying `reliza:sbom:missing`, as a decimal string. ABSENT means every component release of the product had an SBOM | unreleased; reaches CE at the next sync |
+
+## reliza:sbom Namespace Taxonomy
+
+Component-level records of what ReARM does not hold. Like `reliza:export`, they describe the
+document a reader holds, so the "include internal metadata" option does not remove them.
+
+| Property | Description | Since |
+|----------|-------------|-------|
+| `reliza:sbom:missing` | On a component of a product release BOM that stands for a component release ReARM holds no SBOM for. Its bom-ref is `urn:rearm:release:<release uuid>`, the product root depends on it, and a `compositions` entry with `aggregate: unknown` names it: its own dependencies are unknown, not empty. Value: `NO_SBOM_ARTIFACT` (the release has no SBOM artifact) or `COVERAGE_EXCLUDED` (every SBOM artifact it has was left out by the export's coverage filter) | unreleased; reaches CE at the next sync |
 
 ## Standard CycloneDX lifecycle keys written by ReARM
 

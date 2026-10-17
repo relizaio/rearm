@@ -107,6 +107,12 @@ public class UserGroupDataFetcher {
 		// UserGroupService.updateUserGroupComprehensive, so every caller of that
 		// service method is held to the same invariant, not just this fetcher.
 
+		if (null != userGroupInput.getPermissions()) {
+			for (var p : userGroupInput.getPermissions()) {
+				if (null != p) authorizationService.assertGrantObjectExists(ugd.get().getOrg(), p.getScope(), p.getObjectId());
+			}
+		}
+
 		var approvals = userGroupInput.getApprovals();
 		OrganizationData od = getOrganizationService.getOrganizationData(ugd.get().getOrg()).get();
 		

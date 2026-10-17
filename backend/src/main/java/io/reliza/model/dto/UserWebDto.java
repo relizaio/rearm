@@ -43,5 +43,7 @@ public class UserWebDto {
 	private Boolean isGlobalAdmin;
 	private Boolean systemSealed;
 	private String installationType;
+	/** Deployment default for the UI home dashboard: APP or BOARDS. User localStorage choice overrides. */
+	private String defaultDashboard;
 	private Boolean isLicenseValid;
 }

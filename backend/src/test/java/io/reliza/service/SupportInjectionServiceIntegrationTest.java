@@ -22,14 +22,19 @@ import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionTemplate;
 
 import io.reliza.common.Utils;
+import io.reliza.model.LevelOfSupport;
 import io.reliza.model.Organization;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentSupport;
 import io.reliza.model.SupportData;
+import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.SupportMilestoneFact;
 import io.reliza.model.SupportMilestoneType;
 import io.reliza.model.SupportSource;
 import io.reliza.model.SupportState;
+import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SbomComponentSupportRepository;
 import io.reliza.ws.App;
@@ -52,6 +57,7 @@ public class SupportInjectionServiceIntegrationTest {
 	@Autowired private SbomComponentSupportRepository sbomComponentSupportRepository;
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private PlatformTransactionManager transactionManager;
+	@Autowired private OrganizationService organizationService;
 
 	/**
 	 * Both rows in ONE transaction, which matters more than it looks.
@@ -67,6 +73,12 @@ public class SupportInjectionServiceIntegrationTest {
 	 * artifact_sbom_components mappings inside one {@code @Transactional} method.
 	 */
 	private SbomComponent supported(UUID org, String canonicalPurl, String name, String version, LocalDate eos) {
+		return supported(org, canonicalPurl, name, version, eos, null);
+	}
+
+	/** As above, with an attested level of support (null: none). */
+	private SbomComponent supported(UUID org, String canonicalPurl, String name, String version, LocalDate eos,
+			LevelOfSupport level) {
 		return new TransactionTemplate(transactionManager).execute(status -> {
 			SbomComponent sc = new SbomComponent();
 			sc.setOrg(org);
@@ -81,7 +93,7 @@ public class SupportInjectionServiceIntegrationTest {
 			row.setSbomComponentUuid(sc.getUuid());
 			row.setOrg(org);
 			row.setCanonicalPurl(canonicalPurl);
-			row.setSupportData(new SupportData(null, SupportState.ATTESTED, null, SupportSource.MANUAL,
+			row.setSupportData(new SupportData(level, SupportState.ATTESTED, null, SupportSource.MANUAL,
 					assessedAt, null, null,
 					Map.of(SupportMilestoneType.END_OF_SUPPORT, new SupportMilestoneFact(
 							eos.toString(), SupportSource.MANUAL, assessedAt, null, null))));
@@ -98,6 +110,50 @@ public class SupportInjectionServiceIntegrationTest {
 			out.put(p.get("name").asText(), p.get("value").asText());
 		}
 		return out;
+	}
+
+	/**
+	 * T-11 (SCORE-21, SCORE-12 ADR-10): a component whose purl sits only in its bom-ref gets the
+	 * facts of the organization's row for that purl, through both lookup passes, on the export
+	 * path of an ENABLED organization; the document carries the marker and the counts.
+	 */
+	@Test
+	void injectsThroughABomRefPurlOnBothLookupPasses() throws Exception {
+		Organization org = testInitializer.obtainOrganization();
+		UUID orgUuid = org.getUuid();
+		OrganizationData.Settings enable = new OrganizationData.Settings();
+		enable.setSupportInjection(SupportInjectionSetting.ENABLED);
+		organizationService.updateSettings(orgUuid, enable, WhoUpdated.getTestWhoUpdated());
+		String salt = UUID.randomUUID().toString().substring(0, 8);
+
+		// Byte-exact pass: the row is the bom-ref's canonical form.
+		supported(orgUuid, "pkg:golang/reliza.test." + salt + "/stdlib@v1.26.6", "stdlib", "v1.26.6",
+				LocalDate.now().plusYears(1), LevelOfSupport.ACTIVELY_MAINTAINED);
+		// Encoding-safe pass: the row has %2B, the bom-ref a raw +.
+		supported(orgUuid, "pkg:deb/reliza-test-" + salt + "/g%2B%2B@12", "g++", "12",
+				LocalDate.now().plusYears(1), LevelOfSupport.NO_LONGER_MAINTAINED);
+
+		JsonNode bom = Utils.OM.readTree("""
+			{"bomFormat":"CycloneDX","specVersion":"1.6","components":[
+			  {"type":"library","name":"stdlib","version":"v1.26.6",
+			   "bom-ref":"pkg:golang/reliza.test.%s/stdlib@v1.26.6?package-id=abc"},
+			  {"type":"library","name":"g++","version":"12","bom-ref":"pkg:deb/reliza-test-%s/g++@12"},
+			  {"type":"library","name":"nobody","purl":"pkg:npm/nobody-%s@1.0.0"},
+			  {"type":"cryptographic-asset","name":"key","bom-ref":"comp-12"}
+			]}""".formatted(salt, salt, salt));
+
+		JsonNode served = supportInjectionService.injectIfEnabledElseStrip(bom, orgUuid,
+				ExportMetadataOptions.callerSilent());
+
+		JsonNode comps = served.get("components");
+		assertEquals("actively maintained", propMap(comps.get(0)).get("reliza:support:levelOfSupport"),
+				"the bom-ref purl matched byte-exact: " + served);
+		assertEquals("no longer maintained", propMap(comps.get(1)).get("reliza:support:levelOfSupport"),
+				"the bom-ref purl with + matched the %2B row on the second pass: " + served);
+		Map<String, String> meta = propMap(served.get("metadata"));
+		assertEquals("derived-non-attested-current-state", meta.get("reliza:support:disclosure"));
+		assertEquals("1", meta.get("reliza:support:unidentifiedComponents"), "only the key file: " + meta);
+		assertEquals("1", meta.get("reliza:support:unassessedComponents"), "only nobody: " + meta);
 	}
 
 	@Test
@@ -134,9 +190,9 @@ public class SupportInjectionServiceIntegrationTest {
 		Map<String, String> b = propMap(comps.get(1));
 		assertEquals("MANUAL", b.get(SupportBomInjector.PROP_SOURCE_PREFIX + "endOfSupport"),
 				"encoding-drifted (+ vs %2B) component matched via the fallback");
-		// Future EOS -> UNKNOWN. The point of this assertion is that the component MATCHED
-		// (proved by the MANUAL provenance above); the derived status is future-dated.
-		assertEquals("UNKNOWN", b.get(SupportBomInjector.PROP_STATUS));
+		// Future EOS -> WITHIN_SUPPORT_WINDOW. The point of this assertion is that the component
+		// MATCHED (proved by the MANUAL provenance above); the derived status is future-dated.
+		assertEquals("WITHIN_SUPPORT_WINDOW", b.get(SupportBomInjector.PROP_STATUS));
 
 		assertTrue(propMap(comps.get(2)).isEmpty(), "unmatched component gets no support properties");
 

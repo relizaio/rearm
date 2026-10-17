@@ -91,7 +91,14 @@ public class GetDeliverableService {
 		}
 		return dData;
 	}
-	
+
+	/**
+	 * {@link #getDeliverableData(UUID)} only when the deliverable belongs to {@code org}: a missing
+	 * deliverable and another organization's both come back empty.
+	 */
+	public Optional<DeliverableData> getDeliverableData (UUID uuid, UUID org) {
+		return getDeliverableData(uuid).filter(dd -> null != org && org.equals(dd.getOrg()));
+	}
 
 	private List<Deliverable> getDeliverablesByDigestString (String digest, UUID orgUuid) {
 		List<Deliverable> deliverables = new LinkedList<>();

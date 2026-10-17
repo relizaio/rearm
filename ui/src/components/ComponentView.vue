@@ -188,6 +188,9 @@
                                 @update:show="handleComponentSettingsClose"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
+                                <ComponentRevisionConflict v-if="revisionConflict" :conflict="revisionConflict.info" :users="users"
+                                    :can-force="isWritable" :when="commonFunctions.dateDisplay" :component-word="words.component"
+                                    @reload="reloadComponentForm" @force="forceSave" />
                                 <n-tabs
                                     type="segment"
                                     size="medium"
@@ -510,7 +513,7 @@
                                         </div>
                                         <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
-                                                <n-button type="success" @click="save">
+                                                <n-button type="success" data-testid="component-settings-save" @click="save">
                                                     <template #icon>
                                                         <n-icon><Check /></n-icon>
                                                     </template>
@@ -524,6 +527,64 @@
                                                 </n-button>
                                             </n-space>
                                         </div>
+
+                                        <!-- SCORE-42: the declared licence and the supplier ReARM writes on the
+                                             SBOM nodes it makes for this component's releases. A SIBLING of
+                                             coreSettingsActions, never a child (the device panels' lesson), with
+                                             its own document, its own Save and its own baseline: the core-settings
+                                             save sends the whole component and reads the response through
+                                             COMPONENT_FULL_DATA, which must stay valid on a CE mirror that lacks
+                                             these three fields. Hidden when the read failed; the unsupported note
+                                             only when the server cannot answer (schema drift). -->
+                                        <div v-if="updatedComponent && componentData && declaredLicenseSupported && componentLicenseLoaded"
+                                            style="margin-top: 22px;" data-testid="component-license-block">
+                                            <label style="display: flex; align-items: center; gap: 6px; font-weight: bold;">
+                                                <span>Declared licence and supplier</span>
+                                                <n-tooltip trigger="hover" placement="right">
+                                                    <template #trigger>
+                                                        <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                    </template>
+                                                    <div style="max-width: 700px; white-space: pre-line;">{{ COMPONENT_TOOLTIP }}</div>
+                                                </n-tooltip>
+                                            </label>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence expression</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.expression" :readonly="!isWritable"
+                                                        :placeholder="EXPRESSION_PLACEHOLDER" data-testid="component-license"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ EXPRESSION_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence text URL</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.url" :readonly="!isWritable"
+                                                        :placeholder="URL_PLACEHOLDER" data-testid="component-license-url"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ URL_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Supplier</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.supplier" :readonly="!isWritable"
+                                                        :placeholder="SUPPLIER_PLACEHOLDER" data-testid="component-supplier"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ SUPPLIER_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <n-button v-if="isWritable" size="small" type="primary" data-testid="component-license-save"
+                                                :disabled="!declaredLicenseDiffers(componentLicense, componentLicenseBaseline) || savingComponentLicense"
+                                                :loading="savingComponentLicense"
+                                                @click="saveComponentLicense">Save licence and supplier</n-button>
+                                            <n-alert v-if="componentLicenseError" type="error" :show-icon="true" data-testid="component-license-error"
+                                                style="font-size: 12px; max-width: 720px; margin-top: 8px;">
+                                                {{ componentLicenseError }}
+                                            </n-alert>
+                                        </div>
+                                        <div v-if="updatedComponent && componentData && !declaredLicenseSupported"
+                                            class="text-muted" style="margin-top: 22px;" data-testid="component-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
 
                                         <!-- SIBLING of coreSettingsActions, never a child. It
                                              was nested INSIDE that div, whose v-if is
@@ -865,7 +926,8 @@
                                             :org-uuid="orguuid"
                                             :component-uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
                                         <!-- Shown to everyone: what a release is held to is worth
@@ -875,7 +937,8 @@
                                             scope="COMPONENT"
                                             :uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">
                                         <!-- Pro only until the CE backend serves TEA profiles (teaProfilesAvailable).
@@ -1339,13 +1402,28 @@ import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
 import ComponentLocks from './ComponentLocks.vue'
+import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
+import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
+import {
+    COMPONENT_SAVED, COMPONENT_TOOLTIP, EXPRESSION_HINT, EXPRESSION_PLACEHOLDER, SUPPLIER_HINT, SUPPLIER_PLACEHOLDER,
+    UNSUPPORTED_NOTE, UPDATE_COMPONENT_DECLARED_LICENSE, URL_HINT, URL_PLACEHOLDER,
+    componentDeclaredLicenseVariables, declaredLicenseDiffers, loadComponentDeclaredLicense,
+} from '@/utils/declaredLicense'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import { resolveComponentPageTab } from '@/utils/componentPageTab'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
+// TPF-62: the revision the settings form was read at, advanced by this page's own writes of the
+// component, and the pending refusal when a save was refused as stale. Destructured so the
+// template sees top-level refs (a ref nested in a plain object is not unwrapped there).
+const {
+    expected: formRevision, conflict: revisionConflict, baseline: revisionBaseline,
+    saved: revisionSaved, ownWrite: ownComponentWrite, refused: revisionRefused, force: forceRevision
+} = useComponentRevision()
 
 onMounted(async () => {
     await initLoad()
@@ -1354,6 +1432,8 @@ onMounted(async () => {
     deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
     await loadTeaBanner()
+    // Never throws (it catches every read error), so the settings modal below always opens.
+    await loadComponentLicense()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
         await openComponentSettings()
@@ -1565,21 +1645,30 @@ const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
  * possible thing to be wrong about.
  */
 async function saveDeviceClass (): Promise<void> {
+    await submitDeviceClass(formRevision.value)
+}
+
+async function submitDeviceClass (expected: number | null): Promise<void> {
     if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
     savingDeviceClass.value = true
     deviceWindowError.value = null
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: { uuid: componentUuid,
+            variables: { component: withExpectedRevision({ uuid: componentUuid,
                 name: componentData.value?.name || updatedComponent.value?.name,
-                deviceClass: deviceClassEdit.value } },
+                deviceClass: deviceClassEdit.value }, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         await initLoad()
         deviceClassBaseline.value = deviceClassEdit.value
         await loadDeviceWindow()
+        await loadComponentLicense()
     } catch (e: any) {
+        // A stale-revision refusal shows the panel and keeps the class as the user set it, so
+        // Force resends it.
+        if (revisionRefused(e, (rev) => submitDeviceClass(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
         deviceClassEdit.value = deviceClassBaseline.value
     } finally {
@@ -1606,7 +1695,82 @@ async function loadDeviceWindow (): Promise<void> {
     }
 }
 
+/**
+ * The declared licence and supplier (SCORE-42, design ADR-3). Inline rather than a composable:
+ * the view is routed per component uuid (componentUuid is fixed for the instance), so no
+ * navigation reset or request fence is needed, unlike the release page.
+ */
+const componentLicense = reactive({ expression: '', url: '', supplier: '' })
+/** What the server last confirmed; refreshed from the mutation response. */
+const componentLicenseBaseline = reactive({ expression: '', url: '', supplier: '' })
+const componentLicenseLoaded: Ref<boolean> = ref(false)
+const savingComponentLicense: Ref<boolean> = ref(false)
+const componentLicenseError: Ref<string | null> = ref(null)
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function takeComponentLicense (expression: string, url: string, supplier: string): void {
+    componentLicense.expression = expression
+    componentLicense.url = url
+    componentLicense.supplier = supplier
+    componentLicenseBaseline.expression = expression
+    componentLicenseBaseline.url = url
+    componentLicenseBaseline.supplier = supplier
+}
+
+async function loadComponentLicense (): Promise<void> {
+    if (!componentUuid) return
+    try {
+        const r = await loadComponentDeclaredLicense(graphqlClient as any, componentUuid)
+        if (!r.supported) {
+            // Schema drift: the server cannot answer. Latched for the session on every surface.
+            store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+            componentLicenseLoaded.value = false
+            return
+        }
+        takeComponentLicense(r.expression, r.url, r.supplier)
+        componentLicenseError.value = null
+        componentLicenseLoaded.value = true
+    } catch (e: any) {
+        // A failed read is not an unsupported server: hide the block, write nothing, say nothing
+        // (the device window's rule). Never rethrown, so onMounted reaches the settings modal.
+        componentLicenseLoaded.value = false
+        componentLicenseError.value = null
+    }
+}
+
+async function saveComponentLicense (): Promise<void> {
+    // name is REQUIRED: UpdateComponentInput.name is String!.
+    const variables = componentDeclaredLicenseVariables(componentUuid,
+        componentData.value?.name || updatedComponent.value?.name, componentLicense, componentLicenseBaseline)
+    if (!variables) return
+    savingComponentLicense.value = true
+    componentLicenseError.value = null
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: UPDATE_COMPONENT_DECLARED_LICENSE,
+            variables,
+            fetchPolicy: 'no-cache'
+        })
+        // The canonical form, and the URL the server cleared with the expression.
+        const saved = resp?.data?.updateComponent
+        // The save wrote the component row, which adds one to its revision (TPF-61): count it as this page's own
+        // write, or the next settings, device-class or window save would be refused as stale (TPF-62).
+        ownComponentWrite()
+        takeComponentLicense(saved?.licenseExpression || '', saved?.licenseUrl || '', saved?.supplierName || '')
+        notify('success', 'Saved', COMPONENT_SAVED)
+    } catch (e: any) {
+        componentLicenseError.value = commonFunctions.extractGraphQLErrorMessage(e)
+    } finally {
+        savingComponentLicense.value = false
+    }
+}
+
 async function saveDeviceWindow (): Promise<void> {
+    await submitDeviceWindow(formRevision.value)
+}
+
+async function submitDeviceWindow (expected: number | null): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
     const input = deviceWindowMutationInput(componentUuid,
@@ -1617,9 +1781,10 @@ async function saveDeviceWindow (): Promise<void> {
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: input },
+            variables: { component: withExpectedRevision(input, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         // Advance the baseline from what was SENT and accepted -- the mutation deliberately does
         // not select the window back, for the CE reason above.
         deviceWindowBaseline.eos = deviceWindow.eos
@@ -1631,6 +1796,9 @@ async function saveDeviceWindow (): Promise<void> {
         // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
         // end of life", the device-class refusal the walkthrough quotes -- never reaches the
         // panel. saveDeviceClass 40 lines up already uses the right one.
+        // A stale-revision refusal shows the panel instead, and keeps the pickers as the user
+        // set them, so Force resends them.
+        if (revisionRefused(e, (rev) => submitDeviceWindow(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         savingDeviceWindow.value = false
@@ -1825,7 +1993,15 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
-const selectedTab: Ref<string> = ref((route.query.tab as string) || 'latest')
+// An explicit ?tab= wins; a branch or feature-set link (a :branchuuid with no
+// tab) opens Branches / Feature Sets; a plain component link opens Latest.
+const selectedTab: Ref<string> = ref(resolveComponentPageTab({
+    queryTab: route.query.tab,
+    branchUuid: branchRouteId,
+    // Cached on a revisit; initLoad re-resolves once the branch list is fetched.
+    branchType: branchRouteId ? store.getters.branchById(branchRouteId)?.type : undefined,
+    isComponent: store.getters.componentById(componentUuid)?.type !== 'PRODUCT'
+}))
 // Bumped after branch list changes so the Latest tab refetches.
 const latestRefreshToken = ref(0)
 const branchCollapseState: Ref<any> = ref({})
@@ -1942,6 +2118,8 @@ const handleComponentSettingsClose = async function(show: boolean) {
     }
     
     if (!show) {
+        // A refusal belongs to the edit being closed; the form revision stays.
+        revisionConflict.value = null
         // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
         const newQuery = new URLSearchParams(window.location.search)
         newQuery.delete('componentSettingsView')
@@ -2058,6 +2236,8 @@ async function savePerspectives() {
                 perspectiveUuids: selectedPerspectives.value
             }
         })
+        // The perspectives write saves the component row (even for an unchanged set): count it.
+        ownComponentWrite()
         
         if (response.data && response.data.setPerspectivesOnComponent) {
             updatedComponent.value.perspectiveDetails = response.data.setPerspectivesOnComponent.perspectiveDetails
@@ -2273,12 +2453,19 @@ function handleTabChange (tabName: string) {
 
 // Query-only navigations no longer remount the view (router-view keys on
 // path), so browser back/forward across tab states must be applied to
-// local state here; absent param = the default tab, mirroring the old
-// remount-initializer. Local writes only — safe without a route guard.
+// local state here; an absent param resolves exactly as on mount (the
+// branch in the path keeps Branches open and stays selected). Only while
+// this view's route is active: on route leave the params flip to the
+// destination's. Local writes only.
 watch(() => route.query.tab, (t) => {
-    const next = (typeof t === 'string' && t) ? t : 'branches'
+    const here = (route.name === 'ComponentsOfOrg' || route.name === 'ProductsOfOrg') &&
+        String(route.params.compuuid || '') === componentUuid
+    if (!here) return
+    const branchParam = route.params.branchuuid ? route.params.branchuuid.toString() : ''
+    const branchType = branchParam ? store.getters.branchById(branchParam)?.type : undefined
+    const next = resolveComponentPageTab({ queryTab: t, branchUuid: branchParam, branchType, isComponent: isComponent.value })
     if (next !== selectedTab.value) {
-        selectedBranchUuid.value = ''
+        selectedBranchUuid.value = branchParam
         selectedTab.value = next
     }
 })
@@ -2720,6 +2907,11 @@ const fetchVcsRepos = async function () : Promise<any[]> {
 }
 
 async function save () {
+    // Bound as a click handler, which receives the event: the revision cannot be an argument.
+    await submitComponentSave(formRevision.value)
+}
+
+async function submitComponentSave (expected: number | null) {
     // approvalPolicy is sent as null both for "leave unchanged" (server
     // convention) and "clear" (UI operator hit the clearable X). We
     // disambiguate by setting an explicit clearApprovalPolicy flag when
@@ -2736,9 +2928,13 @@ async function save () {
     } else if (stagedOwnerChange.value === 'clear') {
         payload.clearOwner = true
     }
+    // TPF-62: the revision the form was read at; the server refuses the save if the component
+    // changed since.
+    if (expected !== null) payload.expectedRevision = expected
     const ownerWasStaged = stagedOwnerChange.value !== 'none'
     try {
         updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
+        revisionSaved(expected)
         // Update originalComponent to match current state so hasComponentChanges() returns false
         originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
         // Refresh the effective-policy snapshot so the provenance card
@@ -2750,6 +2946,9 @@ async function save () {
         if (ownerWasStaged) await loadOwnership()
         notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
     } catch (err: any) {
+        // A stale-revision refusal: the panel is the message, so no toast. Rethrown so that
+        // saveTriggers still sees a failure.
+        if (revisionRefused(err, (rev) => submitComponentSave(rev))) throw err
         // RelizaException surfaces as BAD_REQUEST with the actual
         // domain message (e.g. "Cannot clear approval policy while
         // component references global events…"). Otherwise it's a
@@ -4067,10 +4266,12 @@ async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
     latestRefreshToken.value++
-    let storeComponent = store.getters.componentById(compUuid)
-    if (!storeComponent || !storeComponent.versionType) {
-        storeComponent = await store.dispatch('fetchComponentFull', compUuid)
-    }
+    // TPF-62: always a fresh read, never the store cache, so the form and the revision it is
+    // saved against come from one read.
+    const { component, revision } = await loadComponentForForm(graphqlClient as any, compUuid)
+    store.commit('ADD_UPDATE_COMPONENT', component)
+    const storeComponent = component
+    revisionBaseline(revision)
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
     marketingVersionEnabled.value = updatedComponent.value.versionType === 'MARKETING'
     isComponent.value = updatedComponent.value.type === 'COMPONENT'
@@ -4090,19 +4291,51 @@ async function initLoad() {
         fetchSecretsIfAllowed()
     }
     
-    // Auto-select tab based on branch type if branchuuid is provided
-    // Only run on initial load, not when closing settings modal
+    // Now that the branch list is loaded, a tag link opens the Tags tab.
+    // Only on initial load, not when closing the settings modal.
     if (branchRouteId && !route.query.tab && !route.query.branchSettingsView) {
-        const allBranches = store.getters.branchesOfComponent(compUuid)
-        const selectedBranch = allBranches.find((b: any) => b.uuid === branchRouteId)
-        if (selectedBranch) {
-            if (selectedBranch.type === 'PULL_REQUEST') {
-                selectedTab.value = 'pull-requests'
-            } else if (selectedBranch.type === 'TAG') {
-                selectedTab.value = 'tags'
-            }
-            // For 'BRANCH' type or undefined, keep default 'branches'
-        }
+        const selectedBranch = store.getters.branchesOfComponent(compUuid).find((b: any) => b.uuid === branchRouteId)
+        selectedTab.value = resolveComponentPageTab({
+            branchUuid: branchRouteId,
+            branchType: selectedBranch?.type,
+            isComponent: isComponent.value
+        })
+    }
+}
+
+/**
+ * Reload on a revision refusal (TPF-62): a fresh read of the form and its revision (which clears
+ * the panel), and every baseline the settings modal compares against, as opening the page does.
+ * The modal stays open on the current values.
+ */
+async function reloadComponentForm () {
+    await initLoad()
+    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassBaseline.value = deviceClassEdit.value
+    await loadDeviceWindow()
+    await loadOwnership()
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    if (updatedComponent.value?.perspectiveDetails) {
+        selectedPerspectives.value = updatedComponent.value.perspectiveDetails.map((p: any) => p.uuid)
+        originalPerspectives.value = [...selectedPerspectives.value]
+    }
+}
+
+/**
+ * Force on a revision refusal (TPF-62): re-runs the refused save with the refusal's revision. A
+ * second refusal re-renders the panel with the newer who and when; any other error was already
+ * shown by the save it re-ran.
+ */
+let forcing = false
+async function forceSave () {
+    if (forcing) return
+    forcing = true
+    try {
+        await forceRevision()
+    } catch {
+        // shown by the save it re-ran
+    } finally {
+        forcing = false
     }
 }
 

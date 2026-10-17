@@ -4,11 +4,13 @@
 package io.reliza.service;
 
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.TimeoutException;
 
 import java.time.Duration;
 import java.time.ZonedDateTime;
@@ -16,8 +18,11 @@ import java.time.ZonedDateTime;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.core.io.buffer.DataBufferLimitException;
 import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
+import org.springframework.http.ResponseEntity;
 import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
@@ -29,7 +34,10 @@ import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.ObjectMapper;
 
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.SbomScoreException;
+import io.reliza.exceptions.SbomScoreException.SbomScoreErrorReason;
 import io.reliza.model.dto.BearIntegrationDto;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData.BomFormat;
@@ -41,6 +49,7 @@ import io.reliza.model.tea.Rebom.ParsedBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
 import io.reliza.model.tea.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
+import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
 import reactor.netty.http.client.HttpClient;
 import reactor.netty.resources.ConnectionProvider;
@@ -73,9 +82,36 @@ public class RebomService {
         SKIPPED
     }
     
+    /**
+     * Default of {@code relizaprops.rebom.score-timeout-seconds}: rebom gives the engine 60 s and
+     * a request may first wait for one of its 4 slots, so the whole exchange gets 180 s.
+     */
+    static final long DEFAULT_SCORE_TIMEOUT_SECONDS = 180;
+
+    private final Duration scoreTimeout;
+
+    /**
+     * Largest answer one rebom read buffers, in bytes. Bounded on purpose (never -1): rebom refuses
+     * a request over 52428800 bytes (its Apollo body limit), so a document above that can never be
+     * scored, and the read only has to admit such a document plus the GraphQL envelope and the gap
+     * between raw and JSON-escaped bytes. An answer over it is {@link RebomResponseTooLargeException}
+     * (task SCORE-19).
+     */
+    public static final int REBOM_RESPONSE_LIMIT = 64 * 1024 * 1024;
+
+    /** {@link #REBOM_RESPONSE_LIMIT} in whole MB, for the messages that name it. */
+    public static final int REBOM_RESPONSE_LIMIT_MB = REBOM_RESPONSE_LIMIT / (1024 * 1024);
+
+    public RebomService(String rebomHost) {
+        this(rebomHost, DEFAULT_SCORE_TIMEOUT_SECONDS);
+    }
+
+    @Autowired
     public RebomService(
-		@Value("${relizaprops.rebom.url}") String rebomHost
+		@Value("${relizaprops.rebom.url}") String rebomHost,
+		@Value("${relizaprops.rebom.score-timeout-seconds:" + DEFAULT_SCORE_TIMEOUT_SECONDS + "}") long scoreTimeoutSeconds
 	) {
+		this.scoreTimeout = Duration.ofSeconds(scoreTimeoutSeconds);
 		// rebom-backend is an @apollo/server v5 standalone server
 		// (rearm/rebom-backend/src/index.ts:61, via startStandaloneServer);
 		// its underlying Node http.Server defaults keepAliveTimeout to
@@ -101,7 +137,7 @@ public class RebomService {
                                     ExchangeStrategies.builder()
                                     .codecs(codecs -> codecs
                                         .defaultCodecs()
-                                        .maxInMemorySize(50 * 1024 * 1024)
+                                        .maxInMemorySize(REBOM_RESPONSE_LIMIT)
                                     ).build()
                                 ).build();
 	}
@@ -224,7 +260,21 @@ public class RebomService {
                 @SuppressWarnings("unchecked")
 				Map<String, Object> gqlResp = (Map<String, Object>) response.data();
                 return gqlResp;
-            });
+            })
+            .onErrorMap(RebomService::isOverReadLimit, RebomResponseTooLargeException::new);
+    }
+
+    /**
+     * Whether a failed read overflowed the buffer: decided on the class anywhere in the cause chain,
+     * never on a message, since the wrapper WebClient puts around the decoder's exception is Spring's.
+     */
+    static boolean isOverReadLimit(Throwable t) {
+        for (Throwable c = Exceptions.unwrap(t); null != c; c = c.getCause()) {
+            if (c instanceof DataBufferLimitException) {
+                return true;
+            }
+        }
+        return false;
     }   
     /**
      * Rebom's refusals have to arrive as refusals.
@@ -644,28 +694,7 @@ public class RebomService {
 
     // }
 
-    /**
-     * Merges the given boms in rebom and stores the result; answers the merged bom's id.
-     *
-     * <p>Every failure arrives as a RelizaException, the way uploadRebomRequest's do: a rebom
-     * refusal (BOM not found, BOM merge failed, ...) as itself, anything else (an HTTP status, a
-     * connection failure, a response that does not deserialize) as "rebom merge call failed".
-     * The merged-SBOM path names each failing component release with this message; a raw
-     * RuntimeException would instead escape to DGS as "Internal server error" and lose it.
-     */
-    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) throws RelizaException {
-        try {
-            return mergeAndStoreBomsCall(bomIds, rebomOptions, org);
-        } catch (RuntimeException e) {
-            RelizaException refusal = unwrapRebomRefusal(e);
-            if (null != refusal) throw refusal;
-            // RelizaException carries no cause, so the trace is kept here.
-            log.error("rebom mergeAndStoreBoms call failed for boms {}", bomIds, e);
-            throw new RelizaException("rebom merge call failed: " + e.getMessage());
-        }
-    }
-
-    private UUID mergeAndStoreBomsCall(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
+    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
         String query = """
             mutation mergeAndStoreBoms ($ids: [ID]!, $rebomOptions: RebomOptions!, $org: ID!) {
                 mergeAndStoreBoms(ids: $ids, rebomOptions: $rebomOptions, org: $org){
@@ -961,5 +990,200 @@ public class RebomService {
             return new SignatureVerifyResult("ERRORED", null, "No response from rebom");
         }
         return Utils.OM.convertValue(result, SignatureVerifyResult.class);
+    }
+    /**
+     * Largest document {@link #scoreBom} sends, in UTF-16 units: rebom refuses a request body over
+     * 52428800 bytes, and a string's UTF-16 length never exceeds its UTF-8 byte count, so a longer
+     * string is certainly over and is refused here without a request. The JSON escaping overhead of
+     * a string at or under the limit is rebom's to judge.
+     */
+    static final int SCORE_REQUEST_LIMIT = 52428800;
+
+    /** {@link #SCORE_REQUEST_LIMIT} in whole MB, for the message that names it. */
+    static final int SCORE_REQUEST_LIMIT_MB = SCORE_REQUEST_LIMIT / (1024 * 1024);
+
+    static final String SCORE_TOO_LARGE_MESSAGE =
+            "SBOM is too large to score: the request to the scoring service is limited to " + SCORE_REQUEST_LIMIT_MB
+            + " MB; export with fewer components (top-level only)";
+    static final String SCORE_TIMEOUT_MESSAGE = "SBOM scoring timed out";
+    static final String SCORE_UNAVAILABLE_MESSAGE = "SBOM scoring is not available on this server";
+    static final String SCORE_FAILED_MESSAGE = "SBOM scoring failed";
+
+    private static final String SCORE_QUERY =
+            "query scoreBomProbe($bom: String!, $profiles: [String!]!) { scoreBomProbe(bom: $bom, profiles: $profiles) }";
+    private static final String REBOM_SCORE_ERROR_CODE = "BOM_SCORE_ERROR";
+    private static final String GRAPHQL_VALIDATION_FAILED = "GRAPHQL_VALIDATION_FAILED";
+
+    /** rebom's reasons for a refused score (rebom-backend BomScoreErrorReason); anything else is a failure. */
+    private enum RebomScoreReason {
+        UNKNOWN_PROFILE,
+        INPUT_TOO_LARGE,
+        INPUT_REFUSED,
+        TIMEOUT,
+        CLI_UNAVAILABLE,
+        CLI_FAILED,
+        REPORT_INVALID;
+
+        static RebomScoreReason parse(String raw) {
+            if (null == raw) return null;
+            try {
+                return valueOf(raw);
+            } catch (IllegalArgumentException e) {
+                return null;
+            }
+        }
+    }
+
+    /**
+     * Scores a document with rebom's {@code scoreBomProbe} and returns the engine's report exactly
+     * as rebom answered it. Nothing is stored, here or in rebom.
+     *
+     * <p>Its own exchange rather than {@link #executeGraphQLQuery}, which turns every 4xx and 5xx
+     * into a bare status and drops {@code extensions.details}, the only place rebom says why a
+     * score was refused. Both bodies cross the client as bytes, serialised and parsed here: the
+     * codecs log what they encode and decode at DEBUG, and neither the document nor the report is
+     * ever written to the log.
+     *
+     * @param bom the document, sent unchanged (the only transformation is JSON string escaping)
+     * @param profiles passed to rebom as given; rebom owns the list of profiles
+     * @return the report string, byte for byte
+     * @throws SbomScoreException with the reason the caller decides on
+     */
+    public String scoreBom(String bom, List<String> profiles) {
+        if (bom.length() > SCORE_REQUEST_LIMIT) {
+            log.debug("Score refused before sending: document of {} UTF-16 units is over the limit", bom.length());
+            throw new SbomScoreException(SbomScoreErrorReason.INPUT_TOO_LARGE, SCORE_TOO_LARGE_MESSAGE);
+        }
+        Map<String, Object> variables = new LinkedHashMap<>();
+        variables.put("bom", bom);
+        variables.put("profiles", profiles);
+        Map<String, Object> requestBody = new LinkedHashMap<>();
+        requestBody.put("query", SCORE_QUERY);
+        requestBody.put("variables", variables);
+        byte[] request = Utils.OM.writeValueAsBytes(requestBody);
+
+        ResponseEntity<byte[]> response;
+        try {
+            response = rebomWebClient.post()
+                    .bodyValue(request)
+                    .exchangeToMono(r -> r.toEntity(byte[].class))
+                    .timeout(scoreTimeout)
+                    .block();
+        } catch (RuntimeException e) {
+            if (Exceptions.unwrap(e) instanceof TimeoutException) {
+                warnScoreFailure(SbomScoreErrorReason.TIMEOUT, null, null, null,
+                        "no answer within " + scoreTimeout.toSeconds() + " s");
+                throw new SbomScoreException(SbomScoreErrorReason.TIMEOUT, SCORE_TIMEOUT_MESSAGE);
+            }
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, null, null, null,
+                    "exchange failed: " + e.getClass().getSimpleName());
+            throw new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        if (null == response) {
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, null, null, null, "no response");
+            throw new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        int status = response.getStatusCode().value();
+        // Decided on the status alone: the 413 body is the HTTP server's page, not GraphQL.
+        if (HttpStatus.CONTENT_TOO_LARGE.value() == status) {
+            log.debug("Score refused by rebom: HTTP 413");
+            throw new SbomScoreException(SbomScoreErrorReason.INPUT_TOO_LARGE, SCORE_TOO_LARGE_MESSAGE);
+        }
+        JsonNode answer = null;
+        byte[] body = response.getBody();
+        if (null != body && body.length > 0) {
+            try {
+                answer = Utils.OM.readTree(body);
+            } catch (JacksonException e) {
+                answer = null;
+            }
+        }
+        JsonNode errors = null == answer ? null : answer.get("errors");
+        if (null != errors && errors.isArray() && !errors.isEmpty()) {
+            throw scoreErrorFrom(status, errors.get(0));
+        }
+        if (status < 200 || status > 299) {
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, status, null, null,
+                    null == answer ? "non-2xx answer that is not JSON" : "non-2xx answer without errors");
+            throw new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        JsonNode report = null == answer ? null : answer.path("data").get("scoreBomProbe");
+        if (null == report || !report.isString()) {
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, status, null, null,
+                    null == answer ? "answer is not JSON" : "answer carries no report");
+            throw new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        String reportText = report.stringValue();
+        if (!isScoreReport(reportText)) {
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, status, null, null,
+                    "report is not a JSON object with an integer reportVersion >= 1");
+            throw new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        return reportText;
+    }
+
+    /**
+     * A report is a JSON object whose {@code reportVersion} is an integer of at least 1. A version
+     * above 1 is still a report: what it means is for the reader to decide.
+     */
+    private static boolean isScoreReport(String reportText) {
+        JsonNode parsed;
+        try {
+            parsed = Utils.OM.readTree(reportText);
+        } catch (JacksonException e) {
+            return false;
+        }
+        if (null == parsed || !parsed.isObject()) return false;
+        JsonNode version = parsed.get("reportVersion");
+        return null != version && version.isIntegralNumber() && version.canConvertToLong()
+                && version.longValue() >= 1;
+    }
+
+    /** One rebom GraphQL error, mapped on its code and reason; the message text decides nothing. */
+    private SbomScoreException scoreErrorFrom(int status, JsonNode error) {
+        JsonNode extensions = error.path("extensions");
+        String code = extensions.path("code").isString() ? extensions.path("code").stringValue() : null;
+        String rawReason = extensions.path("details").path("reason").isString()
+                ? extensions.path("details").path("reason").stringValue() : null;
+        String message = error.path("message").isString() ? error.path("message").stringValue() : "";
+        if (GRAPHQL_VALIDATION_FAILED.equals(code)) {
+            // A rebom that predates scoreBomProbe: the field does not validate.
+            warnScoreFailure(SbomScoreErrorReason.SCORING_UNAVAILABLE, status, code, null, message);
+            return new SbomScoreException(SbomScoreErrorReason.SCORING_UNAVAILABLE, SCORE_UNAVAILABLE_MESSAGE);
+        }
+        RebomScoreReason reason = REBOM_SCORE_ERROR_CODE.equals(code) ? RebomScoreReason.parse(rawReason) : null;
+        if (null == reason) {
+            warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, status, code, rawReason, message);
+            return new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+        switch (reason) {
+            case UNKNOWN_PROFILE:
+                log.debug("Score refused by rebom: {}", reason);
+                return new SbomScoreException(SbomScoreErrorReason.UNKNOWN_PROFILE, message);
+            case INPUT_REFUSED:
+                log.debug("Score refused by rebom: {}", reason);
+                return new SbomScoreException(SbomScoreErrorReason.INPUT_REFUSED, message);
+            case INPUT_TOO_LARGE:
+                log.debug("Score refused by rebom: {}", reason);
+                return new SbomScoreException(SbomScoreErrorReason.INPUT_TOO_LARGE, SCORE_TOO_LARGE_MESSAGE);
+            case TIMEOUT:
+                warnScoreFailure(SbomScoreErrorReason.TIMEOUT, status, code, rawReason, message);
+                return new SbomScoreException(SbomScoreErrorReason.TIMEOUT, SCORE_TIMEOUT_MESSAGE);
+            case CLI_UNAVAILABLE:
+                warnScoreFailure(SbomScoreErrorReason.SCORING_UNAVAILABLE, status, code, rawReason, message);
+                return new SbomScoreException(SbomScoreErrorReason.SCORING_UNAVAILABLE, SCORE_UNAVAILABLE_MESSAGE);
+            case CLI_FAILED:
+            case REPORT_INVALID:
+            default:
+                warnScoreFailure(SbomScoreErrorReason.SCORING_FAILED, status, code, rawReason, message);
+                return new SbomScoreException(SbomScoreErrorReason.SCORING_FAILED, SCORE_FAILED_MESSAGE);
+        }
+    }
+
+    /** The one WARN line of a failed score: rebom's status, code, reason and message, never a body. */
+    private static void warnScoreFailure(SbomScoreErrorReason outcome, Integer status, String code,
+            String rebomReason, String message) {
+        log.warn("SBOM score {}: rebom status={} code={} reason={} message={}",
+                outcome, status, code, rebomReason, message);
     }
 }

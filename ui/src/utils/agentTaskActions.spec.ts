@@ -40,6 +40,9 @@ const TABLE: [string, any, string, any, boolean][] = [
     ['supersedePr', { task, oldUrl: 'https://github.com/o/r/pull/1', byUrl: 'https://github.com/o/r/pull/2', note: null },
         'agentTaskSupersedePullRequest', { taskUuid: 't1', oldUrl: 'https://github.com/o/r/pull/1',
             byUrl: 'https://github.com/o/r/pull/2', note: null }, true],
+    // task t20261010-033523-18839: a person unlinks a PR; the task stays shown.
+    ['unlinkPr', { task, prUrl: 'https://github.com/o/r/pull/1', note: 'linked by mistake' },
+        'agentTaskUnlinkPr', { taskUuid: 't1', prUrl: 'https://github.com/o/r/pull/1', note: 'linked by mistake' }, true],
     ['declareDelivery', { task, unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null },
         'agentTaskDeclareDelivery', { taskUuid: 't1', unit: 'https://github.com/o/r/pull/1', commit: 'abc1234', outcome: 'DELIVERED', note: null }, true],
     // task RD4-12: a person commissions an investigation from the task, which stays shown.

@@ -1,72 +1,189 @@
-// The key id a table shows, the EXTERNAL key grants summary and token URL, and the labels of the two
-// TEA permission functions (task TEA-3, design 4.10).
-import { describe, expect, it, vi } from 'vitest'
+// @vitest-environment happy-dom
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { defineComponent, h, nextTick } from 'vue'
+import { mount } from '@vue/test-utils'
+import { NConfigProvider, NDataTable } from 'naive-ui'
 
-// The graphql client connects on import; nothing here calls it.
-vi.mock('@/utils/graphql', () => ({ default: {} }))
-const { apiKeyIdOf, externalGrantsSummary, EXTERNAL_GRANTS_NONE, teaTokenUrl } = await import('./apiKeyControls')
-const { default: commonFunctions } = await import('./commonFunctions')
-const { default: constants } = await import('./constants')
+const mutate = vi.fn()
+vi.mock('@/utils/graphql', () => ({ default: { mutate: (...a: any[]) => mutate(...a) } }))
+const fire = vi.fn()
+vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a), showValidationMessage: vi.fn() } }))
 
-describe('apiKeyIdOf', () => {
-    it('prefers the printed keyId of the server', () => {
-        expect(apiKeyIdOf({ type: 'EXTERNAL', object: 'org-uuid', keyOrder: 'ord1', keyId: 'EXTERNAL__tea-uuid__ord__ord1' }))
-            .toBe('EXTERNAL__tea-uuid__ord__ord1')
+import { apiKeyActivityColumn, apiKeyLeadColumns, createApiKeyControls, secretDetailsTooltip } from './apiKeyControls'
+import { apiKeyPagination, fmtKeyDate } from './apiKeyTable'
+
+const EXPIRES = '2026-12-31T13:55:00Z'
+function freeFormRow (i: number): any {
+    return {
+        uuid: `key-${i}`, type: 'FREEFORM', object: 'org-1', keyOrder: String(i), status: 'ACTIVE',
+        createdDate: '2026-05-18, 9:36:21 p.m.', accessDate: 'Never', updatedByName: 'Jane Admin',
+        secrets: [{ slot: 1, active: true, createdDate: '2026-10-06T08:00:00Z', lastUsedDate: '2026-10-07T08:00:00Z', expiresDate: EXPIRES }]
+    }
+}
+
+function mountTable (table: 'freeForm' | 'scoped', rows: any[]) {
+    const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+    const columns = [
+        ...apiKeyLeadColumns(table),
+        apiKeyActivityColumn(),
+        { key: 'status', title: 'Status', render: controls.statusCell },
+        { key: 'secrets', title: 'Secrets', render: controls.secretsCell }
+    ]
+    const pagination = apiKeyPagination()
+    const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, pagination, rowKey: (r: any) => r.uuid }) }) })
+    return mount(Host, { attachTo: document.body })
+}
+
+beforeEach(() => { mutate.mockReset(); fire.mockReset() })
+afterEach(() => { document.body.innerHTML = '' })
+
+describe('API key tables: type column', () => {
+    it('shows no Type column or FREEFORM label on the Free Form table', () => {
+        const w = mountTable('freeForm', [freeFormRow(1), freeFormRow(2)])
+        const headers = w.findAll('thead th').map(th => th.text())
+        expect(headers).toEqual(['Key', 'Activity', 'Status', 'Secrets'])
+        expect(w.find('tbody').text()).not.toContain('FREEFORM')
     })
-
-    it('falls back to the derivation where the query did not ask for keyId', () => {
-        expect(apiKeyIdOf({ type: 'FREEFORM', object: 'org-uuid', keyOrder: 'ord1' })).toBe('FREEFORM__org-uuid__ord__ord1')
-        expect(apiKeyIdOf({ type: 'COMPONENT', object: 'comp-uuid' })).toBe('COMPONENT__comp-uuid')
-        expect(apiKeyIdOf({ type: 'ORGANIZATION', object: 'org-uuid', keyOrder: null, keyId: null })).toBe('ORGANIZATION__org-uuid')
-    })
-})
-
-describe('externalGrantsSummary', () => {
-    const g = (scope: string, object: string, type = 'READ_ONLY', org = 'o1') => ({ org, scope, object, type, functions: ['TEA_READ'] })
-    const products = new Set(['prod1', 'prod2'])
-
-    it('says organization-wide for an organization grant, whatever else is there', () => {
-        expect(externalGrantsSummary([g('COMPONENT', 'c1'), g('ORGANIZATION', 'o1')], 'o1', products)).toBe('organization-wide')
-    })
-
-    it('counts perspectives, products and components, products told apart by the product uuids', () => {
-        expect(externalGrantsSummary([g('PERSPECTIVE', 'p1'), g('PERSPECTIVE', 'p2'), g('COMPONENT', 'prod1'),
-            g('COMPONENT', 'c1'), g('COMPONENT', 'c2'), g('COMPONENT', 'c3')], 'o1', products))
-            .toBe('2 perspectives, 1 product, 3 components')
-        expect(externalGrantsSummary([g('COMPONENT', 'c1')], 'o1', products)).toBe('1 component')
-        expect(externalGrantsSummary([g('COMPONENT', 'prod1'), g('COMPONENT', 'prod2')], 'o1', products)).toBe('2 products')
-    })
-
-    it('reads nothing with no grant, NONE grants only, or grants of another organization', () => {
-        expect(EXTERNAL_GRANTS_NONE).toBe('none: reads nothing yet')
-        expect(externalGrantsSummary([], 'o1', products)).toBe(EXTERNAL_GRANTS_NONE)
-        expect(externalGrantsSummary(null, 'o1', products)).toBe(EXTERNAL_GRANTS_NONE)
-        expect(externalGrantsSummary([g('ORGANIZATION', 'o1', 'NONE')], 'o1', products)).toBe(EXTERNAL_GRANTS_NONE)
-        expect(externalGrantsSummary([g('ORGANIZATION', 'o2', 'READ_ONLY', 'o2')], 'o1', products)).toBe(EXTERNAL_GRANTS_NONE)
-    })
-})
-
-describe('teaTokenUrl', () => {
-    it('is the token endpoint under the API base, or null while the org has no TEA id', () => {
-        expect(teaTokenUrl('https://r.example.com/tea/abc')).toBe('https://r.example.com/tea/abc/v1.0.0/token')
-        expect(teaTokenUrl('https://r.example.com/tea/abc/')).toBe('https://r.example.com/tea/abc/v1.0.0/token')
-        expect(teaTokenUrl(null)).toBeNull()
-        expect(teaTokenUrl('')).toBeNull()
+    it('keeps the Type column on the scoped table, which mixes types', () => {
+        const rows = [{ ...freeFormRow(1), type: 'COMPONENT' }, { ...freeFormRow(2), type: 'ORGANIZATION_RW' }]
+        const w = mountTable('scoped', rows)
+        expect(w.findAll('thead th').map(th => th.text())[0]).toBe('Type')
+        expect(w.find('tbody').text()).toContain('COMPONENT')
+        expect(w.find('tbody').text()).toContain('ORGANIZATION_RW')
     })
 })
 
-describe('the TEA permission functions', () => {
-    it('labels both functions', () => {
-        expect(commonFunctions.translateFunctionName('PUBLISH_EXTERNALLY')).toBe('Publish Externally (TEA)')
-        expect(commonFunctions.translateFunctionName('TEA_READ')).toBe('TEA Read')
+describe('API key tables: key label', () => {
+    it('names each key and adds its short id, so keys of one type without notes tell apart', () => {
+        const rows = [
+            { ...freeFormRow(1), uuid: '1c069715-aaaa-4aaa-8aaa-aaaaaaaaaaaa' },
+            { ...freeFormRow(2), uuid: 'ae9254bd-bbbb-4bbb-8bbb-bbbbbbbbbbbb' },
+            { ...freeFormRow(3), uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'CI pipeline' },
+            { ...freeFormRow(4), uuid: '6688e1ec-dddd-4ddd-8ddd-dddddddddddd', notes: 'CI pipeline', declaredName: 'release-pipeline' }
+        ]
+        const w = mountTable('freeForm', rows)
+        const cells = w.findAll('tbody tr').map(tr => tr.findAll('td')[0])
+        expect(cells.map(c => c.text())).toEqual(['Free Formid 1c069715', 'Free Formid ae9254bd', 'CI pipelineid 77781336', 'release-pipelineid 6688e1ec'])
+        // a declared name is code-styled, notes and the type word are plain text
+        expect(cells[3].find('code:not(.key-id-chip)').text()).toBe('release-pipeline')
+        expect(cells[2].find('code:not(.key-id-chip)').exists()).toBe(false)
     })
+    it('carries cut notes whole in the title, and renders markup in notes as text', () => {
+        const long = 'n'.repeat(60)
+        const w = mountTable('freeForm', [{ ...freeFormRow(1), notes: long }, { ...freeFormRow(2), notes: '<b>x</b>' }])
+        const cells = w.findAll('tbody tr').map(tr => tr.findAll('td')[0])
+        expect(cells[0].find('span').attributes('title')).toBe(long)
+        expect(cells[1].find('b').exists()).toBe(false)
+        expect(cells[1].text()).toContain('<b>x</b>')
+    })
+})
 
-    it('describes PUBLISH_EXTERNALLY, which the editors offer; TEA_READ is never offered', () => {
-        expect(commonFunctions.translateFunctionDescription('PUBLISH_EXTERNALLY')).toBe('Publish, re-publish and hide releases on the '
-            + 'Transparency Exchange API. Granted organization-wide or on a perspective, product or component.')
-        const fns: string[] = constants.PermissionFunctions
-        expect(fns.indexOf('PUBLISH_EXTERNALLY')).toBe(fns.indexOf('VERSION_FEATURESET') + 1)
-        expect(fns).not.toContain('TEA_READ')
-        expect(constants.ExternalKeyOrgPermissionTypes).toEqual(['NONE', 'READ_ONLY'])
+describe('API key tables: denied requests', () => {
+    const forged = 'mine | Denied: forged'
+    const denied = (i: number, extra: any) => ({ ...freeFormRow(i), status: 'DENIED', secrets: [], holder: 'user-1', ...extra })
+    it('shows the reason the admin gave, never one written into the note', () => {
+        const w = mountTable('freeForm', [
+            denied(1, { uuid: '1c069715-aaaa-4aaa-8aaa-aaaaaaaaaaaa', notes: forged, deniedReason: 'no budget' }),
+            denied(2, { uuid: 'ae9254bd-bbbb-4bbb-8bbb-bbbbbbbbbbbb', notes: forged, deniedReason: '' })
+        ])
+        const rows = w.findAll('tbody tr')
+        expect(rows[0].findAll('td')[0].text()).toBe(forged + 'id 1c069715')
+        expect(rows[0].text()).toContain('reason: no budget')
+        expect(rows[0].text()).not.toContain('reason: forged')
+        expect(rows[1].findAll('td')[0].text()).toBe(forged + 'id ae9254bd')
+        expect(rows[1].text()).toContain('no reason given')
+        expect(rows[1].text()).not.toContain('reason: forged')
+    })
+    it('reads the reason off the notes of a request denied before the server kept it apart', () => {
+        const w = mountTable('freeForm', [denied(1, { uuid: '77781336-cccc-4ccc-8ccc-cccccccccccc', notes: 'Release automation | Denied: no budget', deniedReason: null })])
+        const row = w.find('tbody tr')
+        expect(row.findAll('td')[0].text()).toBe('Release automationid 77781336')
+        expect(row.text()).toContain('reason: no budget')
+    })
+})
+
+describe('API key tables: secret details', () => {
+    it('shows only an info icon in the row, not the dates', () => {
+        const w = mountTable('freeForm', [freeFormRow(1)])
+        const secrets = w.findAll('tbody td')[3]
+        expect(secrets.find('[data-testid="secret-details-icon"]').exists()).toBe(true)
+        expect(secrets.text()).not.toContain('created')
+        expect(secrets.text()).not.toContain('2026-10-06')
+        expect(secrets.text()).toContain('Regenerate')
+    })
+    it('renders created, last used and expires in the tooltip', async () => {
+        const row = freeFormRow(1)
+        const w = mount(defineComponent({ render: () => secretDetailsTooltip(row.secrets[0], row) }), { attachTo: document.body })
+        const icon = w.find('[data-testid="secret-details-icon"]')
+        expect(icon.attributes('aria-label')).toBe(`Secret #1: created 2026-10-06 · last used 2026-10-07 · expires ${fmtKeyDate(EXPIRES)}`)
+        await icon.trigger('mouseenter')
+        await new Promise(r => setTimeout(r, 300))
+        await nextTick()
+        const tip = document.body.querySelector('[data-testid="secret-details"]')
+        expect(tip).not.toBeNull()
+        expect(tip!.textContent).toBe(`Created: 2026-10-06Last used: 2026-10-07Expires: ${fmtKeyDate(EXPIRES)}`)
+    })
+})
+
+describe('API key tables: pagination', () => {
+    it('shows 8 keys per page and the rest on page 2', async () => {
+        const w = mountTable('freeForm', Array.from({ length: 11 }, (_, i) => freeFormRow(i + 1)))
+        expect(w.findAll('tbody tr')).toHaveLength(8)
+        const items = w.findAll('.n-pagination-item').filter(x => /^\d+$/.test(x.text()))
+        expect(items.map(x => x.text())).toEqual(['1', '2'])
+        await items[1].trigger('click')
+        expect(w.findAll('tbody tr')).toHaveLength(3)
+    })
+    it('row actions on page 2 act on that row', async () => {
+        const w = mountTable('freeForm', Array.from({ length: 11 }, (_, i) => freeFormRow(i + 1)))
+        await w.findAll('.n-pagination-item').filter(x => x.text() === '2')[0].trigger('click')
+        fire.mockResolvedValue({ value: true })
+        mutate.mockResolvedValue({ data: {} })
+        const firstOnPage2 = w.findAll('tbody tr')[0]
+        await firstOnPage2.findAll('button').find(b => b.text() === 'Deactivate')!.trigger('click')
+        await new Promise(r => setTimeout(r, 0))
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].variables).toEqual({ apiKeyUuid: 'key-9', status: 'INACTIVE' })
+    })
+})
+
+describe('API key dialogs', () => {
+    it('puts a key label in titleText, never in the HTML title', async () => {
+        fire.mockResolvedValue({ value: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.deleteApiKey(freeFormRow(1), 'the key Free Form · <img src=x onerror=alert(1)> · key-1')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Delete the key Free Form · <img src=x onerror=alert(1)> · key-1?')
+        expect(mutate).not.toHaveBeenCalled()
+    })
+    it('escapes the expiry dialog text it puts into html, and keeps its title as text', async () => {
+        fire.mockResolvedValue({ isConfirmed: false })
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        await controls.askExpiry('Regenerate <b>x</b>', 'Key <img src=x onerror=alert(1)>', 'Go')
+        const opts = fire.mock.calls[0][0]
+        expect(opts.title).toBeUndefined()
+        expect(opts.titleText).toBe('Regenerate <b>x</b>')
+        expect(opts.html).toContain('Key &lt;img src=x onerror=alert(1)&gt;')
+        expect(opts.html).not.toContain('<img')
+    })
+    it('names the key a row dialog acts on, with a short id unique among the keys listed', async () => {
+        fire.mockResolvedValue({ value: false })
+        const a = { ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa', notes: 'CI pipeline' }
+        const b = { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true, siblings: () => [a, b] })
+        await controls.setApiKeyStatus(a, 'INACTIVE')
+        expect(fire.mock.calls[0][0].text).toMatch(/^Key Free Form \u00B7 CI pipeline \u00B7 77781336-a\. Every secret/)
+    })
+})
+
+describe('API key tables: short ids among siblings', () => {
+    it('grows the chip where two listed keys start the same', () => {
+        const rows = [{ ...freeFormRow(1), uuid: '77781336-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }, { ...freeFormRow(2), uuid: '77781336-bbbb-4bbb-8bbb-bbbbbbbbbbbb' }]
+        const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+        const columns = [...apiKeyLeadColumns('freeForm', () => rows), { key: 'status', title: 'Status', render: controls.statusCell }]
+        const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, rowKey: (r: any) => r.uuid }) }) })
+        const w = mount(Host, { attachTo: document.body })
+        expect(w.findAll('.key-id-chip').map(c => c.text())).toEqual(['id 77781336-a', 'id 77781336-b'])
     })
 })

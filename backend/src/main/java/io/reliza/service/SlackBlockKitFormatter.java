@@ -97,6 +97,7 @@ public class SlackBlockKitFormatter {
             case APPROVAL_REQUESTED -> renderApprovalRequested(event, payload);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event, payload);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event, payload);
+            case AGENT_BOARD_ALERT, AGENT_TASK_NEEDS_PERSON, AGENT_TASK_RETURNED, AGENT_TASK_QUEUE_AGE, AGENT_SESSION_IDLE_WARNING -> renderAgentBoard(event, payload);
         }
         return payload;
     }
@@ -341,6 +342,20 @@ public class SlackBlockKitFormatter {
         addReleaseAction(blocks, r);
 
         out.put("text", capText(headerText));
+        out.put("blocks", blocks);
+    }
+
+    /** A board notification: the headline linked to the task page, the board's own words below it. */
+    private void renderAgentBoard(NotificationOutboxEvent event, Map<String, Object> out) {
+        io.reliza.model.dto.notifications.AgentBoardEventPayload p = AgentBoardRenderSupport.payload(event);
+        if (p == null) { renderFallback(event, out); return; }
+        String headline = AgentBoardRenderSupport.headline(event.getEventType(), p);
+        String url = AgentBoardRenderSupport.url(webBaseUri, p);
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        blocks.add(sectionBlock(url != null ? "<" + url + "|" + headline + ">" : "*" + headline + "*"));
+        String body = AgentBoardRenderSupport.body(p);
+        if (StringUtils.isNotBlank(body)) blocks.add(contextBlock(StringUtils.truncate(body, 2900)));
+        out.put("text", capText(headline));
         out.put("blocks", blocks);
     }
 

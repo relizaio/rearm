@@ -53,6 +53,10 @@ public class PullRequestService {
 	@Autowired
 	private GetSourceCodeEntryService getSourceCodeEntryService;
 
+	@Autowired
+	@org.springframework.context.annotation.Lazy
+	private AgentDeliveryService agentDeliveryService;
+
 	private final PullRequestRepository repository;
 
 	PullRequestService(PullRequestRepository repository) {
@@ -77,6 +81,14 @@ public class PullRequestService {
 		if (targetRepoUuid == null || StringUtils.isBlank(identity)) return Optional.empty();
 		return repository.findByTargetRepoAndIdentity(targetRepoUuid.toString(), identity)
 				.map(PullRequestData::dataFromRecord);
+	}
+
+	/** The org's PRs whose normalised, lower-cased endpoint is one of {@code keys}. */
+	public List<PullRequestData> listByOrgAndEndpointKeys(UUID orgUuid, java.util.Collection<String> keys) {
+		if (null == keys || keys.isEmpty()) return List.of();
+		return repository.findByOrgAndEndpointKeys(orgUuid.toString(), keys).stream()
+				.map(PullRequestData::dataFromRecord)
+				.collect(Collectors.toList());
 	}
 
 	public List<PullRequestData> listByOrg(UUID orgUuid) {
@@ -344,6 +356,11 @@ public class PullRequestService {
 
 			if (headSce != null) {
 				prd = advanceHead(prd.getUuid(), headSce, wu);
+			}
+			// A task waiting on this PR (DELIVERING) completes on its merge, or goes back to the
+			// coordinator on its close -- after this upsert commits, never failing it.
+			if (null != prd.getEndpoint()) {
+				agentDeliveryService.onPullRequestChangedAfterCommit(orgUuid, prd.getEndpoint().toString(), wu);
 			}
 			return Optional.of(prd);
 		} catch (Exception e) {

@@ -35,9 +35,6 @@ public class ApiKeyAccessService {
 		return this.repository.listKeyAccessByOrg(orgUuid);
 	}
 	
-	public Optional<ApiKeyAccess> getKeyAccessByOrgKeyUuid (UUID orgUuid, UUID keyUuid){
-		return this.repository.getKeyAccessByOrgKeyId(orgUuid, keyUuid);
-	}
 
 	private ApiKeyAccess saveApiKeyAccess (ApiKeyAccess ak) {
 		return repository.save(ak);
@@ -68,7 +65,13 @@ public class ApiKeyAccessService {
 	 */
 	private final ConcurrentHashMap<UUID, ZonedDateTime> pendingTouches = new ConcurrentHashMap<>();
 
-	private void queueLastAccessTouch(UUID apiKeyUuid) {
+	/**
+	 * The per-request bump of {@code api_keys.last_access_date}: in memory only, written by
+	 * {@link #flushPendingLastAccessTouches()} on the next scheduler tick. Safe to call more than once for one
+	 * request, since the map merge keeps the newest timestamp. The credential filters call it for every
+	 * verified credential, bearer or Basic on either lane, because not every resolver records access.
+	 */
+	public void touchLastAccess(UUID apiKeyUuid) {
 		ZonedDateTime now = ZonedDateTime.now();
 		pendingTouches.merge(apiKeyUuid, now, (a, b) -> a.isAfter(b) ? a : b);
 	}
@@ -104,7 +107,7 @@ public class ApiKeyAccessService {
     public void recordApiKeyAccess(UUID apiKeyUuid, String ipAddress, UUID org, String apiKeyId ){
 		// Bump api_keys.last_access_date (what the per-org dashboard reads)
 		// via the accumulator — never a direct row UPDATE from here.
-		queueLastAccessTouch(apiKeyUuid);
+		touchLastAccess(apiKeyUuid);
 
 		try {
 			// Dedupe the per-access audit row: CI/CD pipelines polling main
@@ -158,7 +161,7 @@ public class ApiKeyAccessService {
 		session.setNotes(notesJson);
 		session.setAccessDate(ZonedDateTime.now());
 		ApiKeyAccess saved = saveApiKeyAccess(session);
-		queueLastAccessTouch(apiKeyUuid);
+		touchLastAccess(apiKeyUuid);
 		return saved;
 	}
 

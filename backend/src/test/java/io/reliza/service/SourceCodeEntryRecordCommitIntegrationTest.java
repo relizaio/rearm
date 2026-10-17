@@ -84,8 +84,7 @@ public class SourceCodeEntryRecordCommitIntegrationTest {
 		Component component = componentService.createComponent(
 				"comp_" + UUID.randomUUID(), org.getUuid(), ComponentType.COMPONENT,
 				"semver", "Branch.Micro", null, WhoUpdated.getTestWhoUpdated());
-		Branch branch = branchService.createBranch(
-				"main", component.getUuid(), BranchType.BASE, WhoUpdated.getTestWhoUpdated());
+		Branch branch = branchService.getBaseBranchOfComponent(component.getUuid()).orElseThrow();
 		UUID vcsUuid = vcsRepositoryService.provisionVcsRepository(org.getUuid(),
 				"github.com/example/record-commit-" + UUID.randomUUID(), VcsType.GIT,
 				WhoUpdated.getTestWhoUpdated());
