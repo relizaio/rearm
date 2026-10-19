@@ -233,6 +233,23 @@ describe('OrgSettings: addGlobalOutputEvent after the fresh read (T-2)', () => {
         expect(pushedAndSaved(r)).toBe(true)
     })
 
+    it('a PRIVATE organization whose PUBLIC profiles are perspective rows only, or component rows only, asks (test run 2, T-7)', async () => {
+        const row = (scope: string) => ({ scope, mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' })
+        for (const [scope, says] of [['PERSPECTIVE', '1 perspective profile(s) are PUBLIC'], ['COMPONENT', '1 component profile(s) are PUBLIC']]) {
+            const cancelled = rig({ draft: newPublish, read: { view: PRIVATE_ORG.view, rows: [row(scope)] }, answer: { isConfirmed: false } })
+            await cancelled.add()
+            expect(cancelled.fire, scope).toHaveBeenCalledTimes(1)
+            expect(cancelled.fire.mock.calls[0][0].text).toContain(says)
+            expect(cancelled.fire.mock.calls[0][0].text).not.toContain("The organization's TEA profile is PUBLIC")
+            expect(cancelled.refs.globalOutputEvents.value).toEqual([])
+            expect(cancelled.saveGlobalOutputEvents).not.toHaveBeenCalled()
+
+            const confirmed = rig({ draft: newPublish, read: { view: PRIVATE_ORG.view, rows: [row(scope)] }, answer: { isConfirmed: true } })
+            await confirmed.add()
+            expect(pushedAndSaved(confirmed), scope).toBe(true)
+        }
+    })
+
     it('nothing PUBLIC in the organization: no dialog, saved', async () => {
         const r = rig({ draft: newPublish, read: PRIVATE_ORG, answer: { isConfirmed: false } })
         await r.add()
@@ -282,7 +299,7 @@ describe('OrgSettings: addGlobalOutputEvent after the fresh read (T-2)', () => {
 describe('OrgSettings: loadTeaOrgExposure reads both documents fresh (T-2)', () => {
     const code = source('./OrgSettings.vue')
 
-    function rig (o: { writable?: boolean, fails?: boolean, edition?: string }) {
+    function rig (o: { writable?: boolean, fails?: boolean, edition?: string, rows?: any[] }) {
         const queries: any[] = []
         const refs = {
             teaProfilesAvailable, teaOrgPublicSources,
@@ -297,7 +314,7 @@ describe('OrgSettings: loadTeaOrgExposure reads both documents fresh (T-2)', () 
                     if (o.fails) throw new Error('read refused')
                     return q.query === 'VIEW'
                         ? { data: { teaProfileEditorView: view('PRIVATE', 'ORGANIZATION', 0) } }
-                        : { data: { teaProfilesOfOrg: [{ scope: 'COMPONENT', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' }] } }
+                        : { data: { teaProfilesOfOrg: o.rows ?? [{ scope: 'COMPONENT', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' }] } }
                 },
             },
             console: quietConsole,
@@ -315,6 +332,13 @@ describe('OrgSettings: loadTeaOrgExposure reads both documents fresh (T-2)', () 
         ])
         expect(read.rows.length).toBe(1)
         expect(r.refs.teaOrgSources.value).toEqual({ organization: false, perspectives: 0, components: 1, publishedReleases: 0 })
+    })
+
+    it('a PRIVATE organization with only a PUBLIC perspective row keeps the badge on (test run 2, T-7)', async () => {
+        const r = rig({ rows: [{ scope: 'PERSPECTIVE', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' }] })
+        await r.load()
+        expect(r.refs.teaOrgSources.value).toEqual({ organization: false, perspectives: 1, components: 0, publishedReleases: 0 })
+        expect(teaOrgPublicBadgeTitle(r.refs.teaOrgSources.value)).toBe('Publishes to the public: 1 perspective profile(s) are PUBLIC.')
     })
 
     it('answers null with the badge off when not sent (not a writer, CE) or failed', async () => {
@@ -385,6 +409,8 @@ describe('the PUBLIC badge is on TEA_PUBLISH rows only, and per policy rule (T-5
             expect(onPublic({ type: 'TEA_HIDE' })).toBe('TEA Hide')
             expect(onPublic({ type: 'EMAIL_NOTIFICATION' })).toBe('Email Notification')
             expect(render(null)({ type: 'TEA_PUBLISH' })).toBe('TEA Publish')
+            const perspectivesOnly = render({ organization: false, perspectives: 1, components: 0, publishedReleases: 0 })
+            expect(tag(perspectivesOnly({ type: 'TEA_PUBLISH' })).props.title).toBe('Publishes to the public: 1 perspective profile(s) are PUBLIC.')
         })
     })
 })

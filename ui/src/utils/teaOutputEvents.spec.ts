@@ -92,6 +92,24 @@ describe('teaOrgPublicSources (row 5)', () => {
         ])).toEqual({ organization: false, perspectives: 0, components: 1, publishedReleases: 0 })
     })
 
+    it('an organization whose only PUBLIC profiles are perspective rows is PUBLIC, with the dialog and the badge (test run 2, T-7)', () => {
+        const sources = teaOrgPublicSources(orgPrivate, [
+            { scope: 'PERSPECTIVE', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' },
+        ])
+        expect(sources).toEqual({ organization: false, perspectives: 1, components: 0, publishedReleases: 0 })
+        const c = teaConfirmBeforeGlobalAutoPublish(sources, 'g')
+        expect(c).not.toBeNull()
+        expect(c!.text).toContain('1 perspective profile(s) are PUBLIC: components in those perspectives publish publicly. ')
+        expect(c!.text).not.toContain("The organization's TEA profile is PUBLIC")
+        expect(c!.text).not.toContain('component profile(s) are PUBLIC')
+        expect(teaOrgPublicBadgeTitle(sources)).toBe('Publishes to the public: 1 perspective profile(s) are PUBLIC.')
+        // perspective rows that decide nothing PUBLIC keep it null
+        expect(teaOrgPublicSources(orgPrivate, [
+            { scope: 'PERSPECTIVE', mode: 'OVERRIDE', publishing: 'DISABLED', visibility: 'PUBLIC' },
+            { scope: 'PERSPECTIVE', mode: null, publishing: 'ENABLED', visibility: 'PRIVATE' },
+        ])).toBeNull()
+    })
+
     it('the ORGANIZATION-scope row is neither a perspective nor a component: the view speaks for it (T-4)', () => {
         const orgRow = { scope: 'ORGANIZATION', mode: null, publishing: 'ENABLED', visibility: 'PUBLIC' }
         expect(teaOrgPublicSources(orgPrivate, [orgRow])).toBeNull()
