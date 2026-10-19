@@ -88,7 +88,7 @@ The TEA 1.0.0 endpoints that read these profiles and ids land in a later release
 
 ## Publishing releases
 
-Publishing is an explicit act on a release: nothing is published on TEA until someone publishes it, and what is published does not change until it is re-published. Publishing is available in ReARM Pro for now.
+Publishing is an explicit act on a release: nothing is published on TEA until someone publishes it or an action of an approval rule publishes it (Automatic publication below), and what is published does not change until it is re-published. Publishing is available in ReARM Pro for now.
 
 ### What a publication is
 
@@ -113,6 +113,10 @@ Visibility is live, content is frozen: the profile's visibility (PRIVATE or PUBL
 A published release whose lifecycle falls below ASSEMBLED (cancelled, rejected, pending, draft) is concealed on TEA while it stays there, without a hide; it is served again once it is back at ASSEMBLED or beyond.
 
 A publish of a large product can outlast the web proxy's limit; the page then reports a gateway error while the act completes on the server. Reload the release page to see the result; repeating the act is safe, because a publish of what is already published answers that it is already published or unchanged, and a hide of a hidden release changes nothing.
+
+### Automatic publication
+
+The actions TEA Publish (TEA_PUBLISH) and TEA Hide (TEA_HIDE), configured on a component's Actions tab or as policy-wide actions of an approval policy like a VDR snapshot and with no settings of their own, run after the rule's pass on a queue; what they publish is decided by the effective TEA profile at firing time, and when that profile is PUBLIC the editor warns before the save and marks the action. Configuring them, the rules and global-rule refs that fire or disable them on any approval policy of the organization, an approval policy that carries them, or a component name an organization rule maps to such a policy, needs the Publish Externally (TEA) permission on the component; a TEA_PUBLISH fires only from actions, rules and refs that a holder of that permission or an organization admin saved, and a publish whose wiring was changed any other way is withheld with a History line (TEA_PUBLISH withheld: NOT_AUTHORIZED) until a holder edits and saves it on the component, or an organization admin saves the policy's lists again; a component's ref that overrides a global rule's outputs to a TEA_PUBLISH is authorized by the ref and the action, and the overridden rule contributes its condition only; a hide always fires; a component created under a matching name is enrolled by the organization's rule; a global action's TEA kind, and whether a global rule fires one, cannot change under the same action or rule, and a removed global's uuid is never reused (remove it and create a new one); while a hide rule matches no automatic publish runs, in the pass or at the act (History: TEA_PUBLISH withheld); a hide that arrives while a publish waits runs instead of it; a refused act is on the release's History as a GUARD line; a publish in progress is retried within minutes; the property relizaprops.teaOutputEventsEnabled pauses automatic publication on an instance.
 
 ### Products
 

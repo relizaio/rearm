@@ -4,6 +4,7 @@ import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
 import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
+import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
 
 /**
  * The TEA profile documents (task TEA-2) against both schemas, and the edition gate that keeps a
@@ -138,5 +139,24 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
+    })
+})
+
+/**
+ * The TEA output event types (task TEA-13): the option list names only values the Pro schema's
+ * EventType declares, and the CE schema gains them exactly when CE serves TEA, the moment to lift the
+ * edition filter of outputEventTypeOptionsForEdition.
+ */
+describe('TEA output event types (TEA-13) and the edition filter', () => {
+    it.runIf(proSchema)('row 15: the Pro EventType enum has every TEA option value', () => {
+        const pro = enumValuesOf(proSchema!, 'EventType')
+        for (const o of TEA_OUTPUT_EVENT_TYPE_OPTIONS) expect(pro, o.value).toContain(o.value)
+    })
+
+    it('row 16: the CE EventType enum has a TEA value exactly when CE serves TEA, and the CE select offers one only then', () => {
+        const ce = enumValuesOf(ceSchema, 'EventType')
+        for (const o of TEA_OUTPUT_EVENT_TYPE_OPTIONS) expect(ce.includes(o.value), o.value).toBe(ceServesTea())
+        const offered = outputEventTypeOptionsForEdition([], 'OSS').map(o => o.value)
+        expect(TEA_OUTPUT_EVENT_TYPE_OPTIONS.some(o => offered.includes(o.value))).toBe(ceServesTea())
     })
 })
