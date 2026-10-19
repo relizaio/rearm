@@ -66,7 +66,10 @@
                                         <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
                                     <n-form-item label="Type" path="type">
-                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
+                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptionsForSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'TEA_PUBLISH' || globalOutputEvent.type === 'TEA_HIDE'" label="Settings">
+                                        <span class="text-muted">None: the effective TEA profile at firing time decides what is published or hidden.</span>
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                         <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -1457,6 +1460,8 @@ import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaOrgPanel from './TeaOrgPanel.vue'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
+import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeGlobalAutoPublish, TeaEditorView,
+    teaOrgPublicBadgeTitle, teaOrgPublicSources, TeaOrgPublicSources, TeaProfileRow } from '@/utils/teaOutputEvents'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
@@ -5692,6 +5697,41 @@ const outputTriggerTypeOptions = [
     {label: 'Pull Request Comment', value: 'PR_COMMENT'},
     {label: 'Lock', value: 'LOCK'}
 ]
+// TEA-13: TEA Publish and TEA Hide after VDR Snapshot Artifact, where the backend serves TEA.
+const outputTriggerTypeOptionsForSelect = computed(() => outputEventTypeOptionsForEdition(outputTriggerTypeOptions, myUser.value?.installationType))
+
+// TEA-13: what resolves PUBLIC in this organization, for the badge on policy-wide TEA_PUBLISH rows.
+// Read for writers only (the warning is for the person who can save); advisory, the confirmation in
+// addGlobalOutputEvent reads fresh.
+const teaOrgSources: Ref<TeaOrgPublicSources | null> = ref(null)
+
+/** The two organization reads of design 3.4: the organization's own effective profile and every profile row. */
+interface TeaOrgExposureRead { view: TeaEditorView | null, rows: TeaProfileRow[] }
+
+/**
+ * Reads the organization's TEA view and profile rows fresh and sets the badge's sources from them.
+ * Answers the read, or null when it was not sent (CE, not a writer) or failed (logged; the badge is
+ * then left off).
+ */
+async function loadTeaOrgExposure (): Promise<TeaOrgExposureRead | null> {
+    if (!teaProfilesAvailable(myUser.value?.installationType) || !isWritable.value) {
+        teaOrgSources.value = null
+        return null
+    }
+    try {
+        const [viewResp, rowsResp]: any[] = await Promise.all([
+            graphqlClient.query({ query: graphqlQueries.TeaProfileEditorViewGql, variables: { org: orgResolved.value, scope: 'ORGANIZATION', object: null }, fetchPolicy: 'no-cache' }),
+            graphqlClient.query({ query: graphqlQueries.TeaProfilesOfOrgGql, variables: { org: orgResolved.value }, fetchPolicy: 'no-cache' }),
+        ])
+        const read: TeaOrgExposureRead = { view: viewResp.data.teaProfileEditorView ?? null, rows: rowsResp.data.teaProfilesOfOrg ?? [] }
+        teaOrgSources.value = teaOrgPublicSources(read.view, read.rows)
+        return read
+    } catch (err: any) {
+        console.error(err)
+        teaOrgSources.value = null
+        return null
+    }
+}
 
 const externalValidationConclusionOptions = [
     {label: 'Success', value: 'success'},
@@ -5767,6 +5807,7 @@ function selectPolicyForGlobalEvents(policyUuid: string) {
         globalOutputEvents.value = policy.globalOutputEvents || []
         globalInputEvents.value = policy.globalInputEvents || []
     }
+    loadTeaOrgExposure()
 }
 
 function approvalPolicyRowProps (row: any) {
@@ -5861,6 +5902,7 @@ async function fetchApprovalPolicies () {
                 globalOutputEvents.value = policy.globalOutputEvents || []
                 globalInputEvents.value = policy.globalInputEvents || []
             }
+            loadTeaOrgExposure()
         }
     } else {
         approvalPolicyTableData.value = []
@@ -5927,6 +5969,8 @@ async function saveGlobalOutputEvents () {
             if (policyIndex > -1) {
                 approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
             }
+            // TEA-13: the PUBLIC badge follows what was just saved.
+            loadTeaOrgExposure()
         }
         notify('success', 'Success', 'Policy-wide actions saved.')
     } catch (err: any) {
@@ -5998,7 +6042,7 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
     showCreateGlobalOutputEventModal.value = true
 }
 
-function addGlobalOutputEvent () {
+async function addGlobalOutputEvent () {
     // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
     // for them the whole time a form is open. Sending them regardless would persist a scope, a
     // level and a requirement on every rejection and notification -- noise in the stored JSONB
@@ -6033,6 +6077,22 @@ function addGlobalOutputEvent () {
     if (!validation.valid) {
         notify('error', 'Validation Error', validation.error!)
         return
+    }
+    // TEA-13: the public warning when a new policy-wide TEA_PUBLISH is configured (a new entry, or
+    // one whose stored type was not TEA_PUBLISH; design 3.5). Reads fresh and fails closed: nothing
+    // is pushed or saved on a failed read or a cancel, and the modal stays open.
+    const storedType = eventToPush.uuid ? globalOutputEvents.value.find((e: any) => e.uuid === eventToPush.uuid)?.type : null
+    if (eventToPush.type === 'TEA_PUBLISH' && storedType !== 'TEA_PUBLISH' && teaProfilesAvailable(myUser.value?.installationType)) {
+        const read = await loadTeaOrgExposure()
+        if (!read) {
+            notify('error', 'Error', 'Could not read the TEA profiles of this organization; nothing was saved.')
+            return
+        }
+        const c = teaConfirmBeforeGlobalAutoPublish(teaOrgPublicSources(read.view, read.rows), eventToPush.name)
+        if (c) {
+            const answer: any = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+            if (!answer?.isConfirmed) return
+        }
     }
     if (eventToPush.uuid) {
         const existingIndex = globalOutputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
@@ -6177,8 +6237,10 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = row.type === 'TEA_PUBLISH' ? teaOrgPublicBadgeTitle(teaOrgSources.value) : null
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {

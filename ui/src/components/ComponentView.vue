@@ -742,6 +742,7 @@
                                                         />
                                                         <strong>{{ gie.name }}</strong>
                                                         <n-tag v-if="gie.enabled === false" type="warning" size="small" round>Globally disabled</n-tag>
+                                                        <n-tag v-if="teaPolicyRuleBadgeTitle(gie.uuid)" type="error" size="small" round :title="teaPolicyRuleBadgeTitle(gie.uuid) || ''" data-testid="tea-public-badge">PUBLIC</n-tag>
                                                         <span class="text-muted" style="font-size: 0.85em;">
                                                             ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
                                                         </span>
@@ -1045,7 +1046,10 @@
                                                     <n-form-item label="Type" path="type">
                                                         <n-select v-model:value="outputTrigger.type" required 
                                                             v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
-                                                            :options="outputTriggerTypeOptions" />
+                                                            :options="outputTriggerTypeOptionsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'TEA_PUBLISH' || outputTrigger.type === 'TEA_HIDE'" label="Settings">
+                                                        <span class="text-muted">None: the effective TEA profile at firing time decides what is published or hidden.</span>
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                                         <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -1401,6 +1405,8 @@ import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
+import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeAutoPublish, TeaEditorView, teaPublicBadgeTitle,
+    teaActionNames, teaPublishWiring, teaPublishWiringAdded } from '@/utils/teaOutputEvents'
 import ComponentLocks from './ComponentLocks.vue'
 import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
 import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
@@ -1563,16 +1569,26 @@ if (route.params.orguuid) {
 const componentUuid: string = route.params.compuuid.toString()
 
 // TEA profile (TEA-2): the red banner when the component's effective profile is PUBLIC, read once
-// on load and again after the TEA tab saves or removes the override.
+// on load and again after the TEA tab saves or removes the override. TEA-13 keeps the whole view
+// too: the PUBLIC badge on TEA_PUBLISH actions reads it.
 const teaBanner: Ref<string | null> = ref(null)
+const teaView: Ref<TeaEditorView | null> = ref(null)
 const teaPerspectiveOptions = computed(() => ((updatedComponent.value?.perspectiveDetails
     ?? componentData.value?.perspectiveDetails) || [])
     .filter((p: any) => p.type === 'PERSPECTIVE')
     .map((p: any) => ({ label: p.name, value: p.uuid })))
 
+/** The perspective names the TEA texts read, by uuid. */
+function teaPerspectiveNames (): Record<string, string> {
+    const names: Record<string, string> = {}
+    for (const o of teaPerspectiveOptions.value) names[o.value] = o.label
+    return names
+}
+
 async function loadTeaBanner () {
     if (!teaProfilesAvailable(myUser.installationType)) {
         teaBanner.value = null
+        teaView.value = null
         return
     }
     try {
@@ -1581,14 +1597,30 @@ async function loadTeaBanner () {
             variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
             fetchPolicy: 'no-cache',
         })
-        const names: Record<string, string> = {}
-        for (const o of teaPerspectiveOptions.value) names[o.value] = o.label
-        teaBanner.value = teaPublicBanner(resp.data.teaProfileEditorView, names)
+        teaBanner.value = teaPublicBanner(resp.data.teaProfileEditorView, teaPerspectiveNames())
+        teaView.value = resp.data.teaProfileEditorView ?? null
     } catch (err: any) {
         // The banner is advisory; the TEA tab reports a failed read itself.
         console.error(err)
         teaBanner.value = null
+        teaView.value = null
     }
+}
+
+// TEA-13: the PUBLIC badge on a TEA_PUBLISH action row, or null. Advisory; the save-time
+// confirmation reads fresh (confirmTeaPublishWiring).
+function teaActionBadgeTitle (row: any): string | null {
+    if (row?.type !== 'TEA_PUBLISH') return null
+    return teaPublicBadgeTitle(teaView.value, teaPerspectiveNames(), words.value.component)
+}
+
+// The staged TEA publish wiring (design 3.5), for the policy rule header badge of the ref editor.
+const teaStagedWiring = computed((): string[] => teaPublishWiring(updatedComponent.value,
+    policyGlobalInputEvents.value, policyGlobalOutputEvents.value))
+
+function teaPolicyRuleBadgeTitle (ruleUuid: string): string | null {
+    if (!teaStagedWiring.value.some(p => p.startsWith('policy:' + ruleUuid + ':'))) return null
+    return teaPublicBadgeTitle(teaView.value, teaPerspectiveNames(), words.value.component)
 }
 
 // A board's document series (task 36d0549e): shown as its rounds, without the software panels.
@@ -2672,6 +2704,8 @@ const outputTriggerTypeOptions = [
     {label: 'Pull Request Comment', value: 'PR_COMMENT'},
     {label: 'Lock', value: 'LOCK'}
 ]
+// TEA-13: TEA Publish and TEA Hide after VDR Snapshot Artifact, where the backend serves TEA.
+const outputTriggerTypeOptionsForSelect = computed(() => outputEventTypeOptionsForEdition(outputTriggerTypeOptions, myUser.installationType))
 
 const externalValidationConclusionOptions = [
     {label: 'Success', value: 'success'},
@@ -2906,9 +2940,40 @@ const fetchVcsRepos = async function () : Promise<any[]> {
     return vcsRepos.value
 }
 
-async function save () {
+async function save (): Promise<boolean> {
     // Bound as a click handler, which receives the event: the revision cannot be an argument.
+    // TEA-13: the public warning on every save that carries a new TEA publish piece (design 3.5).
+    // false: nothing was sent.
+    if (!(await confirmTeaPublishWiring())) return false
     await submitComponentSave(formRevision.value)
+    return true
+}
+
+/** The public warning. true: proceed (nothing to confirm, or confirmed); false: send nothing. */
+async function confirmTeaPublishWiring (): Promise<boolean> {
+    if (!teaProfilesAvailable(myUser.installationType)) return true
+    const rules = policyGlobalInputEvents.value
+    const globals = policyGlobalOutputEvents.value
+    const added = teaPublishWiringAdded(componentData.value, updatedComponent.value, rules, globals)
+    if (added.length === 0) return true
+    let view: TeaEditorView | null = null
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.TeaProfileEditorViewGql,
+            variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
+            fetchPolicy: 'no-cache',
+        })
+        view = resp.data.teaProfileEditorView
+    } catch (err: any) {
+        console.error(err)
+        notify('error', 'Error', `Could not read the TEA profile of this ${words.value.component}; nothing was saved. ${err?.message || ''}`)
+        return false
+    }
+    const c = teaConfirmBeforeAutoPublish(view, teaPerspectiveNames(), words.value.component,
+        teaActionNames(added, updatedComponent.value.outputTriggers, globals))
+    if (!c) return true
+    const answer = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return Boolean(answer?.isConfirmed)
 }
 
 async function submitComponentSave (expected: number | null) {
@@ -3030,8 +3095,12 @@ async function saveTriggers() {
     updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
 
     try {
-        await save()
-        componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+        const sent = await save()
+        if (sent) {
+            componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+            // TEA-13: the PUBLIC badge follows what was just saved.
+            await loadTeaBanner()
+        }
     } catch (error: any) {
         // save() already surfaced the underlying error via notify; we
         // only need to handle here when CEL needs the specialised
@@ -3910,8 +3979,10 @@ const outputTriggerTableFields: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = teaActionBadgeTitle(row)
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {
@@ -3958,8 +4029,10 @@ const outputTriggerTableFieldsReadOnly: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = teaActionBadgeTitle(row)
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {

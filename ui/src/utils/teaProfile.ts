@@ -325,7 +325,7 @@ export function teaConfirmBeforeSave (exposure: TeaExposureChange | null | undef
 }
 
 /** How many names a confirmation lists before it says "and <N> more". */
-const LISTED_NAMES = 5
+export const LISTED_NAMES = 5
 
 /**
  * The confirmation before a removal: the plain one, or the PUBLIC one when the parent it falls
