@@ -193,15 +193,14 @@ and its signature with `.../signature/download?mediaType=<media type>` on the sa
 - A format or signature stored outside ReARM is a `302` to its `url` or `signatureUrl`, as frozen in the collection. **A client must not send its TEA bearer token to the host the redirect names.**
 - The `Content-Type` of a download is the canonical rendering of the format's media type (lower-case type and subtype, no whitespace around `;`), while `mediaType` in the metadata and in `Content-Location` keeps the spelling the publisher stored.
 
-`Cache-Control` of downloads and `302`s, all with `Vary: Authorization`:
+`Cache-Control` and `Vary` of downloads and `302`s (a `302` is of a PUBLIC or a PRIVATE revision as its download is; a refusal carries no `Vary`):
 
-| Answer | `Cache-Control` |
-|---|---|
-| PUBLIC, versioned download | `public, max-age=86400, immutable` |
-| PUBLIC, `latest` download | `no-cache` |
-| Every `302` | `no-cache` |
-| PRIVATE download | `private, no-cache` |
-| Refusals | `no-store` |
+| Answer | `Cache-Control` | `Vary` |
+|---|---|---|
+| PUBLIC, versioned download | `public, max-age=86400, immutable` | `Authorization` |
+| PUBLIC, `latest` download, and a `302` of a PUBLIC revision | `no-cache` | `Authorization` |
+| PRIVATE download, and a `302` of a PRIVATE revision | `private, no-cache` | `Authorization` |
+| Refusals, the `401` challenges included | `no-store` | none |
 
 The artifact metadata (`/artifact/{uuid}/latest`, `/artifact/{uuid}/{artifactVersion}`) is a JSON answer and follows the rule for JSON answers above, not this table: `no-cache` for an anonymous caller, `private, no-cache` for a valid key of the organization, whatever the visibility.
 
