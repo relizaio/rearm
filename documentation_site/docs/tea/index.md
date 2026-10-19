@@ -1,45 +1,53 @@
 # Transparency Exchange API (TEA)
 
-ReARM is implementing TEA specification as the TEA standard emerges. TEA specification defines a standard, format agnostic, API for the exchange of product related artefacts, like BOMs, between systems. See more details on [TEA GitHub Repository](https://github.com/CycloneDX/transparency-exchange-api/).
+The Transparency Exchange API defines a standard, format agnostic API for the exchange of product related artefacts, like BOMs, between systems. ReARM serves the CycloneDX TEA 1.0.0 specification; see [TEA GitHub Repository](https://github.com/CycloneDX/transparency-exchange-api/) for the specification itself.
 
-Current state of TEA: Community TEA 1.0.0 release is planned for summer 2026.
+ReARM Pro serves TEA 1.0.0 for what an organization publishes: an organization sets up publication profiles, publishes releases, and hands external keys to the parties that may read what is private. ReARM Community Edition does not offer TEA yet: it has no publication profiles, no publishing and no TEA surface. The earlier 0.4.0 beta is retired.
 
-Current state of ReARM TEA implementation is Alpha (as of 2025-05-22) - which means that most calls and workflows are implemented but with limitations.
+## Discovery and the API base
 
-Below you will find details of TEA implementation in ReARM.
+### TEA ids
 
-## Enable TEA on ReARM
-TEA implementation is currently enabled on ReARM Demo Instance at [https://demo.rearmhq.com](https://demo.rearmhq.com). It is only set up for the main organization (called `Demo Organization`) and not for any other organization that may be created by the users.
+Nothing on the Transparency Exchange API carries an internal ReARM uuid. Each organization gets a TEA id the first time it saves a profile with publishing ENABLED, or when its first [external key](../configure/programmatic-access#external-keys-tea) is created, whichever comes first; each component gets one on its first publication; neither ever changes.
 
-TEA implementation is not production ready and is disabled on ReARM by default.
+### The organization's API base
 
-To enable TEA on ReARM Community Edition, in the helm chart, you need to set the `enableBetaTea` value to `true`:
+The organization's TEA API base is `<your ReARM URL>/tea/<organization TEA id>`, for example `https://rearm.example.com/tea/55555555-5555-4555-8555-555555555555`. Organization Settings, Transparency Exchange, Discovery shows it once the organization has a TEA id.
 
-```
-enableBetaTea: true
-```
+The endpoints of TEA 1.0.0 are under `<API base>/v1.0.0/`. A client appends `/v1.0.0` to the base itself, as the `versions` of the `.well-known/tea` document below and the `servers[].versions` of a discovery answer tell it.
 
-For docker-compose or other installations, set `RELIZAPROP_ENABLE_BETA_TEA` environment variable on ReARM backend to `true`.
+### Hosting `.well-known/tea` on your TEI domain
 
-This makes TEA available under `/tea/v0.4.0/` on your ReARM installation and also resolves `./well-known/tea` links as described below.
+A consumer that holds a TEI, `tei://<TEI domain>/uuid/<TEA release id>`, finds the API through the TEI domain. The organization hosts this document at `https://<TEI domain>/.well-known/tea`, served with `Content-Type: application/json`, where `<TEI domain>` is the domain in the organization's TEIs:
 
-## TEA Discovery and Operations
-
-Below we demonstrate ReARM on ReARM as viewed by TEA. It starts with discovery. 
-
-Use ReARM CLI for TEA discovery as documented [here](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md).
-
-For example, TEA full flow for ReARM CE release [26.01.34](https://github.com/relizaio/rearm-cli/blob/main/docs/tea.md) can be done as follows:
-
-```
-rearm tea full_tea_flow --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
+```json
+{
+  "schemaVersion": 1,
+  "endpoints": [
+    {
+      "url": "https://rearm.example.com/tea/55555555-5555-4555-8555-555555555555",
+      "versions": ["1.0.0"],
+      "priority": 1
+    }
+  ]
+}
 ```
 
-Call with debug to see all underlying calls as:
+Organization Settings, Transparency Exchange, Discovery shows the organization's own document, with its own API base as `url`, in the compact form the server builds, ready to copy:
 
 ```
-rearm tea full_tea_flow --debug true --tei "urn:tei:uuid:demo.rearmhq.com:34de200a-a796-4986-a6e0-014f3d2a5806"
+{"schemaVersion":1,"endpoints":[{"url":"https://rearm.example.com/tea/55555555-5555-4555-8555-555555555555","versions":["1.0.0"],"priority":1}]}
 ```
+
+The consumer reads the document, calls `<url>/v1.0.0/discovery?tei=<the TEI>` and continues on that API base.
+
+### The instance's own `/.well-known/tea`
+
+ReARM also answers `GET /.well-known/tea` on its own host. On an installation of type OSS it lists one endpoint per organization that has a TEA id and is not archived, sorted by `url`, with `Cache-Control: public, max-age=300`; while no organization has a TEA id yet it answers `404` with `{"error": "OBJECT_UNKNOWN"}`. On any other installation it answers `404` with `{"error": "NOT_IMPLEMENTED"}`: each organization hosts its own `/.well-known/tea` document on its TEI domain, as above.
+
+### Discovery
+
+`GET <API base>/v1.0.0/discovery?tei=<TEI>` or `?purl=<purl>`, exactly one of the two, answers with the matching product releases, newest first. Discovery answers product releases only. A TEI or purl that resolves no served product release is answered `404` with `{"error": "OBJECT_UNKNOWN"}`; the specification allows no empty discovery answer.
 
 ## Publication profiles
 
@@ -74,18 +82,6 @@ An archived component or product keeps its profile so an admin can hide what it 
 
 Creating a component or product in a PUBLIC perspective (from the perspective's page, through an API key with write access to it, or by a CI run that names it) makes the new component PUBLIC from the start: the organization admin who made the perspective PUBLIC chose that for its members, and a new component exposes nothing it published before.
 
-### TEA ids and discovery
-
-Nothing on the Transparency Exchange API carries an internal ReARM uuid. Each organization gets a TEA id the first time it saves a profile with publishing ENABLED, and each component gets one on its first publication; neither ever changes. The organization's TEA API base is `<your ReARM URL>/tea/<organization TEA id>`.
-
-Organization Settings, Transparency Exchange shows the `.well-known/tea` document the organization hosts at `https://<your TEI domain>/.well-known/tea`, for example:
-
-```
-{"schemaVersion":1,"endpoints":[{"url":"https://rearm.example.com/tea/<organization TEA id>","versions":["1.0.0"],"priority":1}]}
-```
-
-The TEA 1.0.0 endpoints that read these profiles and ids land in a later release; until then the profiles are stored and validated, and the `/tea/v0.4.0/` surface above is unchanged.
-
 ## Publishing releases
 
 Publishing is an explicit act on a release: nothing is published on TEA until someone publishes it, and what is published does not change until it is re-published. Publishing is available in ReARM Pro for now.
@@ -100,13 +96,13 @@ A publish is refused, with the reason, when:
 
 - the release lifecycle is below ASSEMBLED, or below the profile's minimum lifecycle;
 - the component resolves to no single profile (a conflict between perspectives), or its profile has publishing DISABLED;
-- the release or its component is archived, or the release has no SBOM to aggregate;
+- the release or its component is archived, or the release has no SBOM to aggregate. A component release of a product that has no SBOM of its own is left out of the product's TEA aggregate and reported in the publish summary as having no SBOM; ReARM's own exports of the product's SBOM keep a placeholder for it;
 - the caller lacks the Publish Externally (TEA) permission on the release's component. Users and RBAC (FREEFORM or USER) API keys can hold it; organization admins have it implicitly;
 - another publish or hide of the same release is still running, on this or another ReARM instance, after 30 seconds of waiting (five minutes for automatic publication); the act can simply be repeated once it has finished.
 
 ### Re-publish and hide
 
-Re-publish regenerates the aggregated SBOM and writes a new collection version only when something changed; otherwise it reports that nothing changed since the latest version. Hide stops serving the release on TEA. Nothing is deleted: the collections stay, and a later re-publish makes the release served again and continues their numbering.
+Re-publish regenerates the aggregated SBOM and writes a new collection version only when something changed; otherwise it reports that nothing changed since the latest version. Hide stops serving the release on TEA. Nothing is deleted: the collections stay, and a later re-publish makes the release served again and continues their numbering. To a TEA consumer, a hidden release, and every collection and artifact only it published, answers `404` with `{"error": "OBJECT_UNKNOWN"}`, exactly as something that never existed.
 
 Visibility is live, content is frozen: the profile's visibility (PRIVATE or PUBLIC) and publishing setting are applied when TEA is read, so changing them changes who can read what is already published, while the content of each collection version stays as it was published.
 
@@ -122,6 +118,8 @@ When a product's profile has Product components set to PUBLISH_WITH_PRODUCT, pub
 
 With Raw artifacts set to NON_BOM or ALL, the release's own artifacts are published alongside the aggregated SBOM (NON_BOM leaves out BOMs). An artifact is publishable when its version is an integer (its TEA revision) and ReARM holds its checksum: for an artifact stored in ReARM, the retained raw bytes of the upload; for an externally stored one, a download link and a declared checksum. Signatures are published with the artifact they sign. An artifact that does not qualify is skipped and named in the publish summary; it never fails the publish.
 
+An external download link is published only when it is an absolute `http` or `https` URL of printable ASCII characters, at most 4096 octets long, with a host and without user information; an artifact whose link is anything else is skipped with `SKIPPED_LINK_NOT_HTTP_URL`, and the same rule leaves out a deliverable's `distributions[].url` that does not meet it. A signature stored outside ReARM is published as the format's `signatureUrl` under the same rule, and its download is a `302` to that link.
+
 ### TEI
 
 When the profile's TEI is UUID, the publication carries the TEI `tei://<TEI domain>/uuid/<TEA release id>`, recomputed on each publish.
@@ -132,19 +130,107 @@ The release page header offers Publish on TEA, and once published a TEA badge wi
 
 The same acts are available through GraphQL: `publishReleaseOnTea`, `republishReleaseOnTea`, `hideReleaseOnTea` and the query `releaseTeaPublicationView`, and for API keys `publishReleaseOnTeaProgrammatic`, `republishReleaseOnTeaProgrammatic`, `hideReleaseOnTeaProgrammatic` and `releaseTeaPublicationViewProgrammatic`. Notification subscriptions can listen for Release published on TEA and Release hidden from TEA.
 
-The TEA 1.0.0 surface that serves publications to TEA clients lands in a later release; until then publications are recorded and visible in ReARM, and publishing is ReARM Pro only.
+## What a consumer reads
+
+Every operation is a `GET` under `<API base>/v1.0.0`, except the token exchange:
+
+- listings: `/products`, `/components`, `/productReleases`, `/componentReleases` (the last two take `idType`, `TEI` or `PURL`, with `idValue`);
+- products: `/product/{uuid}`, `/product/{uuid}/releases`, `/product/{uuid}/cle`;
+- product releases: `/productRelease/{uuid}`, `/productRelease/{uuid}/collections`, `/productRelease/{uuid}/collection/latest`, `/productRelease/{uuid}/collection/{collectionVersion}`, `/productRelease/{uuid}/cle`;
+- components: `/component/{uuid}`, `/component/{uuid}/releases`, `/component/{uuid}/cle`;
+- component releases: `/componentRelease/{uuid}`, `/componentRelease/{uuid}/collections`, `/componentRelease/{uuid}/collection/latest`, `/componentRelease/{uuid}/collection/{collectionVersion}`, `/componentRelease/{uuid}/cle`;
+- artifacts: `/artifact/{uuid}/latest` and `/artifact/{uuid}/{artifactVersion}` (the metadata), and their `/download` and `/signature/download` (see [Artifact downloads and caching](#artifact-downloads-and-caching));
+- discovery: `/discovery?tei=` or `?purl=` (see [Discovery](#discovery));
+- the one `POST`: `/token` (see [Authentication](#authentication)).
+
+Every `{uuid}` is a TEA id. Collection versions are immutable: version 1 on the first publish, one more each time the published content changes. Each carries its update reason, one of `INITIAL_RELEASE`, `VEX_UPDATED`, `ARTIFACT_UPDATED`, `ARTIFACT_ADDED` and `ARTIFACT_REMOVED`, and its artifact entries, each with a TEA id and a revision.
+
+Listings answer one page holding every result. `pageSize` is accepted from 1 to 100 and not applied; any `pageToken` is refused, since none is ever issued. `sortField` and `sortOrder` (`asc`, the default, or `desc`) are checked per operation: `name` for `/products` and `/components`; `createdDate` (the default), `releaseDate` or `version` for the release listings; `version` for the collection listings.
+
+Every TEA error body carries `error` and optionally `message`:
+
+| Status | `error` | When |
+|---|---|---|
+| `404` | `OBJECT_UNKNOWN` | The object is unknown, hidden or not published, the caller's key does not cover it, a discovery query resolves no served product release, or the organization TEA id in the base is unknown, malformed or archived. |
+| `400` | `INVALID_REQUEST` | A parameter is wrong, a query value is not valid UTF-8 or percent-encoding, or a download `mediaType` is not a media type. |
+| `400` | `INVALID_PAGE_TOKEN` | A `pageToken` is sent. |
+| `406` | `NO_ACCEPTABLE_FORMAT` | A download `mediaType` is absent, blank, a wildcard or names no format of the revision. |
+| `404` | `SIGNATURE_NOT_FOUND` | The format has no signature. |
+| `404` | `NOT_IMPLEMENTED` | The instance's `/.well-known/tea` outside an installation of type OSS, or a redirect target above 4096 octets. |
+
+A path that no TEA operation serves is answered `404` with `{"message":"Not Found"}`, which is not a TEA error: the client has a wrong base or version and fails over to the next endpoint, or reports it.
+
+Requests are limited to 100 per 30 seconds per address, or per key for a caller with a valid token; above that ReARM answers `429` with `Retry-After` and `{"message":"Rate limit exceeded"}`. The address is the first `X-Forwarded-For` entry, which the edge in front of ReARM must set itself (see [Deploying TEA](#deploying-tea)).
+
+JSON answers, artifact metadata included, carry `Cache-Control: no-cache` for an anonymous caller and `private, no-cache` for a caller with a valid key of the organization, whatever the visibility, with `Vary: Authorization`.
 
 ## Authentication
 
 A profile's visibility decides who reads what resolves to it: a PUBLIC profile publishes to anyone, a PRIVATE profile only to holders of an [external key](../configure/programmatic-access#external-keys-tea) whose grants cover the object. An external key is a key the organization hands to a party outside it; it reaches nothing but TEA. The holder exchanges it for a one-hour Bearer token at the token endpoint on the organization's API base, `POST <API base>/v1.0.0/token` with `grant_type=client_credentials`, where the API base is `<your ReARM URL>/tea/<organization TEA id>`.
 
+The full exchange, with an example and every answer of the token endpoint, is under [Exchanging an external key for a token](../configure/programmatic-access#exchanging-an-external-key-for-a-token). The rules a consumer needs:
+
+- A PUBLIC object needs no key.
+- The credentials go as HTTP Basic or as the form fields `client_id` and `client_secret` in the request body, never both in one request and never a parameter twice (`400` with `invalid_request`), and never in the URL query string: a token-request parameter in the query is refused with `400` and `invalid_request` naming the parameters.
+- The token goes as `Authorization: Bearer <token>` on every other TEA endpoint.
+
 A PRIVATE object requested without a token is answered `401` with a `WWW-Authenticate: Bearer realm="tea"` challenge. An invalid, expired or revoked token is answered `401` with `error="invalid_token"` in the challenge, and the client exchanges its key again and retries once. A valid token whose key does not cover the object is answered `404` with `OBJECT_UNKNOWN`, exactly as an object that does not exist or is not published. A PUBLIC object is served to every caller, and a token sent along is ignored.
 
-External keys and the token endpoint are available in ReARM Pro. The TEA 1.0.0 resource surface that applies these rules lands in a later release.
+A token issued by another organization is no credential on this organization's API base: the request is handled as one without a token, so a PUBLIC object is served and a PRIVATE one is answered with the `401` challenge. The API base of an archived organization answers `404` with `OBJECT_UNKNOWN` to everything, the token endpoint included, before any credential is read.
 
-## Known issues, limitations and notes
-- The data present via TEA is consistent with what is visible via ReARM UI, ReARM CLI or ReARM's own GraphQL API. For example, on ReARM Demo Instance, you may explore data using UI
-- ReARM supports TEIs of `uuid` and `purl` types where uuid equals uuid of the Product in ReARM and purl must be set explicitly per release (or can be cnfigured in the Component / Product settings to propagate to releases)
-- The `/tea/v0.4.0/` surface has no authentication; the [authentication](#authentication) above applies to TEA 1.0.0. Links from TEA for downloading artifacts lead to standard ReARM authentication and authorization mechanism. For the [ReARM Demo Instance](https://demo.rearmhq.com), you need to be registered to download artifacts via TEA - Note that registration on ReARM Demo is publicly available
-- Data on [ReARM Demo Instance](https://demo.rearmhq.com) under the Demo Organization that can be obtained via TEA, including downloadable artifacts referenced in TEA and hosted on ReARM Demo, is distributed under the [Creative Commons Attribution 4.0 International (CC-BY-4.0)](https://creativecommons.org/licenses/by/4.0/) license. Note that this license applies only to the aforementioned data and artifacts. It does not apply to, without limitation, any ReARM components or source code or any other data obtained from or related to ReARM
-- Data on [ReARM Demo Instance](https://demo.rearmhq.com) is subject to change without notice at any time, it may be extended, added or removed entirely.
+## Artifact downloads and caching
+
+An artifact revision is downloaded with
+
+```
+GET <API base>/v1.0.0/artifact/{uuid}/{artifactVersion}/download?mediaType=<media type>
+GET <API base>/v1.0.0/artifact/{uuid}/latest/download?mediaType=<media type>
+```
+
+and its signature with `.../signature/download?mediaType=<media type>` on the same two paths. `mediaType` names one of the formats of the revision: absent, blank, a wildcard (`*/*`, `text/*`) or a value that names no format of the revision is answered `406` with `NO_ACCEPTABLE_FORMAT`, and a value that is not a media type (`not a media type`, `text/`) `400` with `INVALID_REQUEST`. A revision with no signature for that format answers `404` with `SIGNATURE_NOT_FOUND`.
+
+- A format stored in ReARM is served with a strong `ETag` (its sha256), `Repr-Digest` (`sha-256=:<base64>:`), an absolute versioned `Content-Location` and a `Content-Disposition` attachment name; a request with a matching `If-None-Match` is answered `304`.
+- A format or signature stored outside ReARM is a `302` to its `url` or `signatureUrl`, as frozen in the collection. **A client must not send its TEA bearer token to the host the redirect names.**
+- The `Content-Type` of a download is the canonical rendering of the format's media type (lower-case type and subtype, no whitespace around `;`), while `mediaType` in the metadata and in `Content-Location` keeps the spelling the publisher stored.
+
+`Cache-Control` of downloads and `302`s, all with `Vary: Authorization`:
+
+| Answer | `Cache-Control` |
+|---|---|
+| PUBLIC, versioned download | `public, max-age=86400, immutable` |
+| PUBLIC, `latest` download | `no-cache` |
+| Every `302` | `no-cache` |
+| PRIVATE download | `private, no-cache` |
+| Refusals | `no-store` |
+
+The artifact metadata (`/artifact/{uuid}/latest`, `/artifact/{uuid}/{artifactVersion}`) is a JSON answer and follows the rule for JSON answers above, not this table: `no-cache` for an anonymous caller, `private, no-cache` for a valid key of the organization, whatever the visibility.
+
+A shared cache may go on serving a copy of a PUBLIC revision for at most one day after the organization hides the publication, archives or rejects the release, narrows the profile to PRIVATE or archives itself. ReARM itself refuses at once; copies already downloaded cannot be recalled. An operator who fronts `/tea` with a CDN should purge it on a hide to make the withdrawal take effect sooner.
+
+Downloads need no ReARM login: the profile's visibility and the external key decide, as for every other TEA object.
+
+## Deploying TEA
+
+There is nothing to switch on: the TEA endpoints are always mounted on ReARM Pro, and an upgrade needs no setting and no step. What a consumer meets depends on the organization:
+
+- Before the organization has a TEA id there is no base: any path under `/tea/<id>` is answered `404` with `OBJECT_UNKNOWN`, and on an installation of type OSS the instance's `/.well-known/tea` is `404` with `OBJECT_UNKNOWN` while no organization has a TEA id. The TEA id is minted when an organization saves a profile with publishing ENABLED, or when its first external key is created.
+- Once the TEA id exists, the base answers: the four listings answer `200` with an empty list; discovery answers `404` with `OBJECT_UNKNOWN` for a TEI or purl that resolves no served product release, which, with nothing published, is every query (the specification allows no empty discovery answer); every object is `404` with `OBJECT_UNKNOWN`; the token endpoint issues tokens for the organization's external keys; and on an installation of type OSS the instance's `/.well-known/tea` lists the base. Nothing is served until a release is published, by hand or by a TEA_PUBLISH action.
+
+A consumer who reaches an empty listing has the right base. A `404` with `OBJECT_UNKNOWN` from discovery alone does not mean a wrong base: a listing on the same base tells the two apart.
+
+Behind a proxy:
+
+- A redirect `Location` near the 4096-octet bound needs `proxy_buffer_size 16k` on the `location /tea` of the UI front's nginx until the shipped UI front carries that setting; without it such a redirect is answered `502`.
+- The per-address limit counts the first `X-Forwarded-For` entry. The edge in front of ReARM must set `X-Forwarded-For` itself and must not pass on a value the client sent (Traefik does this by default for untrusted sources; an nginx edge uses `$remote_addr`, not `$proxy_add_x_forwarded_for`).
+
+ReARM Community Edition does not offer TEA yet; the earlier 0.4.0 beta and its switch are retired.
+
+## Not implemented yet
+
+- **Page tokens.** Listings answer one page; `pageSize` is not applied and every `pageToken` is refused. A listing above 1000 results is logged on the server.
+- **CLE 1.0.0 alignment.** The four CLE operations (`/product/{uuid}/cle`, `/component/{uuid}/cle`, `/productRelease/{uuid}/cle`, `/componentRelease/{uuid}/cle`) are served as ReARM built them for the earlier draft: a product's or component's CLE is the union of the lifecycle events of its served releases, a release's CLE its own events. Alignment with CLE 1.0.0 is a task of its own.
+- **VDR and VEX.** ReARM generates no vulnerability document for a publication; the profile's Vulnerability documents setting is reserved at NONE.
+- **Signing.** ReARM signs nothing it publishes; signatures are published as the publisher stored them.
+- **`preRelease`.** Releases do not set it.
+- **Component discovery.** Discovery answers product releases only; an installation that publishes components only lists them through `/componentReleases?idType=PURL` or `idType=TEI` with `idValue`.
+- **The rearm-cli `tea` verbs.** `tea discovery` and `tea full_tea_flow` speak the retired 0.4.0 beta and do not work against this API until a CLI task updates them.

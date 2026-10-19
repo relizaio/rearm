@@ -14,6 +14,10 @@
             <div v-else data-testid="tea-org-uuid-missing" class="text-muted">
                 Organization TEA id: not minted yet: enable publishing on a profile to mint it.
             </div>
+            <p class="text-muted mt-2">How consumers read this organization's TEA API, and how to host the
+                document above, is described in the
+                <a :href="brandingState.documentationUrl + '/tea/'" target="_blank" rel="noopener noreferrer"
+                    data-testid="tea-docs-link">Transparency Exchange API documentation</a>.</p>
         </div>
 
         <div class="tea-block">
@@ -42,6 +46,7 @@ import { NButton, NDataTable, NInput, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import commonFunctions from '@/utils/commonFunctions'
+import { brandingState } from '@/utils/branding'
 import { TeaNamedObject, teaRowObject } from '@/utils/teaProfile'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 
