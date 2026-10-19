@@ -25,10 +25,10 @@ export function canonicalSerialNumber(value: string): string {
  * (organization, canonical serialNumber), taken as the first statement of every
  * transaction that may write a row of the lineage. It writes nothing and is
  * released by the commit or the rollback, so the version decisions of two
- * uploads of one serialNumber commit in a serial order. Two-key lock space, apart from the one-key session lock of
- * services/advisoryLock.ts. The organization is keyed by its uuid value
- * ($1::uuid::text), so every spelling the uuid type parses takes the one lock
- * its stored rows are under.
+ * uploads of one serialNumber commit in a serial order. Two-key lock space,
+ * apart from the one-key session lock of services/advisoryLock.ts. The
+ * organization is keyed by its uuid value ($1::uuid::text), so every spelling
+ * the uuid type parses takes the one lock its stored rows are under.
  */
 export async function lockLineage(client: TxClient, org: string, key: string): Promise<void> {
     await client.query('SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2))', [org, key]);
