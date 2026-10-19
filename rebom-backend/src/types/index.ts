@@ -16,7 +16,6 @@ export {
     BomConversionError,
     BomMergeError,
     OciStorageError,
-    BomLineageOwnerError,
     BomScoreError,
     BomScoreErrorReason,
     ERROR_CODES,
