@@ -85,6 +85,21 @@ describe('teaOrgPublicSources (row 5)', () => {
             { scope: 'COMPONENT', mode: 'FOLLOW_PERSPECTIVE', publishing: 'ENABLED', visibility: 'PUBLIC' },
         ])).toEqual({ organization: false, perspectives: 2, components: 1, publishedReleases: 0 })
     })
+
+    it('an organization whose only PUBLIC profiles are component rows is PUBLIC (test run 1, T-4)', () => {
+        expect(teaOrgPublicSources(orgPrivate, [
+            { scope: 'COMPONENT', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' },
+        ])).toEqual({ organization: false, perspectives: 0, components: 1, publishedReleases: 0 })
+    })
+
+    it('the ORGANIZATION-scope row is neither a perspective nor a component: the view speaks for it (T-4)', () => {
+        const orgRow = { scope: 'ORGANIZATION', mode: null, publishing: 'ENABLED', visibility: 'PUBLIC' }
+        expect(teaOrgPublicSources(orgPrivate, [orgRow])).toBeNull()
+        expect(teaOrgPublicSources(orgPublic, [orgRow, { scope: 'PERSPECTIVE', mode: null, publishing: 'ENABLED', visibility: 'PUBLIC' }]))
+            .toEqual({ organization: true, perspectives: 1, components: 0, publishedReleases: 3 })
+        expect(teaOrgPublicSources(orgPublic, [orgRow, { scope: 'COMPONENT', mode: 'OVERRIDE', publishing: 'ENABLED', visibility: 'PUBLIC' }]))
+            .toEqual({ organization: true, perspectives: 0, components: 1, publishedReleases: 3 })
+    })
 })
 
 describe('teaPublishWiring and the delta (row 6)', () => {
@@ -164,6 +179,17 @@ describe('teaPublishWiring and the delta (row 6)', () => {
         expect(added(c => { c.globalInputEventRefs.push({ uuid: 'g3', overrideOutputEventsLocally: true, outputEventsOverride: ['g'] }) })).toEqual([])
         expect(added(c => { c.releaseInputTriggers[1].name = 'renamed' })).toEqual([])
         expect(added(c => { c.outputTriggers[0].name = 'Publish it again' })).toEqual([])
+    })
+
+    it('a local rule whose on-false list newly names the publish adds its false piece (test run 1, T-3)', () => {
+        expect(added(c => { c.releaseInputTriggers[0].outputEventsOnFalse = ['h', 'a'] })).toEqual(['rule:r:false:a'])
+        const onFalseOnly = {
+            outputTriggers: [{ uuid: 'a', name: 'Publish it', type: 'TEA_PUBLISH' }],
+            releaseInputTriggers: [{ uuid: 'f', enabled: true, outputEvents: [], outputEventsOnFalse: ['a', 'g', 'm'] }],
+        }
+        expect(teaPublishWiring(onFalseOnly, [], globals)).toEqual(['action:a', 'rule:f:false:a', 'rule:f:false:g'])
+        expect(teaPublishWiringAdded({ ...onFalseOnly, releaseInputTriggers: [] }, onFalseOnly, [], globals))
+            .toEqual(['rule:f:false:a', 'rule:f:false:g'])
     })
 
     it('a new TEA_PUBLISH action adds its piece; a new hide adds nothing', () => {
@@ -257,6 +283,18 @@ describe('teaConfirmBeforeGlobalAutoPublish (row 8)', () => {
         const d = teaConfirmBeforeGlobalAutoPublish({ organization: false, perspectives: 0, components: 3, publishedReleases: 0 }, 'g')!
         expect(d.text).toContain('3 component profile(s) are PUBLIC. ')
         expect(d.text.endsWith(ENDING)).toBe(true)
+    })
+
+    it('shows only the parts that apply (test run 1, T-6)', () => {
+        const orgOnly = teaConfirmBeforeGlobalAutoPublish({ organization: true, perspectives: 0, components: 0, publishedReleases: 1 }, 'g')!.text
+        expect(orgOnly).not.toContain('perspective profile(s)')
+        expect(orgOnly).not.toContain('component profile(s)')
+        const componentsOnly = teaConfirmBeforeGlobalAutoPublish({ organization: false, perspectives: 0, components: 1, publishedReleases: 0 }, 'g')!.text
+        expect(componentsOnly).not.toContain('perspective profile(s)')
+        expect(componentsOnly).not.toContain("The organization's TEA profile")
+        const all = teaConfirmBeforeGlobalAutoPublish({ organization: true, perspectives: 1, components: 2, publishedReleases: 0 }, 'g')!.text
+        expect(all.indexOf("The organization's TEA profile")).toBeLessThan(all.indexOf('1 perspective profile(s) are PUBLIC'))
+        expect(all.indexOf('1 perspective profile(s) are PUBLIC')).toBeLessThan(all.indexOf('2 component profile(s) are PUBLIC'))
     })
 
     it('keeps the action name in text only (security review F-4)', () => {
