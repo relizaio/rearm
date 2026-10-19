@@ -26,8 +26,8 @@ const typeDefs = gql`
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
     scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
-    # The ownership record of a serialNumber lineage (SCORE-45), or null when none exists. The
-    # serialNumber may be given with or without its urn:uuid: prefix.
+    # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
+    # Always null: rebom stores no lineage owner. The arguments are still validated.
     bomLineage(org: ID!, serialNumber: ID!): BomLineage
   }
 
@@ -49,22 +49,25 @@ const typeDefs = gql`
     the signature blob; the trust store is authoritative.
     """
     verifySignature(input: VerifySignatureInput!): VerifySignatureResult!
-    # Set the owners of serialNumber lineages (SCORE-45), each entry in its own transaction, in
-    # input order; at most 500 entries, every one validated before any write. CLAIM_IF_UNOWNED
-    # never overwrites an owner (the backfill); REASSIGN sets it unconditionally (the admin remedy).
+    # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
+    # Answers NO_SUCH_LINEAGE for every entry, in input order, and writes nothing; at most 500
+    # entries, every one validated before any answer.
     setBomLineageOwners(org: ID!, entries: [BomLineageOwnerInput!]!, mode: BomLineageOwnerMode!, actor: String): [BomLineageOwnerResult!]!
   }
 
+  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
   input BomLineageOwnerInput {
     serialNumber: ID!
     ownerComponent: ID!
   }
 
+  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
   enum BomLineageOwnerMode {
     CLAIM_IF_UNOWNED
     REASSIGN
   }
 
+  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
   enum BomLineageOwnerOutcome {
     SET
     UNCHANGED_SAME_OWNER
@@ -72,6 +75,7 @@ const typeDefs = gql`
     NO_SUCH_LINEAGE
   }
 
+  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
   type BomLineageOwnerResult {
     # As given in the entry.
     serialNumber: ID!
@@ -80,6 +84,7 @@ const typeDefs = gql`
     ownerComponent: ID
   }
 
+  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
   type BomLineage {
     # Canonical form, with the urn:uuid: prefix.
     serialNumber: ID!
@@ -364,11 +369,7 @@ input RebomOptions {
     # organization for its own software; absent for third-party software. Filled into the root
     # where it names no supplier; stored with the row.
     supplierName: String
-    # The component of the organization that owns this document's serialNumber lineage
-    # (SCORE-45): ReARM sets it from the target release's component on every upload and merge.
-    # Absent for a caller with no component context. An upload that names an owner is refused
-    # when the lineage belongs to another component, and claims the lineage when it is unowned;
-    # an upload that names none neither checks nor claims (legacy behaviour).
+    # Ignored since SCORE-50; removed once rearm-saas no longer sends it (SCORE-50 child d).
     ownerComponent: ID
     tldOnly: Boolean
     structure: String

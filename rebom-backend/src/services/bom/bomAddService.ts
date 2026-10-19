@@ -1,6 +1,6 @@
 import { logger } from '../../logger';
-import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, isUuid, canonicalUuid } from '../../types';
-import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError, BomLineageOwnerError } from '../../types/errors';
+import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, canonicalUuid } from '../../types';
+import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
 import * as BomLineageRepository from '../../bomLineageRepository';
 import * as SpdxRepository from '../../spdxRepository';
@@ -29,7 +29,7 @@ import { createHash } from 'crypto';
 const AUGMENT_ON_STORAGE = true;
 
 export async function addBom(bomInput: BomInput): Promise<BomRecord> {
-  const input = withCanonicalOrg(bomInput);
+  const input = withoutOwnerComponent(withCanonicalOrg(bomInput));
   const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
     return await addSpdxBom(input);
@@ -40,11 +40,10 @@ export async function addBom(bomInput: BomInput): Promise<BomRecord> {
 
 /**
  * The upload with its organization in canonical form (SCORE-46, review item
- * T-3), set once before anything reads it: rebom.boms and rebom.bom_lineage
- * store every spelling PostgreSQL's uuid type parses as one organization, so
- * the lineage lock, the deduplication, both version checks, the owner checks
- * and the insert must all see the one text form. An organization that is not
- * a uuid is refused before any read or push.
+ * T-3), set once before anything reads it: rebom.boms stores every spelling
+ * PostgreSQL's uuid type parses as one organization, so the lineage lock, the
+ * deduplication, both version checks and the insert must all see the one text
+ * form. An organization that is not a uuid is refused before any read or push.
  */
 function withCanonicalOrg(bomInput: BomInput): BomInput {
   const org = canonicalUuid(bomInput.bomInput?.org);
@@ -52,6 +51,21 @@ function withCanonicalOrg(bomInput: BomInput): BomInput {
     throw new BomValidationError('org must be a uuid', { field: 'org', value: bomInput.bomInput?.org });
   }
   return { ...bomInput, bomInput: { ...bomInput.bomInput, org } };
+}
+
+/**
+ * The upload with rebomOptions.ownerComponent dropped (SCORE-50): accepted from
+ * the rearm-saas that still sends it and ignored, whatever its value, so neither
+ * route, the stored meta nor the augmentation sees it. A shallow copy of the
+ * options, never a delete: the caller's object is left as it was.
+ */
+function withoutOwnerComponent(bomInput: BomInput): BomInput {
+  const rebomOptions = bomInput.bomInput.rebomOptions;
+  if (!rebomOptions) {
+    return bomInput;
+  }
+  const { ownerComponent: _ignored, ...rest } = rebomOptions;
+  return { ...bomInput, bomInput: { ...bomInput.bomInput, rebomOptions: rest } };
 }
 
 /**
@@ -102,60 +116,14 @@ async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: 
   return matchingBom || null;
 }
 
-/**
- * The upload's ownerComponent (SCORE-45 ADR-3): lowercased, or null when absent,
- * null or empty (a null owner, the legacy behaviour). Anything else that is not
- * a uuid is refused before any read.
- */
-function readOwnerComponent(rebomOptions: RebomOptions | undefined | null): string | null {
-  const value = rebomOptions?.ownerComponent;
-  if (value === undefined || value === null || value === '') {
-    return null;
-  }
-  if (!isUuid(value)) {
-    throw new BomValidationError('rebomOptions.ownerComponent must be a uuid', { field: 'ownerComponent', value });
-  }
-  return value.toLowerCase();
-}
-
 type LineageContext = {
   org: string,
   lineageKey: string,
-  caller: string | null,
   // The serialNumber the refusal names: the document's, as the caller sent it.
   serialNumber: string,
   bomVersion: string | number | undefined,
   path: 'CYCLONEDX' | 'SPDX'
 };
-
-function lineageOwnerMismatch(ctx: LineageContext, ownerComponent: string, stage: 'precheck' | 'transaction'): BomLineageOwnerError {
-  logger.warn({
-    org: ctx.org,
-    serialNumber: ctx.lineageKey,
-    uploadingComponent: ctx.caller,
-    ownerComponent,
-    bomVersion: ctx.bomVersion,
-    stage,
-    path: ctx.path
-  }, 'BOM lineage owner mismatch: upload refused');
-  return new BomLineageOwnerError(
-    `BOM with serialNumber ${ctx.serialNumber} belongs to another component of this organization; ` +
-    `a new version of it can only be uploaded to that component. Upload an SBOM with its own serialNumber instead.`,
-    ctx.serialNumber);
-}
-
-/**
- * The pre-check (SCORE-45 ADR-4 step 2): one primary-key read, refused when the
- * lineage has an owner other than the caller (a null caller included). Runs
- * before anything is pushed or written.
- */
-async function checkLineageOwner(ctx: LineageContext): Promise<void> {
-  const lineage = await BomLineageRepository.find(ctx.org, ctx.lineageKey);
-  const owner = lineage?.owner_component ?? null;
-  if (owner !== null && owner !== ctx.caller) {
-    throw lineageOwnerMismatch(ctx, owner, 'precheck');
-  }
-}
 
 /**
  * The version check (SCORE-45 ADR-4 step 3): a document under a stored
@@ -179,19 +147,15 @@ function checkVersionAbove(
 }
 
 /**
- * The lineage decision and the rebom.boms insert in one transaction (SCORE-45
- * ADR-4 step 5, SCORE-46 ADR-13): under the lineage lock, which every caller
- * takes first (inside claimInTransaction), the owner is re-checked, then the
- * version against the lineage's newest stored row on the same client, then the
- * row is inserted. A claim or a row that landed since the pre-checks refuses
- * this upload, and the rollback takes the claim with it.
+ * The version decision and the rebom.boms insert in one transaction (SCORE-46
+ * ADR-13): the lineage lock is the first statement, then the version is
+ * re-checked against the lineage's newest stored row on the same client, then
+ * the row is inserted. A row that landed since the pre-check refuses this
+ * upload.
  */
 async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, queryParams: any[]): Promise<any> {
   return withTransaction(async client => {
-    const owner = await BomLineageRepository.claimInTransaction(client, ctx.org, ctx.lineageKey, ctx.caller);
-    if (owner && owner !== ctx.caller) {
-      throw lineageOwnerMismatch(ctx, owner, 'transaction');
-    }
+    await BomLineageRepository.lockLineage(client, ctx.org, ctx.lineageKey);
     const latest = await BomLineageRepository.latestStoredVersion(client, ctx.org, ctx.lineageKey);
     checkVersionAbove(ctx.serialNumber, latest && { uuid: latest.uuid, bomVersion: latest.bom_version }, ctx.bomVersion);
     return client.query(queryText, queryParams);
@@ -269,10 +233,6 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   rebomOptions.serialNumber = processedBom.serialNumber;
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
   rebomOptions.mod = 'raw';
-  const caller = readOwnerComponent(rebomOptions);
-  if (caller) {
-    rebomOptions.ownerComponent = caller;
-  }
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -330,17 +290,13 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     return duplicateBom;
   }
 
-  // A different document under a lineage another component owns is refused
-  // before the version check, so a non-owner learns nothing about its versions.
   const lineage: LineageContext = {
     org: bomInput.bomInput.org,
     lineageKey: BomLineageRepository.canonicalSerialNumber(serialNumber),
-    caller,
     serialNumber,
     bomVersion: rebomOptions.bomVersion,
     path: 'CYCLONEDX'
   };
-  await checkLineageOwner(lineage);
 
   // Not a duplicate - a different file claiming the same identity has to claim
   // a higher version, or it is asking us to rewrite artifacts that are already
@@ -455,7 +411,6 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
         constraint: 'must be valid SPDX format'
       });
     }
-    const caller = readOwnerComponent(bomInput.bomInput.rebomOptions);
 
     const spdxMetadata = SpdxService.extractSpdxMetadata(spdxContent);
     const fileHash = SpdxService.calculateSpdxHash(spdxContent);
@@ -472,12 +427,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       } else {
         logger.warn({ existingSerialNumber }, "existingSerialNumber provided but no existing SPDX found - treating as new upload");
       }
-      // The update continues the lineage of existingSerialNumber: checked before
-      // anything is pushed or the spdx_boms row is written.
+      // The update continues the lineage of existingSerialNumber.
       const updateKey = BomLineageRepository.canonicalSerialNumber(existingSerialNumber);
-      await checkLineageOwner({
-        org: bomInput.bomInput.org, lineageKey: updateKey, caller, serialNumber: updateKey, bomVersion, path: 'SPDX'
-      });
       // The update's version (the latest SPDX row's plus one) must also be above
       // the lineage's newest row of any format (SCORE-46 ADR-12 item 1), checked
       // here before anything is pushed and again under the lineage lock.
@@ -579,22 +530,16 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       mergedOptions.serialNumber = serialNumber;
       logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
     }
-    if (caller) {
-      mergedOptions.ownerComponent = caller;
-    }
 
-    // The update route's key is existingSerialNumber (checked above, before the
-    // SPDX push); a first upload's key is the converter's serialNumber, known
-    // only now, and is checked before the converted push.
+    // The update route's key is existingSerialNumber (its version checked above,
+    // before the SPDX push); a first upload's key is the converter's
+    // serialNumber, known only now.
     const lineageKey = existingSerialNumber
       ? BomLineageRepository.canonicalSerialNumber(existingSerialNumber)
       : BomLineageRepository.canonicalSerialNumber(serialNumber);
     const lineage: LineageContext = {
-      org: bomInput.bomInput.org, lineageKey, caller, serialNumber: lineageKey, bomVersion, path: 'SPDX'
+      org: bomInput.bomInput.org, lineageKey, serialNumber: lineageKey, bomVersion, path: 'SPDX'
     };
-    if (!existingSerialNumber) {
-      await checkLineageOwner(lineage);
-    }
     
     // Converted, therefore a distinct document from the SPDX file that was
     // uploaded, and given its own identity for the same reason the augmented
