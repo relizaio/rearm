@@ -4,6 +4,12 @@
 // row is named, an archived component or product the lists leave out is read once by uuid and
 // tagged "archived", and a failed read leaves only that row on its uuid. The GraphQL client is
 // mocked and answers by document; the embedded organization editor is stubbed.
+//
+// The Discovery block (task TEA-11, design 4.3 cases 8-9): the API base and the hosted
+// .well-known/tea document are shown exactly as the server built them, the UI's token URL carries
+// the version the document advertises, and a documentation pointer follows the branding settings.
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -14,11 +20,19 @@ vi.mock('@/utils/graphql', () => ({ default: { query: (...a: any[]) => query(...
 vi.mock('./TeaProfileEditor.vue', () => ({ default: { name: 'TeaProfileEditor', render: () => null } }))
 
 const { default: Panel } = await import('./TeaOrgPanel.vue')
+const { brandingState } = await import('@/utils/branding')
+const { teaTokenUrl } = await import('@/utils/apiKeyControls')
 
 const LISTED = '11111111-1111-4111-8111-111111111111'
 const ARCHIVED = '22222222-2222-4222-8222-222222222222'
 const PERSPECTIVE = '33333333-3333-4333-8333-333333333333'
 const ORG = '44444444-4444-4444-8444-444444444444'
+const TEA = '55555555-5555-4555-8555-555555555555'
+const API = 'https://rearm.example.com/tea/' + TEA
+// The exact string TeaProfileService writes (Jackson compact, field order as served).
+const DOC = '{"schemaVersion":1,"endpoints":[{"url":"' + API + '","versions":["1.0.0"],"priority":1}]}'
+const NOT_MINTED = { org: ORG, teaUuid: null }
+const MINTED = { org: ORG, teaUuid: TEA, apiBase: API, wellKnownDocument: DOC }
 
 const operation = (opts: any) => opts.query?.definitions?.[0]?.name?.value
 const nameReads = () => query.mock.calls.filter(c => operation(c[0]) === 'TeaComponentName')
@@ -27,10 +41,10 @@ const row = (scope: string, object: string | null, changes: Record<string, any> 
     ({ uuid: 'row-' + (object ?? 'org'), scope, object, mode: scope === 'COMPONENT' ? 'OVERRIDE' : null,
         publishing: 'DISABLED', visibility: 'PRIVATE', ...changes })
 
-function answers (archivedRead: () => any) {
+function answers (archivedRead: () => any, discovery: Record<string, any> = NOT_MINTED) {
     query.mockImplementation(async (opts: any) => {
         switch (operation(opts)) {
-        case 'TeaOrgDiscovery': return { data: { teaOrgDiscovery: { org: ORG, teaUuid: null } } }
+        case 'TeaOrgDiscovery': return { data: { teaOrgDiscovery: discovery } }
         case 'TeaProfilesOfOrg': return { data: { teaProfilesOfOrg: [row('ORGANIZATION', null), row('COMPONENT', LISTED),
             row('PERSPECTIVE', PERSPECTIVE), row('COMPONENT', ARCHIVED)] } }
         case 'TeaComponentName': return archivedRead()
@@ -86,5 +100,42 @@ describe('TeaOrgPanel', () => {
         expect(w.findAll('[data-testid="tea-archived-tag"]')).toHaveLength(0)
         expect(errors).toHaveBeenCalled()
         errors.mockRestore()
+    })
+
+    it('shows the API base and the hosted .well-known/tea document the server built, and points at the documentation', async () => {
+        answers(() => ({ data: { component: { uuid: ARCHIVED, name: 'old-widget', type: 'PRODUCT', status: 'ARCHIVED' } } }), MINTED)
+        const w = await mountPanel()
+        expect(w.find('[data-testid="tea-org-uuid"]').text()).toBe(TEA)
+        expect(w.find('[data-testid="tea-api-base"]').text()).toBe(API)
+        expect(w.find('[data-testid="tea-org-uuid-missing"]').exists()).toBe(false)
+        const shown = (w.find('[data-testid="tea-well-known"] textarea').element as HTMLTextAreaElement).value
+        expect(shown).toBe(DOC)
+
+        const served = JSON.parse(DOC)
+        expect(served.schemaVersion).toBe(1)
+        expect(served.endpoints[0].url).toBe(w.find('[data-testid="tea-api-base"]').text())
+        expect(served.endpoints[0].versions).toEqual(['1.0.0'])
+        // The token URL the External Keys panel shows carries the version the document advertises.
+        expect(teaTokenUrl(API)).toBe(API + '/v' + served.endpoints[0].versions[0] + '/token')
+
+        const link = w.find('[data-testid="tea-docs-link"]')
+        expect(link.exists()).toBe(true)
+        expect(link.attributes('href')).toBe(brandingState.documentationUrl + '/tea/')
+        expect(link.attributes('href')).toBe('https://docs.rearmhq.com/tea/')
+        expect(link.attributes('target')).toBe('_blank')
+        expect(link.attributes('rel')).toContain('noopener')
+    })
+
+    it('the documentation pointer shows before the TEA id is minted and names no documentation host of its own', async () => {
+        answers(() => ({ data: { component: { uuid: ARCHIVED, name: 'old-widget', type: 'PRODUCT', status: 'ARCHIVED' } } }))
+        const w = await mountPanel()
+        expect(w.find('[data-testid="tea-org-uuid-missing"]').exists()).toBe(true)
+        expect(w.find('[data-testid="tea-api-base"]').exists()).toBe(false)
+        const link = w.find('[data-testid="tea-docs-link"]')
+        expect(link.exists()).toBe(true)
+        expect(link.attributes('href')).toBe(brandingState.documentationUrl + '/tea/')
+
+        const source = readFileSync(resolve(__dirname, 'TeaOrgPanel.vue'), 'utf8')
+        expect(source).not.toContain('docs.rearmhq.com')
     })
 })

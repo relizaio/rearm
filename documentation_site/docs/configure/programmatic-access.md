@@ -222,9 +222,9 @@ in one of two ways, never both in one request:
 |---|---|---|
 | `200` | `access_token`, `token_type` `Bearer`, `expires_in` `3600` | The key and secret match. `expires_in` is lower when the secret expires within the hour. |
 | `400` | `{"error": "unsupported_grant_type"}` | Any grant other than `client_credentials`. There are no refresh tokens. |
-| `400` | `{"error": "invalid_request"}` | `grant_type` is missing, or the credentials are sent both as Basic and as form fields. |
+| `400` | `{"error": "invalid_request"}` | `grant_type` is missing, a token-request parameter (`grant_type`, `client_id`, `client_secret`, `device_code`, `refresh_token`, `assertion`) is sent in the URL query string or more than once, or the credentials are sent both as Basic and as form fields. |
 | `401` | `{"error": "invalid_client"}` with `WWW-Authenticate: Basic realm="tea"` | No credentials, malformed credentials, an unknown key, a wrong or expired secret, a deactivated key, or a key of another organization. |
-| `404` | `{"error": "OBJECT_UNKNOWN"}` | The organization TEA id in the path is unknown. |
+| `404` | `{"error": "OBJECT_UNKNOWN"}` | The organization TEA id in the path is unknown or archived. |
 
 The token lasts one hour and is bound to the secret it came from: retiring, regenerating or
 deleting that secret, or deactivating the key, ends it at once. Exchange the key again when the
@@ -243,8 +243,8 @@ token expires, and send the token as `Authorization: Bearer <token>` on TEA requ
   not exist or is not published, so the party cannot tell the two apart.
 - A listing shows the public objects, plus the private objects the key covers.
 
-The TEA 1.0.0 resource endpoints that apply these rules land in a later release; the key, its
-grants and the token endpoint come first.
+The TEA endpoints that apply these rules are documented on the [Transparency Exchange API](../tea/)
+page.
 
 ## Secrets: rotation, expiry and the kill switch
 
