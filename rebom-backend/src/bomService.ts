@@ -12,7 +12,7 @@
  * - bomProcessingService: BOM transformations
  * - bomMergeService: Merge operations
  * - bomAddService: Add/store operations
- * - bomLineageService: serialNumber lineage ownership
+ * - bomLineageService: deprecated lineage owner stubs (SCORE-50)
  * - bomScoreService: Stateless SBOM scoring (rearm bomutils score)
  * - bomMapper: Data Object Pattern
  */
@@ -77,7 +77,7 @@ export {
   addBom
 } from './services/bom/bomAddService';
 
-// serialNumber lineage ownership (SCORE-45)
+// Deprecated lineage owner stubs (SCORE-50; removed in child d)
 export {
   setBomLineageOwners,
   bomLineage

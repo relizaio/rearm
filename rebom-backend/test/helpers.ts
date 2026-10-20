@@ -93,16 +93,6 @@ export async function cleanupTestBoms(pool: any, serialNumbers: string[]): Promi
         `DELETE FROM rebom.boms WHERE meta->>'serialNumber' IN (${placeholders})`,
         serialNumbers
     );
-    // Lineage rows are keyed by the canonical (urn:uuid:) form; delete both forms.
-    const bothForms = Array.from(new Set(serialNumbers.flatMap(sn => {
-        const bare = sn.replace('urn:uuid:', '');
-        return [bare, `urn:uuid:${bare}`];
-    })));
-    const lineagePlaceholders = bothForms.map((_, i) => `$${i + 1}`).join(',');
-    await pool.query(
-        `DELETE FROM rebom.bom_lineage WHERE serial_number IN (${lineagePlaceholders})`,
-        bothForms
-    );
 }
 
 /**
