@@ -44,8 +44,6 @@ import { BomValidationError, BomVersionConflictError } from '../../src/types/err
  * uuid value. Against the migrated database (localhost:5438 by default).
  */
 
-const A = 'aaaaaaaa-0000-4000-8000-000000000001';
-
 const ORG_BRACES = `{${TEST_ORG_UUID}}`;
 const ORG_NO_HYPHENS = TEST_ORG_UUID.replace(/-/g, '');
 const ORG_UPPER_BRACES = `{${TEST_ORG_UUID.toUpperCase()}}`;
@@ -81,9 +79,8 @@ function document(serialNumber: string, version: number, variant?: string): any 
     return bom;
 }
 
-function upload(serialNumber: string, version: number, owner?: string, org = TEST_ORG_UUID, variant?: string) {
+function upload(serialNumber: string, version: number, org = TEST_ORG_UUID, variant?: string) {
     const rebomOptions = createTestRebomOptions({ serialNumber });
-    if (owner !== undefined) rebomOptions.ownerComponent = owner;
     return BomService.addBom({
         bomInput: { format: 'CYCLONEDX', bom: document(serialNumber, version, variant), org, rebomOptions }
     } as any);
@@ -136,7 +133,7 @@ describe('addBom canonicalises the organization', () => {
             await upload(S, 3);
             const before = pushesOf(S);
 
-            await expect(upload(S, 2, A, org)).rejects.toBeInstanceOf(BomVersionConflictError);
+            await expect(upload(S, 2, org)).rejects.toBeInstanceOf(BomVersionConflictError);
             expect(pushesOf(S)).toBe(before);
             expect(await versions(S)).toStrictEqual(['1', '3']);
         });
@@ -144,10 +141,10 @@ describe('addBom canonicalises the organization', () => {
     it.each(SPLITTING_SPELLINGS)('org spelling d: the same bytes uploaded again with the organization in %s answer the stored row',
         async (_name, org) => {
             const S = fresh();
-            const first: any = await upload(S, 1, A);
+            const first: any = await upload(S, 1);
             const before = pushesOf(S);
 
-            const again: any = await upload(S, 1, A, org);
+            const again: any = await upload(S, 1, org);
             expect(again.uuid).toBe(first.uuid);
             expect(pushesOf(S)).toBe(before);
             expect(await versions(S)).toStrictEqual(['1']);
@@ -156,7 +153,7 @@ describe('addBom canonicalises the organization', () => {
     it('org spelling e: an organization that is not a uuid is refused before any read or push', async () => {
         const S = fresh();
         for (const org of ['not-a-uuid', '', ` ${TEST_ORG_UUID}`, `{${TEST_ORG_UUID}`, undefined, null]) {
-            const rebomOptions = { ...createTestRebomOptions({ serialNumber: S }), ownerComponent: A };
+            const rebomOptions = createTestRebomOptions({ serialNumber: S });
             const refusal = await BomService.addBom({
                 bomInput: { format: 'CYCLONEDX', bom: document(S, 1), org, rebomOptions }
             } as any).catch(e => e);
@@ -176,8 +173,8 @@ describe('the SPDX path', () => {
         SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0', name: 'doc',
         documentNamespace: ns, packages: []
     });
-    const uploadSpdx = (ns: string, org: string, owner?: string, existing?: string) => BomService.addBom({
-        bomInput: { bom: spdx(ns), format: 'SPDX', org, existingSerialNumber: existing, rebomOptions: { ownerComponent: owner } }
+    const uploadSpdx = (ns: string, org: string, existing?: string) => BomService.addBom({
+        bomInput: { bom: spdx(ns), format: 'SPDX', org, existingSerialNumber: existing, rebomOptions: {} }
     } as any);
     const spdxRows = async (ns: string) => (await pool.query(
         `SELECT organization FROM rebom.spdx_boms WHERE spdx_metadata->>'documentNamespace' = $1`, [ns])).rows;
@@ -188,7 +185,7 @@ describe('the SPDX path', () => {
         const converted = document(S, 1);
         convertSpy.mockResolvedValueOnce({ success: true, convertedBom: converted } as any);
 
-        const created: any = await uploadSpdx(N, ORG_BRACES, A);
+        const created: any = await uploadSpdx(N, ORG_BRACES);
 
         expect(created.organization).toBe(TEST_ORG_UUID);
         expect((await spdxRows(N)).map(r => r.organization)).toStrictEqual([TEST_ORG_UUID]);
@@ -201,7 +198,7 @@ describe('the SPDX path', () => {
         await upload(S, 2);
         const before = pushed.length;
 
-        await expect(uploadSpdx(N, ORG_NO_HYPHENS, A, bare(S))).rejects.toBeInstanceOf(BomVersionConflictError);
+        await expect(uploadSpdx(N, ORG_NO_HYPHENS, bare(S))).rejects.toBeInstanceOf(BomVersionConflictError);
         expect(pushed.length).toBe(before);
         expect(await spdxRows(N)).toHaveLength(0);
     });
@@ -286,7 +283,7 @@ describe('parallel, one side spelling the organization otherwise', () => {
         async (label, org2, org3) => {
             await runPairing(`j: ${label}`, async sn => {
                 await upload(sn, 1);
-                return [upload(sn, 2, undefined, org2), upload(sn, 3, undefined, org3)];
+                return [upload(sn, 2, org2), upload(sn, 3, org3)];
             }, async (sn, v2, v3) => {
                 expect(v3.status).toBe('fulfilled');
                 expect(await served(sn)).toBe(3);

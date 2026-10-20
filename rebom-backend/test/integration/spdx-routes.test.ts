@@ -23,12 +23,10 @@ import { BomVersionConflictError } from '../../src/types/errors';
  * SCORE-51 (SCORE-50a) T-2: the SPDX routes with no lineage owner, against the
  * migrated database. The route cases of the removed
  * bom-lineage-owner-spdx.test.ts (SCORE-46 T-16 a+d) are rewritten here without
- * the owner. The rearm-cli conversion is not under test: it answers
+ * the owner; the ownerComponent cases were removed in SCORE-54 (the input field
+ * no longer exists). The rearm-cli conversion is not under test: it answers
  * cyclonedx-simple.json under the serialNumber the case names.
  */
-
-const A = 'aaaaaaaa-0000-4000-8000-000000000001';
-const OWNERS: [string, string | undefined][] = [['a uuid ownerComponent', A], ['no ownerComponent', undefined]];
 
 const createdSerialNumbers: string[] = [];
 
@@ -55,19 +53,17 @@ const spdx = (ns: string) => ({
     documentNamespace: ns, packages: []
 });
 
-function uploadSpdx(ns: string, owner?: string, existing?: string) {
-    const rebomOptions = owner === undefined ? {} : { ownerComponent: owner };
+function uploadSpdx(ns: string, existing?: string) {
     return BomService.addBom({
-        bomInput: { bom: spdx(ns), format: 'SPDX', org: TEST_ORG_UUID, existingSerialNumber: existing, rebomOptions }
+        bomInput: { bom: spdx(ns), format: 'SPDX', org: TEST_ORG_UUID, existingSerialNumber: existing, rebomOptions: {} }
     } as any);
 }
 
-function uploadCycloneDx(serialNumber: string, version: number, owner?: string) {
+function uploadCycloneDx(serialNumber: string, version: number) {
     const bom = loadFixture('cyclonedx-simple.json');
     bom.serialNumber = serialNumber;
     bom.version = version;
     const rebomOptions = createTestRebomOptions({ serialNumber });
-    if (owner !== undefined) rebomOptions.ownerComponent = owner;
     return BomService.addBom({
         bomInput: { format: 'CYCLONEDX', bom, org: TEST_ORG_UUID, rebomOptions }
     } as any);
@@ -87,18 +83,16 @@ afterAll(async () => {
 });
 
 describe('T-2 (o): SPDX first upload', () => {
-    it('with a uuid ownerComponent: accepted and stored without it', async () => {
+    it('accepted and stored', async () => {
         const S = fresh();
         const N = namespace();
         convertsTo(S);
 
-        const created: any = await uploadSpdx(N, A);
+        const created: any = await uploadSpdx(N);
 
         expect(created.source_format).toBe('SPDX');
         expect(created.meta.serialNumber).toBe(S);
-        expect(created.meta).not.toHaveProperty('ownerComponent');
-        const stored = (await bomRows(S))[0];
-        expect(stored.meta).not.toHaveProperty('ownerComponent');
+        expect(await bomRows(S)).toHaveLength(1);
         const rows = await spdxRows(N);
         expect(rows).toHaveLength(1);
         expect(rows[0].conversion_status).toBe('success');
@@ -106,26 +100,25 @@ describe('T-2 (o): SPDX first upload', () => {
 });
 
 describe('T-2 (a): SPDX update continues the lineage across formats', () => {
-    it.each(OWNERS)('with %s', async (_label, owner) => {
+    it('from SPDX to SPDX to CycloneDX', async () => {
         const S = fresh();
         const N1 = namespace();
         const N2 = namespace();
         convertsTo(S);
-        await uploadSpdx(N1, owner);
+        await uploadSpdx(N1);
 
         convertsTo(generateSerialNumber());
-        const updated: any = await uploadSpdx(N2, owner, bare(S));
+        const updated: any = await uploadSpdx(N2, bare(S));
 
         expect(updated.meta.bomVersion).toBe('2');
         expect(updated.source_format).toBe('SPDX');
-        expect(updated.meta).not.toHaveProperty('ownerComponent');
         const rows = await spdxRows(N2);
         expect(rows).toHaveLength(1);
         expect(rows[0].bom_version).toBe(2);
         const served: any = await BomService.findBomObjectById(bare(S), TEST_ORG_UUID);
         expect(served.serialNumber).toBe(updated.meta.processedSerialNumber);
 
-        await uploadCycloneDx(S, 3, owner);
+        await uploadCycloneDx(S, 3);
         expect(await bomRows(S)).toHaveLength(3);
     });
 });
@@ -136,10 +129,10 @@ describe('T-2 (f): SPDX update not above a CycloneDX row', () => {
         const N1 = namespace();
         const N2 = namespace();
         convertsTo(S);
-        await uploadSpdx(N1, A);
-        await uploadCycloneDx(S, 2, A);
+        await uploadSpdx(N1);
+        await uploadCycloneDx(S, 2);
 
-        const refusal: any = await uploadSpdx(N2, A, bare(S)).catch(e => e);
+        const refusal: any = await uploadSpdx(N2, bare(S)).catch(e => e);
 
         expect(refusal).toBeInstanceOf(BomVersionConflictError);
         expect(refusal.storedVersion).toBe(2);
@@ -150,13 +143,13 @@ describe('T-2 (f): SPDX update not above a CycloneDX row', () => {
 });
 
 describe('T-2 (d): identical SPDX first upload', () => {
-    it.each(OWNERS)('with %s: answers the stored converted row, with no second row', async (_label, owner) => {
+    it('answers the stored converted row, with no second row', async () => {
         const S = fresh();
         const N = namespace();
         convertsTo(S);
-        const first: any = await uploadSpdx(N, owner);
+        const first: any = await uploadSpdx(N);
 
-        const again: any = await uploadSpdx(N, owner);
+        const again: any = await uploadSpdx(N);
 
         expect(again.uuid).toBe(first.uuid);
         expect(await spdxRows(N)).toHaveLength(1);

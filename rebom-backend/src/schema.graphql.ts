@@ -26,9 +26,6 @@ const typeDefs = gql`
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
     scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
-    # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-    # Always null: rebom stores no lineage owner. The arguments are still validated.
-    bomLineage(org: ID!, serialNumber: ID!): BomLineage
   }
 
   type Mutation {
@@ -49,52 +46,6 @@ const typeDefs = gql`
     the signature blob; the trust store is authoritative.
     """
     verifySignature(input: VerifySignatureInput!): VerifySignatureResult!
-    # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-    # Answers NO_SUCH_LINEAGE for every entry, in input order, and writes nothing; at most 500
-    # entries, every one validated before any answer.
-    setBomLineageOwners(org: ID!, entries: [BomLineageOwnerInput!]!, mode: BomLineageOwnerMode!, actor: String): [BomLineageOwnerResult!]!
-  }
-
-  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-  input BomLineageOwnerInput {
-    serialNumber: ID!
-    ownerComponent: ID!
-  }
-
-  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-  enum BomLineageOwnerMode {
-    CLAIM_IF_UNOWNED
-    REASSIGN
-  }
-
-  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-  enum BomLineageOwnerOutcome {
-    SET
-    UNCHANGED_SAME_OWNER
-    REFUSED_OWNED_BY_OTHER
-    NO_SUCH_LINEAGE
-  }
-
-  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-  type BomLineageOwnerResult {
-    # As given in the entry.
-    serialNumber: ID!
-    outcome: BomLineageOwnerOutcome!
-    # The owner now stored, for SET and UNCHANGED_SAME_OWNER only.
-    ownerComponent: ID
-  }
-
-  # Deprecated since SCORE-50: answered by a stub, removed in SCORE-50 child d.
-  type BomLineage {
-    # Canonical form, with the urn:uuid: prefix.
-    serialNumber: ID!
-    # Null when the lineage is unowned.
-    ownerComponent: ID
-    claimedAt: DateTime
-    # UPLOAD, BACKFILL or REASSIGN.
-    claimedVia: String
-    # The actor setBomLineageOwners received; null for an upload claim.
-    claimedBy: String
   }
 
   input VerifySignatureInput {
@@ -369,8 +320,6 @@ input RebomOptions {
     # organization for its own software; absent for third-party software. Filled into the root
     # where it names no supplier; stored with the row.
     supplierName: String
-    # Ignored since SCORE-50; removed once rearm-saas no longer sends it (SCORE-50 child d).
-    ownerComponent: ID
     tldOnly: Boolean
     structure: String
     notes: String

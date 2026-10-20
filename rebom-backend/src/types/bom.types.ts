@@ -151,9 +151,6 @@ export type RebomOptions = {
     // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
     // publisher or the organization; absent for third-party software and on older rows.
     supplierName?: string,
-    // Ignored since SCORE-50; removed once rearm-saas no longer sends it (SCORE-50 child d).
-    // addBom drops it from a copy of the options before either route reads them.
-    ownerComponent?: string | null,
     notes: string,
     tldOnly: boolean,
     structure: string,
@@ -241,38 +238,5 @@ export type BomSearch = {
 }
 
 export type BomFormat = 'CYCLONEDX' | 'SPDX';
-
-// The lineage owner types below serve the deprecated compatibility stubs of
-// services/bom/bomLineageService.ts (SCORE-50); removed in SCORE-50 child d.
-export enum BomLineageOwnerMode {
-    CLAIM_IF_UNOWNED = 'CLAIM_IF_UNOWNED',
-    REASSIGN = 'REASSIGN'
-}
-
-export enum BomLineageOwnerOutcome {
-    SET = 'SET',
-    UNCHANGED_SAME_OWNER = 'UNCHANGED_SAME_OWNER',
-    REFUSED_OWNED_BY_OTHER = 'REFUSED_OWNED_BY_OTHER',
-    NO_SUCH_LINEAGE = 'NO_SUCH_LINEAGE'
-}
-
-export type BomLineageOwnerEntry = {
-    serialNumber: string,
-    ownerComponent: string
-}
-
-export type BomLineageOwnerResult = {
-    serialNumber: string,
-    outcome: BomLineageOwnerOutcome,
-    ownerComponent?: string | null
-}
-
-export type BomLineageDto = {
-    serialNumber: string,
-    ownerComponent: string | null,
-    claimedAt: Date | null,
-    claimedVia: string | null,
-    claimedBy: string | null
-}
 
 export const HIERARCHICHAL = 'hierarchical'

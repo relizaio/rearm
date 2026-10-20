@@ -5,7 +5,8 @@ import * as path from 'path';
 // SCORE-51 (SCORE-50a) T-5: rebom has no bom_lineage table and no owner check.
 // The migration versions are contiguous from 1 with no pinned maximum (V9 is
 // free again), and nothing under src/ names the table, the owner error or its
-// code.
+// code. SCORE-54 (SCORE-50d) T-3: nor the removed compatibility stubs, their
+// types or the ownerComponent input.
 const ROOT = path.join(__dirname, '..', '..');
 const MIGRATIONS = path.join(ROOT, 'migrations');
 const SRC = path.join(ROOT, 'src');
@@ -49,5 +50,32 @@ describe('src/', () => {
                 expect(content.includes(needle), `${path.relative(ROOT, file)} contains ${needle}`).toBe(false);
             }
         }
+    });
+
+    it('names none of the SCORE-50 compatibility stubs, their types or ownerComponent (SCORE-54 T-3)', () => {
+        const files = filesUnder(SRC);
+        expect(files.length).toBeGreaterThan(0);
+        const patterns = [
+            /\bownerComponent\b/,
+            /\bsetBomLineageOwners\b/,
+            /\bbomLineage\b/,
+            /\bBomLineage(Dto|Owner\w*)\b/,
+            /NO_SUCH_LINEAGE/,
+            /MAX_LINEAGE_OWNER_ENTRIES/
+        ];
+        for (const file of files) {
+            const content = fs.readFileSync(file, 'utf8');
+            for (const pattern of patterns) {
+                expect(pattern.test(content), `${path.relative(ROOT, file)} matches ${pattern}`).toBe(false);
+            }
+        }
+    });
+
+    it('has no services/bom/bomLineageService.ts (SCORE-54 T-3)', () => {
+        expect(fs.existsSync(path.join(SRC, 'services', 'bom', 'bomLineageService.ts'))).toBe(false);
+    });
+
+    it('still has bomLineageRepository.ts, the ADR-13 lock (SCORE-54 3.3)', () => {
+        expect(fs.existsSync(path.join(SRC, 'bomLineageRepository.ts'))).toBe(true);
     });
 });
