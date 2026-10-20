@@ -71,12 +71,15 @@ import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.common.TxUtils;
 import io.reliza.service.ComponentLockService;
 import io.reliza.service.ComponentLockService.LockedOperation;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.DeclaredLicenses;
+import io.reliza.service.ReleaseService;
 import io.reliza.service.AuditService;
 import io.reliza.service.BranchService;
 import io.reliza.service.DependencyPatternService;
@@ -153,6 +156,10 @@ public class OssReleaseService {
 	@Autowired
 	@Lazy
 	private OssPullRequestAggregatorService pullRequestAggregatorService;
+
+	@Autowired
+	@Lazy
+	private ReleaseService releaseService;
 
 	// Self-proxy so the per-feature-set @Transactional methods run through the
 	// Spring proxy (off-request workers have no ambient transaction).
@@ -860,6 +867,22 @@ public class OssReleaseService {
 			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.VERSION, ReleaseUpdateAction.CHANGED, rData.getVersion(),
 					releaseDto.getVersion(), null, ZonedDateTime.now(), wu));
 		}
+		// Per-release declared licence override (SCORE-39 ADR-1). PATCH as the narrative: omitted
+		// leaves it alone, "" clears it and the release inherits again; a refusal throws before any
+		// write. A change rebuilds the products above the release once it is committed (ADR-5).
+		boolean declaredLicenseChanged = false;
+		if (null != releaseDto.getLicenseExpression()) {
+			String oldLicense = rData.getLicenseExpression();
+			String newLicense = releaseDto.getLicenseExpression().isBlank() ? null
+					: DeclaredLicenses.canonicalExpression(releaseDto.getLicenseExpression(), "licenseExpression");
+			if (!Objects.equals(oldLicense, newLicense)) {
+				rData.setLicenseExpression(newLicense);
+				rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.DECLARED_LICENSE,
+						ReleaseData.narrativeAction(oldLicense, newLicense), oldLicense, newLicense,
+						null, ZonedDateTime.now(), wu));
+				declaredLicenseChanged = true;
+			}
+		}
 		if(null != releaseDto.getParentReleases()){
 			sharedReleaseService.checkCircularDependency(r.getUuid(), releaseDto.getParentReleases());
 			if (!parentReleaseDiff.isEmpty()) {
@@ -936,7 +959,19 @@ public class OssReleaseService {
 			rData.setIdentifiers(releaseDto.getIdentifiers());
 		}
 		log.debug("saving release with rData: {}", rData);
-		return saveRelease(r, rData, wu);
+		Release saved = saveRelease(r, rData, wu);
+		if (declaredLicenseChanged) reconcileMergedSbomsAfterCommit(ReleaseData.dataFromRecord(saved), wu);
+		return saved;
+	}
+
+	/**
+	 * Rebuilds the merged SBOMs of every product above {@code rd} once the current transaction has
+	 * committed (SCORE-39 ADR-5): the routine is asynchronous, and started inside the transaction
+	 * its thread could read the release before the commit and store product merges under the old
+	 * facts. Without a transaction, at once.
+	 */
+	private void reconcileMergedSbomsAfterCommit(ReleaseData rd, WhoUpdated wu) {
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(rd, wu));
 	}
 
 	/** Collect {@code idValue}s for sid-typed PURL identifiers. Null-safe. */
@@ -1902,6 +1937,13 @@ public class OssReleaseService {
 			}
 		}
 
+		// The declared licence override is refused here, before anything is written (SCORE-39 ADR-1);
+		// a blank one is left for the factory (stored as null) or, for an existing release, for
+		// updateRelease (a clear).
+		if (null != releaseDto.getLicenseExpression() && !releaseDto.getLicenseExpression().isBlank()) {
+			releaseDto.setLicenseExpression(
+					DeclaredLicenses.canonicalExpression(releaseDto.getLicenseExpression(), "licenseExpression"));
+		}
 		ReleaseData rData = ReleaseData.releaseDataFactory(releaseDto);
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.RELEASE_CREATED, ReleaseUpdateAction.ADDED, null, null, null,
 				ZonedDateTime.now(), wu);

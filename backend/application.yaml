@@ -8,8 +8,6 @@ server:
   # terminationGracePeriodSeconds so the old replica drains after it has been
   # removed from the Service endpoints, closing the deregistration race.
   shutdown: graceful
-  error:
-    include-message: always
 
 spring:
   task:
@@ -112,6 +110,13 @@ spring:
     multipart: 
       max-file-size: ${MAX_UPLOAD_SIZE:50MB}
       max-request-size: ${MAX_UPLOAD_SIZE:50MB}
+  web:
+    error:
+      # TPF-49: an error body never carries an exception's message. The UI nginx passes the
+      # backend's error answers through as sent, and a request with a valid IdP bearer that
+      # fails renders this error page. Spring Boot 4 reads these settings under
+      # spring.web.error; server.error.* is not read any more, so do not set them there.
+      include-message: never
 
 logging:
   config: classpath:log4j2-${LOG_FORMAT_TYPE:plain}.xml
