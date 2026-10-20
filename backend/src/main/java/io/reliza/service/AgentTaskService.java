@@ -1019,10 +1019,11 @@ public class AgentTaskService {
 
 	/**
 	 * The session working a task parks its own hop for a person (task RD4-5): an OPERATOR-level MANUAL hold
-	 * whose reason is the question. The task shows "awaiting the operator: question", the people who write
-	 * the board are told (the needs-a-person path in {@link #saveData}), and the hop stays assigned to the
-	 * session, so its idle window is still the holder's. A person's release, with the answer as its note,
-	 * gives the hop back to it. The caller has checked that the session holds the assignment.
+	 * whose reason is the question. The task shows "awaiting the operator: question" and the people who write
+	 * the board are told (the needs-a-person path in {@link #saveData}). The park ends the hop (task TPF-66), as a
+	 * return or a session close ends one: a PARKED_FOR_OPERATOR return keeps the hop's usage, role and session,
+	 * and the assignment is cleared, so the task waits with no holder. A person's release, with the answer as its
+	 * note, queues the task again for its role. The caller has checked that the session holds the assignment.
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentTaskData parkHopForOperator(UUID taskUuid, UUID sessionUuid, String question, WhoUpdated wu)
@@ -1034,14 +1035,30 @@ public class AgentTaskService {
 		TaskAssignment a = requireAssignmentBySession(td, taskUuid, sessionUuid);
 		AgentActor holder = AgentActor.ofSession(sessionUuid);
 		String reason = AgentTaskData.AWAITING_THE_OPERATOR + question.strip();
+		HopUsage usage = endHopAtPark(td, a, taskUuid, question.strip());
 		td.transitionStatus(TaskStatus.ON_HOLD, StatusTrigger.HOLD, holder, reason);
 		td.setHold(new TaskHold(HoldLevel.OPERATOR, HoldKind.MANUAL, null, reason, holder, ZonedDateTime.now()));
 		AgentTaskData saved = saveData(td, wu);
 		BoardEffects effects = new BoardEffects(saved.getBoard());
 		effects.info("Task " + label(saved) + " parked by its " + a.role() + " hop, " + reason
-				+ "; a person lifts the hold with the answer as the note");
+				+ "; the hop ended; a person lifts the hold with the answer as the note and the task is queued again for "
+				+ a.role());
+		alertIfOverAllowance(saved, a.role(), usage, effects);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
+	}
+
+	/**
+	 * Ends a hop parked for the operator (task TPF-66) the way a return ends one: the hop's usage frozen now, a
+	 * PARKED_FOR_OPERATOR return carrying the question with the hop's role, agent and session, and the assignment
+	 * cleared. Called at the park, and at the lift of a hold parked before the park ended the hop.
+	 */
+	private HopUsage endHopAtPark(AgentTaskData td, TaskAssignment a, UUID taskUuid, String question) {
+		HopUsage usage = hopUsageWithAllowance(td, a, taskUuid, a.session());
+		td.addReturn(new TaskReturn(a.role(), a.roleUuid(), a.agent(), a.session(), TaskReturnReason.PARKED_FOR_OPERATOR,
+				question, ZonedDateTime.now(), usage, List.of()));
+		td.setAssignment(null);
+		return usage;
 	}
 
 	/** The states the coordinator seat parks a task in for an operator decision (task RD4-17): nobody is working it. */
@@ -1090,7 +1107,7 @@ public class AgentTaskService {
 	 * "action by person: summary"; an INFO names the question and that answer; and the verb then runs as it would on
 	 * an unheld task, moving the task on when it moves it (a completion completes, a cancel cancels, an answer to the
 	 * open questions routes). A person's verb on a hop's own hold runs as before: that hold is answered by its
-	 * release, which gives the hop back to its holder.
+	 * release, which queues the task again for its role (TPF-66).
 	 *
 	 * <p>Call it under the task's lock, before anything else is read from the task, and only where the verb then
 	 * saves the task or throws: the INFO is posted after the commit, and a refusal rolls the release back with it.
@@ -1223,9 +1240,10 @@ public class AgentTaskService {
 	/**
 	 * A person answers the question a hop was parked on (task RD4-5). The note is required, since it is the
 	 * answer: the status row reads "lifted by person: note", and an INFO names the task, the question and
-	 * the answer. The hop goes back to its holder (ASSIGNED). When the holder's session closed meanwhile, the
-	 * task is queued again for the same role, as the close would have done, with the answer on its record for
-	 * the next session. A role is refused: nothing is routed, the hop resumes.
+	 * the answer. The task is queued again for the role that parked it (task TPF-66), with the question and the
+	 * answer on its record for the next hop of the role, which the ordinary offer delivers. A hold parked before
+	 * the park ended the hop still carries the assignment: that hop is ended here, as the park now ends it. A
+	 * role is refused: nothing is routed.
 	 */
 	private AgentTaskData answerParkedHop(AgentTaskData td, AgentActor actor, String note, String role, WhoUpdated wu)
 			throws RelizaException {
@@ -1234,20 +1252,22 @@ public class AgentTaskService {
 					+ " answer as the note: it is recorded on the task for the hop that asked.");
 		}
 		if (StringUtils.isNotBlank(role)) {
-			throw new RelizaException("Task " + label(td) + " was parked by the hop working it, and lifting it gives"
-					+ " the hop back to its holder rather than routing it; lift it without a role.");
+			throw new RelizaException("Task " + label(td) + " was parked by the hop working it, and lifting it queues"
+					+ " the task for " + td.getRole() + " with the answer on its record rather than routing it; lift it"
+					+ " without a role.");
 		}
 		String question = StringUtils.removeStart(td.getHold().reason(), AgentTaskData.AWAITING_THE_OPERATOR);
 		String answer = note.strip();
-		String row = "lifted by " + (null == actor ? "a person" : actor.display()) + ": " + answer;
-		boolean resumes = null != td.getAssignment();
-		td.transitionStatus(resumes ? TaskStatus.ASSIGNED : TaskStatus.QUEUED, StatusTrigger.LIFT_HOLD, actor, row);
+		String who = null == actor ? "a person" : actor.display();
+		TaskAssignment leftover = td.getAssignment();
+		if (null != leftover) endHopAtPark(td, leftover, td.getUuid(), question);
+		td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.LIFT_HOLD, actor, "lifted by " + who + ": " + answer);
 		td.setHold(null);
 		AgentTaskData saved = saveData(td, wu);
 		BoardEffects effects = new BoardEffects(saved.getBoard());
-		effects.info("Task " + label(saved) + " answered by " + (null == actor ? "a person" : actor.display()) + ": "
-				+ answer + " (the question: " + question + ")" + (resumes ? "; the hop resumes with its holder"
-						: "; its session closed meanwhile, so it is queued again for " + saved.getRole()));
+		effects.info("Task " + label(saved) + " answered by " + who + ": " + answer + " (the question: " + question
+				+ "); queued again for " + saved.getRole() + " with the answer on its record"
+				+ (null == leftover ? "" : "; the hop was still assigned from before the change and is ended now"));
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
 	}
@@ -4153,8 +4173,9 @@ public class AgentTaskService {
 				td.addReturn(new TaskReturn(a.role(), a.roleUuid(), a.agent(), a.session(),
 						TaskReturnReason.SESSION_CLOSED, closeNote, ZonedDateTime.now(), usage));
 				td.setAssignment(null);
-				// A hop parked for the operator (task RD4-5) stays parked: the question still waits on a
-				// person, whose release then queues the task for the role, the answer on its record.
+				// A hop parked for the operator (task RD4-5) before its park ended the hop (TPF-66) stays parked:
+				// the question still waits on a person, whose release then queues the task for the role, the
+				// answer on its record. A hop parked since holds no assignment, so the close never meets it.
 				if (TaskStatus.ON_HOLD != td.getStatus()) {
 					td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.SESSION_CLOSED, AgentActor.ofSession(sessionUuid),
 							closeNote);
@@ -4298,10 +4319,11 @@ public class AgentTaskService {
 		// a released session hears that it was released, before any status check could say something vaguer
 		Optional<AgentTaskData.Unassignment> released = td.unassignedFor(sessionUuid);
 		if (released.isPresent()) throw new RelizaException(released.get().refusal(td.keyOrUuid()));
-		// the holder of a parked hop (task RD4-5) hears what it is waiting on, not a bare status
-		if (td.holdParksAHop() && null != td.getAssignment() && td.getAssignment().session().equals(sessionUuid)) {
-			throw new RelizaException("Task " + label(td) + " is parked, " + td.getHold().reason()
-					+ "; the hop resumes when a person lifts the hold with the answer");
+		// the session that parked a hop (task RD4-5) hears what the task waits on and that its hop ended (TPF-66),
+		// not a bare status
+		if (td.holdParksAHop() && parkedBy(td, sessionUuid)) {
+			throw new RelizaException("Task " + label(td) + " is parked, " + td.getHold().reason() + "; your hop ended"
+					+ " when you parked it, and the answer queues the task for " + td.getRole() + " again");
 		}
 		requireStatus(td, taskUuid, TaskStatus.ASSIGNED);
 		TaskAssignment a = td.getAssignment();
@@ -4310,6 +4332,15 @@ public class AgentTaskService {
 			throw new RelizaException("Task " + taskUuid + " is assigned to a different session");
 		}
 		return a;
+	}
+
+	/** Whether this session parked the task's hop (task TPF-66): the task's newest return is its PARKED_FOR_OPERATOR. */
+	private static boolean parkedBy(AgentTaskData td, UUID sessionUuid) {
+		if (null == sessionUuid) return false;
+		List<TaskReturn> returns = td.getReturns();
+		if (null == returns || returns.isEmpty()) return false;
+		TaskReturn newest = returns.get(returns.size() - 1);
+		return TaskReturnReason.PARKED_FOR_OPERATOR == newest.reason() && sessionUuid.equals(newest.session());
 	}
 
 	public AgentTaskData saveData(AgentTaskData td, WhoUpdated wu) {

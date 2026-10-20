@@ -8,6 +8,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.concurrent.TimeoutException;
@@ -27,6 +28,7 @@ import org.springframework.http.client.reactive.ReactorClientHttpConnector;
 import org.springframework.stereotype.Service;
 import org.springframework.web.reactive.function.client.ExchangeStrategies;
 import org.springframework.web.reactive.function.client.WebClient;
+
 
 import tools.jackson.core.JacksonException;
 import tools.jackson.core.type.TypeReference;
@@ -295,6 +297,21 @@ public class RebomService {
         return null;
     }
 
+    /**
+     * Runs a rebom call and blocks, answering rebom's refusal as the checked exception
+     * {@link #handleRebomError} made of it ({@link #unwrapRebomRefusal}) rather than its
+     * RuntimeException wrapper; anything else is rethrown as it is.
+     */
+    private Map<String, Object> executeUnwrapped(String query, Map<String, Object> variables) throws RelizaException {
+        try {
+            return executeGraphQLQuery(query, variables).block();
+        } catch (RuntimeException e) {
+            RelizaException refusal = unwrapRebomRefusal(e);
+            if (null != refusal) throw refusal;
+            throw e;
+        }
+    }
+
     private RebomResponse uploadRebomRequest(JsonNode bomJson, RebomOptions rebomOptions, BomFormat bomFormat, UUID org, String existingSerialNumber) throws RelizaException {
         String mutation = """
             mutation addBom ($bomInput: BomInput!) {
@@ -309,14 +326,7 @@ public class RebomService {
         Map<String, Object> variables = new HashMap<>();
         BomInput bomInput = new BomInput(bomJson, rebomOptions, bomFormat, org, existingSerialNumber);
         variables.put("bomInput", bomInput);
-        Map<String, Object> response;
-        try {
-            response = executeGraphQLQuery(mutation, variables).block();
-        } catch (RuntimeException e) {
-            RelizaException refusal = unwrapRebomRefusal(e);
-            if (null != refusal) throw refusal;
-            throw e;
-        }
+        Map<String, Object> response = executeUnwrapped(mutation, variables);
         // Jackson 3: ObjectMapper is immutable and ObjectReader no longer
         // takes a tree node directly. Round-trip through a JSON string so
         // the per-call FAIL_ON_UNKNOWN_PROPERTIES toggle still applies.
@@ -649,6 +659,53 @@ public class RebomService {
         return bomMetas;
     }
 
+    /**
+     * rebom answered a read with something rearm-saas cannot read (SCORE-52 ADR-3): not an error rebom
+     * raised, which arrives as the {@link RelizaException} it maps to, but an answer of the wrong shape.
+     */
+    public static class MalformedRebomAnswerException extends RelizaException {
+        private static final long serialVersionUID = 1L;
+
+        public MalformedRebomAnswerException(String message) {
+            super(message);
+        }
+    }
+
+    /**
+     * The newest version rebom stores of {@code serialKeyText} in {@code org}, matched as rebom's own
+     * version check matches an upload (the exact text, with or without a lower-case {@code urn:uuid:}
+     * prefix): empty when rebom has no row (SCORE-52 ADR-3 step 2 (b)). No bytes leave.
+     *
+     * @throws MalformedRebomAnswerException when the answer is not a list of at most one row with a
+     *         readable {@code bomVersion}
+     * @throws RelizaException rebom's own error, as itself
+     */
+    public OptionalInt latestStoredBomVersion(UUID org, String serialKeyText) throws RelizaException {
+        String query = """
+                query bomMetaBySerialNumber ($serialNumber: ID!, $org: ID!) {
+                    bomMetaBySerialNumber(serialNumber: $serialNumber, org: $org) {
+                        bomVersion
+                    }
+                }""";
+        Map<String, Object> variables = new HashMap<>();
+        variables.put("serialNumber", serialKeyText);
+        variables.put("org", org.toString());
+        Map<String, Object> response = executeUnwrapped(query, variables);
+        Object rows = null == response ? null : response.get("bomMetaBySerialNumber");
+        if (!(rows instanceof List<?> list) || list.size() > 1) {
+            throw new MalformedRebomAnswerException("bomMetaBySerialNumber answered " + rows);
+        }
+        if (list.isEmpty()) {
+            return OptionalInt.empty();
+        }
+        Object version = list.get(0) instanceof Map<?, ?> row ? row.get("bomVersion") : null;
+        try {
+            return OptionalInt.of(Integer.parseInt(String.valueOf(version).trim()));
+        } catch (NumberFormatException e) {
+            throw new MalformedRebomAnswerException("bomMetaBySerialNumber answered bomVersion " + version);
+        }
+    }
+
     public RebomResponse uploadSbom(JsonNode bomJson, RebomOptions rebomOverride, BomFormat bomFormat, UUID org)  throws RelizaException{
         return uploadRebomRequest(bomJson, rebomOverride, bomFormat, org, null);
     }
@@ -705,7 +762,8 @@ public class RebomService {
         
         Map<String, Object> variables = new HashMap<>();
         variables.put("ids", bomIds);
-        variables.put("rebomOptions", rebomOptions);
+        // The facts key belongs to the stored row only; rebom declares no such input (SCORE-39 ADR-5).
+        variables.put("rebomOptions", rebomOptions.withReleaseNodeFactsKey(null));
         variables.put("org", org);
        
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();

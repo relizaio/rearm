@@ -449,6 +449,12 @@ class VariableQueries {
 		AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
 		""";
 
+	protected static final String EXISTS_RELEASE_REBOM_LISTING_REBOM_ID = """
+		SELECT EXISTS (SELECT 1 FROM rearm.release_reboms
+			WHERE record_data->'reboms' @> jsonb_build_array(
+				jsonb_build_object('rebomId', cast(:rebomIdAsString as text))))
+		""";
+
 
 
 	/*
@@ -939,6 +945,42 @@ class VariableQueries {
 				WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid)))
 			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+		""";
+
+	protected static final String FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM = """
+		SELECT * FROM rearm.artifacts
+		WHERE record_data->>'org' = :org
+		  AND record_data->'internalBom'->>'id' = :serial
+		  AND record_data->>'type' = 'BOM'
+		""";
+
+	/*
+	 * Every release listing an artifact, in any organization (SCORE-52 ADR-8): rule B's holder
+	 * read. Not bounded by organization, as the deliverable and container reads are not, so that a
+	 * listing of another organization is seen and fails closed rather than being missed.
+	 */
+	protected static final String FIND_RELEASES_HOLDING_ARTIFACT = """
+		SELECT * FROM rearm.releases
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(cast(:artUuidAsString as text)))
+		""";
+
+	protected static final String FIND_DELIVERABLES_BY_ARTIFACT = """
+		SELECT * FROM rearm.deliverables
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString))
+		""";
+
+	protected static final String FIND_SCE_ARTIFACT_HOLDERS = """
+		SELECT cast(sce.uuid as text), artifact_element->>'componentUuid', sce.record_data->>'org'
+		FROM rearm.source_code_entries sce,
+			jsonb_array_elements(sce.record_data->'artifacts') AS artifact_element
+		WHERE sce.record_data->'artifacts' @> jsonb_build_array(
+				jsonb_build_object('artifactUuid', cast(:artUuidAsString as text)))
+		  AND artifact_element->>'artifactUuid' = :artUuidAsString
+		""";
+
+	protected static final String FIND_ARTIFACTS_CONTAINING_ARTIFACT = """
+		SELECT * FROM rearm.artifacts
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(cast(:artUuidAsString as text)))
 		""";
 
 	protected static final String FIND_RELEASES_BY_ARTIFACTS_AND_ORG = """

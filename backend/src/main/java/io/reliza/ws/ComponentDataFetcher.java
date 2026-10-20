@@ -35,6 +35,7 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.VersionResponse;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -69,6 +70,7 @@ import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ComponentOwnershipService;
@@ -77,6 +79,7 @@ import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseVersionService;
+import io.reliza.service.SbomWriteAuthorityService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VcsRepositoryService;
@@ -128,6 +131,9 @@ public class ComponentDataFetcher {
 	
 	@Autowired
 	private ReleaseVersionService releaseVersionService;
+
+	@Autowired
+	private SbomWriteAuthorityService sbomWriteAuthorityService;
 	
 	@Autowired
 	private ApprovalPolicyService approvalPolicyService;
@@ -206,7 +212,7 @@ public class ComponentDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
-		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
+		CreateComponentDto cpd = InputConversion.convert(createComponentInputMap, CreateComponentDto.class, "component");
 		List<RelizaObject> ros = new LinkedList<>();
 		if (null != cpd.getOrganization()) ros.add(getOrganizationService.getOrganizationData(cpd.getOrganization()).orElse(null));
 		if (null != cpd.getVcs()) ros.add(vcsRepositoryService.getVcsRepositoryData(cpd.getVcs()).orElseThrow());
@@ -253,7 +259,7 @@ public class ComponentDataFetcher {
 		var ahp = authCtx.ahp();
 		UUID authOrgUuid = authCtx.orgUuid();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		authorizationService.verifyProgrammaticKey(ahp);
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
 		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> getNewVersionInput = dfe.getArgument("newVersionInput");
@@ -404,7 +410,7 @@ public class ComponentDataFetcher {
 			Map<String, Object> sceMap = (Map<String, Object>) getNewVersionInput.get(CommonVariables.SOURCE_CODE_ENTRY_FIELD);
 			@SuppressWarnings("unchecked")
 			List<Map<String, Object>> primaryArtMaps = (List<Map<String, Object>>) sceMap.remove(CommonVariables.ARTIFACTS_FIELD);
-			sourceCodeEntry = Utils.OM.convertValue(sceMap, SceDto.class);
+			sourceCodeEntry = InputConversion.convert(sceMap, SceDto.class, "newVersionInput.sourceCodeEntry");
 			if (primaryArtMaps != null && !primaryArtMaps.isEmpty()) {
 				sourceCodeEntry.setArtifactInputs(primaryArtMaps);
 			}
@@ -414,10 +420,11 @@ public class ComponentDataFetcher {
 		if (getNewVersionInput.containsKey(CommonVariables.COMMITS_FIELD)) {
 			List<Map<String, Object>> commitMaps = (List<Map<String, Object>>) getNewVersionInput.get(CommonVariables.COMMITS_FIELD);
 			List<SceDto> commitsPrep = new LinkedList<>();
-			for (Map<String, Object> commitMap : commitMaps) {
+			for (int j = 0; j < commitMaps.size(); j++) {
+				Map<String, Object> commitMap = commitMaps.get(j);
 				@SuppressWarnings("unchecked")
 				List<Map<String, Object>> commitArtMaps = (List<Map<String, Object>>) commitMap.remove(CommonVariables.ARTIFACTS_FIELD);
-				SceDto dto = Utils.OM.convertValue(commitMap, SceDto.class);
+				SceDto dto = InputConversion.convert(commitMap, SceDto.class, "newVersionInput.commits[" + j + "]");
 				if (commitArtMaps != null && !commitArtMaps.isEmpty()) {
 					dto.setArtifactInputs(commitArtMaps);
 				}
@@ -432,7 +439,9 @@ public class ComponentDataFetcher {
 				setVersionPin, lifecycleResolved, onlyVersionFlag, sourceCodeEntry, commits, VersionTypeEnum.DEV,
 				rebuildFlag);
 
-		VersionResponse vr = releaseVersionService.getNewVersionWrapper(getNewVersionDto, ar.getWhoUpdated());
+		// Rule B reads the calling key's own rights on the SCE uploads (SCORE-52 ADR-2).
+		VersionResponse vr = releaseVersionService.getNewVersionWrapper(getNewVersionDto,
+				sbomWriteAuthorityService.forKey(vk.principal(), ocd.get().getOrg()), ar.getWhoUpdated());
 
 		// PR upsert at getNewVersion: gated on (PR input present AND
 		// SCE-or-commits input present AND onlyVersion=false). When all
@@ -479,7 +488,7 @@ public class ComponentDataFetcher {
 		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> createComponentInputMap = dfe.getArgument("component");
-		CreateComponentDto cpd = Utils.OM.convertValue(createComponentInputMap, CreateComponentDto.class);
+		CreateComponentDto cpd = InputConversion.convert(createComponentInputMap, CreateComponentDto.class, "component");
 		cpd.setOrganization(orgUuid);
 
 		if (cpd.getType() != ComponentType.COMPONENT && cpd.getType() != ComponentType.PRODUCT) {
@@ -559,22 +568,19 @@ public class ComponentDataFetcher {
 			}
 		}
 
-		try {
-			var componentData = ComponentData.dataFromRecord(componentService
-					.createComponent(cpd, ar.getWhoUpdated()));
-			ComponentDto componentDto = Utils.OM.convertValue(componentData, ComponentDto.class);
-			if (null != cpd.getIncludeApi() && cpd.getIncludeApi()) {
-				String apiKeyId = ApiTypeEnum.COMPONENT.toString() + "__" + componentData.getUuid().toString();
-				// a new component has no key row yet, so there is no administrator's kill switch to keep
-				String apiKey = apiKeyService.setObjectApiKey(componentData.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, false, ar.getWhoUpdated());
-				componentDto.setApiKeyId(apiKeyId);
-				componentDto.setApiKey(apiKey);
-			}
-		
-			return componentDto;
-		} catch (RelizaException re) {
-			throw new RuntimeException(re.getMessage());
+		// a RelizaException of the service (a refused licence, URL or supplier, a missing version
+		// schema) propagates, so GraphQLExceptionHandlers serves its message (SCORE-41 ADR-8)
+		var componentData = ComponentData.dataFromRecord(componentService
+				.createComponent(cpd, ar.getWhoUpdated()));
+		ComponentDto componentDto = Utils.OM.convertValue(componentData, ComponentDto.class);
+		if (null != cpd.getIncludeApi() && cpd.getIncludeApi()) {
+			String apiKeyId = ApiTypeEnum.COMPONENT.toString() + "__" + componentData.getUuid().toString();
+			// a new component has no key row yet, so there is no administrator's kill switch to keep
+			String apiKey = apiKeyService.setObjectApiKey(componentData.getUuid(), ApiTypeEnum.COMPONENT, null, null, null, false, ar.getWhoUpdated());
+			componentDto.setApiKeyId(apiKeyId);
+			componentDto.setApiKey(apiKey);
 		}
+		return componentDto;
 	}
 	
 	@PreAuthorize("isAuthenticated()")

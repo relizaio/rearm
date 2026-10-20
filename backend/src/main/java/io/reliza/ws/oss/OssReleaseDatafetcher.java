@@ -24,6 +24,7 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -140,7 +141,7 @@ public class OssReleaseDatafetcher {
 		authorizationService.validateSystemOperational(CallType.READ);
 
 		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
-		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
+		GetLatestReleaseInput glri = InputConversion.convert(latestReleaseInput, GetLatestReleaseInput.class, "release");
 
 		// TODO respect tags
 

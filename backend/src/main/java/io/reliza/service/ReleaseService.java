@@ -16,6 +16,7 @@ import java.util.Date;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -105,6 +106,7 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ArtifactData.DigestRecord;
+import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
@@ -121,7 +123,6 @@ import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.ReleaseData.ReservationEndedBy;
-import io.reliza.model.ReleaseData.UpdateReleaseStrength;
 import io.reliza.model.SourceCodeEntry;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
@@ -141,9 +142,12 @@ import io.reliza.dto.FixedIn.FixedInVerdict;
 import io.reliza.dto.HistoricallyResolvedFinding;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.RearmIdentifierType;
+import io.reliza.model.tea.Rebom.BomHash;
 import io.reliza.model.tea.Rebom.MissingSbomComponent;
 import io.reliza.model.tea.Rebom.MissingSbomReason;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.service.DeclaredLicenses.DeclaredLicense;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.dao.DateCountDao;
@@ -241,6 +245,9 @@ public class ReleaseService {
 	@Autowired
 	private SupportInjectionService supportInjectionService;
 
+	@Autowired
+	private SbomExportSigningService sbomExportSigningService;
+
 	private static final Logger log = LoggerFactory.getLogger(ReleaseService.class);
 
 	/**
@@ -249,10 +256,15 @@ public class ReleaseService {
 	 * served and is merged again on its next request. 2 = bom-refs de-duplicated (SCORE-13);
 	 * 3 = the inputs' services carried and dependency refs that resolve to nothing dropped
 	 * (SCORE-14); 4 = a product merge lists its component releases without a BOM, with their
-	 * dependencies stated unknown (SCORE-15). Bump it when a rebom merge change must reach merges
-	 * already stored.
+	 * dependencies stated unknown (SCORE-15); 5 = the root purl and bom-ref percent-encode the
+	 * group and name once, where earlier merges encoded them twice (SCORE-29); 6 = the merged root
+	 * names the organization as its supplier and carries the digests of the release's one
+	 * deliverable, and a product's placeholders those of theirs (SCORE-30); 7 = ReARM-made nodes
+	 * carry the declared licence and the component supplier (SCORE-39); 8 = a merged node records
+	 * the listed licence expression a fold dropped as {@code reliza:license:dropped} (SCORE-44).
+	 * Bump it when a rebom merge change must reach merges already stored.
 	 */
-	public static final int MERGE_VERSION = 4;
+	public static final int MERGE_VERSION = 8;
 			
 	private final ReleaseRepository repository;
 	
@@ -265,6 +277,18 @@ public class ReleaseService {
 	@Transactional
 	public Optional<Release> getReleaseWriteLocked (UUID uuid) {
 		return repository.findByIdWriteLocked(uuid);
+	}
+
+	/**
+	 * The release row under its write lock, re-read from the database: see
+	 * ReleaseApprovalService.addApprovals. The locked query alone returns the instance this
+	 * persistence context already manages (in addArtifactManual, the copy loaded before the
+	 * upload); only the refresh loads the committed row. TPF-36.
+	 */
+	private Optional<Release> getFreshReleaseWriteLocked(UUID releaseUuid) {
+		Optional<Release> or = repository.findByIdWriteLocked(releaseUuid);
+		or.ifPresent(entityManager::refresh);
+		return or;
 	}
 	 
 	public Optional<ReleaseData> getReleaseData (UUID uuid, UUID myOrgUuid) throws RelizaException {
@@ -414,7 +438,8 @@ public class ReleaseService {
 	
 	@Transactional
 	public void createReleaseFromVersion(SceDto sourceCodeEntry, List<SceDto> commitList,
-			String nextVersion, ReleaseLifecycle lifecycleResolved, BranchData bd, WhoUpdated wu) throws Exception{
+			String nextVersion, ReleaseLifecycle lifecycleResolved, BranchData bd, SbomWriteAuthority authority,
+			WhoUpdated wu) throws Exception{
 
 		//check if source code details are present and create a release with these details and version
 		Optional<SourceCodeEntryData> osced = Optional.empty();
@@ -449,7 +474,7 @@ public class ReleaseService {
 						if (od == null) {
 							od = getOrganizationService.getOrganizationData(bd.getOrg()).orElseThrow();
 						}
-						sceUploadedArts = uploadSceArtifacts(com.getArtifactInputs(), od, com, cd, nextVersion, wu);
+						sceUploadedArts = uploadSceArtifacts(com.getArtifactInputs(), od, com, cd, nextVersion, authority, wu);
 					}
 					var parsedCommit = parseSceFromReleaseCreate(com, sceUploadedArts, bd, bd.getName(), nextVersion, wu);
 					if (parsedCommit.isPresent()) {
@@ -492,7 +517,7 @@ public class ReleaseService {
 						od = getOrganizationService.getOrganizationData(bd.getOrg()).orElseThrow();
 					}
 					primaryUploadedArts = uploadSceArtifacts(
-							sourceCodeEntry.getArtifactInputs(), od, sourceCodeEntry, cd, nextVersion, wu);
+							sourceCodeEntry.getArtifactInputs(), od, sourceCodeEntry, cd, nextVersion, authority, wu);
 				}
 				osced = parseSceFromReleaseCreate(sourceCodeEntry, primaryUploadedArts, bd, bd.getName(), nextVersion, wu);
 			}
@@ -1019,7 +1044,9 @@ public class ReleaseService {
 		String mergedBom = "";
 		if (mediaType == BomMediaType.JSON){
 			JsonNode mergedBomJsonNode = getReleaseSbomAsJsonNode(releaseUuid, tldOnly, ignoreDev, excludeFileComponents, belongsTo, structure, org, wu, excludeCoverageTypes, exportMetadata);
-			mergedBom = mergedBomJsonNode.toString();
+			// Last on the egress, after every edit of the tree: the signature covers the bytes served
+			// (SCORE-33). The org is the exported release's, so only its key can sign.
+			mergedBom = sbomExportSigningService.stampAndSign(mergedBomJsonNode, org, releaseUuid);
 		} else if (mediaType == BomMediaType.CSV) {
 			// Neither gated nor swept, and deliberately not pretending to be: rebom renders
 			// CSV and EXCEL from a fixed column list (name, version, purl, license, author)
@@ -1112,7 +1139,7 @@ public class ReleaseService {
 				.map(cd -> cd.getType() == ComponentType.PRODUCT).orElse(false);
 	}
 
-	private UUID generateComponentReleaseBomForConfig(ReleaseData rd, RebomOptions rebomMergeOptions, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException{
+	private UUID generateComponentReleaseBomForConfig(ReleaseData rd, RebomOptions rebomMergeOptions, ReleaseNodeFacts facts, WhoUpdated wu, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) throws RelizaException{
 		UUID rebomId = null;
 		List<UUID> bomIds = componentReleaseBomIds(rd, rebomMergeOptions.belongsTo(), excludeCoverageTypes);
 		log.debug("RGDEBUG: generateComponentReleaseBomForConfig bomIds: {}", bomIds);
@@ -1124,12 +1151,13 @@ public class ReleaseService {
 			String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
 					.map(RearmIdentifier::getIdValue).orElse(null);
 			var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(), rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.ignoreDev(), rebomMergeOptions.excludeFileComponents(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE,"", "", purl, RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT)
-					.withMergeVersion(MERGE_VERSION);
+					.withMergeVersion(MERGE_VERSION)
+					.withReleaseNode(facts);
 			rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 			// A coverage-filtered merge is never stored: its row would carry the unfiltered
 			// options and be served to the next plain request (SCORE-15 ADR-10).
 			if (!hasCoverageFilter(excludeCoverageTypes)) {
-				addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions.withMergeVersion(MERGE_VERSION)), wu);
+				addRebom(rd, storedRow(rebomId, rebomMergeOptions, facts), wu);
 			}
 		}else if (bomIds.size() > 0){
 			rebomId = bomIds.get(0);
@@ -1151,14 +1179,24 @@ public class ReleaseService {
 	}
 
 	/**
+	 * The merged-BOM row stored for a merge requested with {@code rebomMergeOptions}: the request
+	 * options under {@link #MERGE_VERSION}, keyed by the release node {@code facts} the merge was
+	 * built with (SCORE-39 ADR-5).
+	 */
+	private static ReleaseBom storedRow(UUID rebomId, RebomOptions rebomMergeOptions, ReleaseNodeFacts facts) {
+		return new ReleaseBom(rebomId, rebomMergeOptions.withMergeVersion(MERGE_VERSION)
+				.withReleaseNodeFactsKey(ReleaseNodeFacts.key(facts)));
+	}
+
+	/**
 	 * A merge within one {@link MergeContext}. No filter and an empty one are the same request, and
-	 * so are options that differ only in the merge version of the row they came from: every merge is
-	 * built and stored under {@link #MERGE_VERSION}, so a reconcile meeting a product's older rows
-	 * next to its current ones merges once.
+	 * so are options that differ only in the merge version or the release node facts key of the row
+	 * they came from: every merge is built and stored under {@link #MERGE_VERSION} and the current
+	 * facts, so a reconcile meeting a product's older rows next to its current ones merges once.
 	 */
 	private record MergeKey(UUID release, RebomOptions options, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 		static MergeKey of(ReleaseData rd, RebomOptions options, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
-			return new MergeKey(rd.getUuid(), options.withMergeVersion(MERGE_VERSION),
+			return new MergeKey(rd.getUuid(), options.withMergeVersion(MERGE_VERSION).withReleaseNodeFactsKey(null),
 					hasCoverageFilter(excludeCoverageTypes) ? excludeCoverageTypes : List.of());
 		}
 	}
@@ -1172,6 +1210,10 @@ public class ReleaseService {
 		// for component structure and 
 		UUID retRebomId = null;
 		boolean hasExcludeCoverageTypes = hasCoverageFilter(excludeCoverageTypes);
+		// What the merge would say about rd's own node, and its key: a stored row serves only the
+		// facts it was built with (SCORE-39 ADR-5). Computed once and handed to the generation.
+		ReleaseNodeFacts facts = releaseNodeFacts(rd);
+		String factsKey = ReleaseNodeFacts.key(facts);
 		List<ReleaseBom> reboms = releaseRebomService.getReleaseBoms(rd);
 		// match with request
 		// log.info("rebomMergeOptions: {}",rebomMergeOptions);
@@ -1187,6 +1229,9 @@ public class ReleaseService {
 			    		== Boolean.TRUE.equals(rebomMergeOptions.excludeFileComponents())
 			    // Rows merged under older rules (null) never match, so they are rebuilt once.
 			    && Objects.equals(rb.rebomMergeOptions().mergeVersion(), MERGE_VERSION)
+			    // Nor do rows built with other facts (a changed declared licence, supplier or
+			    // hashes), or before the key existed (null).
+			    && Objects.equals(rb.rebomMergeOptions().releaseNodeFactsKey(), factsKey)
 			).findFirst().orElse(null);
 
 		// What this reconcile or request already produced is not produced again: always on a forced
@@ -1200,7 +1245,7 @@ public class ReleaseService {
 		if(matchedBom == null || forced){
 			ComponentData pd = getComponentService.getComponentData(rd.getComponent()).get();
 			if(pd.getType().equals(ComponentType.COMPONENT)){
-				retRebomId = generateComponentReleaseBomForConfig(rd, rebomMergeOptions, wu, excludeCoverageTypes);
+				retRebomId = generateComponentReleaseBomForConfig(rd, rebomMergeOptions, facts, wu, excludeCoverageTypes);
 			} else {
 				// TODO:
 				// we don't need full unwind here, 
@@ -1255,11 +1300,12 @@ public class ReleaseService {
 									.map(RearmIdentifier::getIdValue).orElse(null);
 							var rebomOptions = new RebomOptions(pd.getName(), od.getName(), rd.getVersion(),  rebomMergeOptions.belongsTo(), rebomMergeOptions.hash(), rebomMergeOptions.tldOnly(), rebomMergeOptions.ignoreDev(), rebomMergeOptions.excludeFileComponents(), rebomMergeOptions.structure(), rebomMergeOptions.notes(), StripBom.TRUE, "", "", purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT)
 									.withMergeVersion(MERGE_VERSION)
-									.withMissingSbomComponents(missing);
+									.withMissingSbomComponents(missing)
+									.withReleaseNode(facts);
 							UUID rebomId = rebomService.mergeAndStoreBoms(bomIds, rebomOptions, od.getUuid());
 							// Never stored when filtered, as at component level (SCORE-15 ADR-10).
 							if (!hasExcludeCoverageTypes) {
-								addRebom(rd, new ReleaseBom(rebomId, rebomMergeOptions.withMergeVersion(MERGE_VERSION)), wu);
+								addRebom(rd, storedRow(rebomId, rebomMergeOptions, facts), wu);
 							}
 							retRebomId = rebomId;
 						}
@@ -1302,16 +1348,95 @@ public class ReleaseService {
 	 * one and null when it records none: never made up, since a placeholder purl would claim an
 	 * identifier ReARM does not hold. The type is ReARM's closest CycloneDX type: a product or a
 	 * Helm chart is an application, a release identified by an OCI or Docker purl a container,
-	 * anything else a library.
+	 * anything else a library. The supplier is as SbomSupplierNames names it (the component's
+	 * supplier name, else the organization for its own component, else none), the hashes are those
+	 * of its one shipped deliverable (SCORE-30 ADR-2, ADR-3, ADR-11), null when none, and the
+	 * licence is the one DeclaredLicenses resolves (SCORE-39 ADR-3), null when none. {@code group}
+	 * stays the organization's name either way.
 	 */
 	MissingSbomComponent buildMissingSbomComponent(ReleaseData rd, MissingSbomReason reason) {
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
-		String orgName = getOrganizationService.getOrganizationData(rd.getOrg())
-				.map(OrganizationData::getName).orElse(null);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(rd.getOrg());
+		String orgName = od.map(OrganizationData::getName).orElse(null);
 		String purl = SidPurlUtils.pickPreferredPurl(rd.getIdentifiers())
 				.map(RearmIdentifier::getIdValue).orElse(null);
+		List<BomHash> hashes = releaseNodeHashes(rd);
+		DeclaredLicense license = DeclaredLicenses.forRelease(od.orElse(null), cd, rd);
 		return new MissingSbomComponent(rd.getUuid().toString(), cd.getName(), rd.getVersion(),
-				missingSbomComponentType(cd, purl), orgName, orgName, purl, reason);
+				missingSbomComponentType(cd, purl), SbomSupplierNames.forRelease(od.orElse(null), cd), orgName, purl,
+				hashes.isEmpty() ? null : hashes, null == license ? null : license.expression(),
+				null == license ? null : license.url(), reason);
+	}
+
+	/**
+	 * What ReARM holds about {@code rd} for the node that describes it in a merged BOM (SCORE-30
+	 * ADR-1, ADR-2, ADR-7; SCORE-39 ADR-3): its supplier as SbomSupplierNames names it, the digests
+	 * of its one shipped deliverable, and the licence DeclaredLicenses resolves for it.
+	 */
+	ReleaseNodeFacts releaseNodeFacts(ReleaseData rd) {
+		OrganizationData od = getOrganizationService.getOrganizationData(rd.getOrg()).orElse(null);
+		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElse(null);
+		DeclaredLicense license = DeclaredLicenses.forRelease(od, cd, rd);
+		return new ReleaseNodeFacts(SbomSupplierNames.forRelease(od, cd), releaseNodeHashes(rd),
+				null == license ? null : license.expression(), null == license ? null : license.url());
+	}
+
+	/**
+	 * The hashes of the node that describes {@code rd} (SCORE-30 ADR-3, ADR-11): the digest records
+	 * of the one deliverable it ships, an outbound deliverable of its base variant, in record order,
+	 * one per algorithm (the first wins), as CycloneDX names the algorithm. A deliverable the
+	 * release consumes (inbound) is another thing's bytes and never counted; nor are the outbound
+	 * deliverables of other variants. Only records of the file a deliverable is (scope
+	 * ORIGINAL_FILE, or none) count; a deliverable without such a record does not count as one.
+	 * With no base variant, no deliverable left, or several, there are none: several deliverables
+	 * have no single set of bytes. A deliverable that does not resolve is skipped. When the release
+	 * and that deliverable both have a preferred purl and the two name different purl types, there
+	 * are none either: the node's purl says what artifact the node is, and a digest of an artifact
+	 * of another type is not its bytes.
+	 */
+	List<BomHash> releaseNodeHashes(ReleaseData rd) {
+		Set<UUID> deliverables = variantService.findBaseVariantForRelease(rd.getUuid())
+				.map(VariantData::getOutboundDeliverables).orElse(Set.of());
+		if (null == deliverables || deliverables.isEmpty()) return List.of();
+		List<DeliverableData> hashed = new ArrayList<>();
+		List<BomHash> hashes = List.of();
+		for (UUID deliverable : deliverables) {
+			Optional<DeliverableData> dd = getDeliverableService.getDeliverableData(deliverable);
+			List<BomHash> h = dd.map(ReleaseService::deliverableHashes).orElse(List.of());
+			if (!h.isEmpty()) {
+				hashed.add(dd.get());
+				hashes = h;
+			}
+		}
+		if (hashed.size() != 1 || purlTypesDisagree(rd.getIdentifiers(), hashed.getFirst().getIdentifiers())) {
+			return List.of();
+		}
+		return hashes;
+	}
+
+	/**
+	 * Whether the preferred purls of a release and of its deliverable both parse and name different
+	 * purl types (SCORE-30 ADR-11); false when either is absent or does not parse.
+	 */
+	private static boolean purlTypesDisagree(List<RearmIdentifier> releaseIdentifiers,
+			List<RearmIdentifier> deliverableIdentifiers) {
+		String releaseType = purlTypeOf(SidPurlUtils.pickPreferredPurl(releaseIdentifiers)
+				.map(RearmIdentifier::getIdValue).orElse(null));
+		String deliverableType = purlTypeOf(SidPurlUtils.pickPreferredPurl(deliverableIdentifiers)
+				.map(RearmIdentifier::getIdValue).orElse(null));
+		return null != releaseType && null != deliverableType && !releaseType.equalsIgnoreCase(deliverableType);
+	}
+
+	private static List<BomHash> deliverableHashes(DeliverableData dd) {
+		if (null == dd.getSoftwareMetadata() || null == dd.getSoftwareMetadata().getDigestRecords()) return List.of();
+		Map<String, BomHash> byAlg = new LinkedHashMap<>();
+		for (DigestRecord record : dd.getSoftwareMetadata().getDigestRecords()) {
+			if (null == record || null == record.algo() || StringUtils.isBlank(record.digest())) continue;
+			if (null != record.scope() && record.scope() != DigestScope.ORIGINAL_FILE) continue;
+			String alg = record.algo().getValue();
+			byAlg.putIfAbsent(alg, new BomHash(alg, record.digest()));
+		}
+		return List.copyOf(byAlg.values());
 	}
 
 	private static String missingSbomComponentType(ComponentData cd, String purl) {
@@ -1557,9 +1682,10 @@ public class ReleaseService {
 	
 	@Transactional
 	public List<UUID> uploadSceArtifacts (List<Map<String, Object>> arts, OrganizationData od, SceDto sceDto,
-			ComponentData cd, String version, WhoUpdated wu) throws RelizaException {
+			ComponentData cd, String version, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		// TODO resolve purls
-		return artifactService.uploadListOfArtifacts(od, arts, new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), StripBom.FALSE, null), wu);
+		return artifactService.uploadListOfArtifacts(od, arts, new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sceDto.getCommit(), StripBom.FALSE, null)
+				.withSupplierName(SbomSupplierNames.forUpload(od, cd, null)), authority, wu);
 	}
 	
 	@Transactional
@@ -1630,36 +1756,15 @@ public class ReleaseService {
 	}
 	
 
-	public ReleaseData addInboundDeliverables(ReleaseData releaseData, List<Map<String, Object>> deliverableDtos,
-			WhoUpdated wu) throws RelizaException {
-		componentLockService.assertUnlocked(releaseData.getComponent(), releaseData.getBranch(),
-				LockedOperation.RELEASE_CONTENT);
-		List<UUID> currentDeliverables = releaseData.getInboundDeliverables();
-		boolean isAllowed = ReleaseLifecycle.isAssemblyAllowed(releaseData.getLifecycle());
-		if (!isAllowed) {
-			throw new RelizaException("Cannot update deliverables on the current release lifecycle");
-		}
-
-		if (deliverableDtos != null && !deliverableDtos.isEmpty()) {
-			List<UUID> newDeliverables = deliverableService.prepareListofDeliverables(deliverableDtos, releaseData.getBranch(),
-					releaseData.getVersion(), wu);
-			currentDeliverables.addAll(newDeliverables);
-		}
-
-		releaseData.setInboundDeliverables(currentDeliverables);
-		ReleaseDto releaseDto = Utils.OM.convertValue(Utils.dataToRecord(releaseData), ReleaseDto.class);
-		Release release = ossReleaseService.updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
-		return ReleaseData.dataFromRecord(release);
-	}
-
 	private void addRebom(ReleaseData releaseData, ReleaseBom rebom, WhoUpdated wu) throws RelizaException {
 		List<ReleaseBom> newBoms = new ArrayList<>(); 
 		List<ReleaseBom> currentBoms = releaseRebomService.getReleaseBoms(releaseData);
 		var currentBomSize = currentBoms.size();
-		// find and replace existing bom matching the current merge crieteria
+		// find and replace existing bom matching the current merge crieteria: one row per request,
+		// whatever version or facts key the old row was built under (SCORE-39 ADR-5)
 		// TODO: delete replaced boms
 		List<ReleaseBom> filteredBoms = currentBoms.stream().filter(bom -> 
-			!(bom.rebomMergeOptions().equals(rebom.rebomMergeOptions()))
+			!ReleaseBom.sameRequest(bom.rebomMergeOptions(), rebom.rebomMergeOptions())
 		).toList();
 		newBoms.addAll(filteredBoms);
 		newBoms.add(rebom);
@@ -1679,7 +1784,9 @@ public class ReleaseService {
 	@Transactional
 	public Boolean addArtifact(UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
 		Boolean added = false;
-		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
+		// TPF-36: lock and refresh right before the append (the upload ran before this call,
+		// outside the lock), so the save keeps what other requests committed meanwhile.
+		Optional<Release> rOpt = getFreshReleaseWriteLocked(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
 			componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
@@ -1816,7 +1923,8 @@ public class ReleaseService {
 	 */
 	@Transactional
 	public void processReleaseArtifacts(List<Map<String, Object>> artifactsList, ReleaseData rd,
-			ComponentData cd, OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+			ComponentData cd, OrganizationData od, String version, SbomWriteAuthority authority, WhoUpdated wu)
+			throws RelizaException {
 		if (null == artifactsList || artifactsList.isEmpty()) {
 			return;
 		}
@@ -1830,8 +1938,9 @@ public class ReleaseService {
 		// Upload artifacts
 		List<UUID> artIds = artifactService.uploadListOfArtifacts(
 			od, artifactsList,
-			new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, purl),
-			wu
+			new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, purl)
+					.withSupplierName(SbomSupplierNames.forUpload(od, cd, null)),
+			authority, wu
 		);
 
 		// Attach artifacts to release
@@ -1853,6 +1962,47 @@ public class ReleaseService {
 			List<DeliverableArtifacts> deliverableArtifacts, List<SceArtifacts> sceArtifacts) {}
 
 	/**
+	 * The deliverable an artifact upload naming rd may attach to, on either lane (TPF-44): one of rd's own
+	 * (deliverablesOfRelease), in rd's organization and built on a branch of rd's component. A missing,
+	 * malformed, foreign or unrelated id reads DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX + the id as sent.
+	 */
+	public DeliverableData resolveReleaseDeliverable(ReleaseData rd, String deliverableId) throws RelizaException {
+		return resolveReleaseDeliverable(rd, deliverableId, deliverablesOfRelease(rd));
+	}
+
+	/** rd's inbound deliverables and the outbound deliverables of each of its variants. */
+	private Set<UUID> deliverablesOfRelease(ReleaseData rd) {
+		Set<UUID> releaseDeliverables = new LinkedHashSet<>(rd.getInboundDeliverables());
+		for (VariantData vd : variantService.getVariantsOfRelease(rd.getUuid())) {
+			if (null != vd.getOutboundDeliverables()) releaseDeliverables.addAll(vd.getOutboundDeliverables());
+		}
+		return releaseDeliverables;
+	}
+
+	private DeliverableData resolveReleaseDeliverable(ReleaseData rd, String deliverableId,
+			Set<UUID> releaseDeliverables) throws RelizaException {
+		return Utils.parseUuid(deliverableId)
+			.filter(releaseDeliverables::contains)
+			.flatMap(u -> getDeliverableService.getDeliverableData(u, rd.getOrg()))
+			.filter(d -> null != d.getBranch() && branchService.getBranchData(d.getBranch())
+					.map(bd -> rd.getComponent().equals(bd.getComponent())).orElse(false))
+			.orElseThrow(() -> new RelizaException(CommonVariables.DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX + deliverableId));
+	}
+
+	/**
+	 * The source code entry an artifact upload naming rd may attach to, on either lane (TPF-44): rd's own or
+	 * one of its commits (getAllCommits), owned by rd's organization (getOwnedSceData: the shared external
+	 * org's entries are not writable). Anything else reads SCE_NOT_FOUND_IN_ORG_PREFIX + the id as sent.
+	 */
+	public SourceCodeEntryData resolveReleaseSourceCodeEntry(ReleaseData rd, String sceId) throws RelizaException {
+		Set<UUID> releaseSces = rd.getAllCommits();
+		return Utils.parseUuid(sceId)
+			.filter(releaseSces::contains)
+			.flatMap(u -> getSourceCodeEntryService.getOwnedSceData(u, rd.getOrg()))
+			.orElseThrow(() -> new RelizaException(CommonVariables.SCE_NOT_FOUND_IN_ORG_PREFIX + sceId));
+	}
+
+	/**
 	 * Check a whole addArtifactProgrammatic input against the release it targets before any part of
 	 * it is uploaded or attached: each part is written on its own, so a refusal found later would
 	 * leave the earlier parts behind. Refuses, in this order:
@@ -1865,7 +2015,9 @@ public class ReleaseService {
 	 * that is not {@code rd}'s own or one of its commits and owned by that organization
 	 * ({@link GetSourceCodeEntryService#getOwnedSceData}; an entry of the shared external org that
 	 * the release references is not writable) -- a missing, malformed, foreign or unrelated uuid
-	 * all read "not found in this organization";</li>
+	 * all read "not found in this organization". This binding rule is
+	 * {@link #resolveReleaseDeliverable} and {@link #resolveReleaseSourceCodeEntry}, which
+	 * addArtifactManual applies too (TPF-44);</li>
 	 * <li>release artifacts on a release whose component or branch is locked (where the lock
 	 * applied before; deliverable and SCE artifacts are not lock-gated here);</li>
 	 * <li>any artifact the upload itself would refuse ({@link ArtifactService#validateUploadInput});</li>
@@ -1881,25 +2033,14 @@ public class ReleaseService {
 		List<Map<String, Object>> releaseArtifacts = inputList(artifactInput.get("releaseArtifacts"));
 
 		List<Map<String, Object>> deliverableInput = inputList(artifactInput.get("deliverableArtifacts"));
-		Set<UUID> releaseDeliverables = new LinkedHashSet<>();
-		if (!deliverableInput.isEmpty()) {
-			releaseDeliverables.addAll(rd.getInboundDeliverables());
-			for (VariantData vd : variantService.getVariantsOfRelease(rd.getUuid())) {
-				if (null != vd.getOutboundDeliverables()) releaseDeliverables.addAll(vd.getOutboundDeliverables());
-			}
-		}
+		Set<UUID> releaseDeliverables = deliverableInput.isEmpty() ? Set.of() : deliverablesOfRelease(rd);
 		List<DeliverableArtifacts> deliverableArtifacts = new LinkedList<>();
 		for (Map<String, Object> delArts : deliverableInput) {
 			String deliverableIdStr = (String) delArts.get("deliverable");
 			if (StringUtils.isEmpty(deliverableIdStr)) {
 				throw new RelizaException("'deliverable' field is required in deliverableArtifacts");
 			}
-			DeliverableData dd = Utils.parseUuid(deliverableIdStr)
-				.filter(releaseDeliverables::contains)
-				.flatMap(u -> getDeliverableService.getDeliverableData(u, rd.getOrg()))
-				.filter(d -> null != d.getBranch() && branchService.getBranchData(d.getBranch())
-						.map(bd -> rd.getComponent().equals(bd.getComponent())).orElse(false))
-				.orElseThrow(() -> new RelizaException("Deliverable not found in this organization: " + deliverableIdStr));
+			DeliverableData dd = resolveReleaseDeliverable(rd, deliverableIdStr, releaseDeliverables);
 			List<Map<String, Object>> artifactsList = inputList(delArts.get("artifacts"));
 			if (artifactsList.isEmpty()) {
 				throw new RelizaException("'artifacts' list cannot be empty in deliverableArtifacts");
@@ -1907,17 +2048,13 @@ public class ReleaseService {
 			deliverableArtifacts.add(new DeliverableArtifacts(dd, artifactsList));
 		}
 
-		Set<UUID> releaseSces = rd.getAllCommits();
 		List<SceArtifacts> sceArtifacts = new LinkedList<>();
 		for (Map<String, Object> sceArts : inputList(artifactInput.get("sceArtifacts"))) {
 			String sceIdStr = (String) sceArts.get("sce");
 			if (StringUtils.isEmpty(sceIdStr)) {
 				throw new RelizaException("'sce' field is required in sceArtifacts");
 			}
-			SourceCodeEntryData sced = Utils.parseUuid(sceIdStr)
-				.filter(releaseSces::contains)
-				.flatMap(u -> getSourceCodeEntryService.getOwnedSceData(u, rd.getOrg()))
-				.orElseThrow(() -> new RelizaException("Source code entry not found in this organization: " + sceIdStr));
+			SourceCodeEntryData sced = resolveReleaseSourceCodeEntry(rd, sceIdStr);
 			List<Map<String, Object>> artifactsList = inputList(sceArts.get("artifacts"));
 			if (artifactsList.isEmpty()) {
 				throw new RelizaException("'artifacts' list cannot be empty in sceArtifacts");
@@ -1968,7 +2105,7 @@ public class ReleaseService {
 	 */
 	@Transactional
 	public void processDeliverableArtifacts(List<DeliverableArtifacts> delArtsList, ReleaseData rd, ComponentData cd,
-			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+			OrganizationData od, String version, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		if (null == delArtsList || delArtsList.isEmpty()) {
 			return;
 		}
@@ -1999,8 +2136,9 @@ public class ReleaseService {
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
 				od, artifactsList,
-				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, hash, StripBom.FALSE, purl),
-				wu
+				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, hash, StripBom.FALSE, purl)
+						.withSupplierName(SbomSupplierNames.forUpload(od, cd, dd)),
+				authority, wu
 			);
 
 			// Attach artifacts to deliverable
@@ -2023,7 +2161,7 @@ public class ReleaseService {
 	 */
 	@Transactional
 	public void processSceArtifacts(List<SceArtifacts> sceArtsList, ReleaseData rd, ComponentData cd,
-			OrganizationData od, String version, WhoUpdated wu) throws RelizaException {
+			OrganizationData od, String version, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		if (null == sceArtsList || sceArtsList.isEmpty()) {
 			return;
 		}
@@ -2039,8 +2177,9 @@ public class ReleaseService {
 			// Upload artifacts
 			List<UUID> artIds = artifactService.uploadListOfArtifacts(
 				od, artifactsList,
-				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sced.getCommit(), StripBom.FALSE, null),
-				wu
+				new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.SCE, sced.getCommit(), StripBom.FALSE, null)
+						.withSupplierName(SbomSupplierNames.forUpload(od, cd, null)),
+				authority, wu
 			);
 
 			// Attach artifacts to SCE
@@ -2138,13 +2277,14 @@ public class ReleaseService {
 
 	@Transactional
 	public Boolean replaceArtifact(UUID replaceArtifactUuid ,UUID artifactUuid, UUID releaseUuid, WhoUpdated wu) {
-		sharedReleaseService.getReleaseData(releaseUuid).ifPresent(rd ->
-				componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
-						LockedOperation.RELEASE_CONTENT));
 		Boolean added = false;
-		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseUuid);
+		// TPF-36: lock and refresh right before the append (the upload ran before this call,
+		// outside the lock); the component-lock check reads the refreshed record, as in addArtifact.
+		Optional<Release> rOpt = getFreshReleaseWriteLocked(releaseUuid);
 		if (null != artifactUuid && rOpt.isPresent()) {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
+			componentLockService.assertUnlocked(rd.getComponent(), rd.getBranch(),
+					LockedOperation.RELEASE_CONTENT);
 				List<UUID> artifacts = rd.getArtifacts();
 				artifacts.remove(replaceArtifactUuid);
 				artifacts.add(artifactUuid);

@@ -34,6 +34,7 @@ import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.EnvironmentType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.SpdxLicenseExpressions;
 import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
 import io.reliza.model.dto.ReleaseMetricsDto;
@@ -96,7 +97,9 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		 * and an auditor asking "when did the wording change" must not have to read through
 		 * date edits to find out.
 		 */
-		FDA_NARRATIVE
+		FDA_NARRATIVE,
+		/** The per-release declared licence override (SCORE-39 ADR-1). */
+		DECLARED_LICENSE
 	}
 	
 	public enum ReleaseUpdateAction {
@@ -466,6 +469,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	 */
 	@JsonProperty
 	private String fdaAssessmentNarrative;
+
+	/**
+	 * Per-release override of the declared licence, a canonical SPDX expression (SCORE-39 ADR-1).
+	 * Null means inherit; read through {@code DeclaredLicenses.forRelease}.
+	 */
+	@JsonProperty
+	private String licenseExpression;
 
 	/**
 	 * The most recent SUPPORT_WINDOW {@link ReleaseUpdateEvent}, or null if the
@@ -899,6 +909,17 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			String narrative = releaseDto.getFdaAssessmentNarrative().strip();
 			rd.setFdaAssessmentNarrative(narrative.isEmpty() ? null : narrative);
 		}
+		// Blank to null and canonical form, as the narrative above; createRelease has already
+		// refused an invalid value, and validateReleaseData refuses one from any other writer.
+		if (null != releaseDto.getLicenseExpression() && !releaseDto.getLicenseExpression().isBlank()) {
+			String expression = releaseDto.getLicenseExpression().strip();
+			try {
+				expression = SpdxLicenseExpressions.canonical(expression);
+			} catch (IllegalArgumentException e) {
+				// kept as given: validateReleaseData refuses it on save
+			}
+			rd.setLicenseExpression(expression);
+		}
 		return rd;
 	}
 	
@@ -951,6 +972,16 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			errors.add("Release fdaAssessmentNarrative exceeds the "
 					+ FdaProse.MAX_LENGTH + " character limit");
 			vr.setErrors(errors);
+		}
+		// The declared licence override, for every writer as the narrative bound above.
+		if (null != rd.getLicenseExpression()) {
+			try {
+				SpdxLicenseExpressions.canonical(rd.getLicenseExpression());
+			} catch (IllegalArgumentException e) {
+				List<String> errors = new ArrayList<>(vr.getErrors());
+				errors.add("Release licenseExpression invalid: " + e.getMessage());
+				vr.setErrors(errors);
+			}
 		}
 		return vr;
 	}

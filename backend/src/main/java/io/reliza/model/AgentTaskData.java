@@ -89,6 +89,11 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		NEEDS_HUMAN,
 		/** System-generated: the holding session closed (agent close, idle auto-close, or operator force-close). */
 		SESSION_CLOSED,
+		/**
+		 * System-generated when the session working the task parks its hop for the operator (task TPF-66); the hop
+		 * ended there.
+		 */
+		PARKED_FOR_OPERATOR,
 		OTHER
 	}
 
@@ -1116,7 +1121,8 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	/**
 	 * Whether the coordinator seat parked this task for an operator decision (task RD4-17): an OPERATOR-level
 	 * MANUAL hold a session placed that records the status to return to. Only the seat's hold records one; a
-	 * hop's own hold (RD4-5) resumes its holder instead, and a person's hold goes back to the coordinator.
+	 * hop's own hold (RD4-5) ended its hop and is queued again for its role on release (TPF-66), and a person's
+	 * hold goes back to the coordinator.
 	 */
 	@JsonIgnore
 	public boolean seatParkedForOperator() {

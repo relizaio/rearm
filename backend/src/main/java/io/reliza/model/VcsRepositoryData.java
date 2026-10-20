@@ -17,6 +17,7 @@ import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData.EventType;
 import io.reliza.model.ComponentData.ReleaseOutputEvent;
 import lombok.AccessLevel;
@@ -86,15 +87,15 @@ public class VcsRepositoryData extends RelizaDataParent implements RelizaObject 
 	 * Service-layer setters call this before persisting so the invariant
 	 * is preserved across all write paths (REST, GraphQL, programmatic).
 	 */
-	public static void validateOutputTriggers(List<ReleaseOutputEvent> triggers) {
+	public static void validateOutputTriggers(List<ReleaseOutputEvent> triggers) throws RelizaException {
 		if (triggers == null || triggers.isEmpty()) return;
 		if (triggers.size() > 1) {
-			throw new IllegalArgumentException("VCS repository accepts at most one outputTrigger");
+			throw new RelizaException("triggers: a VCS repository takes at most one trigger");
 		}
 		ReleaseOutputEvent t = triggers.get(0);
 		if (t.getType() != EventType.EXTERNAL_VALIDATION) {
-			throw new IllegalArgumentException("VCS-level outputTrigger must be of type EXTERNAL_VALIDATION; got "
-					+ t.getType());
+			// TPF-63: the type sent is not echoed
+			throw new RelizaException("triggers[0].type: must be EXTERNAL_VALIDATION on a VCS repository");
 		}
 	}
 }

@@ -22,7 +22,7 @@ package io.reliza.common;
 public final class LogSafe {
 
 	/** The longest rendering, in UTF-16 units, before the cut mark. */
-	static final int MAX_LENGTH = 256;
+	public static final int MAX_LENGTH = 256;
 
 	private LogSafe() {}
 

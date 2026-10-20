@@ -224,7 +224,20 @@ public class SourceCodeEntryService {
 				// The create runs REQUIRES_NEW (createSourceCodeEntryTx via the
 				// proxy) -- keeps a unique-violation from the V26 (vcs, commit)
 				// index from poisoning this routine's tx.
-				return Optional.of(createSourceCodeEntry(sceDto, wu));
+				List<SCEArtifact> incoming = sceDto.getArtifacts();
+				if (null == incoming || incoming.isEmpty()) {
+					return Optional.of(createSourceCodeEntry(sceDto, wu));
+				}
+				// An entry with artifacts is committed WITHOUT them and they are merged in below,
+				// under the row lock, in the caller's transaction (SCORE-47 ADR-17): a refusal later
+				// in the request rolls the attachment back with the artifact rows, and the entry
+				// survives as the artifact-less row a retry would create anyway.
+				sceDto.setArtifacts(new ArrayList<>());
+				try {
+					osce = Optional.of(createSourceCodeEntry(sceDto, wu));
+				} finally {
+					sceDto.setArtifacts(incoming);
+				}
 			} catch (DataIntegrityViolationException dive) {
 				// Lost the race with a concurrent SCE create on the same (vcs, commit).
 				// Re-read the winner's row and fall through to the merge branch so the

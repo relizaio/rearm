@@ -4,6 +4,9 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.never;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -18,7 +21,10 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.repositories.OrganizationRepository;
+import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.WhoUpdated;
@@ -30,6 +36,10 @@ import io.reliza.model.WhoUpdated;
  * exception handler carries it to tenants), before any write happens. The
  * 14-day floor is load-bearing — it keeps the retention sweep clear of the
  * email digest's maximum parking window plus the delivery retry curve.
+ *
+ * <p>SCORE-39 (T-14, ADR-1, ADR-2): the organization's default declared licence. PATCH as the
+ * prose fields; a URL needs an expression at the same level; a refusal names the field and saves
+ * nothing. These cases run on a stored organization and read what is saved.
  */
 public class OrganizationServiceSettingsValidationTest {
 
@@ -127,6 +137,123 @@ public class OrganizationServiceSettingsValidationTest {
 					() -> service.updateSettings(UUID.randomUUID(), retentionPatch(days), wu));
 			assertTrue(e.getMessage().contains("Organization entity not found"),
 					days + " must be accepted by the bounds check; got: " + e.getMessage());
+		}
+	}
+
+	/** What the declared-licence cases saved, or null when nothing was saved. */
+	private OrganizationData saved;
+	private OrganizationRepository repository;
+
+	/** A stored organization whose settings are {@code stored}, on a service that records the save. */
+	private void storedOrganization(OrganizationData.Settings stored) throws Exception {
+		repository = mock(OrganizationRepository.class);
+		service = new OrganizationService(repository);
+		OrganizationData od = new OrganizationData();
+		od.setName("Example Org");
+		od.setSettings(stored);
+		Organization entity = new Organization();
+		entity.setRecordData(Utils.dataToRecord(od));
+		GetOrganizationService getOrgService = mock(GetOrganizationService.class);
+		when(getOrgService.getOrganizationData(any(UUID.class))).thenReturn(Optional.of(od));
+		when(getOrgService.getOrganization(any(UUID.class))).thenReturn(Optional.of(entity));
+		Field f = OrganizationService.class.getDeclaredField("getOrganizationService");
+		f.setAccessible(true);
+		f.set(service, getOrgService);
+		Field a = OrganizationService.class.getDeclaredField("auditService");
+		a.setAccessible(true);
+		a.set(service, mock(AuditService.class));
+		saved = null;
+		when(repository.save(any(Organization.class))).thenAnswer(inv -> {
+			Organization o = inv.getArgument(0);
+			saved = OrganizationData.orgDataFromDbRecord(o);
+			return o;
+		});
+	}
+
+	private static OrganizationData.Settings licence(String expression, String url) {
+		OrganizationData.Settings settings = new OrganizationData.Settings();
+		settings.setDefaultLicenseExpression(expression);
+		settings.setDefaultLicenseUrl(url);
+		return settings;
+	}
+
+	private OrganizationData.Settings apply(OrganizationData.Settings patch) throws RelizaException {
+		service.updateSettings(UUID.randomUUID(), patch, wu);
+		return saved.getSettings();
+	}
+
+	@Test
+	void omittingTheDefaultLicenceLeavesItAlone() throws Exception {
+		storedOrganization(licence("MIT", "https://org.example/licence"));
+
+		OrganizationData.Settings after = apply(retentionPatch(30));
+
+		assertEquals("MIT", after.getDefaultLicenseExpression());
+		assertEquals("https://org.example/licence", after.getDefaultLicenseUrl());
+	}
+
+	@Test
+	void anEmptyDefaultLicenceClearsItAndItsUrl() throws Exception {
+		storedOrganization(licence("MIT", "https://org.example/licence"));
+
+		OrganizationData.Settings after = apply(licence("", null));
+
+		assertNull(after.getDefaultLicenseExpression());
+		assertNull(after.getDefaultLicenseUrl());
+	}
+
+	@Test
+	void theDefaultLicenceIsStoredCanonical() throws Exception {
+		storedOrganization(null);
+
+		OrganizationData.Settings after = apply(licence("apache-2.0", " https://org.example/licence "));
+
+		assertEquals("Apache-2.0", after.getDefaultLicenseExpression());
+		assertEquals("https://org.example/licence", after.getDefaultLicenseUrl());
+	}
+
+	@Test
+	void theUrlAloneIsUpdatedWhenAnExpressionIsStored() throws Exception {
+		storedOrganization(licence("MIT", "https://org.example/old"));
+
+		OrganizationData.Settings after = apply(licence(null, "https://org.example/new"));
+
+		assertEquals("MIT", after.getDefaultLicenseExpression());
+		assertEquals("https://org.example/new", after.getDefaultLicenseUrl());
+	}
+
+	@Test
+	void noassertionIsRefusedWithTheMessageAndNothingIsSaved() throws Exception {
+		storedOrganization(licence("MIT", null));
+
+		RelizaException e = assertThrows(RelizaException.class, () -> apply(licence("NOASSERTION", null)));
+
+		assertEquals("defaultLicenseExpression invalid: NOASSERTION and NONE are not a declared licence; leave the field"
+				+ " empty instead", e.getMessage());
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void aUrlWithoutAnExpressionIsRefused() throws Exception {
+		storedOrganization(null);
+		RelizaException e = assertThrows(RelizaException.class, () -> apply(licence(null, "https://org.example/licence")));
+		assertEquals("defaultLicenseUrl needs a defaultLicenseExpression at the same level", e.getMessage());
+
+		storedOrganization(licence("MIT", null));
+		e = assertThrows(RelizaException.class, () -> apply(licence("", "https://org.example/licence")));
+		assertEquals("defaultLicenseUrl needs a defaultLicenseExpression at the same level", e.getMessage(),
+				"clearing the expression in the same patch leaves no expression for the url");
+		verify(repository, never()).save(any());
+	}
+
+	@Test
+	void theRefusedUrlsNameTheField() throws Exception {
+		for (String url : new String[] {"https://x.example/a b", "https://x.example/\nb", "https://x.example/\"><script>",
+				"not a url", "javascript:alert(1)", "file:///etc/passwd", "ftp://x"}) {
+			storedOrganization(licence("MIT", null));
+			RelizaException e = assertThrows(RelizaException.class, () -> apply(licence(null, url)), url);
+			assertTrue(e.getMessage().startsWith("defaultLicenseUrl invalid: "), url + ": " + e.getMessage());
+			verify(repository, never()).save(any());
 		}
 	}
 }

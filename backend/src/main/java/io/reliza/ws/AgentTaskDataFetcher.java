@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.InputConversion;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,8 +42,6 @@ import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.UserData;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
-import io.reliza.common.Utils;
-import tools.jackson.core.JacksonException;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentBoardData.BoardPauseLevel;
 import io.reliza.model.AgentData;
@@ -561,7 +560,7 @@ public class AgentTaskDataFetcher {
 				sessionUuid, parentTask,
 				parseUuid((String) input.get("producesComponent"), "producesComponent"),
 				input.get("workLevel") instanceof Number lvl ? lvl.intValue() : null,
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				null != sessionUuid ? AgentActor.ofSession(sessionUuid) : null, false,
 				(String) input.get("group"), parseTags(input.get("tags")),
 				ctx.wu());
@@ -660,7 +659,7 @@ public class AgentTaskDataFetcher {
 		if (seedBudget) agentTaskService.checkBudgetSeed(taskUuid, budget);
 		AgentTaskData authorized = agentTaskService.authorize(taskUuid, board, role, orderIndex, dependsOn,
 				producesComponent, workLevel,
-				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
 				setStrength, rawStrength instanceof Number n ? n.doubleValue() : null,
 				AgentActor.ofSession(sessionUuid), ctx.wu());
 		return seedBudget ? agentTaskService.setBudget(taskUuid, budget, AgentActor.ofSession(sessionUuid), ctx.wu())
@@ -737,15 +736,7 @@ public class AgentTaskDataFetcher {
 	static List<SplitChild> toSplitChildren(List<Map<String, Object>> raw)
 			throws RelizaException {
 		if (null == raw) return List.of();
-		try {
-			return raw.stream().map(m -> Utils.OM.convertValue(m, SplitChild.class)).toList();
-		} catch (JacksonException e) {
-			// Jackson 3 throws its own unchecked JacksonException, NOT the IllegalArgumentException
-			// Jackson 2 raised from convertValue. Catching the wrong one let an InvalidFormatException
-			// escape to the client verbatim -- the same leak this method exists to stop, wearing a
-			// different coat. SplitChildConversionTest is what noticed.
-			throw new RelizaException("Could not read split children: " + e.getMessage());
-		}
+		return InputConversion.convertEach(raw, SplitChild.class, "children");
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskCompleteProgrammatic")
@@ -853,6 +844,10 @@ public class AgentTaskDataFetcher {
 		}
 		if (rr == TaskReturnReason.SESSION_CLOSED) {
 			throw new RelizaException("SESSION_CLOSED returns are system-generated only");
+		}
+		if (rr == TaskReturnReason.PARKED_FOR_OPERATOR) {
+			throw new RelizaException("PARKED_FOR_OPERATOR returns are system-generated only: park the hop with task hold"
+					+ " --operator --question");
 		}
 		return agentTaskService.returnTask(taskUuid, sessionUuid, rr, description,
 				null != outputs ? outputs : List.of(), ctx.wu());
@@ -1428,90 +1423,94 @@ public class AgentTaskDataFetcher {
 		PersonContext person = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
 		WhoUpdated wu = person.wu();
 		Map<String, Object> input = dfe.getArgument("input");
-		// Settings are checked before the rest of the form is written: refused, nothing changes (T-2).
-		if (input.get("settings") instanceof Map<?, ?> settings) {
-			agentBoardService.checkSettingsInput(bd.getOrg(), bd.getName(), stringKeyed(settings));
-		}
-		// And the default level against the ladder, each as the board will have it (task RD3-6).
-		agentBoardService.checkDefaultOnLadderInput(bd,
-				input.get("settings") instanceof Map<?, ?> settings ? stringKeyed(settings) : null,
-				input.containsKey("defaultWorkLevel"), (Integer) input.get("defaultWorkLevel"));
-		// So is the merge procedure with the capabilities it needs, as the board will have them (task 71a3dd22).
-		agentBoardService.checkDeliveryInput(bd.getOrg(), bd, input.containsKey("deliveryPolicy"),
-				deliveryPolicyOf(input.get("deliveryPolicy")), coordinatorCapabilitiesPatch(input), false);
-		AgentBoardData.BoardStatus status = null;
-		if (input.get("status") instanceof String s && StringUtils.isNotBlank(s)) {
-			status = AgentBoardData.BoardStatus.valueOf(s);
-		}
-		AgentBoardData updated = agentBoardService.updateBoard(boardUuid,
-				(String) input.get("description"),
-				stringList(input.get("sources")),
-				(String) input.get("coordinatorPrompt"),
-				(Integer) input.get("perAgentWipLimit"),
-				parsePriorityType(input.get("priorityType")),
-				status,
-				parseUuid((String) input.get("target"), "target"),
-				null, // defaultWorkLevel below: sent as null it clears (RD2-1)
-				wu);
-		if (input.containsKey("defaultWorkLevel")) {
-			updated = agentBoardService.setDefaultWorkLevel(boardUuid, (Integer) input.get("defaultWorkLevel"), wu);
-		}
-		// Applied AFTER the sources patch in the same call, so an operator can add the repository
-		// to sources and name it as the documents repo in one request. Ordered the other way, the
-		// "must be one of sources" check would refuse the very patch that satisfies it.
-		// Partial patch: absent leaves the families, {} restores the defaults.
-		if (input.get("elementFamilies") instanceof Map<?, ?> families) {
-			updated = agentBoardService.setElementFamilies(boardUuid, objectMap(families), wu);
-		}
-		// Partial patch: absent leaves the policy, null restores the defaults.
-		if (input.containsKey("elementCheckPolicy")) {
-			updated = agentBoardService.setElementCheckPolicy(boardUuid, elementCheckPolicyOf(input.get("elementCheckPolicy")), wu);
-		}
-		// Partial patch too: absent leaves how the board proves delivery, null restores PR_ROWS.
-		if (input.containsKey("deliveryPolicy")) {
-			updated = agentBoardService.setDeliveryPolicy(boardUuid, deliveryPolicyOf(input.get("deliveryPolicy")), wu);
-		}
-		// Perspectives (board-permissions.md §3): absent leaves them, null clears; the rules and the
-		// caller's consent are the service's.
-		if (input.containsKey("perspectives")) {
-			updated = agentBoardService.setPerspectives(boardUuid, uuidList(input.get("perspectives")),
-					personConsent(bd.getOrg()), wu);
-		}
-		// Absent leaves the task-key prefix; null derives one anew; either way old keys stay (D10).
-		if (input.containsKey("taskPrefix")) {
-			try {
-				updated = agentBoardService.setTaskPrefix(boardUuid, (String) input.get("taskPrefix"), wu);
-			} catch (AgentBoardService.TaskPrefixTaken taken) {
-				throw taken.forCaller(personAccess(person, bd.getOrg()));
+		// One transaction for every step below (TPF-37): the board row locked and read fresh first, then
+		// the prefix lock when the form sends taskPrefix; any refusal leaves the board as it was.
+		return agentBoardService.updateAtomically(boardUuid, input.containsKey("taskPrefix"), fresh -> {
+			// Settings are checked before the rest of the form is written: refused, nothing changes (T-2).
+			if (input.get("settings") instanceof Map<?, ?> settings) {
+				agentBoardService.checkSettingsInput(fresh.getOrg(), fresh.getName(), stringKeyed(settings));
 			}
-		}
-		// Partial patch, as a board file's block (D15): absent leaves it; documents or its prefix sent
-		// as null restores the default.
-		if (input.containsKey("documents")) {
-			updated = agentBoardService.setDocumentsBlock(boardUuid,
-					input.get("documents") instanceof Map<?, ?> m ? stringKeyed(m) : null, wu);
-		}
+			// And the default level against the ladder, each as the board will have it (task RD3-6).
+			agentBoardService.checkDefaultOnLadderInput(fresh,
+					input.get("settings") instanceof Map<?, ?> settings ? stringKeyed(settings) : null,
+					input.containsKey("defaultWorkLevel"), (Integer) input.get("defaultWorkLevel"));
+			// So is the merge procedure with the capabilities it needs, as the board will have them (task 71a3dd22).
+			agentBoardService.checkDeliveryInput(fresh.getOrg(), fresh, input.containsKey("deliveryPolicy"),
+					deliveryPolicyOf(input.get("deliveryPolicy")), coordinatorCapabilitiesPatch(input), false);
+			AgentBoardData.BoardStatus status = null;
+			if (input.get("status") instanceof String s && StringUtils.isNotBlank(s)) {
+				status = AgentBoardData.BoardStatus.valueOf(s);
+			}
+			AgentBoardData updated = agentBoardService.updateBoard(boardUuid,
+					(String) input.get("description"),
+					stringList(input.get("sources")),
+					(String) input.get("coordinatorPrompt"),
+					(Integer) input.get("perAgentWipLimit"),
+					parsePriorityType(input.get("priorityType")),
+					status,
+					parseUuid((String) input.get("target"), "target"),
+					null, // defaultWorkLevel below: sent as null it clears (RD2-1)
+					wu);
+			if (input.containsKey("defaultWorkLevel")) {
+				updated = agentBoardService.setDefaultWorkLevel(boardUuid, (Integer) input.get("defaultWorkLevel"), wu);
+			}
+			// Applied AFTER the sources patch in the same call, so an operator can add the repository
+			// to sources and name it as the documents repo in one request. Ordered the other way, the
+			// "must be one of sources" check would refuse the very patch that satisfies it.
+			// Partial patch: absent leaves the families, {} restores the defaults.
+			if (input.get("elementFamilies") instanceof Map<?, ?> families) {
+				updated = agentBoardService.setElementFamilies(boardUuid, objectMap(families), wu);
+			}
+			// Partial patch: absent leaves the policy, null restores the defaults.
+			if (input.containsKey("elementCheckPolicy")) {
+				updated = agentBoardService.setElementCheckPolicy(boardUuid, elementCheckPolicyOf(input.get("elementCheckPolicy")), wu);
+			}
+			// Partial patch too: absent leaves how the board proves delivery, null restores PR_ROWS.
+			if (input.containsKey("deliveryPolicy")) {
+				updated = agentBoardService.setDeliveryPolicy(boardUuid, deliveryPolicyOf(input.get("deliveryPolicy")), wu);
+			}
+			// Perspectives (board-permissions.md §3): absent leaves them, null clears; the rules and the
+			// caller's consent are the service's.
+			if (input.containsKey("perspectives")) {
+				updated = agentBoardService.setPerspectives(boardUuid, uuidList(input.get("perspectives")),
+						personConsent(bd.getOrg()), wu);
+			}
+			// Absent leaves the task-key prefix; null derives one anew; either way old keys stay (D10).
+			if (input.containsKey("taskPrefix")) {
+				try {
+					updated = agentBoardService.setTaskPrefix(boardUuid, (String) input.get("taskPrefix"), wu);
+				} catch (AgentBoardService.TaskPrefixTaken taken) {
+					throw taken.forCaller(personAccess(person, bd.getOrg()));
+				}
+			}
+			// Partial patch, as a board file's block (D15): absent leaves it; documents or its prefix sent
+			// as null restores the default.
+			if (input.containsKey("documents")) {
+				updated = agentBoardService.setDocumentsBlock(boardUuid,
+						input.get("documents") instanceof Map<?, ?> m ? stringKeyed(m) : null, wu);
+			}
 
-		if (null != input.get("documentsRepo") || null != input.get("documentPaths")) {
-			updated = agentBoardService.setDocumentsConfig(boardUuid,
-					(String) input.get("documentsRepo"),
-					parseDocumentPaths(input.get("documentPaths")), wu);
-		}
-		List<AgentTaskRoleConfigData.AgentCapability> coordinatorCaps = coordinatorCapabilitiesPatch(input);
-		if (null != coordinatorCaps) {
-			updated = agentBoardService.setCoordinatorCapabilities(boardUuid, coordinatorCaps, wu);
-		}
-		// Budget and stops from the form (task 40f270be), checked and applied as a board file's are.
-		if (input.get("settings") instanceof Map<?, ?> settings) {
-			updated = agentBoardService.updateSettingsFromInput(boardUuid, stringKeyed(settings), wu);
-		}
-		// The group list (task RD2-30), with a board file's rules: absent leaves the groups; null or []
-		// deletes them, refused while one holds tasks; a group the list leaves out is closed.
-		if (input.containsKey("groups")) {
-			updated = agentBoardService.setGroupsFromInput(boardUuid,
-					input.get("groups") instanceof List<?> groups ? groupsInput(groups) : null, wu);
-		}
-		return updated;
+			if (null != input.get("documentsRepo") || null != input.get("documentPaths")) {
+				updated = agentBoardService.setDocumentsConfig(boardUuid,
+						(String) input.get("documentsRepo"),
+						parseDocumentPaths(input.get("documentPaths")), wu);
+			}
+			List<AgentTaskRoleConfigData.AgentCapability> coordinatorCaps = coordinatorCapabilitiesPatch(input);
+			if (null != coordinatorCaps) {
+				updated = agentBoardService.setCoordinatorCapabilities(boardUuid, coordinatorCaps, wu);
+			}
+			// Budget and stops from the form (task 40f270be), checked and applied as a board file's are.
+			if (input.get("settings") instanceof Map<?, ?> settings) {
+				updated = agentBoardService.updateSettingsFromInput(boardUuid, stringKeyed(settings), wu);
+			}
+			// The group list (task RD2-30), with a board file's rules: absent leaves the groups; null or []
+			// deletes them, refused while one holds tasks; a group the list leaves out is closed.
+			if (input.containsKey("groups")) {
+				updated = agentBoardService.setGroupsFromInput(boardUuid,
+						input.get("groups") instanceof List<?> groups ? groupsInput(groups) : null, wu);
+			}
+			return updated;
+		});
 	}
 
 	/** AgentBoardInput.groups as string-keyed maps, members sent as null kept: they clear. */
@@ -1809,11 +1808,7 @@ public class AgentTaskDataFetcher {
 
 	private static AgentBoardData.DeliveryPolicy deliveryPolicyOf(Object raw) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, AgentBoardData.DeliveryPolicy.class);
-		} catch (IllegalArgumentException e) {
-			throw new RelizaException("Could not read deliveryPolicy: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, AgentBoardData.DeliveryPolicy.class, "input.deliveryPolicy");
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskLiftHoldProgrammatic")
@@ -1864,7 +1859,7 @@ public class AgentTaskDataFetcher {
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
 		return agentTaskService.humanReview(taskUuid, Boolean.TRUE.equals(accept), note, jc.actor(),
-				toReviewItemDecisions(dfe.getArgument("reviewItems")), toAbout(dfe.getArgument("about")), jc.wu());
+				toReviewItemDecisions(dfe.getArgument("reviewItems"), "reviewItems"), toAbout(dfe.getArgument("about"), "about"), jc.wu());
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskHumanSignOff")
@@ -1967,7 +1962,7 @@ public class AgentTaskDataFetcher {
 				parseUuid((String) input.get("parentTask"), "parentTask"),
 				parseUuid((String) input.get("producesComponent"), "producesComponent"),
 				input.get("workLevel") instanceof Number lvl ? lvl.intValue() : null,
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				jc.actor(), true, (String) input.get("group"), parseTags(input.get("tags")), jc.wu());
 	}
 
@@ -2009,7 +2004,7 @@ public class AgentTaskDataFetcher {
 		// No strength here: people set it, in either direction, with agentTaskSetStrength.
 		return agentTaskService.authorize(taskUuid, board, role, orderIndex, dependsOn,
 				parseUuid(producesComponentRaw, "producesComponent"), workLevel,
-				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
 				false, null, jc.actor(), jc.wu());
 	}
 
@@ -2151,30 +2146,20 @@ public class AgentTaskDataFetcher {
 		} catch (IllegalArgumentException | NullPointerException e) {
 			throw new RelizaException("Unrecognized specification: " + specification);
 		}
-		return agentTaskService.decideReviewItems(taskUuid, spec, toReviewItemDecisions(dfe.getArgument("decisions")),
-				toAbout(dfe.getArgument("about")), jc.actor(), jc.wu());
+		return agentTaskService.decideReviewItems(taskUuid, spec, toReviewItemDecisions(dfe.getArgument("decisions"), "decisions"),
+				toAbout(dfe.getArgument("about"), "about"), jc.actor(), jc.wu());
 	}
 
 	/** Review item decisions from the wire, read as the record the service takes. */
-	static List<AgentDocumentService.BoardReviewItemDecision> toReviewItemDecisions(List<Map<String, Object>> raw)
-			throws RelizaException {
+	static List<AgentDocumentService.BoardReviewItemDecision> toReviewItemDecisions(List<Map<String, Object>> raw,
+			String path) throws RelizaException {
 		if (null == raw) return List.of();
-		try {
-			return raw.stream()
-					.map(m -> Utils.OM.convertValue(m, AgentDocumentService.BoardReviewItemDecision.class))
-					.toList();
-		} catch (JacksonException e) {
-			throw new RelizaException("Could not read review item decisions: " + e.getMessage());
-		}
+		return InputConversion.convertEach(raw, AgentDocumentService.BoardReviewItemDecision.class, path);
 	}
 
-	static BoardReviewItemIndex.About toAbout(Map<String, Object> raw) throws RelizaException {
+	static BoardReviewItemIndex.About toAbout(Map<String, Object> raw, String path) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, BoardReviewItemIndex.About.class);
-		} catch (JacksonException e) {
-			throw new RelizaException("Could not read about: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, BoardReviewItemIndex.About.class, path);
 	}
 
 	/** How far a hop went over its role's allowance; computed, so a refreshed snapshot carries it. */
@@ -2532,7 +2517,7 @@ public class AgentTaskDataFetcher {
 				parseEnum(input.get("kind"), AgentTaskRoleConfigData.RoleKind.class, "kind"),
 				parseEnum(input.get("necessity"), AgentTaskRoleConfigData.RoleNecessity.class, "necessity"),
 				parseEnum(input.get("humanGate"), AgentTaskRoleConfigData.HumanGate.class, "humanGate"),
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				producedOutputList(input.get("producesOutputs")),
 				strengthSpecFromInput(input),
 				hopBudgetFromInput(input),
@@ -2905,18 +2890,10 @@ public class AgentTaskDataFetcher {
 	 * Requirements come over the wire as maps; convert with the shared mapper so the enums are
 	 * validated here rather than deep in resolution.
 	 */
-	private static List<RequiredInput> parseRequiredInputs(Object raw) throws RelizaException {
+	private static List<RequiredInput> parseRequiredInputs(Object raw, String path) throws RelizaException {
 		if (raw == null) return null;
 		if (!(raw instanceof List<?> list)) throw new RelizaException("requiredInputs must be a list");
-		List<RequiredInput> out = new java.util.ArrayList<>();
-		for (Object o : list) {
-			try {
-				out.add(Utils.OM.convertValue(o, RequiredInput.class));
-			} catch (RuntimeException e) {
-				throw new RelizaException("Invalid requiredInput: " + o);
-			}
-		}
-		return out;
+		return InputConversion.convertEach(list, RequiredInput.class, path);
 	}
 
 
@@ -2994,6 +2971,7 @@ public class AgentTaskDataFetcher {
 				throw new RelizaException("Unrecognized lifecycle: " + input.get("lifecycle"));
 			}
 		}
+		NulInputInstrumentation.refuseDecodedJson("input.elements", (String) input.get("elements"));
 		AgentDocumentService.PublishRequest req = new AgentDocumentService.PublishRequest(
 				taskUuid, spec, uuidArg(input.get("component")),
 				(String) input.get("path"), (String) input.get("digest"),
@@ -3016,11 +2994,7 @@ public class AgentTaskDataFetcher {
 
 	private static io.reliza.model.ElementCheckPolicy elementCheckPolicyOf(Object raw) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, io.reliza.model.ElementCheckPolicy.class);
-		} catch (RuntimeException e) {
-			throw new RelizaException("Could not read elementCheckPolicy: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, io.reliza.model.ElementCheckPolicy.class, "input.elementCheckPolicy");
 	}
 
 	/** The newest check report for each of the task's element-bearing documents (elements.md §7). */
@@ -3059,6 +3033,7 @@ public class AgentTaskDataFetcher {
 		AgentTaskData td = requireOrgTask(ctx, taskUuid);
 		RearmSpecificationType spec = RearmSpecificationType.fromValue(specification);
 		if (null == spec) throw new RelizaException("Unknown specification: " + specification);
+		NulInputInstrumentation.refuseDecodedJson("elements", elements);
 		return agentDocumentService.previewElementChecks(td, spec, elements, elementsDigest);
 	}
 
@@ -3357,7 +3332,7 @@ public class AgentTaskDataFetcher {
 		Map<String, Object> source = dfe.getArgument("source");
 		return agentBoardService.applyBoard(orgUuid, AgentBoardService.boardSpecFromInput(dfe.getArgument("spec")),
 				Boolean.TRUE.equals(dfe.getArgument("dryRun")),
-				null == source ? null : Utils.OM.convertValue(source, DeclarativeConfigService.SourceDto.class),
+				null == source ? null : InputConversion.convert(source, DeclarativeConfigService.SourceDto.class, "source"),
 				jc.actor(), personConsent(jc, orgUuid), personAccess(jc, orgUuid), jc.wu());
 	}
 

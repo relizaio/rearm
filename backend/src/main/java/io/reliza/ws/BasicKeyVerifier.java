@@ -82,8 +82,9 @@ final class BasicKeyVerifier {
 			}
 			row = oak.get();
 		} catch (RuntimeException e) {
-			// e.g. an id without __ord__ naming an object with several keys of its type: the lookup is ambiguous and
-			// Spring Data raises; at the authentication boundary that must be the same answer as every other refusal
+			// a failing lookup (a database outage, say): at the authentication boundary that must be the same answer
+			// as every other refusal. An id of an ordered type without its __ord__ no longer gets here: isMatchingApiKey
+			// refuses it before any lookup (ApiTypeEnum.requiresKeyOrder)
 			// the class name only: the message is the data layer's, raised before the secret check
 			log.warn("SECURITY: {} Basic credential rejected from {} (lookup failed) {}: {}", lane, remoteAddr,
 					ProgrammaticAuthenticationFilter.canonicalIdOf(parsed), e.getClass().getName());

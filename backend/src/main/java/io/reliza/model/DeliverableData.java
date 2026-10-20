@@ -12,6 +12,7 @@ import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -32,8 +33,10 @@ import io.reliza.model.cdx.Origin;
 import io.reliza.model.cdx.Party;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.tea.Link;
+import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
+import tools.jackson.databind.annotation.JsonDeserialize;
 import lombok.Builder;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -105,7 +108,10 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 		@Deprecated
 		@JsonProperty(CommonVariables.DIGESTS_FIELD)
 		private Set<String> digests;
+		// Read back in the order recorded (a plain Set reads as a HashSet): the merged SBOM's
+		// release node lists a deliverable's digests in that order (SCORE-30 ADR-3).
 		@JsonProperty
+		@JsonDeserialize(as = LinkedHashSet.class)
 		private Set<DigestRecord> digestRecords;
 		/**
 		 * Timestamp when deliverable build started
@@ -222,6 +228,19 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 
 
 	
+	/**
+	 * The reference ReARM sends rebom with an SBOM attached to this deliverable (SCORE-30 ADR-13):
+	 * its first SHA-256 digest record as {@code sha256:<hex>}, the form
+	 * {@link DeliverableDto#getShaDigest()} gives; empty when it has none.
+	 */
+	public Optional<String> sha256Reference() {
+		if (null == softwareMetadata || null == softwareMetadata.getDigestRecords()) return Optional.empty();
+		return softwareMetadata.getDigestRecords().stream()
+				.filter(dr -> null != dr && dr.algo() == TeaChecksumType.SHA_256 && StringUtils.isNotBlank(dr.digest()))
+				.findFirst()
+				.map(dr -> "sha256:" + dr.digest());
+	}
+
 	public static DeliverableData deliverableDataFactory(DeliverableDto deliverableDto) {
 		DeliverableData dd = new DeliverableData();
 		dd.setDisplayIdentifier(deliverableDto.getDisplayIdentifier());

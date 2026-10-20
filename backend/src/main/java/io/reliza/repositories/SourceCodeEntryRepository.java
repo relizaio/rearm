@@ -72,4 +72,14 @@ public interface SourceCodeEntryRepository extends CrudRepository<SourceCodeEntr
 		value = VariableQueries.FIND_SCE_BY_TICKET_AND_ORG,
 		nativeQuery = true)
 	Optional<SourceCodeEntry> findSourceCodeEntriesByArtifact(String ticket, String org);
+
+	/**
+	 * Every source code entry artifact element naming {@code artUuidAsString}, as
+	 * {@code {sce uuid text, componentUuid tag or null, sce org text}} (SCORE-52 ADR-8 holders). The containment
+	 * probe is served by the expression GIN index on {@code record_data->'artifacts'}.
+	 */
+	@Query(
+		value = VariableQueries.FIND_SCE_ARTIFACT_HOLDERS,
+		nativeQuery = true)
+	List<Object[]> findSceArtifactHolders(String artUuidAsString);
 }

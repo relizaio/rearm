@@ -57,11 +57,14 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.common.Utils.UuidDiff;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
 
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.SbomUpdateNotPermittedException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.StoredIn;
@@ -79,9 +82,13 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReservationEndedBy;
 import io.reliza.model.RelizaObject;
+import io.reliza.service.DeclaredLicenses.DeclaredLicense;
+import io.reliza.service.DeclaredLicenses;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.SourceCodeEntryData.SCEArtifact;
 import io.reliza.model.UserData;
@@ -107,7 +114,12 @@ import io.reliza.model.DownloadLogData.DownloadConfig;
 import io.reliza.model.DownloadLogData.DownloadSubjectType;
 import io.reliza.model.DownloadLogData.DownloadType;
 import io.reliza.service.AcollectionService;
+import io.reliza.service.ArtifactAttachmentGuard;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.SbomUpdateGuard;
+import io.reliza.service.SbomWriteAuthority;
+import io.reliza.service.SbomWriteAuthorityService;
+import io.reliza.service.SbomSupplierNames;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.ProgrammaticReleaseTargetService;
 import io.reliza.service.ProgrammaticReleaseTargetService.ProgrammaticReleaseTarget;
@@ -236,6 +248,15 @@ public class ReleaseDatafetcher {
 
 	@Autowired
 	private SbomScoreService sbomScoreService;
+
+	@Autowired
+	private SbomUpdateGuard sbomUpdateGuard;
+
+	@Autowired
+	private SbomWriteAuthorityService sbomWriteAuthorityService;
+
+	@Autowired
+	private ArtifactAttachmentGuard artifactAttachmentGuard;
 
 	@Autowired
 	private io.reliza.service.PullRequestService pullRequestService;
@@ -997,7 +1018,7 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> manualReleaseInput = dfe.getArgument("release");
-		ReleaseDto releaseDto = Utils.OM.convertValue(manualReleaseInput, ReleaseDto.class);
+		ReleaseDto releaseDto = InputConversion.convert(manualReleaseInput, ReleaseDto.class, "release");
 		UUID branchUuid = releaseDto.getBranch();
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject robranch = obd.isPresent() ? obd.get() : null;
@@ -1006,6 +1027,12 @@ public class ReleaseDatafetcher {
 		RelizaObject roorg = ood.isPresent() ? ood.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(robranch, roorg), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		// A caller-supplied artifact uuid is listed only with the caller's write on every other
+		// component that holds it (SCORE-52 ADR-6), checked before anything is written.
+		if (null != releaseDto.getArtifacts() && !releaseDto.getArtifacts().isEmpty()) {
+			artifactAttachmentGuard.refuseUnheldReference(obd.get().getOrg(), obd.get().getComponent(), null,
+					releaseDto.getArtifacts(), sbomWriteAuthorityService.forUser(oud.get(), obd.get().getOrg()));
+		}
 		return ReleaseData.dataFromRecord(ossReleaseService.createRelease(releaseDto, wu));
 	}
 	
@@ -1073,11 +1100,20 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
-		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
+		ReleaseDto releaseDto = InputConversion.convert(updateReleaseInput, ReleaseDto.class, "release");
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		// An artifact uuid the update adds is listed only with the caller's write on every other
+		// component that holds it (SCORE-52 ADR-6), checked before anything is written; a re-sent
+		// list adds nothing.
+		List<UUID> addedArtifacts = Utils.diffUuidLists(ord.get().getArtifacts(), releaseDto.getArtifacts()).stream()
+				.filter(d -> d.diffAction() == ReleaseUpdateAction.ADDED).map(UuidDiff::object).toList();
+		if (!addedArtifacts.isEmpty()) {
+			artifactAttachmentGuard.refuseUnheldReference(ord.get().getOrg(), ord.get().getComponent(),
+					ord.get().getUuid(), addedArtifacts, sbomWriteAuthorityService.forUser(oud.get(), ord.get().getOrg()));
+		}
 		ossReleaseService.updateRelease(releaseDto, wu);
 		return sharedReleaseService.getReleaseData(releaseDto.getUuid()).get();
 	}
@@ -1089,7 +1125,7 @@ public class ReleaseDatafetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateReleaseInput = dfe.getArgument("release");
-		ReleaseDto releaseDto = Utils.OM.convertValue(updateReleaseInput, ReleaseDto.class);
+		ReleaseDto releaseDto = InputConversion.convert(updateReleaseInput, ReleaseDto.class, "release");
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(releaseDto.getUuid());
 		RelizaObject ro = ord.isPresent() ? ord.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, releaseDto.getUuid(), List.of(ro), CallType.WRITE);
@@ -1287,24 +1323,26 @@ public class ReleaseDatafetcher {
 
 	/**
 	 * An addRelease input's commits, then its source code entry, in the order they are recorded,
-	 * as the dtos they become (artifacts left out); the input is not modified.
+	 * as the dtos they become (artifacts left out); the input is not modified. {@code path} is the
+	 * input's name as the caller sent it ({@code release}, or {@code releases[i]} for the batch), so a
+	 * refused conversion names the field. Package-private for AgentTaskInputPathsTest.
 	 */
 	@SuppressWarnings("unchecked")
-	private static List<SceDto> sceDtosToRecord(Map<String, Object> progReleaseInput) {
-		List<Map<String, Object>> sceMaps = new LinkedList<>();
+	static List<SceDto> sceDtosToRecord(Map<String, Object> progReleaseInput, String path) {
+		List<SceDto> sceDtos = new LinkedList<>();
 		if (progReleaseInput.get(CommonVariables.COMMITS_FIELD) instanceof List<?> commitList) {
-			commitList.forEach(com -> {
-				if (com instanceof Map<?, ?> comMap) sceMaps.add((Map<String, Object>) comMap);
-			});
+			for (int j = 0; j < commitList.size(); j++) {
+				if (commitList.get(j) instanceof Map<?, ?> comMap) {
+					Map<String, Object> withoutArtifacts = new HashMap<>((Map<String, Object>) comMap);
+					withoutArtifacts.remove(CommonVariables.ARTIFACTS_FIELD);
+					sceDtos.add(InputConversion.convert(withoutArtifacts, SceDto.class, path + ".commits[" + j + "]"));
+				}
+			}
 		}
 		if (progReleaseInput.get(CommonVariables.SOURCE_CODE_ENTRY_FIELD) instanceof Map<?, ?> sceMap) {
-			sceMaps.add((Map<String, Object>) sceMap);
-		}
-		List<SceDto> sceDtos = new LinkedList<>();
-		for (Map<String, Object> sceMap : sceMaps) {
-			Map<String, Object> withoutArtifacts = new HashMap<>(sceMap);
+			Map<String, Object> withoutArtifacts = new HashMap<>((Map<String, Object>) sceMap);
 			withoutArtifacts.remove(CommonVariables.ARTIFACTS_FIELD);
-			sceDtos.add(Utils.OM.convertValue(withoutArtifacts, SceDto.class));
+			sceDtos.add(InputConversion.convert(withoutArtifacts, SceDto.class, path + ".sourceCodeEntry"));
 		}
 		return sceDtos;
 	}
@@ -1316,10 +1354,10 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
-		authorizationService.verifyProgrammaticKey(authCtx.ahp());
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(authCtx.ahp());
 		authorizationService.validateSystemOperational(CallType.WRITE);
 		Map<String, Object> progReleaseInput = dfe.getArgument("release");
-		return createReleaseFromProgrammaticInput(progReleaseInput, authCtx, false);
+		return createReleaseFromProgrammaticInput(progReleaseInput, "release", authCtx, vk, false);
 	}
 
 	/**
@@ -1338,15 +1376,15 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		if (null == authCtx.ahp()) throw new AccessDeniedException("Invalid authorization type");
-		authorizationService.verifyProgrammaticKey(authCtx.ahp());
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(authCtx.ahp());
 		authorizationService.validateSystemOperational(CallType.WRITE);
 		List<Map<String, Object>> releaseInputs = dfe.getArgument("releases");
 		if (null == releaseInputs || releaseInputs.isEmpty()) {
 			throw new RelizaException("At least one release is required for addReleasesProgrammatic");
 		}
 		List<ReleaseData> created = new ArrayList<>(releaseInputs.size());
-		for (Map<String, Object> progReleaseInput : releaseInputs) {
-			created.add(createReleaseFromProgrammaticInput(progReleaseInput, authCtx, true));
+		for (int i = 0; i < releaseInputs.size(); i++) {
+			created.add(createReleaseFromProgrammaticInput(releaseInputs.get(i), "releases[" + i + "]", authCtx, vk, true));
 		}
 		// Auto-integrate was deferred above; queue it now and fire it after commit,
 		// off-thread, once per affected feature set, deduped across the whole batch
@@ -1357,8 +1395,9 @@ public class ReleaseDatafetcher {
 		return created;
 	}
 
-	private ReleaseData createReleaseFromProgrammaticInput(Map<String, Object> progReleaseInput,
-			ProgrammaticAuthContext authCtx, boolean deferAutoIntegrate) throws IOException, RelizaException, Exception {
+	private ReleaseData createReleaseFromProgrammaticInput(Map<String, Object> progReleaseInput, String path,
+			ProgrammaticAuthContext authCtx, VerifiedProgrammaticKey vk, boolean deferAutoIntegrate)
+			throws IOException, RelizaException, Exception {
 		var ahp = authCtx.ahp();
 		UUID authOrgUuid = authCtx.orgUuid();
 
@@ -1506,6 +1545,8 @@ public class ReleaseDatafetcher {
 		Utils.addReleaseProgrammaticValidateDeliverables(outboundDeliverablesList, bd);
 		
 		OrganizationData od = getOrganizationService.getOrganizationData(ocd.get().getOrg()).get();
+		// Rule B reads the calling key's own rights on every upload below (SCORE-52 ADR-2).
+		SbomWriteAuthority authority = sbomWriteAuthorityService.forKey(vk.principal(), od.getUuid());
 		
 		URI endpoint = null;
 		String endpointStr = (String) progReleaseInput.get(CommonVariables.ENDPOINT_FIELD);
@@ -1520,7 +1561,7 @@ public class ReleaseDatafetcher {
 		// Refuse the whole build before anything is written: deliverables, artifacts and each
 		// commit below are recorded on their own, so a refusal found at a later commit would
 		// leave the earlier parts behind.
-		sourceCodeEntryService.requireBuildRecordable(bd, sceDtosToRecord(progReleaseInput));
+		sourceCodeEntryService.requireBuildRecordable(bd, sceDtosToRecord(progReleaseInput, path));
 		
 		var releaseDtoBuilder = ReleaseDto.builder()
 										 .branch(bd.getUuid())
@@ -1529,7 +1570,7 @@ public class ReleaseDatafetcher {
 		List<UUID> inboundDeliverables = new LinkedList<>();
 		if (null != inboundDeliverablesList && !inboundDeliverablesList.isEmpty()) {
 			inboundDeliverables = deliverableService.prepareListofDeliverables(inboundDeliverablesList,
-					bd.getUuid(), version, ar.getWhoUpdated());
+					bd.getUuid(), version, authority, ar.getWhoUpdated());
 		}
 		
 		List<UUID> artifacts = new LinkedList<>();
@@ -1537,7 +1578,8 @@ public class ReleaseDatafetcher {
 			@SuppressWarnings("unchecked")
 			List<Map<String,Object>> artifactsList = (List<Map<String,Object>>) progReleaseInput.get("artifacts");
 			// TODO allow propagation of purl from release purl
-			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, null), ar.getWhoUpdated());
+			artifacts = artifactService.uploadListOfArtifacts(od, artifactsList, new RebomOptions(ocd.get().getName(), od.getName(), version, ArtifactBelongsTo.RELEASE, null, StripBom.FALSE, null)
+					.withSupplierName(SbomSupplierNames.forUpload(od, ocd.get(), null)), authority, ar.getWhoUpdated());
 		}
 		
 		if (progReleaseInput.containsKey(CommonVariables.SOURCE_CODE_ENTRY_FIELD) || progReleaseInput.containsKey(CommonVariables.COMMITS_FIELD)) {
@@ -1552,12 +1594,14 @@ public class ReleaseDatafetcher {
 			
 			// parse list of associated commits obtained via git log with previous CI build if any (note this may include osce)
 			if (commitList != null) {
-				for (var com : commitList) {
+				for (int j = 0; j < commitList.size(); j++) {
+					var com = commitList.get(j);
 					@SuppressWarnings("unchecked")
 					List<Map<String, Object>> arts = (List<Map<String, Object>>) com.get("artifacts");
 					com.remove("artifacts");
-					SceDto sceDto = Utils.OM.convertValue(com, SceDto.class);
-					List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
+					SceDto sceDto = InputConversion.convert(com, SceDto.class, path + ".commits[" + j + "]");
+					List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, authority,
+							ar.getWhoUpdated());
 					var parsedCommit = releaseService.parseSceFromReleaseCreate(sceDto, sceUploadedArts, 
 							bd, bd.getName(), version, ar.getWhoUpdated());
 					if (parsedCommit.isPresent()) {
@@ -1581,8 +1625,9 @@ public class ReleaseDatafetcher {
 			@SuppressWarnings("unchecked")
 			List<Map<String, Object>> arts = (List<Map<String, Object>>) sceMap.get("artifacts");
 			sceMap.remove("artifacts");
-			SceDto sceDto = Utils.OM.convertValue(sceMap, SceDto.class);
-			List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, ar.getWhoUpdated());
+			SceDto sceDto = InputConversion.convert(sceMap, SceDto.class, path + ".sourceCodeEntry");
+			List<UUID> sceUploadedArts = releaseService.uploadSceArtifacts(arts, od, sceDto, cd, version, authority,
+					ar.getWhoUpdated());
 			osced = releaseService.parseSceFromReleaseCreate(sceDto, sceUploadedArts, bd, bd.getName(), version, ar.getWhoUpdated());
 		}
 
@@ -1606,12 +1651,13 @@ public class ReleaseDatafetcher {
 		// Distribution module: thread identifier / device-identity fields so the
 		// CLI / programmatic callers can ship UDI-DI, GUDID, and support dates.
 		if (progReleaseInput.containsKey("identifiers")) {
-			releaseDtoBuilder.identifiers(Utils.OM.convertValue(progReleaseInput.get("identifiers"),
-					new tools.jackson.core.type.TypeReference<java.util.List<io.reliza.model.RearmIdentifier>>() {}));
+			releaseDtoBuilder.identifiers(InputConversion.convert(progReleaseInput.get("identifiers"),
+					new tools.jackson.core.type.TypeReference<java.util.List<io.reliza.model.RearmIdentifier>>() {},
+					path + ".identifiers"));
 		}
 		if (progReleaseInput.containsKey("gudidRecord")) {
-			releaseDtoBuilder.gudidRecord(Utils.OM.convertValue(progReleaseInput.get("gudidRecord"),
-					io.reliza.model.ReleaseData.GudidRecord.class));
+			releaseDtoBuilder.gudidRecord(InputConversion.convert(progReleaseInput.get("gudidRecord"),
+					io.reliza.model.ReleaseData.GudidRecord.class, path + ".gudidRecord"));
 		}
 		if (progReleaseInput.containsKey("gudidStatus")) {
 			releaseDtoBuilder.gudidStatus(io.reliza.model.ReleaseData.GudidStatus.valueOf(
@@ -1623,6 +1669,8 @@ public class ReleaseDatafetcher {
 		if (progReleaseInput.containsKey("eol")) {
 			releaseDtoBuilder.eol(java.time.LocalDate.parse((String) progReleaseInput.get("eol")));
 		}
+		// Declared licence override (SCORE-39 ADR-1), validated by createRelease.
+		releaseDtoBuilder.licenseExpression((String) progReleaseInput.get("licenseExpression"));
 		try {
 			releaseDtoBuilder.version(version)
 							.inboundDeliverables(inboundDeliverables)
@@ -1647,7 +1695,8 @@ public class ReleaseDatafetcher {
 			}
 			if (null != outboundDeliverablesList && !outboundDeliverablesList.isEmpty()) {
 				List<UUID> outboundDeliverables = deliverableService
-						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, ar.getWhoUpdated());
+						.prepareListofDeliverables(outboundDeliverablesList, bd.getUuid(), version, authority,
+								ar.getWhoUpdated());
 				variantService.addOutboundDeliverables(outboundDeliverables, vd.getUuid(), ar.getWhoUpdated());
 				// Gated on shouldRebuild. Carry-forward only has something to do when a prior set was
 				// stripped (priorOutboundDeliverables is populated only under shouldRebuild); on a first
@@ -1711,29 +1760,20 @@ public class ReleaseDatafetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		Map<String, Object> artifactInput = dfe.getArgument("artifactInput");
+		if (null == artifactInput) throw new RelizaException("artifactInput: required");
 		// Avoid Jackson trying to process nested 'artifact' (may contain MultipartFile) during record mapping
 		Map<String, Object> convertible = new LinkedHashMap<>(artifactInput);
 		@SuppressWarnings("unchecked")
 		Map<String, Object> artifact = (Map<String, Object>) convertible.remove("artifact");
-		CreateArtifactInput createArtifactInput = Utils.OM.convertValue(convertible, CreateArtifactInput.class);
+		CreateArtifactInput createArtifactInput = InputConversion.convert(convertible, CreateArtifactInput.class, "artifactInput");
 		
 		List<RelizaObject> ros = new LinkedList<>();
 		
 		Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(createArtifactInput.release());
 		RelizaObject releaseRo = ord.isPresent() ? ord.get() : null;
+		// TPF-44: the release alone; the component, deliverable and sce the input names are bound to it
+		// below, after the authorization (no pre-authorization lookup of a named object)
 		ros.add(releaseRo);
-
-		if (null != createArtifactInput.component()) {
-			ros.add(getComponentService.getComponentData(createArtifactInput.component()).orElseThrow());
-		}	
-
-		if (null != createArtifactInput.deliverable()) {
-			ros.add(getDeliverableService.getDeliverableData(createArtifactInput.deliverable()).orElseThrow());
-		}
-
-		if (null != createArtifactInput.sce()) {
-			ros.add(getSourceCodeEntryService.getSourceCodeEntryData(createArtifactInput.sce()).orElseThrow());
-		}
 
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.RELEASE, createArtifactInput.release(), ros, CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
@@ -1750,7 +1790,19 @@ public class ReleaseDatafetcher {
 		ArtifactBelongsTo belongsTo = ArtifactBelongsTo.RELEASE;
 		if(artifactInput.containsKey("belongsTo") && StringUtils.isNotEmpty((String)artifactInput.get("belongsTo")))
 			belongsTo = ArtifactBelongsTo.valueOf((String)artifactInput.get("belongsTo"));
-		
+
+		// TPF-44: every object the input names besides the release must be the release's own, by the rule
+		// addArtifactProgrammatic applies, before anything is uploaded or written.
+		if (null != createArtifactInput.component() && !createArtifactInput.component().equals(rd.getComponent())) {
+			throw new RelizaException(CommonVariables.PROGRAMMATIC_COMPONENT_NOT_FOUND_MESSAGE);
+		}
+		boolean toDeliverable = ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable");
+		boolean toSce = ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce");
+		DeliverableData targetDeliverable = (toDeliverable || null != createArtifactInput.deliverable())
+				? releaseService.resolveReleaseDeliverable(rd, (String) artifactInput.get("deliverable")) : null;
+		SourceCodeEntryData targetSce = (toSce || null != createArtifactInput.sce())
+				? releaseService.resolveReleaseSourceCodeEntry(rd, (String) artifactInput.get("sce")) : null;
+
 		MultipartFile multipartFile = null;
 		if (artifact != null && artifact.containsKey("file")) {
 			multipartFile = (MultipartFile) artifact.get("file");
@@ -1761,7 +1813,12 @@ public class ReleaseDatafetcher {
 			artifact.remove("file");
 		}
 
-		ArtifactDto artDto = Utils.OM.convertValue(artifact, ArtifactDto.class);
+		if (null == artifact) throw new RelizaException("artifactInput.artifact: required");
+		// TEA out-of-scope entry #35: nested child artifacts are not supported here
+		if (artifact.get("artifacts") instanceof List<?> nested && !nested.isEmpty()) {
+			throw new RelizaException("artifactInput.artifact.artifacts: nested artifacts are not accepted by addArtifactManual; add each artifact with its own call");
+		}
+		ArtifactDto artDto = InputConversion.convert(artifact, ArtifactDto.class, "artifactInput.artifact");
 		artDto.setOrg(rd.getOrg());
 		if(null!= inputArtifactUuid){
 			artDto.setUuid(inputArtifactUuid);
@@ -1806,23 +1863,38 @@ public class ReleaseDatafetcher {
 
 		UUID artId = null;
 
+		// The attachment's own reference and supplier go to rebom (SCORE-30 ADR-12, ADR-13): the
+		// deliverable's SHA-256 digest or the source code entry's commit, never the artifact's own
+		// digests, which are the uploaded file's.
 		String purl = null;
-		if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
-			UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
-			DeliverableData dd = getDeliverableService.getDeliverableData(deliverableId).get();
-			purl = SidPurlUtils.pickPreferredPurl(dd.getIdentifiers())
+		String hash = null;
+		String supplierName;
+		if(toDeliverable){
+			purl = SidPurlUtils.pickPreferredPurl(targetDeliverable.getIdentifiers())
 					.map(RearmIdentifier::getIdValue).orElse(null);
-		} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
+			hash = targetDeliverable.sha256Reference().orElse(null);
+			supplierName = SbomSupplierNames.forUpload(od, cd, targetDeliverable);
+		} else if(toSce){
 			// TODO purl for sce
+			hash = targetSce.getCommit();
+			supplierName = SbomSupplierNames.forUpload(od, cd, null);
 		} else { // belongs to release
 			purl = SidPurlUtils.pickPreferredPurl(ord.get().getIdentifiers())
 					.map(RearmIdentifier::getIdValue).orElse(null);
+			supplierName = SbomSupplierNames.forUpload(od, cd, null);
 		}
 
 		if (multipartFile != null) {
-			String hash = null != artDto.getDigests() ? artDto.getDigests().stream().findFirst().orElse(null) : null;
 			artDto.setOrg(rd.getOrg());
-			artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom(), purl), wu);
+			try {
+				artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom(), purl)
+						.withSupplierName(supplierName), sbomWriteAuthorityService.forUser(oud.get(), rd.getOrg()), wu);
+			} catch (SbomUpdateNotPermittedException e) {
+				// Nothing of the release is written before the upload, so the record's own
+				// transaction does not wait on this one (SCORE-47 ADR-14).
+				sbomUpdateGuard.recordRefusal(rd.getUuid(), cd.getUuid(), e, wu);
+				throw e;
+			}
 		} else {
 			artId = artifactService.createArtifact(artDto, wu).getUuid();
 		}
@@ -1834,11 +1906,10 @@ public class ReleaseDatafetcher {
 		// if 3. null != inputArtifactUuid == artId means artifact was replaced in place, nothing needs to be done.
 		if(null != artId){
 			if(null == inputArtifactUuid){
-				if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
-					UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
-					deliverableService.addArtifact(deliverableId, artId, wu);
-				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
-					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
+				if(toDeliverable){
+					deliverableService.addArtifact(targetDeliverable.getUuid(), artId, wu);
+				} else if(toSce){
+					UUID sceUuid = targetSce.getUuid();
 					SCEArtifact sceArt = new SCEArtifact(artId,
 							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					sourceCodeEntryService.addArtifact(sceUuid, sceArt, wu);
@@ -1848,11 +1919,10 @@ public class ReleaseDatafetcher {
 			}else if(!inputArtifactUuid.equals(artId)) {
 
 				// replace the exisiting artifact here
-				if(ArtifactBelongsTo.DELIVERABLE.equals(belongsTo) && artifactInput.containsKey("deliverable")){
-					UUID deliverableId = UUID.fromString((String)artifactInput.get("deliverable"));
-					deliverableService.replaceArtifact(deliverableId,inputArtifactUuid, artId, wu);
-				} else if(ArtifactBelongsTo.SCE.equals(belongsTo) && artifactInput.containsKey("sce")){
-					UUID sceUuid = UUID.fromString((String)artifactInput.get("sce"));
+				if(toDeliverable){
+					deliverableService.replaceArtifact(targetDeliverable.getUuid(), inputArtifactUuid, artId, wu);
+				} else if(toSce){
+					UUID sceUuid = targetSce.getUuid();
 					SCEArtifact sceArt = new SCEArtifact(artId,
 							SourceCodeEntryData.sceArtifactComponentTag(artDto.getType(), cd.getUuid()));
 					SCEArtifact replaceArt = new SCEArtifact(inputArtifactUuid, cd.getUuid());
@@ -1924,7 +1994,7 @@ public class ReleaseDatafetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		authorizationService.verifyProgrammaticKey(ahp);
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
 		authorizationService.validateSystemOperational(CallType.WRITE);
 		
 		Map<String, Object> addArtifactInput = dfe.getArgument("artifactInput");
@@ -1952,11 +2022,20 @@ public class ReleaseDatafetcher {
 		// Check the whole input before the first upload: each part below writes on its own, so a
 		// refusal found later would leave the earlier parts behind.
 		ProgrammaticArtifactTargets targets = releaseService.resolveProgrammaticArtifactTargets(addArtifactInput, rd);
+		// Rule B reads the calling key's own rights on every upload below (SCORE-52 ADR-2).
+		SbomWriteAuthority authority = sbomWriteAuthorityService.forKey(vk.principal(), cd.getOrg());
 
 		// Delegate artifact processing to service layer
-		releaseService.processReleaseArtifacts(targets.releaseArtifacts(), rd, cd, od, version, wu);
-		releaseService.processDeliverableArtifacts(targets.deliverableArtifacts(), rd, cd, od, version, wu);
-		releaseService.processSceArtifacts(targets.sceArtifacts(), rd, cd, od, version, wu);
+		try {
+			releaseService.processReleaseArtifacts(targets.releaseArtifacts(), rd, cd, od, version, authority, wu);
+			releaseService.processDeliverableArtifacts(targets.deliverableArtifacts(), rd, cd, od, version, authority, wu);
+			releaseService.processSceArtifacts(targets.sceArtifacts(), rd, cd, od, version, authority, wu);
+		} catch (SbomUpdateNotPermittedException e) {
+			// The refused part's own transaction has rolled back; the earlier parts stay. Recorded
+			// on the release in its own transaction (SCORE-47 ADR-14).
+			sbomUpdateGuard.recordRefusal(rd.getUuid(), cd.getUuid(), e, wu);
+			throw e;
+		}
 		
 		// Reconcile merged SBOM
 		releaseService.reconcileMergedSbomRoutine(rd, wu);
@@ -2389,6 +2468,21 @@ public class ReleaseDatafetcher {
 		return dataLoader.load(new ComponentKey(rd.getComponent()));
 	}
 	
+	/**
+	 * The licence ReARM declares for the release's node in a merged SBOM (SCORE-39 ADR-3): the
+	 * release override, else the component's, else the organization default; null when none.
+	 * Read under the Release object's own read permission.
+	 */
+	@DgsData(parentType = "Release", field = "effectiveLicense")
+	public DeclaredLicense effectiveLicenseOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		ComponentData cd = null == rd.getComponent() ? null
+				: getComponentService.getComponentData(rd.getComponent()).orElse(null);
+		OrganizationData od = null == rd.getOrg() ? null
+				: getOrganizationService.getOrganizationData(rd.getOrg()).orElse(null);
+		return DeclaredLicenses.forRelease(od, cd, rd);
+	}
+
 	@DgsData(parentType = "Release", field = "sourceCodeEntryDetails")
 	public SourceCodeEntryData sceOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();

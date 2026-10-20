@@ -86,7 +86,7 @@ class RebomServiceMergeMissingSbomTest {
 	@Test
 	void theListTravelsInTheMergeRequestAsRebomsInputShape() throws Exception {
 		MissingSbomComponent httpd = new MissingSbomComponent("0b0f4a52-6c55-4d1f-9a8e-0000000000e5", "httpd", "2.4.68",
-				"container", "Example Org", "Example Org", null, MissingSbomReason.NO_SBOM_ARTIFACT);
+				"container", "Example Org", "Example Org", null, null, null, null, MissingSbomReason.NO_SBOM_ARTIFACT);
 
 		assertEquals(MERGED, service.mergeAndStoreBoms(IDS, merge().withMissingSbomComponents(List.of(httpd)), ORG));
 

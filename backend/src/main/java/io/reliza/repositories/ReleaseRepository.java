@@ -137,6 +137,15 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findReleasesByReleaseArtifact(String artifactUuidAsString, String orgUuidAsString);
 
+	/**
+	 * Every release listing the artifact directly, in any organization: rule B's holder read
+	 * (SCORE-52 ADR-8), which must see a listing of another organization to fail closed on it.
+	 */
+	@Query(
+			value = VariableQueries.FIND_RELEASES_HOLDING_ARTIFACT,
+			nativeQuery = true)
+	List<Release> findReleasesHoldingArtifact(@Param("artUuidAsString") String artUuidAsString);
+
 	@Query(
 			value = VariableQueries.FIND_PENDING_RELEASES_AFTER_CUTOFF,
 			nativeQuery = true)

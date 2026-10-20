@@ -23,6 +23,8 @@ import java.util.UUID;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
@@ -80,6 +82,9 @@ public class OrganizationService {
 	 */
 	public static final int MAX_IGNORE_VIOLATION_PATTERNS = 100;
 
+	@PersistenceContext
+	private EntityManager entityManager;
+
 	@Autowired
     private AuditService auditService;
 	
@@ -127,6 +132,7 @@ public class OrganizationService {
 		}
 		Optional<Organization> oo = getOrganizationService.getOrganization(org.getUuid());
 		if (oo.isPresent()) {
+			recordData = OrganizationData.keepArchived(recordData, repository.currentStatusForUpdate(org.getUuid()));
 			auditService.createAndSaveAuditRecord(TableName.ORGANIZATIONS, org);
 			org.setRevision(org.getRevision() + 1);
 			org.setLastUpdatedDate(ZonedDateTime.now());
@@ -204,16 +210,22 @@ public class OrganizationService {
 
 	/**
 	 * Record a task-key prefix claim (board-documents.md D9). Persistence only: the caller holds
-	 * the org's AGENT_TASK_PREFIXES lock and has checked the prefix is free.
+	 * the org's AGENT_TASK_PREFIXES lock and read the registry under it, fresh (TPF-35). One
+	 * statement on the one registry key, put-if-absent ({@link OrganizationRepository#recordTaskPrefixClaim}),
+	 * so it can erase neither a committed claim nor any other organization field; no revision, no
+	 * audit row, and {@code wu} is not written (the claim carries its own board and date; the board
+	 * row records the prefix with its own who-updated). The request's managed copy of the
+	 * organization is refreshed afterwards, so every later reader, and any later whole-record save
+	 * in the request, sees the claim.
 	 */
 	@Transactional
 	public void recordTaskPrefixClaim(UUID orgUuid, String prefix, UUID board, WhoUpdated wu) throws RelizaException {
-		Organization org = getOrganizationService.getOrganization(orgUuid)
-				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
-		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
-		if (null == od.getAgentTaskPrefixes()) od.setAgentTaskPrefixes(new java.util.LinkedHashMap<>());
-		od.getAgentTaskPrefixes().putIfAbsent(prefix, new OrganizationData.TaskPrefixClaim(board, ZonedDateTime.now()));
-		saveOrganization(org, Utils.dataToRecord(od), wu);
+		String claim = Utils.OM.writeValueAsString(new OrganizationData.TaskPrefixClaim(board, ZonedDateTime.now()));
+		if (0 == repository.recordTaskPrefixClaim(orgUuid, prefix, claim)) {
+			throw new RelizaException("Organization not found: " + orgUuid);
+		}
+		Organization org = entityManager.find(Organization.class, orgUuid);
+		if (null != org) entityManager.refresh(org);
 	}
 
 	/** Persist validated team-assignment rules (T2). Validation lives in
@@ -555,10 +567,14 @@ public class OrganizationService {
 		String[] splitSecret = secret.split(CommonVariables.JOIN_SECRET_SEPARATOR);
 		String orgUuidStr = encryptionService.decrypt(splitSecret[0]);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		Optional<Organization> oorg = getOrganizationService.getOrganization(orgUuid);
+		// TPF-48: the row locked and refreshed, so a join that read before an archive committed waits
+		// for it and sees ARCHIVED, and the save below writes from the committed row
+		Optional<Organization> oorg = repository.findByIdWriteLocked(orgUuid);
 		if (oorg.isPresent()) {
 			Organization org = oorg.get();
+			entityManager.refresh(org);
 			OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+			if (StatusEnum.ARCHIVED == od.getStatus()) throw new RelizaException("Invitation expired");
 			Optional<InvitedObject> oio = od.resolveInvitee(secret);
 			if (oio.isPresent()) {
 				if (ZonedDateTime.now().isAfter(oio.get().getChallengeExpiry())) {
@@ -766,6 +782,7 @@ public class OrganizationService {
 					"fdaRiskTransferProcessRef");
 			applyProse(settingsPatch.getFdaRiskIncreasesNotice(), settings::setFdaRiskIncreasesNotice,
 					"fdaRiskIncreasesNotice");
+			applyDeclaredLicense(settingsPatch, settings);
 
 			if (settingsPatch.getDefaultView() != null) {
 				settings.setDefaultView(settingsPatch.getDefaultView());
@@ -884,6 +901,22 @@ public class OrganizationService {
 		// runs at all -- FdaProse returns null both for "omitted" and for "cleared", and only
 		// this caller knows those must behave differently.
 		setter.accept(FdaProse.normalize(value, fieldName));
+	}
+
+	/**
+	 * The organization's default declared licence (SCORE-39 ADR-1), PATCH as the prose fields:
+	 * omitted leaves each value alone, blank clears it (clearing the expression clears the URL),
+	 * anything else is validated and stored in canonical form; a URL needs an expression at the
+	 * organization level. A refusal names the field and stores nothing.
+	 */
+	private static void applyDeclaredLicense(OrganizationData.Settings patch, OrganizationData.Settings settings)
+			throws RelizaException {
+		if (null == patch.getDefaultLicenseExpression() && null == patch.getDefaultLicenseUrl()) return;
+		DeclaredLicenses.LicensePatch applied = DeclaredLicenses.patch(settings.getDefaultLicenseExpression(),
+				settings.getDefaultLicenseUrl(), patch.getDefaultLicenseExpression(), patch.getDefaultLicenseUrl(),
+				"defaultLicenseExpression", "defaultLicenseUrl");
+		settings.setDefaultLicenseExpression(applied.expression());
+		settings.setDefaultLicenseUrl(applied.url());
 	}
 
 	/**

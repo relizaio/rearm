@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -26,14 +27,22 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.DeliverableData;
+import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
+import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.tea.Rebom.BomHash;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -46,6 +55,16 @@ import io.reliza.service.RebomService.BomStructureType;
  * SCORE-13's rules (2) is merged again. SCORE-15 (T-4, ADR-7): listing the component releases
  * without a BOM moved them to 4, so a row stored under SCORE-14's rules (3) is merged again. Every
  * expectation reads {@link ReleaseService#MERGE_VERSION}.
+ *
+ * <p>SCORE-30 (T-14, ADR-7, ADR-8): the release facts moved them to 6. The component merge and the
+ * product merge each send the facts of the release they merge, set before the request leaves; the
+ * stored row never carries them.
+ *
+ * <p>SCORE-39 (T-13, ADR-4, ADR-5): the declared licence and the component supplier moved them to 7.
+ * A stored row carries the key of the release node facts it was built with and serves only a request
+ * whose facts have that key; a row without one, or with another, is merged again. A new row replaces
+ * every row of the same request whatever its version or key, so a release keeps one row per request;
+ * rows of other requests stay. The facts are computed once per release per request.
  */
 class ReleaseBomMergeVersionCacheTest {
 
@@ -62,6 +81,10 @@ class ReleaseBomMergeVersionCacheTest {
 	private static final UUID SECOND_OLD_ROW = UUID.randomUUID();
 	private static final UUID NEWER_ROW = UUID.randomUUID();
 	private static final UUID MERGED = UUID.randomUUID();
+	private static final UUID DELIVERABLE = UUID.randomUUID();
+	private static final String SHA_256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+	private static final String SHA_512 = "ee26b0dd4af7e749aa1a8ee3c10ae9923f618980772e473f8819a5d4940e0db2"
+			+ "7ac185f8a0e1d5f84f88bc887fd67b143732c304cc5fa9ad8e6f57f50028a8ff";
 	/** The rules SCORE-14 stored rows under, before SCORE-15 listed releases without a BOM. */
 	private static final int PREVIOUS_MERGE_VERSION = ReleaseService.MERGE_VERSION - 1;
 
@@ -70,6 +93,8 @@ class ReleaseBomMergeVersionCacheTest {
 	private ReleaseRebomService releaseRebomService;
 	private SharedReleaseService sharedReleaseService;
 	private GetComponentService getComponentService;
+	private GetDeliverableService getDeliverableService;
+	private VariantService variantService;
 	private ReleaseData rd;
 
 	@BeforeEach
@@ -88,6 +113,10 @@ class ReleaseBomMergeVersionCacheTest {
 		ReflectionTestUtils.setField(svc, "getOrganizationService", getOrganizationService);
 		ReflectionTestUtils.setField(svc, "artifactService", artifactService);
 		ReflectionTestUtils.setField(svc, "supportInjectionService", mock(SupportInjectionService.class));
+		getDeliverableService = mock(GetDeliverableService.class);
+		ReflectionTestUtils.setField(svc, "getDeliverableService", getDeliverableService);
+		variantService = mock(VariantService.class);
+		ReflectionTestUtils.setField(svc, "variantService", variantService);
 
 		rd = componentRelease(RELEASE);
 		when(sharedReleaseService.getReleaseData(RELEASE)).thenReturn(Optional.of(rd));
@@ -117,10 +146,20 @@ class ReleaseBomMergeVersionCacheTest {
 		return release;
 	}
 
-	/** A row stored with the options of a plain flat request, under rule version {@code mergeVersion}. */
+	/** The key of the facts the releases here have: the organization as supplier, nothing else. */
+	private static final String FACTS_KEY = ReleaseNodeFacts.key(new ReleaseNodeFacts("org", null, null, null));
+
+	/**
+	 * A row stored with the options of a plain flat request, under rule version {@code mergeVersion}
+	 * and the facts the releases here have.
+	 */
 	private static ReleaseBom row(UUID id, Integer mergeVersion) {
+		return row(id, mergeVersion, FACTS_KEY);
+	}
+
+	private static ReleaseBom row(UUID id, Integer mergeVersion, String factsKey) {
 		return new ReleaseBom(id, new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null, BomStructureType.FLAT)
-				.withMergeVersion(mergeVersion));
+				.withMergeVersion(mergeVersion).withReleaseNodeFactsKey(factsKey));
 	}
 
 	private UUID request(UUID release) throws Exception {
@@ -129,10 +168,14 @@ class ReleaseBomMergeVersionCacheTest {
 	}
 
 	@Test
-	void theMergeVersionIsFour() {
-		assertEquals(4, ReleaseService.MERGE_VERSION,
-				"4 = product merges list releases without a BOM (SCORE-15 ADR-7), after 3 = services carried and"
-				+ " dangling refs dropped (SCORE-14 ADR-5) and 2 = bom-refs de-duplicated (SCORE-13 ADR-8)");
+	void theMergeVersionIsEight() {
+		assertEquals(8, ReleaseService.MERGE_VERSION,
+				"8 = a merged node records the listed licence expression a fold dropped as reliza:license:dropped (SCORE-44 ADR-6),"
+				+ " after 7 = ReARM-made nodes carry the declared licence and the component supplier (SCORE-39 ADR-4),"
+				+ " after 6 = ReARM's own nodes carry the organization as supplier and the deliverable digests (SCORE-30"
+				+ " ADR-8), 5 = the root purl encodes group and name once (SCORE-29 ADR-3), 4 = product"
+				+ " merges list releases without a BOM (SCORE-15 ADR-7), 3 = services carried and dangling refs"
+				+ " dropped (SCORE-14 ADR-5) and 2 = bom-refs de-duplicated (SCORE-13 ADR-8)");
 	}
 
 	@Test
@@ -147,8 +190,8 @@ class ReleaseBomMergeVersionCacheTest {
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
 		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
-		assertEquals(List.of(row(OLD_ROW, PREVIOUS_MERGE_VERSION), row(MERGED, ReleaseService.MERGE_VERSION)),
-				stored.getValue(), "the previous row stays as stored, the new row is added under the current rules");
+		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
+				"the new row under the current rules replaces the previous row of the same request");
 	}
 
 	@Test
@@ -176,13 +219,12 @@ class ReleaseBomMergeVersionCacheTest {
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
 		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
-		assertEquals(List.of(row(OLD_ROW, PREVIOUS_MERGE_VERSION), row(NEWER_ROW, ReleaseService.MERGE_VERSION + 1),
-				row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
-				"both rows stay as stored, the new row is added under the current rules");
+		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
+				"the new row under the current rules replaces both rows of the same request");
 	}
 
 	@Test
-	void aReleaseWithOnlyAnOldRowIsMergedOnceUnderTheCurrentRulesAndKeepsTheOldRow() throws Exception {
+	void aReleaseWithOnlyAnOldRowIsMergedOnceUnderTheCurrentRulesAndReplacesTheOldRow() throws Exception {
 		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, null)));
 
 		assertEquals(MERGED, request(RELEASE));
@@ -193,11 +235,9 @@ class ReleaseBomMergeVersionCacheTest {
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
 		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
-		assertEquals(List.of(OLD_ROW, MERGED), stored.getValue().stream().map(ReleaseBom::rebomId).toList(),
-				"the old row stays, the new one is added after it");
-		assertEquals(row(OLD_ROW, null), stored.getValue().get(0));
-		assertEquals(row(MERGED, ReleaseService.MERGE_VERSION), stored.getValue().get(1),
-				"the new row is the request's options under the current rules, so the next request matches it");
+		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
+				"one row for the request: the request's options under the current rules and facts, so the next"
+				+ " request matches it");
 	}
 
 	@Test
@@ -248,6 +288,179 @@ class ReleaseBomMergeVersionCacheTest {
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
 		verify(releaseRebomService).setReboms(eq(product), stored.capture(), eq(WU));
-		assertEquals(row(productMerge, ReleaseService.MERGE_VERSION), stored.getValue().get(stored.getValue().size() - 1));
+		assertEquals(List.of(row(productMerge, ReleaseService.MERGE_VERSION)), stored.getValue());
+	}
+
+	@Test
+	void aComponentMergeSendsTheFactsOfItsReleaseAndStoresARowWithoutThem() throws Exception {
+		DeliverableData dd = new DeliverableData();
+		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
+				new DigestRecord(TeaChecksumType.SHA_256, SHA_256),
+				new DigestRecord(TeaChecksumType.SHA_512, SHA_512)))).build());
+		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
+		ships(RELEASE, DELIVERABLE);
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, PREVIOUS_MERGE_VERSION)));
+
+		request(RELEASE);
+
+		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
+		verify(rebomService).mergeAndStoreBoms(anyList(), sent.capture(), eq(ORG));
+		assertEquals(new ReleaseNodeFacts("org", List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), null, null),
+				sent.getValue().releaseNode());
+		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.getValue().mergeVersion());
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
+		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		assertEquals(1, stored.getValue().size());
+		ReleaseBom newRow = stored.getValue().get(0);
+		assertEquals(row(MERGED, ReleaseService.MERGE_VERSION, ReleaseNodeFacts.key(sent.getValue().releaseNode())), newRow,
+				"the row carries the key of the facts sent, not the facts");
+		assertNull(newRow.rebomMergeOptions().releaseNode(), "the facts are not part of the cache key");
+	}
+
+	// SCORE-39 T-13: the key of the facts decides, under the current rules
+	@Test
+	void aRowUnderTheCurrentRulesWithAnotherFactsKeyIsNotServedAndIsReplaced() throws Exception {
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, ReleaseService.MERGE_VERSION,
+				ReleaseNodeFacts.key(new ReleaseNodeFacts("org", null, "MIT", null)))));
+
+		assertEquals(MERGED, request(RELEASE));
+
+		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), any(), eq(ORG));
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
+		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue());
+	}
+
+	@Test
+	void aRowUnderTheCurrentRulesWithoutAFactsKeyIsNotServed() throws Exception {
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, ReleaseService.MERGE_VERSION, null)));
+
+		assertEquals(MERGED, request(RELEASE));
+
+		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), any(), eq(ORG));
+	}
+
+	@Test
+	void theRowOfTheCurrentFactsIsServedWithoutAMergeAndTheFactsAreReadOnce() throws Exception {
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(
+				row(OLD_ROW, ReleaseService.MERGE_VERSION, ReleaseNodeFacts.key(new ReleaseNodeFacts("org", null, "MIT", null))),
+				row(CURRENT_ROW, ReleaseService.MERGE_VERSION)));
+
+		assertEquals(CURRENT_ROW, request(RELEASE));
+
+		verify(rebomService, never()).mergeAndStoreBoms(anyList(), any(), any());
+		verify(variantService, times(1)).findBaseVariantForRelease(RELEASE);
+	}
+
+	@Test
+	void aRegeneratedComponentMergeReadsTheFactsOnce() throws Exception {
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, null)));
+
+		request(RELEASE);
+
+		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), any(), eq(ORG));
+		verify(variantService, times(1)).findBaseVariantForRelease(RELEASE);
+	}
+
+	@Test
+	void aRowBuiltBeforeTheComponentDeclaredALicenceIsNotServedAndTheMergeSendsIt() throws Exception {
+		ComponentData cd = getComponentService.getComponentData(COMPONENT).orElseThrow();
+		when(cd.getLicenseExpression()).thenReturn("LicenseRef-Acme-Commercial");
+		when(cd.getLicenseUrl()).thenReturn("https://acme.example/licence");
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(CURRENT_ROW, ReleaseService.MERGE_VERSION)));
+
+		assertEquals(MERGED, request(RELEASE));
+
+		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
+		verify(rebomService).mergeAndStoreBoms(anyList(), sent.capture(), eq(ORG));
+		ReleaseNodeFacts facts = new ReleaseNodeFacts("org", null, "LicenseRef-Acme-Commercial", "https://acme.example/licence");
+		assertEquals(facts, sent.getValue().releaseNode());
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
+		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION, ReleaseNodeFacts.key(facts))), stored.getValue());
+	}
+
+	@Test
+	void aNewRowKeepsTheRowsOfOtherRequests() throws Exception {
+		RebomOptions flat = row(OLD_ROW, null).rebomMergeOptions();
+		List<ReleaseBom> others = List.of(
+				new ReleaseBom(UUID.randomUUID(), new RebomOptions(ArtifactBelongsTo.DELIVERABLE, false, false, null,
+						BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)),
+				new ReleaseBom(UUID.randomUUID(), new RebomOptions(ArtifactBelongsTo.RELEASE, true, false, null,
+						BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)),
+				new ReleaseBom(UUID.randomUUID(), new RebomOptions(ArtifactBelongsTo.RELEASE, false, true, null,
+						BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)),
+				new ReleaseBom(UUID.randomUUID(), new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null,
+						BomStructureType.HIERARCHICAL).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)),
+				new ReleaseBom(UUID.randomUUID(), new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, true,
+						BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)));
+		List<ReleaseBom> before = new ArrayList<>(others);
+		before.add(new ReleaseBom(OLD_ROW, flat));
+		// an unticked file switch stored as false is the same request as one stored before the option (null)
+		before.add(new ReleaseBom(SECOND_OLD_ROW, new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, false,
+				BomStructureType.FLAT).withMergeVersion(PREVIOUS_MERGE_VERSION)));
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(before);
+
+		assertEquals(MERGED, request(RELEASE));
+
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
+		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		List<ReleaseBom> after = new ArrayList<>(others);
+		after.add(row(MERGED, ReleaseService.MERGE_VERSION));
+		assertEquals(after, stored.getValue());
+	}
+
+	@Test
+	void theProductMergeAndTheComponentMergesItTriggersEachSendTheirOwnReleasesFacts() throws Exception {
+		ReleaseData second = componentRelease(SECOND_RELEASE);
+		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, null)));
+		when(releaseRebomService.getReleaseBoms(second)).thenReturn(List.of(row(SECOND_OLD_ROW, null)));
+		DeliverableData dd = new DeliverableData();
+		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
+				new DigestRecord(TeaChecksumType.SHA_256, SHA_256)))).build());
+		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
+		ships(SECOND_RELEASE, DELIVERABLE);
+		ReleaseData product = productRelease();
+		when(sharedReleaseService.unwindReleaseDependencies(product)).thenReturn(new LinkedHashSet<>(List.of(rd, second)));
+
+		request(PRODUCT_RELEASE);
+
+		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
+		verify(rebomService, times(3)).mergeAndStoreBoms(anyList(), sent.capture(), eq(ORG));
+		assertEquals(List.of(new ReleaseNodeFacts("org", null, null, null),
+				new ReleaseNodeFacts("org", List.of(new BomHash("SHA-256", SHA_256)), null, null),
+				new ReleaseNodeFacts("org", null, null, null)),
+				sent.getAllValues().stream().map(RebomOptions::releaseNode).toList(),
+				"each component merge carries its release's facts, the product merge the product release's");
+		assertEquals(List.of(RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT, RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT,
+				RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT),
+				sent.getAllValues().stream().map(RebomOptions::rootComponentMergeMode).toList());
+	}
+
+	/** {@code release} ships {@code deliverable}: the outbound deliverable of its base variant. */
+	private void ships(UUID release, UUID deliverable) {
+		VariantData base = new VariantData();
+		base.setOutboundDeliverables(new LinkedHashSet<>(List.of(deliverable)));
+		when(variantService.findBaseVariantForRelease(release)).thenReturn(Optional.of(base));
+	}
+
+	/** A product release over this test's component releases, with an old row and no deliverables. */
+	private ReleaseData productRelease() {
+		ReleaseData product = mock(ReleaseData.class);
+		when(product.getUuid()).thenReturn(PRODUCT_RELEASE);
+		when(product.getOrg()).thenReturn(ORG);
+		when(product.getComponent()).thenReturn(PRODUCT);
+		when(product.getVersion()).thenReturn("2.0.0");
+		when(releaseRebomService.getReleaseBoms(product)).thenReturn(List.of(row(UUID.randomUUID(), null)));
+		when(sharedReleaseService.getReleaseData(PRODUCT_RELEASE)).thenReturn(Optional.of(product));
+		ComponentData pd = mock(ComponentData.class);
+		when(pd.getType()).thenReturn(ComponentType.PRODUCT);
+		when(pd.getName()).thenReturn("product");
+		when(getComponentService.getComponentData(PRODUCT)).thenReturn(Optional.of(pd));
+		return product;
 	}
 }

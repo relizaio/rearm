@@ -1532,6 +1532,27 @@ public class AuthorizationService {
 				key.keyUuid());
 	}
 
+	/**
+	 * Whether an RBAC key (FREEFORM, USER, FEDERATED) has RESOURCE WRITE on {@code object} at
+	 * {@code scope} in {@code org}: the decision of {@link #isFreeformKeyAuthorizedForObjectGraphQL}
+	 * without the refusal and without recording a key access (SCORE-52 ADR-2). A USER key is capped by
+	 * its owner's current permissions, a FEDERATED key by its trust rules. A key refused at key level
+	 * (an inactive USER-key owner, a FEDERATED identity without its exchange) answers false, as does a
+	 * key of another organization.
+	 */
+	public boolean rbacKeyWrites(AuthHeaderParse ahp, UUID org, PermissionScope scope, UUID object) {
+		RbacKey key;
+		try {
+			key = resolveRbacKey(ahp);
+		} catch (AccessDeniedException e) {
+			return false;
+		}
+		if (null == org || null == object || !org.equals(key.orgUuid())) {
+			return false;
+		}
+		return bothAuthorize(key, ownerSide(key), org, PermissionFunction.RESOURCE, scope, object, CallType.WRITE);
+	}
+
 	public FreeformKeyVerification isFreeformKeyAuthorizedForObjectGraphQL(AuthHeaderParse ahp,
 			@NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid,
 			Collection<RelizaObject> ros, CallType ct) throws RelizaException {

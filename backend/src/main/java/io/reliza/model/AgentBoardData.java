@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -831,5 +832,15 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 		bd.setUuid(b.getUuid());
 		bd.setCreatedDate(b.getCreatedDate());
 		return bd;
+	}
+
+	/** The record with the stored task counter when that is the higher one (TPF-42): no whole-board save puts the counter back. */
+	public static Map<String, Object> keepNextTaskNumber(Map<String, Object> recordData, Optional<Integer> stored) {
+		if (null == stored || stored.isEmpty()) return recordData;
+		Object own = recordData.get("nextTaskNumber");
+		if (own instanceof Number n && n.intValue() >= stored.get()) return recordData;
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		out.put("nextTaskNumber", stored.get());
+		return out;
 	}
 }

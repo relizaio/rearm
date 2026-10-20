@@ -451,13 +451,32 @@ public class SupportInjectionService {
 		Set<String> keys = SupportBomInjector.collectKeys(bom);
 		if (keys.isEmpty()) return Map.of();
 
-		// Byte-exact pass (catches the common case, incl. all cpe-only keys).
-		Set<String> byteMatched = new HashSet<>();
-		for (SbomComponent sc :
-				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), new ArrayList<>(keys))) {
-			byteMatched.add(sc.getCanonicalPurl());
-			byKey.put(sc.getCanonicalPurl(), sc);
+		// Byte-exact pass (catches the common case, incl. all cpe-only keys). It also probes the
+		// legacy key of each purl (SCORE-29 ADR-4): a release-node row written before rebom
+		// stopped encoding the group and name twice carries %2520 where the export now has %20.
+		// A row under the key itself wins over one under its legacy variant.
+		Map<String, String> keyOfVariant = new HashMap<>();
+		for (String key : keys) {
+			Utils.doubleEncodedNamespaceNameVariant(key)
+					.filter(variant -> !keys.contains(variant))
+					.ifPresent(variant -> keyOfVariant.putIfAbsent(variant, key));
 		}
+		List<String> probes = new ArrayList<>(keys);
+		probes.addAll(keyOfVariant.keySet());
+		Set<String> byteMatched = new HashSet<>();
+		Map<String, SbomComponent> byVariant = new HashMap<>();
+		for (SbomComponent sc :
+				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), probes)) {
+			if (keys.contains(sc.getCanonicalPurl())) {
+				byteMatched.add(sc.getCanonicalPurl());
+				byKey.put(sc.getCanonicalPurl(), sc);
+			} else {
+				byVariant.put(keyOfVariant.get(sc.getCanonicalPurl()), sc);
+			}
+		}
+		byVariant.forEach((key, sc) -> {
+			if (byKey.putIfAbsent(key, sc) == null) byteMatched.add(key);
+		});
 
 		// Encoding-safe fallback for purl keys the byte pass missed. cpe keys and malformed
 		// purls do not parse here, so they stay byte-only -- exactly the desired behavior.

@@ -21,6 +21,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -77,7 +78,7 @@ public class UserGroupDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 
 		Map<String, Object> userGroupInputMap = dfe.getArgument("userGroup");
-		CreateUserGroupDto createDto = Utils.OM.convertValue(userGroupInputMap, CreateUserGroupDto.class);
+		CreateUserGroupDto createDto = InputConversion.convert(userGroupInputMap, CreateUserGroupDto.class, "userGroup");
 
 		Optional<OrganizationData> ood = getOrganizationService.getOrganizationData(createDto.getOrg());
 		RelizaObject ro = ood.isPresent() ? ood.get() : null;
@@ -93,7 +94,7 @@ public class UserGroupDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		Map<String, Object> userGroupInputMap = dfe.getArgument("userGroup");
-		UpdateUserGroupDto userGroupInput = Utils.OM.convertValue(userGroupInputMap, UpdateUserGroupDto.class);
+		UpdateUserGroupDto userGroupInput = InputConversion.convert(userGroupInputMap, UpdateUserGroupDto.class, "userGroup");
 		UUID groupUuid = userGroupInput.getGroupId();
 
 		Optional<UserGroupData> ugd = userGroupService.getUserGroupData(groupUuid);
