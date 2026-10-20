@@ -46,6 +46,7 @@ import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
+import io.reliza.model.DeliverableData.BelongsToOrganization;
 import io.reliza.model.DeliverableData.PackageType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
@@ -157,12 +158,13 @@ public class DeliverableService {
 	}
 	
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList,
-			UUID branchUUID, String version, WhoUpdated wu) throws RelizaException{
-		return prepareListofDeliverables(deliverablesList, branchUUID, version, false, wu);
+			UUID branchUUID, String version, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException{
+		return prepareListofDeliverables(deliverablesList, branchUUID, version, false, authority, wu);
 	}
 	
+	/** {@code authority} is the uploading principal's rights, which rule B reads for each SBOM uploaded. */
 	public List<UUID> prepareListofDeliverables(List<Map<String, Object>> deliverablesList, UUID branchUUID,
-			String version, Boolean addOnComplete, WhoUpdated wu) throws RelizaException {
+			String version, Boolean addOnComplete, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		List<UUID> deliverables = new LinkedList<>();
 		
 		var bd = branchService.getBranchData(branchUUID).orElseThrow();
@@ -178,8 +180,11 @@ public class DeliverableService {
 			
 			String purl = SidPurlUtils.pickPreferredPurl(deliverableDto.getIdentifiers())
 					.map(RearmIdentifier::getIdValue).orElse(null);
-			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE, purl);
-			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, wu);
+			// The deliverable is created on branchUUID, so it is INTERNAL (deliverableDataFactory).
+			RebomOptions rebomOptions = new RebomOptions(cd.getName(), od.getName(), version, ArtifactBelongsTo.DELIVERABLE, deliverableDto.getShaDigest(), StripBom.FALSE, purl)
+					.withSupplierName(SbomSupplierNames.forDeliverable(od, cd, deliverableDto.getPublisher(),
+							null != branchUUID ? BelongsToOrganization.INTERNAL : BelongsToOrganization.EXTERNAL));
+			var artIds = artifactService.uploadListOfArtifacts(od, arts, rebomOptions, authority, wu);
 			deliverableDto.setArtifacts(artIds);			
 			// if deliverable with this digest already exists for this org, do not create a new one (only software deliverables)
 			List<Deliverable> deliverablesByDigest = new LinkedList<>();

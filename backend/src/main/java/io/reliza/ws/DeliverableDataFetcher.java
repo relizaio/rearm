@@ -28,6 +28,8 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.InputConversion;
+import io.reliza.exceptions.SbomUpdateNotPermittedException;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -45,6 +47,7 @@ import io.reliza.model.dto.DeliverableDto.AddOutboundDeliverablesInput;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.ProgrammaticReleaseTargetService;
 import io.reliza.service.ProgrammaticReleaseTargetService.ProgrammaticReleaseTarget;
 import io.reliza.service.ProgrammaticReleaseTargetService.RbacKeyPolicy;
@@ -53,6 +56,8 @@ import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.ReleaseService;
+import io.reliza.service.SbomUpdateGuard;
+import io.reliza.service.SbomWriteAuthorityService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.UserService;
 import io.reliza.service.VariantService;
@@ -70,6 +75,12 @@ public class DeliverableDataFetcher {
 	
 	@Autowired
 	DeliverableService deliverableService;
+
+	@Autowired
+	SbomUpdateGuard sbomUpdateGuard;
+
+	@Autowired
+	SbomWriteAuthorityService sbomWriteAuthorityService;
 	
 	@Autowired
 	GetDeliverableService getDeliverableService;
@@ -130,7 +141,7 @@ public class DeliverableDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> addDeliverablesInputMap = dfe.getArgument("deliverables");
-		AddOutboundDeliverablesInput addDeliverablesInput = Utils.OM.convertValue(addDeliverablesInputMap, AddOutboundDeliverablesInput.class);
+		AddOutboundDeliverablesInput addDeliverablesInput = InputConversion.convert(addDeliverablesInputMap, AddOutboundDeliverablesInput.class, "deliverables");
 		Optional<ReleaseData> ord = Optional.empty();
 		Optional<VariantData> ovd = Optional.empty();
 		
@@ -187,7 +198,7 @@ public class DeliverableDataFetcher {
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		var ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(), servletWebRequest);
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
-		authorizationService.verifyProgrammaticKey(ahp);
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
 		authorizationService.validateSystemOperational(CallType.WRITE);
 		
 		Map<String, Object> addDeliverablesInputMap = dfe.getArgument("deliverables");
@@ -222,8 +233,16 @@ public class DeliverableDataFetcher {
 		
 		List<UUID> deliverables = new LinkedList<>();
 		if (null != deliverablesList && !deliverablesList.isEmpty()) {
-			deliverables = deliverableService.prepareListofDeliverables(deliverablesList,
-					bd.getUuid(), version, wu);
+			try {
+				deliverables = deliverableService.prepareListofDeliverables(deliverablesList,
+						bd.getUuid(), version, sbomWriteAuthorityService.forKey(vk.principal(), bd.getOrg()), wu);
+			} catch (SbomUpdateNotPermittedException e) {
+				// The release row is not written by this transaction before the upload (the variant
+				// is written after it), so the record's own transaction does not wait on it
+				// (SCORE-47 ADR-14); the rethrow rolls the created deliverables back.
+				sbomUpdateGuard.recordRefusal(ord.get().getUuid(), target.component().getUuid(), e, wu);
+				throw e;
+			}
 		}
 
 		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);

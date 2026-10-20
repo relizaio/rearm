@@ -13,23 +13,15 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 // scripts/validate-graphql checks them too; this spec pins the CE side, which that script only
 // warns about, and that the SHARED documents never gain the fields.
 //
-// Pro (rearm-saas 2026-10-sbom-score, SCORE-41) declares the fields. The CE mirror in this repo
-// lacks them until its sync: a CE backend refuses each read as schema drift and the three
-// surfaces show the unsupported note. When the sync lands, the CE cases fail and are to be turned
-// into "valid on CE" assertions.
-const cannotQuery = (fields: string[], type: string): string[] =>
-    fields.map(f => `Cannot query field "${f}" on type "${type}".`)
-const ORG_FIELDS = cannotQuery(['defaultLicenseExpression', 'defaultLicenseUrl'], 'Settings')
-const COMPONENT_FIELDS = cannotQuery(['licenseExpression', 'licenseUrl', 'supplierName'], 'Component')
-const RELEASE_FIELDS = cannotQuery(['licenseExpression', 'effectiveLicense'], 'Release')
-
-const DOCUMENTS: Array<[string, any, string[]]> = [
-    ['ORG_DECLARED_LICENSE_QUERY', ORG_DECLARED_LICENSE_QUERY, ORG_FIELDS],
-    ['UPDATE_ORG_DECLARED_LICENSE', UPDATE_ORG_DECLARED_LICENSE, ORG_FIELDS],
-    ['COMPONENT_DECLARED_LICENSE_QUERY', COMPONENT_DECLARED_LICENSE_QUERY, COMPONENT_FIELDS],
-    ['UPDATE_COMPONENT_DECLARED_LICENSE', UPDATE_COMPONENT_DECLARED_LICENSE, COMPONENT_FIELDS],
-    ['RELEASE_DECLARED_LICENSE_QUERY', RELEASE_DECLARED_LICENSE_QUERY, RELEASE_FIELDS],
-    ['UPDATE_RELEASE_DECLARED_LICENSE', UPDATE_RELEASE_DECLARED_LICENSE, RELEASE_FIELDS],
+// Pro (rearm-saas, SCORE-41) declares the fields. The CE mirror in this repo has them since the
+// CE sync of SCORE-55, so every document is valid against the CE schema too.
+const DOCUMENTS: Array<[string, any]> = [
+    ['ORG_DECLARED_LICENSE_QUERY', ORG_DECLARED_LICENSE_QUERY],
+    ['UPDATE_ORG_DECLARED_LICENSE', UPDATE_ORG_DECLARED_LICENSE],
+    ['COMPONENT_DECLARED_LICENSE_QUERY', COMPONENT_DECLARED_LICENSE_QUERY],
+    ['UPDATE_COMPONENT_DECLARED_LICENSE', UPDATE_COMPONENT_DECLARED_LICENSE],
+    ['RELEASE_DECLARED_LICENSE_QUERY', RELEASE_DECLARED_LICENSE_QUERY],
+    ['UPDATE_RELEASE_DECLARED_LICENSE', UPDATE_RELEASE_DECLARED_LICENSE],
 ]
 
 const NEW_FIELDS = ['defaultLicenseExpression', 'defaultLicenseUrl', 'licenseExpression', 'licenseUrl', 'supplierName', 'effectiveLicense']
@@ -51,8 +43,8 @@ describe('declared licence documents vs the schemas', () => {
         expect(validate(proSchema as GraphQLSchema, doc).map(e => e.message)).toEqual([])
     })
 
-    it.each(DOCUMENTS)('%s is reported as drift against the CE schema until the CE sync', (_name, doc, expected) => {
-        expect(validate(ceSchema, doc).map(e => e.message)).toEqual(expected)
+    it.each(DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+        expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
     })
 
     it.each(SHARED)('the shared document %s selects none of the new fields', (_name, text) => {

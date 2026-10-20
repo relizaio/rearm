@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.util.HashSet;
+import java.util.List;
 import java.util.Map;
 import java.util.Set;
 
@@ -75,11 +76,30 @@ public class ProgrammaticSchemaSplitTest {
 	}
 
 	@Test
+	void sbomSigningKeyFieldsAreJwtOnly() throws IOException {
+		// SCORE-32 T-6: key management is a person's org-admin work; the programmatic endpoint refuses it
+		ProgrammaticSchemaRegistry r = new ProgrammaticSchemaRegistry();
+		for (String m : List.of("generateSbomSigningKey", "importSbomSigningKey", "revokeSbomSigningKey")) {
+			assertFalse(r.allows(OperationDefinition.Operation.MUTATION, m), m);
+			assertTrue(baseRootFields(read("schema/user.graphqls")).get("Mutation").contains(m), m);
+		}
+		assertFalse(r.allows(OperationDefinition.Operation.QUERY, "sbomSigningKeys"));
+		assertTrue(baseRootFields(read("schema/user.graphqls")).get("Query").contains("sbomSigningKeys"));
+	}
+
+	@Test
 	void reopenIsSeatBoundOnTheProgrammaticEndpointAndAPersonsVerbOnTheOther() throws IOException {
 		ProgrammaticSchemaRegistry r = new ProgrammaticSchemaRegistry();
 		assertTrue(r.allows(OperationDefinition.Operation.MUTATION, "agentTaskReopenProgrammatic"));
 		assertFalse(r.allows(OperationDefinition.Operation.MUTATION, "agentTaskReopen"), "the person's verb is JWT-only");
 		assertTrue(baseRootFields(read("schema/user.graphqls")).get("Mutation").contains("agentTaskReopen"));
+	}
+
+	@Test
+	void noKeyCanArchiveAnOrganization() throws IOException {
+		ProgrammaticSchemaRegistry r = new ProgrammaticSchemaRegistry();
+		assertFalse(r.allows(OperationDefinition.Operation.MUTATION, "archiveOrganization"), "TPF-48: archiving is a person's verb, user lane only");
+		assertTrue(baseRootFields(read("schema/user.graphqls")).get("Mutation").contains("archiveOrganization"));
 	}
 
 	@Test

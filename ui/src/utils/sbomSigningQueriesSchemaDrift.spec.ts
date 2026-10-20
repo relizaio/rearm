@@ -8,11 +8,8 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 // scripts/validate-graphql checks them too; this spec pins the CE side, which that script only
 // warns about.
 //
-// Pro (rearm-saas 2026-10-sbom-score, SCORE-32) has the list and the three mutations. The CE
-// mirror in this repo has none of them until its sync: a CE backend refuses the list as schema
-// drift, and the organization settings show "This server does not offer SBOM export signing
-// yet" instead of the section. When the sync lands, the CE case fails and is to be turned into a
-// "valid on CE" assertion.
+// Pro (rearm-saas, SCORE-32) has the list and the three mutations. The CE mirror in this repo
+// has them since the CE sync of SCORE-55, so every document is valid against the CE schema too.
 const DOCUMENTS: Array<[string, any, string, 'query' | 'mutation']> = [
     ['SBOM_SIGNING_KEYS', SBOM_SIGNING_KEYS, 'sbomSigningKeys', 'query'],
     ['GENERATE_SBOM_SIGNING_KEY', GENERATE_SBOM_SIGNING_KEY, 'generateSbomSigningKey', 'mutation'],
@@ -31,11 +28,8 @@ describe('SBOM signing documents vs the schemas', () => {
         expect(validate(proSchema as GraphQLSchema, doc).map(e => e.message)).toEqual([])
     })
 
-    it.each(DOCUMENTS)('%s is reported as drift against the CE schema until the CE sync', (_name, doc, field, op) => {
-        const messages = validate(ceSchema, doc).map(e => e.message)
-        expect(messages).toHaveLength(1)
-        const type = op === 'query' ? 'Query' : 'Mutation'
-        expect(messages[0]).toMatch(new RegExp(`^Cannot query field "${field}" on type "${type}"\\.`))
+    it.each(DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+        expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
     })
 
     it.each(DOCUMENTS)('%s is a %s with one root field', (_name, doc, field, op) => {

@@ -292,6 +292,15 @@
         <artifactId>cvss-calculator</artifactId>
         <version>1.5.1</version>
     </dependency>
+    <!-- RFC 8785 JSON Canonicalization Scheme: the signing input of the JSF signature on
+         merged SBOM exports (SCORE-31 ADR-2), the canonical form rearm-cli's verifier
+         recomputes. Apache-2.0, no runtime dependency; 1.1 is the last release. Used only
+         through io.reliza.service.JsfCanonicalizer, which adds the I-JSON checks it lacks. -->
+    <dependency>
+        <groupId>io.github.erdtman</groupId>
+        <artifactId>java-json-canonicalization</artifactId>
+        <version>1.1</version>
+    </dependency>
     <!-- vers (package-url vers-spec) ranges and per-ecosystem version ordering: the
          library Dependency-Track 4 and 5 use to decide which versions an advisory
          affects, so ReARM orders versions as they did. io.reliza:versioning bumps

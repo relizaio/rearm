@@ -4,13 +4,18 @@
 
 package io.reliza.model.tea;
 
+import java.nio.charset.StandardCharsets;
 import java.util.List;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import tools.jackson.databind.JsonNode;
+import tools.jackson.databind.MapperFeature;
+import tools.jackson.databind.SerializationFeature;
+import tools.jackson.databind.json.JsonMapper;
 
+import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.dto.OASResponseDto;
@@ -41,6 +46,17 @@ public class Rebom {
         // release graph at generation time like the BOM ids, so NOT part of the merged-BOM cache
         // key and never on a stored ReleaseBom row. Null when empty, and then never serialised.
         @JsonInclude(JsonInclude.Include.NON_NULL) List<MissingSbomComponent> missingSbomComponents,
+        // Merge only: what ReARM holds about the release the merged root describes (SCORE-30
+        // ADR-7); rebom fills the root's supplier and hashes from it where the root has none.
+        // Derived from the release at generation time like missingSbomComponents, so NOT part of
+        // the merged-BOM cache key and never on a stored ReleaseBom row. Null when it holds
+        // nothing, and then never serialised.
+        @JsonInclude(JsonInclude.Include.NON_NULL) ReleaseNodeFacts releaseNode,
+        // Upload only: the supplier ReARM names for the root of this upload (SCORE-30 ADR-12,
+        // SbomSupplierNames): the deliverable's publisher, else the organization for its own
+        // software; null for third-party software. rebom fills the root's supplier from it where
+        // the root names none. Null is never serialised, so a request without it keeps its shape.
+        @JsonInclude(JsonInclude.Include.NON_NULL) String supplierName,
         BomStructureType structure,
         String notes,
         StripBom stripBom,
@@ -51,54 +67,59 @@ public class Rebom {
         String originalMediaType,   // Media type of original file (for SPDX)
         String purl,
         RootComponentMergeMode rootComponentMergeMode,
-        String bomVersion  // Rearm-managed version for SPDX (1, 2, 3...)
+        String bomVersion,  // Rearm-managed version for SPDX (1, 2, 3...)
+        // Stored merge rows only: the key of the release node facts the merge was built with
+        // (SCORE-39 ADR-5, ReleaseNodeFacts.key). Part of the merged-BOM cache key, so a row built
+        // before the release's declared licence, supplier or hashes changed is not served. Never
+        // sent to rebom (RebomService.mergeAndStoreBoms drops it); null is never serialised.
+        @JsonInclude(JsonInclude.Include.NON_NULL) String releaseNodeFactsKey
     ) {
         // create opts
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
-            this(name, group, version, belongsTo, hash, tldOnly, false, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, tldOnly, false, null, null, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl) {
-            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl, RootComponentMergeMode rootComponentMergeMode) {
-            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null);
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, null, null, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null, null);
         }
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, Boolean tldOnly, Boolean ignoreDev, Boolean excludeFileComponents, BomStructureType structure, String notes, StripBom stripBom, String serialNumber, String bomDigest, String purl, RootComponentMergeMode rootComponentMergeMode) {
-            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null);
+            this(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents, null, null, null, null, structure, notes, stripBom, serialNumber, bomDigest, null, null, null, purl, rootComponentMergeMode, null, null);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure, RootComponentMergeMode rootComponentMergeMode) {
-            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", rootComponentMergeMode, null);
+            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", rootComponentMergeMode, null, null);
         }
         public RebomOptions() {
-            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, false, null, null, null, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, ArtifactBelongsTo.RELEASE, null, false, false, null, null, null, null, null, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
     
 
         public RebomOptions(String name, String group,  String version, ArtifactBelongsTo belongsTo, String hash, StripBom stripBom, String purl) {
-            this(name, group, version, belongsTo, hash, false, false, null, null, null, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(name, group, version, belongsTo, hash, false, false, null, null, null, null, null, BomStructureType.FLAT, "sent from ReArm", stripBom, "", "", null, null, null, purl, RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
         // merge opts
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly,  BomStructureType structure) {
-            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, belongsTo, null, tldOnly, false, null, null, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, BomStructureType structure) {
-            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, null, null, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
 
         public RebomOptions(ArtifactBelongsTo belongsTo, Boolean tldOnly, Boolean ignoreDev, Boolean excludeFileComponents, BomStructureType structure) {
-            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, excludeFileComponents, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null);
+            this(null, null, null, belongsTo, null, tldOnly, ignoreDev, excludeFileComponents, null, null, null, null, structure, "sent from ReArm", StripBom.TRUE, "", "", null, null, null, "", RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT, null, null);
         }
 
         /** The same options, for a merge built under merge rule version {@code mergeVersion}. */
         public RebomOptions withMergeVersion(Integer mergeVersion) {
             return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
-                    mergeVersion, missingSbomComponents, structure, notes, stripBom, serialNumber, bomDigest,
-                    originalFileDigest, originalFileSize, originalMediaType, purl, rootComponentMergeMode, bomVersion);
+                    mergeVersion, missingSbomComponents, releaseNode, supplierName, structure, notes, stripBom, serialNumber,
+                    bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl, rootComponentMergeMode, bomVersion, releaseNodeFactsKey);
         }
 
         /**
@@ -107,9 +128,103 @@ public class Rebom {
          */
         public RebomOptions withMissingSbomComponents(List<MissingSbomComponent> missing) {
             return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
-                    mergeVersion, null == missing || missing.isEmpty() ? null : List.copyOf(missing), structure, notes,
+                    mergeVersion, null == missing || missing.isEmpty() ? null : List.copyOf(missing), releaseNode,
+                    supplierName, structure, notes, stripBom, serialNumber, bomDigest, originalFileDigest, originalFileSize,
+                    originalMediaType, purl, rootComponentMergeMode, bomVersion, releaseNodeFactsKey);
+        }
+
+        /**
+         * The same options, carrying {@code facts} about the release the merged root describes
+         * (SCORE-30 ADR-7). A blank supplier name and an empty hash list are carried as null, and
+         * facts holding neither as no facts at all, so a request without them keeps the shape it
+         * had before.
+         */
+        public RebomOptions withReleaseNode(ReleaseNodeFacts facts) {
+            return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
+                    mergeVersion, missingSbomComponents, ReleaseNodeFacts.orNull(facts), supplierName, structure, notes,
                     stripBom, serialNumber, bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl,
-                    rootComponentMergeMode, bomVersion);
+                    rootComponentMergeMode, bomVersion, releaseNodeFactsKey);
+        }
+
+        /**
+         * The same options, naming {@code name} as the supplier of the uploaded root (SCORE-30
+         * ADR-12); a blank or null name is carried as null, so the request keeps the shape it had
+         * before.
+         */
+        public RebomOptions withSupplierName(String name) {
+            return new RebomOptions(this.name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
+                    mergeVersion, missingSbomComponents, releaseNode, null == name || name.isBlank() ? null : name, structure, notes,
+                    stripBom, serialNumber, bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl,
+                    rootComponentMergeMode, bomVersion, releaseNodeFactsKey);
+        }
+
+        /**
+         * The same options, recording {@code key} as the key of the release node facts the stored
+         * merge was built with (SCORE-39 ADR-5); null when none.
+         */
+        public RebomOptions withReleaseNodeFactsKey(String key) {
+            return new RebomOptions(name, group, version, belongsTo, hash, tldOnly, ignoreDev, excludeFileComponents,
+                    mergeVersion, missingSbomComponents, releaseNode, supplierName, structure, notes, stripBom,
+                    serialNumber, bomDigest, originalFileDigest, originalFileSize, originalMediaType, purl,
+                    rootComponentMergeMode, bomVersion, key);
+        }
+    }
+
+    /**
+     * One CycloneDX {@code hashes[]} entry (SCORE-30): {@code alg} a CycloneDX hash algorithm name
+     * ({@code SHA-256}, {@code SHA-512}, ...), {@code content} the hex value.
+     */
+    public record BomHash(String alg, String content) {}
+
+    /**
+     * What ReARM holds about a release, for the node that describes it in a merged BOM (SCORE-30
+     * ADR-1 to ADR-3, ADR-11; SCORE-39 ADR-3): {@code supplierName} as SbomSupplierNames names it,
+     * {@code hashes} the digest records of the one deliverable the release ships, and the declared
+     * licence as DeclaredLicenses resolves it ({@code licenseExpression}, a canonical SPDX
+     * expression, and {@code licenseUrl}). rebom writes each onto the node only where the node has
+     * none. The member names are rebom's ReleaseNodeFactsInput field names.
+     */
+    @JsonInclude(JsonInclude.Include.NON_NULL)
+    public record ReleaseNodeFacts(String supplierName, List<BomHash> hashes, String licenseExpression,
+            String licenseUrl) {
+
+        /** Writes the facts for {@link #key}: sorted members, no nulls, compact. */
+        private static final JsonMapper KEY_MAPPER = JsonMapper.builder()
+                .enable(MapperFeature.SORT_PROPERTIES_ALPHABETICALLY)
+                .disable(MapperFeature.SORT_CREATOR_PROPERTIES_FIRST)
+                .enable(SerializationFeature.ORDER_MAP_ENTRIES_BY_KEYS)
+                .changeDefaultPropertyInclusion(incl -> JsonInclude.Value.construct(
+                        JsonInclude.Include.NON_NULL, JsonInclude.Include.NON_NULL))
+                .build();
+
+        /**
+         * {@code facts} with a blank name, licence expression or URL and an empty list carried as
+         * null, or null when it holds none of them.
+         */
+        static ReleaseNodeFacts orNull(ReleaseNodeFacts facts) {
+            if (null == facts) return null;
+            String name = blankToNull(facts.supplierName());
+            List<BomHash> hashes = null == facts.hashes() || facts.hashes().isEmpty() ? null : List.copyOf(facts.hashes());
+            String expression = blankToNull(facts.licenseExpression());
+            String url = blankToNull(facts.licenseUrl());
+            return null == name && null == hashes && null == expression && null == url ? null
+                    : new ReleaseNodeFacts(name, hashes, expression, url);
+        }
+
+        /**
+         * The key of {@code facts} on a stored merge row (SCORE-39 ADR-5): the lower-case hex
+         * SHA-256 of the compact JSON of {@link #orNull} with members sorted and nulls left out
+         * ({@code {}} when there are no facts), so equal facts give equal keys and "no facts" has
+         * one too.
+         */
+        public static String key(ReleaseNodeFacts facts) {
+            ReleaseNodeFacts normalised = orNull(facts);
+            String json = null == normalised ? "{}" : KEY_MAPPER.writeValueAsString(normalised);
+            return Utils.bytesToHexSha256(json.getBytes(StandardCharsets.UTF_8));
+        }
+
+        private static String blankToNull(String s) {
+            return null == s || s.isBlank() ? null : s;
         }
     }
 
@@ -117,7 +232,11 @@ public class Rebom {
      * A component release of a product that yielded no BOM, as rebom lists it in the product's
      * merged BOM (SCORE-15 ADR-2): a component with the bom-ref {@code urn:rearm:release:<releaseUuid>},
      * the property {@code reliza:sbom:missing = reason} and unknown dependencies. {@code purl} is
-     * null when the release records none; it is never made up.
+     * null when the release records none; it is never made up. {@code hashes} are the digests of
+     * the one deliverable the release ships (SCORE-30 ADR-3), null when there are none, and then
+     * never serialised; {@code supplierName} as SbomSupplierNames names it (ADR-2), null when it
+     * names none; {@code licenseExpression} and {@code licenseUrl} the declared licence as
+     * DeclaredLicenses resolves it (SCORE-39 ADR-3), null when none, and then never serialised.
      */
     public record MissingSbomComponent(
         String releaseUuid,
@@ -127,6 +246,9 @@ public class Rebom {
         String supplierName,
         String group,
         String purl,
+        @JsonInclude(JsonInclude.Include.NON_NULL) List<BomHash> hashes,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String licenseExpression,
+        @JsonInclude(JsonInclude.Include.NON_NULL) String licenseUrl,
         MissingSbomReason reason
     ) {}
 

@@ -23,7 +23,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -176,7 +176,7 @@ public class VulnAnalysisDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		Map<String, Object> inputMap = dfe.getArgument("analysis");
-		CreateVulnAnalysisDto createDto = Utils.OM.convertValue(inputMap, CreateVulnAnalysisDto.class);
+		CreateVulnAnalysisDto createDto = InputConversion.convert(inputMap, CreateVulnAnalysisDto.class, "analysis");
 		
 		List<RelizaObject> ros = new LinkedList<>();
 		
@@ -235,7 +235,7 @@ public class VulnAnalysisDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		Map<String, Object> inputMap = dfe.getArgument("analysis");
-		UpdateVulnAnalysisDto updateDto = Utils.OM.convertValue(inputMap, UpdateVulnAnalysisDto.class);
+		UpdateVulnAnalysisDto updateDto = InputConversion.convert(inputMap, UpdateVulnAnalysisDto.class, "analysis");
 		
 		// Get existing analysis to check org
 		Optional<VulnAnalysisData> existingAnalysis = vulnAnalysisService.getVulnAnalysisData(updateDto.getAnalysisUuid());

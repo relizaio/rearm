@@ -34,18 +34,15 @@ import { pool } from '../../src/utils';
 import { logger } from '../../src/logger';
 import { canonicalUuid } from '../../src/types';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber, cleanupTestBoms } from '../helpers';
-import { BomLineageOwnerError, BomValidationError, BomVersionConflictError } from '../../src/types/errors';
+import { BomValidationError, BomVersionConflictError } from '../../src/types/errors';
 
 /**
- * SCORE-46, review item T-3: rebom.boms and rebom.bom_lineage store every
- * spelling PostgreSQL's uuid type parses as one organization, so addBom
- * canonicalises the organization before anything reads it, and the lineage
- * lock and the in-transaction version re-check key on the uuid value. Against
- * the migrated database (localhost:5438 by default).
+ * SCORE-46, review item T-3, kept by SCORE-51 (SCORE-50a) with no lineage owner:
+ * rebom.boms stores every spelling PostgreSQL's uuid type parses as one
+ * organization, so addBom canonicalises the organization before anything reads
+ * it, and the lineage lock and the in-transaction version re-check key on the
+ * uuid value. Against the migrated database (localhost:5438 by default).
  */
-
-const A = 'aaaaaaaa-0000-4000-8000-000000000001';
-const B = 'bbbbbbbb-0000-4000-8000-000000000002';
 
 const ORG_BRACES = `{${TEST_ORG_UUID}}`;
 const ORG_NO_HYPHENS = TEST_ORG_UUID.replace(/-/g, '');
@@ -82,18 +79,11 @@ function document(serialNumber: string, version: number, variant?: string): any 
     return bom;
 }
 
-function upload(serialNumber: string, version: number, owner?: string, org = TEST_ORG_UUID, variant?: string) {
+function upload(serialNumber: string, version: number, org = TEST_ORG_UUID, variant?: string) {
     const rebomOptions = createTestRebomOptions({ serialNumber });
-    if (owner !== undefined) rebomOptions.ownerComponent = owner;
     return BomService.addBom({
         bomInput: { format: 'CYCLONEDX', bom: document(serialNumber, version, variant), org, rebomOptions }
     } as any);
-}
-
-async function lineageRow(serialNumber: string): Promise<any> {
-    const res = await pool.query(
-        'SELECT * FROM rebom.bom_lineage WHERE organization = $1 AND serial_number = $2', [TEST_ORG_UUID, serialNumber]);
-    return res.rows[0];
 }
 
 async function versions(serialNumber: string): Promise<string[]> {
@@ -136,36 +126,25 @@ describe('canonicalUuid', () => {
 });
 
 describe('addBom canonicalises the organization', () => {
-    it.each(ALL_SPELLINGS)('org spelling b: an owner upload with the organization in %s claims and stores under the organization',
-        async (_name, org) => {
-            const S = fresh();
-            const created: any = await upload(S, 1, A, org);
-
-            expect(created.organization).toBe(TEST_ORG_UUID);
-            expect((await lineageRow(S)).owner_component).toBe(A);
-            expect(await versions(S)).toStrictEqual(['1']);
-        });
-
-    it.each(SPLITTING_SPELLINGS)('org spelling c: with no race, an owner upload in %s beneath a newer null row is refused before any push',
+    it.each(SPLITTING_SPELLINGS)('org spelling c: with no race, an upload in %s beneath a newer row is refused before any push',
         async (_name, org) => {
             const S = fresh();
             await upload(S, 1);
             await upload(S, 3);
             const before = pushesOf(S);
 
-            await expect(upload(S, 2, A, org)).rejects.toBeInstanceOf(BomVersionConflictError);
+            await expect(upload(S, 2, org)).rejects.toBeInstanceOf(BomVersionConflictError);
             expect(pushesOf(S)).toBe(before);
-            expect(await lineageRow(S)).toBeUndefined();
             expect(await versions(S)).toStrictEqual(['1', '3']);
         });
 
     it.each(SPLITTING_SPELLINGS)('org spelling d: the same bytes uploaded again with the organization in %s answer the stored row',
         async (_name, org) => {
             const S = fresh();
-            const first: any = await upload(S, 1, A);
+            const first: any = await upload(S, 1);
             const before = pushesOf(S);
 
-            const again: any = await upload(S, 1, A, org);
+            const again: any = await upload(S, 1, org);
             expect(again.uuid).toBe(first.uuid);
             expect(pushesOf(S)).toBe(before);
             expect(await versions(S)).toStrictEqual(['1']);
@@ -174,7 +153,7 @@ describe('addBom canonicalises the organization', () => {
     it('org spelling e: an organization that is not a uuid is refused before any read or push', async () => {
         const S = fresh();
         for (const org of ['not-a-uuid', '', ` ${TEST_ORG_UUID}`, `{${TEST_ORG_UUID}`, undefined, null]) {
-            const rebomOptions = { ...createTestRebomOptions({ serialNumber: S }), ownerComponent: A };
+            const rebomOptions = createTestRebomOptions({ serialNumber: S });
             const refusal = await BomService.addBom({
                 bomInput: { format: 'CYCLONEDX', bom: document(S, 1), org, rebomOptions }
             } as any).catch(e => e);
@@ -183,7 +162,6 @@ describe('addBom canonicalises the organization', () => {
             expect(refusal.details).toStrictEqual({ field: 'org', value: org });
         }
         expect(pushesOf(S)).toBe(0);
-        expect(await lineageRow(S)).toBeUndefined();
         expect(await versions(S)).toStrictEqual([]);
     });
 });
@@ -195,22 +173,21 @@ describe('the SPDX path', () => {
         SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0', name: 'doc',
         documentNamespace: ns, packages: []
     });
-    const uploadSpdx = (ns: string, org: string, owner?: string, existing?: string) => BomService.addBom({
-        bomInput: { bom: spdx(ns), format: 'SPDX', org, existingSerialNumber: existing, rebomOptions: { ownerComponent: owner } }
+    const uploadSpdx = (ns: string, org: string, existing?: string) => BomService.addBom({
+        bomInput: { bom: spdx(ns), format: 'SPDX', org, existingSerialNumber: existing, rebomOptions: {} }
     } as any);
     const spdxRows = async (ns: string) => (await pool.query(
         `SELECT organization FROM rebom.spdx_boms WHERE spdx_metadata->>'documentNamespace' = $1`, [ns])).rows;
 
-    it('org spelling f: a first SPDX upload with the organization in braces claims and stores under the organization', async () => {
+    it('org spelling f: a first SPDX upload with the organization in braces stores under the organization', async () => {
         const S = fresh();
         const N = namespace();
         const converted = document(S, 1);
         convertSpy.mockResolvedValueOnce({ success: true, convertedBom: converted } as any);
 
-        const created: any = await uploadSpdx(N, ORG_BRACES, A);
+        const created: any = await uploadSpdx(N, ORG_BRACES);
 
         expect(created.organization).toBe(TEST_ORG_UUID);
-        expect((await lineageRow(S)).owner_component).toBe(A);
         expect((await spdxRows(N)).map(r => r.organization)).toStrictEqual([TEST_ORG_UUID]);
     });
 
@@ -221,10 +198,9 @@ describe('the SPDX path', () => {
         await upload(S, 2);
         const before = pushed.length;
 
-        await expect(uploadSpdx(N, ORG_NO_HYPHENS, A, bare(S))).rejects.toBeInstanceOf(BomVersionConflictError);
+        await expect(uploadSpdx(N, ORG_NO_HYPHENS, bare(S))).rejects.toBeInstanceOf(BomVersionConflictError);
         expect(pushed.length).toBe(before);
         expect(await spdxRows(N)).toHaveLength(0);
-        expect(await lineageRow(S)).toBeUndefined();
     });
 });
 
@@ -264,8 +240,8 @@ describe('the lineage lock and the version re-check', () => {
     });
 });
 
-// The T-17 pairings with one side spelling the organization otherwise: every
-// iteration must still end as one of the two serial orders, with the loser told.
+// SCORE-51 T-3 (ii) with one side spelling the organization otherwise: every
+// spelling takes the one lock, so version 2 never lands beneath version 3.
 describe('parallel, one side spelling the organization otherwise', () => {
     const ITERATIONS = 20;
 
@@ -288,75 +264,36 @@ describe('parallel, one side spelling the organization otherwise', () => {
             }
             counts[outcome] = (counts[outcome] ?? 0) + 1;
         }
-        logger.info({ pairing: name, iterations: ITERATIONS, counts }, 'SCORE-46 org spelling race outcomes');
+        logger.info({ pairing: name, iterations: ITERATIONS, counts }, 'SCORE-51 org spelling race outcomes');
         expect(violations, `${violations.length} of ${ITERATIONS} iterations broke the invariant`).toStrictEqual([]);
     }
 
-    const fulfilledCount = (...r: PromiseSettledResult<any>[]) => r.filter(x => x.status === 'fulfilled').length;
     const reason = (r: PromiseSettledResult<any>) => (r as PromiseRejectedResult).reason;
 
-    // [label, the owner's organization, the null caller's organization]
+    // [label, the organization of version 2, the organization of version 3]
     const SIDES: [string, string, string][] = [
-        ['null caller in braces', TEST_ORG_UUID, ORG_BRACES],
-        ['owner in braces', ORG_BRACES, TEST_ORG_UUID],
-        ['null caller with no hyphens', TEST_ORG_UUID, ORG_NO_HYPHENS],
-        ['owner with no hyphens', ORG_NO_HYPHENS, TEST_ORG_UUID]
+        ['version 3 in upper case', TEST_ORG_UUID, ORG_UPPER],
+        ['version 2 in braces', ORG_BRACES, TEST_ORG_UUID],
+        ['version 3 in braces', TEST_ORG_UUID, ORG_BRACES],
+        ['version 2 with no hyphens', ORG_NO_HYPHENS, TEST_ORG_UUID],
+        ['version 3 with no hyphens', TEST_ORG_UUID, ORG_NO_HYPHENS]
     ];
 
-    it.each(SIDES)('org spelling j (T-17 a shape, %s): a lazy claim against a null upload of a higher version ends in one serial order',
-        async (label, ownerOrg, nullOrg) => {
+    it.each(SIDES)('org spelling j (T-3 ii, %s): versions 2 and 3 at once never leave 2 above 3',
+        async (label, org2, org3) => {
             await runPairing(`j: ${label}`, async sn => {
                 await upload(sn, 1);
-                return [upload(sn, 2, A, ownerOrg), upload(sn, 3, undefined, nullOrg)];
-            }, async (sn, owner, nullCaller) => {
-                expect(fulfilledCount(owner, nullCaller)).toBe(1);
-                if (owner.status === 'fulfilled') {
-                    expect(reason(nullCaller)).toBeInstanceOf(BomLineageOwnerError);
-                    expect((await lineageRow(sn)).owner_component).toBe(A);
-                    expect(await versions(sn)).toStrictEqual(['1', '2']);
-                    expect(await served(sn)).toBe(2);
-                    return 'owner first';
-                }
-                expect(reason(owner)).toBeInstanceOf(BomVersionConflictError);
-                expect(await lineageRow(sn)).toBeUndefined();
-                expect(await versions(sn)).toStrictEqual(['1', '3']);
+                return [upload(sn, 2, org2), upload(sn, 3, org3)];
+            }, async (sn, v2, v3) => {
+                expect(v3.status).toBe('fulfilled');
                 expect(await served(sn)).toBe(3);
-                return 'null first';
+                if (v2.status === 'fulfilled') {
+                    expect(await versions(sn)).toStrictEqual(['1', '2', '3']);
+                    return 'both';
+                }
+                expect(reason(v2)).toBeInstanceOf(BomVersionConflictError);
+                expect(await versions(sn)).toStrictEqual(['1', '3']);
+                return '3 first';
             });
-        }, 120000);
-
-    it.each(SIDES)('org spelling k (T-17 b shape, %s): a first claim of a fresh serialNumber against a null upload ends in one serial order',
-        async (label, ownerOrg, nullOrg) => {
-            await runPairing(`k: ${label}`, async sn => [upload(sn, 1, B, ownerOrg), upload(sn, 2, undefined, nullOrg)],
-                async (sn, owner, nullCaller) => {
-                    expect(fulfilledCount(owner, nullCaller)).toBe(1);
-                    if (owner.status === 'fulfilled') {
-                        expect(reason(nullCaller)).toBeInstanceOf(BomLineageOwnerError);
-                        expect((await lineageRow(sn)).owner_component).toBe(B);
-                        expect(await versions(sn)).toStrictEqual(['1']);
-                        return 'owner first';
-                    }
-                    expect(reason(owner)).toBeInstanceOf(BomVersionConflictError);
-                    expect(await lineageRow(sn)).toBeUndefined();
-                    expect(await versions(sn)).toStrictEqual(['2']);
-                    return 'null first';
-                });
-        }, 120000);
-
-    it('org spelling l (T-17 c shape, A in braces, B with no hyphens): two components racing for a fresh serialNumber end with exactly one owner',
-        async () => {
-            await runPairing('l: A braces vs B no hyphens',
-                async sn => [upload(sn, 1, A, ORG_BRACES, 'a'), upload(sn, 1, B, ORG_NO_HYPHENS, 'b')],
-                async (sn, a, b) => {
-                    expect(fulfilledCount(a, b)).toBe(1);
-                    const [winner, loser] = a.status === 'fulfilled' ? [A, b] : [B, a];
-                    const lost = reason(loser);
-                    expect(lost instanceof BomLineageOwnerError || lost instanceof BomVersionConflictError).toBe(true);
-                    expect((await lineageRow(sn)).owner_component).toBe(winner);
-                    const rows = await BomRepository.allBomsBySerialNumber(sn, TEST_ORG_UUID);
-                    expect(rows).toHaveLength(1);
-                    expect(rows[0].meta.ownerComponent).toBe(winner);
-                    return winner === A ? 'A first' : 'B first';
-                });
         }, 120000);
 });

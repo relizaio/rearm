@@ -1,0 +1,57 @@
+[
+  {
+    "name": "rfc8785-3.2.2.3-numbers",
+    "input": "[1E30, 4.50, 1e-7, 0.000001, 1e21, -0, 333333333.33333329, 9007199254740993, 1.0, 1E+2]",
+    "expected": "[1e+30,4.5,1e-7,0.000001,1e+21,0,333333333.3333333,9007199254740992,1,100]"
+  },
+  {
+    "name": "rfc8785-3.2.2-sample",
+    "input": "{\n  \"numbers\": [333333333.33333329, 1E30, 4.50,\n              2e-3, 0.000000000000000000000000001],\n  \"string\": \"\\u20ac$\\u000F\\u000aA'\\u0042\\u0022\\u005c\\\\\\\"\\/\",\n  \"literals\": [null, true, false]\n}",
+    "expected": "{\"literals\":[null,true,false],\"numbers\":[333333333.3333333,1e+30,4.5,0.002,1e-27],\"string\":\"\u20ac$\\u000f\\nA'B\\\"\\\\\\\\\\\"/\"}"
+  },
+  {
+    "name": "rfc8785-3.2.3-sorting",
+    "input": "{\n  \"\\u20ac\": \"Euro Sign\",\n  \"\\r\": \"Carriage Return\",\n  \"\\ufb33\": \"Hebrew Letter Dalet With Dagesh\",\n  \"1\": \"One\",\n  \"\\ud83d\\ude00\": \"Emoji: Grinning Face\",\n  \"\\u0080\": \"Control\",\n  \"\\u00f6\": \"Latin Small Letter O With Diaeresis\"\n}",
+    "expected": "{\"\\r\":\"Carriage Return\",\"1\":\"One\",\"\u0080\":\"Control\",\"\u00f6\":\"Latin Small Letter O With Diaeresis\",\"\u20ac\":\"Euro Sign\",\"\ud83d\ude00\":\"Emoji: Grinning Face\",\"\ufb33\":\"Hebrew Letter Dalet With Dagesh\"}"
+  },
+  {
+    "name": "utf16-not-utf8-key-order",
+    "input": "{\"\\ufb33\": 2, \"\\ud83d\\ude00\": 1, \"\\u20ac\": 0}",
+    "expected": "{\"\u20ac\":0,\"\ud83d\ude00\":1,\"\ufb33\":2}"
+  },
+  {
+    "name": "nested-unsorted-keys",
+    "input": "{ \"b\": { \"z\": 1, \"a\": [ { \"y\": 2, \"x\": 1 } ] }, \"a\": 0, \"B\": null }",
+    "expected": "{\"B\":null,\"a\":0,\"b\":{\"a\":[{\"x\":1,\"y\":2}],\"z\":1}}"
+  },
+  {
+    "name": "every-json-escape",
+    "input": "[\"\\\"\", \"\\\\\", \"\\/\", \"\\b\", \"\\f\", \"\\n\", \"\\r\", \"\\t\", \"\\u0000\", \"\\u001f\", \"\\u001F\", \"\\u0041\"]",
+    "expected": "[\"\\\"\",\"\\\\\",\"/\",\"\\b\",\"\\f\",\"\\n\",\"\\r\",\"\\t\",\"\\u0000\",\"\\u001f\",\"\\u001f\",\"A\"]"
+  },
+  {
+    "name": "non-ascii-stays-unescaped",
+    "input": "{\"name\": \"caf\\u00e9 \\u4e2d \\ud83d\\ude00 \\u2028\"}",
+    "expected": "{\"name\":\"caf\u00e9 \u4e2d \ud83d\ude00 \u2028\"}"
+  },
+  {
+    "name": "empty-object-and-array",
+    "input": "{ \"o\" : { } , \"a\" : [ ] }",
+    "expected": "{\"a\":[],\"o\":{}}"
+  },
+  {
+    "name": "literals",
+    "input": "[ true , false , null ]",
+    "expected": "[true,false,null]"
+  },
+  {
+    "name": "integer-2^53+1-rounds",
+    "input": "9007199254740993",
+    "expected": "9007199254740992"
+  },
+  {
+    "name": "rfc8785-appendix-b-samples",
+    "input": "[295147905179352825856, 1424953923781206.25, 5e-324, 1E23, -0.0]",
+    "expected": "[295147905179352830000,1424953923781206.2,5e-324,1e+23,0]"
+  }
+]

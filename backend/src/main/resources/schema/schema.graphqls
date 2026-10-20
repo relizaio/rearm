@@ -87,6 +87,13 @@ type Component {
 	apiKey: String
 	createdType: ProgrammaticType
 	lastUpdatedBy: ID
+	"""
+	The revision of the stored component: every save of the component row adds one (settings, locks,
+	perspectives, archive, declarative applies). The settings page sends the revision it read back as
+	UpdateComponentInput.expectedRevision, so a save from a page opened before another change is refused.
+	Null on a component object that was not read from its row.
+	"""
+	revision: Int
 	createdDate: DateTime
 	defaultConfig: String
 	visibilitySetting: VisibilitySetting
@@ -126,6 +133,24 @@ type Component {
 	sidAuthoritySegments: [String!]
 	"""Internal/external classification (D16). Null on legacy rows is treated as INTERNAL."""
 	isInternal: BelongsToOrganization
+	"""
+	The component's declared licence (SCORE-39), a canonical SPDX expression; null when unset,
+	and then the organization default applies. Written on the SBOM nodes ReARM makes for the
+	component's releases unless a release overrides it.
+	"""
+	licenseExpression: String
+	"""URL of licenseExpression (http or https); null when unset."""
+	licenseUrl: String
+	"""
+	Supplier named on the SBOM nodes ReARM makes for the component's releases when no
+	deliverable publisher names one (SCORE-39); null when unset, and then the organization is
+	named for its own (INTERNAL) software and none otherwise.
+	Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set.
+	A root uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM
+	(a new serialNumber) uploaded to a release made after the change carries the new value in
+	that release's export. An identical file is answered with the stored row, unchanged.
+	"""
+	supplierName: String
 	"""
 	Synthetic component-level lifecycle derived from the lifecycles of the
 	component's releases:
@@ -444,6 +469,14 @@ type Settings {
 	time.
 	"""
 	fdaRiskIncreasesNotice: String
+	"""
+	The organization's default declared licence (SCORE-39), a canonical SPDX expression: written
+	on the SBOM nodes ReARM makes for a release whose component and release declare none. Null
+	when unset.
+	"""
+	defaultLicenseExpression: String
+	"""URL of defaultLicenseExpression (http or https); null when unset."""
+	defaultLicenseUrl: String
 	"""
 	Org-wide default UI view (Security or DevOps) for users who have not
 	picked one in their browser. Null means SECURITY.
@@ -1140,6 +1173,17 @@ type Release {
 	every release that never set one, which is the overwhelming majority.
 	"""
 	fdaAssessmentNarrative: String
+	"""
+	Per-release override of the declared licence (SCORE-39), a canonical SPDX expression. NULL
+	MEANS INHERIT: read effectiveLicense for what ReARM writes on the release's SBOM node.
+	"""
+	licenseExpression: String
+	"""
+	The licence ReARM declares for this release's node in a merged SBOM (SCORE-39): the
+	release override, else the component's licence, else the organization default; null when
+	no level declares one. The url comes only from the level that won (a release has none).
+	"""
+	effectiveLicense: DeclaredLicense
 	"""
 	Provenance for the release's own eos/eol -- the CLE lifecycle projections, NOT
 	the device support window -- DERIVED from the most recent SUPPORT_WINDOW update
@@ -2118,6 +2162,45 @@ input CreateComponentInput {
 	components never receive a platform-stamped sid PURL (D16).
 	"""
 	isInternal: BelongsToOrganization
+	"""
+	Declared licence (SCORE-39), omitted or empty for none.
+	An SPDX licence expression: SPDX list ids (any case, stored in the list's casing, a
+	trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the upper-case operators AND, OR and
+	WITH (exception ids syntax-checked only) and parentheses; at most 512 characters.
+	NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	"""
+	licenseExpression: String
+	"""
+	URL of licenseExpression (SCORE-39): an absolute http or https URL with a host, printable
+	ASCII (punycode host), no user information, at most 2048 characters; needs licenseExpression.
+	"""
+	licenseUrl: String
+	"""
+	Supplier named on the SBOM nodes of the component's releases (SCORE-39): trimmed, at most
+	255 characters; no < or >, control, invisible formatting or bidi characters.
+	Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set.
+	A root uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM
+	(a new serialNumber) uploaded to a release made after the change carries the new value in
+	that release's export. An identical file is answered with the stored row, unchanged.
+	"""
+	supplierName: String
+}
+
+"""A declared licence as resolved for a release (SCORE-39)."""
+type DeclaredLicense {
+	"""Canonical SPDX expression."""
+	expression: String!
+	"""URL of the licence, from the level that declared it; null when it has none."""
+	url: String
+	"""The level the licence was resolved from."""
+	level: DeclaredLicenseLevel!
+}
+
+"""Where a release's declared licence comes from (SCORE-39)."""
+enum DeclaredLicenseLevel {
+	ORGANIZATION
+	COMPONENT
+	RELEASE
 }
 
 
@@ -2665,6 +2748,9 @@ enum ReleaseUpdateScopeEnum {
 	# The per-release FDA assessment narrative override. Distinct from SUPPORT_WINDOW: the
 	# window is a factual commitment, this is the manufacturer's justification prose.
 	FDA_NARRATIVE
+	# The per-release declared licence override (SCORE-39). Added with the Java value: a value
+	# missing here fails the serialisation of every release that carries it.
+	DECLARED_LICENSE
 }
 
 enum ReleaseUpdateActionEnum {
@@ -3336,8 +3422,8 @@ type AgentBoardEventPage {
 
 enum AgentSignOffOutcome { PASSED REJECTED }
 
-"""Why an assigned agent handed the task back to the coordinator. SESSION_CLOSED is system-generated on any session-close path."""
-enum AgentTaskReturnReason { TASK_UNCLEAR ROLE_MISMATCH MISSING_CAPABILITY BLOCKED_ON_DEPENDENCY NEEDS_HUMAN SESSION_CLOSED OTHER }
+"""Why an assigned agent handed the task back to the coordinator. SESSION_CLOSED is system-generated on any session-close path; PARKED_FOR_OPERATOR is system-generated when the session working the task parks its hop for the operator, which ends the hop."""
+enum AgentTaskReturnReason { TASK_UNCLEAR ROLE_MISMATCH MISSING_CAPABILITY BLOCKED_ON_DEPENDENCY NEEDS_HUMAN SESSION_CLOSED PARKED_FOR_OPERATOR OTHER }
 
 type AgentBoardPause {
 	level: AgentBoardPauseLevel
@@ -5906,6 +5992,41 @@ type ModelOntology {
 # Image / SBOM / X.509 land in v2. See backend/ai-plans/agentic/README §11.4.
 # ============================================================
 
+
+"""
+An organization's SBOM signing key (SCORE-32). Public material only: the private key never leaves
+the server. CURRENT signs exports, RETIRED was replaced by a rotation and still verifies documents
+signed before retiredAt, REVOKED is no longer vouched for.
+"""
+type SbomSigningKey {
+	uuid: ID
+	org: ID
+	keyId: String
+	algorithm: SbomSigningKeyAlgorithm
+	status: SbomSigningKeyStatus
+	source: SbomSigningKeySource
+	"""JSON string of the public JWK: {"kty":"OKP","crv":"Ed25519","x":"..."}"""
+	publicKeyJwk: String
+	publicKeyPem: String
+	createdDate: DateTime
+	retiredAt: DateTime
+	revokedAt: DateTime
+}
+
+enum SbomSigningKeyAlgorithm {
+	Ed25519
+}
+
+enum SbomSigningKeyStatus {
+	CURRENT
+	RETIRED
+	REVOKED
+}
+
+enum SbomSigningKeySource {
+	GENERATED
+	IMPORTED
+}
 
 """
 Enrolled public key bound to an Agent or Committer. The verifier

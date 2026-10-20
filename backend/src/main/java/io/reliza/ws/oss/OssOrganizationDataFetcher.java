@@ -7,7 +7,6 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,7 +20,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -93,11 +92,11 @@ public class OssOrganizationDataFetcher {
 
 		UUID userUuid = UUID.fromString(userUuidStr);
 
+		if (null == permissions) throw new RelizaException("permissions: required");
+		List<PermissionDto> convertedPermissions = InputConversion.convertEach(permissions, PermissionDto.class, "permissions");
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());		
 		OrgUserData retUserData = null;
 		try {
-			List<PermissionDto> convertedPermissions = permissions.stream()
-					.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
 			authorizationService.assertGrantObjectsExist(orgUuid, convertedPermissions);
 			UserData ud = userService.setUserPermissions(userUuid, orgUuid, Optional.of(permissionType), convertedPermissions, wu);
 			retUserData = UserData.convertUserDataToOrgUserData(ud, orgUuid);

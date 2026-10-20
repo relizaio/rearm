@@ -155,6 +155,18 @@ public class UpdateComponentDto {
 	@JsonProperty
 	private BelongsToOrganization isInternal;
 
+	/** Declared licence (SCORE-39 ADR-1). Null = unchanged; empty string clears it and its URL. */
+	@JsonProperty
+	private String licenseExpression;
+
+	/** URL of the declared licence. Null = unchanged; empty string clears. */
+	@JsonProperty
+	private String licenseUrl;
+
+	/** Supplier name (SCORE-39 ADR-3). Null = unchanged; empty string clears. */
+	@JsonProperty
+	private String supplierName;
+
 	/** Manually-assigned lead user UUIDs. Null = unchanged; empty list clears. */
 	@JsonProperty
 	private Set<UUID> leads;
@@ -179,6 +191,12 @@ public class UpdateComponentDto {
 	/** Explicitly remove the stored owner; see {@code ComponentDto.clearOwner}. */
 	@JsonProperty
 	private Boolean clearOwner;
+	/**
+	 * The revision of the component this save was prepared from (TPF-61); see
+	 * {@code ComponentDto.expectedRevision}. Declared here because updateComponent deserializes
+	 * into this DTO, which ignores unknown fields.
+	 */
+	private Integer expectedRevision;
 
 	public static ReleaseOutputEvent convertReleaseOutputEventFromInput (ReleaseOutputEventInput roei,
 			IntegrationType it) throws DatabindException, JacksonException {
@@ -270,12 +288,16 @@ public class UpdateComponentDto {
 								.sidPurlOverride(ucd.getSidPurlOverride())
 								.sidAuthoritySegments(ucd.getSidAuthoritySegments())
 								.isInternal(ucd.getIsInternal())
+								.licenseExpression(ucd.getLicenseExpression())
+								.licenseUrl(ucd.getLicenseUrl())
+								.supplierName(ucd.getSupplierName())
 								.leads(ucd.getLeads())
 								.contacts(ucd.getContacts())
 								.owner(ucd.getOwner())
 								.clearOwner(ucd.getClearOwner())
 								.deviceSupportWindow(ucd.getDeviceSupportWindow())
 								.clearDeviceSupportWindow(ucd.getClearDeviceSupportWindow())
+								.expectedRevision(ucd.getExpectedRevision())
 								.build();
 		return cdto;
 	}

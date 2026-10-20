@@ -100,6 +100,8 @@ public class ArtifactServiceRawUploadRetentionTest {
     @BeforeEach
     void setUp() {
         artifactService = spy(new ArtifactService(null, null, "reliza", "http://localhost"));
+        // SCORE-52: storeArtifactOnRebom runs rule B first; nothing holds the serialNumber here.
+        ReflectionTestUtils.setField(artifactService, "sbomUpdateGuard", mock(SbomUpdateGuard.class));
         artifactUuid = UUID.randomUUID();
     }
 
@@ -313,7 +315,7 @@ public class ArtifactServiceRawUploadRetentionTest {
         saved.setUuid(UUID.randomUUID());
         doReturn(saved).when(artifactService).persistArtifact(any(), any());
 
-        UUID result = artifactService.uploadArtifact(uploadDto(), upload(PRETTY_CDX), new RebomOptions(), null);
+        UUID result = artifactService.uploadArtifact(uploadDto(), upload(PRETTY_CDX), new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL, null);
 
         assertEquals(saved.getUuid(), result);
         ArgumentCaptor<ArtifactDto> persisted = ArgumentCaptor.forClass(ArtifactDto.class);
@@ -342,7 +344,7 @@ public class ArtifactServiceRawUploadRetentionTest {
             new DigestRecord(TeaChecksumType.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE))));
 
         RelizaException e = assertThrows(RelizaException.class,
-            () -> artifactService.uploadArtifact(dto, upload(PRETTY_CDX), new RebomOptions(), null));
+            () -> artifactService.uploadArtifact(dto, upload(PRETTY_CDX), new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL, null));
 
         assertTrue(e.getMessage().contains("RAW_OCI_STORAGE"), e.getMessage());
         verify(artifactService, never()).uploadFileToConfiguredOci(any(Resource.class), anyString(), anyString());
@@ -379,10 +381,10 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setOriginalSize(709L);
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", 709L, "application/json",
-            null, null, "1");
+            null, null, "1", null);
         RebomResponse rebomResponse = new RebomResponse(UUID.randomUUID(), rebomsCopy, meta, false);
         BomLifecycleService bomLifecycleService = mock(BomLifecycleService.class);
         when(bomLifecycleService.processBomArtifact(any(), any(), any(), any(), any(), any(), any()))
@@ -453,7 +455,8 @@ public class ArtifactServiceRawUploadRetentionTest {
         };
 
         assertThrows(Exception.class, () -> ReflectionTestUtils.invokeMethod(
-            artifactService, "storeArtifactOnRebom", dto, file, null, new RebomOptions()));
+            artifactService, "storeArtifactOnRebom", dto, file, null, new RebomOptions(),
+            SbomWriteAuthority.NO_PRINCIPAL));
 
         verify(artifactService).uploadFileToConfiguredOci(any(Resource.class),
             eq("raw-" + Utils.bytesToHexSha256(uploaded)), eq(Utils.bytesToHexSha256(uploaded)));
@@ -503,10 +506,10 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
 
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", rebomReportedSize, "application/json",
-            null, null, "1");
+            null, null, "1", null);
         RebomResponse rebomResponse = new RebomResponse(UUID.randomUUID(), rebomsCopy, meta, false);
 
         BomLifecycleService bomLifecycleService = mock(BomLifecycleService.class);
@@ -518,7 +521,7 @@ public class ArtifactServiceRawUploadRetentionTest {
             @Override public String getFilename() { return "sbom.json"; }
         };
         return ReflectionTestUtils.invokeMethod(artifactService, "storeArtifactOnRebom",
-            bomDto(artifactUuid, format), file, null, new RebomOptions());
+            bomDto(artifactUuid, format), file, null, new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL);
     }
 
     /**

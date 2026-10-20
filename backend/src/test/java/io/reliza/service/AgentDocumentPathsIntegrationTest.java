@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.common.Utils;
@@ -67,6 +68,7 @@ public class AgentDocumentPathsIntegrationTest {
 	@Autowired private AgentSessionService agentSessionService;
 	@Autowired private AgentBoardRepository boardRepository;
 	@Autowired private SharedReleaseService sharedReleaseService;
+	@Autowired private JdbcTemplate jdbcTemplate;
 
 	private record Rig(Organization org, Component target, String targetName, AgentBoardData board, AgentTaskData task,
 			AgentData agent, AgentSessionData session) {}
@@ -215,10 +217,10 @@ public class AgentDocumentPathsIntegrationTest {
 		agentTaskService.saveData(unkeyed, WU);
 		AgentBoardData unnumbered = board(r);
 		unnumbered.setTasksNumbered(false);
-		unnumbered.setNextTaskNumber(0);
 		unnumbered.setTaskPrefix(null);
 		unnumbered.setTaskPrefixHistory(new java.util.ArrayList<>());
 		agentBoardService.saveData(unnumbered, WU);
+		jdbcTemplate.update("UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{nextTaskNumber}', '0') WHERE uuid = ?", unnumbered.getUuid());
 		assertNull(task(r).getKey());
 
 		String next = path(r, ARCH);
