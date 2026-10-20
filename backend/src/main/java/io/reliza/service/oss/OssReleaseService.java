@@ -77,6 +77,7 @@ import io.reliza.service.ComponentLockService.LockedOperation;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
+import io.reliza.service.ArtifactAttachmentGuard;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.DeclaredLicenses;
 import io.reliza.service.ReleaseService;
@@ -148,6 +149,9 @@ public class OssReleaseService {
 
 	@Autowired
 	private ArtifactService artifactService;
+
+	@Autowired
+	private ArtifactAttachmentGuard artifactAttachmentGuard;
 			
 	@Autowired
 	@Lazy
@@ -846,6 +850,14 @@ public class OssReleaseService {
 					+ ", attempted=" + releaseDto.getSidComponentName() + ")");
 		}
 		List<UuidDiff> artDiff = Utils.diffUuidLists(rData.getArtifacts(), releaseDto.getArtifacts());
+		// An added artifact must be of the release's organization and not an agent session's (the
+		// floor, SCORE-52 ADR-6), checked before the list is written.
+		List<UUID> addedArtifacts = artDiff.stream().filter(ad -> ad.diffAction() == ReleaseUpdateAction.ADDED)
+				.map(UuidDiff::object).toList();
+		if (!addedArtifacts.isEmpty()) {
+			artifactAttachmentGuard.refuseForeignAttachment(rData.getOrg(), rData.getComponent(), r.getUuid(),
+					addedArtifacts);
+		}
 		if (!artDiff.isEmpty()) {
 			rData.setArtifacts(releaseDto.getArtifacts());
 			artDiff.forEach(ad -> {
@@ -1878,6 +1890,12 @@ public class OssReleaseService {
 			if (null != releaseDto.getSourceCodeEntry()) suppliedSces.add(releaseDto.getSourceCodeEntry());
 			if (null != releaseDto.getCommits()) suppliedSces.addAll(releaseDto.getCommits());
 			validateReleaseReferences(releaseDto.getOrg(), suppliedSces, suppliedParents);
+			// Every artifact a new release lists must be of its organization and not an agent
+			// session's (the floor, SCORE-52 ADR-6).
+			if (null != releaseDto.getArtifacts() && !releaseDto.getArtifacts().isEmpty()) {
+				artifactAttachmentGuard.refuseForeignAttachment(releaseDto.getOrg(), releaseDto.getComponent(), null,
+						releaseDto.getArtifacts());
+			}
 		} else if (existingReleaseData.isPresent()) {
 			// Rebuild / PENDING: the arm completes through updateRelease, which checks the references
 			// that differ from the stored release -- a legacy one re-sent unchanged does not block it.
