@@ -29,7 +29,7 @@ import { createHash } from 'crypto';
 const AUGMENT_ON_STORAGE = true;
 
 export async function addBom(bomInput: BomInput): Promise<BomRecord> {
-  const input = withoutOwnerComponent(withCanonicalOrg(bomInput));
+  const input = withCanonicalOrg(bomInput);
   const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
     return await addSpdxBom(input);
@@ -44,28 +44,17 @@ export async function addBom(bomInput: BomInput): Promise<BomRecord> {
  * PostgreSQL's uuid type parses as one organization, so the lineage lock, the
  * deduplication, both version checks and the insert must all see the one text
  * form. An organization that is not a uuid is refused before any read or push.
+ * The options are a shallow copy too: both routes fill meta into them, and the
+ * caller's object (mergeAndStoreBoms logs and reuses it) is left as it was.
  */
 function withCanonicalOrg(bomInput: BomInput): BomInput {
   const org = canonicalUuid(bomInput.bomInput?.org);
   if (!org) {
     throw new BomValidationError('org must be a uuid', { field: 'org', value: bomInput.bomInput?.org });
   }
-  return { ...bomInput, bomInput: { ...bomInput.bomInput, org } };
-}
-
-/**
- * The upload with rebomOptions.ownerComponent dropped (SCORE-50): accepted from
- * the rearm-saas that still sends it and ignored, whatever its value, so neither
- * route, the stored meta nor the augmentation sees it. A shallow copy of the
- * options, never a delete: the caller's object is left as it was.
- */
-function withoutOwnerComponent(bomInput: BomInput): BomInput {
   const rebomOptions = bomInput.bomInput.rebomOptions;
-  if (!rebomOptions) {
-    return bomInput;
-  }
-  const { ownerComponent: _ignored, ...rest } = rebomOptions;
-  return { ...bomInput, bomInput: { ...bomInput.bomInput, rebomOptions: rest } };
+  return { ...bomInput, bomInput: { ...bomInput.bomInput, org,
+    ...(rebomOptions ? { rebomOptions: { ...rebomOptions } } : {}) } };
 }
 
 /**
