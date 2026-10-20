@@ -2,11 +2,11 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // SCORE-51 (SCORE-50a) T-2: the SPDX routes with no lineage owner. The route
 // cases of the removed bomLineageOwnerSpdx.test.ts (SCORE-46 T-15 b/e/f/g) are
-// rewritten here without the owner; every case runs with
-// rebomOptions.ownerComponent a uuid and absent, and the first upload also with
-// a string that is not a uuid. The SPDX repository and the rearm-cli conversion
-// are mocked; runQuery is also the transaction client, so it records every
-// statement in order (SCORE-46 r3 shape).
+// rewritten here without the owner. The owner cases were removed in SCORE-54
+// (the input field no longer exists): every route case runs once with empty
+// rebomOptions, and these are the SPDX addBom coverage. The SPDX repository
+// and the rearm-cli conversion are mocked; runQuery is also the transaction
+// client, so it records every statement in order (SCORE-46 r3 shape).
 const LOCK = 'SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2))';
 let latestRows: any[] = [];
 const runQuery = vi.fn(async (text: string, _params?: any[]) => {
@@ -72,11 +72,6 @@ const S = 'urn:uuid:11111111-2222-3333-4444-555555555555';
 const S_BARE = '11111111-2222-3333-4444-555555555555';
 const SC = 'urn:uuid:99999999-8888-4777-8666-555555555555';
 const ORG = '00000000-0000-0000-0000-000000000000';
-const A = 'aaaaaaaa-0000-4000-8000-000000000001';
-
-// (i) a uuid and (ii) absent, for every case; (o) adds a string that is not a uuid.
-const OWNERS: [string, string | undefined][] = [['a uuid ownerComponent', A], ['no ownerComponent', undefined]];
-const OWNERS_O: [string, string | undefined][] = [...OWNERS, ['a non-uuid ownerComponent', 'not-a-uuid']];
 
 function converted(serialNumber: string) {
     return {
@@ -91,10 +86,6 @@ const spdx = (ns: string, name = 'doc') => ({
     SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0', name,
     documentNamespace: ns, packages: []
 });
-
-function options(owner: string | undefined): any {
-    return owner === undefined ? {} : { ownerComponent: owner };
-}
 
 const uploadSpdx = (doc: any, rebomOptions: any, existing?: string) => addBom({
     bomInput: { bom: doc, format: 'SPDX', org: ORG, existingSerialNumber: existing, rebomOptions }
@@ -128,10 +119,8 @@ beforeEach(() => {
 });
 
 describe('T-2 (o): SPDX first upload', () => {
-    it.each(OWNERS_O)('with %s: accepted, stored without ownerComponent, under the lock', async (_label, owner) => {
-        const rebomOptions = options(owner);
-
-        const created: any = await uploadSpdx(spdx('ns-1'), rebomOptions);
+    it('accepted and stored, under the lock', async () => {
+        const created: any = await uploadSpdx(spdx('ns-1'), {});
 
         expect(created.uuid).toBe('inserted');
         expect(pushToOci).toHaveBeenCalledTimes(2);
@@ -142,18 +131,15 @@ describe('T-2 (o): SPDX first upload', () => {
         expect(runQuery.mock.calls[0][1]).toStrictEqual([ORG, SC]);
         const meta = (insertCall()![1] as any[])[1];
         expect(meta.serialNumber).toBe(SC);
-        expect(meta).not.toHaveProperty('ownerComponent');
         expectNoLineageTable();
-        // A copy, not a mutation: the caller's options keep what it sent.
-        expect(rebomOptions).toStrictEqual(options(owner));
     });
 });
 
 describe('T-2 (a): SPDX update accepted', () => {
-    it.each(OWNERS)('with %s: the next version, under the lock, then linked', async (_label, owner) => {
+    it('the next version, under the lock, then linked', async () => {
         findSpdxBomBySerialNumber.mockResolvedValue({ uuid: 'spdx-old', bom_version: 1 });
 
-        await uploadSpdx(spdx('ns-2'), options(owner), S_BARE);
+        await uploadSpdx(spdx('ns-2'), {}, S_BARE);
 
         expect(pushToOci).toHaveBeenCalledTimes(2);
         expect(createSpdxBom).toHaveBeenCalledTimes(1);
@@ -164,7 +150,6 @@ describe('T-2 (a): SPDX update accepted', () => {
         expect(params[5]).toBe('SPDX');
         expect(params[1].serialNumber).toBe(S);
         expect(params[1].bomVersion).toBe('2');
-        expect(params[1]).not.toHaveProperty('ownerComponent');
         const insertOrder = runQuery.mock.invocationCallOrder[2];
         expect(linkConvertedBom.mock.invocationCallOrder[0]).toBeGreaterThan(insertOrder);
         expect(updateSpdxBomConversionStatus).toHaveBeenCalledWith(expect.any(String), 'success');
@@ -174,21 +159,20 @@ describe('T-2 (a): SPDX update accepted', () => {
 });
 
 describe('T-2 (b): SPDX update with no SPDX row of the serialNumber', () => {
-    it.each(OWNERS)('with %s and no stored row: accepted at version 1 under the prefixed serialNumber', async (_label, owner) => {
-        await uploadSpdx(spdx('ns-2'), options(owner), S_BARE);
+    it('with no stored row: accepted at version 1 under the prefixed serialNumber', async () => {
+        await uploadSpdx(spdx('ns-2'), {}, S_BARE);
 
         expect(createSpdxBom.mock.calls[0][0].bom_version).toBe(1);
         expect(kinds()).toStrictEqual(['lock', 'latest', 'insert']);
         const meta = (insertCall()![1] as any[])[1];
         expect(meta.serialNumber).toBe(S);
         expect(meta.bomVersion).toBe('1');
-        expect(meta).not.toHaveProperty('ownerComponent');
     });
 
-    it.each(OWNERS)('with %s and a CycloneDX row at version 1: refused before any push or write', async (_label, owner) => {
+    it('with a CycloneDX row at version 1: refused before any push or write', async () => {
         allBomsBySerialNumber.mockResolvedValue([{ uuid: 'cdx-1', meta: { bomVersion: '1', serialNumber: S } }]);
 
-        await expect(uploadSpdx(spdx('ns-2'), options(owner), S_BARE)).rejects.toBeInstanceOf(BomVersionConflictError);
+        await expect(uploadSpdx(spdx('ns-2'), {}, S_BARE)).rejects.toBeInstanceOf(BomVersionConflictError);
         expect(pushToOci).not.toHaveBeenCalled();
         expect(createSpdxBom).not.toHaveBeenCalled();
         expect(runQuery).not.toHaveBeenCalled();
@@ -196,11 +180,11 @@ describe('T-2 (b): SPDX update with no SPDX row of the serialNumber', () => {
 });
 
 describe('T-2 (f): SPDX update not above a CycloneDX row', () => {
-    it.each(OWNERS)('with %s: refused before any push, naming both versions', async (_label, owner) => {
+    it('refused before any push, naming both versions', async () => {
         findSpdxBomBySerialNumber.mockResolvedValue({ uuid: 'spdx-old', bom_version: 1 });
         allBomsBySerialNumber.mockResolvedValue([{ uuid: 'cdx-2', meta: { bomVersion: '2', serialNumber: S } }]);
 
-        const result = uploadSpdx(spdx('ns-2'), options(owner), S_BARE);
+        const result = uploadSpdx(spdx('ns-2'), {}, S_BARE);
         await expect(result).rejects.toBeInstanceOf(BomVersionConflictError);
         await result.catch((e: any) => {
             expect(e.storedVersion).toBe(2);
@@ -214,11 +198,11 @@ describe('T-2 (f): SPDX update not above a CycloneDX row', () => {
 });
 
 describe('T-2 (c): SPDX update refused in the transaction', () => {
-    it.each(OWNERS)('with %s: a row stored since the pre-checks stops the insert', async (_label, owner) => {
+    it('a row stored since the pre-checks stops the insert', async () => {
         findSpdxBomBySerialNumber.mockResolvedValue({ uuid: 'spdx-old', bom_version: 1 });
         latestRows = [{ uuid: 'late', bom_version: '2' }];
 
-        await expect(uploadSpdx(spdx('ns-2'), options(owner), S_BARE)).rejects.toBeInstanceOf(BomVersionConflictError);
+        await expect(uploadSpdx(spdx('ns-2'), {}, S_BARE)).rejects.toBeInstanceOf(BomVersionConflictError);
         expect(pushToOci).toHaveBeenCalledTimes(2);
         expect(createSpdxBom).toHaveBeenCalledTimes(1);
         expect(kinds()).toStrictEqual(['lock', 'latest']);
@@ -227,7 +211,7 @@ describe('T-2 (c): SPDX update refused in the transaction', () => {
 });
 
 describe('T-2 (d): identical SPDX first upload', () => {
-    it.each(OWNERS)('with %s: answers the stored converted row, with no push and no write', async (_label, owner) => {
+    it('answers the stored converted row, with no push and no write', async () => {
         const doc = spdx('ns-1');
         const stored = { uuid: 'converted-1', meta: { serialNumber: SC, bomVersion: '1' } };
         findSpdxBomByNamespace.mockResolvedValue({
@@ -235,7 +219,7 @@ describe('T-2 (d): identical SPDX first upload', () => {
         });
         bomById.mockResolvedValue([stored]);
 
-        const result: any = await uploadSpdx(doc, options(owner));
+        const result: any = await uploadSpdx(doc, {});
 
         expect(result).toBe(stored);
         expect(bomById).toHaveBeenCalledWith('converted-1');
@@ -249,7 +233,7 @@ describe('T-2 (d): identical SPDX first upload', () => {
             uuid: 'spdx-1', file_sha256: 'another-hash', converted_bom_uuid: 'converted-1'
         });
 
-        await expect(uploadSpdx(spdx('ns-1', 'changed'), options(A))).rejects.toBeInstanceOf(BomValidationError);
+        await expect(uploadSpdx(spdx('ns-1', 'changed'), {})).rejects.toBeInstanceOf(BomValidationError);
         expect(pushToOci).not.toHaveBeenCalled();
         expect(createSpdxBom).not.toHaveBeenCalled();
         expect(runQuery).not.toHaveBeenCalled();
