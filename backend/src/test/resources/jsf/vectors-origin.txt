@@ -1,0 +1,16 @@
+Shared JSF vectors of SCORE-31 (section 4.1), copied byte for byte (cp, no reformatting) by SCORE-33.
+
+Source repository: github.com/relizaio/rearm-cli
+Path:              internal/bomscore/testdata/jsf/
+Commit:            ad946c665153327de290e8bd75b87b2d93503b2a (branch 2026-10-sbom-score, merge of PR 156, SCORE-34)
+Regenerate there:  go test ./internal/bomscore -run TestJSFVectors -update
+
+Copied: signed-ed25519.cdx.json, signed-ed25519.pretty.cdx.json, signed-es256.cdx.json,
+tampered.cdx.json, malformed.cdx.json, malformed-base64.cdx.json, unsigned.cdx.json,
+keyid-only.cdx.json, embedded-wrong-key.cdx.json, pub.pem, pub-es256.pem, pub.jwk.json,
+keys.jwks.json, wrong-key.jwks.json, jcs-vectors.json, canonical/signed-ed25519.jcs,
+canonical/signed-es256.jcs.
+
+When rearm-cli regenerates them, refresh this copy by hand from the new commit and update the
+commit above. JsfCanonicalizerTest, JsfVerifierTest and SbomExportSigningVectorsTest fail on a
+stale copy; that is the intended signal. rfc8032-vectors.json beside them is SCORE-32's, not a copy.

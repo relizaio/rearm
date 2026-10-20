@@ -182,49 +182,6 @@ describe('BOM Merge Operations', () => {
         }
     });
 
-    it('T-11 (SCORE-46): a merge that names an owner claims the merged lineage for it', async () => {
-        const owner = 'aaaaaaaa-0000-4000-8000-000000000001';
-        const inputs: string[] = [];
-        for (const fixture of ['cyclonedx-simple.json', 'cyclonedx-for-merge.json']) {
-            const bomContent = loadFixture(fixture);
-            const serialNumber = generateSerialNumber();
-            createdSerialNumbers.push(serialNumber);
-            bomContent.serialNumber = serialNumber;
-            const created = await BomService.addBom({
-                bomInput: {
-                    format: 'CYCLONEDX' as const,
-                    bom: bomContent,
-                    org: TEST_ORG_UUID,
-                    rebomOptions: createTestRebomOptions({ serialNumber, name: 'app', version: '1.0.0' })
-                }
-            });
-            inputs.push(created.uuid);
-        }
-        const mergedSerialNumber = generateSerialNumber();
-        createdSerialNumbers.push(mergedSerialNumber);
-        const options = createTestRebomOptions({ serialNumber: mergedSerialNumber, name: 'merged-app', version: '1.0.0' });
-        options.ownerComponent = owner;
-
-        const mergedRecord = await BomService.mergeAndStoreBoms(inputs, options, TEST_ORG_UUID, BomService.addBom);
-        const storedSerialNumber = mergedRecord.meta.serialNumber;
-        createdSerialNumbers.push(storedSerialNumber);
-        try {
-            const lineage = await BomService.bomLineage(TEST_ORG_UUID, storedSerialNumber);
-            expect(lineage?.ownerComponent).toBe(owner);
-            expect(lineage?.claimedVia).toBe('UPLOAD');
-            expect(mergedRecord.meta.ownerComponent).toBe(owner);
-
-            const mergedBom = await BomService.findBomObjectById(mergedRecord.uuid, TEST_ORG_UUID) as any;
-            expect(mergedBom.bomFormat).toBe('CycloneDX');
-            expect(mergedBom.specVersion).toBe('1.6');
-            expect(mergedBom.metadata.component.name).toBe('merged-app');
-            expect(mergedBom.components.length).toBeGreaterThan(0);
-        } finally {
-            await pool.query('DELETE FROM rebom.bom_lineage WHERE organization = $1 AND serial_number = $2',
-                [TEST_ORG_UUID, storedSerialNumber]);
-        }
-    });
-
     it('should deduplicate components when merging BOMs', async () => {
         // Create two BOMs with overlapping components
         const bomContent1 = loadFixture('cyclonedx-simple.json');

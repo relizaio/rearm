@@ -397,6 +397,15 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
 	 */
 	private List<UUID> artifacts = new ArrayList<>();
+	/**
+	 * SBOM rule B (SCORE-52 ADR-3, ADR-7): true when this BOM row was a copy, an upload of an
+	 * existing serialNumber that stored no new version, by a principal that could not then have
+	 * stored one. A copy makes its component a holder but never authorizes an update. Set by the
+	 * server on every BOM upload, never caller input or output; null (rows written before rule B)
+	 * reads as false.
+	 */
+	@JsonProperty
+	private Boolean bomCopy;
 	
 	/**
 	 * OCI repository name where this downloadable artifact is stored (e.g., "downloadable-artifacts-2026-03")
@@ -515,9 +524,16 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		if (null != artifactDto.getArtifacts()) {
 			ad.setArtifacts(artifactDto.getArtifacts());
 		}
+		ad.setBomCopy(artifactDto.getBomCopy());
 		return ad;
 	}
 	
+	/** Whether this BOM row is a copy under rule B ({@link #bomCopy}); null reads as false. */
+	@JsonIgnore
+	public boolean isCopyRow() {
+		return Boolean.TRUE.equals(bomCopy);
+	}
+
 	@JsonIgnore
 	public boolean isSignatureType() {
 		if (this.type == ArtifactType.SIGNATURE || this.type == ArtifactType.CERTIFICATE_PGP || this.type == ArtifactType.CERTIFICATE_X_509 

@@ -22,7 +22,7 @@ export function hasIgnoreDev(opts: RebomOptions): boolean {
 
 const UUID_PATTERN = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 
-/** A uuid in the 8-4-4-4-12 hex form, either case (the shape organization and ownerComponent have). */
+/** A uuid in the 8-4-4-4-12 hex form, either case (the shape an organization has). */
 export function isUuid(value: unknown): value is string {
     return typeof value === 'string' && UUID_PATTERN.test(value);
 }

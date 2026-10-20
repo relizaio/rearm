@@ -18,7 +18,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.GlobalTeamAssignmentRule;
@@ -68,11 +68,7 @@ public class OrgTeamAssignmentRuleDataFetcher {
 				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		List<GlobalTeamAssignmentRule> typedRules = new LinkedList<>();
-		if (null != rules) {
-			for (Object raw : rules) {
-				typedRules.add(Utils.OM.convertValue(raw, GlobalTeamAssignmentRule.class));
-			}
-		}
+		if (null != rules) typedRules.addAll(InputConversion.convertEach(rules, GlobalTeamAssignmentRule.class, "rules"));
 		// Single entry point: validate-and-persist is encapsulated in the service
 		// so no caller can reach the write without validation.
 		return teamAssignmentRuleService.setRules(orgUuid, typedRules, wu);

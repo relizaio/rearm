@@ -94,10 +94,13 @@ rearm agent task hold <task> --session <session-uuid> --operator \
 ```
 
 The task shows "awaiting the operator: <question>", the people who write the
-board are notified, and the hop stays yours: your idle window is still the
-holder's, and your sign-off waits. A person lifts the hold with the answer as
-its note; the answer is recorded on the task (a status row "lifted by
-<person>: <answer>" and an INFO on the board) and the hop resumes with you. Only
+board are notified, and your hop ends at the park: publish what you have first.
+A person lifts the hold with the answer as its note; the answer is recorded on
+the task (a status row "lifted by <person>: <answer>" and an INFO on the board)
+and the task is queued again for your role, with the question and the answer on
+its status history. The next hop of the role (yours if you are waiting, or
+another session's) reads them in `task show`; `rearm agent wait` offers the task
+like any other. Only
 the session holding the task parks it, and only at `--operator` level: a
 COORDINATOR hold is the seat's. The coordinator seat parks a task nobody is
 working the same way, for a decision it cannot make (a red CI run on a delivery,

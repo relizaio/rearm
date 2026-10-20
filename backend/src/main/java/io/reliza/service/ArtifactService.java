@@ -82,6 +82,7 @@ import io.reliza.repositories.ArtifactLiteRepository;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
+import io.reliza.service.SbomUpdateGuard.UploadKind;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
 
@@ -128,6 +129,10 @@ public class ArtifactService {
 	@Lazy
 	@Autowired
 	private GetDeliverableService getDeliverableService;
+
+	@Lazy
+	@Autowired
+	private SbomUpdateGuard sbomUpdateGuard;
 	
 	private final ArtifactRepository repository;
 	private final ArtifactLiteRepository liteRepository;
@@ -564,11 +569,12 @@ public class ArtifactService {
 	// TODO try to enforce strict type here
 	// TODO double check how we set and meaning of hash in rebom options
 	@Transactional
-	public List<UUID> uploadListOfArtifacts(OrganizationData od, List<Map<String, Object>> arts, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+	public List<UUID> uploadListOfArtifacts(OrganizationData od, List<Map<String, Object>> arts, RebomOptions rebomOptions,
+			SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		List<UUID> artIds = new LinkedList<>();
 		if (null != arts && !arts.isEmpty()) {
 			for (Map<String, Object> artMap : arts) {
-				var artId = uploadSingleArtifactWithFileFromList(artMap, od, rebomOptions, wu);
+				var artId = uploadSingleArtifactWithFileFromList(artMap, od, rebomOptions, authority, wu);
 				artIds.add(artId);
 			}
 		}
@@ -576,10 +582,12 @@ public class ArtifactService {
 	}
 
 	// TODO try to enforce strict type here
-	private UUID uploadSingleArtifactWithFileFromList(Map<String, Object> artMap, OrganizationData od, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+	private UUID uploadSingleArtifactWithFileFromList(Map<String, Object> artMap, OrganizationData od, RebomOptions rebomOptions,
+			SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		List<UUID> artifactsOfThisArtifact = new LinkedList<>();
 		if (artMap.containsKey("artifacts")) {
-			artifactsOfThisArtifact = uploadListOfArtifacts(od, (List<Map<String, Object>>) artMap.get("artifacts"), rebomOptions, wu);
+			artifactsOfThisArtifact = uploadListOfArtifacts(od, (List<Map<String, Object>>) artMap.get("artifacts"), rebomOptions,
+					authority, wu);
 		}
 		artMap.remove("artifacts");
 		MultipartFile file = (MultipartFile) artMap.get("file");
@@ -588,8 +596,8 @@ public class ArtifactService {
 		artDto.setArtifacts(artifactsOfThisArtifact);
 		artDto.setOrg(od.getOrg());
 		RebomOptions updRebomOptions = new RebomOptions(rebomOptions.name(), rebomOptions.group(), rebomOptions.version(), rebomOptions.belongsTo(),
-				rebomOptions.hash(), artDto.getStripBom(), rebomOptions.purl());
-		return uploadArtifact(artDto, file.getResource(), updRebomOptions, wu);
+				rebomOptions.hash(), artDto.getStripBom(), rebomOptions.purl()).withSupplierName(rebomOptions.supplierName());
+		return uploadArtifact(artDto, file.getResource(), updRebomOptions, authority, wu);
 	}
 
 	/** The field rules every stored artifact meets: a type, known coverage tags, a link when stored externally. */
@@ -641,8 +649,14 @@ public class ArtifactService {
 		validateArtifactFields(artDto);
 	}
 
+	/**
+	 * Stores an uploaded artifact. {@code authority} is the uploading principal's rights, which rule B
+	 * reads for a BOM ({@link SbomUpdateGuard#refuseUnauthorizedUpdate}); there is no overload
+	 * without it.
+	 */
 	@Transactional
-	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions, WhoUpdated wu) throws RelizaException {
+	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions,
+			SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 		if (null == orgUuid) throw new RelizaException("Missing artifact org.");
 		// The caller's records are checked here and only here on this path: before the upload
@@ -673,7 +687,7 @@ public class ArtifactService {
 
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if(isRebomStoreable(artifactDto)){
-				artifactUploadResponse = storeArtifactOnRebom(artifactDto, file, existingAd, rebomOptions);
+				artifactUploadResponse = storeArtifactOnRebom(artifactDto, file, existingAd, rebomOptions, authority);
 			} else {
 				artifactUploadResponse = storeArtifactOnRearmDirect(artifactDto, file, existingAd);
 			}
@@ -773,11 +787,13 @@ public class ArtifactService {
 	 * @param file
 	 * @param existingAd
 	 * @param rebomOptions
+	 * @param authority the uploading principal's rights, for rule B
 	 * @return
 	 * @throws RelizaException
 	 */
 	@Transactional
-	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions) throws RelizaException {
+	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions,
+			SbomWriteAuthority authority) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 
 		// 1. Read the upload ONCE into memory, then parse from those bytes.
@@ -805,6 +821,12 @@ public class ArtifactService {
 			log.error("Error reading Json", e);
 			throw new RelizaException("Cannot parse artifact JSON. Make sure artifact type is set correctly.");
 		}
+
+		// 2b. Rule B before anything is retained or leaves (SCORE-52 ADR-3): a new version of an
+		// existing serialNumber needs org-wide write or write on every holder. rebom no longer decides
+		// who may update; this also keeps the raw blob of a refused upload out of OCI storage. The
+		// answer is what the accepted upload is: an authorizing row, or a copy.
+		UploadKind uploadKind = refuseUnauthorizedUpdate(artifactDto, bomJson, existingAd, authority);
 
 		// 3. Retain the bytes BEFORE rebom sees them, which is the ordering that actually matters.
 		// Pushing after rebom has accepted would avoid an unreferenced blob when rebom refuses
@@ -874,6 +896,12 @@ public class ArtifactService {
 			}
 		} else if(artifactDto.getBomFormat().equals(BomFormat.SPDX)){
 			response = applySpdxResponse(artifactDto, rebomResponse, lifecycleResult, rebomOptions);
+			if (null == existingSerialNumberForSpdx) {
+				// An SPDX first upload has its serialNumber only now: rebom answers an existing row for a
+				// namespace and content it already stores, so it may be a copy (SCORE-52 ADR-3).
+				uploadKind = sbomUpdateGuard.classifySpdxFirstUpload(orgUuid, artifactDto.getInternalBom().id(),
+						artifactDto.getUuid(), authority);
+			}
 		} else {
 			throw new RelizaException("Unsupported BOM format: " + artifactDto.getBomFormat());
 		}
@@ -883,6 +911,9 @@ public class ArtifactService {
 		// reader in the backend, so the whole of its blast radius is a number in the UI that has
 		// been reporting the processed copy (1446 for a 1043-byte upload).
 		response.setOriginalSize((long) uploadedBytes.length);
+		// Unconditionally, so that whatever a dto carried is overwritten, and an authorized new
+		// version of a copy row clears its mark.
+		artifactDto.setBomCopy(UploadKind.COPY == uploadKind);
 
 		log.info("BOM processing complete for artifact {}, internalBomId: {}",
 			artifactDto.getUuid(), artifactDto.getInternalBom().id());
@@ -1011,6 +1042,55 @@ public class ArtifactService {
 	}
 
 	/**
+	 * Rule B for this upload (SCORE-52 ADR-3), with the uploading principal's rights: a CycloneDX
+	 * document whose serialNumber is a uuid, at its document version; an SPDX upload replacing an
+	 * artifact with an internalBom.id, always an update (rebom assigns the next version). Any other
+	 * upload is an {@code AUTHOR} here: a CycloneDX document without a uuid serialNumber is
+	 * validated and keyed by rebom, and an SPDX first upload is classified after rebom answers.
+	 */
+	private UploadKind refuseUnauthorizedUpdate(ArtifactDto artifactDto, JsonNode bomJson, ArtifactData existingAd,
+			SbomWriteAuthority authority) throws RelizaException {
+		UUID org = artifactDto.getOrg();
+		if (null == org) {
+			return UploadKind.AUTHOR;
+		}
+		if (BomFormat.CYCLONEDX == artifactDto.getBomFormat()) {
+			JsonNode serialNode = bomJson.get("serialNumber");
+			String serialAsSent = null == serialNode || serialNode.isNull() ? null : serialNode.asText();
+			Optional<UUID> serial = SbomUpdateGuard.canonicalSerialNumber(serialAsSent);
+			if (serial.isPresent()) {
+				return sbomUpdateGuard.refuseUnauthorizedUpdate(org, serial.get(), SbomUpdateGuard.trimAsRebom(serialAsSent),
+						cycloneDxVersion(bomJson), authority, serialAsSent);
+			}
+		} else if (BomFormat.SPDX == artifactDto.getBomFormat() && null != existingAd
+				&& null != existingAd.getInternalBom() && null != existingAd.getInternalBom().id()) {
+			UUID serial = existingAd.getInternalBom().id();
+			return sbomUpdateGuard.refuseUnauthorizedUpdate(org, serial, serial.toString(), Integer.MAX_VALUE, authority,
+					serial.toString());
+		}
+		return UploadKind.AUTHOR;
+	}
+
+	/**
+	 * The CycloneDX document version as rule B compares it: 1 when absent (the specification's
+	 * default), and {@link Integer#MAX_VALUE} (an update) when present but not an int. Fail-closed on
+	 * purpose: rebom reads a version with JavaScript's parseInt, which takes "2.0" as 2 and
+	 * "2147483648" as itself, so reading such a value low here would let rule B pass as a re-upload a
+	 * version rebom then stores as new.
+	 */
+	static int cycloneDxVersion(JsonNode bomJson) {
+		JsonNode version = bomJson.get("version");
+		if (null == version || version.isNull()) {
+			return 1;
+		}
+		try {
+			return Integer.parseInt(version.asText().trim());
+		} catch (NumberFormatException e) {
+			return Integer.MAX_VALUE;
+		}
+	}
+
+	/**
 	 * Prepares SPDX BOM for processing:
 	 * - Detects if update (existingAd present)
 	 * - Returns existingSerialNumber for continuity
@@ -1026,19 +1106,14 @@ public class ArtifactService {
 	}
 
 	/**
-	 * Extracts internalBomId from rebom response serialNumber.
-	 * Handles both "urn:uuid:..." and plain UUID formats.
+	 * Extracts internalBomId from rebom response serialNumber: "urn:uuid:" followed by a canonical
+	 * uuid, or the canonical uuid alone, and nothing else (SCORE-47 T-4,
+	 * {@link SbomUpdateGuard#lineageOfRebomSerialNumber}).
 	 */
-	private UUID extractInternalBomId(RebomResponse rebomResponse) throws RelizaException {
-		try {
-			String bomSerialNumber = rebomResponse.meta().serialNumber();
-			if(bomSerialNumber.startsWith("urn")){
-				bomSerialNumber = bomSerialNumber.replace("urn:uuid:","");
-			}
-			return UUID.fromString(bomSerialNumber);
-		} catch (Exception e) {
-			throw new RelizaException("Error parsing BOM serialNumber: " + e.getMessage());
-		}
+	static UUID extractInternalBomId(RebomResponse rebomResponse) throws RelizaException {
+		String bomSerialNumber = null == rebomResponse.meta() ? null : rebomResponse.meta().serialNumber();
+		return SbomUpdateGuard.lineageOfRebomSerialNumber(bomSerialNumber)
+				.orElseThrow(() -> new RelizaException("Error parsing BOM serialNumber: " + bomSerialNumber));
 	}
 
 	/**

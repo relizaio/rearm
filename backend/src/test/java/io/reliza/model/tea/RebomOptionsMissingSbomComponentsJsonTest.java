@@ -31,9 +31,9 @@ import tools.jackson.databind.JsonNode;
 class RebomOptionsMissingSbomComponentsJsonTest {
 
 	private static final MissingSbomComponent HTTPD = new MissingSbomComponent("0b0f4a52-6c55-4d1f-9a8e-0000000000d1",
-			"httpd", "2.4.68", "container", "Example Org", "Example Org", "pkg:oci/httpd@2.4.68", MissingSbomReason.NO_SBOM_ARTIFACT);
+			"httpd", "2.4.68", "container", "Example Org", "Example Org", "pkg:oci/httpd@2.4.68", null, null, null, MissingSbomReason.NO_SBOM_ARTIFACT);
 	private static final MissingSbomComponent FLYWAY = new MissingSbomComponent("0b0f4a52-6c55-4d1f-9a8e-0000000000d2",
-			"flyway", "11.20.3", "library", "Example Org", "Example Org", null, MissingSbomReason.COVERAGE_EXCLUDED);
+			"flyway", "11.20.3", "library", "Example Org", "Example Org", null, null, null, null, MissingSbomReason.COVERAGE_EXCLUDED);
 
 	private static RebomOptions merge() {
 		return new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null, BomStructureType.FLAT).withMergeVersion(4);

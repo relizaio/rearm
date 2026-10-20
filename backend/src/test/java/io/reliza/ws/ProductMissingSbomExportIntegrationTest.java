@@ -52,6 +52,9 @@ class ProductMissingSbomExportIntegrationTest extends SbomScoreGraphqlTestBase {
 	private static final String INTERNAL_MARKER = "reliza:containerSafeVersion";
 	/** What the egress writes for an organization that does not disclose support data; not this task's. */
 	private static final String DISCLOSURE = "reliza:support:disclosure=provenance-stripped-no-disclosure";
+	/** SCORE-33: the record every merged JSON export of an org without a signing key ends with. */
+	private static final String SIGNED_FALSE = "reliza:export:signed=false";
+	private static final String NO_KEY = "reliza:export:unsignedReason=NO_KEY";
 
 	/** The product merge as rebom stores it, for the bare release {@code bare}. */
 	private static String productDoc(UUID bare) {
@@ -145,7 +148,9 @@ class ProductMissingSbomExportIntegrationTest extends SbomScoreGraphqlTestBase {
 		Product p = product();
 		JsonNode exported = Utils.OM.readTree(export(p));
 
-		assertEquals(List.of(COUNT + "=1", INTERNAL_MARKER + "=1.2.3", DISCLOSURE), metadataProperties(exported));
+		// SCORE-33: the org has no signing key, so the export ends in the unsigned record
+		assertEquals(List.of(COUNT + "=1", INTERNAL_MARKER + "=1.2.3", DISCLOSURE, SIGNED_FALSE, NO_KEY),
+				metadataProperties(exported));
 		assertEquals(Utils.OM.readTree("[{\"name\":\"" + MARKER + "\",\"value\":\"NO_SBOM_ARTIFACT\"}]"),
 				exported.get("components").get(1).get("properties"));
 		assertEquals(Utils.OM.readTree("[{\"aggregate\":\"unknown\",\"dependencies\":[\"urn:rearm:release:" + p.bare() + "\"]}]"),
@@ -158,7 +163,8 @@ class ProductMissingSbomExportIntegrationTest extends SbomScoreGraphqlTestBase {
 		Product p = product();
 		JsonNode exported = Utils.OM.readTree(export(p, "im", false));
 
-		assertEquals(List.of(COUNT + "=1", DISCLOSURE), metadataProperties(exported), "the strip ran and kept the count");
+		assertEquals(List.of(COUNT + "=1", DISCLOSURE, SIGNED_FALSE, NO_KEY), metadataProperties(exported),
+				"the strip ran and kept the count");
 		assertEquals(Utils.OM.readTree("[{\"name\":\"" + MARKER + "\",\"value\":\"NO_SBOM_ARTIFACT\"}]"),
 				exported.get("components").get(1).get("properties"));
 		assertEquals(Utils.OM.readTree("[{\"aggregate\":\"unknown\",\"dependencies\":[\"urn:rearm:release:" + p.bare() + "\"]}]"),

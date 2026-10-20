@@ -10,6 +10,7 @@ import java.util.List;
 import java.util.Set;
 import java.util.UUID;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -121,4 +122,11 @@ public class ArtifactDto {
 
 	@JsonProperty
 	private String rawOciRepositoryName;  // Repository holding a BOM artifact's raw uploaded bytes
+
+	/**
+	 * Rule B's classification of a BOM upload (SCORE-52 ADR-7), set by ArtifactService on every BOM
+	 * upload. Never read from a caller's map: an upload map that named it is ignored.
+	 */
+	@JsonIgnore
+	private Boolean bomCopy;
 }

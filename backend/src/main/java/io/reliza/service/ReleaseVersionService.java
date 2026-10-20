@@ -73,7 +73,8 @@ public class ReleaseVersionService {
 	 * would fail with "Failed to retrieve next version" → "Not authorized".
 	 * Each underlying step manages its own transaction.
 	 */
-	public VersionResponse getNewVersionWrapper(GetNewVersionDto getNewVersionDto, WhoUpdated wu) throws Exception{
+	public VersionResponse getNewVersionWrapper(GetNewVersionDto getNewVersionDto, SbomWriteAuthority authority,
+			WhoUpdated wu) throws Exception{
 		VersionResponse vr = null;
 		UUID projectId = getNewVersionDto.project();
 		Optional<ComponentData> opd = getComponentService.getComponentData(projectId);
@@ -177,7 +178,7 @@ public class ReleaseVersionService {
 		if(getNewVersionDto.onlyVersion()) {
 			vr = new VersionResponse(nextVersion, dockerTagSafeVersion, "");
 		} else {
-			releaseService.createReleaseFromVersion(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, wu);
+			releaseService.createReleaseFromVersion(getNewVersionDto.sourceCodeEntry(), getNewVersionDto.commits(), nextVersion, getNewVersionDto.lifecycle(), bd, authority, wu);
 			// Re-read the just-created release so the response reflects the
 			// lifecycle AFTER any synchronous trigger fired during save
 			// (e.g. a component-level CEL gate that pre-emptively moved it

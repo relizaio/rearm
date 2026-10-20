@@ -30,6 +30,7 @@ import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.tea.Rebom.MissingSbomComponent;
 import io.reliza.model.tea.Rebom.MissingSbomReason;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -73,7 +74,7 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 
 	private static MissingSbomComponent missing(UUID release, String version, MissingSbomReason reason) {
 		return new MissingSbomComponent(release.toString(), "component", version, "library", "Example Org",
-				"Example Org", null, reason);
+				"Example Org", null, null, null, null, reason);
 	}
 
 	// T-2
@@ -88,7 +89,9 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 		RebomOptions sent = productMergeRequest();
 		assertEquals(new RebomOptions("product", "Example Org", "26.10.35", ArtifactBelongsTo.RELEASE, null, false, false,
 				null, BomStructureType.FLAT, "sent from ReArm", StripBom.TRUE, "", "", null,
-				RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT).withMergeVersion(ReleaseService.MERGE_VERSION), sent);
+				RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT).withMergeVersion(ReleaseService.MERGE_VERSION)
+				// SCORE-30: and the product release's facts, the organization as its supplier
+				.withReleaseNode(new ReleaseNodeFacts("Example Org", List.of(), null, null)), sent);
 		assertNull(sent.missingSbomComponents());
 		assertFalse(Utils.OM.writeValueAsString(sent).contains("missingSbomComponents"));
 		verify(rebomService).mergeAndStoreBoms(eq(componentMergeIds()), any(), eq(ORG));
@@ -159,7 +162,8 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
 		verify(releaseRebomService).setReboms(eq(product), stored.capture(), eq(WU));
 		assertEquals(List.of(new ReleaseBom(productMerge(), new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null,
-				BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION))), stored.getValue());
+				BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY))),
+				stored.getValue());
 		assertNull(stored.getValue().get(0).rebomMergeOptions().missingSbomComponents());
 	}
 }

@@ -1373,6 +1373,46 @@ public class Utils {
 	}
 
 	/**
+	 * The legacy key of a release-node purl (SCORE-29 ADR-4): before the fix rebom percent-encoded
+	 * a release's group and name twice, so a space reads {@code %2520} where the single-encoded
+	 * purl has {@code %20}, and {@code sbom_components.canonical_purl} rows written then carry that
+	 * form. Returns the input with every {@code %} of its namespace and name segments written as
+	 * {@code %25}, and then every {@code :} of the namespace written as {@code %253A} and every
+	 * {@code /} inside it as {@code %252F} (ADR-6: packageurl-js keeps those two raw in a namespace,
+	 * while the pre-fix rebom had already encoded them before packageurl-js encoded the {@code %}
+	 * again). The namespace is everything before the last {@code /} of the segments, the name the
+	 * part after it. The type, version, qualifiers and subpath are left byte for byte. Empty when
+	 * the input is not a {@code pkg:} purl or nothing would change (no {@code %} in the segments
+	 * and no {@code :} or {@code /} in the namespace). String surgery only, like
+	 * {@link #canonicalizePurlPreservingEncoding}: nothing is decoded or re-encoded.
+	 */
+	public static Optional<String> doubleEncodedNamespaceNameVariant(String canonicalPurl) {
+		if (canonicalPurl == null || !canonicalPurl.startsWith("pkg:")) return Optional.empty();
+		int end = canonicalPurl.length();
+		int hash = canonicalPurl.indexOf('#');
+		if (hash >= 0) end = hash;
+		int q = canonicalPurl.indexOf('?');
+		if (q >= 0 && q < end) end = q;
+		int typeSlash = canonicalPurl.indexOf('/', 4);
+		if (typeSlash < 0 || typeSlash >= end) return Optional.empty();
+		int segmentsEnd = end;
+		int at = canonicalPurl.lastIndexOf('@', end - 1);
+		if (at > typeSlash && at > canonicalPurl.lastIndexOf('/', end - 1)) segmentsEnd = at;
+		String segments = canonicalPurl.substring(typeSlash + 1, segmentsEnd);
+		int nameSlash = segments.lastIndexOf('/');
+		String legacyName = segments.substring(nameSlash + 1).replace("%", "%25");
+		String legacySegments = legacyName;
+		if (nameSlash >= 0) {
+			String legacyNamespace = segments.substring(0, nameSlash).replace("%", "%25")
+					.replace(":", "%253A").replace("/", "%252F");
+			legacySegments = legacyNamespace + "/" + legacyName;
+		}
+		if (legacySegments.equals(segments)) return Optional.empty();
+		return Optional.of(canonicalPurl.substring(0, typeSlash + 1) + legacySegments
+				+ canonicalPurl.substring(segmentsEnd));
+	}
+
+	/**
 	 * Whether two canonical purls denote the same identity once percent-encoding
 	 * differences are decoded away -- i.e. same type/namespace/name/version and
 	 * the same qualifier map. Guard for repair paths: an encoding-variant pair

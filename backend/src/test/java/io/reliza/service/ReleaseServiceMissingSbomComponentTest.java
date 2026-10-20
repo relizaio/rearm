@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
@@ -22,22 +23,36 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ArtifactCoverageType;
 import io.reliza.common.CommonVariables.TagRecord;
+import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.DeliverableData;
+import io.reliza.model.DeliverableData.BelongsToOrganization;
+import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.VariantData;
+import io.reliza.model.tea.Rebom.BomHash;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.MissingSbomComponent;
 import io.reliza.model.tea.Rebom.MissingSbomReason;
+import io.reliza.model.tea.TeaChecksumType;
+import tools.jackson.databind.JsonNode;
 
 /**
  * SCORE-15 (T-1, ADR-2): what ReleaseService tells rebom about a component release of a product
- * that yields no BOM, field by field, and why it yields none.
+ * that yields no BOM, field by field, and why it yields none. SCORE-30 (T-12): with the digests of
+ * the one deliverable it ships (its base variant's outbound one), and no supplier for an EXTERNAL
+ * component or the external sentinel organization.
+ *
+ * <p>SCORE-39 (T-11, ADR-3): with the declared licence DeclaredLicenses resolves and the supplier
+ * name the component records; absent licence fields are null and never serialised.
  */
 class ReleaseServiceMissingSbomComponentTest {
 
@@ -46,10 +61,16 @@ class ReleaseServiceMissingSbomComponentTest {
 	private static final UUID COMPONENT = UUID.randomUUID();
 	private static final UUID ARTIFACT = UUID.randomUUID();
 	private static final UUID SECOND_ARTIFACT = UUID.randomUUID();
+	private static final UUID DELIVERABLE = UUID.randomUUID();
+	private static final String SHA_256 = "9f86d081884c7d659a2feaa0c55ad015a3bf4f1b2b0b822cd15d6c15b0f00a08";
+	private static final String SHA_1 = "a94a8fe5ccb19ba61c4c0873d391e987982fbbd3";
 
 	private ReleaseService svc;
 	private SharedReleaseService sharedReleaseService;
 	private ArtifactService artifactService;
+	private GetDeliverableService getDeliverableService;
+	private GetOrganizationService getOrganizationService;
+	private VariantService variantService;
 	private ComponentData cd;
 	private ReleaseData rd;
 
@@ -57,18 +78,24 @@ class ReleaseServiceMissingSbomComponentTest {
 	void wire() {
 		svc = new ReleaseService(null);
 		GetComponentService getComponentService = mock(GetComponentService.class);
-		GetOrganizationService getOrganizationService = mock(GetOrganizationService.class);
+		getOrganizationService = mock(GetOrganizationService.class);
 		sharedReleaseService = mock(SharedReleaseService.class);
 		artifactService = mock(ArtifactService.class);
 		ReflectionTestUtils.setField(svc, "getComponentService", getComponentService);
 		ReflectionTestUtils.setField(svc, "getOrganizationService", getOrganizationService);
 		ReflectionTestUtils.setField(svc, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(svc, "artifactService", artifactService);
+		getDeliverableService = mock(GetDeliverableService.class);
+		ReflectionTestUtils.setField(svc, "getDeliverableService", getDeliverableService);
+		variantService = mock(VariantService.class);
+		ReflectionTestUtils.setField(svc, "variantService", variantService);
+		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.of(new VariantData()));
 
 		cd = mock(ComponentData.class);
 		when(cd.getName()).thenReturn("httpd");
 		when(cd.getType()).thenReturn(ComponentType.COMPONENT);
 		when(cd.getKind()).thenReturn(ComponentKind.GENERIC);
+		when(cd.getIsInternalOrDefault()).thenReturn(BelongsToOrganization.INTERNAL);
 		when(getComponentService.getComponentData(COMPONENT)).thenReturn(Optional.of(cd));
 		OrganizationData od = mock(OrganizationData.class);
 		when(od.getName()).thenReturn("Example Org");
@@ -114,7 +141,7 @@ class ReleaseServiceMissingSbomComponentTest {
 		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
 
 		assertEquals(new MissingSbomComponent("0b0f4a52-6c55-4d1f-9a8e-0000000000b1", "httpd", "2.4.68", "container",
-				"Example Org", "Example Org", "pkg:oci/httpd@2.4.68", MissingSbomReason.NO_SBOM_ARTIFACT), built);
+				"Example Org", "Example Org", "pkg:oci/httpd@2.4.68", null, null, null, MissingSbomReason.NO_SBOM_ARTIFACT), built);
 	}
 
 	@Test
@@ -209,5 +236,142 @@ class ReleaseServiceMissingSbomComponentTest {
 
 		when(sharedReleaseService.unwindReleaseDependencies(rd)).thenReturn(new LinkedHashSet<>(List.of(bare, excluded)));
 		assertEquals(MissingSbomReason.COVERAGE_EXCLUDED, svc.missingSbomReason(rd, ArtifactBelongsTo.RELEASE, List.of(ArtifactCoverageType.DEV)));
+	}
+
+	// ---- hashes and supplier (SCORE-30 T-12, ADR-2, ADR-3) ---------------------------------------
+
+	/** The release ships one deliverable with digests: an outbound deliverable of its base variant. */
+	private void oneDeliverableWithDigests() {
+		DeliverableData dd = new DeliverableData();
+		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
+				new DigestRecord(TeaChecksumType.SHA_256, SHA_256), new DigestRecord(TeaChecksumType.SHA_1, SHA_1)))).build());
+		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
+		VariantData base = new VariantData();
+		base.setOutboundDeliverables(new LinkedHashSet<>(List.of(DELIVERABLE)));
+		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.of(base));
+	}
+
+	@Test
+	void thePlaceholderCarriesTheDigestsOfTheReleasesOneDeliverable() {
+		oneDeliverableWithDigests();
+		when(rd.getIdentifiers()).thenReturn(List.of(purl("pkg:oci/httpd@2.4.68")));
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertEquals(new MissingSbomComponent("0b0f4a52-6c55-4d1f-9a8e-0000000000b1", "httpd", "2.4.68", "container",
+				"Example Org", "Example Org", "pkg:oci/httpd@2.4.68",
+				List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-1", SHA_1)), null, null, MissingSbomReason.NO_SBOM_ARTIFACT), built);
+	}
+
+	@Test
+	void withoutADigestThePlaceholderCarriesNoHashesAndSendsNoSuchKey() throws Exception {
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertNull(built.hashes());
+		JsonNode sent = Utils.OM.readTree(Utils.OM.writeValueAsString(built));
+		assertFalse(sent.has("hashes"), sent.toString());
+	}
+
+	@Test
+	void theHashesAreSentInRebomsInputShape() throws Exception {
+		oneDeliverableWithDigests();
+
+		JsonNode sent = Utils.OM.readTree(Utils.OM.writeValueAsString(
+				svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT)));
+
+		assertEquals(Utils.OM.readTree("[{\"alg\":\"SHA-256\",\"content\":\"" + SHA_256 + "\"},"
+				+ "{\"alg\":\"SHA-1\",\"content\":\"" + SHA_1 + "\"}]"), sent.get("hashes"));
+	}
+
+	@Test
+	void aConsumedDeliverableGivesThePlaceholderNoHashes() {
+		oneDeliverableWithDigests();
+		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.of(new VariantData()));
+		when(rd.getInboundDeliverables()).thenReturn(new ArrayList<>(List.of(DELIVERABLE)));
+
+		assertNull(svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT).hashes());
+	}
+
+	@Test
+	void anExternalComponentsPlaceholderNamesNoSupplierAndKeepsTheGroupAndItsHashes() {
+		oneDeliverableWithDigests();
+		when(cd.getIsInternalOrDefault()).thenReturn(BelongsToOrganization.EXTERNAL);
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertNull(built.supplierName());
+		assertEquals("Example Org", built.group());
+		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-1", SHA_1)), built.hashes());
+	}
+
+	@Test
+	void aReleaseOfTheExternalSentinelOrganizationNamesNoSupplier() {
+		when(rd.getOrg()).thenReturn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+		OrganizationData external = mock(OrganizationData.class);
+		when(external.getUuid()).thenReturn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+		when(external.getName()).thenReturn("External");
+		when(getOrganizationService.getOrganizationData(CommonVariables.EXTERNAL_PROJ_ORG_UUID)).thenReturn(Optional.of(external));
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertNull(built.supplierName());
+		assertEquals("External", built.group());
+	}
+
+	@Test
+	void thePlaceholderCarriesTheComponentLicenceItsUrlAndTheComponentSupplier() {
+		when(cd.getLicenseExpression()).thenReturn("LicenseRef-Acme-Commercial");
+		when(cd.getLicenseUrl()).thenReturn("https://acme.example/licence");
+		when(cd.getSupplierName()).thenReturn("Acme Corp");
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertEquals("LicenseRef-Acme-Commercial", built.licenseExpression());
+		assertEquals("https://acme.example/licence", built.licenseUrl());
+		assertEquals("Acme Corp", built.supplierName());
+		JsonNode json = Utils.OM.valueToTree(built);
+		assertEquals("LicenseRef-Acme-Commercial", json.get("licenseExpression").asString());
+		assertEquals("https://acme.example/licence", json.get("licenseUrl").asString());
+	}
+
+	@Test
+	void thePlaceholderOfAnExternalComponentWithoutABomNamesItsSupplierAndTheOrganizationDefault() {
+		when(cd.getIsInternalOrDefault()).thenReturn(BelongsToOrganization.EXTERNAL);
+		when(cd.getSupplierName()).thenReturn("Upstream Vendor");
+		OrganizationData od = getOrganizationService.getOrganizationData(ORG).orElseThrow();
+		OrganizationData.Settings settings = new OrganizationData.Settings();
+		settings.setDefaultLicenseExpression("AGPL-3.0-only");
+		settings.setDefaultLicenseUrl("https://org.example/licence");
+		when(od.getSettings()).thenReturn(settings);
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertEquals("AGPL-3.0-only", built.licenseExpression());
+		assertEquals("https://org.example/licence", built.licenseUrl());
+		assertEquals("Upstream Vendor", built.supplierName());
+	}
+
+	@Test
+	void aReleaseOverrideReachesThePlaceholderWithoutAUrl() {
+		when(cd.getLicenseExpression()).thenReturn("LicenseRef-Acme-Commercial");
+		when(cd.getLicenseUrl()).thenReturn("https://acme.example/licence");
+		when(rd.getLicenseExpression()).thenReturn("MIT");
+
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertEquals("MIT", built.licenseExpression());
+		assertNull(built.licenseUrl());
+		assertFalse(Utils.OM.<JsonNode>valueToTree(built).has("licenseUrl"), "a null url is not serialised");
+	}
+
+	@Test
+	void withoutADeclaredLicenceTheLicenceFieldsAreNullAndNotSerialised() {
+		MissingSbomComponent built = svc.buildMissingSbomComponent(rd, MissingSbomReason.NO_SBOM_ARTIFACT);
+
+		assertNull(built.licenseExpression());
+		assertNull(built.licenseUrl());
+		JsonNode json = Utils.OM.valueToTree(built);
+		assertFalse(json.has("licenseExpression"));
+		assertFalse(json.has("licenseUrl"));
 	}
 }

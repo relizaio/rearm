@@ -42,4 +42,10 @@ public interface DeliverableRepository extends CrudRepository<Deliverable, UUID>
 			value = VariableQueries.FIND_DELIVERABLE_BY_BUILD_ID,
 			nativeQuery = true)
 	List<Deliverable> findDeliverableByBuildId(String query, String orgUuidAsString);
+
+	/** The deliverables whose artifacts list contains {@code artUuidAsString} (SCORE-47 lineage holders). */
+	@Query(
+			value = VariableQueries.FIND_DELIVERABLES_BY_ARTIFACT,
+			nativeQuery = true)
+	List<Deliverable> findDeliverablesByArtifact(String artUuidAsString);
 }

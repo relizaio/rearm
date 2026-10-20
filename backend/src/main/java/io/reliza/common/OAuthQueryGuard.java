@@ -29,7 +29,12 @@ import java.util.regex.Pattern;
  * by exact name, never through Spring's binder, which accepts names and shapes an exact-name read
  * does not ({@code client_id[]}, a comma join of repeated values); the rate limiter reads the token
  * request's {@code client_id} through the same {@link #single}, so the two always read the same text
- * (task TPF-26).
+ * (task TPF-26). The revoke endpoint does the same for its one parameter, {@code token}: refused when
+ * repeated, read by exact name through {@link #single} (task TPF-52).
+ *
+ * <p>The token endpoint also refuses a request that carries an {@code Authorization} header together with a
+ * {@code client_id} or {@code client_secret} form parameter ({@link #usesTwoClientAuthenticationMethods}, task
+ * TPF-50), with the TEA endpoint's text ({@link #ONE_METHOD_DESCRIPTION}).
  */
 public final class OAuthQueryGuard {
 	private OAuthQueryGuard() {}
@@ -38,13 +43,15 @@ public final class OAuthQueryGuard {
 	public static final Set<String> TOKEN_REQUEST_PARAMETERS = Set.of("grant_type", "client_id", "client_secret", "device_code",
 			"refresh_token", "assertion");
 
-	/** The one parameter {@code POST /api/programmatic/revoke} binds: the refresh token. */
+	/** The one parameter {@code POST /api/programmatic/revoke} reads: the refresh token. */
 	public static final Set<String> REVOKE_REQUEST_PARAMETERS = Set.of("token");
 
 	public static final String BODY_ONLY_DESCRIPTION = "request parameters are accepted in the form body only (RFC 6749 section 2.3.1 and 3.2); "
 			+ "send the API key as HTTP Basic or as client_id and client_secret form fields";
 
 	public static final String ONCE_ONLY_DESCRIPTION = "each request parameter is accepted at most once (RFC 6749 section 3.2)";
+
+	public static final String ONE_METHOD_DESCRIPTION = "use one client authentication method: HTTP Basic or client_id and client_secret";
 
 	/** A name URLDecoder decodes without throwing: every % starts a two-digit hex escape. */
 	private static final Pattern DECODABLE = Pattern.compile("(?:[^%]|%[0-9A-Fa-f]{2})*");
@@ -92,5 +99,16 @@ public final class OAuthQueryGuard {
 		if (parameterMap == null) return null;
 		String[] values = parameterMap.get(name);
 		return values == null || values.length == 0 ? null : values[0];
+	}
+
+	/**
+	 * Whether a token request uses two client authentication methods (RFC 6749 section 2.3): an Authorization header
+	 * value that is non-null and non-empty (the test by which the token endpoint prefers the header to the form) together
+	 * with a client_id or client_secret parameter under its exact name, read with {@link #single} as the endpoint and the
+	 * rate limiter read it. Names only: a value, the empty one included, is never looked at.
+	 */
+	public static boolean usesTwoClientAuthenticationMethods(String authorization, Map<String, String[]> parameterMap) {
+		if (authorization == null || authorization.isEmpty()) return false;
+		return single(parameterMap, "client_id") != null || single(parameterMap, "client_secret") != null;
 	}
 }

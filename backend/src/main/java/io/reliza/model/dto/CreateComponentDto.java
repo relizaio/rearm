@@ -79,4 +79,13 @@ public class CreateComponentDto {
 
 	/** INTERNAL/EXTERNAL classification. Server defaults null to INTERNAL on create. */
 	private BelongsToOrganization isInternal;
+
+	/** Declared licence, an SPDX expression (SCORE-39 ADR-1); null or blank = none. */
+	private String licenseExpression;
+
+	/** URL of the declared licence; needs {@link #licenseExpression}. */
+	private String licenseUrl;
+
+	/** Supplier named on the SBOM nodes of the component's releases (SCORE-39 ADR-3). */
+	private String supplierName;
 }

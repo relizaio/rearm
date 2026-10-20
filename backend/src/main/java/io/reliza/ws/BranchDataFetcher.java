@@ -31,6 +31,7 @@ import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.VersionResponse;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.SafeRegex;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Branch;
@@ -213,7 +214,7 @@ public class BranchDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> updateBranchInputMap = dfe.getArgument("branch");
-		BranchDto updateBranchInput = Utils.OM.convertValue(updateBranchInputMap, BranchDto.class);
+		BranchDto updateBranchInput = InputConversion.convert(updateBranchInputMap, BranchDto.class, "branch");
 		
 		// Validate dependency patterns; this form has always refused an empty one
 		if (updateBranchInput.getDependencyPatterns() != null) {

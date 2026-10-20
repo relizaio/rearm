@@ -556,9 +556,18 @@ public class ApiKeyService {
 	 */
 	public UUID resolveOrgForKey(AuthHeaderParse ahp) {
 		if (ahp == null || ahp.getObjUuid() == null || ahp.getType() == null) return null;
+		if (presentsNoRequiredKeyOrder(ahp)) return null;
 		return repository.findApiKeyByUuidAndTypeOnly(ahp.getObjUuid(), ahp.getType().toString(),
 				StringUtils.isEmpty(ahp.getKeyOrder()) ? null : ahp.getKeyOrder())
 				.map(ApiKey::getOrg).orElse(null);
+	}
+
+	/**
+	 * True when the parse names a key type that always carries a key order
+	 * ({@link ApiTypeEnum#requiresKeyOrder()}) but presents none or an empty one.
+	 */
+	private static boolean presentsNoRequiredKeyOrder(AuthHeaderParse ahp) {
+		return ahp.getType() != null && ahp.getType().requiresKeyOrder() && StringUtils.isEmpty(ahp.getKeyOrder());
 	}
 
 	/**
@@ -571,6 +580,13 @@ public class ApiKeyService {
 			// access-token path: the programmatic authentication filter already verified the
 			// token against this key row (status, signature, expiry, audience, secret fingerprint)
 			return ahp.getVerifiedKeyUuid();
+		}
+		if (presentsNoRequiredKeyOrder(ahp)) {
+			// an id of an ordered type without its order names every key of its object: refused before any
+			// key-table read, so neither the answer nor its cost depends on how many keys the object holds
+			log.warn("SECURITY: programmatic auth failed - {} presented without its key order ip={}",
+					ahp.canonicalId(), ahp.getRemoteIp());
+			return null;
 		}
 		UUID matchingKeyId = null;
 		UUID orgUuid = ahp.getOrgUuid();

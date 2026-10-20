@@ -223,6 +223,10 @@ public class App {
 	 * {@link LegacyGraphqlBasicFilter} (TPF-29) runs after the limiter and verifies a Basic key credential with the same
 	 * {@link BasicKeyVerifier} as this chain, so the resolvers there see only verified keys too; the UI's IdP JWT and an
 	 * anonymous call pass it untouched.
+	 *
+	 * <p>A path under /api/programmatic/v1/ that this matcher does not name falls to the browser chain below, which has no
+	 * permit for the prefix (TPF-54): a new endpoint under the prefix needs authentication there until it is added to this
+	 * matcher.
 	 */
 	@Bean
 	@Order(1)
@@ -271,7 +275,6 @@ public class App {
 		  				.requestMatchers("/.well-known/tea/**").permitAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
-						.requestMatchers("/api/programmatic/v1/**").permitAll()
 						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
 						.requestMatchers(BrandingController.PATH + "/**").permitAll() // public branding the UI reads before login
 		  				.anyRequest().authenticated();
@@ -283,7 +286,6 @@ public class App {
 		  				.requestMatchers("/.well-known/tea/**").denyAll() // TODO adjust with auth coming to TEA
 		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
 						.requestMatchers("/api/healthCheck").permitAll()
-						.requestMatchers("/api/programmatic/v1/**").permitAll()
 						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
 						.requestMatchers(BrandingController.PATH + "/**").permitAll() // public branding the UI reads before login
 		  				.anyRequest().authenticated();

@@ -22,7 +22,7 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.OrganizationData;
@@ -132,7 +132,7 @@ public class DeclarativeConfigDataFetcher {
 
 	private static SourceDto source(DgsDataFetchingEnvironment dfe) {
 		Map<String, Object> m = dfe.getArgument("source");
-		return m == null ? null : Utils.OM.convertValue(m, SourceDto.class);
+		return m == null ? null : InputConversion.convert(m, SourceDto.class, "source");
 	}
 
 	private static boolean dryRun(DgsDataFetchingEnvironment dfe) {
@@ -144,7 +144,7 @@ public class DeclarativeConfigDataFetcher {
 	public ApplyResult applyCatalogProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		Authed a = authorize(dfe, CallType.WRITE);
 		Map<String, Object> specMap = dfe.getArgument("spec");
-		CatalogSpecDto spec = Utils.OM.convertValue(specMap, CatalogSpecDto.class);
+		CatalogSpecDto spec = InputConversion.convert(specMap, CatalogSpecDto.class, "spec");
 		return declarativeConfigService.applyCatalog(a.orgUuid(), spec, dryRun(dfe), source(dfe), a.whoUpdated());
 	}
 
@@ -152,7 +152,7 @@ public class DeclarativeConfigDataFetcher {
 	public ApplyResult applyBranchesProgrammatic(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		Authed a = authorize(dfe, CallType.WRITE);
 		Map<String, Object> specMap = dfe.getArgument("spec");
-		BranchesSpecDto spec = Utils.OM.convertValue(specMap, BranchesSpecDto.class);
+		BranchesSpecDto spec = InputConversion.convert(specMap, BranchesSpecDto.class, "spec");
 		return declarativeConfigService.applyBranches(a.orgUuid(), spec, dryRun(dfe), source(dfe), a.whoUpdated());
 	}
 

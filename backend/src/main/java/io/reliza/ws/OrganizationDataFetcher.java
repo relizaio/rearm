@@ -13,7 +13,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -33,6 +32,7 @@ import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -115,6 +115,7 @@ public class OrganizationDataFetcher {
 		RelizaObject ros = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ros), CallType.WRITE);
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		NulInputInstrumentation.refuseDecodedCycloneDxJson("cdxJson", cdxJson);
 		List<ImportComponentResult> results = cdxImportService.importFromCycloneDx(orgUuid, cdxJson, wu);
 		return results.stream().filter(r -> r != null).toList();
 	}
@@ -385,8 +386,8 @@ public class OrganizationDataFetcher {
 		if (!oud.get().isGlobalAdmin() && !oud.get().getOrganizations().contains(orgUuid)) {
 			throw new RelizaException("Not a member of this organization");
 		}
-		List<PermissionDto> convertedPermissions = permissions == null ? List.of() : permissions.stream()
-				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		List<PermissionDto> convertedPermissions = permissions == null ? List.of()
+				: InputConversion.convertEach(permissions, PermissionDto.class, "permissions");
 		authorizationService.assertGrantObjectsExist(orgUuid, convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(p.approvals(), od.get())) {
@@ -599,7 +600,7 @@ public class OrganizationDataFetcher {
 
 		OrganizationData.Settings settingsPatch = settings == null
 				? new OrganizationData.Settings()
-				: Utils.OM.convertValue(settings, OrganizationData.Settings.class);
+				: InputConversion.convert(settings, OrganizationData.Settings.class, "settings");
 		if (settingsPatch.getBranchSuffixMode() == BranchSuffixMode.INHERIT) {
 			throw new RelizaException("INHERIT is not a valid branchSuffixMode for organization settings");
 		}
@@ -683,8 +684,7 @@ public class OrganizationDataFetcher {
 		boolean holderMayEdit = oakd.isPresent() && oakd.get().getStatus() == ApiKeyData.ApiKeyStatus.REQUESTED; // the requester shapes the proposal; admins own it once approved
 		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, holderMayEdit);
 		OrganizationData od = getOrganizationService.getOrganizationData(oakd.get().getOrg()).get();
-		List<PermissionDto> convertedPermissions = permissions.stream()
-				.map(p -> Utils.OM.convertValue(p, PermissionDto.class)).collect(Collectors.toList());
+		List<PermissionDto> convertedPermissions = InputConversion.convertEach(permissions, PermissionDto.class, "permissions");
 		authorizationService.assertGrantObjectsExist(od.getUuid(), convertedPermissions);
 		for (PermissionDto p : convertedPermissions) {
 			if (null != p.approvals() && !p.approvals().isEmpty()) {

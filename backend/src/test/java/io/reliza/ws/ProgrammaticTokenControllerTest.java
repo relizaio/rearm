@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 
+import java.net.URI;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
@@ -104,8 +105,12 @@ public class ProgrammaticTokenControllerTest {
 	}
 
 	private Key freeformKey() throws Exception {
-		Organization org = testInitializer.obtainOrganization();
-		ApiKey key = apiKeyService.createObjectApiKey(org.getUuid(), ApiTypeEnum.FREEFORM, org.getUuid(),
+		return freeformKey(testInitializer.obtainOrganization().getUuid());
+	}
+
+	/** A FREEFORM key on {@code org}: two calls on one org give it two keys. */
+	private Key freeformKey(UUID org) throws Exception {
+		ApiKey key = apiKeyService.createObjectApiKey(org, ApiTypeEnum.FREEFORM, org,
 				UUID.randomUUID().toString(), "TPF-3 token query test", WU);
 		String secret = apiKeyService.addApiKeySecret(key.getUuid(), null, WU);
 		return new Key(ApiKeyService.keyIdOf(key), secret);
@@ -115,9 +120,9 @@ public class ProgrammaticTokenControllerTest {
 		return URLEncoder.encode(s, StandardCharsets.UTF_8);
 	}
 
-	/** A form POST whose body is {@code form} (already encoded) and whose URL carries {@code query}, if any. */
+	/** A form POST whose body is {@code form} and whose URL carries {@code query}, if any, both already encoded: a URI, not a template, so token%5B%5D arrives as token[] (TPF-52 T-1). */
 	private static MockHttpServletRequestBuilder form(String path, String query, String form) {
-		MockHttpServletRequestBuilder b = post(query == null ? path : path + "?" + query)
+		MockHttpServletRequestBuilder b = post(URI.create(query == null ? path : path + "?" + query))
 				.contentType(MediaType.APPLICATION_FORM_URLENCODED)
 				.content(form == null ? "" : form);
 		b.with(r -> { r.setRemoteAddr("198.51.100.23"); return r; });
@@ -188,6 +193,52 @@ public class ProgrammaticTokenControllerTest {
 		Key k = freeformKey();
 		assertTokenIssued(send(form(ProgrammaticTokenController.PATH, null, "grant_type=client_credentials")
 				.header(HttpHeaders.AUTHORIZATION, k.basic())));
+	}
+
+	// ---- TPF-51 4.2: an orderless id of an ordered type is the invalid-client 401, never a server error; header alone
+	// or form alone in every row, as TPF-50's guard answers a request sending both with its 400 before the parse
+
+	private static void assertInvalidClient(Answer a, String description) {
+		assertEquals(401, a.status(), a.raw());
+		assertEquals(OAuthErrors.INVALID_CLIENT, a.body().get("error"), a.raw());
+		assertEquals(description, a.body().get("error_description"), a.raw());
+		assertFalse(a.body().containsKey("access_token"), "no token: " + a.raw());
+		assertEquals("no-store", a.cacheControl());
+	}
+
+	private static final String UNKNOWN_KEY = "unknown API key or wrong secret";
+
+	private Answer clientCredentialsBasic(String id, String secret) throws Exception {
+		return send(form(ProgrammaticTokenController.PATH, null, "grant_type=client_credentials")
+				.header(HttpHeaders.AUTHORIZATION, new Key(id, secret).basic()));
+	}
+
+	// rows 1 to 4: an org with two FREEFORM keys
+	@Test
+	public void anOrderlessFreeformIdIsTheInvalidClient401() throws Exception {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		Key first = freeformKey(org);
+		Key second = freeformKey(org);
+		// row 1: header alone (the defect: the ambiguous lookup's exception left the controller)
+		assertInvalidClient(clientCredentialsBasic("FREEFORM__" + org, first.secret()), UNKNOWN_KEY);
+		// row 2: form alone
+		assertInvalidClient(send(form(ProgrammaticTokenController.PATH, null, "grant_type=client_credentials&client_id="
+				+ enc("FREEFORM__" + org) + "&client_secret=" + enc(first.secret()))), UNKNOWN_KEY);
+		// row 3: the empty order
+		assertInvalidClient(clientCredentialsBasic("FREEFORM__" + org + "__ord__", first.secret()), UNKNOWN_KEY);
+		// row 4: each key by its own id is unchanged
+		assertTokenIssued(send(form(ProgrammaticTokenController.PATH, null, "grant_type=client_credentials")
+				.header(HttpHeaders.AUTHORIZATION, first.basic())));
+		assertTokenIssued(send(form(ProgrammaticTokenController.PATH, null, "grant_type=client_credentials")
+				.header(HttpHeaders.AUTHORIZATION, second.basic())));
+	}
+
+	// row 5: an org with exactly one FREEFORM key, the orderless id with its real secret (was a token)
+	@Test
+	public void anOrderlessFreeformIdOnAOneKeyOrgIsRefused() throws Exception {
+		UUID org = testInitializer.obtainOrganization().getUuid();
+		Key only = freeformKey(org);
+		assertInvalidClient(clientCredentialsBasic("FREEFORM__" + org, only.secret()), UNKNOWN_KEY);
 	}
 
 	/** The exchange verified the key's secret, so it bumps the key's last access (task t20261013-072815-2705). */
@@ -274,6 +325,51 @@ public class ProgrammaticTokenControllerTest {
 		Answer a = send(form(DeviceAuthorizationController.REVOKE_PATH, null, "token=not-a-live-token"));
 		assertEquals(200, a.status(), a.raw());
 		assertEquals("", a.raw());
+	}
+
+	// ---- TPF-52 4.2: revoke refuses a repeated token and reads it by exact name only, through the real binding
+	private Answer revoke(String query, String body) throws Exception { return send(form(DeviceAuthorizationController.REVOKE_PATH, query, body)); }
+	private static void assertRevokeAnswered(Answer a) {
+		assertEquals(200, a.status(), a.raw());
+		assertEquals("", a.raw(), "success has no body");
+		assertEquals("no-store", a.cacheControl());
+	}
+
+	// row 1: a repeated token is refused and the session lives; the same token once ends it
+	@Test
+	public void revokeRefusesARepeatedToken() throws Exception {
+		Live live = liveSession();
+		String t = enc(live.refreshToken());
+		Answer a = revoke(null, "token=" + t + "&token=" + t);
+		assertRefusedRepeated(a, "token");
+		assertFalse(a.raw().contains(live.refreshToken()), "the answer never repeats the token");
+		assertEquals(Status.ACTIVE, statusOf(live.session()));
+		assertRevokeAnswered(revoke(null, "token=" + t));
+		assertEquals(Status.REVOKED, statusOf(live.session()));
+	}
+
+	// row 2: a token under a decorated or case-changed name is not read (the binder read token[] when token was absent)
+	@Test
+	public void revokeNeverReadsADecoratedTokenName() throws Exception {
+		Live live = liveSession();
+		String t = enc(live.refreshToken());
+		for (String name : List.of("token%5B%5D", "token%5B0%5D", "token.value", "Token", "TOKEN")) {
+			assertRevokeAnswered(revoke(null, name + "=" + t));
+			assertEquals(Status.ACTIVE, statusOf(live.session()), name + " is not read");
+		}
+		assertRevokeAnswered(revoke(null, "token=" + t));
+		assertEquals(Status.REVOKED, statusOf(live.session()));
+	}
+
+	// rows 3 to 5: a decorated query name is neither refused nor read; no token answers 200; a query token is refused first
+	@Test
+	public void revokeIgnoresADecoratedQueryNameAndRefusesAQueryTokenFirst() throws Exception {
+		Live live = liveSession();
+		assertRevokeAnswered(revoke("token%5B%5D=" + enc(live.refreshToken()), null)); // an empty body: the token is not echoed
+		assertEquals(Status.ACTIVE, statusOf(live.session()));
+		assertRevokeAnswered(revoke(null, null));
+		assertRefused(revoke("token=" + enc(live.refreshToken()), "token=a&token=b"), "token");
+		assertEquals(Status.ACTIVE, statusOf(live.session()));
 	}
 
 	// ---- TPF-26 4.3: a repeated parameter is refused before any parse; the parameters are read by exact name only

@@ -121,7 +121,10 @@ public class BoardAgentsService {
 		for (AgentTaskData td : tasks) {
 			AgentTaskData.TaskAssignment a = td.getAssignment();
 			if (null != a && id.equals(a.session())) {
-				if (null == working || (null != a.assignedAt() && a.assignedAt().isAfter(working.getAssignment().assignedAt()))) {
+				// A task ON_HOLD is not worked (TPF-66): a hop parked before its park ended the hop keeps its
+				// assignment, and its session shows WAITING or IDLE, not WORKING the parked task.
+				if (TaskStatus.ON_HOLD != td.getStatus() && (null == working
+						|| (null != a.assignedAt() && a.assignedAt().isAfter(working.getAssignment().assignedAt())))) {
 					working = td;
 				}
 				if (null != a.role()) roles.add(a.role());

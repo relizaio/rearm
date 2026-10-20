@@ -25,6 +25,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -79,7 +80,7 @@ public class OssComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> componentUpdateData = dfe.getArgument("component");
 
-		UpdateComponentDto ucdto = io.reliza.common.Utils.OM.convertValue(componentUpdateData, UpdateComponentDto.class);
+		UpdateComponentDto ucdto = InputConversion.convert(componentUpdateData, UpdateComponentDto.class, "component");
 		UUID componentUuid = ucdto.getUuid();
 		List<RelizaObject> ros = new LinkedList<>();
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);

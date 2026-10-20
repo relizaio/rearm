@@ -54,8 +54,10 @@ import io.reliza.service.AgentSessionOriginService;
 import io.reliza.service.AgentSessionService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.ModelOntologyService;
+import io.reliza.service.SbomWriteAuthorityService;
 import io.reliza.service.UserService;
 import java.time.ZonedDateTime;
 import java.util.LinkedList;
@@ -94,6 +96,8 @@ public class AgentDataFetcher {
 
 	@Autowired
 	private AgentSessionService agentSessionService;
+	@Autowired
+	private SbomWriteAuthorityService sbomWriteAuthorityService;
 	@Autowired
 	private io.reliza.service.AgentSessionVisibilityService agentSessionVisibilityService;
 
@@ -848,8 +852,10 @@ public class AgentDataFetcher {
 		if (artifacts == null || artifacts.isEmpty()) {
 			throw new RelizaException("artifacts is required and must be non-empty");
 		}
-		WhoUpdated wu = authorizeProgrammaticAgentAccessOnSession(sessionUuid, dfe);
-		return agentSessionService.uploadAndAttachArtifacts(sessionUuid, artifacts, wu);
+		VisibleSession visible = visibleSession(sessionUuid, dfe);
+		// The agent key's own grants are what rule B reads (SCORE-52 ADR-5).
+		return agentSessionService.uploadAndAttachArtifacts(sessionUuid, artifacts,
+				sbomWriteAuthorityService.forKey(visible.principal(), visible.org()), visible.fkv().whoUpdated());
 	}
 
 	@DgsData(parentType = "Mutation", field = "sessionUpdateMetaProgrammatic")
@@ -1285,6 +1291,13 @@ public class AgentDataFetcher {
 
 	private FreeformKeyVerification authorizeVisibleSession(UUID sessionUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
+		return visibleSession(sessionUuid, dfe).fkv();
+	}
+
+	/** A session the calling key may see: its verification, the verified principal and the session's org. */
+	private record VisibleSession(FreeformKeyVerification fkv, AuthHeaderParse principal, UUID org) {}
+
+	private VisibleSession visibleSession(UUID sessionUuid, DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		AuthHeaderParse ahp = authorizationService.authenticateProgrammatic(requestData.getHeaders(),
@@ -1298,7 +1311,7 @@ public class AgentDataFetcher {
 		// reads Not authorized whatever the uuid and the instance state), then the state, so a sealed
 		// or unlicensed instance answers a missing and an existing session alike. The original ahp is
 		// passed on below so the access row and the WhoUpdated stay as they were.
-		authorizationService.verifyProgrammaticKey(ahp);
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
 		authorizationService.validateSystemOperational(CallType.ESSENTIAL_READ);
 		AgentSessionData sd = agentSessionService.getSessionData(sessionUuid)
 				.orElseThrow(() -> new RelizaException("Session not found: " + sessionUuid));
@@ -1327,6 +1340,6 @@ public class AgentDataFetcher {
 		if (!agentSessionVisibilityService.mayRead(sd, fkv.apiKeyUuid(), admin, readsBoard)) {
 			throw new RelizaException("Session not found: " + sessionUuid);
 		}
-		return fkv;
+		return new VisibleSession(fkv, vk.principal(), sd.getOrg());
 	}
 }

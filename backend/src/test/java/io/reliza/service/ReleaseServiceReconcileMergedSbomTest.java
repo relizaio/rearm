@@ -234,7 +234,7 @@ class ReleaseServiceReconcileMergedSbomTest extends ReleaseServiceMergeTestBase 
 		assertEquals(List.of(new ReleaseBom(innerWithinOuter.merged(), rowOptions(BomStructureType.FLAT))), rows.get(INNER));
 	}
 
-	// T-22 (c): an unforced export does not look the bundled releases up and serves the bundled product's row
+	// T-22 (c): an unforced export does not unwind the bundled product and serves its row
 	@Test
 	void anUnforcedProductExportServesTheBundledProductsRowWithoutLookingItUp() throws Exception {
 		nestedProducts();
@@ -250,6 +250,8 @@ class ReleaseServiceReconcileMergedSbomTest extends ReleaseServiceMergeTestBase 
 		assertEquals(onlyProductMergeOf(product.getVersion()), exported);
 		assertEquals(List.of(B_FLAT, innerRow, A_FLAT, sourceRow), productMerges().get(0).bomIds());
 		assertEquals(List.of(), componentMerges());
-		verify(getComponentService, never()).getComponentData(INNER_PRODUCT);
+		// SCORE-39 ADR-5: the row is matched on the release node facts, which read the component;
+		// what stays pinned is that the served product is not unwound.
+		verify(sharedReleaseService, never()).unwindReleaseDependencies(inner);
 	}
 }

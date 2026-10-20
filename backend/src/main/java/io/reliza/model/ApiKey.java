@@ -34,6 +34,20 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		FREEFORM, // arbitrary-permissioned key for RBAC
 		USER, // personal key owned by a user: its permissions are a ceiling, intersected with the owner's current permissions
 		FEDERATED; // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
+
+		/**
+		 * Whether an id of this type must carry its key order ({@code __ord__<order>}) to name one key.
+		 * Every FREEFORM, USER and FEDERATED row is minted with an order, and the org of a presented id of
+		 * these types is resolved from the key row itself, so an id without an order (or with an empty one)
+		 * names every key of its object rather than one, and is refused before any lookup.
+		 * <p>
+		 * The set equals {@code AuthHeaderParse.isRbacKey()} today, but the two answer different questions
+		 * (the permission model versus the shape of the id) and stay separate, so a future type joins each
+		 * on its own merits.
+		 */
+		public boolean requiresKeyOrder() {
+			return this == FREEFORM || this == USER || this == FEDERATED;
+		}
 	}
 	
 	private static final long serialVersionUID = 2347342;

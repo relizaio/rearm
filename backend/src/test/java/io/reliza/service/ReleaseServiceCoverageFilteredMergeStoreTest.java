@@ -47,7 +47,7 @@ class ReleaseServiceCoverageFilteredMergeStoreTest extends ReleaseServiceMergeTe
 		Merge filteredMerge = productMerges().get(0);
 		assertEquals(filtered, filteredMerge.merged());
 		assertEquals(List.of(new MissingSbomComponent(DEV_ONLY.toString(), "component", "5.0.0", "library",
-				"Example Org", "Example Org", null, MissingSbomReason.COVERAGE_EXCLUDED)),
+				"Example Org", "Example Org", null, null, null, null, MissingSbomReason.COVERAGE_EXCLUDED)),
 				filteredMerge.options().missingSbomComponents());
 		assertEquals(Map.of(), rowWrites, "neither the product nor any component stores a row");
 

@@ -22,6 +22,7 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.VcsType;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -141,11 +142,10 @@ public class VcsRepositoryDataFetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		List<Map<String, Object>> rawTriggers = dfe.getArgument("triggers");
 		List<io.reliza.model.ComponentData.ReleaseOutputEvent> triggers = new java.util.ArrayList<>();
-		if (rawTriggers != null) {
-			for (Map<String, Object> ti : rawTriggers) {
-				io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput input =
-						io.reliza.common.Utils.OM.convertValue(ti,
-								io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput.class);
+		List<io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput> inputs = InputConversion.convertEach(
+				rawTriggers, io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput.class, "triggers");
+		if (inputs != null) {
+			for (io.reliza.model.dto.UpdateComponentDto.ReleaseOutputEventInput input : inputs) {
 				triggers.add(io.reliza.model.dto.UpdateComponentDto.convertReleaseOutputEventFromInput(input, null));
 			}
 		}

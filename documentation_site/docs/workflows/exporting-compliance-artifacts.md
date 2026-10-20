@@ -160,28 +160,75 @@ the server log names them. The property stays in the export when internal metada
 is inside the signed document. From the ReARM release after 26.10.52 on; product exports cached
 before it are rebuilt on their next request.
 
-### Which component may supersede an uploaded SBOM
+### Who may upload a new version of an SBOM
 
-A CycloneDX `serialNumber` identifies one SBOM lineage within your organization. Uploading the same
-`serialNumber` with a higher `version` makes that version the one ReARM reads for every release that
-holds the `serialNumber`; whether a stored export shows it follows
-[When a change shows](#what-the-nodes-rearm-makes-carry). From the ReARM release after 26.10.52 on,
-a lineage belongs to the component whose release first uploaded it, and only releases of that
-component can supersede it with a higher version. An upload of a higher version to a release of
-another component is refused, whoever uploads it and whatever their permissions, with the error code
-`SBOM_SERIAL_NUMBER_OWNED_BY_OTHER_COMPONENT` and a message that tells the uploader to generate an
-SBOM with its own `serialNumber`; the message never names the owning component. An SPDX document
-uploaded as the next version of a stored SBOM follows the same rule. When the target release already
-exists, the refusal is recorded on it as a `GUARD` update event; a refused `rearm addrelease` creates
-no release and records nothing. An identical file uploaded again is not a new version and is answered
-with the stored document, as before. Lineages stored before this release are assigned to their
-component at the first start of the upgraded server. A `serialNumber` that several components had
-uploaded before the upgrade is left without an owner: the first of those components to upload a
-higher version becomes its owner, and an organization admin can reassign it at any time. Organization
-admins read the owner of a lineage with the `sbomLineageOwner` query and move a lineage to another
-component (a component re-created under a new identifier, or a `serialNumber` shared by mistake) with
-the `reassignSbomLineageOwner` mutation; both take the organization and the `serialNumber`, with or
-without the `urn:uuid:` prefix.
+::: tip Available in both ReARM Community Edition and ReARM Pro
+The rule in this subsection, its error code, its `GUARD` event and the check on listing an existing artifact apply in both editions. The upgrade note at the end of this subsection applies to both editions too.
+:::
+
+A CycloneDX `serialNumber` identifies one SBOM within your organization, and several components may hold the same one. A component holds it when one of its releases, deliverables or commits lists an artifact with that `serialNumber`, directly or inside another artifact. Uploading the same `serialNumber` with a higher `version` makes that version the one ReARM reads for every release that holds the `serialNumber`; whether a stored export shows it follows [When a change shows](#what-the-nodes-rearm-makes-carry). From the ReARM release after 26.10.52 on, such an upload is accepted when the uploader has write permission on the whole organization (an organization admin, an organization read-write key, or a Free Form or personal key with read-write on the organization), or write permission on every component that holds the `serialNumber`; write permission on a release or a branch is not write permission on its component. Otherwise it is refused before anything is stored, with the error code `SBOM_SERIAL_NUMBER_UPDATE_NOT_PERMITTED` and a message that never names the components that hold it. When the target release already exists, the refusal is recorded on it as a `GUARD` update event; a refused `rearm addrelease` creates no release. A component's own key can therefore rebuild an SBOM that only its component holds, also after identical rebuilds. An SPDX document uploaded as the next version of a stored SBOM follows the same rule.
+
+A new `serialNumber` is accepted from anyone who may upload to the target. Three kinds of existing `serialNumber` need write permission on the whole organization for a new version: one that no component holds any more (every artifact with it was replaced or removed, or only agent sessions hold it); the `serialNumber` of a merged release or product SBOM, which ReARM mints itself; and one whose first upload never completed because the request that carried it failed after the SBOM was stored. In the last case, uploading the identical first file once more makes it the component's own again. An identical file uploaded again is not a new version: it is attached and answered with the stored document, and its component then holds the `serialNumber`, so later new versions also need write permission on that component. It lets its component's key upload new versions later only when the uploader could already have uploaded a new version itself. Listing an existing artifact on a release by reference follows the same test: it needs write permission on every other component that holds the artifact, or on the whole organization when nothing holds it.
+
+Builds of the ReARM Pro main branch from 16 October 2026 tried a per-component owner of each `serialNumber` instead; no release shipped it. Its error code `SBOM_SERIAL_NUMBER_OWNED_BY_OTHER_COMPONENT`, the `sbomLineageOwner` query and the `reassignSbomLineageOwner` mutation are gone.
+
+**Upgrading to the release after 26.10.52.** Before you change any image, run three read-only queries. The first is for every installation of either edition. The other two find something only where a main build from 16 October 2026 ran.
+
+- The duplicate-number query, in the ReARM database (`rearm-postgresql` on Docker Compose, `<release>-postgresql` on Helm, or your external database). It lists the tasks of an agent task board that share a task number:
+
+  ```sql
+  SELECT t.record_data->>'board' AS board, (t.record_data->>'number')::int AS number,
+         t.record_data->>'key' AS task_key, t.uuid AS task, t.record_data->>'title' AS title, t.created_date
+  FROM rearm.agent_tasks t
+  WHERE t.record_data->>'number' IS NOT NULL
+    AND ((t.record_data->>'board'), (t.record_data->>'number')::int) IN (
+        SELECT record_data->>'board', (record_data->>'number')::int FROM rearm.agent_tasks
+        WHERE record_data->>'number' IS NOT NULL GROUP BY 1, 2 HAVING count(*) > 1)
+  ORDER BY board, number, t.created_date;
+  ```
+
+  From this release on, two tasks of one board never share a number (database migration 96), and the backend does not start while a board already has such a pair. Earlier releases could store one: a board change saved while a task was being registered on that board could set the board's task counter back, and the next task then took a number already in use. The query returns no rows on an installation without agent task boards, and on one where migration 96 already ran.
+- The 97/98 query, in the ReARM database: `SELECT version, description FROM public.flyway_schema_history WHERE version IN ('97','98');` Only ReARM Pro main builds wrote these rows; on Community Edition this query returns no rows.
+- The rebom query, in the rebom database (`rebom-postgresql` on Docker Compose, `<release>-rebom-postgres` on Helm, or your external database): `SELECT to_regclass('rebom.bom_lineage') AS lineage_table, (SELECT count(*) FROM rebom.flyway_schema_history WHERE version = '9') AS v9_rows;` This finds something, on either edition, only where a rebom image built from the main branch from 16 October 2026 ran; the published Helm charts and Docker Compose file name earlier rebom images.
+
+If the duplicate-number query returns rows, do not upgrade yet. Rows with the same `board` and `number` are tasks of that board with the same number, usually also the same key, and this release's backend would stop at start with Flyway reporting `could not create unique index "agent_tasks_board_number"`. ReARM has no action that renumbers a task, so the repair is an edit of task rows in the ReARM database, and which task keeps the number is for an administrator of the organization that owns the board to decide: the key is what the board's documents, notes and pull request titles quote. The usual repair keeps the number on the task registered first and gives each later task of the pair a number above the highest number on its board, with the key `<board prefix>-<number>`; deleting a task instead loses the task and its history. Make the edit while the backend is stopped and after a backup of the ReARM database, and ask first if you are unsure: on the [issue tracker](https://github.com/relizaio/rearm/issues) for ReARM Community Edition, or through your ReARM Pro support contact. The board's task counter needs no change: this release draws each new number above the highest number on the board. Upgrade once the query returns no rows. If you already upgraded and the backend stopped with that Flyway message, migration 96 was not applied: stop the backend, repair the pairs the same way, and start it again.
+
+If all three queries return no rows (the rebom query a null `lineage_table` and `v9_rows` 0), upgrade as usual: take the backend and rebom images of this release together, as this release's Helm chart or Docker Compose file names them, and do not run this release's backend beside an earlier rebom, which refuses some of its SBOM uploads. The backend's first start builds two database indexes before it serves, so on a large database it takes longer than usual; on Helm, if the backend pod restarts before it becomes ready, raise `backend.startupFailureThreshold`.
+
+If the 97/98 query or the rebom query found something, the installation ran a main build from 16 October 2026 and may need two database repairs, and their order matters: a ReARM Pro backend from such a build must never run beside this release's rebom, or a key with write permission on one component could replace an SBOM that other components hold. Follow these steps in order:
+
+1. Before you change any image, stop the backend and rebom, and wait until neither has a running pod or container. On Helm: `kubectl -n <namespace> scale deployment/<release>-backend deployment/<release>-rebom-backend --replicas=0`. On Docker Compose: `docker compose stop rearm-core rebom-backend`. If a deployment tool starts them again, set their replicas to 0 in the tool's source or pause its sync, and stop them again before step 2.
+2. If the 97/98 query returned rows, delete them only if they are exactly `97` `sbom signing keys` and `98` `artifacts internal bom index`: `DELETE FROM public.flyway_schema_history WHERE version IN ('97','98');`. Never delete a `97` or `98` row with another description. Migrations 94 and 95 then find their table and index in place. Without this step, this release's backend stops at start with Flyway reporting `Detected resolved migration not applied to database: 94, 95, 96`.
+3. Start this release's rebom and backend together. On Helm: `helm upgrade` with this release's chart, then scale either deployment back to its replica count if it stays at 0. On Docker Compose: this release's compose file, then `docker compose up -d`. Never start this release's rebom beside an earlier backend.
+4. Once both are ready, and only if the rebom query found the table or a `v9_rows` count above 0, run in the rebom database: `DROP TABLE IF EXISTS rebom.bom_lineage; DELETE FROM rebom.flyway_schema_history WHERE version = '9';`
+5. From step 1 on, only go forward. Do not run `helm rollback`, do not go back to an earlier compose file, and never start an earlier rebom or backend on these databases. If this release's backend does not become ready, stop it again (step 1) and upgrade to a later release.
+
+If you already upgraded and this release's backend stops with the Flyway message in step 2, start at step 1. On ReARM Pro, your earlier backend may then have kept serving beside this release's rebom until you stopped it, and it did not apply the rule above in that time: a key with write permission on one component could have uploaded a new version of an SBOM that other components hold, and every release that holds it now reads that version. Once both are running again, list the new versions of existing `serialNumber`s stored since this release's rebom first started (replace `<start>` with that time; if you are not sure, use the time you began the upgrade or earlier: an earlier time only lists more rows), in the rebom database:
+
+```sql
+SELECT b.organization, lower(replace(b.meta->>'serialNumber', 'urn:uuid:', '')) AS serial_number, b.meta->>'bomVersion' AS bom_version, b.created_date
+FROM rebom.boms b
+WHERE b.created_date >= '<start>'
+  AND EXISTS (SELECT 1 FROM rebom.boms o
+              WHERE o.organization = b.organization
+                AND replace(o.meta->>'serialNumber', 'urn:uuid:', '') = replace(b.meta->>'serialNumber', 'urn:uuid:', '')
+                AND o.created_date < b.created_date)
+ORDER BY b.created_date;
+```
+
+For each row it returns, find the artifacts of that organization that carry its `serial_number` and the releases that list them, in the ReARM database (an artifact with no release here is held by a deliverable or a commit):
+
+```sql
+SELECT a.uuid AS artifact, a.created_date, a.last_updated_date, r.uuid AS release
+FROM rearm.artifacts a
+LEFT JOIN rearm.releases r ON r.record_data->'artifacts' @> to_jsonb(a.uuid::text)
+WHERE a.record_data->>'org' = '<organization>'
+  AND a.record_data->>'type' = 'BOM'
+  AND a.record_data->'internalBom'->>'id' = '<serial_number>'
+ORDER BY a.created_date;
+```
+
+The **History** tab of each release shows who added or updated each artifact and when; for an artifact that came with the release, who created the release. Where a version in that time came from a user or key that should not have changed that SBOM, upload a corrected SBOM with the same `serialNumber` and a higher `version` as an organization administrator.
 
 ### Scoring the export
 
