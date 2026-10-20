@@ -135,6 +135,8 @@ class ReleaseServiceForgedSupportStripTest {
 			}
 		};
 		ReflectionTestUtils.setField(svc, "rebomService", rebom);
+		// SCORE-33: the JSON export ends in the signing stamp; here the org has no key
+		ReflectionTestUtils.setField(svc, "sbomExportSigningService", SbomExportSigningFixtures.keylessService());
 		// The REAL injector service. The strip path touches neither repository, so nulls are
 		// safe here and the production tree edit is what runs.
 		//

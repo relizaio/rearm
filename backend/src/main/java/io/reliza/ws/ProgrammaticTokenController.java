@@ -43,7 +43,9 @@ import lombok.extern.slf4j.Slf4j;
  * header). Returns a one-hour bearer access token for the programmatic GraphQL endpoint.
  * No refresh tokens: a client holding its key simply exchanges again. Request parameters in the
  * URL query string are refused with 400 invalid_request ({@link OAuthQueryGuard}), and so is a
- * request that carries one of them more than once. The parameters are read by exact name through
+ * request that carries one of them more than once, and so is a request that carries an Authorization header
+ * together with a client_id or client_secret form field (one client authentication method per request, task
+ * TPF-50). The parameters are read by exact name through
  * {@link OAuthQueryGuard#single}, the read the rate limiter makes, never through Spring's binder
  * (task TPF-26): do not put a {@code @RequestParam} back on {@link #token}.
  */
@@ -80,6 +82,13 @@ public class ProgrammaticTokenController {
 		if (!repeated.isEmpty()) {
 			log.warn("SECURITY: token request refused from {}: {} sent more than once", request.getRemoteAddr(), repeated);
 			return error(HttpStatus.BAD_REQUEST, OAuthErrors.INVALID_REQUEST, OAuthQueryGuard.ONCE_ONLY_DESCRIPTION + "; sent more than once: " + String.join(", ", repeated));
+		}
+		// TPF-50: one client authentication method per request (RFC 6749 section 2.3), on every grant and before any
+		// parse or lookup: an Authorization header beside a client_id or client_secret form field is refused, as TEA does
+		if (OAuthQueryGuard.usesTwoClientAuthenticationMethods(request.getHeader(HttpHeaders.AUTHORIZATION), request.getParameterMap())) {
+			log.warn("SECURITY: token request refused from {}: an Authorization header and a client_id or client_secret form field",
+					LogSafe.text(request.getRemoteAddr()));
+			return error(HttpStatus.BAD_REQUEST, OAuthErrors.INVALID_REQUEST, OAuthQueryGuard.ONE_METHOD_DESCRIPTION);
 		}
 		// TPF-26: read by exact name through the helper the rate limiter reads client_id with, so both read the same text
 		Map<String, String[]> params = request.getParameterMap();

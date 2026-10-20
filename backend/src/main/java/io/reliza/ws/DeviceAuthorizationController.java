@@ -30,7 +30,8 @@ import lombok.extern.slf4j.Slf4j;
  * {@code POST /api/programmatic/device/code} starts a login (no credentials: the user approves it
  * in the browser); the CLI then polls the token endpoint with the device-code grant.
  * {@code POST /api/programmatic/revoke} (RFC 7009) ends a session by its refresh token: logout.
- * The refresh token is read from the form body only ({@link OAuthQueryGuard}).
+ * The refresh token is read from the form body only, once, by its exact name ({@link OAuthQueryGuard}):
+ * a token sent more than once is refused, and a decorated spelling such as {@code token[]} is never read.
  */
 @RestController
 @Slf4j
@@ -74,18 +75,30 @@ public class DeviceAuthorizationController {
 	}
 
 	@PostMapping(value = REVOKE_PATH, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<Map<String, Object>> revoke(HttpServletRequest request, @RequestParam(value = "token", required = false) String token) {
+	public ResponseEntity<Map<String, Object>> revoke(HttpServletRequest request) {
 		// TPF-3: the refresh token travels in the form body only; in the URL query string it is refused before any lookup
 		List<String> inQuery = OAuthQueryGuard.namesInQuery(request.getQueryString(), OAuthQueryGuard.REVOKE_REQUEST_PARAMETERS);
 		if (!inQuery.isEmpty()) {
 			log.warn("SECURITY: revoke request refused from {}: {} in the URL query string", request.getRemoteAddr(), inQuery);
-			return ResponseEntity.status(HttpStatus.BAD_REQUEST).header(HttpHeaders.CACHE_CONTROL, "no-store")
-					.body(Map.of("error", OAuthErrors.INVALID_REQUEST, "error_description",
-							OAuthQueryGuard.BODY_ONLY_DESCRIPTION + "; in the query string: " + String.join(", ", inQuery)));
+			return invalidRequest(OAuthQueryGuard.BODY_ONLY_DESCRIPTION + "; in the query string: " + String.join(", ", inQuery));
 		}
+		// TPF-52: a token sent more than once is refused before anything is read (RFC 7009 section 2.2.1; names only), as the token endpoint does
+		List<String> repeated = OAuthQueryGuard.namesRepeated(request.getParameterMap(), OAuthQueryGuard.REVOKE_REQUEST_PARAMETERS);
+		if (!repeated.isEmpty()) {
+			log.warn("SECURITY: revoke request refused from {}: {} sent more than once", request.getRemoteAddr(), repeated);
+			return invalidRequest(OAuthQueryGuard.ONCE_ONLY_DESCRIPTION + "; sent more than once: " + String.join(", ", repeated));
+		}
+		// TPF-52: read by exact name, never through Spring's binder (no comma join, no token[] fallback); absent reads null
+		String token = OAuthQueryGuard.single(request.getParameterMap(), "token");
 		// RFC 7009: 200 whether or not the token was live, so a caller cannot probe for valid tokens
 		boolean revoked = cliSessionService.revokeByRefreshToken(token, request.getRemoteAddr());
 		if (revoked) log.info("CLI session logged out from {}", request.getRemoteAddr());
 		return ResponseEntity.status(HttpStatus.OK).header(HttpHeaders.CACHE_CONTROL, "no-store").build();
+	}
+
+	/** The RFC 6749 section 5.2 body both revoke refusals answer: 400 invalid_request, not stored. */
+	private static ResponseEntity<Map<String, Object>> invalidRequest(String description) {
+		return ResponseEntity.status(HttpStatus.BAD_REQUEST).header(HttpHeaders.CACHE_CONTROL, "no-store")
+				.body(Map.of("error", OAuthErrors.INVALID_REQUEST, "error_description", description));
 	}
 }

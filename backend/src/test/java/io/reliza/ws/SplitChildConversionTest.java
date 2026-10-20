@@ -17,6 +17,7 @@ import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.exceptions.InvalidInputException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentTaskInput.SplitChild;
 
@@ -83,13 +84,15 @@ class SplitChildConversionTest {
 		Map<String, Object> m = new HashMap<>();
 		m.put("title", "part 1");
 		m.put("producesComponent", "not-a-uuid");
-		RelizaException e = assertThrows(RelizaException.class,
+		InvalidInputException e = assertThrows(InvalidInputException.class,
 				() -> AgentTaskDataFetcher.toSplitChildren(List.of(m)));
-		assertTrue(e.getMessage().contains("split children"), e.getMessage());
+		assertEquals("children[0].producesComponent: not a uuid", e.getMessage());
 
 		Map<String, Object> m2 = new HashMap<>();
 		m2.put("title", "part 1");
 		m2.put("dependsOnSiblingIndexes", List.of("first"));
-		assertThrows(RelizaException.class, () -> AgentTaskDataFetcher.toSplitChildren(List.of(m2)));
+		InvalidInputException e2 = assertThrows(InvalidInputException.class,
+				() -> AgentTaskDataFetcher.toSplitChildren(List.of(m2)));
+		assertEquals("children[0].dependsOnSiblingIndexes[0]: must be a number", e2.getMessage());
 	}
 }

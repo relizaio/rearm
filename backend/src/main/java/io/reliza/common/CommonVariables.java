@@ -306,6 +306,10 @@ public class CommonVariables {
 	public static final String PROGRAMMATIC_VARIANT_NOT_FOUND_MESSAGE = "Variant not found in this organization";
 	/** As {@link #PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE}, for a named component. */
 	public static final String PROGRAMMATIC_COMPONENT_NOT_FOUND_MESSAGE = "Component not found in this organization";
+	/** An artifact upload's deliverable that is not the named release's own, missing or foreign alike; the id follows. */
+	public static final String DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX = "Deliverable not found in this organization: ";
+	/** As DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX, for a source code entry. */
+	public static final String SCE_NOT_FOUND_IN_ORG_PREFIX = "Source code entry not found in this organization: ";
 	
 	public static final String ADDED_ON_COMPLETE = "addedOnComplete";
 	
@@ -500,6 +504,7 @@ public class CommonVariables {
 		DEVICES("devices"),
 		DEVICE_EVENTS("device_events"),
 		SIGNING_KEYS("signing_keys"),
+		SBOM_SIGNING_KEYS("sbom_signing_keys"),
 		SIGNATURE_VERIFICATIONS("signature_verifications"),
 		MODEL_ONTOLOGIES("model_ontologies"),
 		DELIVERABLES("deliverables"),

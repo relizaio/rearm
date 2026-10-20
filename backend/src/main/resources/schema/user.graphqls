@@ -440,6 +440,8 @@ type Query {
 	signingKey(uuid: ID!): SigningKey
 	signingKeysOfOwner(orgUuid: ID!, ownerType: SigningKeyOwnerType!, ownerUuid: ID!): [SigningKey]
 	signingKeysOfOrg(orgUuid: ID!): [SigningKey]
+	"""SBOM signing keys of an organization (SCORE-32): CURRENT first, then the rest newest first. Org READ."""
+	sbomSigningKeys(orgUuid: ID!): [SbomSigningKey]
 	signatureVerification(uuid: ID!): SignatureVerification
 	signatureVerificationsForSubject(subjectType: SignatureSubjectType!, subjectUuid: ID!): [SignatureVerification]
 
@@ -1092,6 +1094,13 @@ type Mutation {
 	deletePerspective(uuid: ID!): Perspective
 	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
 	"""
+	Adds one perspective to the component's perspectives and keeps the others. Same authorization and
+	refusals as setPerspectivesOnComponent: ADMIN on the component; an unknown, archived or other
+	organization's perspective is "Perspective not found: <uuid>"; a product-based perspective is
+	refused. Adding a perspective the component already has changes nothing.
+	"""
+	addPerspectiveToComponent(componentUuid: ID!, perspectiveUuid: ID!): Component
+	"""
 	SaaS-only. Creates a component or product and atomically assigns it to the given
 	perspective. Requires WRITE permission on the perspective. Only real perspectives
 	(PerspectiveType.PERSPECTIVE) are allowed -- product-derived perspectives are rejected.
@@ -1212,6 +1221,13 @@ type Mutation {
 	archiveCommitter(uuid: ID!): Committer
 	enrollSigningKey(input: SigningKeyInput!): SigningKey
 	revokeSigningKey(uuid: ID!): SigningKey
+	"""
+	SBOM signing keys (SCORE-32), org ADMIN. Generate and import make the new key CURRENT and retire the
+	previous CURRENT key; import takes an Ed25519 private key as PKCS#8 PEM. Revoke marks a key REVOKED.
+	"""
+	generateSbomSigningKey(orgUuid: ID!): SbomSigningKey
+	importSbomSigningKey(orgUuid: ID!, privateKeyPem: String!): SbomSigningKey
+	revokeSbomSigningKey(uuid: ID!): SbomSigningKey
 	"""
 	Update the allowed_signers principal (identity) on an enrolled key.
 	Operator JWT path. Fingerprint / pubKey are immutable; SSH keys
@@ -3895,6 +3911,16 @@ input ReleaseInput {
 	has one and the org-level prose fields already read blank as clear.
 	"""
 	fdaAssessmentNarrative: String
+	"""
+	Per-release override of the declared licence (SCORE-39). PATCH: OMIT to leave unchanged,
+	send an EMPTY STRING to clear (the release inherits again).
+	An SPDX licence expression: SPDX list ids (any case, stored in the list's casing, a
+	trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the upper-case operators AND, OR and
+	WITH (exception ids syntax-checked only) and parentheses; at most 512 characters.
+	NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	No URL at release level: the effective URL is null while the release overrides.
+	"""
+	licenseExpression: String
 	vcsUri: String
 	repoPath: String
 }
@@ -4384,6 +4410,24 @@ input SettingsInput {
 	convention elsewhere.
 	"""
 	fdaRiskIncreasesNotice: String
+	"""
+	Organization default declared licence (SCORE-39). PATCH: OMIT to leave unchanged, send
+	an EMPTY STRING to clear; clearing it clears defaultLicenseUrl too. Organization ADMIN only,
+	as every settings field.
+	An SPDX licence expression: SPDX list ids (any case, stored in the list's casing, a
+	trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the upper-case operators AND, OR and
+	WITH (exception ids syntax-checked only) and parentheses; at most 512 characters.
+	NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	"""
+	defaultLicenseExpression: String
+	"""
+	URL of defaultLicenseExpression (SCORE-39). PATCH: OMIT to leave unchanged, send an EMPTY
+	STRING to clear.
+	An absolute http or https URL with a host, printable ASCII (punycode host), no user
+	information, at most 2048 characters; refused unless the organization stores a
+	defaultLicenseExpression after this patch.
+	"""
+	defaultLicenseUrl: String
 }
 
 input ShipProductInput {
@@ -4843,6 +4887,33 @@ input UpdateComponentInput {
 	Update internal/external classification (D16). Null leaves the existing value unchanged.
 	"""
 	isInternal: BelongsToOrganization
+	"""
+	Component declared licence (SCORE-39). PATCH: OMIT to leave unchanged, send an EMPTY
+	STRING to clear; clearing it clears licenseUrl too.
+	An SPDX licence expression: SPDX list ids (any case, stored in the list's casing, a
+	trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the upper-case operators AND, OR and
+	WITH (exception ids syntax-checked only) and parentheses; at most 512 characters.
+	NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	"""
+	licenseExpression: String
+	"""
+	URL of licenseExpression (SCORE-39). PATCH: OMIT to leave unchanged, send an EMPTY STRING
+	to clear.
+	An absolute http or https URL with a host, printable ASCII (punycode host), no user
+	information, at most 2048 characters; refused unless the component stores a
+	licenseExpression after this patch.
+	"""
+	licenseUrl: String
+	"""
+	Supplier named on the SBOM nodes of the component's releases (SCORE-39). PATCH: OMIT to
+	leave unchanged, send an EMPTY STRING to clear. Trimmed, at most 255 characters; no < or >,
+	control, invisible formatting or bidi characters.
+	Applies to the nodes ReARM makes at the next export and to SBOMs uploaded after it is set.
+	A root uploaded earlier keeps the supplier recorded at its upload; a newly generated SBOM
+	(a new serialNumber) uploaded to a release made after the change carries the new value in
+	that release's export. An identical file is answered with the stored row, unchanged.
+	"""
+	supplierName: String
 	"""Manually-assigned lead user UUIDs. Null leaves unchanged; empty list clears."""
 	leads: [ID!]
 	"""Freeform stakeholder contacts (HTML-sanitized server-side). Null leaves unchanged; empty list clears."""
@@ -4858,6 +4929,14 @@ input UpdateComponentInput {
 	to org team-assignment rules. Takes precedence over owner when both are sent.
 	"""
 	clearOwner: Boolean
+	"""
+	The revision of the component this save was prepared from (Component.revision as read). When sent, the
+	save is refused and nothing is written unless the stored revision is exactly this one; the error carries
+	extensions.code COMPONENT_REVISION_CONFLICT, the current revision, and who changed the component last
+	and when. When omitted nothing is checked (declarative applies, the CLI, the Terraform provider and
+	older pages send none).
+	"""
+	expectedRevision: Int
 }
 
 input UpdateInstancePlanInput {

@@ -53,7 +53,6 @@ public class SystemInfoData extends RelizaDataParent{
 	 * application logic over jsonb, and neither is expressible as DDL.
 	 */
 	private ZonedDateTime modelCatalogueSweepAt;
-
 	private String sendGridKey;
 	private String fromEmail;
 	private SmtpProps smtpProps;

@@ -6,6 +6,7 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
@@ -15,6 +16,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.model.ComponentData;
@@ -160,5 +162,25 @@ public class CdxImportServiceIntegrationTest {
 				.orElseThrow();
 		ReleaseData releaseData = ReleaseData.dataFromRecord(release);
 		assertNotNull(releaseData.getSourceCodeEntry(), "imported release lost its pedigree source code entry");
+	}
+
+	/**
+	 * Task TPF-47 decision 7: a component write that fails inside the import's joined transaction (here the
+	 * decoded U+0000 of a version, which Postgres cannot store) has already marked the transaction rollback-only,
+	 * so the per-component catch rethrows it: the caller gets the failure's own type, not the
+	 * UnexpectedRollbackException of a doomed commit, and nothing is written. Called on the service, so the
+	 * fetcher's decoded-document refusal is not in the way; the version travels as the JSON escape, the only way
+	 * the CycloneDX parser admits the character.
+	 */
+	@Test
+	public void aFailedComponentWriteReachesTheCallerAsItsOwnType() throws Exception {
+		Organization org = testInitializer.obtainOrganization();
+		String name = "tpf47-rollback-" + UUID.randomUUID();
+		String bom = "{\"bomFormat\":\"CycloneDX\",\"specVersion\":\"1.6\",\"version\":1,\"components\":[{\"type\":"
+				+ "\"library\",\"name\":\"" + name + "\",\"version\":\"1.0\\u0000\",\"properties\":[{\"name\":"
+				+ "\"reliza:rearmImport:rearmImportable\",\"value\":\"true\"}]}]}";
+		assertThrows(DataIntegrityViolationException.class,
+				() -> cdxImportService.importFromCycloneDx(org.getUuid(), bom, WhoUpdated.getTestWhoUpdated()));
+		assertTrue(componentService.findComponentDataByOrgNameType(org.getUuid(), name, ComponentType.COMPONENT).isEmpty());
 	}
 }

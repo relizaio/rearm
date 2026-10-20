@@ -28,6 +28,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -86,7 +87,7 @@ public class CliSessionDataFetcher {
 		// Everything that can reject the request runs before the session is approved, and the writes that
 		// follow share one transaction, so a rejected set never leaves an approved session with a useless key.
 		List<PermissionDto> requested = permissions == null ? List.of()
-				: permissions.stream().map(m -> Utils.OM.convertValue(m, PermissionDto.class)).toList();
+				: InputConversion.convertEach(permissions, PermissionDto.class, "permissions");
 		authorizationService.assertGrantObjectsExist(orgUuid, requested);
 		for (PermissionDto pd : requested) {
 			if (pd.approvals() != null && !pd.approvals().isEmpty() && !Utils.isSanitizedApprovalsSent(pd.approvals(), od.get()))

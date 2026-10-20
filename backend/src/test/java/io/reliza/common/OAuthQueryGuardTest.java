@@ -5,11 +5,13 @@
 
 package io.reliza.common;
 
+import static io.reliza.common.OAuthQueryGuard.ONE_METHOD_DESCRIPTION;
 import static io.reliza.common.OAuthQueryGuard.REVOKE_REQUEST_PARAMETERS;
 import static io.reliza.common.OAuthQueryGuard.TOKEN_REQUEST_PARAMETERS;
 import static io.reliza.common.OAuthQueryGuard.namesInQuery;
 import static io.reliza.common.OAuthQueryGuard.namesRepeated;
 import static io.reliza.common.OAuthQueryGuard.single;
+import static io.reliza.common.OAuthQueryGuard.usesTwoClientAuthenticationMethods;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -21,7 +23,8 @@ import org.junit.jupiter.api.Test;
 
 /**
  * The query-string parser behind the token and revoke endpoints' body-only rule (task TPF-3), and the
- * repeated-parameter check and exact-name read of the token endpoint and the rate limiter (task TPF-26).
+ * repeated-parameter check and exact-name read of the token endpoint and the rate limiter (task TPF-26), and
+ * the one-client-authentication-method check of the token endpoint (task TPF-50).
  */
 public class OAuthQueryGuardTest {
 
@@ -86,6 +89,10 @@ public class OAuthQueryGuardTest {
 		assertEquals(List.of("token"), namesInQuery("token=x", REVOKE_REQUEST_PARAMETERS));
 		assertTrue(namesInQuery("token=x", TOKEN_REQUEST_PARAMETERS).isEmpty());
 		assertTrue(namesInQuery("client_secret=x&refresh_token=y", REVOKE_REQUEST_PARAMETERS).isEmpty());
+		// TPF-52 4.3: the repeat check over the revoke set names token only
+		assertEquals(List.of("token"), namesRepeated(Map.of("token", new String[] {"a", "b"}), REVOKE_REQUEST_PARAMETERS));
+		assertTrue(namesRepeated(Map.of("token[]", new String[] {"a", "b"}, "refresh_token", new String[] {"a", "b"}),
+				REVOKE_REQUEST_PARAMETERS).isEmpty());
 	}
 
 	// TPF-26 4.3 row 6: namesRepeated
@@ -113,5 +120,34 @@ public class OAuthQueryGuardTest {
 		assertEquals("a", single(Map.of("client_id", new String[] {"a"}), "client_id"));
 		assertEquals("a", single(Map.of("client_id", new String[] {"a", "b"}), "client_id"));
 		assertNull(single(Map.of("client_id[]", new String[] {"a"}), "client_id"), "exact names only");
+	}
+
+	// TPF-50 architecture 4.1: a header and an exact form name, names only
+	@Test
+	public void usesTwoMethodsOnlyWithAHeaderAndAnExactFormName() {
+		Map<String, String[]> both = Map.of("client_id", new String[] {"a"}, "client_secret", new String[] {"s"});
+		assertEquals(false, usesTwoClientAuthenticationMethods(null, both), "row 1: no header");
+		assertEquals(false, usesTwoClientAuthenticationMethods("", both), "row 2: an empty header");
+		assertEquals(false, usesTwoClientAuthenticationMethods("Basic x", Map.of()), "row 3: an empty map");
+		assertEquals(false, usesTwoClientAuthenticationMethods("Basic x", null), "row 3: a null map");
+		assertEquals(true, usesTwoClientAuthenticationMethods("Basic x", Map.of("client_id", new String[] {"a"})), "row 4: client_id");
+		assertEquals(true, usesTwoClientAuthenticationMethods("Basic x", Map.of("client_secret", new String[] {"s"})), "row 5: client_secret");
+		assertEquals(true, usesTwoClientAuthenticationMethods("Basic x", Map.of("client_id", new String[] {""})),
+				"row 6: the name counts, the value is not read");
+		assertEquals(true, usesTwoClientAuthenticationMethods(" ", Map.of("client_id", new String[] {"a"})),
+				"row 7: a whitespace-only header is present");
+		assertEquals(true, usesTwoClientAuthenticationMethods("Bearer t", Map.of("client_secret", new String[] {"s"})), "row 8: any scheme");
+		assertEquals(true, usesTwoClientAuthenticationMethods("Digest abc", Map.of("client_secret", new String[] {"s"})), "row 8: any scheme");
+		assertEquals(false, usesTwoClientAuthenticationMethods("Basic x", Map.of("client_id[]", new String[] {"a"}, "client_secret[]",
+				new String[] {"s"}, "client_id.value", new String[] {"a"}, "scope", new String[] {"x"}, "grant_type",
+				new String[] {"client_credentials"})), "row 9: names nobody reads");
+		assertEquals(false, usesTwoClientAuthenticationMethods("Basic x", Map.of("client_id", new String[] {})),
+				"row 10: no value, as single reads it");
+	}
+
+	// TPF-50 architecture 4.1: the TEA endpoint's literal (TeaTokenController on 2026-10-tea), so TEA can switch to the constant
+	@Test
+	public void theOneMethodTextIsTeas() {
+		assertEquals("use one client authentication method: HTTP Basic or client_id and client_secret", ONE_METHOD_DESCRIPTION);
 	}
 }

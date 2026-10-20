@@ -270,8 +270,7 @@ public class AgentBoardService {
 	 * existing key alone. Mutates {@code bd} for the caller to save.
 	 */
 	void applyTaskPrefix(AgentBoardData bd, String wanted, WhoUpdated wu) throws RelizaException {
-		lockTaskPrefixes(bd.getOrg());
-		Map<String, OrganizationData.TaskPrefixClaim> registry = taskPrefixRegistry(bd.getOrg());
+		Map<String, OrganizationData.TaskPrefixClaim> registry = lockedTaskPrefixRegistry(bd.getOrg());
 		String prefix;
 		if (null != wanted) {
 			prefix = wanted;
@@ -304,6 +303,32 @@ public class AgentBoardService {
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		entityManager.refresh(b);
 		return AgentBoardData.dataFromRecord(b);
+	}
+
+	/** The steps of a board write made of several service calls (TPF-37), run on the board as locked. */
+	@FunctionalInterface
+	public interface BoardUpdate {
+		AgentBoardData apply(AgentBoardData fresh) throws RelizaException;
+	}
+
+	/**
+	 * A board write made of several steps -- the board form's update -- as one transaction (TPF-37).
+	 * The board row is locked and read fresh first ({@link #lockBoard}); when the steps may claim a
+	 * task-key prefix the organization's AGENT_TASK_PREFIXES lock comes next, before any step writes:
+	 * the order every claim takes them (board row, then prefix lock). Each step joins this
+	 * transaction, so a refusal in any of them, a RelizaException or a RuntimeException, rolls every
+	 * step back, the prefix claim included, and the board stays as it was. A step's own locked read of
+	 * the board is this transaction's lock again and returns this copy with the earlier steps' writes.
+	 * A step must let a refusal propagate: one caught to carry on leaves the transaction marked
+	 * rollback-only, and the commit fails in its place. Not rolled back: a VCS repository a step
+	 * provisions ({@link VcsRepositoryService#provisionVcsRepository} commits on its own).
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentBoardData updateAtomically(UUID boardUuid, boolean claimsTaskPrefix, BoardUpdate steps)
+			throws RelizaException {
+		AgentBoardData fresh = lockBoard(boardUuid);
+		if (claimsTaskPrefix) lockTaskPrefixes(fresh.getOrg());
+		return steps.apply(fresh);
 	}
 
 	/**
@@ -388,6 +413,26 @@ public class AgentBoardService {
 		}
 	}
 
+	/**
+	 * The org's registry, read under the org's AGENT_TASK_PREFIXES lock and fresh from the database
+	 * (TPF-35): the lock is on a key, not on the organization row, and the request's persistence
+	 * context may already hold an organization read before the lock, from before a claim that
+	 * committed while this one waited. So the organization is refreshed after the lock, as
+	 * {@link #lockBoard} does for a board, which also leaves the request's managed copy fresh for
+	 * every later reader. A refresh drops unflushed changes to the organization: claim before
+	 * writing the organization in the same transaction (writing it first would also take its row
+	 * lock before the prefix lock, the reverse of every claim's order).
+	 */
+	private Map<String, OrganizationData.TaskPrefixClaim> lockedTaskPrefixRegistry(UUID orgUuid) {
+		lockTaskPrefixes(orgUuid);
+		io.reliza.model.Organization org = entityManager.find(io.reliza.model.Organization.class, orgUuid);
+		if (null == org) return Map.of();
+		entityManager.refresh(org);
+		Map<String, OrganizationData.TaskPrefixClaim> registry = OrganizationData.orgDataFromDbRecord(org)
+				.getAgentTaskPrefixes();
+		return null == registry ? Map.of() : registry;
+	}
+
 	private Map<String, OrganizationData.TaskPrefixClaim> taskPrefixRegistry(UUID orgUuid) {
 		return getOrganizationService.getOrganizationData(orgUuid)
 				.map(OrganizationData::getAgentTaskPrefixes)
@@ -452,9 +497,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData setDocumentsConfig(UUID boardUuid, String documentsRepoUri,
 			Map<RearmSpecificationType, String> documentPaths, WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		if (null != documentsRepoUri) {
 			bd.setDocumentsRepo(documentsRepositoryFor(bd, documentsRepoUri, wu));
 		}
@@ -633,9 +676,7 @@ public class AgentBoardService {
 	public AgentBoardData updateSettings(UUID boardUuid, Long budgetMicros, Integer softAlertPercent,
 			Integer cycleCap, Integer noProgressRepeatsToStop, Integer blockingPriority,
 			Integer completionPriority, WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		if (null != budgetMicros) bd.setBudgetMicros(budgetMicros);
 		if (null != softAlertPercent) bd.setSoftAlertPercent(softAlertPercent);
 		if (null != cycleCap) bd.setCycleCap(cycleCap);
@@ -665,9 +706,7 @@ public class AgentBoardService {
 	public AgentBoardData setCoordinatorCapabilities(UUID boardUuid, List<AgentCapability> caps, WhoUpdated wu)
 			throws RelizaException {
 		List<AgentCapability> valid = coordinatorCapabilities(caps);
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		bd.setCoordinatorCapabilities(valid);
 		return saveData(bd, wu);
 	}
@@ -728,9 +767,7 @@ public class AgentBoardService {
 			String coordinatorPrompt, Integer perAgentWipLimit,
 			PriorityType priorityType, BoardStatus status, UUID target, Integer defaultWorkLevel,
 			WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		if (target != null && !target.equals(bd.getTarget())) {
 			validateTarget(target, bd.getOrg());
 			// The new target must be a member of every perspective the board is in (rule 2).
@@ -772,9 +809,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData setPause(UUID boardUuid, BoardPauseLevel actorLevel, boolean pause,
 			String reason, AgentActor actor, WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		BoardPauseLevel current = bd.getPause() != null ? bd.getPause().level() : BoardPauseLevel.NONE;
 		if (actorLevel == BoardPauseLevel.COORDINATOR && current == BoardPauseLevel.OPERATOR) {
 			throw new RelizaException("Board " + boardUuid
@@ -802,9 +837,7 @@ public class AgentBoardService {
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData markSoftAlertPosted(UUID boardUuid, WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		if (bd.isSoftAlertPosted()) return bd;
 		bd.setSoftAlertPosted(true);
 		return saveData(bd, wu);
@@ -1009,6 +1042,7 @@ public class AgentBoardService {
 	public int sweepEventLogOf(UUID boardUuid, ZonedDateTime now) throws RelizaException {
 		Optional<AgentBoard> b = repository.findByIdWriteLocked(boardUuid);
 		if (b.isEmpty()) return 0;
+		entityManager.refresh(b.get());
 		AgentBoardData bd = AgentBoardData.dataFromRecord(b.get());
 		int days = bd.getEffectiveEventRetentionDays();
 		if (days <= 0) return 0;
@@ -1050,9 +1084,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData claimCoordinatorSeat(UUID boardUuid, UUID sessionUuid, UUID agentUuid,
 			WhoUpdated wu) throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		CoordinatorSeat seat = bd.getCoordinatorSeat();
 		if (seat != null && !sessionUuid.equals(seat.session())) {
 			throw new RelizaException("Board " + boardUuid + " coordinator seat is held by session "
@@ -1089,13 +1121,16 @@ public class AgentBoardService {
 	/**
 	 * Release coordinator seats held by a closing session, with an ALERT saying why (task 6e7fe6fe):
 	 * a seat that frees itself silently leaves the board without a coordinator and nobody told.
-	 * Called from every session-close path.
+	 * Called from every session-close path. Each board is read under its row lock (TPF-42), and a
+	 * board whose seat is no longer this session's is left alone.
 	 */
+	@Transactional(rollbackFor = RelizaException.class)
 	public void releaseSeatsForSession(UUID sessionUuid, String reason, WhoUpdated wu) {
 		if (sessionUuid == null) return;
 		for (AgentBoard b : repository.findBySeatSession(sessionUuid.toString())) {
 			try {
-				AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+				AgentBoardData bd = lockBoard(b.getUuid());
+				if (!isSeatHolder(bd, sessionUuid)) continue;
 				bd.setCoordinatorSeat(null);
 				String message = "Coordinator seat released: " + (null == reason ? "session " + sessionUuid + " closed" : reason);
 				addEvent(bd, new AgentBoardData.BoardEvent(AgentBoardData.BoardEventKind.ALERT, message,
@@ -1583,10 +1618,10 @@ public class AgentBoardService {
 		for (AgentTaskRoleConfigData preset : listPresets(board.getOrg())) {
 			if (!preset.isActive()) continue;
 			if (wanted.equalsIgnoreCase(preset.getName())) {
-				if (StringUtils.isBlank(board.getCoordinatorPrompt())) {
-					board.setCoordinatorPrompt(preset.getPrompt());
-					board = saveData(board, wu);
-				}
+				// Through the proxy: the prompt is saved in updateBoard's own transaction, read under
+				// the board's lock (TPF-42), even when the caller has no transaction.
+				if (StringUtils.isBlank(board.getCoordinatorPrompt())) board = self.updateBoard(board.getUuid(),
+						null, null, preset.getPrompt(), null, null, null, null, null, wu);
 				seeded = true;
 				continue;
 			}
@@ -1628,8 +1663,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData reseedCoordinatorPrompt(UUID boardUuid, String presetName, AgentActor by,
 			WhoUpdated wu) throws RelizaException {
-		AgentBoardData board = getBoardData(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
+		AgentBoardData board = lockBoard(boardUuid);
 		AgentTaskRoleConfigData preset = listPresets(board.getOrg()).stream()
 				.filter(p -> p.getName().equalsIgnoreCase(presetName))
 				.findFirst()
@@ -1872,9 +1906,7 @@ public class AgentBoardService {
 	public AgentBoardData setElementCheckPolicy(UUID boardUuid, io.reliza.model.ElementCheckPolicy declared, WhoUpdated wu)
 			throws RelizaException {
 		io.reliza.model.ElementCheckPolicy checked = elementCheckPolicy(declared);
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		bd.setElementCheckPolicy(checked);
 		return saveData(bd, wu);
 	}
@@ -1883,9 +1915,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData setDeliveryPolicy(UUID boardUuid, AgentBoardData.DeliveryPolicy declared, WhoUpdated wu)
 			throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		bd.setDeliveryPolicy(normalised(declared));
 		return saveData(bd, wu);
 	}
@@ -1895,9 +1925,7 @@ public class AgentBoardService {
 	public AgentBoardData setElementFamilies(UUID boardUuid, Map<String, ?> declared, WhoUpdated wu)
 			throws RelizaException {
 		DeclaredFamilies checked = elementFamilies(declared);
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		bd.setElementFamilies(checked.names());
 		bd.setElementFamilyDefinedIn(checked.definedIn());
 		return saveData(bd, wu);
@@ -2276,6 +2304,11 @@ public class AgentBoardService {
 		return repository.findWatchingHumanQueueAge().stream().map(AgentBoardData::dataFromRecord).toList();
 	}
 
+	/**
+	 * The one whole-board save. Call it inside the writer's transaction, after its
+	 * {@link #lockBoard}: the save keeps the stored task counter when that is the higher one
+	 * (TPF-42), read FOR UPDATE, and only a transaction keeps that lock to the save's UPDATE.
+	 */
 	public AgentBoardData saveData(AgentBoardData bd, WhoUpdated wu) {
 		AgentBoard b = bd.getUuid() != null
 				? repository.findById(bd.getUuid()).orElseGet(AgentBoard::new)
@@ -2283,6 +2316,7 @@ public class AgentBoardService {
 		Map<String, Object> recordData = Utils.dataToRecord(bd);
 		Optional<AgentBoard> existing = repository.findById(b.getUuid());
 		if (existing.isPresent()) {
+			recordData = AgentBoardData.keepNextTaskNumber(recordData, repository.currentNextTaskNumberForUpdate(b.getUuid()));
 			auditService.createAndSaveAuditRecord(TableName.AGENT_BOARDS, b);
 			b.setRevision(b.getRevision() + 1);
 			b.setLastUpdatedDate(ZonedDateTime.now());
@@ -2889,8 +2923,14 @@ public class AgentBoardService {
 
 		// ---- the board ----
 		if (creating) {
-			bd = createBoard(orgUuid, boardName, null, sources, null, null, null, target, null,
-					d.has("taskPrefix", spec.getTaskPrefix()) ? spec.getTaskPrefix() : null, wu);
+			try {
+				bd = createBoard(orgUuid, boardName, null, sources, null, null, null, target, null,
+						d.has("taskPrefix", spec.getTaskPrefix()) ? spec.getTaskPrefix() : null, wu);
+			} catch (TaskPrefixTaken taken) {
+				// Claimed between the check above and the claim under the lock (TPF-35): told as the check would tell it.
+				result.add(error(boardName, taken.forCaller(access).getMessage()));
+				return result;
+			}
 			if (!d.has("coordinatorPrompt", spec.getCoordinatorPrompt())) {
 				// A new board takes its coordinator prompt from the presets, as the UI's create
 				// does. Only the prompt: the file's roles are the board's roles.
@@ -3431,9 +3471,7 @@ public class AgentBoardService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData updateSettingsFromInput(UUID boardUuid, Map<String, Object> settings, WhoUpdated wu)
 			throws RelizaException {
-		AgentBoard b = repository.findByIdWriteLocked(boardUuid)
-				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
-		AgentBoardData bd = AgentBoardData.dataFromRecord(b);
+		AgentBoardData bd = lockBoard(boardUuid);
 		if (null == settings) return bd;
 		SettingsInput in = settingsFromInput(bd.getOrg(), bd.getName(), settings);
 		applySettings(bd, in.settings(), in.declared());

@@ -270,4 +270,22 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Query(value = "SELECT min(a.created_date) FROM rearm.artifacts a "
 			+ "WHERE a.record_data->>'type' = 'BOM'", nativeQuery = true)
 	java.time.Instant findOldestBomArtifactCreatedDate();
+
+	/**
+	 * The BOM artifacts of an organization carrying the serialNumber {@code serialAsString}
+	 * (canonical lowercase uuid text, the form internalBom.id is stored in): the rows rule B reads
+	 * the holders of (SCORE-52 ADR-3). Served by the V95 expression index
+	 * idx_artifacts_org_internal_bom, whose expressions this predicate repeats verbatim.
+	 */
+	@Query(value = VariableQueries.FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM, nativeQuery = true)
+	List<Artifact> findBomArtifactsByOrgAndInternalBom(@Param("org") String orgUuidAsString,
+			@Param("serial") String serialAsString);
+
+	/**
+	 * Every artifact whose own {@code artifacts} list names {@code artUuidAsString}, in any
+	 * organization (SCORE-52 ADR-8: a container of another organization must be seen, so that it
+	 * fails closed). Served by the jsonb_path_ops GIN index idx_artifacts_record_data_gin.
+	 */
+	@Query(value = VariableQueries.FIND_ARTIFACTS_CONTAINING_ARTIFACT, nativeQuery = true)
+	List<Artifact> findContainingArtifacts(@Param("artUuidAsString") String artUuidAsString);
 }

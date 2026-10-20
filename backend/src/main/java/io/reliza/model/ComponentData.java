@@ -19,6 +19,7 @@ import org.apache.commons.lang3.StringUtils;
 import org.jsoup.Jsoup;
 import org.jsoup.safety.Safelist;
 
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
@@ -642,6 +643,25 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	private BelongsToOrganization isInternal;
 
 	/**
+	 * The component's declared licence, a canonical SPDX expression (SCORE-39 ADR-1); null when
+	 * unset, and then the organization's default applies. Read through
+	 * {@code DeclaredLicenses.forRelease}.
+	 */
+	@JsonProperty
+	private String licenseExpression;
+
+	/** The URL of {@link #licenseExpression}, an http or https URL; null when unset. */
+	@JsonProperty
+	private String licenseUrl;
+
+	/**
+	 * The supplier ReARM names for the SBOM nodes of this component's releases when no publisher
+	 * names one (SCORE-39 ADR-3, {@code SbomSupplierNames}); null when unset.
+	 */
+	@JsonProperty
+	private String supplierName;
+
+	/**
 	 * Cached value of the synthetic {@code effectiveLifecycle} GraphQL field, populated
 	 * up-front by the components-list datafetcher via a single batched SQL query (see
 	 * {@code ComponentService.effectiveLifecyclesForComponents}). Read by the per-Component
@@ -659,6 +679,11 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 
 	@com.fasterxml.jackson.annotation.JsonIgnore
 	private boolean effectiveLifecycleCached;
+
+	/** The row's revision at the read this object came from (TPF-61). Not part of the record; served as Component.revision. */
+	@JsonIgnore
+	@EqualsAndHashCode.Exclude
+	private Integer revision;
 
 	public List<RearmIdentifier> getIdentifiers () {
 		return new LinkedList<>(this.identifiers);
@@ -707,6 +732,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		Map<String,Object> recordData = c.getRecordData();
 		ComponentData cd = Utils.OM.convertValue(recordData, ComponentData.class);
 		cd.setUuid(c.getUuid());
+		cd.setRevision(c.getRevision());
 		return cd;
 	}
 	@Override

@@ -151,22 +151,15 @@ public class BomLifecycleService {
     }
 
     /**
-     * Extract internal BOM ID from rebom response
+     * Extract internal BOM ID from rebom response: only rebom's exact lineage form is accepted
+     * ({@link SbomUpdateGuard#lineageOfRebomSerialNumber}, SCORE-47 T-4).
      */
     private UUID extractInternalBomId(RebomResponse rebomResponse) throws RelizaException {
-        try {
-            String serialNumber = rebomResponse.meta().serialNumber();
-            if (serialNumber == null || serialNumber.isEmpty()) {
-                throw new RelizaException("Rebom response missing serialNumber");
-            }
-            
-            // Remove urn:uuid: prefix if present
-            String uuidString = serialNumber.replace("urn:uuid:", "");
-            return UUID.fromString(uuidString);
-            
-        } catch (IllegalArgumentException e) {
-            throw new RelizaException("Invalid UUID in rebom response serialNumber: " + 
-                rebomResponse.meta().serialNumber());
+        String serialNumber = rebomResponse.meta().serialNumber();
+        if (serialNumber == null || serialNumber.isEmpty()) {
+            throw new RelizaException("Rebom response missing serialNumber");
         }
+        return SbomUpdateGuard.lineageOfRebomSerialNumber(serialNumber)
+            .orElseThrow(() -> new RelizaException("Invalid UUID in rebom response serialNumber: " + serialNumber));
     }
 }

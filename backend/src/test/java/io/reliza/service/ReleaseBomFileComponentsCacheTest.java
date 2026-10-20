@@ -39,6 +39,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ExportMetadataOptions;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 
@@ -68,6 +69,8 @@ class ReleaseBomFileComponentsCacheTest {
 	private static final UUID SECOND_RELEASE = UUID.randomUUID();
 	private static final UUID SECOND_NULL_ROW = UUID.randomUUID();
 	private static final UUID SECOND_TRUE_ROW = UUID.randomUUID();
+	/** The release node facts key every release here has: the organization as supplier (SCORE-39 ADR-5). */
+	private static final String FACTS_KEY = ReleaseNodeFacts.key(new ReleaseNodeFacts("org", null, null, null));
 
 	private ReleaseService svc;
 	private RebomService rebomService;
@@ -88,12 +91,16 @@ class ReleaseBomFileComponentsCacheTest {
 		GetOrganizationService getOrganizationService = mock(GetOrganizationService.class);
 		ArtifactService artifactService = mock(ArtifactService.class);
 		ReflectionTestUtils.setField(svc, "rebomService", rebomService);
+		// SCORE-33: the JSON export ends in the signing stamp; here the org has no key
+		ReflectionTestUtils.setField(svc, "sbomExportSigningService", SbomExportSigningFixtures.keylessService());
 		ReflectionTestUtils.setField(svc, "releaseRebomService", releaseRebomService);
 		ReflectionTestUtils.setField(svc, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(svc, "getComponentService", getComponentService);
 		ReflectionTestUtils.setField(svc, "getOrganizationService", getOrganizationService);
 		ReflectionTestUtils.setField(svc, "artifactService", artifactService);
 		ReflectionTestUtils.setField(svc, "supportInjectionService", supportInjectionService);
+		// the release node facts read the base variant (SCORE-30 ADR-3); none here, so no hashes
+		ReflectionTestUtils.setField(svc, "variantService", mock(VariantService.class));
 
 		rd = mock(ReleaseData.class);
 		when(rd.getUuid()).thenReturn(RELEASE);
@@ -119,10 +126,11 @@ class ReleaseBomFileComponentsCacheTest {
 	}
 
 	private static ReleaseBom row(UUID id, Boolean excludeFileComponents) {
-		// Stored under the current merge rules, so only the file switch decides (SCORE-13 adds
-		// the rule version to the key; ReleaseBomMergeVersionCacheTest covers it).
+		// Stored under the current merge rules and facts, so only the file switch decides (SCORE-13
+		// adds the rule version and SCORE-39 the facts key to the key; ReleaseBomMergeVersionCacheTest
+		// covers both).
 		return new ReleaseBom(id, new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, excludeFileComponents,
-				BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION));
+				BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY));
 	}
 
 	private UUID request(boolean excludeFileComponents) throws Exception {
@@ -292,9 +300,9 @@ class ReleaseBomFileComponentsCacheTest {
 		// The VDR read asks for every artifact (belongsTo null), flat, the whole graph.
 		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(
 				new ReleaseBom(TRUE_ROW, new RebomOptions(null, false, false, true, BomStructureType.FLAT)
-						.withMergeVersion(ReleaseService.MERGE_VERSION)),
+						.withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY)),
 				new ReleaseBom(NULL_ROW, new RebomOptions(null, false, false, null, BomStructureType.FLAT)
-						.withMergeVersion(ReleaseService.MERGE_VERSION))));
+						.withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY))));
 		when(rebomService.findBomByIdJson(any(), eq(ORG))).thenAnswer(inv -> Utils.OM.readTree("{}"));
 
 		svc.mergedBomForVdr(RELEASE, ORG, WU);

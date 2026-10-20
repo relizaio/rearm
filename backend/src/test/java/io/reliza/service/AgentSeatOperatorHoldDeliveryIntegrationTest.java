@@ -183,8 +183,8 @@ public class AgentSeatOperatorHoldDeliveryIntegrationTest extends AgentDeliveryT
 
 	@Test
 	public void aPersonsVerbOnAHopsOwnHoldDoesNotAnswerIt() throws RelizaException {
-		// RD4-5's hold resumes its holder on the answer; a person's verb on it runs as before, and a session's is
-		// refused like on the seat's.
+		// RD4-5's hold ends its hop at the park and queues the task for its role on the answer (TPF-66); a person's
+		// verb on it runs as before, and a session's is refused like on the seat's.
 		Rig r = rig(false);
 		AgentTaskData t = queuedCoder(r, null);
 		agentTaskService.assign(t.getUuid(), board(r), r.worker().getUuid(), r.session().getUuid(), WU);

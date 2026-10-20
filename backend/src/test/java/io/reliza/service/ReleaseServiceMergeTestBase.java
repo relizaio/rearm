@@ -37,6 +37,7 @@ import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.tea.Rebom.InternalBom;
 import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -93,6 +94,8 @@ abstract class ReleaseServiceMergeTestBase {
 		ReflectionTestUtils.setField(svc, "artifactService", artifactService);
 		sbomComponentService = mock(SbomComponentService.class);
 		ReflectionTestUtils.setField(svc, "sbomComponentService", sbomComponentService);
+		// the release node facts read the base variant (SCORE-30 ADR-3); none here, so no hashes
+		ReflectionTestUtils.setField(svc, "variantService", mock(VariantService.class));
 
 		ComponentData cd = mock(ComponentData.class);
 		when(cd.getType()).thenReturn(ComponentType.COMPONENT);
@@ -141,10 +144,16 @@ abstract class ReleaseServiceMergeTestBase {
 		});
 	}
 
+	/**
+	 * The key of the release node facts every release here has (SCORE-39 ADR-5): the organization
+	 * as supplier, no hashes, no declared licence.
+	 */
+	protected static final String FACTS_KEY = ReleaseNodeFacts.key(new ReleaseNodeFacts("Example Org", null, null, null));
+
 	/** The row options a plain request of {@code structure} is stored under. */
 	protected static RebomOptions rowOptions(BomStructureType structure) {
 		return new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null, structure)
-				.withMergeVersion(ReleaseService.MERGE_VERSION);
+				.withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY);
 	}
 
 	protected ReleaseData componentRelease(UUID uuid, String version) {

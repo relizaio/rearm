@@ -25,7 +25,7 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentData;
 import io.reliza.model.AgentIdentityCredential;
@@ -231,7 +231,7 @@ public class SignatureDataFetcher {
 	@DgsData(parentType = "Mutation", field = "upsertCommitter")
 	public CommitterData upsertCommitter(@InputArgument("input") java.util.Map<String, Object> input) throws RelizaException {
 		var oud = userService.getUserDataByAuth(currentAuth());
-		CommitterData seed = Utils.OM.convertValue(input, CommitterData.class);
+		CommitterData seed = InputConversion.convert(input, CommitterData.class, "input");
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(seed.getOrg());
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, seed.getOrg(), Collections.singletonList(od.orElse(null)), CallType.WRITE);
@@ -253,7 +253,7 @@ public class SignatureDataFetcher {
 	@DgsData(parentType = "Mutation", field = "enrollSigningKey")
 	public SigningKeyData enrollSigningKey(@InputArgument("input") java.util.Map<String, Object> input) throws RelizaException {
 		var oud = userService.getUserDataByAuth(currentAuth());
-		SigningKeyData seed = Utils.OM.convertValue(input, SigningKeyData.class);
+		SigningKeyData seed = InputConversion.convert(input, SigningKeyData.class, "input");
 		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(seed.getOrg());
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, seed.getOrg(), Collections.singletonList(od.orElse(null)), CallType.WRITE);
@@ -310,7 +310,7 @@ public class SignatureDataFetcher {
 
 		Map<String, Object> signingKey = dfe.getArgument("signingKey");
 		if (signingKey == null) throw new RelizaException("signingKey is required");
-		SigningKeyData seed = Utils.OM.convertValue(signingKey, SigningKeyData.class);
+		SigningKeyData seed = InputConversion.convert(signingKey, SigningKeyData.class, "signingKey");
 
 		// Org is never client-supplied here (AgentSigningKeyInput has no
 		// org field) — it's always the org the calling key resolves to.

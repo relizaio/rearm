@@ -252,13 +252,9 @@ public class BoardPerspectiveService {
 
 	private void changeMembership(UUID component, List<UUID> add, List<UUID> remove, WhoUpdated wu)
 			throws RelizaException {
-		Optional<ComponentData> ocd = getComponentService.getComponentData(component);
-		if (ocd.isEmpty()) return;
-		Set<UUID> current = new LinkedHashSet<>(null == ocd.get().getPerspectives() ? Set.of() : ocd.get().getPerspectives());
-		Set<UUID> next = new LinkedHashSet<>(current);
-		next.addAll(add);
-		next.removeAll(remove);
-		if (!next.equals(current)) componentService.setPerspectives(component, next, wu);
+		// the delta is applied to the stored set under the component row lock: a set computed from a
+		// read taken before the lock would put back a removal another writer committed first
+		componentService.changePerspectives(component, add, remove, wu);
 	}
 
 	/**
@@ -270,8 +266,8 @@ public class BoardPerspectiveService {
 		for (AgentBoard row : boardRepository.findByOrg(orgUuid.toString())) {
 			AgentBoardData bd = AgentBoardData.dataFromRecord(row);
 			if (null == bd.getPerspectives() || !bd.getPerspectives().contains(perspective)) continue;
-			AgentBoard locked = boardRepository.findByIdWriteLocked(bd.getUuid()).orElse(row);
-			AgentBoardData fresh = AgentBoardData.dataFromRecord(locked);
+			AgentBoardData fresh = agentBoardService.lockBoard(bd.getUuid());
+			if (null == fresh.getPerspectives() || !fresh.getPerspectives().contains(perspective)) continue;
 			List<UUID> after = new ArrayList<>(fresh.getPerspectives());
 			after.remove(perspective);
 			if (null != fresh.getDocumentComponents()) {

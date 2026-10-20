@@ -5,10 +5,12 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -23,14 +25,18 @@ import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoard;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.model.saas.PerspectiveData;
 import io.reliza.repositories.AgentBoardRepository;
+import io.reliza.service.oss.OssPerspectiveService;
 
 /**
  * Board scope, functions and the resolver (board-permissions.md §2; task ffb564ce), over grants built
@@ -48,6 +54,7 @@ public class AuthorizationServiceBoardTest {
 	private final UUID foreign = UUID.randomUUID();
 	private final UUID perspective = UUID.randomUUID();
 	private final UUID component = UUID.randomUUID();
+	private final OssPerspectiveService ossPerspectiveService = mock(OssPerspectiveService.class);
 
 	private AgentBoard row(UUID uuid, UUID orgUuid, List<UUID> perspectives) {
 		AgentBoardData bd = new AgentBoardData();
@@ -77,6 +84,7 @@ public class AuthorizationServiceBoardTest {
 		when(repo.findByOrg(anyString())).thenAnswer(i -> rows.values().stream()
 				.filter(r -> AgentBoardData.dataFromRecord(r).getOrg().toString().equals(i.getArgument(0))).toList());
 		ReflectionTestUtils.setField(svc, "agentBoardRepository", repo);
+		ReflectionTestUtils.setField(svc, "ossPerspectiveService", ossPerspectiveService);
 		return svc;
 	}
 
@@ -208,6 +216,38 @@ public class AuthorizationServiceBoardTest {
 			assertFalse(svc.boardPermission(List.of(agentFn), org, board, fn, CallType.READ),
 					"the org-wide AGENT function clears no board function: " + fn);
 		}
+	}
+
+	// ---------- 5. grant objects: PERSPECTIVE (TPF-15) ----------
+
+	@Test
+	void aPerspectiveGrantOnALivePerspectiveIsAccepted() throws Exception {
+		AuthorizationService svc = service();
+		when(ossPerspectiveService.requireLivePerspective(org, perspective)).thenReturn(new PerspectiveData());
+		svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective);
+	}
+
+	@Test
+	void aPerspectiveGrantOnADeadOrForeignPerspectiveIsRefused() throws Exception {
+		AuthorizationService svc = service();
+		when(ossPerspectiveService.requireLivePerspective(org, perspective))
+				.thenThrow(new RelizaException("Perspective not found: " + perspective));
+		RelizaException one = assertThrows(RelizaException.class,
+				() -> svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective));
+		assertEquals("Perspective not found: " + perspective, one.getMessage());
+		PermissionDto dto = new PermissionDto(org, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY,
+				Set.of(PermissionFunction.RESOURCE), null);
+		RelizaException all = assertThrows(RelizaException.class,
+				() -> svc.assertGrantObjectsExist(org, List.of(dto)));
+		assertEquals("Perspective not found: " + perspective, all.getMessage());
+	}
+
+	@Test
+	void otherScopesAreNotAskedAboutPerspectives() throws Exception {
+		AuthorizationService svc = service();
+		svc.assertGrantObjectExists(org, PermissionScope.COMPONENT, component);
+		svc.assertGrantObjectExists(org, PermissionScope.ORGANIZATION, org);
+		verifyNoInteractions(ossPerspectiveService);
 	}
 
 	// ---------- 6. the held set ----------

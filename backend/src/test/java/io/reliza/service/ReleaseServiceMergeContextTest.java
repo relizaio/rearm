@@ -62,7 +62,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 
 	private static final RebomOptions FLAT = rowOptions(BomStructureType.FLAT);
 	private static final RebomOptions TOP_LEVEL_ONLY = new RebomOptions(ArtifactBelongsTo.RELEASE, true, false, null,
-			BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION);
+			BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY);
 
 	private ReleaseData source;
 	private ReleaseData a;
@@ -251,6 +251,22 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 
 		assertEquals(Map.of(P1_VERSION, 1L), productMergeCounts());
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
+	}
+
+	// SCORE-39 T-13 (ADR-5): rows of a product that differ only in the release node facts key are the
+	// same merge too (MergeKey drops the key), and the merge leaves one row for the request
+	@Test
+	void aProductsRowsThatDifferOnlyInTheFactsKeyAreOneMerge() {
+		threeLevels(FLAT);
+		storeRow(P1, UUID.randomUUID(), FLAT.withReleaseNodeFactsKey("0".repeat(64)));
+		storeRow(P1, UUID.randomUUID(), FLAT);
+		productsAbove(source, p1);
+
+		svc.reconcileMergedSbomRoutine(source, WU);
+
+		assertEquals(Map.of(P1_VERSION, 1L), productMergeCounts());
+		assertEquals(1, componentMerges().size(), componentMerges().toString());
+		assertEquals(List.of(new ReleaseBom(onlyMergeOf(P1_VERSION), FLAT)), rows.get(P1));
 	}
 
 	// ADR-12 memo on the unforced path where no row serves (departure D-20): a coverage-filtered export

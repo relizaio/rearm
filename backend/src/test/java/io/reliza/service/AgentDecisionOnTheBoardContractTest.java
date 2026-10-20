@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.io.IOException;
@@ -51,7 +52,9 @@ class AgentDecisionOnTheBoardContractTest {
 		assertTrue(asking.contains("rearm agent task hold <task> --session <session-uuid> --operator \\ --question"),
 				"asking should give the holder's hold as it runs");
 		assertTrue(asking.contains("The task shows \"awaiting the operator: <question>\""), "what the task shows");
-		assertTrue(asking.contains("the hop stays yours"), "the hop stays assigned to the holder");
+		assertTrue(asking.contains("your hop ends at the park"), "the park ends the hop (TPF-66)");
+		assertTrue(asking.contains("the task is queued again for your role"), "the lift queues the task (TPF-66)");
+		assertFalse(asking.contains("the hop stays yours"), "the hop no longer stays the holder's (TPF-66)");
 		assertTrue(asking.contains("A person lifts the hold with the answer as its note"), "the lift carries the answer");
 		assertTrue(asking.contains("A decision you receive outside the board is written into the task by you."),
 				"the generic rule is in the section agents read before asking");

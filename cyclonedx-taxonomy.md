@@ -28,6 +28,7 @@ For details about the taxonomy, refer to the official CycloneDX Taxonomy Reposit
 | `reliza:support` | Namespace for per-component software support disclosure (level of support, end-of-support dates and their provenance) |
 | `reliza:device` | Namespace for the enclosing device release's own lifecycle dates |
 | `reliza:export` | Namespace for document-level records of how an exported BOM was produced |
+| `reliza:license` | Namespace for component-level records of what a merge decided about a node's licence |
 
 
 ## reliza:rearmImport Namespace Taxonomy
@@ -190,14 +191,17 @@ product/device release that declares at least one of them.
 ## reliza:export Namespace Taxonomy
 
 Document-level records, in `metadata.properties`, of what an export option did to the
-document. They describe the document a reader holds, so the "include internal metadata"
-option does not remove them.
+document and whether ReARM signed it. They describe the document a reader holds, so the
+"include internal metadata" option does not remove them.
 
 | Property | Description | Since |
 |----------|-------------|-------|
 | `reliza:export:fileComponentsExcluded` | Written by the merge of a release BOM exported with "Leave out file components" (`excludeFileComponents: true`): the number of components of CycloneDX type `file` left out of this document, as a decimal string. `0` means the option was on and nothing matched; an ABSENT property means the option was off and nothing was left out. On a product release it adds what the component merges it was made from had already left out | unreleased; reaches CE at the next sync |
 | `reliza:export:danglingRefsDropped` | Written by the merge of a release BOM when `dependencies[]` named bom-refs that resolve to no component or service of the document: the number of dependency entries and `dependsOn`/`provides` items dropped for it, as a decimal string. ABSENT means every reference resolved and nothing was dropped. Counts this document's merge only, not what the merges it was made from dropped | unreleased; reaches CE at the next sync |
 | `reliza:export:componentsWithoutSbom` | Written by the merge of a product release BOM when it lists component releases ReARM holds no SBOM for: the number of components carrying `reliza:sbom:missing`, as a decimal string. ABSENT means every component release of the product had an SBOM | unreleased; reaches CE at the next sync |
+| `reliza:export:signed` | Written by ReARM on every merged CycloneDX JSON release export, last on the way out and inside the signed payload: `true` when the document carries a root JSF `signature` made with the exporting organization's current SBOM signing key, `false` when it does not (see `reliza:export:unsignedReason`). An ABSENT property means the export predates signing. A copy anywhere else in the document, an uploaded component's included, is removed before the stamp | unreleased; reaches CE at the next sync |
+| `reliza:export:signatureKeyId` | Written beside `reliza:export:signed` = `true`: the `keyId` of the organization key that signed this document, equal to the root signature's `keyId` and to the `kid` of the key in the organization's public JWKS | unreleased; reaches CE at the next sync |
+| `reliza:export:unsignedReason` | Written beside `reliza:export:signed` = `false`: why the document is unsigned. `NO_KEY` = the organization has no current signing key (none made, or the current one revoked); `SIGNING_ERROR` = it has one and signing failed (the server logs the cause) | unreleased; reaches CE at the next sync |
 
 ## reliza:sbom Namespace Taxonomy
 
@@ -207,6 +211,16 @@ document a reader holds, so the "include internal metadata" option does not remo
 | Property | Description | Since |
 |----------|-------------|-------|
 | `reliza:sbom:missing` | On a component of a product release BOM that stands for a component release ReARM holds no SBOM for. Its bom-ref is `urn:rearm:release:<release uuid>`, the product root depends on it, and a `compositions` entry with `aggregate: unknown` names it: its own dependencies are unknown, not empty. Value: `NO_SBOM_ARTIFACT` (the release has no SBOM artifact) or `COVERAGE_EXCLUDED` (every SBOM artifact it has was left out by the export's coverage filter) | unreleased; reaches CE at the next sync |
+
+## reliza:license Namespace Taxonomy
+
+Component-level records of what a merge did to a node's licence. Like `reliza:sbom`, they
+describe the document a reader holds, so the "include internal metadata" option does not remove
+them.
+
+| Property | Description | Since |
+|----------|-------------|-------|
+| `reliza:license:dropped` | On a component of a merged release or product BOM: one entry per distinct listed licence expression that the merge dropped in favour of the licence kept on that node (the licence the release declares, or the licence its own SBOM carries). The value is the expression text as the input listed it. May repeat on one node, one entry per expression. Nothing is recorded for `NOASSERTION`, `NONE` or an expression the node still holds. Licence ids are not recorded: they are merged beside kept ids or names and dropped beside a kept expression, where only the server log names them | unreleased; reaches CE at the next sync |
 
 ## Standard CycloneDX lifecycle keys written by ReARM
 

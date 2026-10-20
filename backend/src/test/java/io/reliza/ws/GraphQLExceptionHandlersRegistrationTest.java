@@ -6,6 +6,7 @@ package io.reliza.ws;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.ZonedDateTime;
 import java.util.List;
 
 import org.junit.jupiter.api.AfterEach;
@@ -19,6 +20,7 @@ import graphql.GraphQLContext;
 import graphql.GraphQLError;
 import graphql.schema.DataFetchingEnvironment;
 import graphql.schema.DataFetchingEnvironmentImpl;
+import io.reliza.exceptions.ComponentRevisionConflictException;
 import io.reliza.exceptions.RebomResponseTooLargeException;
 
 /**
@@ -64,6 +66,14 @@ class GraphQLExceptionHandlersRegistrationTest {
 		GraphQLError err = resolve(new RebomResponseTooLargeException(new IllegalStateException("cause text")));
 		assertEquals(GraphQLExceptionHandlers.EXPORT_TOO_LARGE_MESSAGE, err.getMessage());
 		assertEquals("BAD_REQUEST", String.valueOf(err.getErrorType()));
+	}
+
+	// TPF-61 row 20c: the stale-save refusal reaches its own handler, not handleReliza (which sets no extensions)
+	@Test
+	void aComponentRevisionConflictIsRoutedToItsHandler() {
+		GraphQLError err = resolve(new ComponentRevisionConflictException(4, 5, null, null, null,
+				ZonedDateTime.parse("2026-10-13T10:00:00Z")));
+		assertEquals("COMPONENT_REVISION_CONFLICT", err.getExtensions().get("code"));
 	}
 
 	// The fallback the test above tells apart from: what an unregistered handler leaves behind

@@ -24,7 +24,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 
@@ -114,7 +114,7 @@ public class IntegrationDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		
 		Map<String, Object> integrationInput = dfe.getArgument("integration");
-		CreateIntegrationInput cii = Utils.OM.convertValue(integrationInput, CreateIntegrationInput.class);
+		CreateIntegrationInput cii = InputConversion.convert(integrationInput, CreateIntegrationInput.class, "integration");
 
 		var odCreate = getOrganizationService.getOrganizationData(cii.org());
 		RelizaObject roCreate = odCreate.isPresent() ? odCreate.get() : null;

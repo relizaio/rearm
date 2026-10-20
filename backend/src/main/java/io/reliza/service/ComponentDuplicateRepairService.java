@@ -35,6 +35,8 @@ import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.oss.OssReleaseService;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 
 /**
  * Feature-gated repair for DUPLICATE component registrations: several
@@ -78,6 +80,9 @@ import io.reliza.service.oss.OssReleaseService;
 public class ComponentDuplicateRepairService {
 
 	private static final Logger log = LoggerFactory.getLogger(ComponentDuplicateRepairService.class);
+
+	@PersistenceContext
+	private EntityManager entityManager;
 
 	@Autowired private ComponentService componentService;
 	@Autowired private BranchService branchService;
@@ -300,6 +305,11 @@ public class ComponentDuplicateRepairService {
 					.map(BranchData::branchDataFromDbRecord)
 					.filter(bd -> bd.getStatus() != StatusEnum.ARCHIVED)
 					.count();
+			// Lock order: releases before their component. The release moves above are still
+			// pending in this persistence context, and archiveComponent's locked read flushes
+			// component changes only, so it would lock the component before the moved releases
+			// reach the database -- the reverse of every release writer. Flush them first.
+			entityManager.flush();
 			componentService.archiveComponent(dup.getUuid(), wu);
 			branchesArchived += (int) liveBranches;
 			componentsArchived++;

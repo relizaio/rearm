@@ -6,14 +6,18 @@ package io.reliza.repositories;
 import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.model.Organization;
+import jakarta.persistence.LockModeType;
 
 public interface OrganizationRepository extends CrudRepository<Organization, UUID> {
 	@Override
@@ -73,4 +77,41 @@ public interface OrganizationRepository extends CrudRepository<Organization, UUI
 			@Param("orgUuid") UUID orgUuid,
 			@Param("completedAt") String completedAt,
 			@Param("keyVersion") int keyVersion);
+
+	/**
+	 * Record one task-key prefix claim (board-documents.md D9, TPF-35): one statement on the one
+	 * {@code agentTaskPrefixes} key, NOT a whole-record save, so a concurrent organization save keeps
+	 * its fields and a committed claim is never erased. Put-if-absent: jsonb {@code ||} takes the
+	 * right operand's value for a key both objects hold, so an entry already present is never
+	 * replaced. The {@code jsonb_typeof = 'object'} guard is the one {@link #certifyFindingChangeV3Backfill}
+	 * documents: an absent key or {@code "agentTaskPrefixes": null} starts from {@code '{}'}, where a
+	 * plain {@code COALESCE} would keep the JSON null and {@code ||} would build an array. No revision,
+	 * no last-updated date, no audit row. The caller holds the org's AGENT_TASK_PREFIXES lock.
+	 *
+	 * @param claim the {@code TaskPrefixClaim} rendered by {@code Utils.OM}, the whole-record mapper
+	 * @return rows updated: 1, or 0 when the organization does not exist
+	 */
+	@Modifying
+	@Query(value = "UPDATE rearm.organizations SET record_data = jsonb_set(record_data, '{agentTaskPrefixes}', "
+			+ "jsonb_build_object(:prefix, CAST(:claim AS jsonb)) "
+			+ "|| (CASE WHEN jsonb_typeof(record_data->'agentTaskPrefixes') = 'object' "
+			+ "THEN record_data->'agentTaskPrefixes' ELSE '{}'::jsonb END)) "
+			+ "WHERE uuid = :orgUuid",
+			nativeQuery = true)
+	int recordTaskPrefixClaim(
+			@Param("orgUuid") UUID orgUuid,
+			@Param("prefix") String prefix,
+			@Param("claim") String claim);
+
+	/** The organization row locked FOR UPDATE (TPF-48); the caller refreshes the entity it returns,
+	 *  since open-in-view can hand back a copy loaded earlier in the request. */
+	@Transactional
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@Query(value = "SELECT o FROM Organization o where o.uuid = :uuid")
+	Optional<Organization> findByIdWriteLocked(@Param("uuid") UUID uuid);
+
+	/** The stored status, the row locked FOR UPDATE until the caller's transaction ends (TPF-48): every
+	 *  whole-record save reads it so that none writes an archived organization back as live. */
+	@Query(value = "SELECT record_data->>'status' FROM rearm.organizations WHERE uuid = :uuid FOR UPDATE", nativeQuery = true)
+	Optional<String> currentStatusForUpdate(@Param("uuid") UUID uuid);
 }

@@ -59,14 +59,27 @@ public interface AgentBoardRepository extends CrudRepository<AgentBoard, UUID> {
 	 * return it, writing that one field and nothing else -- no revision, no lastUpdatedDate, no audit
 	 * copy. A plain native query rather than {@code @Modifying}, which cannot return the RETURNING
 	 * value. The caller holds the board lock (it serialises with numbering and a prefix change); the
-	 * counter only grows, so a number is never reused, even after the last task is deleted.
+	 * counter only grows, so a number is never reused, even after the last task is deleted. The draw
+	 * starts from the larger of the counter and the board's highest stored number (TPF-43), so a counter
+	 * put below a stored number cannot hand that number out again; the stored rows are read under the
+	 * same board lock the draw holds.
 	 */
 	@Transactional
-	@Query(value = "UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{nextTaskNumber}', "
-			+ "to_jsonb(coalesce((record_data->>'nextTaskNumber')::int, 0) + 1)) "
-			+ "WHERE uuid = :uuid RETURNING (record_data->>'nextTaskNumber')::int",
+	@Query(value = "UPDATE rearm.agent_boards b SET record_data = jsonb_set(b.record_data, '{nextTaskNumber}', "
+			+ "to_jsonb(GREATEST(coalesce((b.record_data->>'nextTaskNumber')::int, 0), "
+			+ "coalesce((SELECT max((t.record_data->>'number')::int) FROM rearm.agent_tasks t "
+			+ "WHERE t.record_data->>'board' = CAST(b.uuid AS text) AND t.record_data->>'number' IS NOT NULL), 0)) + 1)) "
+			+ "WHERE b.uuid = :uuid RETURNING (b.record_data->>'nextTaskNumber')::int",
 			nativeQuery = true)
 	Integer nextTaskNumber(@Param("uuid") UUID uuid);
+
+	/**
+	 * The stored task counter, the row locked FOR UPDATE until the caller's transaction ends (TPF-42):
+	 * every whole-board save reads it so that none writes a lower counter back over a draw.
+	 */
+	@Query(value = "SELECT (record_data->>'nextTaskNumber')::int FROM rearm.agent_boards WHERE uuid = :uuid FOR UPDATE",
+			nativeQuery = true)
+	Optional<Integer> currentNextTaskNumberForUpdate(@Param("uuid") UUID uuid);
 
 	/** Boards that set a staleness block (task RD3-4). */
 	@Query(value = "SELECT * FROM rearm.agent_boards b WHERE jsonb_typeof(b.record_data->'staleness') = 'object'",

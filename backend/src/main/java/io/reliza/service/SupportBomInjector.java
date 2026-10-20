@@ -189,11 +189,40 @@ public final class SupportBomInjector {
 	 */
 	static final String SBOM_MISSING_PROPERTY = "reliza:sbom:missing";
 	/**
+	 * rebom's record on a component of a merged release or product BOM of a listed licence
+	 * expression the merge dropped in favour of the licence kept on that node (SCORE-44, design
+	 * ADR-1): one entry per distinct dropped expression, the value the expression as the input
+	 * listed it.
+	 */
+	static final String DROPPED_LICENSE_PROPERTY = "reliza:license:dropped";
+	/**
 	 * rebom's record on a merged product BOM of how many components carry
 	 * {@link #SBOM_MISSING_PROPERTY} (SCORE-15, design ADR-3): written at merge time into
 	 * {@code metadata.properties}, only when there is one.
 	 */
 	static final String COMPONENTS_WITHOUT_SBOM_PROPERTY = "reliza:export:componentsWithoutSbom";
+	/**
+	 * ReARM's statement, inside the signed payload of a merged JSON export, that the served
+	 * document carries a root signature ({@code "true"}) or not ({@code "false"}); written last on
+	 * the egress by {@link SbomExportSigningService} (SCORE-31 ADR-8, SCORE-33 section 3.5).
+	 */
+	static final String SIGNED_PROPERTY = "reliza:export:signed";
+	/** Why a merged JSON export is unsigned: a {@code SbomExportSigningService.UnsignedReason} name. */
+	static final String UNSIGNED_REASON_PROPERTY = "reliza:export:unsignedReason";
+	/** The {@code keyId} of the organization key that signed a merged JSON export. */
+	static final String SIGNATURE_KEY_ID_PROPERTY = "reliza:export:signatureKeyId";
+	/**
+	 * The three signing records: statements only the export signer makes, so every egress sweep
+	 * removes a copy that arrived in an uploaded document ({@link #isReservedNamespace}), and the
+	 * internal-metadata strip keeps the one the signer wrote ({@link #DOCUMENT_RECORD_PROPERTIES}).
+	 */
+	static final Set<String> SIGNING_RECORD_PROPERTIES = Set.of(SIGNED_PROPERTY, UNSIGNED_REASON_PROPERTY,
+			SIGNATURE_KEY_ID_PROPERTY);
+	/**
+	 * The root JSF signature member. Only the merged export's signer writes one; an uploaded
+	 * document's root signature is removed by the egress sweep ({@link #stripInboundSignature}).
+	 */
+	static final String NODE_SIGNATURE = "signature";
 	/**
 	 * Reliza-namespaced properties that describe the served document itself and so survive the
 	 * internal-metadata strip, by exact name. Not a prefix: the strip's rule stays "every reliza
@@ -214,9 +243,19 @@ public final class SupportBomInjector {
 	 * because they ARE the explicitly identified unknown (SCORE-15 ADR-3, CISA 2026): without
 	 * them a reader cannot tell a component release ReARM holds no SBOM for from one whose SBOM
 	 * lists nothing. The first sits on components, which the strip walks as well.
+	 *
+	 * <p>{@link #DROPPED_LICENSE_PROPERTY} is here because it is the record that a merge dropped a
+	 * listed licence expression on that node (SCORE-44 ADR-5): without it a reader cannot tell
+	 * why the node's licence differs from the consumer's SBOM. It sits on components too.
+	 *
+	 * <p>{@link #SIGNED_PROPERTY}, {@link #UNSIGNED_REASON_PROPERTY} and
+	 * {@link #SIGNATURE_KEY_ID_PROPERTY} are here because they say whether the served document is
+	 * signed, by which key, or why not (SCORE-33 section 3.5): stripping them would leave a reader
+	 * unable to tell a pre-signing export from an unsigned one.
 	 */
 	private static final Set<String> DOCUMENT_RECORD_PROPERTIES = Set.of(FILE_COMPONENTS_EXCLUDED_PROPERTY,
-			DANGLING_REFS_DROPPED_PROPERTY, SBOM_MISSING_PROPERTY, COMPONENTS_WITHOUT_SBOM_PROPERTY);
+			DANGLING_REFS_DROPPED_PROPERTY, SBOM_MISSING_PROPERTY, COMPONENTS_WITHOUT_SBOM_PROPERTY,
+			DROPPED_LICENSE_PROPERTY, SIGNED_PROPERTY, UNSIGNED_REASON_PROPERTY, SIGNATURE_KEY_ID_PROPERTY);
 	/**
 	 * The document-level attestation block (CycloneDX 1.6+), server-owned exactly like the
 	 * reliza namespaces above -- and NOT reachable by the property sweep, which walks property
@@ -514,6 +553,7 @@ public final class SupportBomInjector {
 		// exact scope of that guarantee: it is not every served document.
 		stripReservedEverywhere(bom);
 		stripInboundDeclarations((ObjectNode) bom);
+		stripInboundSignature((ObjectNode) bom);
 		stripAssignedBomRefs(bom);
 		injectInto(bom.get("components"), factsByKey, asOf, device);
 		// metadata.component is the root self-component (injected too if matched). The
@@ -633,6 +673,7 @@ public final class SupportBomInjector {
 		}
 		stripReservedEverywhere(bom);
 		stripInboundDeclarations((ObjectNode) bom);
+		stripInboundSignature((ObjectNode) bom);
 		stripAssignedBomRefs(bom);
 		return true;
 	}
@@ -660,6 +701,18 @@ public final class SupportBomInjector {
 	 */
 	private static void stripInboundDeclarations(ObjectNode bom) {
 		bom.remove(NODE_DECLARATIONS);
+	}
+
+	/**
+	 * Remove an inbound root {@code signature}, UNCONDITIONALLY, on every egress that routes through
+	 * this class (SCORE-33 security review). A served document that ReARM has swept is no longer the
+	 * bytes its uploader signed, and a root signature naming the organization's {@code keyId} next to
+	 * an uploader's own {@code publicKey} would read as ReARM's. The raw download, which serves the
+	 * uploaded bytes untouched, does not pass through here and keeps it; the merged export gets its
+	 * own signature afterwards from {@link SbomExportSigningService}.
+	 */
+	private static void stripInboundSignature(ObjectNode bom) {
+		bom.remove(NODE_SIGNATURE);
 	}
 
 	/**
@@ -1008,18 +1061,25 @@ public final class SupportBomInjector {
 	}
 
 	/**
-	 * Recursively remove every reliza:support:* and reliza:device:* property from every node's
-	 * {@code properties} array, everywhere in the tree -- the server-owned-namespace guarantee must
-	 * hold document wide, not just on the primary component surface.
+	 * Recursively remove every reliza:support:* and reliza:device:* property, and every signing
+	 * record ({@link #SIGNING_RECORD_PROPERTIES}), from every node's {@code properties} array,
+	 * everywhere in the tree -- the server-owned-namespace guarantee must hold document wide, not
+	 * just on the primary component surface.
 	 */
 	private static void stripReservedEverywhere(JsonNode node) {
 		stripPropertiesEverywhere(node, SupportBomInjector::isReservedNamespace);
 	}
 
-	/** The server-owned namespaces, as one predicate rather than two passes over every node. */
+	/**
+	 * The server-owned namespaces and the signing records, as one predicate rather than passes over
+	 * every node. The signing records are here because {@link #DOCUMENT_RECORD_PROPERTIES} exempts
+	 * them from the internal strip: without this, an uploaded {@code reliza:export:signed=true} would
+	 * be served by every egress the signer does not run on (SCORE-33 security review).
+	 */
 	private static boolean isReservedNamespace(String propertyName) {
 		return propertyName.startsWith(RELIZA_SUPPORT_PREFIX)
-				|| propertyName.startsWith(RELIZA_DEVICE_PREFIX);
+				|| propertyName.startsWith(RELIZA_DEVICE_PREFIX)
+				|| SIGNING_RECORD_PROPERTIES.contains(propertyName);
 	}
 
 	/**
@@ -1044,6 +1104,19 @@ public final class SupportBomInjector {
 		for (JsonNode child : node) {
 			stripPropertiesEverywhere(child, doomed);
 		}
+	}
+
+	/**
+	 * Remove every {@code properties[]} entry whose name is one of {@code names}, from every node of
+	 * the tree (the walk of {@link #stripPropertiesEverywhere}, by exact name).
+	 */
+	static void stripPropertiesNamedEverywhere(JsonNode node, Set<String> names) {
+		stripPropertiesEverywhere(node, names::contains);
+	}
+
+	/** Append the property {@code name} = {@code value} to the {@code properties} of {@code node}, created when absent. */
+	static void appendProperty(ObjectNode node, String name, String value) {
+		addProperty(properties(node), name, value);
 	}
 
 	/** The node-level half of {@link #stripPropertiesEverywhere}. */
@@ -1097,6 +1170,10 @@ public final class SupportBomInjector {
 	 *       product merge lists for component releases without an SBOM, and their number
 	 *       ({@link #DOCUMENT_RECORD_PROPERTIES}): what makes their unknown dependencies
 	 *       explicit.</li>
+	 *   <li><b>{@code reliza:license:dropped}</b> on a component -- the record that the merge
+	 *       dropped a listed licence expression in favour of the licence kept on that node
+	 *       ({@link #DOCUMENT_RECORD_PROPERTIES}): what explains a licence that differs from the
+	 *       consumer's SBOM.</li>
 	 *   <li><b>{@code reliza:bomref:*} bom-refs and the {@code reliza:claim:} /
 	 *       {@code reliza:evidence:} / {@code reliza:assessor:} refs inside
 	 *       {@code declarations}</b> -- these are reference IDENTIFIERS, not properties, and they

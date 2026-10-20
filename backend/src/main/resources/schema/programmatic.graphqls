@@ -490,8 +490,8 @@ extend type Mutation {
 	  returns the task to the loop;
 	- the session holding the task's current assignment, at OPERATOR level only (task RD4-5), with the question
 	  for the person as the reason: the task shows "awaiting the operator: <question>", the board's writers are
-	  told, and the hop stays assigned to the session. A person lifts the hold with the answer as the note, which
-	  is recorded on the task, and the hop resumes with its holder.
+	  told, and the hop ends (task TPF-66). A person lifts the hold with the answer as the note, which is
+	  recorded on the task, and the task is queued again for its role.
 	- the coordinator seat, at OPERATOR level with the question as the reason (task RD4-17), on a task in
 	  PENDING_INTAKE, QUEUED, AWAITING_COORDINATOR or DELIVERING: the same record and notification. A person's
 	  release with the answer as the note, or anything else a person does on the task (answering its questions,
@@ -655,7 +655,8 @@ extend type Mutation {
 	agentTaskHumanReview, not here. On a lift, role optionally names an active role to route to instead of the one
 	routing would pick; lifting a no-progress or cycle-cap stop routes past that stop once (task 4c566d0d).
 	A hop its holder parked for the operator (task RD4-5) is lifted with the answer as reason, which is required
-	and recorded on the task (a status row and an INFO); it takes no role, and the hop resumes with its holder.
+	and recorded on the task (a status row and an INFO); it takes no role: the hop ended at the park, and the task
+	is queued again for its role (task TPF-66).
 	A task the coordinator seat parked for the operator (task RD4-17) is lifted the same way, and returns to the
 	status it was parked from (hold.returnTo).
 	"""
@@ -1437,6 +1438,15 @@ input ReleaseInputProg {
 	VALIDATE_PR firings. Ignored on calls that do not create a release.
 	"""
 	pullRequest: PullRequestInfoInput
+	"""
+	Per-release override of the declared licence (SCORE-39), an SPDX expression: SPDX list ids
+	(any case, stored in the list's casing, a trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the
+	upper-case operators AND, OR and WITH (exception ids syntax-checked only) and parentheses; at
+	most 512 characters. NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	Omitted or empty for none: the release then inherits the component's licence, else the
+	organization default.
+	"""
+	licenseExpression: String
 }
 
 type SbomProbingResult {
