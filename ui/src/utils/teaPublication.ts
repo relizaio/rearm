@@ -3,7 +3,7 @@
 // the collection and entry rows, the History text of a TEA_PUBLICATION event. Kept out of
 // ReleaseView.vue, with no Vue import, so teaPublication.spec.ts runs it.
 
-import { parseGraphQLError } from './graphqlErrorText'
+import { graphqlRefusalText } from './graphqlErrorText'
 import { teaSourceLabel } from './teaProfile'
 
 /** What the confirmation names: the release, and the perspective names a profile source may point at. */
@@ -131,11 +131,26 @@ function childSkipText (c: any): string {
     return CHILD_SKIPPED[c?.outcome]
 }
 
+/**
+ * The aggregate SBOM's revision when the publication names no aggregate list (a head written before
+ * TEA-28, V101): the deprecated aggregateArtifact's entry, else the first generated entry.
+ */
 function aggregateRevision (result: any): number | null {
     const entries: any[] = result?.collection?.entries || []
     const agg = entries.find(e => e && e.artifact === result?.publication?.aggregateArtifact)
         ?? entries.find(e => e && e.origin === 'SYNTHETIC')
     return agg ? agg.revision : null
+}
+
+/** One aggregate per SBOM profile the publication names (TEA-28), in its order, with the entry revision. */
+function aggregateSummary (result: any): string | null {
+    const list: any[] = result?.publication?.aggregateArtifacts || []
+    if (!list.length) return null
+    const entries: any[] = result?.collection?.entries || []
+    return 'aggregate SBOMs: ' + list.map(a => {
+        const rev = entries.find(e => e && e.artifact === a?.artifact)?.revision
+        return (a?.profileName ?? '') + (rev != null ? ' r' + rev : '')
+    }).join(', ')
 }
 
 function childName (c: any): string {
@@ -152,8 +167,10 @@ export function teaPublishSummary (result: any): string {
     if (result?.outcome === 'UNCHANGED') return 'Nothing changed since collection version ' + version
     const lead = result?.outcome === 'REPUBLISHED' ? 'Re-published' : 'Published'
     const parts: string[] = [lead + ': collection version ' + version]
-    const revision = aggregateRevision(result)
-    if (revision != null) parts.push('aggregate SBOM revision ' + revision)
+    const aggregates = aggregateSummary(result)
+    const revision = aggregates ? null : aggregateRevision(result)
+    if (aggregates) parts.push(aggregates)
+    else if (revision != null) parts.push('aggregate SBOM revision ' + revision)
 
     const artifacts: any[] = result?.artifacts || []
     const published = artifacts.filter(a => a?.status === 'PUBLISHED').length
@@ -274,6 +291,7 @@ export function teaEntryRows (collection: any, apiBase: string | null | undefine
         origin: e.origin === 'SYNTHETIC' ? 'Generated' : 'Uploaded',
         type: e.type ?? '',
         name: e.name ?? '',
+        profile: e.sbomProfileName ?? '',
         mediaType: e.mediaType ?? '',
         checksum: (e.checksums || []).map((c: any) => c.algType + ':' + c.algValue).join(', '),
         teaUrl: teaArtifactUrl(apiBase, e.teaUuid, e.revision),
@@ -317,5 +335,5 @@ export function teaActErrorText (err: any): string {
     if (status === 502 || status === 503 || status === 504) return TEA_ACT_GATEWAY_TEXT
     const message = String(err?.message ?? '')
     if (/status code 50[234]\b/.test(message) || /Failed to fetch/.test(message)) return TEA_ACT_GATEWAY_TEXT
-    return parseGraphQLError(message)
+    return graphqlRefusalText(err)
 }

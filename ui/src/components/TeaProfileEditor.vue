@@ -43,35 +43,13 @@
                                 <span v-else>{{ TEA_FIELD_HELP.visibility }}</span>
                             </template>
                         </n-form-item>
-                        <n-form-item label="Dependency depth">
-                            <n-select data-testid="tea-dependency-depth" v-model:value="form.dependencyDepth" :options="TEA_DEPENDENCY_DEPTH_OPTIONS" />
-                        </n-form-item>
-                        <n-form-item label="Optional dependencies">
-                            <n-select data-testid="tea-optional-dependencies" v-model:value="form.optionalDependencies" :options="TEA_OPTIONAL_DEPENDENCIES_OPTIONS" />
-                        </n-form-item>
-                        <n-form-item label="SBOM structure">
-                            <n-select data-testid="tea-structure" v-model:value="form.structure" :options="TEA_STRUCTURE_OPTIONS" />
-                        </n-form-item>
-                        <n-form-item label="SBOM sources">
-                            <n-select data-testid="tea-sources" v-model:value="form.sources" multiple :options="TEA_SOURCES_OPTIONS" />
-                            <template #feedback>{{ TEA_FIELD_HELP.sources }}</template>
-                        </n-form-item>
-                        <n-form-item label="Excluded coverage">
-                            <n-select data-testid="tea-excluded-coverage" v-model:value="form.excludedCoverage" multiple :options="TEA_EXCLUDED_COVERAGE_OPTIONS" />
-                            <template #feedback>{{ TEA_FIELD_HELP.excludedCoverage }}</template>
-                        </n-form-item>
-                        <n-form-item label="Support metadata">
-                            <n-select data-testid="tea-support-metadata" v-model:value="form.supportMetadata"
-                                :options="TEA_SUPPORT_METADATA_OPTIONS" :disabled="injectionOff" />
+                        <n-form-item label="SBOM profiles">
+                            <SbomProfilePicker data-testid="tea-profiles" v-model="form.profiles" :entries="catalog"
+                                :installation-type="installationType" :names="perspectiveNames" :disabled="!isWritable" />
                             <template #feedback>
-                                <span v-if="injectionOff" data-testid="tea-support-metadata-reason">
-                                    The organization's support injection is off, so support metadata stays excluded.
-                                </span>
-                                <span v-else>{{ TEA_FIELD_HELP.supportMetadata }}</span>
+                                <span v-if="catalogError" data-testid="tea-profiles-error" class="text-danger">{{ catalogError }}</span>
+                                <span v-else>{{ TEA_FIELD_HELP.profiles }}</span>
                             </template>
-                        </n-form-item>
-                        <n-form-item label="Internal metadata">
-                            <n-select data-testid="tea-internal-metadata" v-model:value="form.internalMetadata" :options="TEA_INTERNAL_METADATA_OPTIONS" />
                         </n-form-item>
                         <n-form-item label="Raw artifacts">
                             <n-select data-testid="tea-raw-artifacts" v-model:value="form.rawArtifacts" :options="TEA_RAW_ARTIFACTS_OPTIONS" />
@@ -90,9 +68,6 @@
                         </n-form-item>
                         <n-form-item v-if="form.tei === 'UUID'" label="TEI domain">
                             <n-input data-testid="tea-tei-domain" v-model:value="form.teiDomain" placeholder="products.example.com" />
-                        </n-form-item>
-                        <n-form-item label="Vulnerability documents">
-                            <span data-testid="tea-vulnerability-documents">NONE (reserved)</span>
                         </n-form-item>
                     </div>
                 </n-form>
@@ -115,15 +90,15 @@ import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
+import profilesQueries from '@/utils/profilesQueries'
 import {
-    Option, TeaProfileForm, TeaScope, TEA_DEPENDENCY_DEPTH_OPTIONS, TEA_EXCLUDED_COVERAGE_OPTIONS, TEA_FIELD_HELP,
-    TEA_INTERNAL_METADATA_OPTIONS, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS, TEA_OPTIONAL_DEPENDENCIES_OPTIONS,
-    TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_SOURCES_OPTIONS,
-    TEA_STRUCTURE_OPTIONS, TEA_SUPPORT_METADATA_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults,
-    teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView, teaProfileInput, teaPublicBanner, teaSourceLine,
-    TeaConfirm, TeaExposureChange,
+    Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS,
+    TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS,
+    TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView,
+    teaProfileInput, teaPublicBanner, teaSourceLine, TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
+import SbomProfilePicker from './SbomProfilePicker.vue'
 
 const props = withDefaults(defineProps<{
     orgUuid: string
@@ -154,6 +129,9 @@ const form = ref<TeaProfileForm>(teaBuiltInDefaults())
 const loading = ref(false)
 const saving = ref(false)
 const loadError = ref<string | null>(null)
+// The SBOM profile catalog at this scope, for the picker (TEA-30); its own error line under the picker.
+const catalog = ref<any[]>([])
+const catalogError = ref<string | null>(null)
 
 const perspectiveNames = computed((): Record<string, string> => {
     const names: Record<string, string> = {}
@@ -165,32 +143,52 @@ const perspectiveNames = computed((): Record<string, string> => {
 const showMode = computed(() => props.scope === 'COMPONENT' && props.installationType !== 'OSS')
 const follows = computed(() => props.scope === 'COMPONENT' && form.value.mode === 'FOLLOW_PERSPECTIVE')
 const showProductComponents = computed(() => props.scope !== 'COMPONENT' || props.objectIsProduct)
-const injectionOff = computed(() => view.value?.supportInjection === 'DISABLED')
 const sourceLine = computed(() => teaSourceLine(view.value, perspectiveNames.value))
 const banner = computed(() => teaPublicBanner(view.value, perspectiveNames.value))
 const conflictNames = computed(() => (view.value?.parent?.conflictingPerspectives ?? []).map((p: any) => p.name).join(', '))
 const scopeWord = computed(() => props.objectIsProduct ? 'product' : props.scope.toLowerCase())
 
-watch(injectionOff, (off) => { if (off) form.value.supportMetadata = 'EXCLUDE' })
-
 async function load () {
     loading.value = true
     loadError.value = null
     try {
-        const resp: any = await graphqlClient.query({
-            query: graphqlQueries.TeaProfileEditorViewGql,
-            variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid },
-            fetchPolicy: 'no-cache',
-        })
+        const [resp]: any[] = await Promise.all([
+            graphqlClient.query({
+                query: graphqlQueries.TeaProfileEditorViewGql,
+                variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid },
+                fetchPolicy: 'no-cache',
+            }),
+            reloadCatalog(),
+        ])
         view.value = resp.data.teaProfileEditorView
         form.value = teaFormFromView(view.value, props.scope)
         if (props.scope === 'COMPONENT' && props.installationType === 'OSS') form.value.mode = 'OVERRIDE'
-        if (injectionOff.value) form.value.supportMetadata = 'EXCLUDE'
     } catch (err: any) {
         console.error(err)
-        loadError.value = commonFunctions.parseGraphQLError(err.message)
+        loadError.value = graphqlRefusalText(err)
     } finally {
         loading.value = false
+    }
+}
+
+/**
+ * The SBOM profile catalog at this scope alone (TEA-30, design 3.3.6): the picker's entries. It
+ * touches neither the view nor the form, so an unsaved edit survives; the hosts call it when the
+ * overrides beside the editor change. A failure leaves the picker with the stored names only.
+ */
+async function reloadCatalog () {
+    try {
+        const resp: any = await graphqlClient.query({
+            query: profilesQueries.SbomProfileCatalogGql,
+            variables: { org: props.orgUuid, scope: props.scope, object: props.objectUuid },
+            fetchPolicy: 'no-cache',
+        })
+        catalog.value = resp.data.sbomProfileCatalog ?? []
+        catalogError.value = null
+    } catch (err: any) {
+        console.error(err)
+        catalog.value = []
+        catalogError.value = graphqlRefusalText(err)
     }
 }
 
@@ -209,7 +207,7 @@ async function exposureOf (profile: Record<string, any> | null): Promise<TeaExpo
         return resp.data.teaProfileExposureChange
     } catch (err: any) {
         console.error(err)
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
         return null
     }
 }
@@ -221,7 +219,7 @@ async function confirmed (c: TeaConfirm | null): Promise<boolean> {
 }
 
 async function save () {
-    const profile = teaProfileInput(form.value, props.scope)
+    const profile = teaProfileInput(form.value, props.scope, props.installationType)
     const exposure = await exposureOf(profile)
     if (!exposure) return
     if (!await confirmed(teaConfirmBeforeSave(exposure, scopeWord.value, perspectiveNames.value,
@@ -235,7 +233,8 @@ async function save () {
         emit('saved', resp.data.saveTeaProfile)
         await load()
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        console.error(err)
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     } finally {
         saving.value = false
     }
@@ -253,7 +252,8 @@ async function remove () {
         emit('removed')
         await load()
     } catch (err: any) {
-        Swal.fire('Error!', commonFunctions.parseGraphQLError(err.message), 'error')
+        console.error(err)
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     }
 }
 
@@ -264,7 +264,7 @@ function resetToDefaults () {
 onMounted(load)
 watch(() => [props.orgUuid, props.scope, props.objectUuid], load)
 
-defineExpose({ load })
+defineExpose({ load, reloadCatalog })
 </script>
 
 <style scoped>

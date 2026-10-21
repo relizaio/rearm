@@ -211,4 +211,158 @@ describe('TEA surfaces contract', () => {
         expect(q).toContain('createExternalApiKey(orgUuid: $orgUuid, holderName: $holderName, notes: $notes)')
         expect(q).toContain('setApiKeyHolderName(apiKeyUuid: $apiKeyUuid, holderName: $holderName)')
     })
+
+    // TEA-30 row 26: the Profiles tab, the overrides and package settings hosts, the Submissions tab and section.
+    it('OrgSettings carries the Profiles tab before Transparency Exchange, admin and Pro only, loading its names', () => {
+        const os = src('OrgSettings.vue')
+        const line = '<n-tab-pane name="profiles" tab="Profiles" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">'
+        const profiles = os.indexOf(line)
+        expect(profiles).toBeGreaterThan(0)
+        expect(profiles).toBeLessThan(os.indexOf('<n-tab-pane name="tea" tab="Transparency Exchange"'))
+        expect(os.slice(profiles, os.indexOf('</n-tab-pane>', profiles))).toContain('<SbomProfilesPanel')
+        expect(os).toMatch(/const proOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
+        expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
+        const start = os.indexOf('async function loadTabSpecificData')
+        const body = os.slice(start, os.indexOf('\n}\n', start))
+        const branch = body.indexOf('} else if (tabName === "profiles") {')
+        expect(branch).toBeGreaterThan(0)
+        const prof = body.slice(branch, body.indexOf('} else if', branch + 1))
+        expect(prof).toContain("...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : [])")
+        expect(prof).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+    })
+
+    it('the perspective TEA dialog hosts the overrides and the package settings, wired to reload both catalogs', () => {
+        const os = src('OrgSettings.vue')
+        const card = os.search(/:title="'TEA profile of perspective: ' \+ selectedPerspectiveName"/)
+        expect(card).toBeGreaterThan(0)
+        const dialog = os.slice(card, os.indexOf('</n-card>', card))
+        expect(dialog).toContain(":scope=\"selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'\"")
+        expect(dialog).toContain('ref="perspectiveTeaEditor"')
+        expect(dialog.indexOf('<SbomProfileOverrides')).toBeGreaterThan(dialog.indexOf('<TeaProfileEditor'))
+        expect(dialog).toContain('@changed="reloadPerspectiveSbomConsumers"')
+        expect(dialog.indexOf('<PackageSettingsEditor')).toBeGreaterThan(dialog.indexOf('<SbomProfileOverrides'))
+        expect(dialog).toContain('ref="perspectivePackageEditor"')
+        expect(dialog).toContain('v-if="regulatoryPackagesAvailable(myUser.installationType)"')
+        const fn = os.slice(os.indexOf('function reloadPerspectiveSbomConsumers'), os.indexOf('\n}\n', os.indexOf('function reloadPerspectiveSbomConsumers')))
+        expect(fn).toContain('perspectiveTeaEditor.value?.reloadCatalog()')
+        expect(fn).toContain('perspectivePackageEditor.value?.reloadCatalog()')
+    })
+
+    it('ComponentView keeps its TEA pane line and hosts the editor, the overrides and the package settings in order', () => {
+        const cv = src('ComponentView.vue')
+        const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">')
+        expect(tea).toBeGreaterThan(0)
+        const pane = cv.slice(tea, cv.indexOf('</n-tab-pane>', tea))
+        const editor = pane.indexOf('<TeaProfileEditor')
+        const overrides = pane.indexOf('<SbomProfileOverrides')
+        const pkg = pane.indexOf('<PackageSettingsEditor')
+        expect(editor).toBeGreaterThan(0)
+        expect(overrides).toBeGreaterThan(editor)
+        expect(pkg).toBeGreaterThan(overrides)
+        expect(pane.slice(editor, overrides)).toContain('ref="teaEditor"')
+        expect(pane.slice(overrides, pkg)).toContain('@changed="reloadSbomConsumers"')
+        expect(pane.slice(overrides, pkg)).toContain('v-if="regulatoryPackagesAvailable(myUser.installationType)"')
+        expect(pane.slice(pkg)).toContain('ref="packageEditor"')
+        const fn = cv.slice(cv.indexOf('function reloadSbomConsumers'), cv.indexOf('\n}\n', cv.indexOf('function reloadSbomConsumers')))
+        expect(fn).toContain('teaEditor.value?.reloadCatalog()')
+        expect(fn).toContain('packageEditor.value?.reloadCatalog()')
+    })
+
+    it('ComponentView carries the Submissions tab after the branches tab, bound to the page branches and refresh token', () => {
+        const cv = src('ComponentView.vue')
+        const branches = cv.indexOf('<n-tab-pane name="branches"')
+        const line = `<n-tab-pane v-if="componentData?.type === 'PRODUCT' && submissionsAvailable(myUser.installationType)" name="submissions" tab="Submissions">`
+        const subs = cv.indexOf(line)
+        expect(branches).toBeGreaterThan(0)
+        expect(subs).toBeGreaterThan(branches)
+        const pane = cv.slice(subs, cv.indexOf('</n-tab-pane>', subs))
+        expect(pane).toContain('<ProductSubmissionsPanel')
+        expect(pane).toContain(':branches="branches"')
+        expect(pane).toContain(':refresh-token="latestRefreshToken"')
+        expect(cv).toMatch(/\nconst branches: ComputedRef<any> = computed\(/)
+        expect(cv).toMatch(/\nconst latestRefreshToken = ref\(0\)/)
+        expect(src('../utils/componentPageTab.ts')).toContain("export const SUBMISSIONS_TAB: ComponentPageTab = 'submissions'")
+    })
+
+    it('ReleaseView carries the Regulatory submissions section after the TEA section and before Produced Deliverables', () => {
+        const rv = src('ReleaseView.vue')
+        const line = '<div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound" data-testid="submissions-section">'
+        const at = rv.indexOf(line)
+        expect(at).toBeGreaterThan(rv.indexOf('data-testid="tea-section"'))
+        expect(at).toBeLessThan(rv.indexOf('Produced Deliverables'))
+        expect(rv.slice(at + line.length).trimStart().startsWith('<h3>Regulatory submissions</h3>')).toBe(true)
+        expect(rv.slice(at, rv.indexOf('</div>', at))).toContain('<ReleaseSubmissionsPanel')
+    })
+
+    it('ReleaseView shows the SBOM profile of each TEA entry in a Profile column after Name (design 3.3.7)', () => {
+        const rv = src('ReleaseView.vue')
+        expect(rv).toContain("    { key: 'name', title: 'Name' },\n    { key: 'profile', title: 'Profile' },\n    { key: 'mediaType', title: 'Media type' },")
+    })
+
+    it('ReleaseView renders a SUBMISSION History row through submissionHistoryText, before the acollection branch', () => {
+        const rv = src('ReleaseView.vue')
+        const branch = rv.indexOf("if (row.rus === 'SUBMISSION') {")
+        expect(branch).toBeGreaterThan(rv.indexOf("if (row.rus === 'TEA_PUBLICATION') {"))
+        expect(branch).toBeLessThan(rv.indexOf("if (row.source === 'acollection' && row.artifact) {"))
+        const body = rv.slice(branch, rv.indexOf('\n            }\n', branch))
+        expect(body).toContain('const txt = submissionHistoryText(row)')
+        expect(body).toContain("return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt")
+    })
+
+    // TEA-30 row 28: one download URL builder, and the dialog rule (design 3.8, D18).
+    it('ReleaseView builds no download path; artifactDownload.ts is the one builder', () => {
+        const rv = src('ReleaseView.vue')
+        for (const literal of ["'/rawdownload'", "'/download'", '?version=']) expect(rv, literal).not.toContain(literal)
+        expect(rv.split('/api/manual/v1/artifact/')).toHaveLength(2)
+        const line = rv.split('\n').find(l => l.includes('/api/manual/v1/artifact/'))!
+        expect(line).toContain("fetchWithAuth('/api/manual/v1/artifact/upload'")
+        expect(rv).toContain("import { artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'")
+        const ad = src('../utils/artifactDownload.ts')
+        expect(ad.split('/api/manual/v1/artifact/')).toHaveLength(2)
+        expect(ad.split('?version=')).toHaveLength(2)
+    })
+
+    // The sixteen files of row 28: the fifteen non-spec files of 3.13 New (sbomProfileDelete.ts, the
+    // shared delete path the editor, the catalog and the overrides call, among them) and
+    // TeaProfileEditor.vue (a file added later is added here).
+    const DIALOG_FILES = ['../utils/profilesQueries.ts', '../utils/submissionQueries.ts', '../utils/sbomProfile.ts',
+        '../utils/packageSettings.ts', '../utils/submissions.ts', '../utils/submissionActs.ts', '../utils/artifactDownload.ts',
+        '../utils/sbomProfileDelete.ts', 'SbomProfileEditor.vue', 'SbomProfilesPanel.vue', 'SbomProfileOverrides.vue',
+        'SbomProfilePicker.vue', 'PackageSettingsEditor.vue', 'ProductSubmissionsPanel.vue', 'ReleaseSubmissionsPanel.vue',
+        'TeaProfileEditor.vue']
+    it.each(DIALOG_FILES)('%s: every Swal.fire is the object form, and no html sink', (file) => {
+        const f = src(file)
+        const calls = (f.match(/Swal\.fire\(/g) ?? []).length
+        const objectCalls = (f.match(/Swal\.fire\(\s*\{/g) ?? []).length
+        expect(objectCalls).toBe(calls)
+        if (!f.includes("from 'sweetalert2'")) expect(calls).toBe(0)
+        expect(f).not.toMatch(/\bhtml\s*:/)
+        expect(f).not.toMatch(/v-html/)
+        expect(f).not.toMatch(/innerHTML/)
+    })
+
+    it('the dialog rule covers the files that call Swal: the editor, the delete path, the package editor and the acts', () => {
+        for (const file of ['TeaProfileEditor.vue', 'SbomProfileEditor.vue', '../utils/sbomProfileDelete.ts',
+            'PackageSettingsEditor.vue', '../utils/submissionActs.ts']) {
+            expect((src(file).match(/Swal\.fire\(\s*\{/g) ?? []).length, file).toBeGreaterThan(0)
+        }
+    })
+
+    // Round 4 (design 3.7.1, D19): the text of a failed GraphQL call is graphqlRefusalText's, never
+    // parseGraphQLError over Apollo's joined message.
+    it.each(DIALOG_FILES)('%s: no parseGraphQLError call; the error text comes from graphqlRefusalText', (file) => {
+        expect(src(file)).not.toContain('parseGraphQLError(')
+    })
+
+    it('the files that show a GraphQL error call graphqlRefusalText, and teaActErrorText ends in it', () => {
+        for (const file of ['../utils/sbomProfileDelete.ts', 'SbomProfileEditor.vue', 'SbomProfilesPanel.vue',
+            'SbomProfileOverrides.vue', 'PackageSettingsEditor.vue', 'ProductSubmissionsPanel.vue',
+            'ReleaseSubmissionsPanel.vue', 'TeaProfileEditor.vue']) {
+            expect(src(file), file).toContain('graphqlRefusalText(')
+        }
+        const tp = src('../utils/teaPublication.ts')
+        expect(tp).toContain('return graphqlRefusalText(err)')
+        expect(tp).not.toContain('parseGraphQLError(')
+    })
 })
+

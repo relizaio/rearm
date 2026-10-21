@@ -49,43 +49,6 @@ export const TEA_VISIBILITY_OPTIONS: Option[] = [
     opt('PUBLIC', 'Public: anyone who knows the TEA URL'),
 ]
 
-export const TEA_DEPENDENCY_DEPTH_OPTIONS: Option[] = [
-    opt('FULL', 'Full dependency tree'),
-    opt('TOP_LEVEL_ONLY', 'Top-level dependencies only'),
-]
-
-export const TEA_OPTIONAL_DEPENDENCIES_OPTIONS: Option[] = [
-    opt('INCLUDE', 'Include optional (dev) dependencies'),
-    opt('EXCLUDE', 'Exclude optional (dev) dependencies'),
-]
-
-export const TEA_STRUCTURE_OPTIONS: Option[] = [
-    opt('FLAT', 'Flat'),
-    opt('HIERARCHICAL', 'Hierarchical'),
-]
-
-export const TEA_SOURCES_OPTIONS: Option[] = [
-    opt('DELIVERABLE', 'Deliverable SBOMs'),
-    opt('RELEASE', 'Release SBOMs'),
-    opt('SOURCE_CODE', 'Source code SBOMs'),
-]
-
-export const TEA_EXCLUDED_COVERAGE_OPTIONS: Option[] = [
-    opt('DEV', 'Development'),
-    opt('TEST', 'Test'),
-    opt('BUILD_TIME', 'Build time'),
-]
-
-export const TEA_SUPPORT_METADATA_OPTIONS: Option[] = [
-    opt('INCLUDE', 'Include support metadata'),
-    opt('EXCLUDE', 'Exclude support metadata'),
-]
-
-export const TEA_INTERNAL_METADATA_OPTIONS: Option[] = [
-    opt('INCLUDE', 'Include internal metadata'),
-    opt('EXCLUDE', 'Exclude internal metadata'),
-]
-
 export const TEA_RAW_ARTIFACTS_OPTIONS: Option[] = [
     opt('NONE', 'None'),
     opt('NON_BOM', 'Non-BOM artifacts'),
@@ -113,43 +76,32 @@ export const TEA_TEI_OPTIONS: Option[] = [
 export const TEA_FIELD_HELP: Record<string, string> = {
     publishing: 'DISABLED conceals every release resolving to this profile and blocks new publishes.',
     visibility: 'Resolved at request time: switching it changes who can read what is already published.',
-    dependencyDepth: 'Whether published SBOMs carry the whole dependency tree or only top-level dependencies.',
-    optionalDependencies: 'Whether optional (development) dependencies stay in published SBOMs.',
-    structure: 'The shape of the merged SBOM.',
-    sources: 'Which SBOMs of a release are merged into what is published.',
-    excludedCoverage: 'SBOMs of these coverage types are left out.',
-    supportMetadata: 'Support facts woven into published SBOMs; needs the organization support injection.',
-    internalMetadata: 'ReARM-internal metadata in published SBOMs.',
     rawArtifacts: 'Which existing release artifacts ride along with a publication.',
     productComponents: 'For a product: whether its component releases are published with it.',
     minimumLifecycle: 'The lifecycle a release must have reached before it can be published.',
     tei: 'Stamps a TEI onto the release identifiers at publish.',
-    vulnerabilityDocuments: 'Reserved for a later release.',
+    profiles: 'The SBOM profiles this scope publishes, one aggregated SBOM each, in this order; every name must '
+        + 'resolve at this scope while publishing is ENABLED.',
 }
 
-/** The profile fields a save sends, in the order the editor shows them. */
-export const TEA_PROFILE_FIELDS = ['publishing', 'visibility', 'dependencyDepth', 'optionalDependencies', 'structure',
-    'sources', 'excludedCoverage', 'supportMetadata', 'internalMetadata', 'rawArtifacts', 'productComponents',
-    'minimumLifecycle', 'tei', 'teiDomain', 'vulnerabilityDocuments'] as const
+/**
+ * The profile fields a save sends, in the order the editor shows them. The SBOM recipe fields moved
+ * to named SBOM profiles (TEA-27; sbomProfile.ts): a TEA row names the profiles it publishes instead.
+ */
+export const TEA_PROFILE_FIELDS = ['publishing', 'visibility', 'rawArtifacts', 'productComponents',
+    'minimumLifecycle', 'tei', 'teiDomain', 'profiles'] as const
 
 export interface TeaProfileForm {
     mode: string | null
     followedPerspective: string | null
     publishing: string
     visibility: string
-    dependencyDepth: string
-    optionalDependencies: string
-    structure: string
-    sources: string[]
-    excludedCoverage: string[]
-    supportMetadata: string
-    internalMetadata: string
     rawArtifacts: string
     productComponents: string
     minimumLifecycle: string
     tei: string
     teiDomain: string | null
-    vulnerabilityDocuments: string
+    profiles: string[]
 }
 
 /** The built-in defaults: the profile every organization has before it saves one. */
@@ -159,19 +111,12 @@ export function teaBuiltInDefaults (): TeaProfileForm {
         followedPerspective: null,
         publishing: 'DISABLED',
         visibility: 'PRIVATE',
-        dependencyDepth: 'FULL',
-        optionalDependencies: 'INCLUDE',
-        structure: 'FLAT',
-        sources: ['DELIVERABLE', 'RELEASE', 'SOURCE_CODE'],
-        excludedCoverage: ['DEV', 'TEST'],
-        supportMetadata: 'EXCLUDE',
-        internalMetadata: 'EXCLUDE',
         rawArtifacts: 'NONE',
         productComponents: 'PUBLISH_WITH_PRODUCT',
         minimumLifecycle: 'ASSEMBLED',
         tei: 'DISABLED',
         teiDomain: null,
-        vulnerabilityDocuments: 'NONE',
+        profiles: ['default'],
     }
 }
 
@@ -201,8 +146,11 @@ export function teaFormFromView (view: any, scope: TeaScope): TeaProfileForm {
     }
 }
 
-/** The TeaProfileInput a save sends: a FOLLOW row sends its mode and perspective only. */
-export function teaProfileInput (form: TeaProfileForm, scope: TeaScope): Record<string, any> {
+/**
+ * The TeaProfileInput a save sends: a FOLLOW row sends its mode and perspective only. `profiles` is
+ * sent as a copy in the picker's order; on CE (OSS) the first name only, the CE rule of exactly one.
+ */
+export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installationType?: string | null): Record<string, any> {
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
         return { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: form.followedPerspective }
     }
@@ -213,6 +161,8 @@ export function teaProfileInput (form: TeaProfileForm, scope: TeaScope): Record<
         out[f] = Array.isArray(v) ? [...v] : v
     }
     out.teiDomain = form.tei === 'UUID' ? (form.teiDomain || null) : null
+    const profiles = [...(form.profiles ?? [])]
+    out.profiles = installationType === 'OSS' ? profiles.slice(0, 1) : profiles
     return out
 }
 

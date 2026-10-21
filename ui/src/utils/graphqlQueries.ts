@@ -554,19 +554,12 @@ const TEA_PROFILE_FIELDS_GQL = `
     followedPerspective
     publishing
     visibility
-    dependencyDepth
-    optionalDependencies
-    structure
-    sources
-    excludedCoverage
-    supportMetadata
-    internalMetadata
     rawArtifacts
     productComponents
     minimumLifecycle
     tei
     teiDomain
-    vulnerabilityDocuments
+    profiles
     revision
 `
 
@@ -710,6 +703,10 @@ const TEA_PUBLICATION_FIELDS_GQL = `
     profileSourceObject
     cascadeOf
     aggregateArtifact
+    aggregateArtifacts {
+        profileName
+        artifact
+    }
     tei
     firstPublishedDate
     lastPublishedDate
@@ -747,6 +744,9 @@ const TEA_PUBLISHED_COLLECTION_FIELDS_GQL = `
         }
         signatureArtifact
         signatureRevision
+        sbomProfileName
+        sbomProfileUuid
+        sbomProfileRevision
     }
 `
 

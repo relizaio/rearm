@@ -288,4 +288,41 @@ describe('teaActErrorText (round 4, 95)', () => {
         expect(teaActErrorText({ message: 'x', networkError: { statusCode: 400 } })).toBe('x')
         expect(teaActErrorText({ message: 'server error', networkError: { statusCode: 500 } })).toBe('server error')
     })
+
+    it('a refusal of a non-null act answers the refusal entry alone (TEA-30 round 4, 3.7.1)', () => {
+        const NULL_TEXT = "The field at path '/publishReleaseOnTea' was declared as a non null type, but the code involved in "
+            + 'retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+            + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+            + "non-nullable type is 'TeaPublishResult' within parent type 'Mutation'"
+        const err = Object.assign(new Error(IN_PROGRESS + '\n' + NULL_TEXT), { errors: [
+            { message: IN_PROGRESS, extensions: { classification: 'BAD_REQUEST' } },
+            { message: NULL_TEXT, path: ['publishReleaseOnTea'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] })
+        expect(teaActErrorText(err)).toBe(IN_PROGRESS)
+    })
+})
+
+// TEA-30 (design 3.3.7, D13): the publication names one aggregate per SBOM profile (TEA-28); the
+// summary lists them with their revisions, and the entries carry the profile name.
+describe('the aggregate list and the profile column (TEA-30)', () => {
+    it('lists one aggregate per profile in the publication order, the deprecated sentence only without a list', () => {
+        const text = teaPublishSummary({ outcome: 'PUBLISHED',
+            publication: publication({ aggregateArtifacts: [{ profileName: 'default', artifact: 'agg-1' },
+                { profileName: 'top', artifact: 'agg-2' }] }),
+            collection: { version: 3, entries: [{ artifact: 'agg-1', revision: 2, origin: 'SYNTHETIC' },
+                { artifact: 'agg-2', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [], children: [] })
+        expect(text).toBe('Published: collection version 3; aggregate SBOMs: default r2, top r1; 0 artifacts published, 0 skipped')
+        const legacy = teaPublishSummary({ outcome: 'PUBLISHED', publication: publication({ aggregateArtifacts: [] }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 4, origin: 'SYNTHETIC' }] }, artifacts: [], children: [] })
+        expect(legacy).toBe('Published: collection version 1; aggregate SBOM revision 4; 0 artifacts published, 0 skipped')
+    })
+
+    it('an entry carries its SBOM profile name, empty for a legacy entry', () => {
+        const rows = teaEntryRows({ entries: [
+            { teaUuid: 't-1', revision: 1, origin: 'SYNTHETIC', name: 'top.cdx.json', sbomProfileName: 'top' },
+            { teaUuid: 't-2', revision: 1, origin: 'SYNTHETIC', name: 'shop-api-1.4.0-tea-aggregate.cdx.json' },
+        ] }, API)
+        expect(rows.map(r => r.profile)).toEqual(['top', ''])
+    })
 })
