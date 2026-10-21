@@ -1,9 +1,11 @@
 // @vitest-environment happy-dom
 //
-// The product page's Submissions tab (task TEA-30, design 4.6 row 32): two releases of the feature
-// set (an ASSEMBLED one with an ACTIVE head v2, a DRAFT one without) and a head on a release of
-// another feature set; the actions only for a writer, Create disabled below ASSEMBLED; the filters
-// passed to the server; the release links; a failed read; the branches and refresh-token props.
+// The product page's Submissions tab (task TEA-30, design 4.6 row 32): three releases of the feature
+// set (an ASSEMBLED one with an ACTIVE head v2, a DRAFT one without, and, round 4, a
+// GENERAL_AVAILABILITY one with a WITHDRAWN head) and a head on a release of another feature set; the
+// actions only for a writer, Withdraw only on an ACTIVE head, Create disabled below ASSEMBLED; the
+// filters passed to the server; the release links; a failed read showing the refusal entry alone;
+// the branches and refresh-token props.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
@@ -23,18 +25,30 @@ const BRANCHES = [{ uuid: 'b-main', name: 'main', key: 'b-main' }, { uuid: 'b-fe
 const RELEASES = [
     { uuid: 'r1', version: '1.0.0', lifecycle: 'ASSEMBLED', createdDate: '2026-10-01T00:00:00Z' },
     { uuid: 'r2', version: '1.1.0', lifecycle: 'DRAFT', createdDate: '2026-10-05T00:00:00Z' },
+    { uuid: 'r3', version: '0.8.0', lifecycle: 'GENERAL_AVAILABILITY', createdDate: '2026-09-15T00:00:00Z' },
 ]
 const HEADS = [
     { uuid: 's1', release: 'r1', releaseVersion: '1.0.0', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2,
         lastActKind: 'RESUBMITTED', lastActDate: '2026-10-02T00:00:00Z' },
+    { uuid: 's3', release: 'r3', releaseVersion: '0.8.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 3,
+        lastActKind: 'WITHDRAWN', lastActDate: '2026-09-20T00:00:00Z' },
     { uuid: 's9', release: 'r-old', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 1,
         lastActKind: 'WITHDRAWN', lastActDate: '2026-09-01T00:00:00Z' },
 ]
+const NULL_TEXT = "The field at path '/submissionsOfComponent' was declared as a non null type, but the code involved "
+    + 'in retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+    + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+    + "non-nullable type is '[Submission!]' within parent type 'Query'"
 let failing = false
 
 function answers () {
     query.mockImplementation(async (opts: any) => {
-        if (failing) throw new Error('submissions read refused')
+        if (failing) {
+            throw Object.assign(new Error('submissions read refused\n' + NULL_TEXT), { errors: [
+                { message: 'submissions read refused', extensions: { classification: 'BAD_REQUEST' } },
+                { message: NULL_TEXT, path: ['submissionsOfComponent'], extensions: { classification: 'NullValueInNonNullableField' } },
+            ] })
+        }
         switch (operation(opts)) {
         case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
         case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: HEADS } }
@@ -81,7 +95,21 @@ describe('ProductSubmissionsPanel', () => {
         expect(create.attributes('disabled')).toBeDefined()
         expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
         const rows = w.findAll('[data-testid="submissions-release-rows"] tbody tr')
-        expect(rows[0].find('td').text()).toBe('1.1.0')
+        expect(rows.map((r: any) => r.find('td').text())).toEqual(['1.1.0', '1.0.0', '0.8.0'])
+        w.unmount()
+    })
+
+    it('offers Resubmit and no Withdraw on a WITHDRAWN head', async () => {
+        const { w } = await mountPanel()
+        const cell = rowOf(w, '0.8.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
+        expect(cell.exists()).toBe(true)
+        expect(cell.find('[data-testid="submission-state"]').text()).toBe('Withdrawn')
+        expect(cell.text()).toContain('v3')
+        expect(cell.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
+        expect(cell.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        const active = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
+        expect(active.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
+        expect(active.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
         w.unmount()
     })
 
@@ -125,6 +153,7 @@ describe('ProductSubmissionsPanel', () => {
         failing = true
         const { w } = await mountPanel()
         expect(document.body.textContent).toContain('submissions read refused')
+        expect(document.body.textContent).not.toContain('declared as a non null type')
         expect(w.find('[data-testid="submissions-retry"]').exists()).toBe(true)
         w.unmount()
     })

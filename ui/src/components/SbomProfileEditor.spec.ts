@@ -172,18 +172,27 @@ describe('SbomProfileEditor', () => {
         expect(w.emitted('removed')).toEqual([['default']])
     })
 
-    it('row 15: a refusal naming a component with markup shows verbatim as text, one object argument, and emits nothing', async () => {
+    it('row 15: a refusal naming a component with markup shows the refusal entry alone as text, one object argument, and emits nothing', async () => {
         const sentence = 'SBOM profile top of the organization cannot be deleted: the FDA_PREMARKET package settings of '
             + 'component <img src=x onerror=alert(1)> name it and it would no longer resolve there; point them at another profile first'
         const w = await mountWith(view({ stored: profile() }), { scope: 'ORGANIZATION', objectUuid: null })
         fire.mockResolvedValueOnce({ isConfirmed: true })
-        mutate.mockRejectedValueOnce(new Error(sentence))
+        const NULL_TEXT = "The field at path '/deleteSbomProfile' was declared as a non null type, but the code involved in "
+            + 'retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+            + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+            + "non-nullable type is 'Boolean' within parent type 'Mutation'"
+        mutate.mockRejectedValueOnce(Object.assign(new Error(sentence + '\n' + NULL_TEXT), { errors: [
+            { message: sentence, extensions: { classification: 'BAD_REQUEST' } },
+            { message: NULL_TEXT, path: ['deleteSbomProfile'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] }))
         await w.find('[data-testid="sbom-delete"]').trigger('click')
         await flushPromises()
         expect(fire).toHaveBeenCalledTimes(2)
         expect(fire.mock.calls[1]).toHaveLength(1)
         expect(typeof fire.mock.calls[1][0]).toBe('object')
         expect(fire.mock.calls[1][0]).toEqual({ title: 'Error!', text: sentence, icon: 'error' })
+        expect(fire.mock.calls[1][0].text).not.toContain('\n')
+        expect(fire.mock.calls[1][0].text).not.toContain('declared as a non null type')
         expect(fire.mock.calls.every(c => c.length === 1 && !('html' in c[0]))).toBe(true)
         expect(w.emitted('removed')).toBeUndefined()
     })

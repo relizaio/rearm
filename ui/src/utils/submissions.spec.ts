@@ -130,6 +130,19 @@ describe('the confirmations and the act error text (row 31)', () => {
         expect(submissionActErrorText(new Error('Release widget 1.2.0 (u): the submission is at v3, not v2; reload it before resubmitting')))
             .toBe('Release widget 1.2.0 (u): the submission is at v3, not v2; reload it before resubmitting')
     })
+
+    it('answers the refusal alone for the two-entry rejection of a non-null act (round 4, 3.7.1)', () => {
+        const refusal = 'Release widget 1.2.0 (u): the submission is at v3, not v2; reload it before resubmitting'
+        const NULL_TEXT = "The field at path '/resubmitSubmission' was declared as a non null type, but the code involved "
+            + 'in retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+            + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+            + "non-nullable type is 'SubmissionActResult' within parent type 'Mutation'"
+        const err = Object.assign(new Error(refusal + '\n' + NULL_TEXT), { errors: [
+            { message: refusal, extensions: { classification: 'BAD_REQUEST' } },
+            { message: NULL_TEXT, path: ['resubmitSubmission'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] })
+        expect(submissionActErrorText(err)).toBe(refusal)
+    })
 })
 
 describe('the History text (row 35)', () => {

@@ -90,7 +90,7 @@ import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import profilesQueries from '@/utils/profilesQueries'
 import {
     Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS,
@@ -165,7 +165,7 @@ async function load () {
         if (props.scope === 'COMPONENT' && props.installationType === 'OSS') form.value.mode = 'OVERRIDE'
     } catch (err: any) {
         console.error(err)
-        loadError.value = commonFunctions.parseGraphQLError(err.message)
+        loadError.value = graphqlRefusalText(err)
     } finally {
         loading.value = false
     }
@@ -188,7 +188,7 @@ async function reloadCatalog () {
     } catch (err: any) {
         console.error(err)
         catalog.value = []
-        catalogError.value = commonFunctions.parseGraphQLError(err.message)
+        catalogError.value = graphqlRefusalText(err)
     }
 }
 
@@ -207,7 +207,7 @@ async function exposureOf (profile: Record<string, any> | null): Promise<TeaExpo
         return resp.data.teaProfileExposureChange
     } catch (err: any) {
         console.error(err)
-        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
         return null
     }
 }
@@ -234,7 +234,7 @@ async function save () {
         await load()
     } catch (err: any) {
         console.error(err)
-        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     } finally {
         saving.value = false
     }
@@ -253,7 +253,7 @@ async function remove () {
         await load()
     } catch (err: any) {
         console.error(err)
-        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     }
 }
 

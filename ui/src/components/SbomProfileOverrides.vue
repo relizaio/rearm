@@ -42,7 +42,7 @@ import { computed, h, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NDataTable, NModal, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { Option, sbomCatalogRows, sbomEffectiveLine, sbomScopeWord } from '@/utils/sbomProfile'
 import { deleteSbomProfileConfirmed } from '@/utils/sbomProfileDelete'
 import SbomProfileEditor from './SbomProfileEditor.vue'
@@ -135,7 +135,7 @@ async function reload (): Promise<boolean> {
         catalog.value = []
         stored.value = []
         loadFailed.value = true
-        notification.error({ content: commonFunctions.parseGraphQLError(err.message), duration: 5000 })
+        notification.error({ content: graphqlRefusalText(err), duration: 5000 })
         return false
     }
 }

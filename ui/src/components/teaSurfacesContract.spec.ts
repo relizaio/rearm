@@ -322,8 +322,9 @@ describe('TEA surfaces contract', () => {
         expect(ad.split('?version=')).toHaveLength(2)
     })
 
-    // The fifteen files of the design plus sbomProfileDelete.ts, the shared delete path the editor,
-    // the catalog and the overrides call (a file added later is added here).
+    // The sixteen files of row 28: the fifteen non-spec files of 3.13 New (sbomProfileDelete.ts, the
+    // shared delete path the editor, the catalog and the overrides call, among them) and
+    // TeaProfileEditor.vue (a file added later is added here).
     const DIALOG_FILES = ['../utils/profilesQueries.ts', '../utils/submissionQueries.ts', '../utils/sbomProfile.ts',
         '../utils/packageSettings.ts', '../utils/submissions.ts', '../utils/submissionActs.ts', '../utils/artifactDownload.ts',
         '../utils/sbomProfileDelete.ts', 'SbomProfileEditor.vue', 'SbomProfilesPanel.vue', 'SbomProfileOverrides.vue',
@@ -345,6 +346,23 @@ describe('TEA surfaces contract', () => {
             'PackageSettingsEditor.vue', '../utils/submissionActs.ts']) {
             expect((src(file).match(/Swal\.fire\(\s*\{/g) ?? []).length, file).toBeGreaterThan(0)
         }
+    })
+
+    // Round 4 (design 3.7.1, D19): the text of a failed GraphQL call is graphqlRefusalText's, never
+    // parseGraphQLError over Apollo's joined message.
+    it.each(DIALOG_FILES)('%s: no parseGraphQLError call; the error text comes from graphqlRefusalText', (file) => {
+        expect(src(file)).not.toContain('parseGraphQLError(')
+    })
+
+    it('the files that show a GraphQL error call graphqlRefusalText, and teaActErrorText ends in it', () => {
+        for (const file of ['../utils/sbomProfileDelete.ts', 'SbomProfileEditor.vue', 'SbomProfilesPanel.vue',
+            'SbomProfileOverrides.vue', 'PackageSettingsEditor.vue', 'ProductSubmissionsPanel.vue',
+            'ReleaseSubmissionsPanel.vue', 'TeaProfileEditor.vue']) {
+            expect(src(file), file).toContain('graphqlRefusalText(')
+        }
+        const tp = src('../utils/teaPublication.ts')
+        expect(tp).toContain('return graphqlRefusalText(err)')
+        expect(tp).not.toContain('parseGraphQLError(')
     })
 })
 

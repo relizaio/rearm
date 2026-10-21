@@ -3,7 +3,7 @@
 // the collection and entry rows, the History text of a TEA_PUBLICATION event. Kept out of
 // ReleaseView.vue, with no Vue import, so teaPublication.spec.ts runs it.
 
-import { parseGraphQLError } from './graphqlErrorText'
+import { graphqlRefusalText } from './graphqlErrorText'
 import { teaSourceLabel } from './teaProfile'
 
 /** What the confirmation names: the release, and the perspective names a profile source may point at. */
@@ -335,5 +335,5 @@ export function teaActErrorText (err: any): string {
     if (status === 502 || status === 503 || status === 504) return TEA_ACT_GATEWAY_TEXT
     const message = String(err?.message ?? '')
     if (/status code 50[234]\b/.test(message) || /Failed to fetch/.test(message)) return TEA_ACT_GATEWAY_TEXT
-    return parseGraphQLError(message)
+    return graphqlRefusalText(err)
 }

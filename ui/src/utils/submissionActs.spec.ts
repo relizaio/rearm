@@ -17,6 +17,10 @@ const HEAD = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'ACTIVE'
 const PREVIEW = { canSubmit: true, refusal: null, message: null, nextVersion: 1, head: null,
     settings: { row: null, revision: 0, source: 'DEFAULT' }, sbomProfile: { name: 'default', row: null, revision: 0, source: 'DEFAULT' },
     plan: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED', selection: 'INCLUDE', generatorPresent: true }] }
+const NULL_TEXT = "The field at path '/resubmitSubmission' was declared as a non null type, but the code involved in "
+    + 'retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+    + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+    + "non-nullable type is 'SubmissionActResult' within parent type 'Mutation'"
 const TITLES = ['Error!', 'Cannot create this submission', 'Cannot resubmit this submission', 'Create submission?', 'Resubmit?',
     'Withdraw submission?', 'Submission']
 
@@ -63,6 +67,20 @@ describe('useSubmissionActs', () => {
         expect(query.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET' })
         expect(fire).toHaveBeenCalledTimes(1)
         expect(fire.mock.calls[0]).toEqual([{ title: 'Cannot create this submission', text: message, icon: 'error' }])
+        expect(mutate).not.toHaveBeenCalled()
+        everyCallIsOneObject()
+    })
+
+    it('a refused preview on resubmit shows its message under the constant title as text and sends nothing', async () => {
+        const message = 'Release <img src=x onerror=alert(1)> 1.2.0: the SBOM profile top does not resolve at component '
+            + '<img src=x onerror=alert(1)>'
+        preview = { ...PREVIEW, canSubmit: false, refusal: 'PROFILE_NOT_FOUND', message, head: HEAD }
+        await acts().resubmit(HEAD, NAMES)
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(operation(query.mock.calls[0][0])).toBe('SubmissionPreview')
+        expect(query.mock.calls[0][0].variables).toEqual({ release: 'r1', kind: 'FDA_PREMARKET' })
+        expect(fire).toHaveBeenCalledTimes(1)
+        expect(fire.mock.calls[0]).toEqual([{ title: 'Cannot resubmit this submission', text: message, icon: 'error' }])
         expect(mutate).not.toHaveBeenCalled()
         everyCallIsOneObject()
     })
@@ -128,9 +146,14 @@ describe('useSubmissionActs', () => {
         const refusal = 'Release <img src=x onerror=alert(1)> 1.2.0: the submission head moved'
         preview = { ...PREVIEW, nextVersion: 3, head: HEAD }
         fire.mockResolvedValueOnce({ isConfirmed: true, value: 'why' })
-        mutate.mockRejectedValueOnce(new Error(refusal))
+        mutate.mockRejectedValueOnce(Object.assign(new Error(refusal + '\n' + NULL_TEXT), { errors: [
+            { message: refusal, extensions: { classification: 'BAD_REQUEST' } },
+            { message: NULL_TEXT, path: ['resubmitSubmission'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] }))
         await acts().resubmit(HEAD, NAMES)
         expect(fire.mock.calls.at(-1)).toEqual([{ title: 'Error!', text: refusal, icon: 'error' }])
+        expect(fire.mock.calls.at(-1)![0].text).not.toContain('\n')
+        expect(fire.mock.calls.at(-1)![0].text).not.toContain('declared as a non null type')
         expect(reload).toHaveBeenCalledTimes(1)
 
         fire.mockResolvedValueOnce({ isConfirmed: true, value: 'why' })

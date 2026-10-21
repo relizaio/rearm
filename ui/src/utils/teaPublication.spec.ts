@@ -288,6 +288,18 @@ describe('teaActErrorText (round 4, 95)', () => {
         expect(teaActErrorText({ message: 'x', networkError: { statusCode: 400 } })).toBe('x')
         expect(teaActErrorText({ message: 'server error', networkError: { statusCode: 500 } })).toBe('server error')
     })
+
+    it('a refusal of a non-null act answers the refusal entry alone (TEA-30 round 4, 3.7.1)', () => {
+        const NULL_TEXT = "The field at path '/publishReleaseOnTea' was declared as a non null type, but the code involved in "
+            + 'retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+            + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+            + "non-nullable type is 'TeaPublishResult' within parent type 'Mutation'"
+        const err = Object.assign(new Error(IN_PROGRESS + '\n' + NULL_TEXT), { errors: [
+            { message: IN_PROGRESS, extensions: { classification: 'BAD_REQUEST' } },
+            { message: NULL_TEXT, path: ['publishReleaseOnTea'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] })
+        expect(teaActErrorText(err)).toBe(IN_PROGRESS)
+    })
 })
 
 // TEA-30 (design 3.3.7, D13): the publication names one aggregate per SBOM profile (TEA-28); the

@@ -6,7 +6,7 @@
 // as the positional second argument, which SweetAlert2 renders as HTML (design 3.8, D18).
 import Swal from 'sweetalert2'
 import profilesQueries from './profilesQueries'
-import { parseGraphQLError } from './graphqlErrorText'
+import { graphqlRefusalText } from './graphqlErrorText'
 import { SbomScope, sbomDeleteConfirm } from './sbomProfile'
 
 export type SbomDeleteOutcome = 'deleted' | 'cancelled' | 'refused'
@@ -33,7 +33,7 @@ export async function deleteSbomProfileConfirmed (client: { mutate: (o: any) => 
         return 'deleted'
     } catch (err: any) {
         console.error(err)
-        Swal.fire({ title: 'Error!', text: parseGraphQLError(String(err?.message ?? err)), icon: 'error' })
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
         return 'refused'
     }
 }

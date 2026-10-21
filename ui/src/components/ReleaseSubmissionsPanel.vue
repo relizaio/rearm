@@ -50,7 +50,7 @@ import { NButton, NDataTable, NSpace, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
@@ -220,7 +220,7 @@ async function read () {
     } catch (err: any) {
         console.error(err)
         heads.value = []
-        loadError.value = commonFunctions.parseGraphQLError(err.message)
+        loadError.value = graphqlRefusalText(err)
     }
 }
 

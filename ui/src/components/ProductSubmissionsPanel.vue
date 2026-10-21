@@ -37,7 +37,7 @@ import { NButton, NDataTable, NSelect, NSpace, NTag, useNotification } from 'nai
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
@@ -158,7 +158,7 @@ async function read () {
         heads.value = []
         releases.value = []
         loadFailed.value = true
-        notification.error({ content: commonFunctions.parseGraphQLError(err.message), duration: 5000 })
+        notification.error({ content: graphqlRefusalText(err), duration: 5000 })
     }
 }
 

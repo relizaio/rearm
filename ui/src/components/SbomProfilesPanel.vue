@@ -60,7 +60,7 @@ import { NButton, NCard, NDataTable, NModal, NTag, useNotification } from 'naive
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import profilesQueries from '@/utils/profilesQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { TeaNamedObject, teaRowObject } from '@/utils/teaProfile'
 import { sbomCatalogRows, sbomValueText } from '@/utils/sbomProfile'
 import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
@@ -171,7 +171,7 @@ async function reload (): Promise<boolean> {
         stored.value = []
         ofOrg.value = []
         loadFailed.value = true
-        notification.error({ content: commonFunctions.parseGraphQLError(err.message), duration: 5000 })
+        notification.error({ content: graphqlRefusalText(err), duration: 5000 })
         return false
     }
     await readUnlistedComponents()

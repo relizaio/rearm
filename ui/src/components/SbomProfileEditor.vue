@@ -74,7 +74,7 @@ import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
-import commonFunctions from '@/utils/commonFunctions'
+import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import FieldLabel from './FieldLabel.vue'
 import {
     Option, SbomProfileForm, SbomScope, SBOM_DEFAULT_NAME, SBOM_DEPENDENCY_DEPTH_OPTIONS, SBOM_DESCRIPTION_MAX,
@@ -167,7 +167,7 @@ async function load () {
         if (injectionOff.value) form.value.supportMetadata = 'EXCLUDE'
     } catch (err: any) {
         console.error(err)
-        loadError.value = commonFunctions.parseGraphQLError(err.message)
+        loadError.value = graphqlRefusalText(err)
     } finally {
         loading.value = false
     }
@@ -199,7 +199,7 @@ async function save () {
         await load()
     } catch (err: any) {
         console.error(err)
-        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     } finally {
         saving.value = false
     }

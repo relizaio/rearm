@@ -159,7 +159,14 @@ describe('PackageSettingsEditor', () => {
         expect(mutate.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1', kind: 'FDA_PREMARKET' })
         expect(w.emitted('removed')).toHaveLength(1)
         fire.mockResolvedValueOnce({ isConfirmed: true })
-        mutate.mockRejectedValueOnce(new Error('Not authorized'))
+        const NULL_TEXT = "The field at path '/deletePackageSettings' was declared as a non null type, but the code involved in "
+            + 'retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
+            + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
+            + "non-nullable type is 'Boolean' within parent type 'Mutation'"
+        mutate.mockRejectedValueOnce(Object.assign(new Error('Not authorized\n' + NULL_TEXT), { errors: [
+            { message: 'Not authorized', extensions: { classification: 'DataFetchingException' } },
+            { message: NULL_TEXT, path: ['deletePackageSettings'], extensions: { classification: 'NullValueInNonNullableField' } },
+        ] }))
         await w.find('[data-testid="package-remove"]').trigger('click')
         await flushPromises()
         expect(fire.mock.calls.at(-1)).toEqual([{ title: 'Error!', text: 'Not authorized', icon: 'error' }])
