@@ -81,7 +81,7 @@ so they can verify old documents.
 
 **Revoke.** Revoke is offered on the current key and on every retired key, and asks first:
 
-> Verification of documents signed with this key will report KEY_REVOKED. If it is the current key, exports are unsigned until a new key exists.
+> A check against a key list that marks this key revoked reports KEY_REVOKED; a copied PEM or JWK carries no status, so tell consumers who hold it. If it is the current key, exports are unsigned until a new key exists.
 
 A revoked key stays listed under earlier keys with the status `REVOKED`. A consumer gets
 `KEY_REVOKED` only when verifying against a JWKS that marks the key `REVOKED`; a PEM or JWK file
@@ -149,7 +149,7 @@ or that the CLI cannot verify, makes the `cisa-2026` profile NOT READY.
 **The embedded key proves integrity, not authorship.** Without `--key`, `verify-signature` checks
 the signature against the `publicKey` it embeds. That proves the document was not changed since it
 was signed under that key, but anyone can sign a document with a key of their own and embed it.
-Only a check against the organization's published keys says who signed it.
+Only a check against the organization's key, as an admin gave it to you, says who signed it.
 
 The outcome, `input.signature.verification` in the CLI's JSON output (from the
 [rearm-cli bomutils documentation](https://github.com/relizaio/rearm-cli/blob/main/docs/bomutils.md),

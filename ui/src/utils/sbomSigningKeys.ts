@@ -45,8 +45,8 @@ export const ROTATE_CONFIRM = Object.freeze({
 /** The confirm before a revoke (Swal.fire options). */
 export const REVOKE_CONFIRM = Object.freeze({
     title: 'Revoke this SBOM signing key?',
-    text: 'Verification of documents signed with this key will report KEY_REVOKED. If it is the current key,'
-        + ' exports are unsigned until a new key exists.',
+    text: 'A check against a key list that marks this key revoked reports KEY_REVOKED; a copied PEM or JWK carries'
+        + ' no status, so tell consumers who hold it. If it is the current key, exports are unsigned until a new key exists.',
     confirmButtonText: 'Revoke',
 })
 
