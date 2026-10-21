@@ -73,7 +73,7 @@ A ReARM CE installation gains SBOM export signing at its next sync; until then t
 
 **Rotate.** With a current key, the button reads **Rotate key**, and it asks first:
 
-> The current key is retired and new exports sign with the new key. Retired keys stay in the organization's public keys so documents signed with them keep verifying.
+> The current key is retired and new exports sign with the new key. Retired keys stay listed under earlier keys, so documents signed with them can still be verified with them.
 
 Documents signed before the rotation keep verifying with the retired key, which stays in the
 organization's public keys with the status `RETIRED`. An admin can give consumers the retired key
@@ -83,8 +83,10 @@ so they can verify old documents.
 
 > Verification of documents signed with this key will report KEY_REVOKED. If it is the current key, exports are unsigned until a new key exists.
 
-A revoked key stays in the organization's public keys with the status `REVOKED`, and a consumer
-verifying a document signed with it gets `KEY_REVOKED`. Revoking the current key leaves the
+A revoked key stays listed under earlier keys with the status `REVOKED`. A consumer gets
+`KEY_REVOKED` only when verifying against a JWKS that marks the key `REVOKED`; a PEM or JWK file
+carries no status, so while the public keys are not published, tell consumers who hold a revoked
+key to stop trusting it. Revoking the current key leaves the
 organization without one: every export from then on says `reliza:export:unsignedReason` `NO_KEY`
 until you generate or import a new key.
 

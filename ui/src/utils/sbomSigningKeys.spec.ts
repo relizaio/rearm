@@ -51,7 +51,7 @@ describe('the confirm and hint texts', () => {
     it('are the design texts', () => {
         expect(ROTATE_CONFIRM).toEqual({
             title: 'Rotate the SBOM signing key?',
-            text: 'The current key is retired and new exports sign with the new key. Retired keys stay published in the JWKS so documents signed with them keep verifying.',
+            text: 'The current key is retired and new exports sign with the new key. Retired keys stay listed under earlier keys, so documents signed with them can still be verified with them.',
             confirmButtonText: 'Rotate',
         })
         expect(REVOKE_CONFIRM).toEqual({
