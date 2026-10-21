@@ -27,12 +27,14 @@ works everywhere it used to. This page covers what is new alongside it:
 - **[GitHub Actions without a secret](#github-actions-without-a-secret)**: let a workflow
   authenticate with the identity token GitHub issues to the job, so CI holds no key at all.
 - **[External keys (TEA)](#external-keys-tea)** - hand a party outside your organization a key
-  that reads what you published on the Transparency Exchange API, and nothing else (ReARM Pro).
+  that reads what you published on the Transparency Exchange API, and nothing else: no write, no
+  download, no regulatory submission (ReARM Pro).
 
 ## Edition differences
 
 Everything on this page behaves the same on both editions, except for the objects a permission can
-point at, the answer to a refused federated exchange, and external keys, which are ReARM Pro only:
+point at, the answer to a refused federated exchange, and external keys, regulatory submissions and
+the number of SBOM profiles a TEA publishing settings row may name, which differ by edition:
 
 | Where | ReARM Pro | ReARM CE |
 |---|---|---|
@@ -41,6 +43,8 @@ point at, the answer to a refused federated exchange, and external keys, which a
 | Creating a component into a perspective (`perspective` input, `--perspective`) | Supported | Not applicable: CE has no perspectives |
 | A federated exchange that no trust rule admits (an unknown issuer, an identity token that does not verify, no rule matching the identity) | One answer, `invalid_grant` `assertion not accepted: ...`; the cause is in the server log | The answer names the cause, for example `no trust rule matches this identity` |
 | External keys (the **External Keys** tab and the TEA token endpoint) | Supported | Not offered: external keys are Pro only, and CE shows no External Keys tab |
+| SBOM profiles and TEA publishing (the programmatic reads `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, the publish preview `releaseTeaPublicationViewProgrammatic`, and the publish, re-publish and hide operations; no programmatic operation reads or writes TEA publishing settings) | Organization, perspective and component scope; a TEA publishing settings row names up to 10 SBOM profiles | Reaches a CE installation at its next sync from Pro (today a CE server has none of these operations); there, organization and component scope, and a TEA publishing settings row names exactly one SBOM profile |
+| Regulatory submissions (the programmatic reads `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic`, `submissionVersionProgrammatic`, and the part downloads) | Supported for FREEFORM and USER keys with read access; no key can create, resubmit or withdraw | Not offered: today a CE server has none of these operations; once the shared code reaches it at a sync from Pro, these reads answer an empty list or nothing, and no key can act on any edition |
 
 ## Managing keys in the UI
 
@@ -53,7 +57,7 @@ organization administrators see. It is split into five tabs:
 | **User Keys** | Personal keys belonging to members of the organization. |
 | **Scoped Keys** | Keys bound to one object (component, instance, cluster, organization-wide and approval keys), carrying that object's access. |
 | **Federated Identities** | Trust rules that let CI authenticate with its own identity token instead of a stored secret, plus the per-repository identities those rules have created. See [GitHub Actions without a secret](#github-actions-without-a-secret). |
-| **External Keys** | ReARM Pro. Keys for parties outside the organization, which read what the organization published on TEA and nothing else. See [External keys (TEA)](#external-keys-tea). |
+| **External Keys** | ReARM Pro. Keys for parties outside the organization, which read what the organization published on TEA and nothing else: they hold no write authority, reach no download and never see a regulatory submission. See [External keys (TEA)](#external-keys-tea). |
 
 Your own keys are on your profile, in the **API Keys** tab under **Your API Keys**. From there you
 can **Create key** for yourself, or **Request a Free Form key** if you need one an administrator has
@@ -232,8 +236,9 @@ token expires, and send the token as `Authorization: Bearer <token>` on TEA requ
 
 ### What the outside party sees
 
-- An object whose TEA profile is **PUBLIC** is served to every caller; a token sent along is
-  ignored.
+- An object whose TEA publishing settings are **PUBLIC** is served to every caller; a token sent
+  along is ignored. Visibility is a setting of the TEA publishing settings a component resolves to,
+  never of an SBOM profile.
 - A **PRIVATE** object requested with no token is answered `401` with the challenge
   `WWW-Authenticate: Bearer realm="tea"`.
 - An invalid, expired or revoked token is answered `401` with `error="invalid_token"` in the
