@@ -1,11 +1,12 @@
 // TEA profiles (task TEA-2): the editor's option lists and its pure logic -- what the form starts
 // from, what a save sends, and the copy of the source line, the banner and the PUBLIC confirmation.
 import { describe, expect, it } from 'vitest'
+import * as teaProfileModule from './teaProfile'
 import {
-    TEA_DEPENDENCY_DEPTH_OPTIONS, TEA_EXCLUDED_COVERAGE_OPTIONS, TEA_INTERNAL_METADATA_OPTIONS, TEA_MINIMUM_LIFECYCLE_OPTIONS,
-    TEA_MODE_OPTIONS, TEA_OPTIONAL_DEPENDENCIES_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
-    TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_SOURCES_OPTIONS, TEA_STRUCTURE_OPTIONS,
-    TEA_SUPPORT_METADATA_OPTIONS, TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaFormFromView,
+    TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS,
+    TEA_MODE_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
+    TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS,
+    TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaFormFromView,
     teaConfirmBeforeMembership, teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaMembershipDelta,
     teaNeedsPublicConfirm, teaProfileInput,
     teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
@@ -19,13 +20,6 @@ describe('TEA profile option lists', () => {
             [TEA_MODE_OPTIONS, ['OVERRIDE', 'FOLLOW_PERSPECTIVE']],
             [TEA_PUBLISHING_OPTIONS, ['ENABLED', 'DISABLED']],
             [TEA_VISIBILITY_OPTIONS, ['PRIVATE', 'PUBLIC']],
-            [TEA_DEPENDENCY_DEPTH_OPTIONS, ['FULL', 'TOP_LEVEL_ONLY']],
-            [TEA_OPTIONAL_DEPENDENCIES_OPTIONS, ['INCLUDE', 'EXCLUDE']],
-            [TEA_STRUCTURE_OPTIONS, ['FLAT', 'HIERARCHICAL']],
-            [TEA_SOURCES_OPTIONS, ['DELIVERABLE', 'RELEASE', 'SOURCE_CODE']],
-            [TEA_EXCLUDED_COVERAGE_OPTIONS, ['DEV', 'TEST', 'BUILD_TIME']],
-            [TEA_SUPPORT_METADATA_OPTIONS, ['INCLUDE', 'EXCLUDE']],
-            [TEA_INTERNAL_METADATA_OPTIONS, ['INCLUDE', 'EXCLUDE']],
             [TEA_RAW_ARTIFACTS_OPTIONS, ['NONE', 'NON_BOM', 'ALL']],
             [TEA_PRODUCT_COMPONENTS_OPTIONS, ['PUBLISH_WITH_PRODUCT', 'PRODUCT_ONLY']],
             [TEA_TEI_OPTIONS, ['DISABLED', 'UUID']],
@@ -45,14 +39,61 @@ describe('TEA profile option lists', () => {
     })
 })
 
-const PARENT = { ...teaBuiltInDefaults(), publishing: 'ENABLED', dependencyDepth: 'TOP_LEVEL_ONLY', uuid: 'org-row' }
+// TEA-30 rows 9 and 10: the recipe left the TEA row for named SBOM profiles; the row names them.
+describe('the TEA row names SBOM profiles (TEA-30)', () => {
+    it('row 9: the fields are the eight channel names ending in profiles, and no recipe option list is left', () => {
+        expect([...TEA_PROFILE_FIELDS]).toEqual(['publishing', 'visibility', 'rawArtifacts', 'productComponents',
+            'minimumLifecycle', 'tei', 'teiDomain', 'profiles'])
+        const exported = Object.keys(teaProfileModule)
+        for (const gone of ['TEA_DEPENDENCY_DEPTH_OPTIONS', 'TEA_OPTIONAL_DEPENDENCIES_OPTIONS', 'TEA_STRUCTURE_OPTIONS',
+            'TEA_SOURCES_OPTIONS', 'TEA_EXCLUDED_COVERAGE_OPTIONS', 'TEA_SUPPORT_METADATA_OPTIONS',
+            'TEA_INTERNAL_METADATA_OPTIONS', 'TEA_VULNERABILITY_DOCUMENTS_OPTIONS']) {
+            expect(exported, gone).not.toContain(gone)
+        }
+        for (const f of ['dependencyDepth', 'optionalDependencies', 'structure', 'sources', 'excludedCoverage',
+            'supportMetadata', 'internalMetadata', 'vulnerabilityDocuments']) {
+            expect(TEA_FIELD_HELP, f).not.toHaveProperty(f)
+            expect(teaBuiltInDefaults(), f).not.toHaveProperty(f)
+        }
+        expect(teaBuiltInDefaults().profiles).toEqual(['default'])
+        expect(TEA_FIELD_HELP.profiles).toContain('one aggregated SBOM each, in this order')
+    })
+
+    it('row 10: the form copies profiles from the stored row, else the parent, else default', () => {
+        const stored = { ...teaBuiltInDefaults(), mode: 'OVERRIDE', profiles: ['top', 'default'] }
+        const parent = { ...teaBuiltInDefaults(), profiles: ['parent-one'] }
+        const fromStored = teaFormFromView({ stored, parent: { profile: parent } }, 'COMPONENT')
+        expect(fromStored.profiles).toEqual(['top', 'default'])
+        expect(fromStored.profiles).not.toBe(stored.profiles)
+        expect(teaFormFromView({ stored: null, parent: { profile: parent } }, 'COMPONENT').profiles).toEqual(['parent-one'])
+        expect(teaFormFromView({ stored: null, parent: { status: 'CONFLICT', profile: null } }, 'COMPONENT').profiles)
+            .toEqual(['default'])
+        // A FOLLOW row stores no names: pre-filled from the parent.
+        expect(teaFormFromView({ stored: { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', profiles: null },
+            parent: { profile: parent } }, 'COMPONENT').profiles).toEqual(['parent-one'])
+    })
+
+    it('row 10: a save sends profiles as a copy in order on Pro, the first name only on CE, none on FOLLOW', () => {
+        const form = { ...teaBuiltInDefaults(), mode: 'OVERRIDE', profiles: ['top', 'default'] }
+        const pro = teaProfileInput(form, 'COMPONENT')
+        expect(pro.profiles).toEqual(['top', 'default'])
+        expect(pro.profiles).not.toBe(form.profiles)
+        expect(teaProfileInput(form, 'COMPONENT', 'SAAS').profiles).toEqual(['top', 'default'])
+        expect(teaProfileInput(form, 'ORGANIZATION', 'OSS').profiles).toEqual(['top'])
+        expect(teaProfileInput({ ...form, mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT'))
+            .toEqual({ mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' })
+        expect(Object.keys(pro).sort()).toEqual([...TEA_PROFILE_FIELDS, 'mode'].sort())
+    })
+})
+
+const PARENT = { ...teaBuiltInDefaults(), publishing: 'ENABLED', minimumLifecycle: 'READY_TO_SHIP', uuid: 'org-row' }
 
 describe('the form and the save', () => {
     it('starts from the stored row, else the parent, else the defaults', () => {
         const stored = { ...teaBuiltInDefaults(), mode: 'OVERRIDE', visibility: 'PUBLIC' }
         expect(teaFormFromView({ stored, parent: { profile: PARENT } }, 'COMPONENT').visibility).toBe('PUBLIC')
         const fromParent = teaFormFromView({ stored: null, parent: { status: 'RESOLVED', profile: PARENT } }, 'COMPONENT')
-        expect(fromParent.dependencyDepth).toBe('TOP_LEVEL_ONLY')
+        expect(fromParent.minimumLifecycle).toBe('READY_TO_SHIP')
         expect(fromParent.mode).toBe('OVERRIDE')
         const conflict = teaFormFromView({ stored: null, parent: { status: 'CONFLICT', profile: null } }, 'COMPONENT')
         expect(conflict.publishing).toBe('DISABLED')

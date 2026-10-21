@@ -42,7 +42,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi :span="isDocument || selectedTab === 'latest' ? 10 : 3">
+            <n-gi :span="isDocument || wideTab ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -945,6 +945,7 @@
                                         <!-- Pro only until the CE backend serves TEA profiles (teaProfilesAvailable).
                                              Shown to everyone, writable by an admin, as the Guards tab. -->
                                         <TeaProfileEditor
+                                            ref="teaEditor"
                                             :org-uuid="orguuid"
                                             scope="COMPONENT"
                                             :object-uuid="componentUuid"
@@ -957,6 +958,32 @@
                                             :installation-type="myUser.installationType"
                                             @saved="loadTeaBanner"
                                             @removed="loadTeaBanner"/>
+                                        <h6 class="mt-3">SBOM profiles at this {{ words.component }}</h6>
+                                        <SbomProfileOverrides
+                                            :org-uuid="orguuid"
+                                            scope="COMPONENT"
+                                            :object-uuid="componentUuid"
+                                            :object-name="componentData?.name"
+                                            :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :is-writable="isAdmin"
+                                            :perspective-options="teaPerspectiveOptions"
+                                            :installation-type="myUser.installationType"
+                                            :names="teaPerspectiveNames()"
+                                            @changed="reloadSbomConsumers" />
+                                        <template v-if="regulatoryPackagesAvailable(myUser.installationType)">
+                                            <h6 class="mt-3">Regulatory package settings</h6>
+                                            <PackageSettingsEditor
+                                                ref="packageEditor"
+                                                :org-uuid="orguuid"
+                                                scope="COMPONENT"
+                                                :object-uuid="componentUuid"
+                                                :object-name="componentData?.name"
+                                                :object-is-product="componentData?.type === 'PRODUCT'"
+                                                :is-writable="isAdmin"
+                                                :perspective-options="teaPerspectiveOptions"
+                                                :installation-type="myUser.installationType"
+                                                :names="teaPerspectiveNames()" />
+                                        </template>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
@@ -1345,13 +1372,23 @@
                         <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
                             <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
+                        <n-tab-pane v-if="componentData?.type === 'PRODUCT' && submissionsAvailable(myUser.installationType)" name="submissions" tab="Submissions">
+                            <ProductSubmissionsPanel
+                                :org-uuid="orguuid"
+                                :component-uuid="componentUuid"
+                                :component-name="componentData?.name"
+                                :branches="branches"
+                                :is-writable="isWritable"
+                                :installation-type="myUser.installationType"
+                                :refresh-token="latestRefreshToken" />
+                        </n-tab-pane>
                         <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
                             <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
                         </n-tab-pane>
                     </n-tabs>
                 </div>
             </n-gi>
-            <n-gi v-if="!isDocument && selectedTab !== 'latest'" span="7">
+            <n-gi v-if="!isDocument && !wideTab" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1404,6 +1441,11 @@ import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaProfileEditor from './TeaProfileEditor.vue'
+import SbomProfileOverrides from './SbomProfileOverrides.vue'
+import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
+import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
+import { submissionsAvailable } from '@/utils/submissions'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
 import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeAutoPublish, TeaEditorView, teaPublicBadgeTitle,
     teaActionNames, teaPublishWiring, teaPublishWiringAdded } from '@/utils/teaOutputEvents'
@@ -1583,6 +1625,15 @@ function teaPerspectiveNames (): Record<string, string> {
     const names: Record<string, string> = {}
     for (const o of teaPerspectiveOptions.value) names[o.value] = o.label
     return names
+}
+
+// The TEA and package editors of the TEA tab (TEA-30): an override change beside them reloads
+// their SBOM profile catalogs only, so an unsaved edit of their forms survives (design 3.3.4, D15).
+const teaEditor = ref<any>(null)
+const packageEditor = ref<any>(null)
+function reloadSbomConsumers () {
+    teaEditor.value?.reloadCatalog()
+    packageEditor.value?.reloadCatalog()
 }
 
 async function loadTeaBanner () {
@@ -2036,6 +2087,8 @@ const selectedTab: Ref<string> = ref(resolveComponentPageTab({
 }))
 // Bumped after branch list changes so the Latest tab refetches.
 const latestRefreshToken = ref(0)
+// The Latest and Submissions tabs take the page's width: no branch pane beside them (TEA-30).
+const wideTab = computed(() => selectedTab.value === 'latest' || selectedTab.value === 'submissions')
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true

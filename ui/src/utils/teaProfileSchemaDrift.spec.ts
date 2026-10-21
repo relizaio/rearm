@@ -1,10 +1,22 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
+// notificationsCommon and the submission helpers reach the GraphQL client and keycloak through
+// commonFunctions and fetchClient as an import side effect; this spec reads only their data.
+vi.mock('@/utils/commonFunctions', () => ({ default: {} }))
+vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 import { validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
 import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
+import profilesQueries from './profilesQueries'
+import submissionQueries from './submissionQueries'
+import { PACKAGE_SELECTION_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, regulatoryPackagesAvailable } from './packageSettings'
+import {
+    PART_SKIP_REASON_LABELS, SUBMISSION_ACT_LABELS, SUBMISSION_PART_OUTCOME_LABELS, SUBMISSION_STATE_LABELS,
+    submissionsAvailable,
+} from './submissions'
+import { eventTypeOptions } from './notificationsCommon'
 
 /**
  * The TEA profile documents (task TEA-2) against both schemas, and the edition gate that keeps a
@@ -158,5 +170,115 @@ describe('TEA output event types (TEA-13) and the edition filter', () => {
         for (const o of TEA_OUTPUT_EVENT_TYPE_OPTIONS) expect(ce.includes(o.value), o.value).toBe(ceServesTea())
         const offered = outputEventTypeOptionsForEdition([], 'OSS').map(o => o.value)
         expect(TEA_OUTPUT_EVENT_TYPE_OPTIONS.some(o => offered.includes(o.value))).toBe(ceServesTea())
+    })
+})
+
+/**
+ * Named SBOM profiles, package settings and submissions (task TEA-30, design 4.5 rows 23 to 25):
+ * Pro-only documents in profilesQueries.ts and submissionQueries.ts, each group behind its gate and
+ * tied to the CE schema by a canary, so a CE sync that brings one surface flips exactly its gate.
+ */
+const PROFILE_DOCS = {
+    SbomProfilesGql: profilesQueries.SbomProfilesGql,
+    SbomProfilesOfOrgGql: profilesQueries.SbomProfilesOfOrgGql,
+    SbomProfileCatalogGql: profilesQueries.SbomProfileCatalogGql,
+    SbomProfileEditorViewGql: profilesQueries.SbomProfileEditorViewGql,
+    SaveSbomProfileGql: profilesQueries.SaveSbomProfileGql,
+    DeleteSbomProfileGql: profilesQueries.DeleteSbomProfileGql,
+}
+const PACKAGE_DOCS = {
+    PackageKindsGql: profilesQueries.PackageKindsGql,
+    PackageSettingsOfScopeGql: profilesQueries.PackageSettingsOfScopeGql,
+    PackageSettingsOfOrgGql: profilesQueries.PackageSettingsOfOrgGql,
+    PackageSettingsEditorViewGql: profilesQueries.PackageSettingsEditorViewGql,
+    SavePackageSettingsGql: profilesQueries.SavePackageSettingsGql,
+    DeletePackageSettingsGql: profilesQueries.DeletePackageSettingsGql,
+}
+const SUBMISSION_DOCS = {
+    SubmissionsOfComponentGql: submissionQueries.SubmissionsOfComponentGql,
+    SubmissionsOfReleaseGql: submissionQueries.SubmissionsOfReleaseGql,
+    SubmissionPreviewGql: submissionQueries.SubmissionPreviewGql,
+    CreateSubmissionGql: submissionQueries.CreateSubmissionGql,
+    ResubmitSubmissionGql: submissionQueries.ResubmitSubmissionGql,
+    WithdrawSubmissionGql: submissionQueries.WithdrawSubmissionGql,
+}
+const RELEASES_OF_BRANCH = submissionQueries.SubmissionReleasesOfBranchGql
+
+const ceServesSbomProfiles = () => Boolean(ceSchema.getQueryType()?.getFields().sbomProfileCatalog)
+const ceServesPackageSettings = () => Boolean(ceSchema.getQueryType()?.getFields().packageKinds)
+const ceServesSubmissions = () => Boolean(ceSchema.getQueryType()?.getFields().submissionsOfComponent)
+
+describe('SBOM profile, package settings and submission documents (TEA-30) and their gates', () => {
+    it('row 23: the TEA editor documents select the channel fields and profiles only (no recipe field on TeaProfile)', () => {
+        const editorView = graphqlQueries.TeaProfileEditorViewGql.loc!.source.body
+        for (const gone of ['dependencyDepth', 'optionalDependencies', 'excludedCoverage', 'supportMetadata',
+            'internalMetadata', 'vulnerabilityDocuments']) expect(editorView, gone).not.toContain(gone)
+        expect(editorView).toContain('profiles')
+    })
+
+    const GROUPS: [string, Record<string, any>, () => boolean][] = [
+        ['profiles', PROFILE_DOCS, ceServesSbomProfiles],
+        ['package settings', PACKAGE_DOCS, ceServesPackageSettings],
+        ['submissions', SUBMISSION_DOCS, ceServesSubmissions],
+    ]
+
+    it('row 24: six documents per group', () => {
+        for (const [group, docs] of GROUPS) expect(Object.keys(docs), group).toHaveLength(6)
+    })
+
+    it.runIf(proSchema)('row 24: every document of the three groups validates against the Pro schema', () => {
+        for (const [, docs] of GROUPS) {
+            for (const [name, doc] of Object.entries(docs)) expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
+        expect(validate(proSchema!, RELEASES_OF_BRANCH).map(e => e.message)).toEqual([])
+    })
+
+    it('row 24: on CE each document validates exactly when its canary says the CE schema serves the surface', () => {
+        for (const [group, docs, canary] of GROUPS) {
+            for (const [name, doc] of Object.entries(docs)) {
+                expect(validate(ceSchema, doc).length === 0, group + ' ' + name).toBe(canary())
+            }
+        }
+    })
+
+    it('row 24: the feature-set release read validates on CE as well', () => {
+        expect(validate(ceSchema, RELEASES_OF_BRANCH).map(e => e.message)).toEqual([])
+    })
+
+    it('row 24: each gate is shut on CE exactly while its canary is false', () => {
+        expect(teaProfilesAvailable('OSS')).toBe(ceServesSbomProfiles())
+        expect(teaProfilesAvailable('OSS')).toBe(ceServesTea())
+        expect(regulatoryPackagesAvailable('OSS')).toBe(ceServesPackageSettings())
+        expect(submissionsAvailable('OSS')).toBe(ceServesSubmissions())
+        for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE']) {
+            expect(regulatoryPackagesAvailable(t)).toBe(true)
+            expect(submissionsAvailable(t)).toBe(true)
+        }
+    })
+
+    it.runIf(proSchema)('row 25: the label tables and option lists equal the Pro enums', () => {
+        const keys = (o: Record<string, string>) => Object.keys(o).sort()
+        expect(keys(SUBMISSION_STATE_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionState').sort())
+        expect(keys(SUBMISSION_ACT_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionActOutcome').sort())
+        expect(keys(SUBMISSION_PART_OUTCOME_LABELS)).toEqual(enumValuesOf(proSchema!, 'SubmissionPartOutcome').sort())
+        expect(keys(PART_SKIP_REASON_LABELS)).toEqual(enumValuesOf(proSchema!, 'PartSkipReason').sort())
+        expect(PACKAGE_SELECTION_OPTIONS.map(o => o.value).sort()).toEqual(enumValuesOf(proSchema!, 'PackagePartSelection').sort())
+        expect(PACKAGE_VEX_FORMAT_OPTIONS.map(o => o.value).sort()).toEqual(enumValuesOf(proSchema!, 'VexDocumentFormat').sort())
+    })
+
+    const SUBMISSION_EVENTS = ['RELEASE_SUBMISSION_CREATED', 'RELEASE_SUBMISSION_WITHDRAWN']
+
+    it.runIf(proSchema)('row 25: the two notification options are Pro event types', () => {
+        const pro = enumValuesOf(proSchema!, 'NotificationEventTypeEnum')
+        for (const v of SUBMISSION_EVENTS) {
+            expect(pro, v).toContain(v)
+            expect((eventTypeOptions as any[]).find(o => o.value === v)?.proOnly, v).toBe(true)
+        }
+    })
+
+    it('row 25: the CE schema has neither notification type nor the SUBMISSION history scope while it serves no submissions', () => {
+        const ce = enumValuesOf(ceSchema, 'NotificationEventTypeEnum')
+        for (const v of SUBMISSION_EVENTS) expect(ce.includes(v), v).toBe(ceServesSubmissions())
+        expect(enumValuesOf(ceSchema, 'ReleaseUpdateScopeEnum').includes('SUBMISSION')).toBe(ceServesSubmissions())
     })
 })

@@ -852,6 +852,7 @@
                                  product component's COMPONENT-scope row (TEA-2 design 3.2). -->
                             <TeaProfileEditor
                                 v-if="showPerspectiveTeaModal"
+                                ref="perspectiveTeaEditor"
                                 :org-uuid="orgResolved"
                                 :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
                                 :object-uuid="selectedPerspectiveUuid"
@@ -860,6 +861,34 @@
                                 :is-writable="isOrgAdmin"
                                 :is-org-admin="isOrgAdmin"
                                 :installation-type="myUser.installationType"/>
+                            <!-- TEA-30: the perspective's SBOM profile overrides and package settings. -->
+                            <n-collapse v-if="showPerspectiveTeaModal" class="mt-3">
+                                <n-collapse-item title="SBOM profiles of this perspective" name="sbom-profiles">
+                                    <SbomProfileOverrides
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap"
+                                        @changed="reloadPerspectiveSbomConsumers" />
+                                </n-collapse-item>
+                                <n-collapse-item v-if="regulatoryPackagesAvailable(myUser.installationType)"
+                                    title="Package settings of this perspective" name="package-settings">
+                                    <PackageSettingsEditor
+                                        ref="perspectivePackageEditor"
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap" />
+                                </n-collapse-item>
+                            </n-collapse>
                         </n-card>
                     </n-modal>
                     <n-modal
@@ -1335,6 +1364,14 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     </n-form>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="profiles" tab="Profiles" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
+                <SbomProfilesPanel
+                    :org-uuid="orgResolved"
+                    :is-org-admin="isOrgAdmin"
+                    :installation-type="myUser.installationType"
+                    :perspectives="perspectives"
+                    :components="teaNamedObjects" />
+            </n-tab-pane>
             <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
                 <TeaOrgPanel
                     :org-uuid="orgResolved"
@@ -1414,7 +1451,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -1459,6 +1496,10 @@ import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
 import TeaOrgPanel from './TeaOrgPanel.vue'
+import SbomProfilesPanel from './SbomProfilesPanel.vue'
+import SbomProfileOverrides from './SbomProfileOverrides.vue'
+import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
 import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
 import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeGlobalAutoPublish, TeaEditorView,
     teaOrgPublicBadgeTitle, teaOrgPublicSources, TeaOrgPublicSources, TeaProfileRow } from '@/utils/teaOutputEvents'
@@ -1546,6 +1587,12 @@ async function loadTabSpecificData (tabName: string) {
         // The Transparency Exchange table names its rows from the perspectives list (Pro) and the
         // products store; load both here so the tab reads the same when it is opened directly.
         // Components come from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
+    } else if (tabName === "profiles") {
+        // The Profiles tab (TEA-30) names its rows the same way as the Transparency Exchange tab.
         await Promise.all([
             ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
             store.dispatch('fetchProducts', orgResolved.value)
@@ -1791,9 +1838,9 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea']
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea', 'profiles']
 // tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
-const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea']
+const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea', 'profiles']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
@@ -2415,6 +2462,18 @@ const newPerspective: Ref<any> = ref({
 const showPerspectiveComponentsModal = ref(false)
 const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
 const showPerspectiveTeaModal: Ref<boolean> = ref(false)
+// The perspective TEA dialog's editors (TEA-30): an override change reloads their SBOM profile catalogs only.
+const perspectiveTeaEditor = ref<any>(null)
+const perspectivePackageEditor = ref<any>(null)
+function reloadPerspectiveSbomConsumers () {
+    perspectiveTeaEditor.value?.reloadCatalog()
+    perspectivePackageEditor.value?.reloadCatalog()
+}
+const perspectiveNamesMap = computed((): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const p of perspectives.value) if (p?.uuid) out[p.uuid] = p.name
+    return out
+})
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')

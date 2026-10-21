@@ -29,7 +29,7 @@ function view (changes: Record<string, any> = {}) {
     return {
         stored: null,
         effective: resolved('ORGANIZATION', profile({ publishing: 'ENABLED' })),
-        parent: resolved('ORGANIZATION', profile({ publishing: 'ENABLED', dependencyDepth: 'TOP_LEVEL_ONLY' })),
+        parent: resolved('ORGANIZATION', profile({ publishing: 'ENABLED', minimumLifecycle: 'READY_TO_SHIP' })),
         publishedReleases: 0,
         supportInjection: 'ENABLED',
         ...changes,
@@ -43,16 +43,27 @@ const NONE = exposure('PRIVATE', 'PRIVATE', 'NONE')
 const operation = (opts: any) => opts.query?.definitions?.[0]?.name?.value
 const exposureCalls = () => query.mock.calls.filter(c => operation(c[0]) === 'TeaProfileExposureChange')
 
-/** The editor view for the view query; the exposure answer (or a rejection) for the dry-run. */
+// The SBOM profile catalog at the editor's scope (TEA-30): the picker's entries.
+const entry = (name: string, status = 'RESOLVED', changes: Record<string, any> = {}) => ({ name, resolution: {
+    status, source: status === 'RESOLVED' ? 'ORGANIZATION' : null, sourceObject: null,
+    profile: status === 'RESOLVED' ? { name, revision: 1 } : null, conflictingPerspectives: [], ...changes } })
+let catalogAnswer: any = [entry('default'), entry('top')]
+
+/** The editor view for the view query; the exposure answer (or a rejection) for the dry-run; the catalog. */
 function answers (v: any, x: any = NONE) {
     query.mockImplementation(async (opts: any) => {
         if (operation(opts) === 'TeaProfileExposureChange') {
             if (x instanceof Error) throw x
             return { data: { teaProfileExposureChange: x } }
         }
+        if (operation(opts) === 'SbomProfileCatalog') {
+            if (catalogAnswer instanceof Error) throw catalogAnswer
+            return { data: { sbomProfileCatalog: catalogAnswer } }
+        }
         return { data: { teaProfileEditorView: v } }
     })
 }
+const calls = (name: string) => query.mock.calls.filter(c => operation(c[0]) === name)
 
 async function mountWith (v: any, props: Record<string, any> = {}, x: any = NONE) {
     answers(v, x)
@@ -72,13 +83,14 @@ describe('TeaProfileEditor', () => {
         mutate.mockReset()
         fire.mockReset()
         mutate.mockResolvedValue({ data: { saveTeaProfile: { uuid: 'saved' } } })
+        catalogAnswer = [entry('default'), entry('top')]
     })
 
     it('pre-fills from the organization when nothing is stored, and offers no remove', async () => {
         const w = await mountWith(view())
         expect(query.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1' })
         expect(w.find('[data-testid="tea-source"]').text()).toContain('pre-filled from organization')
-        expect(select(w, 'tea-dependency-depth').props('value')).toBe('TOP_LEVEL_ONLY')
+        expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
         expect(select(w, 'tea-publishing').props('value')).toBe('ENABLED')
         expect(w.find('[data-testid="tea-remove"]').exists()).toBe(false)
     })
@@ -163,9 +175,6 @@ describe('TeaProfileEditor', () => {
         const nonAdmin = await mountWith(view({ supportInjection: 'DISABLED' }), { isOrgAdmin: false })
         expect(select(nonAdmin, 'tea-visibility').props('disabled')).toBe(true)
         expect(nonAdmin.find('[data-testid="tea-visibility-reason"]').text()).toContain('organization admin')
-        expect(select(nonAdmin, 'tea-support-metadata').props('disabled')).toBe(true)
-        expect(select(nonAdmin, 'tea-support-metadata').props('value')).toBe('EXCLUDE')
-        expect(nonAdmin.find('[data-testid="tea-support-metadata-reason"]').exists()).toBe(true)
 
         expect(select(nonAdmin, 'tea-product-components')).toBeUndefined()
         const product = await mountWith(view(), { objectIsProduct: true })
@@ -185,7 +194,7 @@ describe('TeaProfileEditor', () => {
             .find((i: any) => (i.element as HTMLInputElement).value === 'OVERRIDE')!.setValue(true)
         await flushPromises()
         expect(w.find('[data-testid="tea-fields"]').exists()).toBe(true)
-        expect(select(w, 'tea-dependency-depth').props('value')).toBe('TOP_LEVEL_ONLY')
+        expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
     })
 
     it('confirms a FOLLOW that makes the component PUBLIC, naming the perspective; cancel sends nothing', async () => {
@@ -284,8 +293,10 @@ describe('TeaProfileEditor', () => {
         await w.find('[data-testid="tea-save"]').trigger('click')
         await flushPromises()
         expect(fire).toHaveBeenCalledTimes(1)
-        expect(fire.mock.calls[0][0]).toBe('Error!')
-        expect(fire.mock.calls[0][2]).toBe('error')
+        // TEA-30 row 19 (design 3.8, D18): the object form, the message in text, one argument, no html key.
+        expect(fire.mock.calls[0]).toHaveLength(1)
+        expect(fire.mock.calls[0][0]).toEqual({ title: 'Error!', text: 'minimumLifecycle DRAFT is too low', icon: 'error' })
+        expect(fire.mock.calls[0][0]).not.toHaveProperty('html')
         expect(mutate).not.toHaveBeenCalled()
     })
 
@@ -300,5 +311,90 @@ describe('TeaProfileEditor', () => {
 
         const active = await mountWith(view())
         expect(active.find('[data-testid="tea-archived"]').exists()).toBe(false)
+    })
+
+    // TEA-30 row 19: the recipe fields left the editor; the SBOM profile picker names the profiles.
+    describe('the SBOM profile picker (TEA-30)', () => {
+        const RECIPE_TESTIDS = ['tea-dependency-depth', 'tea-optional-dependencies', 'tea-structure', 'tea-sources',
+            'tea-excluded-coverage', 'tea-support-metadata', 'tea-internal-metadata', 'tea-vulnerability-documents']
+
+        it('shows no recipe field, and the picker between visibility and raw artifacts with the stored names', async () => {
+            const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top', 'default'] }) }))
+            for (const id of RECIPE_TESTIDS) expect(w.find(`[data-testid="${id}"]`).exists(), id).toBe(false)
+            const root = w.find('[data-testid="tea-profiles"]')
+            expect(root.exists()).toBe(true)
+            expect(root.element.tagName).toBe('DIV')
+            expect(root.classes()).toContain('sbom-profile-picker-root')
+            expect(root.find('[data-testid="sbom-profile-picker"]').exists()).toBe(true)
+            const html = w.html()
+            const at = (id: string) => html.indexOf(`data-testid="${id}"`)
+            expect(at('tea-profiles')).toBeGreaterThan(at('tea-visibility'))
+            expect(at('tea-profiles')).toBeLessThan(at('tea-raw-artifacts'))
+            expect(select(w, 'sbom-profile-picker').props('value')).toEqual(['top', 'default'])
+            const sent = calls('SbomProfileCatalog')
+            expect(sent).toHaveLength(1)
+            expect(sent[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1' })
+            expect(sent[0][0].fetchPolicy).toBe('no-cache')
+        })
+
+        it('shows a catalog failure under the picker and keeps the stored names', async () => {
+            catalogAnswer = new Error('catalog unavailable')
+            const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }))
+            expect(w.find('[data-testid="tea-profiles-error"]').text()).toBe('catalog unavailable')
+            expect(select(w, 'sbom-profile-picker').props('value')).toEqual(['top'])
+            expect(w.find('[data-testid="tea-load-error"]').exists()).toBe(false)
+        })
+
+        it('reloadCatalog() reads the catalog alone, the lines follow it, and an unsaved edit survives', async () => {
+            const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }))
+            await select(w, 'sbom-profile-picker').vm.$emit('update:value', ['top', 'default'])
+            await select(w, 'tea-publishing').vm.$emit('update:value', 'ENABLED')
+            expect(w.findAll('[data-testid="sbom-picker-line"]')[0].classes()).not.toContain('text-danger')
+            const viewReads = calls('TeaProfileEditorView').length
+            catalogAnswer = [entry('default'), entry('top', 'CONFLICT', { conflictingPerspectives: [P1, P2] })]
+            await (w.vm as any).reloadCatalog()
+            await flushPromises()
+            expect(calls('SbomProfileCatalog')).toHaveLength(2)
+            expect(calls('TeaProfileEditorView')).toHaveLength(viewReads)
+            expect(select(w, 'sbom-profile-picker').props('value')).toEqual(['top', 'default'])
+            expect(select(w, 'tea-publishing').props('value')).toBe('ENABLED')
+            const line = w.findAll('[data-testid="sbom-picker-line"]')[0]
+            expect(line.classes()).toContain('text-danger')
+            expect(line.text()).toContain('Payments, Retail')
+        })
+
+        it('saves exactly the channel fields with mode, profiles in the picker order, one name on CE', async () => {
+            const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }))
+            await select(w, 'sbom-profile-picker').vm.$emit('update:value', ['top', 'default'])
+            await w.find('[data-testid="tea-save"]').trigger('click')
+            await flushPromises()
+            const sent = mutate.mock.calls[0][0].variables.profile
+            expect(Object.keys(sent).sort()).toEqual([...TEA_PROFILE_FIELDS, 'mode'].sort())
+            expect(sent.profiles).toEqual(['top', 'default'])
+
+            mutate.mockClear()
+            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }),
+                { installationType: 'OSS' })
+            expect(select(ce, 'sbom-profile-picker').props('multiple')).toBe(false)
+            await select(ce, 'sbom-profile-picker').vm.$emit('update:value', 'top')
+            await ce.find('[data-testid="tea-save"]').trigger('click')
+            await flushPromises()
+            expect(mutate.mock.calls[0][0].variables.profile.profiles).toEqual(['top'])
+        })
+
+        it('shows a refused save naming a perspective as text in the object form, with one argument', async () => {
+            const message = 'SBOM profile top resolves to a conflict between perspectives <img src=x onerror=alert(1)>, '
+                + 'Payments at component widget: define it on the component or follow one perspective for it'
+            const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }))
+            mutate.mockRejectedValueOnce(new Error(message))
+            await w.find('[data-testid="tea-save"]').trigger('click')
+            await flushPromises()
+            const errors = fire.mock.calls.filter(c => c[0]?.title === 'Error!')
+            expect(errors).toHaveLength(1)
+            expect(errors[0]).toHaveLength(1)
+            expect(errors[0][0]).toEqual({ title: 'Error!', text: message, icon: 'error' })
+            expect(fire.mock.calls.every(c => c.length === 1 && typeof c[0] === 'object' && !('html' in c[0]))).toBe(true)
+            expect(w.emitted('saved')).toBeUndefined()
+        })
     })
 })

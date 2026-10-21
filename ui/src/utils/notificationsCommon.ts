@@ -182,6 +182,9 @@ export const eventTypeOptions = [
     // TEA publication events (Pro): one per publish or hide act, on the release it was invoked on.
     { label: 'Release published on TEA', value: 'RELEASE_TEA_PUBLISHED', proOnly: true },
     { label: 'Release hidden from TEA', value: 'RELEASE_TEA_HIDDEN', proOnly: true },
+    // Regulatory submission events (Pro, TEA-35): a version written (first or resubmission) and a withdrawal.
+    { label: 'Release submission created', value: 'RELEASE_SUBMISSION_CREATED', proOnly: true },
+    { label: 'Release submission withdrawn', value: 'RELEASE_SUBMISSION_WITHDRAWN', proOnly: true },
 ]
 
 export const AGENT_BOARD_EVENT_TYPES = ['AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED',

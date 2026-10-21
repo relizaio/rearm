@@ -1387,6 +1387,21 @@
                         </div>
                         <n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />
                     </div>
+                    <!-- TEA-30: the release's regulatory submissions (Pro), per kind with every version. -->
+                    <div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound" data-testid="submissions-section">
+                        <h3>Regulatory submissions</h3>
+                        <ReleaseSubmissionsPanel
+                            :org-uuid="updatedRelease?.org"
+                            :release-uuid="updatedRelease?.uuid"
+                            :release-version="updatedRelease?.version"
+                            :lifecycle="updatedRelease?.lifecycle"
+                            :component-uuid="updatedRelease?.componentDetails?.uuid"
+                            :component-name="updatedRelease?.componentDetails?.name"
+                            :is-writable="isWritable"
+                            :installation-type="myUser?.installationType"
+                            :names="teaPerspectiveNames()"
+                            :user-label="resolveUserById" />
+                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
                             Produced Deliverables
@@ -2277,8 +2292,11 @@ import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
 import SbomScorePanel from '@/components/SbomScorePanel.vue'
+import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
+import { submissionHistoryText, submissionsAvailable } from '@/utils/submissions'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
-import { fetchWithAuth, fetchArrayBufferWithAuth } from '../utils/fetchClient'
+import { fetchWithAuth } from '../utils/fetchClient'
+import { artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import { GET_VEX_PROPOSALS_BY_RELEASE } from '@/graphql/vexImport'
@@ -4326,6 +4344,7 @@ const teaEntriesTableFields: DataTableColumns<any> = [
     { key: 'origin', title: 'Origin' },
     { key: 'type', title: 'Type' },
     { key: 'name', title: 'Name' },
+    { key: 'profile', title: 'Profile' },
     { key: 'mediaType', title: 'Media type' },
     { key: 'checksum', title: 'Checksum', render: (row: any) => h('span', { style: 'word-break: break-all;' }, row.checksum) },
     {
@@ -6033,17 +6052,11 @@ const submitForm = async () => {
     
 };
 const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
-    let url = '/api/manual/v1/artifact/' + art.uuid
-    if (raw) {
-        url += '/rawdownload'
-    }else{
-        url += '/download'
-    }
-    if (version) {
-        url += `?version=${encodeURIComponent(version)}`;
-    }
     try {
-        const downloadResp = await fetchArrayBufferWithAuth(url)
+        // The one download URL builder (TEA-30, design 3.5.2): a version that is not an integer
+        // throws here and shows through the catch below, rather than fetching the latest version.
+        const url = artifactDownloadUrl(art.uuid, raw, version)
+        const downloadResp = await downloadArtifactBytes(url)
         const artType = art.tags?.find((tag: any) => tag.key === 'mediaType')?.value
         const fileNameTag = art.tags?.find((tag: any) => tag.key === 'fileName')?.value
         
@@ -6084,11 +6097,7 @@ const downloadArtifact = async (art: any, raw: boolean, version?: string) => {
             fileName = fileNameTag || `${art.uuid}`
         }
         
-        let blob = new Blob([downloadResp], { type: artType })
-        let link = document.createElement('a')
-        link.href = window.URL.createObjectURL(blob)
-        link.download = fileName
-        link.click()
+        saveBlob(downloadResp, fileName, artType)
     } catch (err) {
         notify('error', 'Error', 'Error on artifact download' + err)
         console.error(err)
@@ -7308,6 +7317,12 @@ const releaseHistoryFields = computed(() => [
             // A publish, re-publish or hide on TEA (TEA-5).
             if (row.rus === 'TEA_PUBLICATION') {
                 return teaPublicationHistoryText(row, teaView.value)
+            }
+            // A regulatory submission created, resubmitted or withdrawn (TEA-30; Pro only, the scope
+            // exists on Pro alone): its old and new value, the act's reason in the tooltip.
+            if (row.rus === 'SUBMISSION') {
+                const txt = submissionHistoryText(row)
+                return reasonIcon ? h('span', { style: 'display: inline-flex; align-items: center;' }, [txt, reasonIcon]) : txt
             }
             // For artifact events from acollections, show type with info icon
             if (row.source === 'acollection' && row.artifact) {

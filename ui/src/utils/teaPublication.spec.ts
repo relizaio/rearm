@@ -289,3 +289,28 @@ describe('teaActErrorText (round 4, 95)', () => {
         expect(teaActErrorText({ message: 'server error', networkError: { statusCode: 500 } })).toBe('server error')
     })
 })
+
+// TEA-30 (design 3.3.7, D13): the publication names one aggregate per SBOM profile (TEA-28); the
+// summary lists them with their revisions, and the entries carry the profile name.
+describe('the aggregate list and the profile column (TEA-30)', () => {
+    it('lists one aggregate per profile in the publication order, the deprecated sentence only without a list', () => {
+        const text = teaPublishSummary({ outcome: 'PUBLISHED',
+            publication: publication({ aggregateArtifacts: [{ profileName: 'default', artifact: 'agg-1' },
+                { profileName: 'top', artifact: 'agg-2' }] }),
+            collection: { version: 3, entries: [{ artifact: 'agg-1', revision: 2, origin: 'SYNTHETIC' },
+                { artifact: 'agg-2', revision: 1, origin: 'SYNTHETIC' }] },
+            artifacts: [], children: [] })
+        expect(text).toBe('Published: collection version 3; aggregate SBOMs: default r2, top r1; 0 artifacts published, 0 skipped')
+        const legacy = teaPublishSummary({ outcome: 'PUBLISHED', publication: publication({ aggregateArtifacts: [] }),
+            collection: { version: 1, entries: [{ artifact: 'agg-1', revision: 4, origin: 'SYNTHETIC' }] }, artifacts: [], children: [] })
+        expect(legacy).toBe('Published: collection version 1; aggregate SBOM revision 4; 0 artifacts published, 0 skipped')
+    })
+
+    it('an entry carries its SBOM profile name, empty for a legacy entry', () => {
+        const rows = teaEntryRows({ entries: [
+            { teaUuid: 't-1', revision: 1, origin: 'SYNTHETIC', name: 'top.cdx.json', sbomProfileName: 'top' },
+            { teaUuid: 't-2', revision: 1, origin: 'SYNTHETIC', name: 'shop-api-1.4.0-tea-aggregate.cdx.json' },
+        ] }, API)
+        expect(rows.map(r => r.profile)).toEqual(['top', ''])
+    })
+})
