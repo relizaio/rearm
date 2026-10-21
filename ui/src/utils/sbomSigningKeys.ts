@@ -37,8 +37,8 @@ export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing 
 /** The confirm before Generate replaces a CURRENT key (Swal.fire options). */
 export const ROTATE_CONFIRM = Object.freeze({
     title: 'Rotate the SBOM signing key?',
-    text: 'The current key is retired and new exports sign with the new key. Retired keys stay listed'
-        + ' under earlier keys, so documents signed with them can still be verified with them.',
+    text: 'The current key is retired and new exports sign with the new key. Earlier keys are listed'
+        + ' without their public key, so copy the current public key first if consumers will verify documents it signed.',
     confirmButtonText: 'Rotate',
 })
 

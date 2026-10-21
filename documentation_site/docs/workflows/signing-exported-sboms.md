@@ -73,11 +73,12 @@ A ReARM CE installation gains SBOM export signing at its next sync; until then t
 
 **Rotate.** With a current key, the button reads **Rotate key**, and it asks first:
 
-> The current key is retired and new exports sign with the new key. Retired keys stay listed under earlier keys, so documents signed with them can still be verified with them.
+> The current key is retired and new exports sign with the new key. Earlier keys are listed without their public key, so copy the current public key first if consumers will verify documents it signed.
 
-Documents signed before the rotation keep verifying with the retired key, which stays in the
-organization's public keys with the status `RETIRED`. An admin can give consumers the retired key
-so they can verify old documents.
+Documents signed before the rotation keep verifying with the retired key. The retired key stays
+in the table of earlier keys with the status `RETIRED`, but the table shows its key id and dates
+only, not the public key: copy the PEM or JWK of the current key before you rotate if consumers
+will need it to verify documents signed with it.
 
 **Revoke.** Revoke is offered on the current key and on every retired key, and asks first:
 
@@ -114,8 +115,8 @@ openssl genpkey -algorithm ed25519 -out org-sbom-signing.pem
 To verify a signed export, you need the organization's public key. Ask an organization admin to
 give you the public key from **Organization Settings**, **Admin Settings**, **SBOM export signing**;
 the admin can copy it as PEM or JWK using the copy buttons. For older documents signed with
-retired or revoked keys, ask the admin for the key that signed it; the settings panel shows a
-table of all earlier keys with their dates and status.
+retired or revoked keys, you need the key you were given at the time: the settings panel lists
+earlier keys with their dates and status, but not their public keys.
 
 Save the key to a file and verify with the ReARM CLI:
 
@@ -123,7 +124,8 @@ Save the key to a file and verify with the ReARM CLI:
 rearm bomutils verify-signature -f release.cdx.json --key pub.pem
 ```
 
-A JWKS file (multiple keys) is also accepted:
+A JWKS file is also accepted, for example one you assemble from the JWKs an admin gave you
+(`{"keys": [ ... ]}`), so one file can verify documents signed before and after a rotation:
 
 ```bash
 rearm bomutils verify-signature -f release.cdx.json --key org-sbom-keys.jwks.json
