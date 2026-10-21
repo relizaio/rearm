@@ -61,7 +61,7 @@ and no size. An archived, externally stored or digest-less artifact is left out 
 
 ## Package settings
 
-Package settings are one row per scope and kind, at the organization, a perspective (ReARM Pro) and a component or product; a component's row is an override or a choice to follow a perspective. They resolve as a whole, like TEA publishing settings, with the same conflict rule: a conflict refuses the act with `SETTINGS_CONFLICT`.
+Package settings are one row per scope and kind, at the organization, a perspective (ReARM Pro) and a component or product; a component's row is an override or a choice to follow a perspective. They resolve as a whole, like TEA publishing settings, with the same conflict rule, for a product as for a component: a conflict refuses the act with `SETTINGS_CONFLICT`.
 
 The fields:
 
@@ -69,7 +69,7 @@ The fields:
 - per-part options: `selection` (`INCLUDE` or `EXCLUDE`) for every part; `suppressedFindings` for `VDR` and `VEX`; `inTriageFindings` and `vexFormat` for `VEX`; `artifactTypes` for `RAW_ARTIFACTS`;
 - a description.
 
-The built-in default per kind names `default` with the kind's default selections, so a first submission needs no setup. A save is refused when a required part is excluded, when an included `RAW_ARTIFACTS` has no artifact type, when an option does not apply to its part, or when the named SBOM profile does not resolve at the scope. Package settings carry no visibility: nothing they shape is ever public. Reading them needs read access on the scope's object, and writing them admin on it.
+The built-in default per kind names `default` with the kind's default selections, so a first submission needs no setup. A save is refused when a required part is excluded, when an included `RAW_ARTIFACTS` has no artifact type, when an option does not apply to its part, or when the named SBOM profile does not resolve at the scope. Package settings carry no visibility: nothing they shape is ever public. What the API enforces: reading package settings needs read access on the scope's object, and `savePackageSettings` and `deletePackageSettings` need ADMIN on it (an ADMIN grant on the component or product, on the perspective, or organization-wide; an organization admin holds it at every scope). In the UI, the package settings editor is editable by organization admins, and a perspective, component or product admin can also save through the user GraphQL API.
 
 The package settings editor is per scope and kind, generic over the kinds the server lists, with the profile picker for the SBOM part and the per-part options. The organization's package settings are on the Profiles tab of Organization Settings (the tab beside Transparency Exchange that also holds the organization's SBOM profiles; not on the Transparency Exchange tab), a component's or product's on its TEA tab, and a perspective's in its TEA dialog on the Perspectives tab of Organization Settings (ReARM Pro). Screenshots and the exact labels follow once the UI task that builds them lands.
 
