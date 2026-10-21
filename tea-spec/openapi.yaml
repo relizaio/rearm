@@ -52,8 +52,10 @@ paths:
           description: UUID of TEA Product in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
-        - $ref: "#/components/parameters/page-offset"
         - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-product-release"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
           $ref: "#/components/responses/paginated-product-release"
@@ -116,10 +118,14 @@ paths:
       description: Returns a list of TEA product releases. Note that multiple product releases may match.
       operationId: queryTeaProductReleases
       parameters:
-        - $ref: "#/components/parameters/page-offset"
-        - $ref: "#/components/parameters/page-size"
+        # For result filtering
         - $ref: "#/components/parameters/id-type"
         - $ref: "#/components/parameters/id-value"
+        # For pagination
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-product-release"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
           $ref: "#/components/responses/paginated-product-release"
@@ -157,10 +163,14 @@ paths:
         match.
       operationId: queryTeaProducts
       parameters:
-        - $ref: "#/components/parameters/page-offset"
-        - $ref: "#/components/parameters/page-size"
+        # For result filtering
         - $ref: "#/components/parameters/id-type"
         - $ref: "#/components/parameters/id-value"
+        # For pagination
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-product"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
           $ref: "#/components/responses/paginated-product"
@@ -203,15 +213,13 @@ paths:
           description: UUID of TEA Component in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-component-release"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
-          description: Requested Releases of TEA Component found and returned
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  "$ref": "#/components/schemas/release"
+          $ref: "#/components/responses/paginated-component-release"
         '400':
           $ref: "#/components/responses/400-invalid-request"
         '404':
@@ -247,10 +255,14 @@ paths:
       description: Returns a list of TEA components. Note that multiple components may match.
       operationId: queryTeaComponents
       parameters:
-        - $ref: "#/components/parameters/page-offset"
-        - $ref: "#/components/parameters/page-size"
+        # For result filtering
         - $ref: "#/components/parameters/id-type"
         - $ref: "#/components/parameters/id-value"
+        # For pagination
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-component"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
           $ref: "#/components/responses/paginated-component"
@@ -263,10 +275,14 @@ paths:
       description: Returns a list of TEA component releases. Note that multiple component releases may match.
       operationId: queryTeaComponentReleases
       parameters:
-        - $ref: "#/components/parameters/page-offset"
-        - $ref: "#/components/parameters/page-size"
+        # For result filtering
         - $ref: "#/components/parameters/id-type"
         - $ref: "#/components/parameters/id-value"
+        # For pagination
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-component"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
           $ref: "#/components/responses/paginated-component-release"
@@ -381,15 +397,13 @@ paths:
           description: UUID of TEA Component Release in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-collection"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
-          description: Requested TEA Collection found and returned
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  "$ref": "#/components/schemas/collection"
+          $ref: "#/components/responses/paginated-collection"
         '400':
           $ref: "#/components/responses/400-invalid-request"
         '404':
@@ -407,15 +421,13 @@ paths:
           description: UUID of TEA Product Release in the TEA server
           schema:
             "$ref": "#/components/schemas/uuid"
+        - $ref: "#/components/parameters/page-size"
+        - $ref: "#/components/parameters/page-token"
+        - $ref: "#/components/parameters/sort-field-collection"
+        - $ref: "#/components/parameters/sort-order"
       responses:
         '200':
-          description: Requested TEA Collection found and returned
-          content:
-            application/json:
-              schema:
-                type: array
-                items:
-                  "$ref": "#/components/schemas/collection"
+          $ref: "#/components/responses/paginated-collection"
         '400':
           $ref: "#/components/responses/400-invalid-request"
         '404':
@@ -1468,29 +1480,24 @@ components:
     pagination-details:
       type: object
       properties:
-        timestamp:
+        hasNext:
+          type: boolean
+          description: |
+            A flag (to aid clients) to know whether there is a next page of results to fetch. 
+            
+            `nextPageToken` will always be supplied, hence this hint is included to aid clients.
+          default: false
+        nextPageToken:
           type: string
-          format: date-time
-          example: '2024-03-20T15:30:00Z'
-        pageStartIndex:
-          type: integer
-          format: int64
-          default: 0
-        pageSize:
-          type: integer
-          format: int64
-          default: 100
-        totalResults:
-          type: integer
-          format: int64
-      required:
-        - timestamp
-        - pageStartIndex
-        - pageSize
-        - totalResults
+          nullable: false
+          description: |
+            A token that can be used in a following request to retrieve the next page or results.
 
+            It must always be supplied in responses.
+      required:
+        - hasNext
+        - nextPageToken
     paginated-product-response:
-      type: object
       description: A paginated response containing TEA Products
       allOf:
         - $ref: "#/components/schemas/pagination-details"
@@ -1500,9 +1507,9 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/product"
-
+          required:
+            - results
     paginated-product-release-response:
-      type: object
       description: A paginated response containing TEA Product Releases
       allOf:
         - $ref: "#/components/schemas/pagination-details"
@@ -1512,9 +1519,9 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/productRelease"
-
+          required:
+            - results
     paginated-component-response:
-      type: object
       description: A paginated response containing TEA Components
       allOf:
         - $ref: "#/components/schemas/pagination-details"
@@ -1524,9 +1531,9 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/component"
-
+          required:
+            - results
     paginated-component-release-response:
-      type: object
       description: A paginated response containing TEA Component Releases
       allOf:
         - $ref: "#/components/schemas/pagination-details"
@@ -1536,6 +1543,21 @@ components:
               type: array
               items:
                 $ref: "#/components/schemas/release"
+          required:
+            - results
+    paginated-collection-response:
+      description: A paginated response containing TEA Collections
+      allOf:
+        - $ref: "#/components/schemas/pagination-details"
+        - type: object
+          properties:
+            results:
+              type: array
+              items:
+                $ref: "#/components/schemas/collection"
+          required:
+            - results
+
   responses:
     204-common-delete:
       description: Object deleted successfully
@@ -1587,26 +1609,102 @@ components:
         application/json:
           schema:
             $ref: "#/components/schemas/paginated-component-release-response"
+    paginated-collection:
+      description: A paginated response containing TEA Collections
+      content:
+        application/json:
+          schema:
+            $ref: "#/components/schemas/paginated-collection-response"
+                    
   parameters:
     # Pagination
-    page-offset:
-      name: pageOffset
-      description: Pagination offset
-      in: query
-      required: false
-      schema:
-        type: integer
-        format: int64
-        default: 0
     page-size:
       name: pageSize
-      description: Pagination offset
+      description: The maximum number of results to return.
       in: query
       required: false
       schema:
         type: integer
         format: int64
-        default: 100
+        minimum: 1
+        maximum: 100
+        default: 25
+    page-token:
+      name: pageToken
+      description: |
+        An opaque token used to retrieve the next page of results. 
+        This should be copied exactly from the `nextPageToken` field of a previous response.
+      in: query
+      required: false
+      schema:
+        type: string
+    sort-order:
+      name: sortOrder
+      description: The direction of the sort.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - asc
+          - desc
+        default: asc
+    # Pagination Sort Fields per TEA Object Type
+    sort-field-collection:
+      name: sortField
+      description: The field by which to sort the results.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - version
+        default: version
+    sort-field-component:
+      name: sortField
+      description: The field by which to sort the results.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - name
+        default: name
+    sort-field-component-release:
+      name: sortField
+      description: The field by which to sort the results.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - createdDate
+          - releaseDate
+          - version
+        default: createdDate
+    sort-field-product:
+      name: sortField
+      description: The field by which to sort the results.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - name
+        default: name
+    sort-field-product-release:
+      name: sortField
+      description: The field by which to sort the results.
+      in: query
+      required: false
+      schema:
+        type: string
+        enum:
+          - createdDate
+          - releaseDate
+          - version
+        default: createdDate
+
     #
     # Query by identifier
     #
