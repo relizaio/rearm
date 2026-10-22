@@ -12,7 +12,8 @@ export const API_KEY_TYPE_WORDS: Record<string, string> = {
     INSTANCE: 'Instance',
     CLUSTER: 'Cluster',
     APPROVAL: 'Approval',
-    FEDERATED: 'Federated identity'
+    FEDERATED: 'Federated identity',
+    EXTERNAL: 'External'
 }
 
 /** "Free Form" for FREEFORM; the raw type when it has no word; "Key" when there is no type. */

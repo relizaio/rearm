@@ -16,5 +16,5 @@ features:
 - title: SBOM / xBOM Management
   details: Stores various Bills of Materials (SBOMs, xBOMs),  VDRs, VEXs, SARIF files, digital signatures, attestations and other security artifacts alongside your releases for 10+ years
 - title: Regulatory Compliance
-  details: Helps fulfill xBOM requirements of EU CRA, US EOs 14028, 14144, Section 524B of FD&C Act, India's RBI and SEBI
+  details: Helps fulfill xBOM requirements of EU CRA, US EOs 14028, 14144, Section 524B of FD&C Act, India's RBI and SEBI; assembles FDA premarket submission packages (ReARM Pro)
 ---

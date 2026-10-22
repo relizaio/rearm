@@ -26,11 +26,15 @@ works everywhere it used to. This page covers what is new alongside it:
   session may last.
 - **[GitHub Actions without a secret](#github-actions-without-a-secret)**: let a workflow
   authenticate with the identity token GitHub issues to the job, so CI holds no key at all.
+- **[External keys (TEA)](#external-keys-tea)** - hand a party outside your organization a key
+  that reads what you published on the Transparency Exchange API, and nothing else: no write, no
+  download, no regulatory submission (ReARM Pro).
 
 ## Edition differences
 
 Everything on this page behaves the same on both editions, except for the objects a permission can
-point at and the answer to a refused federated exchange:
+point at, the answer to a refused federated exchange, and external keys, regulatory submissions and
+the number of SBOM profiles a TEA publishing settings row may name, which differ by edition:
 
 | Where | ReARM Pro | ReARM CE |
 |---|---|---|
@@ -38,11 +42,14 @@ point at and the answer to a refused federated exchange:
 | Federated trust rules, extra static permissions | Scopes `Component / Product`, `Perspective` and `Instance / Cluster` | `Instance / Cluster` is hidden. `Perspective` is listed, but there is nothing to select in it, because CE has no perspectives |
 | Creating a component into a perspective (`perspective` input, `--perspective`) | Supported | Not applicable: CE has no perspectives |
 | A federated exchange that no trust rule admits (an unknown issuer, an identity token that does not verify, no rule matching the identity) | One answer, `invalid_grant` `assertion not accepted: ...`; the cause is in the server log | The answer names the cause, for example `no trust rule matches this identity` |
+| External keys (the **External Keys** tab and the TEA token endpoint) | Supported | Not offered: external keys are Pro only, and CE shows no External Keys tab |
+| SBOM profiles and TEA publishing (the programmatic reads `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, the publish preview `releaseTeaPublicationViewProgrammatic`, and the publish, re-publish and hide operations; no programmatic operation reads or writes TEA publishing settings) | Organization, perspective and component scope; a TEA publishing settings row names up to 10 SBOM profiles | Reaches a CE installation at its next sync from Pro (today a CE server has none of these operations); there, organization and component scope, and a TEA publishing settings row names exactly one SBOM profile |
+| Regulatory submissions (the programmatic reads `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic`, `submissionVersionProgrammatic`, and the part downloads) | Supported for FREEFORM and USER keys with read access; no key can create, resubmit or withdraw | Not offered: today a CE server has none of these operations; once the shared code reaches it at a sync from Pro, these reads answer an empty list or nothing, and no key can act on any edition |
 
 ## Managing keys in the UI
 
 Keys for an organization live under **Organization Settings -> Programmatic Access**, which only
-organization administrators see. It is split into four tabs:
+organization administrators see. It is split into five tabs:
 
 | Tab | What it holds |
 |---|---|
@@ -50,6 +57,7 @@ organization administrators see. It is split into four tabs:
 | **User Keys** | Personal keys belonging to members of the organization. |
 | **Scoped Keys** | Keys bound to one object (component, instance, cluster, organization-wide and approval keys), carrying that object's access. |
 | **Federated Identities** | Trust rules that let CI authenticate with its own identity token instead of a stored secret, plus the per-repository identities those rules have created. See [GitHub Actions without a secret](#github-actions-without-a-secret). |
+| **External Keys** | ReARM Pro. Keys for parties outside the organization, which read what the organization published on TEA and nothing else: they hold no write authority, reach no download and never see a regulatory submission. See [External keys (TEA)](#external-keys-tea). |
 
 Your own keys are on your profile, in the **API Keys** tab under **Your API Keys**. From there you
 can **Create key** for yourself, or **Request a Free Form key** if you need one an administrator has
@@ -139,6 +147,109 @@ Things worth knowing:
   `WWW-Authenticate: Bearer` challenge, as is a call with an invalid or expired token. Artifact and
   signature downloads are served `Cache-Control: private, no-store`, so nothing access-controlled
   lands in a shared cache.
+
+## External keys (TEA)
+
+An **external key** is a key you hand to a party outside your organization, for example a
+customer or an auditor that consumes your SBOMs, so that it can read what the organization
+published on the [Transparency Exchange API](../tea/) (TEA). It authenticates at the TEA token
+endpoint of your organization and nowhere else:
+
+- it reaches no programmatic GraphQL API, no artifact or signature download and no CLI, and it
+  backs no browser login of the CLI: the programmatic token endpoint answers `invalid_client` for
+  it, exactly as for an unknown key;
+- it reads only what its grants cover, and only objects the organization published on TEA;
+- the TEA endpoints accept tokens of external keys only, so no other key reaches TEA either.
+
+::: tip ReARM Pro
+External keys are a ReARM Pro feature for now. ReARM Community Edition shows no External Keys tab.
+:::
+
+### Creating an external key
+
+Organization administrators manage external keys under **Organization Settings -> Programmatic
+Access -> External Keys**:
+
+1. **Create** a key with the plus icon. Give the **holder**, the name of the outside party (up to
+   200 characters), and optional notes. The key id is created with no secret. If the
+   organization has no TEA id yet, creating its first external key mints it.
+2. **Set grants** from the Manage column. Grants are read-only: pick the whole organization, or
+   the perspectives (ReARM Pro), products and components the party may read. A product grant
+   covers the product and its components. There are no functions or approvals to choose: every
+   grant is stored as read-only with the TEA Read function. A key with no grant reads nothing.
+3. **Add a secret** in the Secrets column. The secret is shown once. Minting a secret of an
+   external key takes an organization administrator, since the secret leaves the organization.
+   Any member with write access on the organization can cut an outside party off (deactivate the
+   key, retire or delete a secret, shorten an expiry); only an organization administrator can
+   restore or extend access (re-activate the key, re-enable a secret, clear or extend an expiry,
+   mint a secret).
+4. Hand the **key id** (the API ID in the IDs column) and the secret to the party, together with
+   the token URL shown at the top of the tab.
+
+The key id has the form `EXTERNAL__<organization TEA id>__ord__<key order>`. Rotation, secret
+expiry, deactivation and deletion work as for every other key: see
+[Rotating without downtime](#rotating-without-downtime).
+
+External keys are managed in the External Keys tab only. They cannot be declared in a key file,
+and the programmatic key listing (`rearm apikey list`, the Terraform provider) never shows them,
+whatever the calling key's permissions.
+
+### Exchanging an external key for a token
+
+The token endpoint sits on the organization's TEA API base, which is
+`<your ReARM URL>/tea/<organization TEA id>`:
+
+```bash
+curl -s -u "$KEY_ID:$KEY_SECRET" \
+  -X POST "$API_BASE/v1.0.0/token" \
+  -d "grant_type=client_credentials"
+```
+
+```json
+{
+  "access_token": "eyJhbGciOi...",
+  "token_type": "Bearer",
+  "expires_in": 3600
+}
+```
+
+The endpoint takes the OAuth 2.0 `client_credentials` grant and nothing else. The credentials go
+in one of two ways, never both in one request:
+
+- **HTTP Basic.** Per RFC 6749 section 2.3.1, the key id and the secret are each
+  `application/x-www-form-urlencoded` encoded, then joined with a colon and Base64 encoded. ReARM
+  key ids and secrets contain no character that this encoding changes, so `curl -u` sends the
+  right header; a client that applies the encoding is accepted as well.
+- **Form fields** `client_id` and `client_secret` in the request body.
+
+| Status | Answer | When |
+|---|---|---|
+| `200` | `access_token`, `token_type` `Bearer`, `expires_in` `3600` | The key and secret match. `expires_in` is lower when the secret expires within the hour. |
+| `400` | `{"error": "unsupported_grant_type"}` | Any grant other than `client_credentials`. There are no refresh tokens. |
+| `400` | `{"error": "invalid_request"}` | `grant_type` is missing, a token-request parameter (`grant_type`, `client_id`, `client_secret`, `device_code`, `refresh_token`, `assertion`) is sent in the URL query string or more than once, or the credentials are sent both as Basic and as form fields. |
+| `401` | `{"error": "invalid_client"}` with `WWW-Authenticate: Basic realm="tea"` | No credentials, malformed credentials, an unknown key, a wrong or expired secret, a deactivated key, or a key of another organization. |
+| `404` | `{"error": "OBJECT_UNKNOWN"}` | The organization TEA id in the path is unknown or archived. |
+
+The token lasts one hour and is bound to the secret it came from: retiring, regenerating or
+deleting that secret, or deactivating the key, ends it at once. Exchange the key again when the
+token expires, and send the token as `Authorization: Bearer <token>` on TEA requests.
+
+### What the outside party sees
+
+- An object whose TEA publishing settings are **PUBLIC** is served to every caller; a token sent
+  along is ignored. Visibility is a setting of the TEA publishing settings a component resolves to,
+  never of an SBOM profile.
+- A **PRIVATE** object requested with no token is answered `401` with the challenge
+  `WWW-Authenticate: Bearer realm="tea"`.
+- An invalid, expired or revoked token is answered `401` with `error="invalid_token"` in the
+  challenge: exchange the key again and retry once.
+- With a valid token, a PRIVATE object is served when the key's grants cover it. Anything the key
+  may not read is answered `404` with `{"error": "OBJECT_UNKNOWN"}`, exactly as an object that does
+  not exist or is not published, so the party cannot tell the two apart.
+- A listing shows the public objects, plus the private objects the key covers.
+
+The TEA endpoints that apply these rules are documented on the [Transparency Exchange API](../tea/)
+page.
 
 ## Secrets: rotation, expiry and the kill switch
 
