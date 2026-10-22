@@ -50,9 +50,9 @@ describe('admin task actions', () => {
         const w = actions(richTask({ status: 'AWAITING_COORDINATOR', hold: null }))
         const hold = () => button(w, 'Put on hold (operator)')!
         expect(hold().attributes('disabled')).toBeDefined()
-        await w.find('.holdrow input').setValue('   ')
+        await w.find('.holdrow textarea').setValue('   ')
         expect(hold().attributes('disabled')).toBeDefined()
-        await w.find('.holdrow input').setValue(' waiting on legal ')
+        await w.find('.holdrow textarea').setValue(' waiting on legal ')
         expect(hold().attributes('disabled')).toBeUndefined()
         await hold().trigger('click')
         expect(w.emitted('operator-hold')?.[0]?.[0]).toMatchObject({ reason: 'waiting on legal' })
