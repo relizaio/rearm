@@ -352,6 +352,11 @@ input RebomOptions {
     # replaces a value.
     # Derived by ReARM at generation time, not part of the options it matches stored merges on.
     releaseNode: ReleaseNodeFactsInput
+    # Merge only: the entries of ids whose roots describe the merged release itself (its own
+    # RELEASE-attached uploads, as ReARM's rows say). Their roots are folded into the merged root;
+    # every other input's root is left where the merge put it. Absent or empty: nothing is folded.
+    # Not stored.
+    releaseRootIds: [ID!]
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 

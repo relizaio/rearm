@@ -169,3 +169,42 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
             .toStrictEqual([DELIVERABLE_ROOT, EXTERNAL_PLACEHOLDER, PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
     });
 });
+
+/**
+ * SCORE-57 (T-8): the same product export with an upload attached to the component release itself
+ * and listed by rearm-saas. The upload's root folds into the release node, which then carries the
+ * declared licence, the deliverable digest and the supplier: no node of facts-api@1.0.0 fails the
+ * licence or hash checks, and every other node fails exactly as above.
+ */
+describe.skipIf(process.arch !== 'x64')('the score of a product export whose component release has a listed RELEASE-attached upload', () => {
+    const created: string[] = [];
+
+    beforeEach(() => {
+        clearMockOciStorage();
+    });
+
+    afterEach(async () => {
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    const ofRelease = (refs: string[]) => refs.filter(r => r.includes('facts-api@1.0.0'));
+
+    it('fails the licence and hash checks on no node of the release, and on the other nodes as before (T-8)', async () => {
+        const { product } = await buildProductExport(created, true, true, undefined, true);
+        const report = score(product);
+
+        for (const id of ['cisa-2026.component-license', 'cisa-2026.component-hash-value', 'cisa-2026.component-hash-algorithm', 'fda.baseline.component-hash']) {
+            expect(ofRelease(failing(report, id)), id).toStrictEqual([]);
+        }
+        expect(failing(report, 'cisa-2026.component-license'))
+            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_ROOT, SCE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+        expect(check(report, 'cisa-2026.component-license').total).toBe(12);
+        for (const id of HASH_CHECKS) {
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT, SCE_ROOT].sort());
+        }
+        expect(product.components.some((c: any) => c['bom-ref'] === RELEASE_NODE)).toBe(true);
+    });
+});

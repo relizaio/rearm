@@ -2,7 +2,7 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -25,6 +25,11 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     // Before the file filter: the filter keys what it drops by bom-ref and assumes one
     // component per ref, and a hoisted subtree can hold file components it has to see.
     if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
+    // After the de-dup (bom-refs are unique, an equal-purl copy of the root is settled) and before
+    // the fill: the uploaded roots of the release's own RELEASE-attached artifacts, as rearm-saas
+    // listed them, fold into the merged root, so the declared facts fill only what the upload left
+    // out (SCORE-57 ADR-1). An input rearm-saas did not list never folds (ADR-2 (c)).
+    if (mergedBom) mergedBom = foldReleaseRoots(mergedBom, listedReleaseInputs(ids, bomObjs, rebomOptions.releaseRootIds), rebomOptions).bom
     // After the de-dup: an uploaded copy of the root collapsed into it has already given the
     // root its own supplier, hashes and licenses, which the release's facts never replace
     // (SCORE-30 ADR-6, SCORE-40 ADR-3).
