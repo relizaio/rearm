@@ -19,7 +19,7 @@
                              @require-review="p => emit('require-review', p)"/>
                 <!-- What the task waits on, for every reader (RD2-7). -->
                 <task-open-questions :task="task" :roles="roles"/>
-                <task-actions v-if="canOperate(board)" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
+                <task-actions v-if="canOperate(board)" ref="actions" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
                               @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
                               @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
                               @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
@@ -29,14 +29,15 @@
                               @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
                               @declare-delivery="p => emit('declare-delivery', p)"
                               @set-budget="p => emit('set-budget', p)"/>
-                <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames"
-                              @open="t => emit('open', t)"/>
+                <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames" :board="board"
+                              @open="t => emit('open', t)" @focus-unassign="actions?.focusUnassign()"/>
             </div>
         </n-drawer-content>
     </n-drawer>
 </template>
 
 <script lang="ts" setup>
+import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
 import { NDrawer, NDrawerContent } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
@@ -46,6 +47,10 @@ import TaskSummary from './task/TaskSummary.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import { taskPagePath } from '@/utils/agentTaskFormat'
 import { canOperate } from '@/utils/agentBoardAccess'
+
+// The task actions, for the summary's stale line to focus the Unassign reason (TPF-69); a ref, not a
+// query, because n-drawer teleports its content out of this component's root.
+const actions = ref<InstanceType<typeof TaskActions> | null>(null)
 
 defineProps<{
     task: any | null
