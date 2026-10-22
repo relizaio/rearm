@@ -8,6 +8,7 @@ import {
     DROPPED_LICENSE_PROPERTY
 } from '../../src/services/bom/bomProcessingService';
 import { SCE_ROOT, DELIVERABLE_ROOT } from '../releaseNodeFacts.fixture';
+import { BomStructure } from '../../src/types';
 
 /**
  * SCORE-57 (T-1, T-2, T-3, T-19; ADR-2 to ADR-5): the uploaded roots of the merging release's own
@@ -58,8 +59,8 @@ function merged(nodes: any[], extra: any = {}): any {
     };
 }
 
-function fold(bom: any, ids: string[], inputs: any[], releaseRootIds: string[] | null | undefined) {
-    return foldReleaseRoots(bom, listedReleaseInputs(ids, inputs, releaseRootIds), OPTIONS);
+function fold(bom: any, ids: string[], inputs: any[], releaseRootIds: string[] | null | undefined, options: any = OPTIONS) {
+    return foldReleaseRoots(bom, listedReleaseInputs(ids, inputs, releaseRootIds), options);
 }
 
 function refs(bom: any): string[] {
@@ -445,7 +446,8 @@ describe('foldReleaseRoots: order and several roots (T-3)', () => {
         expect(out.metadata.component.properties.map((p: any) => p.value)).toStrictEqual([UP2, UP]);
     });
 
-    it('hoists the children of a HIERARCHICAL merge after the root own, in input order', () => {
+    /** Two listed nodes, UP2 with [c3] then UP with [c1, c2], ahead of lib-a; the root holds [own]. */
+    function nested() {
         const { up, up2 } = pair();
         const c1 = { type: 'library', name: 'c1', 'bom-ref': 'c1' };
         const c2 = { type: 'library', name: 'c2', 'bom-ref': 'c2' };
@@ -453,10 +455,58 @@ describe('foldReleaseRoots: order and several roots (T-3)', () => {
         const own = { type: 'library', name: 'own', 'bom-ref': 'own' };
         const bom = merged([{ ...nodeOf(up2), components: [c3] }, { ...nodeOf(up), components: [c1, c2] }]);
         bom.metadata.component = { ...bom.metadata.component, components: [own] };
+        return { up, up2, c1, c2, c3, own, bom };
+    }
+
+    // SCORE-62 ADR-8, T-3c: under HIERARCHICAL a folded node's children are the upload's top-level
+    // components, so they take the node's place at the top level.
+    it('puts the children of a HIERARCHICAL merge at the top level, each folded node replaced in its place', () => {
+        const { up, up2, c1, c2, c3, own, bom } = nested();
+
+        const { bom: out, count } = fold(bom, ['a', 'b'], [up, up2], ['a', 'b'], { ...OPTIONS, structure: BomStructure.HIERARCHICAL });
+
+        expect(count).toBe(2);
+        expect(out.components.slice(0, 3)).toStrictEqual([c3, c1, c2]);
+        expect(refs(out)).toStrictEqual(['c3', 'c1', 'c2', LIB_A]);
+        expect(out.metadata.component.components).toStrictEqual([own]);
+    });
+
+    it('reads the structure without regard to case', () => {
+        const { up, up2, own, bom } = nested();
+
+        const { bom: out } = fold(bom, ['a', 'b'], [up, up2], ['a', 'b'], { ...OPTIONS, structure: 'hierarchical' });
+
+        expect(refs(out)).toStrictEqual(['c3', 'c1', 'c2', LIB_A]);
+        expect(out.metadata.component.components).toStrictEqual([own]);
+    });
+
+    it('removes a node listed under HIERARCHICAL that has no children and adds nothing in its place', () => {
+        const { up } = pair();
+        const bom = merged([nodeOf(up)]);
+
+        const { bom: out, count } = fold(bom, ['a'], [up], ['a'], { ...OPTIONS, structure: BomStructure.HIERARCHICAL });
+
+        expect(count).toBe(1);
+        expect(refs(out)).toStrictEqual([LIB_A]);
+        expect('components' in out.metadata.component).toBe(false);
+    });
+
+    it('hoists the children of a FLAT merge (no structure) after the root own, in input order', () => {
+        const { up, up2, c1, c2, c3, own, bom } = nested();
 
         const { bom: out } = fold(bom, ['a', 'b'], [up, up2], ['a', 'b']);
 
         expect(out.metadata.component.components).toStrictEqual([own, c1, c2, c3]);
+        expect(refs(out)).toStrictEqual([LIB_A]);
+    });
+
+    it('hoists the children of an explicit FLAT merge after the root own', () => {
+        const { up, up2, c1, c2, c3, own, bom } = nested();
+
+        const { bom: out } = fold(bom, ['a', 'b'], [up, up2], ['a', 'b'], { ...OPTIONS, structure: BomStructure.FLAT });
+
+        expect(out.metadata.component.components).toStrictEqual([own, c1, c2, c3]);
+        expect(refs(out)).toStrictEqual([LIB_A]);
     });
 
     it('replaces a releaseRootsFolded value already present rather than adding a second', () => {

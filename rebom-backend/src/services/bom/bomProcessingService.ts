@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
+import { RebomOptions, HIERARCHICHAL, BomStructure, normalizeBomStructure, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -1270,12 +1270,16 @@ function repointDependencies(deps: any, folded: Set<string>, rootRef: string): a
  * rearm-saas did not list is never a candidate (ADR-2 (c)). Each candidate's root must carry a
  * belongsto=RELEASE qualifier and the options' name, version and group exactly (ADR-2 (a), (b));
  * the node folded is the top-level component with that root's bom-ref. Survivor-wins with the
- * merged root as survivor (mergeDuplicateInto, ADR-3), the node's children hoisted after the root's
- * own, references re-pointed (ADR-4), FOLDED_ROOT_PROPERTY on the root per fold and
- * RELEASE_ROOTS_FOLDED_PROPERTY on the document (ADR-5). With nothing to fold the input itself is
- * returned; otherwise a copy, the input and the candidates untouched.
+ * merged root as survivor (mergeDuplicateInto, ADR-3), references re-pointed (ADR-4),
+ * FOLDED_ROOT_PROPERTY on the root per fold and RELEASE_ROOTS_FOLDED_PROPERTY on the document
+ * (ADR-5). Where the node's children go depends on the structure (SCORE-62 ADR-8): under
+ * HIERARCHICAL they are the upload's top-level components the merge nested under its root, so each
+ * folded node is replaced at the top level, in its place, by its children; under FLAT (or no
+ * structure) they are an assembly the upload declared under its root and are hoisted after the
+ * merged root's own. With nothing to fold the input itself is returned; otherwise a copy, the
+ * input and the candidates untouched.
  */
-export function foldReleaseRoots(bom: any, candidates: any[], options: Pick<RebomOptions, 'name' | 'version' | 'group'>): ReleaseRootFoldResult {
+export function foldReleaseRoots(bom: any, candidates: any[], options: Pick<RebomOptions, 'name' | 'version' | 'group'> & { structure?: string }): ReleaseRootFoldResult {
   const none = { bom, count: 0 }
   const root = bom?.metadata?.component
   if (!root || typeof root !== 'object' || !Array.isArray(candidates) || candidates.length === 0) return none
@@ -1318,10 +1322,11 @@ export function foldReleaseRoots(bom: any, candidates: any[], options: Pick<Rebo
   }
   if (nodes.length === 0) return none
 
+  const hierarchical = normalizeBomStructure(options?.structure ?? '') === BomStructure.HIERARCHICAL
   const survivor: any = { ...root }
   for (const node of nodes) {
     mergeDuplicateInto(survivor, node, bom.specVersion)
-    if (Array.isArray(node.components) && node.components.length) {
+    if (!hierarchical && Array.isArray(node.components) && node.components.length) {
       survivor.components = [...(Array.isArray(survivor.components) ? survivor.components : []), ...node.components]
     }
     logger.info({ folded: bomRefOf(node), into: rootRef }, 'release root folded into the merged root')
@@ -1332,7 +1337,12 @@ export function foldReleaseRoots(bom: any, candidates: any[], options: Pick<Rebo
     .filter((p: any) => !found.some((f: any) => f?.name === p.name && f?.value === p.value))
   survivor.properties = [...found, ...records]
 
-  const out: any = { ...bom, components: components.filter((c: any) => !folded.has(bomRefOf(c) as string)) }
+  const out: any = {
+    ...bom,
+    components: hierarchical
+      ? components.flatMap((c: any) => (folded.has(bomRefOf(c) as string) ? (Array.isArray(c.components) ? c.components : []) : [c]))
+      : components.filter((c: any) => !folded.has(bomRefOf(c) as string))
+  }
   if ('dependencies' in bom) out.dependencies = repointDependencies(bom.dependencies, folded, rootRef)
   if ('compositions' in bom) {
     out.compositions = mapIfChanged(bom.compositions, (c: any) => {
