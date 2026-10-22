@@ -2,6 +2,9 @@
 // backend returns. The six goldens are copied unchanged from rearm-cli
 // internal/bomscore/testdata/golden/ at commit 9ead33a (branch 2026-10-sbom-score, merge 13f5368);
 // two-profiles, skip-files and version-2 are written for these specs (design SCORE-6 4.1).
+// self is rearm-cli internal/bomscore/testdata/golden/fda.self.cdx.json copied unchanged at
+// e0ee130 (SCORE-59); it is not in GOLDENS, which pins the pre-SCORE-10 absence of `options`
+// and `input.componentsSkipped` that this newer golden carries (design SCORE-61 ADR-5).
 import { readFileSync } from 'fs'
 import { join } from 'path'
 

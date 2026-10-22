@@ -120,6 +120,45 @@ describe('orderChecks', () => {
     })
 })
 
+// SCORE-61 (design ADR-4, ADR-5): the per-check skip fields of a real engine report (rearm-cli
+// fda.self.cdx.json golden at e0ee130, SCORE-59), kept out of GOLDENS on purpose.
+describe('the per-check skip fields', () => {
+    const SUPPORT = ['fda.component.support-level', 'fda.component.end-of-support']
+
+    it('reads componentsSkipped, skippedTypes and selfComponentsSkipped on the support checks only', () => {
+        const report = parseSbomScoreReport(fixtureText('self'))
+        expect(report.reportVersion).toBe(1)
+        expect(report.options?.skipFiles).toBe(false)
+        expect(report.input.componentsSkipped).toBe(0)
+        const checks = report.profiles[0].checks
+        for (const id of SUPPORT) {
+            const c = checks.find(x => x.id === id)!
+            expect(c.componentsSkipped, id).toBe(2)
+            expect(c.skippedTypes, id).toEqual(['cryptographic-asset', 'file'])
+            expect(c.selfComponentsSkipped, id).toBe(1)
+        }
+        const vulns = checks.find(c => c.id === 'fda.document.vulnerabilities')!
+        expect(vulns.componentsSkipped).toBeUndefined()
+        expect(vulns.skippedTypes).toBeUndefined()
+        expect(vulns.selfComponentsSkipped).toBeUndefined()
+    })
+
+    it('does not move a check in the order', () => {
+        const ordered = orderChecks(parseSbomScoreReport(fixtureText('self')).profiles[0].checks)
+        const lastFail = ordered.map(c => c.status).lastIndexOf('FAIL')
+        expect(lastFail).toBeGreaterThanOrEqual(0)
+        for (const id of SUPPORT) {
+            const i = ordered.findIndex(c => c.id === id)
+            expect(ordered[i].status, id).toBe('PASS')
+            expect(i, id).toBeGreaterThan(lastFail)
+        }
+    })
+
+    it('is not one of the pre-SCORE-10 goldens', () => {
+        expect(GOLDENS).not.toContain('self')
+    })
+})
+
 describe('summaryLine', () => {
     const profile = (pass: number, fail: number, notAssessed: number, errors: number): any =>
         ({ summary: { pass, fail, notAssessed, errors } })

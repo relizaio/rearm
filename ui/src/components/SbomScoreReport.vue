@@ -120,11 +120,30 @@ function hasFailingList (row: SbomScoreCheck): boolean {
     return row.status === 'FAIL' && Array.isArray(row.failing) && row.failing.length > 0
 }
 
+// The entries the engine left out of `total`, on every status: they qualify the passed/total
+// beside them, and a 4/4 PASS is where the operator most needs to know what was not among the four.
+function skippedLines (row: SbomScoreCheck): any[] {
+    const lines: any[] = []
+    const types = row.componentsSkipped ?? 0
+    if (types > 0) {
+        const of = Array.isArray(row.skippedTypes) && row.skippedTypes.length
+            ? ` of type ${row.skippedTypes.join(', ')}` : ''
+        lines.push(h('div', { class: 'sbom-score-skipped' },
+            `${types} component${types === 1 ? '' : 's'}${of} not counted (not software packages)`))
+    }
+    const self = row.selfComponentsSkipped ?? 0
+    if (self > 0) {
+        lines.push(h('div', { class: 'sbom-score-skipped' },
+            `${self} of the subject's own components not counted (reliza:support:selfComponent)`))
+    }
+    return lines
+}
+
 // Rendered inside n-data-table cells, so these elements carry no scope id: their styles are :deep.
 // The lines under a check's title: why it failed and what to do, why it was not assessed, or
 // what the engine said when the check itself broke.
 function detailLines (row: SbomScoreCheck): any[] {
-    const lines: any[] = []
+    const lines: any[] = [...skippedLines(row)]
     if (row.status === 'FAIL') {
         if (row.note) lines.push(h('div', { class: 'sbom-score-note' }, row.note))
         if (row.remedy) lines.push(h('div', { class: 'sbom-score-remedy' }, `Remedy: ${row.remedy}`))
@@ -197,6 +216,11 @@ const columns: DataTableColumns<SbomScoreCheck> = [
 .sbom-score-source {
     font-size: 12px;
     margin-bottom: 8px;
+}
+:deep(.sbom-score-skipped) {
+    font-size: 12px;
+    margin-top: 2px;
+    color: #888;
 }
 :deep(.sbom-score-check-id) {
     font-family: monospace;

@@ -123,6 +123,19 @@ export interface BulkOutcome {
     concurrentWriteDetected: boolean
 }
 
+/** The per-item outcomes this build knows (user.graphqls SbomComponentSupportBulkResult). */
+export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 'FAILED'
+
+/**
+ * One reading of a server outcome, shared by the counters in `submit` and by
+ * `groupNotWritten`, so the totals and the "Not written" list cannot classify differently.
+ * Null for an outcome this build does not know: counted as unknown, never dropped.
+ */
+export function classifyBulkOutcome (outcome: string): BulkItemOutcome | null {
+    return outcome === 'APPLIED' || outcome === 'SKIPPED_ATTESTED'
+        || outcome === 'SKIPPED_ROOT' || outcome === 'FAILED' ? outcome : null
+}
+
 /** How many components the confirmation shows by name. A count alone hides a wrong filter. */
 export const SAMPLE_SIZE = 10
 
@@ -141,7 +154,16 @@ export interface BulkCollectResult {
     /** The filter's total from the server, for "800 of 2,431 undisclosed". */
     backlogTotal: number
     sample: Array<{ uuid: string, name: string, version: string }>
+    /**
+     * A name for EVERY collected id, not only the sample. The walk is the only moment the UI
+     * holds the names; the done stage needs them to name each entry that was not written, and
+     * re-querying after the write would read the list the sweep just changed.
+     */
+    labels: Record<string, BulkLabel>
 }
+
+/** The name and version a collected id was listed under. */
+export interface BulkLabel { name: string, version: string }
 
 /**
  * Problems that would fail EVERY item, checked before a multi-minute walk.
@@ -198,6 +220,7 @@ export function useBulkAttest () {
     const progress = ref(0)
     const error: Ref<string | null> = ref(null)
     const sample: Ref<Array<{ uuid: string, name: string, version: string }>> = ref([])
+    const labels: Ref<Record<string, BulkLabel>> = ref({})
     const backlogTotal = ref(0)
     let cancelRequested = false
 
@@ -222,8 +245,10 @@ export function useBulkAttest () {
         error.value = null
         collected.value = []
         sample.value = []
+        labels.value = {}
         backlogTotal.value = 0
         const ids: string[] = []
+        const found: Record<string, BulkLabel> = {}
         let after: string | null = null
         let refused = false
         try {
@@ -250,12 +275,13 @@ export function useBulkAttest () {
                     const id = row.sbomComponentUuid
                     if (!id) continue
                     ids.push(id)
+                    const name = row.component?.name ?? '(unnamed)'
+                    const version = row.component?.version ?? ''
+                    // The first occurrence of a duplicate id wins, as the dedupe below keeps
+                    // the first position.
+                    if (!Object.prototype.hasOwnProperty.call(found, id)) found[id] = { name, version }
                     if (sample.value.length < SAMPLE_SIZE) {
-                        sample.value.push({
-                            uuid: id,
-                            name: row.component?.name ?? '(unnamed)',
-                            version: row.component?.version ?? ''
-                        })
+                        sample.value.push({ uuid: id, name, version })
                     }
                 }
                 if (!page.hasMore || !page.endCursor) break
@@ -279,13 +305,19 @@ export function useBulkAttest () {
         // NO ids when refusing. Handing back a partial list next to a flag invites a caller
         // to destructure { ids } and sweep a truncated set -- exactly the silent partial the
         // refusal exists to prevent.
-        if (refused) return { ids: [], refused: true, backlogTotal: backlogTotal.value, sample: [] }
+        if (refused) {
+            return { ids: [], refused: true, backlogTotal: backlogTotal.value, sample: [], labels: {} }
+        }
         // Deduped. A duplicate straddling two batches is written twice, and the second write
         // re-asserts and re-dates the attestation the first just made -- the server dedupes
         // only within one request.
         const unique = Array.from(new Set(ids))
         collected.value = unique
-        return { ids: unique, refused: false, backlogTotal: backlogTotal.value, sample: sample.value }
+        labels.value = found
+        return {
+            ids: unique, refused: false, backlogTotal: backlogTotal.value, sample: sample.value,
+            labels: found
+        }
     }
 
     /** Write in batches, aggregating per-item outcomes. */
@@ -344,10 +376,11 @@ export function useBulkAttest () {
                 if (!r) throw new Error('the server returned no result for this batch')
                 out.results.push(...r.results)
                 for (const item of r.results) {
-                    if (item.outcome === 'APPLIED') out.applied += 1
-                    else if (item.outcome === 'SKIPPED_ATTESTED') out.skippedAttested += 1
-                    else if (item.outcome === 'SKIPPED_ROOT') out.skippedRoot += 1
-                    else if (item.outcome === 'FAILED') out.failed += 1
+                    const known = classifyBulkOutcome(item.outcome)
+                    if (known === 'APPLIED') out.applied += 1
+                    else if (known === 'SKIPPED_ATTESTED') out.skippedAttested += 1
+                    else if (known === 'SKIPPED_ROOT') out.skippedRoot += 1
+                    else if (known === 'FAILED') out.failed += 1
                     // No silent else. A future or misspelled outcome would otherwise be
                     // counted nowhere, so the four counters would stop summing to
                     // results.length and a batch that did something would report 0/0/0.
@@ -406,6 +439,120 @@ export function useBulkAttest () {
 
     return {
         collect, submit, requestCancel, validateBulkInput,
-        collecting, submitting, collected, progress, error, sample, backlogTotal
+        collecting, submitting, collected, progress, error, sample, labels, backlogTotal
     }
+}
+
+/** Why an entry of a sweep was not written. */
+export type NotWrittenReason = 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'FAILED' | 'UNKNOWN' | 'NO_RESULT'
+
+export interface NotWrittenEntry {
+    uuid: string
+    /** `name version`, or the uuid when the walk holds no name for it. */
+    label: string
+    /** The server's message for FAILED, the raw outcome for UNKNOWN, otherwise null. */
+    detail: string | null
+}
+
+export interface NotWrittenGroup {
+    reason: NotWrittenReason
+    title: string
+    explanation: string
+    entries: NotWrittenEntry[]
+}
+
+const NOT_WRITTEN_ORDER: NotWrittenReason[] =
+    ['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'FAILED', 'UNKNOWN', 'NO_RESULT']
+
+function notWrittenTitle (reason: NotWrittenReason, n: number): string {
+    switch (reason) {
+    case 'SKIPPED_ROOT':
+        return `${n} skipped: the release's own ${n === 1 ? 'component' : 'components'}`
+    case 'SKIPPED_ATTESTED': return `${n} skipped: already attested`
+    case 'FAILED': return `${n} failed`
+    case 'UNKNOWN': return `${n} with a result this version cannot interpret`
+    case 'NO_RESULT': return `${n} with no result`
+    }
+}
+
+/**
+ * What NO_RESULT means depends on how the sweep ended, and must agree with the alerts beside
+ * it: a sweep the server refused is never promised a re-run, and a stop between batches is
+ * (retryable stays false on that path, so this cannot key on retryable alone).
+ */
+function noResultExplanation (outcome: BulkOutcome): string {
+    if (outcome.aborted && outcome.retryable) {
+        return 'The sweep stopped during their batch or before it. Those in the batch that'
+            + ' failed may still have been written: re-running the same sweep reports any that'
+            + ' were as already attested, and writes the rest.'
+    }
+    if (outcome.aborted) {
+        return 'Not written: the sweep was refused, so nothing was written for them. The error'
+            + ' above says why.'
+    }
+    if (outcome.stoppedEarly) {
+        return 'Not sent: the sweep was stopped before their batch. Re-running the same sweep'
+            + ' writes them; components already attested are skipped, not rewritten.'
+    }
+    return 'No result came back for them. Check them before relying on this sweep.'
+}
+
+const NOT_WRITTEN_EXPLANATION: Record<Exclude<NotWrittenReason, 'NO_RESULT'>, string> = {
+    SKIPPED_ROOT: 'They are not counted by the FDA support checks and are left out of the'
+        + ' coverage gauge; the export marks them as the release\'s own.',
+    SKIPPED_ATTESTED: 'They were already attested when the sweep reached them; their'
+        + ' attestations were left untouched.',
+    FAILED: 'Nothing was written for them. The message beside each entry is the server\'s.',
+    UNKNOWN: 'They are counted in none of the totals above. Check them before relying on'
+        + ' this sweep.'
+}
+
+/**
+ * Every entry of a sweep that was not written, grouped by reason, in a fixed order.
+ *
+ * Pure, so the rules are tested here rather than in ReleaseView, which no spec mounts. An id
+ * with no result is found by membership in the results, never by position: a batch answered
+ * with a gap must not shift the blame onto the next id.
+ */
+export function groupNotWritten (
+    ids: string[],
+    outcome: BulkOutcome,
+    labels: Record<string, BulkLabel>
+): NotWrittenGroup[] {
+    const byReason: Record<NotWrittenReason, NotWrittenEntry[]> = {
+        SKIPPED_ROOT: [], SKIPPED_ATTESTED: [], FAILED: [], UNKNOWN: [], NO_RESULT: []
+    }
+    const labelOf = (uuid: string): string => {
+        const l = Object.prototype.hasOwnProperty.call(labels, uuid) ? labels[uuid] : undefined
+        return l ? `${l.name} ${l.version}`.trim() : uuid
+    }
+    const answered = new Set<string>()
+    for (const r of outcome.results) {
+        answered.add(r.sbomComponentUuid)
+        const known = classifyBulkOutcome(r.outcome)
+        if (known === 'APPLIED') continue
+        const uuid = r.sbomComponentUuid
+        if (known === 'SKIPPED_ROOT' || known === 'SKIPPED_ATTESTED') {
+            byReason[known].push({ uuid, label: labelOf(uuid), detail: null })
+        } else if (known === 'FAILED') {
+            byReason.FAILED.push({ uuid, label: labelOf(uuid), detail: r.message || 'no reason given' })
+        } else {
+            // The same classifier and no-silent-else as the counters in submit, so this list
+            // and unknownOutcomes agree.
+            byReason.UNKNOWN.push({ uuid, label: labelOf(uuid), detail: String(r.outcome) })
+        }
+    }
+    for (const uuid of ids) {
+        if (!answered.has(uuid)) byReason.NO_RESULT.push({ uuid, label: labelOf(uuid), detail: null })
+    }
+    return NOT_WRITTEN_ORDER
+        .filter(reason => byReason[reason].length > 0)
+        .map(reason => ({
+            reason,
+            title: notWrittenTitle(reason, byReason[reason].length),
+            explanation: reason === 'NO_RESULT'
+                ? noResultExplanation(outcome)
+                : NOT_WRITTEN_EXPLANATION[reason],
+            entries: byReason[reason]
+        }))
 }
