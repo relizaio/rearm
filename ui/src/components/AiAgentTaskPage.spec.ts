@@ -1,7 +1,7 @@
 // @vitest-environment happy-dom
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { fixtureRoles, fixtureTasks, richTask } from './task/taskFixtures'
+import { fixtureRoles, fixtureTasks, richTask, staleHopMark, staleTask } from './task/taskFixtures'
 
 const dispatch = vi.fn()
 const push = vi.fn()
@@ -72,6 +72,36 @@ describe('AiAgentTaskPage', () => {
         const headings = w.findAll('.dsec__h').map(h => h.text())
         expect(headings).toContain('Open questions')
         expect(headings).not.toContain('Answer')
+    })
+
+    // A staleness mark (TPF-69) is its own block beside the assignment, on the marks alone.
+    it('shows a stale hop beside the current assignment', async () => {
+        serve(staleTask('assigned'))
+        const w = mount(Page)
+        await flushPromises()
+        const line = w.find('[data-testid="task-stale"]')
+        expect(line.exists()).toBe(true)
+        expect(line.text()).toContain('stale: no progress 70 min')
+        expect(line.find('.tstale').attributes('title')).toBe(`hopNoProgress: ${staleHopMark.message}`)
+        expect(w.findAll('.dsec__h').map(h => h.text())).toContain('Current assignment')
+    })
+
+    it('shows a stuck delivery although the task has no assignment', async () => {
+        serve(staleTask('delivering'))
+        const w = mount(Page)
+        await flushPromises()
+        const line = w.find('[data-testid="task-stale"]')
+        expect(line.exists()).toBe(true)
+        expect(line.text()).toContain('stale: delivery stuck 3 h')
+        expect(w.findAll('.dsec__h').map(h => h.text())).not.toContain('Current assignment')
+    })
+
+    it('shows no stale block on a task without a mark', async () => {
+        serve(staleTask('assigned', { stale: [] }))
+        const w = mount(Page)
+        await flushPromises()
+        expect(w.find('[data-testid="task-stale"]').exists()).toBe(false)
+        expect(w.findAll('.dsec__h').map(h => h.text())).toContain('Current assignment')
     })
 
     it('says so when the task is not found', async () => {
