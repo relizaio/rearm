@@ -694,37 +694,47 @@
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <n-tabs type="segment" v-model:value="programmaticSubTab" size="medium" animated style="margin-bottom: 16px;">
                     <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
+                        <n-input v-model:value="freeFormKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-freeFormKeys" />
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
                             <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
-                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1200"
+                            <n-data-table :columns="keyRequestFields" :data="shownKeyRequests" :scroll-x="1520"
                                 :row-key="dataTableRowKey" :pagination="keyRequestsPagination" class="table-hover" data-testid="key-requests-table">
+                                <template #empty><n-empty data-testid="keys-empty-keyRequests" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1420"
+                            <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="1840"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-freeFormKeys" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
                                 title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="userKeys" tab="User Keys">
+                        <n-input v-model:value="userKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-userKeys" />
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1310"
+                            <n-data-table :columns="userKeyFields" :data="shownUserKeys" :scroll-x="1730"
                                 :row-key="dataTableRowKey" :pagination="userKeysPagination" class="table-hover" data-testid="user-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-userKeys" :description="keysEmptyText(userKeysSearch)" /></template>
                             </n-data-table>
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="scopedKeys" tab="Scoped Keys">
+                        <n-input v-model:value="scopedKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-scopedKeys" />
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1400"
+                            <n-data-table :columns="programmaticAccessFields" :data="shownScopedKeys" :scroll-x="1820"
                                 :row-key="dataTableRowKey" :pagination="scopedKeysPagination" class="table-hover" data-testid="scoped-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-scopedKeys" :description="keysEmptyText(scopedKeysSearch)" /></template>
                             </n-data-table>
                             <n-modal
                                 preset="dialog"
@@ -1379,7 +1389,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NEmpty } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -1417,8 +1427,9 @@ import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
 import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
-import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
+import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumns, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySorters, escapeHtml, filterApiKeysBySearch } from '../utils/apiKeyControls'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
+import { normalizeSearchTerm } from '@/utils/tableSearch'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
@@ -1516,6 +1527,16 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
 const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+// one search box per key sub-tab (the Free Form box filters its Key Requests table too); the terms stay in the page, never in the URL
+const freeFormKeysSearch = ref('')
+const userKeysSearch = ref('')
+const scopedKeysSearch = ref('')
+const shownKeyRequests = computed(() => filterApiKeysBySearch(computedKeyRequests.value, freeFormKeysSearch.value))
+const shownFreeFormKeys = computed(() => filterApiKeysBySearch(computedFreeFormKeys.value, freeFormKeysSearch.value))
+const shownUserKeys = computed(() => filterApiKeysBySearch(computedUserKeys.value, userKeysSearch.value))
+const shownScopedKeys = computed(() => filterApiKeysBySearch(computedProgrammaticAccessKeys.value, scopedKeysSearch.value))
+/** The empty-table text: names the term when one is set, naive-ui's "No Data" otherwise. */
+function keysEmptyText (raw: string): string { const t = normalizeSearchTerm(raw); return t ? `No keys match "${t}"` : 'No Data' }
 const federatedPanel = ref<any>(null)
 function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
@@ -1938,6 +1959,7 @@ async function releaseKeyName (row: any) {
 }
 const apiKeyDeclaredColumn = {
     key: 'declaredName', width: 170, title: 'Declared As',
+    sorter: apiKeySorters.declaredName,
     render: (row: any) => {
         const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
         if (row.declarative) {
@@ -1975,12 +1997,13 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
 }
 
 const programmaticAccessFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('scoped', () => programmaticAccessKeys.value),
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('scoped', () => programmaticAccessKeys.value, { testid: 'scopedKeys-key-uuid', notify }),
+    ...apiKeyActivityColumns(),
     {
         key: 'object',
         width: 140,
         title: 'Object',
+        sorter: apiKeySorters.object,
         render: (row: any) => {
             let el = h('span', row.object_val || '')
             if (row.type === 'COMPONENT') {
@@ -2018,11 +2041,7 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
-    {
-        key: 'notes',
-        width: 120,
-        title: 'Notes'
-    },
+    apiKeyNotesColumn(120),
     {
         key: 'controls',
         title: 'Manage',
@@ -2062,10 +2081,11 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('freeForm', () => programmaticAccessKeys.value),
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('freeForm', () => programmaticAccessKeys.value, { testid: 'freeFormKeys-key-uuid', notify }),
+    ...apiKeyActivityColumns(),
     {
         key: 'holderName', width: 110, title: 'Holder',
+        sorter: apiKeySorters.holder,
         render: (row: any) => {
             if (!row.holder) return h('span', { class: 'text-muted' }, '—')
             const kids: any[] = [h('span', row.holderName)]
@@ -2075,11 +2095,7 @@ const freeFormKeyFields: Ref<any> = ref([
     },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
-    {
-        key: 'notes',
-        width: 110,
-        title: 'Notes'
-    },
+    apiKeyNotesColumn(110),
     apiKeyDeclaredColumn,
     {
         key: 'boundAgents',
@@ -2136,9 +2152,9 @@ const freeFormKeyFields: Ref<any> = ref([
     }
 ])
 const userKeyFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('user', () => programmaticAccessKeys.value),
-    { key: 'ownerName', width: 140, title: 'Owner' },
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('user', () => programmaticAccessKeys.value, { testid: 'userKeys-key-uuid', notify }),
+    { key: 'ownerName', width: 140, title: 'Owner', sorter: apiKeySorters.owner },
+    ...apiKeyActivityColumns(),
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
@@ -2148,7 +2164,7 @@ const userKeyFields: Ref<any> = ref([
             return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
         }
     },
-    { key: 'notes', width: 130, title: 'Notes' },
+    apiKeyNotesColumn(130),
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -4733,6 +4749,8 @@ function formatValuesForApiKeys (apiKeyEntry: any) {
     updEntry['createdDateIso'] = apiKeyEntry['createdDate'] || ''
     // to the minute in 24h form (2026-10-06, 13:55): short enough to sit on one line of the Activity column
     updEntry['createdDate'] = fmtKeyDate(apiKeyEntry['createdDate'])
+    // the raw instant too, so the Last accessed column sorts by time, not by display text ('' when never accessed)
+    updEntry['accessDateIso'] = apiKeyEntry['accessDate'] || ''
     updEntry['accessDate'] = apiKeyEntry['accessDate'] ? fmtKeyDate(apiKeyEntry['accessDate']) : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
         const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
@@ -5268,12 +5286,12 @@ async function reassignHolder (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const keyRequestFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('keyRequests', () => programmaticAccessKeys.value),
-    { key: 'holderName', width: 150, title: 'Requested By' },
-    { key: 'createdDate', width: 130, title: 'Requested' },
+    ...apiKeyLeadColumns('keyRequests', () => programmaticAccessKeys.value, { testid: 'keyRequests-key-uuid', notify }),
+    { key: 'holderName', width: 150, title: 'Requested By', sorter: apiKeySorters.holder },
+    { key: 'createdDate', width: 130, title: 'Requested', sorter: apiKeySorters.created, defaultSortOrder: 'descend' },
     { key: 'status', width: 140, title: 'Status', render: apiKeyControls.statusCell },
     { key: 'proposed', width: 120, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
-    { key: 'notes', width: 220, title: 'Purpose / Notes' },
+    apiKeyNotesColumn(220, 'Purpose / Notes'),
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {

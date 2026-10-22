@@ -6,7 +6,9 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
-import { apiKeyDeniedReason, apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId } from '@/utils/apiKeyLabel'
+import { apiKeyDeniedReason, apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId, cleanLabelText } from '@/utils/apiKeyLabel'
+import { normalizeSearchTerm, textMatches, uuidMatches, UUID_PREFIX_MIN } from '@/utils/tableSearch'
+import { type NotifyFn, uuidCopyColumn } from '@/utils/uuidCopyColumn'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -240,6 +242,7 @@ function apiKeyIdsDetail (row: any) {
 export function apiKeyLabelColumn (siblings?: () => any[]): any {
     return {
         key: 'label', width: 240, title: 'Key',
+        sorter: apiKeySorters.name,
         render: (row: any) => {
             const name = apiKeyName(row)
             const uncut = name.kind === 'notes' ? apiKeyNotesUncut(row) : ''
@@ -259,17 +262,49 @@ export function apiKeyLabelColumn (siblings?: () => any[]): any {
 /** Type column: only on a table that mixes key types (see showsKeyType). */
 export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
 
-/** Left-most columns of a key table: Type where the table mixes types, then the Key label. */
-export function apiKeyLeadColumns (table: ApiKeyTableKind, siblings?: () => any[]): any[] {
-    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn(siblings)] : [apiKeyLabelColumn(siblings)]
+/** Left-most columns of a key table: Type where the table mixes types, then the Key label, then (when uuid is given) the full uuid with a copy button. */
+export function apiKeyLeadColumns (table: ApiKeyTableKind, siblings?: () => any[], uuid?: { testid: string, notify: NotifyFn }): any[] {
+    const cols: any[] = showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn(siblings)] : [apiKeyLabelColumn(siblings)]
+    if (uuid) cols.push({ ...uuidCopyColumn({ what: 'Key UUID', testid: uuid.testid, notify: uuid.notify }), width: 320 })
+    return cols
 }
 
-/** Created, last accessed and updated by, stacked in one column instead of three. */
-export function apiKeyActivityColumn (width: number = 200): any {
+/** Created, and under it who last updated the key when known; sortable by the raw instant, newest first by default. */
+export function apiKeyCreatedColumn (width: number = 150): any {
     return {
-        key: 'activity', width, title: 'Activity',
-        render: (row: any) => h('div', { style: 'font-size: 12px;' }, keyActivityLines(row).map(l => h('div', [h('span', { class: 'subtle' }, `${l.label} `), h('span', { style: l.label === 'Updated by' ? '' : 'white-space: nowrap;' }, l.value)])))
+        key: 'created', title: 'Created', width,
+        sorter: apiKeySorters.created,
+        defaultSortOrder: 'descend',
+        render: (row: any) => {
+            const lines = keyActivityLines(row)
+            const updatedBy = lines.find(l => l.label === 'Updated by')
+            const kids: any[] = [h('div', { style: 'white-space: nowrap;' }, lines[0].value)]
+            if (updatedBy) kids.push(h('div', [h('span', { class: 'subtle' }, `${updatedBy.label} `), h('span', updatedBy.value)]))
+            return h('div', { style: 'font-size: 12px;' }, kids)
+        }
     }
+}
+
+/** Last accessed ('Never' muted), sortable by the raw instant. */
+export function apiKeyLastAccessColumn (width: number = 150): any {
+    return {
+        key: 'lastAccess', title: 'Last accessed', width,
+        sorter: apiKeySorters.lastAccess,
+        render: (row: any) => {
+            const value = keyActivityLines(row)[1].value
+            return h('span', { class: value === 'Never' ? 'text-muted' : '', style: 'font-size: 12px; white-space: nowrap;' }, value)
+        }
+    }
+}
+
+/** The Created and Last accessed columns of a key table, each with its own sorter. */
+export function apiKeyActivityColumns (): any[] {
+    return [apiKeyCreatedColumn(), apiKeyLastAccessColumn()]
+}
+
+/** A sortable plain notes column; the cell prints row.notes as text. */
+export function apiKeyNotesColumn (width: number, title: string = 'Notes'): any {
+    return { key: 'notes', title, width, sorter: apiKeySorters.notes }
 }
 
 /** The id string a client presents for this key (Basic user name / client_id). */
@@ -277,4 +312,61 @@ export function apiKeyIdOf (row: any): string {
     let keyId = row.type + '__' + row.object
     if (row.keyOrder) keyId += '__ord__' + row.keyOrder
     return keyId
+}
+
+export type RowCompare = (a: any, b: any) => number
+
+function byUuid (a: any, b: any): number {
+    return String(a?.uuid || '').localeCompare(String(b?.uuid || ''))
+}
+
+/** Ascending text order, case-insensitive and numeric-aware; rows whose text is empty go after every non-empty one; ties broken by uuid so the order is total. */
+export function apiKeyTextSorter (read: (row: any) => string | null | undefined): RowCompare {
+    return (a: any, b: any) => {
+        const ta = String(read(a) ?? '').trim().toLowerCase()
+        const tb = String(read(b) ?? '').trim().toLowerCase()
+        let c = 0
+        if (!ta && tb) c = 1
+        else if (ta && !tb) c = -1
+        else if (ta && tb) c = ta.localeCompare(tb, undefined, { numeric: true })
+        return c || byUuid(a, b)
+    }
+}
+
+/** Ascending instant order (oldest first); a missing or unparsable instant reads as 0, i.e. before every real date; ties broken by uuid. */
+export function apiKeyInstantSorter (read: (row: any) => string | null | undefined): RowCompare {
+    return (a: any, b: any) => ((Date.parse(read(a) || '') || 0) - (Date.parse(read(b) || '') || 0)) || byUuid(a, b)
+}
+
+/** One comparator per sortable key-table column (naive-ui reverses it on descend). */
+export const apiKeySorters = {
+    /** what the Key column prints: declared name, else notes, else the type word */
+    name: apiKeyTextSorter(row => apiKeyName(row).text),
+    declaredName: apiKeyTextSorter(row => cleanLabelText(row?.declaredName)),
+    /** the note without a legacy denial tail */
+    notes: apiKeyTextSorter(row => apiKeyNotesUncut(row)),
+    holder: apiKeyTextSorter(row => row?.holderName),
+    owner: apiKeyTextSorter(row => row?.ownerName),
+    object: apiKeyTextSorter(row => row?.object_val),
+    repository: apiKeyTextSorter(row => row?.federation?.repository),
+    created: apiKeyInstantSorter(row => row?.createdDateIso),
+    lastAccess: apiKeyInstantSorter(row => row?.accessDateIso)
+}
+
+/**
+ * Does this key row match the (already normalized) term? '' matches every row. A uuid matches by
+ * exact or prefix, the printed API id by prefix (4+ characters), the declared name, the notes and a
+ * federated identity's repository by case-insensitive substring.
+ */
+export function apiKeySearchMatches (row: any, term: string): boolean {
+    if (term === '') return true
+    if (uuidMatches(row?.uuid, term)) return true
+    if (term.length >= UUID_PREFIX_MIN && apiKeyIdOf(row).toLowerCase().startsWith(term)) return true
+    return textMatches([row?.declaredName, row?.notes, row?.federation?.repository], term)
+}
+
+/** The rows matching raw, as a new array in input order; every row for an empty or blank raw. */
+export function filterApiKeysBySearch<T> (rows: T[], raw: string | null | undefined): T[] {
+    const term = normalizeSearchTerm(raw)
+    return rows.filter(r => apiKeySearchMatches(r, term))
 }

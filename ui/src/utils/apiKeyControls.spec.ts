@@ -9,8 +9,8 @@ vi.mock('@/utils/graphql', () => ({ default: { mutate: (...a: any[]) => mutate(.
 const fire = vi.fn()
 vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a), showValidationMessage: vi.fn() } }))
 
-import { apiKeyActivityColumn, apiKeyLeadColumns, createApiKeyControls, secretDetailsTooltip } from './apiKeyControls'
-import { apiKeyPagination, fmtKeyDate } from './apiKeyTable'
+import { apiKeyActivityColumns, apiKeyCreatedColumn, apiKeyInstantSorter, apiKeyLabelColumn, apiKeyLastAccessColumn, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySorters, createApiKeyControls, filterApiKeysBySearch, secretDetailsTooltip } from './apiKeyControls'
+import { apiKeyPagination, fmtKeyDate, keyActivityLines } from './apiKeyTable'
 
 const EXPIRES = '2026-12-31T13:55:00Z'
 function freeFormRow (i: number): any {
@@ -21,11 +21,31 @@ function freeFormRow (i: number): any {
     }
 }
 
+/** The stacked Activity column as it was before TPF-88, kept local so the existing rows keep their column count and mount order. */
+const stackedActivityColumn = {
+    key: 'activity', width: 200, title: 'Activity',
+    render: (row: any) => h('div', { style: 'font-size: 12px;' }, keyActivityLines(row).map(l => h('div', [h('span', { class: 'subtle' }, `${l.label} `), h('span', { style: l.label === 'Updated by' ? '' : 'white-space: nowrap;' }, l.value)])))
+}
+
 function mountTable (table: 'freeForm' | 'scoped', rows: any[]) {
     const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
     const columns = [
         ...apiKeyLeadColumns(table),
-        apiKeyActivityColumn(),
+        stackedActivityColumn,
+        { key: 'status', title: 'Status', render: controls.statusCell },
+        { key: 'secrets', title: 'Secrets', render: controls.secretsCell }
+    ]
+    const pagination = apiKeyPagination()
+    const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, pagination, rowKey: (r: any) => r.uuid }) }) })
+    return mount(Host, { attachTo: document.body })
+}
+
+/** TPF-88: the rig of the sortable key tables, with the UUID column and Created descending at mount. */
+function mountSortableTable (table: 'freeForm' | 'scoped', rows: any[], notify = vi.fn()) {
+    const controls = createApiKeyControls({ notify: vi.fn(), reload: vi.fn(), canManage: () => true })
+    const columns = [
+        ...apiKeyLeadColumns(table, undefined, { testid: 'freeFormKeys-key-uuid', notify }),
+        ...apiKeyActivityColumns(),
         { key: 'status', title: 'Status', render: controls.statusCell },
         { key: 'secrets', title: 'Secrets', render: controls.secretsCell }
     ]
@@ -185,5 +205,188 @@ describe('API key tables: short ids among siblings', () => {
         const Host = defineComponent({ render: () => h(NConfigProvider, null, { default: () => h(NDataTable, { columns, data: rows, rowKey: (r: any) => r.uuid }) }) })
         const w = mount(Host, { attachTo: document.body })
         expect(w.findAll('.key-id-chip').map(c => c.text())).toEqual(['id 77781336-a', 'id 77781336-b'])
+    })
+})
+
+// ---- TPF-88: search, sorters and the sortable columns (design 4.2, rows 5-23) ----
+
+function keyRow (uuid: string, ord: string, type: string, declaredName: string | null, notes: string | null, holder: string, created: string, accessed: string, extra: any = {}): any {
+    return {
+        uuid, type, object: 'org-1', keyOrder: ord, declaredName, notes, holderName: holder, ownerName: holder,
+        createdDateIso: created, accessDateIso: accessed,
+        createdDate: fmtKeyDate(created), accessDate: accessed ? fmtKeyDate(accessed) : 'Never',
+        status: 'ACTIVE', secrets: [], ...extra
+    }
+}
+const A = keyRow('0dfce17a-fc79-4245-937d-eff5213fdfcb', '1', 'FREEFORM', 'ci-main', 'nightly build', 'Olga Admin', '2026-10-01T00:00:00Z', '2026-10-10T00:00:00Z')
+const B = keyRow('0dfc1111-0000-4000-8000-000000000002', '2', 'FREEFORM', 'CI-Deploy', null, 'pavel builder', '2026-10-02T00:00:00Z', '')
+const C = keyRow('abcd0000-0000-4000-8000-000000000003', '3', 'FREEFORM', null, 'Nightly BUILD of docs', '', '2026-10-02T00:00:00Z', '2026-10-12T00:00:00Z')
+const D = keyRow('12340000-0000-4000-8000-000000000004', '4', 'FREEFORM', '', '', 'Zed Ops', '', '')
+const E = keyRow('ffff0000-0000-4000-8000-000000000005', '5', 'FREEFORM', 'release bot', 'x | Denied: no reason', 'ann dev', '2026-10-05T00:00:00Z', '2026-10-11T00:00:00Z')
+const F = keyRow('99990000-0000-4000-8000-000000000006', '6', 'FEDERATED', null, null, '', '2026-10-03T00:00:00Z', '2026-10-09T00:00:00Z',
+    { federation: { repository: 'relizaio/rearm', provider: 'GITHUB_ACTIONS' } })
+const KEYS = [A, B, C, D, E, F]
+const NAMES = new Map<string, string>(KEYS.map((k, i) => [k.uuid, 'ABCDEF'[i]]))
+/** the rows as their fixture letters, so a failure names the rows */
+const letters = (rows: any[]): string[] => rows.map(r => NAMES.get(r.uuid) || r.uuid)
+const search = (raw: any, rows: any[] = KEYS): string[] => letters(filterApiKeysBySearch(rows, raw))
+const sortedBy = (cmp: (a: any, b: any) => number): string[] => letters([...KEYS].sort(cmp))
+const reversedBy = (cmp: (a: any, b: any) => number): string[] => letters([...KEYS].sort((a, b) => -cmp(a, b)))
+
+describe('TPF-88 key search: uuid, API id, declared name, notes, repository', () => {
+    it('row 5: matches a full uuid, whatever its case', () => {
+        expect(search('0dfce17a-fc79-4245-937d-eff5213fdfcb')).toEqual(['A'])
+        expect(search('0DFCE17A-FC79-4245-937D-EFF5213FDFCB')).toEqual(['A'])
+    })
+    it('row 6: matches a uuid prefix of 4+ characters, never an inner part', () => {
+        expect(search('0dfc')).toEqual(['A', 'B'])
+        expect(search('0DFC')).toEqual(['A', 'B'])
+        expect(search('fc79')).toEqual([])
+        expect(search('eff5213fdfcb')).toEqual([])
+        expect(search('0df')).toEqual([])
+    })
+    it('row 7: matches the printed API id, exact or by a 4+ character prefix', () => {
+        expect(search('freeform__org-1__ord__3')).toEqual(['C'])
+        expect(search('freeform__org-1__ord__')).toEqual(['A', 'B', 'C', 'D', 'E'])
+        expect(search('fre')).toEqual([])
+        expect(search('federated__')).toEqual(['F'])
+    })
+    it('row 8: matches the declared name by case-insensitive substring', () => {
+        expect(search('ci-')).toEqual(['A', 'B'])
+        expect(search('release bot')).toEqual(['E'])
+        expect(search('ci-main')).toEqual(['A'])
+    })
+    it('row 9: matches the stored notes, a legacy denial tail included', () => {
+        expect(search('build')).toEqual(['A', 'C'])
+        expect(search('denied')).toEqual(['E'])
+        expect(search('nightly build of')).toEqual(['C'])
+    })
+    it('row 10: a uuid-shaped term matches by uuid and by text, each row once', () => {
+        expect(search('abcd')).toEqual(['C'])
+        expect(search('1234')).toEqual(['D'])
+        expect(search('ffff')).toEqual(['E'])
+        const G = { ...C, uuid: 'cafe0000-0000-4000-8000-000000000007', keyOrder: '7', notes: 'ffff cache' }
+        NAMES.set(G.uuid, 'G')
+        expect(search('ffff', [...KEYS, G])).toEqual(['E', 'G'])
+        expect(search('cafe', [...KEYS, G])).toEqual(['G'])
+    })
+    it('row 11: matches a federated identity by its repository', () => {
+        expect(search('relizaio/')).toEqual(['F'])
+        expect(search('rearm')).toEqual(['F'])
+    })
+    it('row 12: gives an empty result, and a bare row does not throw', () => {
+        expect(search('nobody')).toEqual([])
+        expect(search('9999')).toEqual(['F'])
+        expect(search('7777')).toEqual([])
+        expect(() => filterApiKeysBySearch([{ uuid: 'x' }], 'nobody')).not.toThrow()
+        expect(filterApiKeysBySearch([{ uuid: 'x' }], 'nobody')).toEqual([])
+        expect(filterApiKeysBySearch([{ uuid: 'x' }], '')).toEqual([{ uuid: 'x' }])
+    })
+    it('row 13: an empty or blank term gives every row, as a new array', () => {
+        for (const raw of ['', '   ', undefined, null]) {
+            const out = filterApiKeysBySearch(KEYS, raw)
+            expect(out).toEqual(KEYS)
+            expect(out).not.toBe(KEYS)
+        }
+    })
+})
+
+describe('TPF-88 key sorters: ascending order, empties last, uuid tiebreak', () => {
+    it('row 14: name sorts what the Key column prints', () => {
+        expect(sortedBy(apiKeySorters.name)).toEqual(['B', 'A', 'F', 'D', 'C', 'E'])
+        expect(reversedBy(apiKeySorters.name)).toEqual(['E', 'C', 'D', 'F', 'A', 'B'])
+    })
+    it('row 15: declared name, the empties last in uuid order', () => {
+        expect(sortedBy(apiKeySorters.declaredName)).toEqual(['B', 'A', 'E', 'D', 'F', 'C'])
+        expect(reversedBy(apiKeySorters.declaredName)).toEqual(['C', 'F', 'D', 'E', 'A', 'B'])
+    })
+    it('row 16: notes, the shorter prefix first and the empties last', () => {
+        expect(sortedBy(apiKeySorters.notes)).toEqual(['A', 'C', 'E', 'B', 'D', 'F'])
+        expect(reversedBy(apiKeySorters.notes)).toEqual(['F', 'D', 'B', 'E', 'C', 'A'])
+    })
+    it('row 17: holder and owner, case-insensitive, the empties last', () => {
+        expect(sortedBy(apiKeySorters.holder)).toEqual(['E', 'A', 'B', 'D', 'F', 'C'])
+        expect(reversedBy(apiKeySorters.holder)).toEqual(['C', 'F', 'D', 'B', 'A', 'E'])
+        expect(sortedBy(apiKeySorters.owner)).toEqual(['E', 'A', 'B', 'D', 'F', 'C'])
+        expect(reversedBy(apiKeySorters.owner)).toEqual(['C', 'F', 'D', 'B', 'A', 'E'])
+    })
+    it('row 18: created by instant, a missing instant oldest, same-instant rows by uuid', () => {
+        expect(sortedBy(apiKeySorters.created)).toEqual(['D', 'A', 'B', 'C', 'F', 'E'])
+        expect(reversedBy(apiKeySorters.created)).toEqual(['E', 'F', 'C', 'B', 'A', 'D'])
+        expect(apiKeySorters.created(B, C)).toBe(apiKeySorters.created(B, C))
+        expect(apiKeySorters.created(B, C)).toBeLessThan(0)
+    })
+    it('row 19: last accessed, never-accessed rows first ascending and last descending', () => {
+        expect(sortedBy(apiKeySorters.lastAccess)).toEqual(['B', 'D', 'F', 'A', 'E', 'C'])
+        expect(reversedBy(apiKeySorters.lastAccess)).toEqual(['C', 'E', 'A', 'F', 'D', 'B'])
+        const cmp = apiKeyInstantSorter((r: any) => r.x)
+        const rows = [{ uuid: 'b', x: 'not a date' }, { uuid: 'a', x: 'not a date' }]
+        expect(() => [...rows].sort(cmp)).not.toThrow()
+        expect([...rows].sort(cmp).map(r => r.uuid)).toEqual(['a', 'b'])
+    })
+})
+
+describe('TPF-88 key table columns: UUID, Created, Last accessed, sortable', () => {
+    const firstCells = (w: any): string[] => w.findAll('tbody tr').map((tr: any) => tr.findAll('td')[0].text())
+    const startsAs = (cells: string[]): string[] => cells.map(t => t.startsWith('ci-main') ? 'A' : t.startsWith('Nightly BUILD of docs') ? 'C' : t.startsWith('release bot') ? 'E' : t)
+
+    it('row 20: headers of the sortable rig, and the lead column keys with and without the UUID column', () => {
+        const ff = mountSortableTable('freeForm', [A])
+        expect(ff.findAll('thead th').map(th => th.text())).toEqual(['Key', 'UUID', 'Created', 'Last accessed', 'Status', 'Secrets'])
+        ff.unmount()
+        const sc = mountSortableTable('scoped', [{ ...A, type: 'COMPONENT' }])
+        expect(sc.findAll('thead th').map(th => th.text())).toEqual(['Type', 'Key', 'UUID', 'Created', 'Last accessed', 'Status', 'Secrets'])
+        expect(apiKeyLeadColumns('freeForm').map(c => c.key)).toEqual(['label'])
+        expect(apiKeyLeadColumns('scoped').map(c => c.key)).toEqual(['type', 'label'])
+        expect(apiKeyLeadColumns('freeForm', undefined, { testid: 't', notify: vi.fn() }).map(c => c.key)).toEqual(['label', 'uuid'])
+    })
+    it('row 21: the uuid cell shows the full uuid with a copy button that copies that row', async () => {
+        const writeText = vi.fn().mockResolvedValue(undefined)
+        Object.defineProperty(navigator, 'clipboard', { value: { writeText }, configurable: true })
+        const notify = vi.fn()
+        const w = mountSortableTable('freeForm', [A, B], notify)
+        const cells = w.findAll('[data-testid="freeFormKeys-key-uuid"]')
+        expect(cells).toHaveLength(2)
+        expect(cells.map(c => c.text())).toEqual([B.uuid, A.uuid])
+        const buttons = w.findAll('[data-testid="freeFormKeys-key-uuid-copy"]')
+        expect(buttons).toHaveLength(2)
+        for (const b of buttons) {
+            expect(b.element.tagName).toBe('BUTTON')
+            expect(b.attributes('aria-label')).toBe('Copy Key UUID')
+        }
+        await buttons[1].trigger('click')
+        await new Promise(r => setTimeout(r, 0))
+        expect(writeText).toHaveBeenCalledTimes(1)
+        expect(writeText).toHaveBeenCalledWith(A.uuid)
+        expect(notify).toHaveBeenCalledTimes(1)
+        expect(notify).toHaveBeenCalledWith('success', 'Copied', 'Key UUID copied')
+    })
+    it('row 22: the builders carry sorters, Created descends at mount, Last accessed cycles on click', async () => {
+        for (const col of [apiKeyLabelColumn(), apiKeyCreatedColumn(), apiKeyLastAccessColumn(), apiKeyNotesColumn(100)]) {
+            expect(typeof col.sorter).toBe('function')
+        }
+        expect(apiKeyCreatedColumn().defaultSortOrder).toBe('descend')
+        expect(apiKeyNotesColumn(220, 'Purpose / Notes').title).toBe('Purpose / Notes')
+        expect(apiKeyNotesColumn(220, 'Purpose / Notes').key).toBe('notes')
+        const w = mountSortableTable('freeForm', [A, C, E])
+        expect(startsAs(firstCells(w))).toEqual(['E', 'C', 'A'])
+        const created = w.findAll('thead th').find(th => th.text() === 'Created')!
+        expect(created.find('.n-data-table-sorter').exists()).toBe(true)
+        const lastAccessed = () => w.findAll('thead th').find(th => th.text() === 'Last accessed')!
+        await lastAccessed().trigger('click')
+        await nextTick()
+        expect(startsAs(firstCells(w))).toEqual(['C', 'E', 'A'])
+        await lastAccessed().trigger('click')
+        await nextTick()
+        expect(startsAs(firstCells(w))).toEqual(['A', 'E', 'C'])
+    })
+    it('row 23: the Created cell carries the updater, the Last accessed cell says Never', () => {
+        const w = mountSortableTable('freeForm', [{ ...A, updatedByName: 'Jane Admin' }])
+        const createdCell = w.findAll('tbody td')[2]
+        expect(createdCell.text()).toContain(fmtKeyDate('2026-10-01T00:00:00Z'))
+        expect(createdCell.text()).toContain('Updated by Jane Admin')
+        w.unmount()
+        const v = mountSortableTable('freeForm', [B])
+        expect(v.findAll('tbody td')[3].text()).toBe('Never')
     })
 })
