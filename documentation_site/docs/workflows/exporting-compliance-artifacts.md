@@ -147,9 +147,14 @@ a release's **Meta** tab, **Declared licence for this release**. On the API:
 `supplierName`); `updateRelease` and `addReleaseProgrammatic` (`licenseExpression`). The ReARM CLI
 and the Terraform provider gain them in a later release.
 
-**What still fails.** The scoring check Component License still fails on the root of an uploaded
-SBOM whose generator wrote no licence, which is the release's own software in an SBOM attached to
-the release or to a deliverable: the declared licence is not written there. See
+**The root of an SBOM uploaded against the release.** It is folded into the release's node in
+the export: the node keeps the upload's description, supplier and licence, the declared licence
+and the deliverable digest fill what the upload left out, and the folded root's bom-ref is
+recorded on the node as `reliza:export:foldedRoot`.
+
+**What still fails.** The scoring checks Component License and Component Hash still fail on the
+root of an SBOM attached to a deliverable or to a source code entry whose generator wrote none:
+those roots keep their own entries. See
 [Reading the report](./sbom-scoring#reading-the-report).
 
 ### Listed licences a merge dropped

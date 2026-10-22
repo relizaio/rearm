@@ -448,3 +448,34 @@ describe('extractFileFilteredBom', () => {
         });
     });
 });
+
+/**
+ * SCORE-57: the root's own children, where the bom-ref de-dup and the release root fold hoist the
+ * children of a folded copy of the root, are filtered like the rest and counted.
+ */
+describe('extractFileFilteredBom: the root own children', () => {
+    it('leaves a file child of metadata.component out, keeps the rest in order, and counts it', () => {
+        const bom = graphBom();
+        const lib = { type: 'library', name: 'r', version: '1', 'bom-ref': 'R' };
+        bom.metadata.component = { ...bom.metadata.component, components: [{ type: 'file', name: 'rf', 'bom-ref': 'RF' }, lib] };
+        bom.dependencies.push({ ref: 'RF', dependsOn: ['R'] });
+
+        const plain = extractFileFilteredBom(graphBom());
+        const { bom: out, excludedCount } = extractFileFilteredBom(bom);
+
+        expect(out.metadata.component.components).toStrictEqual([lib]);
+        expect(excludedCount).toBe(plain.excludedCount + 1);
+        expect(out.dependencies.some((d: any) => d.ref === 'RF')).toBe(false);
+        expect(bom.metadata.component.components).toHaveLength(2);
+    });
+
+    it('leaves a root without file children as it was', () => {
+        const bom = graphBom();
+        const children = [{ type: 'library', name: 'r', version: '1', 'bom-ref': 'R' }];
+        bom.metadata.component = { ...bom.metadata.component, components: children };
+
+        const { bom: out } = extractFileFilteredBom(bom);
+
+        expect(out.metadata.component.components).toBe(children);
+    });
+});

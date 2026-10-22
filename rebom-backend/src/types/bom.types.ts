@@ -204,6 +204,11 @@ export type RebomOptions = {
     // release at generation time, like missingSbomComponents: not part of the options ReARM
     // matches stored merges on.
     releaseNode?: ReleaseNodeFacts | null,
+    // Merge only: the entries of the merge's ids whose roots describe the merged release itself (its
+    // own RELEASE-attached uploads, as ReARM's rows say, SCORE-57 ADR-11); their roots are folded
+    // into the merged root and no other. Absent or empty: nothing is folded. Derived by ReARM at
+    // generation time: not part of the options ReARM matches stored merges on, not stored.
+    releaseRootIds?: string[] | null,
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate
