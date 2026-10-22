@@ -201,3 +201,54 @@ describe('the bulk sweep is wired into ReleaseView', () => {
         expect(source).toContain('concurrentWriteDetected')
     })
 })
+
+/**
+ * The done stage names every entry not written (SCORE-61). The rules are tested in
+ * useBulkAttest.spec.ts (groupNotWritten); this pins the seam: the labels travel from the
+ * walk onto the selection, the computed feeds the template, and the template only renders.
+ */
+describe('the done stage names every entry not written', () => {
+    const doneStart = source.indexOf('<!-- DONE:')
+    const done = source.slice(doneStart, source.indexOf('<template #footer>', doneStart))
+
+    it.each([
+        ['groupNotWritten', '@/utils/useBulkAttest'],
+        ['NCollapse', 'naive-ui'],
+        ['NCollapseItem', 'naive-ui']
+    ])('imports %s from %s', (symbol, module) => {
+        expect(source).toMatch(new RegExp(
+            `import\\s+\\{[^}]*\\b${symbol}\\b[^}]*\\}\\s+from\\s+'${escapeRegExp(module)}'`))
+    })
+
+    it('starts every selection with empty labels', () => {
+        expect(code).toMatch(/const emptyBulkSelection = [\s\S]*?labels:\s*\{\}/)
+    })
+
+    it('pins the walk\'s labels onto the selection beside the ids', () => {
+        expect(functionBody('collectBulkTargets')).toMatch(/labels:\s*res\.labels/)
+    })
+
+    it('computes the groups from the pinned ids, the outcome and the pinned labels', () => {
+        const m = code.match(/const bulkNotWritten\b[\s\S]*?groupNotWritten\(([^)]*)\)/)
+        expect(m, 'no bulkNotWritten computed calling groupNotWritten').not.toBeNull()
+        const args = (m?.[1] ?? '').split(',').map(a => a.trim())
+        expect(args).toEqual(['bulkCollected.value.ids', 'bulkResult.value', 'bulkCollected.value.labels'])
+    })
+
+    it('renders one collapsed item per group, each entry by name and detail, as text', () => {
+        expect(done).toContain('Not written')
+        expect(done).toContain('v-for="g in bulkNotWritten"')
+        expect(done).toContain('n-collapse-item')
+        expect(done).toContain(':title="g.title"')
+        expect(done).toContain('g.explanation')
+        expect(done).toContain('v-for="e in g.entries"')
+        expect(done).toContain('e.label')
+        expect(done).toContain('e.detail')
+        // Names and messages come from the SBOM and the server.
+        expect(done).not.toContain('v-html')
+    })
+
+    it('agrees the headline\'s noun with its count', () => {
+        expect(done).toContain("bulkResult.skippedRoot === 1 ? 'component' : 'components'")
+    })
+})

@@ -817,7 +817,7 @@
                         {{ bulkResult.applied }} attested.
                         <span v-if="bulkResult.skippedRoot">
                             {{ bulkResult.skippedRoot }} skipped as the release's own
-                            component.</span>
+                            {{ bulkResult.skippedRoot === 1 ? 'component' : 'components' }}.</span>
                         <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
                     </n-alert>
                     <!-- Not hidden: on a fresh UNATTESTED walk this should be zero, so a
@@ -851,6 +851,24 @@
                         counted in none of the totals above. Check those components before
                         relying on this sweep.
                     </n-alert>
+                    <!-- Every entry that was not written, by name and reason. Items are
+                         collapsed: a closed item's body is not rendered, so a 5,000-line list
+                         costs nothing until the operator opens it. Interpolation only, never raw HTML: the
+                         names and messages come from the SBOM and the server. -->
+                    <div v-if="bulkNotWritten.length" style="margin-top: 10px;">
+                        <div style="font-size: 12px; font-weight: 600;">Not written</div>
+                        <n-collapse style="font-size: 12px; margin-top: 4px;">
+                            <n-collapse-item v-for="g in bulkNotWritten" :key="g.reason"
+                                :name="g.reason" :title="g.title">
+                                <p style="font-size: 12px; margin: 0 0 4px 0;">{{ g.explanation }}</p>
+                                <ul style="font-size: 12px; margin: 0 0 0 18px;">
+                                    <li v-for="e in g.entries" :key="e.uuid + e.label">
+                                        {{ e.label }}<span v-if="e.detail"> &mdash; {{ e.detail }}</span>
+                                    </li>
+                                </ul>
+                            </n-collapse-item>
+                        </n-collapse>
+                    </div>
                     <div v-if="bulkResult.failed" style="margin-top: 10px;">
                         <div style="font-size: 12px; font-weight: 600;">Failures</div>
                         <ul style="font-size: 12px; margin: 4px 0 0 18px;">
@@ -2255,8 +2273,8 @@ import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
-import { useBulkAttest, validateBulkInput, emptyBulkForm } from '@/utils/useBulkAttest'
-import type { BulkAttestInput, BulkCollectResult, BulkOutcome } from '@/utils/useBulkAttest'
+import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
+import type { BulkAttestInput, BulkCollectResult, BulkOutcome, NotWrittenGroup } from '@/utils/useBulkAttest'
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
 import { loadSbomComponentSupportDetail } from '@/utils/sbomComponentSupportDetail'
@@ -2279,7 +2297,7 @@ import { UpCircleOutlined } from '@vicons/antd'
 import type { SelectOption } from 'naive-ui'
 import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawnAttestation, supportTag,
     WITHDRAWN_TAG } from '@/utils/supportStatusTag'
-import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput, NDescriptions, NDescriptionsItem } from 'naive-ui'
+import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput, NDescriptions, NDescriptionsItem, NCollapse, NCollapseItem } from 'naive-ui'
 import Swal from 'sweetalert2'
 import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
@@ -4555,7 +4573,7 @@ interface BulkSelection extends Omit<BulkCollectResult, 'refused'> {
 }
 
 const emptyBulkSelection = (): BulkSelection =>
-    ({ ids: [], backlogTotal: 0, sample: [], filter: 'UNATTESTED', search: '' })
+    ({ ids: [], backlogTotal: 0, sample: [], labels: {}, filter: 'UNATTESTED', search: '' })
 
 const bulkCollected: Ref<BulkSelection> = ref(emptyBulkSelection())
 const bulkResult: Ref<BulkOutcome | null> = ref(null)
@@ -4573,6 +4591,11 @@ const bulkFailureGroups: ComputedRef<Record<string, number>> = computed(() => {
     }
     return out
 })
+
+/** Every entry not written, grouped by reason; the rules are in groupNotWritten. */
+const bulkNotWritten: ComputedRef<NotWrittenGroup[]> = computed(() => bulkResult.value
+    ? groupNotWritten(bulkCollected.value.ids, bulkResult.value, bulkCollected.value.labels)
+    : [])
 
 const bulkPercent: ComputedRef<number> = computed((): number =>
     Math.round(100 * bulk.progress.value / Math.max(bulkCollected.value.ids.length, 1)))
@@ -4640,7 +4663,7 @@ async function collectBulkTargets () {
     // the filter the walk actually ran under, not whatever the list is showing by the time
     // the operator reads it.
     bulkCollected.value = {
-        ids: res.ids, backlogTotal: res.backlogTotal, sample: res.sample,
+        ids: res.ids, backlogTotal: res.backlogTotal, sample: res.sample, labels: res.labels,
         filter: sbomAppliedFilter.value, search: sbomAppliedSearch.value
     }
     bulkStage.value = 'confirm'
