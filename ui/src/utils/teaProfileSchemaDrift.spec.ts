@@ -6,6 +6,7 @@ vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAu
 import { validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { editionPermissionFunctions, TEA_PERMISSION_FUNCTIONS, teaProfilesAvailable } from './teaProfile'
+import { TEA_RIDE_ALONG_SKIP_LABELS, TEA_RIDE_ALONG_STATUSES } from './teaPublication'
 import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
@@ -151,6 +152,12 @@ describe('TEA publication documents (TEA-5) and the edition gate', () => {
         for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
+    })
+
+    it.runIf(proSchema)('the ride-along statuses equal the Pro TeaRideAlongStatus, and every one but PUBLISHED has a summary label', () => {
+        const pro = enumValuesOf(proSchema!, 'TeaRideAlongStatus')
+        expect([...TEA_RIDE_ALONG_STATUSES].sort()).toEqual([...pro].sort())
+        expect(Object.keys(TEA_RIDE_ALONG_SKIP_LABELS).sort()).toEqual(pro.filter(v => v !== 'PUBLISHED').sort())
     })
 })
 

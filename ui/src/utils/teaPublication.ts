@@ -110,12 +110,24 @@ export function teaHideConfirm (view: any): TeaConfirm {
     }
 }
 
-export const TEA_RIDE_ALONG_SKIP_LABELS: Record<string, string> = {
+/**
+ * The Pro TeaRideAlongStatus values: one artifact (or signature) row of a publish, PUBLISHED or
+ * the reason it stayed out. teaProfileSchemaDrift.spec.ts holds this list to the Pro enum.
+ */
+export const TEA_RIDE_ALONG_STATUSES = [
+    'PUBLISHED', 'SKIPPED_NO_RAW_BYTES', 'SKIPPED_NO_CHECKSUM', 'SKIPPED_VERSION_NOT_INTEGER',
+    'SKIPPED_SIGNATURE_TYPE', 'SKIPPED_NO_DOWNLOAD_LINK', 'SKIPPED_LINK_NOT_HTTP_URL',
+] as const
+export type TeaRideAlongStatus = typeof TEA_RIDE_ALONG_STATUSES[number]
+
+/** The summary's text per skip status; a status added to the list above and left out here does not compile. */
+export const TEA_RIDE_ALONG_SKIP_LABELS: Record<Exclude<TeaRideAlongStatus, 'PUBLISHED'>, string> = {
     SKIPPED_NO_RAW_BYTES: 'no retained raw bytes',
     SKIPPED_NO_CHECKSUM: 'no checksum',
     SKIPPED_VERSION_NOT_INTEGER: 'version is not an integer',
     SKIPPED_SIGNATURE_TYPE: 'signature, published with its artifact',
     SKIPPED_NO_DOWNLOAD_LINK: 'no download link',
+    SKIPPED_LINK_NOT_HTTP_URL: 'download link is not an absolute http(s) URL',
 }
 
 const CHILD_PUBLISHED = ['PUBLISHED', 'REPUBLISHED', 'UNCHANGED']
@@ -179,7 +191,7 @@ export function teaPublishSummary (result: any): string {
     if (skipped.length) {
         const counts = new Map<string, number>()
         for (const a of skipped) {
-            const label = TEA_RIDE_ALONG_SKIP_LABELS[a.status] ?? a.status
+            const label = TEA_RIDE_ALONG_SKIP_LABELS[a.status as keyof typeof TEA_RIDE_ALONG_SKIP_LABELS] ?? a.status
             counts.set(label, (counts.get(label) ?? 0) + 1)
         }
         artifactPart += ' (' + [...counts].map(([label, n]) => n + ' ' + label).join(', ') + ')'
