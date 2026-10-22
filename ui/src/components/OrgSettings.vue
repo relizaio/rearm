@@ -1418,6 +1418,7 @@ import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
 import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
+import { uuidCopyColumn } from '../utils/uuidCopyColumn'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
@@ -2453,11 +2454,14 @@ const perspectiveComponentColumns = [
     }
 ]
 
+const perspectiveUuidColumn = uuidCopyColumn({ what: 'Perspective UUID', testid: 'perspective-uuid', notify })
+
 const perspectiveFields = [
     {
         key: 'name',
         title: 'Perspective Name'
     },
+    perspectiveUuidColumn,
     {
         key: 'createdDate',
         title: 'Created Date',
