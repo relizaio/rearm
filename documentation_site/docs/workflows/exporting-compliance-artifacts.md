@@ -36,6 +36,8 @@ BOM-shaping options, which do not apply to them:
 | **Support addendum (PDF)** | The same document, typeset |
 | **Device support statement (PDF)** | A plain-language statement for patients, caregivers and biomedical engineers. Product releases only, and only once all three organization labeling statements have been authored |
 
+The **Support addendum (CSV)** downloaded here is rendered in the browser and neutralizes only a cell's leading `=`, `+`, `-`, `@`, TAB or CR, with one apostrophe before it. Whenever your spreadsheet's list separator is not a comma (a `;` locale, or a separator set by hand to any other character), open the file through the spreadsheet's text import with the comma delimiter (in Excel, Data > From Text/CSV with the delimiter set to Comma), never by double-click: a double-click in a `;` locale mis-splits the columns and can evaluate a formula that follows a `;` or a line break inside a cell, and the text import is the only protection for this file. The server-rendered addendum of a regulatory package also neutralizes those positions; the browser download does not have that rule, which is a UI change. See [the support addendum of a regulatory package](./regulatory-packages#the-support-addendum) for the full rule.
+
 On a component release the device support statement is not offered: it is a statement about a
 device, and the product release that ships the component is where it is generated.
 
@@ -54,6 +56,8 @@ Exports the merged SBOM for the release. Options:
 | **Include support metadata** | Whether this export carries the support attestations. See [Per-export metadata options](#per-export-metadata-options) |
 | **Include internal metadata** | Whether this export keeps ReARM's own markers. See [Per-export metadata options](#per-export-metadata-options) |
 | **Leave out file components** | Drops components of type `file` (for example a container image's file inventory, which has no version or supplier) from the exported BOM and from the score. CISA 2026 allows an SBOM to exclude non-code files. The exported file records how many were left out in the metadata property `reliza:export:fileComponentsExcluded`; it applies to every media type. On the API: `releaseSbomExport(excludeFileComponents: true)` |
+
+When a document is produced for a channel rather than by hand, the same choices (structure, dependency depth, coverage, support and internal metadata) are stored once as a named SBOM profile: the Transparency Exchange API publishes one aggregated SBOM per SBOM profile its TEA publishing settings name (see [SBOM profiles](../tea/#sbom-profiles)), and a [regulatory package](./regulatory-packages)'s SBOM part is generated with the SBOM profile its package settings name.
 
 Click **Export** to download the file.
 
@@ -256,8 +260,8 @@ signature. See [Signing exported SBOMs](./signing-exported-sboms).
 
 ## Per-export metadata options
 
-One release is often the source of two documents with opposite requirements. An FDA premarket
-submission wants the support attestations and does not care that ReARM assembled the file; a BOM
+One release is often the source of two documents with opposite requirements. An [FDA premarket
+submission](./regulatory-packages) (ReARM assembles one as a regulatory package) wants the support attestations and does not care that ReARM assembled the file; a BOM
 handed to a customer should read as **your** content, with the tooling provenance out of it.
 
 The two switches beside **Top Level Dependencies Only** answer those questions per export rather

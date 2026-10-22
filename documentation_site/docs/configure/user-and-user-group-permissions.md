@@ -90,9 +90,13 @@ Currently, following functions are available:
 
 - `Finding Analysis Read` - grants read access to finding analysis
 - `Finding Analysis Write` - grants write access to finding analysis (also requires `Finding Analysis Read` for practical work)
-- `Artifact Download` - grants delete access to download artifacts, including aggregated artifacts
+- `Artifact Download` - grants access to download artifacts, including generated ones such as TEA aggregates and regulatory submission documents
+- `TEA Read` - the only function an external key carries: read what the organization published on the Transparency Exchange API (ReARM Pro); it is not offered to users
+- `Publish Externally (TEA)` - publish, re-publish and hide releases on the Transparency Exchange API, and configure the automatic TEA actions; users and RBAC API keys can hold it; organization admins have it (ReARM Pro)
 
 All functions are always available for `Administrator` permission type.
+
+Creating, resubmitting or withdrawing a regulatory submission needs no function, only `Read & Write` (or higher) in a grant that covers the release's component: on the component, on a perspective that contains it, or organization-wide; a release-scoped grant does not suffice (ReARM Pro). Downloading its documents needs `Artifact Download` in a grant that covers the component the same way. See [Regulatory Packages and Submissions](../workflows/regulatory-packages#permissions).
 
 ### 3) Organization-Wide Approval Permissions
 
