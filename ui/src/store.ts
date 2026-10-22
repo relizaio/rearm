@@ -88,6 +88,7 @@ const AGENT_TASK_SELECTION = `
     hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo linked { prUrl by at } }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
+    stale { rule since minutes message }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }

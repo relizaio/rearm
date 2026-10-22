@@ -486,8 +486,11 @@
 
             <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
+                    <n-input v-model:value="usersSearch" clearable class="mb-2" style="max-width: 420px"
+                             placeholder="Search by uuid, name or email" data-testid="users-search" />
                     <h5>Users ({{ activeUsers.length }})</h5>
-                    <n-data-table :columns="userFields" :data="activeUsers" class="table-hover">
+                    <n-data-table :columns="userFields" :data="shownActiveUsers" class="table-hover">
+                        <template #empty><n-empty data-testid="users-empty" :description="usersEmptyText" /></template>
                     </n-data-table>
                     <n-modal
                         v-model:show="showOrgRegistryTokenModal"
@@ -562,7 +565,8 @@
                     </div>
                     <div class="mt-4">
                         <h5>Inactive Users ({{ inactiveUsers.length }})</h5>
-                        <n-data-table :columns="inactiveUserFields" :data="inactiveUsers" class="table-hover">
+                        <n-data-table :columns="inactiveUserFields" :data="shownInactiveUsers" class="table-hover">
+                            <template #empty><n-empty data-testid="users-empty" :description="usersEmptyText" /></template>
                         </n-data-table>
                     </div>
                 </div>
@@ -1451,7 +1455,7 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem, NEmpty } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
@@ -1491,7 +1495,10 @@ import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
 import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
+import { uuidCopyColumn } from '../utils/uuidCopyColumn'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
+import { normalizeSearchTerm } from '@/utils/tableSearch'
+import { filterUsersBySearch } from '@/utils/orgUsersSearch'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
@@ -2282,6 +2289,12 @@ async function loadUsers() {
 const activeUsers = computed(() => users.value.filter((u: any) => u.status !== 'INACTIVE'))
 const inactiveUsers = computed(() => users.value.filter((u: any) => u.status === 'INACTIVE'))
 
+const usersSearch = ref('')
+const usersSearchTerm = computed(() => normalizeSearchTerm(usersSearch.value))
+const shownActiveUsers = computed(() => filterUsersBySearch(activeUsers.value, usersSearch.value))
+const shownInactiveUsers = computed(() => filterUsersBySearch(inactiveUsers.value, usersSearch.value))
+const usersEmptyText = computed(() => usersSearchTerm.value ? `No users match "${usersSearch.value.trim()}"` : 'No Data')
+
 const canInactivateUsers = computed(() => {
     return isGlobalAdmin.value || (isOrgAdmin.value && myorg.value?.type === 'DEFAULT')
 })
@@ -2565,11 +2578,14 @@ const perspectiveComponentColumns = [
     }
 ]
 
+const perspectiveUuidColumn = uuidCopyColumn({ what: 'Perspective UUID', testid: 'perspective-uuid', notify })
+
 const perspectiveFields = [
     {
         key: 'name',
         title: 'Perspective Name'
     },
+    perspectiveUuidColumn,
     {
         key: 'createdDate',
         title: 'Created Date',
@@ -3094,12 +3110,14 @@ const userEmailColumn =
     }
 const userEmailColumnReactive = reactive(userEmailColumn)
 
+const userUuidColumn = uuidCopyColumn({ what: 'User UUID', testid: 'user-uuid', notify })
 const userFields = [
     userEmailColumn,
     {
         key: 'name',
         title: 'Name'
     },
+    userUuidColumn,
     {
         key: 'permission',
         title: 'Permissions',
@@ -3194,6 +3212,7 @@ const userFields = [
         }
     }
 ]
+const inactiveUserUuidColumn = uuidCopyColumn({ what: 'User UUID', testid: 'inactive-user-uuid', notify })
 const inactiveUserFields = [
     {
         key: 'email',
@@ -3203,6 +3222,7 @@ const inactiveUserFields = [
         key: 'name',
         title: 'Name'
     },
+    inactiveUserUuidColumn,
     {
         key: 'controls',
         title: 'Manage',
