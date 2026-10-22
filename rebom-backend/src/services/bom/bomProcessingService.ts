@@ -260,18 +260,27 @@ function isEmptyList(refs: any): boolean {
  *   emptied (and that names no vulnerabilities) goes; `aggregate` is unchanged;
  * - vulnerabilities[].affects and annotations[].subjects: dropped refs go, and an entry
  *   the filter emptied goes.
- * `metadata.component` is never dropped, kept components are neither changed nor
- * re-ordered. Writes FILE_COMPONENTS_EXCLUDED_PROPERTY into metadata.properties: the
+ * `metadata.component` is never dropped, but its own nested components are filtered like the
+ * rest (counted too, so a root that carries file children in any merge reports them); kept
+ * components are neither changed nor re-ordered. Writes FILE_COMPONENTS_EXCLUDED_PROPERTY into
+ * metadata.properties: the
  * number left out here plus `inheritedCount` (what the inputs of a merge had already
  * left out), replacing a value already present so the document carries exactly one.
  */
 export function extractFileFilteredBom(bom: any, inheritedCount: number = 0): FileFilterResult {
   const rootRef: string | undefined = bom?.metadata?.component?.['bom-ref']
   const dropped = new Set<string>()
-  const { kept, count } = Array.isArray(bom?.components)
+  const top = Array.isArray(bom?.components)
     ? dropFileComponents(bom.components, dropped, rootRef)
     : { kept: bom?.components, count: 0 }
-  logger.info(`File filter: ${count} file components left out, ${Array.isArray(kept) ? kept.length : 0} kept`)
+  const kept = top.kept
+  // The root's own children too: the bom-ref de-dup and the release root fold (SCORE-57) hoist
+  // the children of a folded copy of the root there.
+  const rootChildren = Array.isArray(bom?.metadata?.component?.components)
+    ? dropFileComponents(bom.metadata.component.components, dropped, rootRef)
+    : null
+  const count = top.count + (rootChildren ? rootChildren.count : 0)
+  logger.info(`File filter: ${count} file components left out, ${Array.isArray(kept) ? kept.length : 0} top-level kept`)
 
   const out: any = { ...bom }
   if (bom?.components !== undefined) out.components = kept
@@ -332,6 +341,7 @@ export function extractFileFilteredBom(bom: any, inheritedCount: number = 0): Fi
 
   const excludedCount = count + inheritedCount
   const metadata = { ...(bom?.metadata || {}) }
+  if (rootChildren && rootChildren.count > 0) metadata.component = { ...metadata.component, components: rootChildren.kept }
   const properties = Array.isArray(metadata.properties)
     ? metadata.properties.filter((p: any) => p?.name !== FILE_COMPONENTS_EXCLUDED_PROPERTY)
     : []
@@ -1128,6 +1138,240 @@ export function fillRootFromRecordMeta(bom: any, meta: RecordMetaFacts | null | 
     component.pedigree = { ...pedigree, commits: [{ uid: reference }] }
   }
   return { ...bom, metadata: { ...bom.metadata, component } }
+}
+
+/**
+ * Metadata property a merged BOM carries when uploaded roots that describe the release itself were
+ * folded into the merged root (SCORE-57 ADR-5): how many. Written only above 0; internal, stripped
+ * on egress like BOM_REFS_DEDUPLICATED_PROPERTY.
+ */
+export const RELEASE_ROOTS_FOLDED_PROPERTY = 'reliza:export:releaseRootsFolded'
+
+/**
+ * Property the merged root carries once per uploaded root folded into it (SCORE-57 ADR-5), with that
+ * root's bom-ref as the value, in input order. Kept on egress (rearm-saas DOCUMENT_RECORD_PROPERTIES).
+ */
+export const FOLDED_ROOT_PROPERTY = 'reliza:export:foldedRoot'
+
+export type ReleaseRootFoldResult = {
+  bom: any,
+  count: number
+}
+
+/**
+ * SCORE-57 ADR-2 (c), ADR-11: the merge inputs whose ids rearm-saas listed in `releaseRootIds` as the
+ * merging release's own RELEASE-attached BOM artifacts, in input order. `inputs[i]` is the document
+ * of `ids[i]` (findBomsForMerge keeps the order); inputs beyond `ids.length` (the placeholders) are
+ * never returned. The ids are compared as strings exactly, each list repeat counted once; an id
+ * listed that is not among `ids` is one warn line. An absent or empty list returns none.
+ */
+export function listedReleaseInputs(ids: string[], inputs: any[], releaseRootIds: string[] | null | undefined): any[] {
+  if (!Array.isArray(releaseRootIds) || releaseRootIds.length === 0) return []
+  if (!Array.isArray(ids) || !Array.isArray(inputs)) return []
+  const listed = new Set(releaseRootIds)
+  const known = new Set(ids)
+  for (const id of listed) {
+    if (!known.has(id)) logger.warn({ releaseRootId: id }, 'release root listed but not an input')
+  }
+  const out: any[] = []
+  for (let i = 0; i < ids.length && i < inputs.length; i++) {
+    if (listed.has(ids[i])) out.push(inputs[i])
+  }
+  return out
+}
+
+/**
+ * Why a listed input's root is not folded (ADR-2 (a), (b)), or undefined when it is a candidate.
+ * `silent`: the identifier case (a purl without a belongsto qualifier), left to dedupeBomRefs.
+ */
+function releaseRootSkip(root: any, options: Pick<RebomOptions, 'name' | 'version' | 'group'>): { reason: string, silent?: boolean, detail?: any } | undefined {
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return { reason: 'the input has no metadata.component' }
+  if (typeof root.purl !== 'string' || root.purl === '') return { reason: 'the input root has no purl' }
+  let parsed: PackageURL
+  try {
+    parsed = PackageURL.fromString(root.purl)
+  } catch (e) {
+    return { reason: 'the input root purl does not parse', detail: { purl: root.purl } }
+  }
+  const qualifiers: Record<string, unknown> = parsed.qualifiers ? { ...parsed.qualifiers } : {}
+  const key = Object.keys(qualifiers).find((k) => k.toLowerCase() === 'belongsto')
+  if (key === undefined) return { reason: 'identifier', silent: true }
+  const kind = normalizeArtifactBelongsTo(qualifiers[key])
+  if (kind !== ArtifactBelongsTo.RELEASE) return { reason: 'the input root is attached to another kind', detail: { purl: root.purl, belongsTo: qualifiers[key] } }
+  if (root.name !== options.name || root.version !== options.version || root.group !== options.group) {
+    return {
+      reason: 'release root listed but its identity fields differ',
+      detail: {
+        purl: root.purl,
+        name: [root.name, options.name],
+        version: [root.version, options.version],
+        group: [root.group, options.group]
+      }
+    }
+  }
+  return undefined
+}
+
+/** `list` with every folded ref read as `into`, repeats removed; the same list when it names none. */
+function repointList(list: any, folded: Set<string>, into: string): any {
+  if (!Array.isArray(list) || !list.some((r: any) => typeof r === 'string' && folded.has(r))) return list
+  return uniqueInOrder(list.map((r: any) => (typeof r === 'string' && folded.has(r) ? into : r)))
+}
+
+/**
+ * ADR-4: `dependencies[]` after the fold. The folded refs' entries are folded into the root's entry
+ * (`dependsOn` and `provides` unioned root-first; the entry is created where the first folded one
+ * stood when the root has none), every other entry reads the root's ref for a folded one, and the
+ * root's entry names neither a folded ref nor itself. The same list when nothing changes.
+ */
+function repointDependencies(deps: any, folded: Set<string>, rootRef: string): any {
+  if (!Array.isArray(deps)) return deps
+  const isFolded = (dep: any) => typeof dep?.ref === 'string' && folded.has(dep.ref)
+  const foldedEntries = deps.filter(isFolded)
+  let changed = foldedEntries.length > 0
+  const out: any[] = []
+  let rootIndex = -1
+  let firstFoldedAt = -1
+  for (const dep of deps) {
+    if (isFolded(dep)) {
+      if (firstFoldedAt < 0) firstFoldedAt = out.length
+      continue
+    }
+    let next = dep
+    for (const key of ['dependsOn', 'provides']) {
+      const list = repointList(dep?.[key], folded, rootRef)
+      if (list === dep?.[key]) continue
+      next = next === dep ? { ...dep } : next
+      next[key] = list
+    }
+    if (next !== dep) changed = true
+    if (rootIndex < 0 && dep?.ref === rootRef) rootIndex = out.length
+    out.push(next)
+  }
+  if (!changed) return deps
+  if (rootIndex < 0 && foldedEntries.length === 0) return out
+  let rootEntry: any = rootIndex >= 0 ? { ...out[rootIndex] } : { ref: rootRef }
+  for (const key of ['dependsOn', 'provides']) {
+    const lists = [rootEntry[key], ...foldedEntries.map((e: any) => e?.[key])].filter(Array.isArray)
+    if (lists.length === 0) continue
+    rootEntry[key] = uniqueInOrder(lists.flat().map((r: any) => (typeof r === 'string' && folded.has(r) ? rootRef : r)))
+      .filter((r: any) => r !== rootRef)
+  }
+  if (rootIndex >= 0) out[rootIndex] = rootEntry
+  else out.splice(firstFoldedAt, 0, rootEntry)
+  return out
+}
+
+/**
+ * SCORE-57: folds the uploaded roots that describe the merging release itself into the merged root
+ * (`metadata.component`). Runs after dedupeBomRefs (bom-refs are unique, an equal-purl copy of the
+ * root already settled) and before fillReleaseNode (the declared facts fill only what the upload
+ * left out, SCORE-30 ADR-6). `candidates` are the inputs listedReleaseInputs returned: an input
+ * rearm-saas did not list is never a candidate (ADR-2 (c)). Each candidate's root must carry a
+ * belongsto=RELEASE qualifier and the options' name, version and group exactly (ADR-2 (a), (b));
+ * the node folded is the top-level component with that root's bom-ref. Survivor-wins with the
+ * merged root as survivor (mergeDuplicateInto, ADR-3), the node's children hoisted after the root's
+ * own, references re-pointed (ADR-4), FOLDED_ROOT_PROPERTY on the root per fold and
+ * RELEASE_ROOTS_FOLDED_PROPERTY on the document (ADR-5). With nothing to fold the input itself is
+ * returned; otherwise a copy, the input and the candidates untouched.
+ */
+export function foldReleaseRoots(bom: any, candidates: any[], options: Pick<RebomOptions, 'name' | 'version' | 'group'>): ReleaseRootFoldResult {
+  const none = { bom, count: 0 }
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || !Array.isArray(candidates) || candidates.length === 0) return none
+  const rootRef = bomRefOf(root)
+  const components: any[] = Array.isArray(bom.components) ? bom.components : []
+  if (!rootRef) {
+    logger.info('release root fold: the merged root has no bom-ref, nothing folded')
+    return none
+  }
+
+  const folded = new Set<string>()
+  const nodes: any[] = []
+  for (const candidate of candidates) {
+    const candidateRoot = candidate?.metadata?.component
+    const skip = releaseRootSkip(candidateRoot, options)
+    if (skip) {
+      if (!skip.silent) logger.info({ ...(skip.detail || {}) }, `release root fold: listed input skipped: ${skip.reason}`)
+      continue
+    }
+    const ref = bomRefOf(candidateRoot)
+    if (!ref) {
+      logger.info({ purl: candidateRoot.purl }, 'release root fold: listed input skipped: the input root has no bom-ref')
+      continue
+    }
+    if (ref === rootRef) {
+      logger.info({ bomRef: ref }, 'release root fold: listed input skipped: its root is the merged root (settled by the bom-ref de-dup)')
+      continue
+    }
+    if (folded.has(ref)) {
+      logger.info({ bomRef: ref }, 'release root fold: listed input skipped: its bom-ref was folded already')
+      continue
+    }
+    const node = components.find((c: any) => bomRefOf(c) === ref)
+    if (!node) {
+      logger.info({ bomRef: ref }, 'release root fold: listed input skipped: no top-level component carries its bom-ref')
+      continue
+    }
+    folded.add(ref)
+    nodes.push(node)
+  }
+  if (nodes.length === 0) return none
+
+  const survivor: any = { ...root }
+  for (const node of nodes) {
+    mergeDuplicateInto(survivor, node, bom.specVersion)
+    if (Array.isArray(node.components) && node.components.length) {
+      survivor.components = [...(Array.isArray(survivor.components) ? survivor.components : []), ...node.components]
+    }
+    logger.info({ folded: bomRefOf(node), into: rootRef }, 'release root folded into the merged root')
+  }
+  const found = Array.isArray(survivor.properties) ? survivor.properties : []
+  const records = nodes
+    .map((node: any) => ({ name: FOLDED_ROOT_PROPERTY, value: bomRefOf(node) }))
+    .filter((p: any) => !found.some((f: any) => f?.name === p.name && f?.value === p.value))
+  survivor.properties = [...found, ...records]
+
+  const out: any = { ...bom, components: components.filter((c: any) => !folded.has(bomRefOf(c) as string)) }
+  if ('dependencies' in bom) out.dependencies = repointDependencies(bom.dependencies, folded, rootRef)
+  if ('compositions' in bom) {
+    out.compositions = mapIfChanged(bom.compositions, (c: any) => {
+      if (!c || typeof c !== 'object') return c
+      const assemblies = repointList(c.assemblies, folded, rootRef)
+      const dependencies = repointList(c.dependencies, folded, rootRef)
+      if (assemblies === c.assemblies && dependencies === c.dependencies) return c
+      const next = { ...c }
+      if (assemblies !== c.assemblies) next.assemblies = assemblies
+      if (dependencies !== c.dependencies) next.dependencies = dependencies
+      return next
+    })
+  }
+  if ('vulnerabilities' in bom) {
+    out.vulnerabilities = mapIfChanged(bom.vulnerabilities, (v: any) => {
+      if (!Array.isArray(v?.affects) || !v.affects.some((a: any) => typeof a?.ref === 'string' && folded.has(a.ref))) return v
+      const renamed = v.affects.map((a: any) => (typeof a?.ref === 'string' && folded.has(a.ref) ? { ...a, ref: rootRef } : a))
+      const affects = foldByRef(renamed, ['versions'], (a, b) => unionByKey(a, b, affectedVersionKey))
+      return { ...v, affects }
+    })
+  }
+  if ('annotations' in bom) {
+    out.annotations = mapIfChanged(bom.annotations, (a: any) => {
+      if (!a || typeof a !== 'object') return a
+      const subjects = repointList(a.subjects, folded, rootRef)
+      return subjects === a.subjects ? a : { ...a, subjects }
+    })
+  }
+
+  const metadata = { ...(bom.metadata || {}), component: survivor }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== RELEASE_ROOTS_FOLDED_PROPERTY)
+    : []
+  properties.push({ name: RELEASE_ROOTS_FOLDED_PROPERTY, value: String(nodes.length) })
+  metadata.properties = properties
+  out.metadata = metadata
+
+  logger.info(`release root fold: ${nodes.length} uploaded roots that describe the release folded into the merged root`)
+  return { bom: out, count: nodes.length }
 }
 
 export type ReleaseNodeFillResult = {
