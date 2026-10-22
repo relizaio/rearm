@@ -212,13 +212,19 @@ describe('the merged release export folds the uploaded root that describes the r
             expect(property(bom.metadata.properties, RELEASE_ROOTS_FOLDED_PROPERTY)).toStrictEqual([{ name: RELEASE_ROOTS_FOLDED_PROPERTY, value: '2' }]);
         });
 
-        it('folds under HIERARCHICAL, the upload components nested under the root', async () => {
+        // SCORE-62 ADR-8, T-5c: the folded node's children take its place at the top level.
+        it('folds under HIERARCHICAL, the upload components at the top level in place of its root', async () => {
             const u = await uploads();
             const { bom } = await componentMerge([u.sce, u.deliverable, u.release], { releaseRootIds: [u.release] }, { structure: 'HIERARCHICAL' });
 
             expect(property(bom.metadata.component.properties, FOLDED_ROOT_PROPERTY)).toHaveLength(1);
-            expect((bom.metadata.component.components || []).map((c: any) => c['bom-ref'])).toContain('pkg:npm/lib-g@1.0.0');
+            expect(node(bom, 'pkg:npm/lib-g@1.0.0')).toBeDefined();
+            expect((bom.metadata.component.components || []).map((c: any) => c['bom-ref'])).not.toContain('pkg:npm/lib-g@1.0.0');
+            expect(node(bom, SCE_ROOT)?.components?.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/lib-a@1.0.0', 'pkg:npm/lib-b@1.0.0']);
+            expect(node(bom, DELIVERABLE_ROOT)?.components?.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/lib-c@1.0.0']);
+            expect(rootEntry(bom).dependsOn).toContain('pkg:npm/lib-g@1.0.0');
             expect(allComponents(bom).filter(c => c !== bom.metadata.component && hasBelongsToRelease(c.purl))).toStrictEqual([]);
+            await expect(validateBom(bom)).resolves.toBeTruthy();
         });
 
         it('folds in the top-level-only merge', async () => {
