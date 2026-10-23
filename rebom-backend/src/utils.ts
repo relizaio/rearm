@@ -11,7 +11,9 @@ export function getPool() {
 
 export { runQuery, withTransaction, pool };
 
-export async function shellExec(cmd: string, args: any[], timeout?: number): Promise<string> { // timeout = in ms
+// stderrLevel: the level each stderr chunk is logged at. 'error' (the default) keeps the historical
+// `shell command error:` line; 'info' and 'warn' log `shell command stderr:` (SCORE-68 ADR-4).
+export async function shellExec(cmd: string, args: any[], timeout?: number, stderrLevel: 'error' | 'warn' | 'info' = 'error'): Promise<string> { // timeout = in ms
   return new Promise((resolve, reject) => {
       let options: any = {}
       if (timeout) options.timeout = timeout
@@ -22,7 +24,11 @@ export async function shellExec(cmd: string, args: any[], timeout?: number): Pro
       })
     
       child.stderr.on('data', (data: any) => {
-          logger.error(`shell command error: ${data}`)
+          if (stderrLevel === 'error') {
+              logger.error(`shell command error: ${data}`)
+          } else {
+              logger[stderrLevel](`shell command stderr: ${data}`)
+          }
       })
 
       child.on('exit', (code: number) => {

@@ -346,6 +346,8 @@ describe('mergeBoms: the expression merge-boms drops is logged before it runs', 
             ]);
             expect(shellExec).toHaveBeenCalledTimes(1);
             expect(drops[0].order).toBeLessThan(shellExec.mock.invocationCallOrder[0]);
+            // merge-boms stderr is logged at info (SCORE-68 T-6, ADR-4)
+            expect(shellExec.mock.calls[0][3]).toBe('info');
         } finally {
             info.mockRestore();
         }
