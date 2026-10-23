@@ -16,9 +16,13 @@
         </n-alert>
         <div class="programmaticAccessBlock mt-4">
             <h5>External Keys</h5>
+            <n-input v-model:value="externalKeysSearch" clearable class="mb-2" style="max-width: 460px"
+                placeholder="Search keys by uuid, key id, holder or notes" data-testid="keys-search-externalKeys" />
             <n-spin :show="loading">
-                <n-data-table data-testid="external-keys-table" :columns="externalKeyFields" :data="rows" :scroll-x="2200"
-                    :row-key="(r: any) => r.uuid" class="table-hover" />
+                <n-data-table data-testid="external-keys-table" :columns="externalKeyFields" :data="shownRows" :scroll-x="2520"
+                    :row-key="(r: any) => r.uuid" class="table-hover">
+                    <template #empty><n-empty data-testid="keys-empty-externalKeys" :description="keysEmptyText(externalKeysSearch)" /></template>
+                </n-data-table>
             </n-spin>
             <n-icon v-if="isOrgAdmin" class="clickable" data-testid="external-key-create" title="Create External Key" size="24"
                 @click="createExternalKey"><CirclePlus /></n-icon>
@@ -36,7 +40,7 @@
  * reason TeaOrgPanel is: OrgSettings is large enough.
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NDataTable, NIcon, NSpin } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NEmpty, NIcon, NInput, NSpin } from 'naive-ui'
 import { CirclePlus, Key as KeyIcon, Pencil, Trash } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import Swal from 'sweetalert2'
@@ -44,8 +48,11 @@ import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import commonFunctions from '@/utils/commonFunctions'
 import {
-    apiKeyIdsColumn, apiKeyTypeColumn, createApiKeyControls, externalGrantsSummary, EXTERNAL_GRANTS_NONE, teaTokenUrl
+    apiKeyIdsColumn, apiKeyInstantSorter, apiKeySorters, apiKeyTypeColumn, createApiKeyControls, externalGrantsSummary,
+    EXTERNAL_GRANTS_NONE, filterApiKeysBySearch, teaTokenUrl
 } from '@/utils/apiKeyControls'
+import { uuidCopyColumn } from '@/utils/uuidCopyColumn'
+import { normalizeSearchTerm } from '@/utils/tableSearch'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -61,6 +68,11 @@ const HOLDER_NAME_MAX = 200
 const store = useStore()
 const loading = ref(false)
 const rows = ref<any[]>([])
+// the search box (task TPF-88): uuid, key id, holder and notes; the term lives in the panel, never in the URL
+const externalKeysSearch = ref('')
+const shownRows = computed(() => filterApiKeysBySearch(rows.value, externalKeysSearch.value, r => [r.holderName]))
+/** The empty-table text: names the term when one is set, naive-ui's "No Data" otherwise. */
+function keysEmptyText (raw: string): string { const t = normalizeSearchTerm(raw); return t ? `No keys match "${t}"` : 'No Data' }
 const discovery = ref<any>(null)
 const showGrants = ref(false)
 const grantsKey = ref<any>(null)
@@ -185,8 +197,9 @@ function openGrants (row: any) {
 const externalKeyFields = computed(() => [
     apiKeyTypeColumn,
     apiKeyIdsColumn(),
+    { ...uuidCopyColumn({ what: 'Key UUID', testid: 'externalKeys-key-uuid', notify: props.notify }), width: 320 },
     {
-        key: 'holderName', width: 220, title: 'Holder',
+        key: 'holderName', width: 220, title: 'Holder', sorter: apiKeySorters.holder,
         render: (row: any) => h('div', { style: 'display: flex; align-items: center;' }, [
             h('span', { 'data-testid': 'external-key-holder' }, row.holderName || ''),
             props.isOrgAdmin
@@ -195,8 +208,14 @@ const externalKeyFields = computed(() => [
                 : null
         ])
     },
-    { key: 'createdDate', width: 180, title: 'Created', render: (row: any) => fmtDate(row.createdDate, '') },
-    { key: 'accessDate', width: 180, title: 'Last Accessed', render: (row: any) => fmtDate(row.accessDate, 'Never') },
+    {
+        key: 'createdDate', width: 180, title: 'Created', render: (row: any) => fmtDate(row.createdDate, ''),
+        sorter: apiKeyInstantSorter((r: any) => r.createdDate), defaultSortOrder: 'descend' as const
+    },
+    {
+        key: 'accessDate', width: 180, title: 'Last Accessed', render: (row: any) => fmtDate(row.accessDate, 'Never'),
+        sorter: apiKeyInstantSorter((r: any) => r.accessDate)
+    },
     {
         key: 'grants', width: 260, title: 'Grants',
         render: (row: any) => {
@@ -206,7 +225,7 @@ const externalKeyFields = computed(() => [
     },
     { key: 'status', width: 200, title: 'Status', render: controls.statusCell },
     { key: 'secrets', width: 420, title: 'Secrets', render: controls.secretsCell },
-    { key: 'notes', width: 180, title: 'Notes' },
+    { key: 'notes', width: 180, title: 'Notes', sorter: apiKeySorters.notes },
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {

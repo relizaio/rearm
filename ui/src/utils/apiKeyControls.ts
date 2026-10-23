@@ -391,17 +391,19 @@ export const apiKeySorters = {
 /**
  * Does this key row match the (already normalized) term? '' matches every row. A uuid matches by
  * exact or prefix, the printed API id by prefix (4+ characters), the declared name, the notes and a
- * federated identity's repository by case-insensitive substring.
+ * federated identity's repository by case-insensitive substring. moreTexts adds a table's own text
+ * fields (for example an external key's holder) to the text path.
  */
-export function apiKeySearchMatches (row: any, term: string): boolean {
+export function apiKeySearchMatches (row: any, term: string, moreTexts?: (row: any) => Array<string | null | undefined>): boolean {
     if (term === '') return true
     if (uuidMatches(row?.uuid, term)) return true
     if (term.length >= UUID_PREFIX_MIN && apiKeyIdOf(row).toLowerCase().startsWith(term)) return true
-    return textMatches([row?.declaredName, row?.notes, row?.federation?.repository], term)
+    return textMatches([row?.declaredName, row?.notes, row?.federation?.repository, ...(moreTexts ? moreTexts(row) : [])], term)
 }
 
 /** The rows matching raw, as a new array in input order; every row for an empty or blank raw. */
-export function filterApiKeysBySearch<T> (rows: T[], raw: string | null | undefined): T[] {
+export function filterApiKeysBySearch<T> (rows: T[], raw: string | null | undefined,
+    moreTexts?: (row: T) => Array<string | null | undefined>): T[] {
     const term = normalizeSearchTerm(raw)
-    return rows.filter(r => apiKeySearchMatches(r, term))
+    return rows.filter(r => apiKeySearchMatches(r, term, moreTexts))
 }

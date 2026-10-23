@@ -9,7 +9,7 @@ vi.mock('@/utils/graphql', () => ({ default: { mutate: (...a: any[]) => mutate(.
 const fire = vi.fn()
 vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a), showValidationMessage: vi.fn() } }))
 
-import { apiKeyActivityColumns, apiKeyCreatedColumn, apiKeyInstantSorter, apiKeyLabelColumn, apiKeyLastAccessColumn, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySorters, createApiKeyControls, filterApiKeysBySearch, secretDetailsTooltip } from './apiKeyControls'
+import { apiKeyActivityColumns, apiKeyCreatedColumn, apiKeyInstantSorter, apiKeyLabelColumn, apiKeyLastAccessColumn, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySearchMatches, apiKeySorters, createApiKeyControls, filterApiKeysBySearch, secretDetailsTooltip } from './apiKeyControls'
 import { apiKeyPagination, fmtKeyDate, keyActivityLines } from './apiKeyTable'
 
 const EXPIRES = '2026-12-31T13:55:00Z'
@@ -288,6 +288,21 @@ describe('TPF-88 key search: uuid, API id, declared name, notes, repository', ()
             expect(out).toEqual(KEYS)
             expect(out).not.toBe(KEYS)
         }
+    })
+    it('row 34: moreTexts adds a table\'s own texts to the text path', () => {
+        const holder = (r: any) => [r.holderName]
+        expect(search('olga')).toEqual([])
+        expect(letters(filterApiKeysBySearch(KEYS, 'olga', holder))).toEqual(['A'])
+        expect(search('build')).toEqual(['A', 'C'])
+        expect(letters(filterApiKeysBySearch(KEYS, 'build', holder))).toEqual(['A', 'B', 'C'])
+        const all = filterApiKeysBySearch(KEYS, '', holder)
+        expect(all).toEqual(KEYS)
+        expect(all).not.toBe(KEYS)
+        const blank = () => [null, undefined]
+        expect(() => filterApiKeysBySearch(KEYS, 'nobody', blank)).not.toThrow()
+        expect(filterApiKeysBySearch(KEYS, 'nobody', blank)).toEqual([])
+        expect(apiKeySearchMatches(A, 'olga', holder)).toBe(true)
+        expect(apiKeySearchMatches(A, 'olga')).toBe(false)
     })
 })
 
