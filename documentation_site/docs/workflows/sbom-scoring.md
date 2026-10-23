@@ -53,6 +53,14 @@ an export when it includes support metadata (`reliza:support:levelOfSupport` and
 metadata, fails those two checks until the components are assessed in ReARM and exported with
 support metadata.
 
+The two support checks do not judge the release's own entries: in a product, its component
+releases; in any release, its own uploaded root, which the merge folds into the release's node.
+The export with support metadata marks each of them `reliza:support:selfComponent` = `true`, and
+the report says how many it left out under `selfComponentsSkipped` on each of the two checks; the
+**Score** dialog shows the same number under the check. The coverage gauge and bulk attestation
+leave the same entries out, so you attest third-party components only. An export or score without
+support metadata carries no marker, and the two checks fail every component as before.
+
 ## Where to score
 
 ### The release BOM export

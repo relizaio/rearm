@@ -14,6 +14,7 @@ import {
 } from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom, mintProcessedSerialNumber } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
+import { REBOM_MERGE_MOD, stripReleaseNodeStamps } from './releaseNodeStamp';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { withTransaction } from '../../utils';
@@ -28,14 +29,35 @@ import { createHash } from 'crypto';
  */
 const AUGMENT_ON_STORAGE = true;
 
-export async function addBom(bomInput: BomInput): Promise<BomRecord> {
+/**
+ * Where a stored document comes from. `UPLOAD` (every caller but the merge store): rebom removes
+ * `reliza:export:releaseNode` from the processed document and stores `meta.mod` `raw`. `MERGE`
+ * (mergeAndStoreBoms only): the document is rebom's own merge output, kept with its stamps, and
+ * stored with `meta.mod` `rebom` (SCORE-60 ADR-9). In-process only, never read from a request.
+ */
+export type BomOrigin = 'UPLOAD' | 'MERGE'
+
+export async function addBom(bomInput: BomInput, origin: BomOrigin = 'UPLOAD'): Promise<BomRecord> {
   const input = withCanonicalOrg(bomInput);
   const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
     return await addSpdxBom(input);
   } else {
-    return await addCycloneDxBom(input);
+    return await addCycloneDxBom(input, origin);
   }
+}
+
+/**
+ * An uploaded document never carries rebom's release node stamp into storage: only a merge output
+ * keeps it (SCORE-60 ADR-9 (a)).
+ */
+function withoutUploadedStamps(bom: any, origin: BomOrigin): any {
+  if (origin === 'MERGE') return bom;
+  const stripped = stripReleaseNodeStamps(bom);
+  if (stripped.count > 0) {
+    logger.info({ removed: stripped.count }, 'Removed reliza:export:releaseNode from an uploaded document');
+  }
+  return stripped.bom;
 }
 
 /**
@@ -164,7 +186,7 @@ async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, q
  * @param bomInput - BOM input containing the raw BOM and metadata
  * @returns BOM record (existing or newly created)
  */
-async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
+async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<BomRecord> {
   // Step 1: Process and validate BOM
   const rawBom = bomInput.bomInput.bom;
   // CycloneDX 1.7 is published upstream but no library in our stack
@@ -195,11 +217,11 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   let processedBom: any;
   if (processable) {
     const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
-    processedBom = await processBomObj(inputForProcessing);
+    processedBom = withoutUploadedStamps(await processBomObj(inputForProcessing), origin);
   } else {
     logger.info({ specVersion: rawBom?.specVersion },
       'CycloneDX spec not supported by processing/validation stack — storing raw verbatim, skipping processing/validation/augmentation');
-    processedBom = structuredClone(rawBom);
+    processedBom = withoutUploadedStamps(structuredClone(rawBom), origin);
   }
 
   // serialNumber is the BOM's identity and must come from the producing tool —
@@ -221,7 +243,8 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};
   rebomOptions.serialNumber = processedBom.serialNumber;
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
-  rebomOptions.mod = 'raw';
+  // From the in-process origin, never from the request (SCORE-60 ADR-9 (b)).
+  rebomOptions.mod = origin === 'MERGE' ? REBOM_MERGE_MOD : 'raw';
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -501,6 +524,9 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
 
     const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata, bomVersion, existingSerialNumber);
     const mergedOptions = { ...rebomOptions, ...bomInput.bomInput.rebomOptions };
+    // After the spread, so a request `mod` never wins: no merge is stored through this route
+    // (SCORE-60 ADR-9 (b)).
+    mergedOptions.mod = 'raw';
     
     let serialNumber: string;
     if (existingSerialNumber) {
@@ -535,7 +561,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     // CycloneDX copy is. No source reference: the document it came from is
     // SPDX, and BOM-Link has no form for one -- better no link than an
     // invented one.
-    const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
+    const convertedBom = mintProcessedSerialNumber(withoutUploadedStamps(conversionResult.convertedBom, 'UPLOAD'), null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
     // fileHash is sha256(JSON.stringify(spdxContent)) -- the parsed document, not the
