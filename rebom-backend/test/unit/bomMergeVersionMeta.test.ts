@@ -49,3 +49,19 @@ describe('mergeVersion in the stored meta', () => {
         expect(fromNestedMeta(without).mergeVersion).toBeUndefined();
     });
 });
+
+/** SCORE-63 T-4: the generation-time lists are not stored. */
+describe('the release root lists in the stored meta', () => {
+    it('stores neither attachedRootIds nor releaseRootIds', () => {
+        // createTestRebomOptions names its fields; the two lists are set on the request as sent.
+        const meta = { ...createTestRebomOptions({ mergeVersion: 14 }), releaseRootIds: ['r1'], attachedRootIds: ['a1', 'a2'] };
+
+        const nested = toNestedMeta(meta);
+        const text = JSON.stringify(nested);
+
+        expect(text).not.toContain('attachedRootIds');
+        expect(text).not.toContain('releaseRootIds');
+        expect(fromNestedMeta(nested)).not.toHaveProperty('attachedRootIds');
+        expect(fromNestedMeta(nested)).not.toHaveProperty('releaseRootIds');
+    });
+});

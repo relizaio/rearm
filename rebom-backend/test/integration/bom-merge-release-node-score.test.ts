@@ -131,16 +131,17 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         expect(check(report, 'cisa-2026.component-license').passed).toBe(5);
     });
 
-    it('with the declared licences the licence fails only on the uploaded roots without one and the EXTERNAL placeholder (SCORE-40 T-6)', async () => {
+    it('with the declared licences the licence fails only on the release-attached root of another release and the EXTERNAL placeholder (SCORE-40 T-6, SCORE-63)', async () => {
         const { product } = await buildProductExport(created, true, true);
         const report = score(product);
 
         // the release node passes in the named form (the engine reads license.name), the INTERNAL
         // placeholder in the id form; the product root is metadata.component, not scored per component
+        // SCORE-63: the component's SCE- and deliverable-attached roots carry its declared licence
         expect(failing(report, 'cisa-2026.component-license'))
-            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_ROOT, SCE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+            .toStrictEqual([RELEASE_ROOT, EXTERNAL_PLACEHOLDER].sort());
         expect(check(report, 'cisa-2026.component-license').total).toBe(11);
-        expect(check(report, 'cisa-2026.component-license').passed).toBe(7);
+        expect(check(report, 'cisa-2026.component-license').passed).toBe(9);
         for (const id of PRODUCER_CHECKS) {
             expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT].sort());
         }
@@ -199,8 +200,9 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose com
         for (const id of ['cisa-2026.component-license', 'cisa-2026.component-hash-value', 'cisa-2026.component-hash-algorithm', 'fda.baseline.component-hash']) {
             expect(ofRelease(failing(report, id)), id).toStrictEqual([]);
         }
+        // SCORE-63: the attached roots carry the declared licence too
         expect(failing(report, 'cisa-2026.component-license'))
-            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_ROOT, SCE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+            .toStrictEqual([RELEASE_ROOT, EXTERNAL_PLACEHOLDER].sort());
         expect(check(report, 'cisa-2026.component-license').total).toBe(12);
         for (const id of HASH_CHECKS) {
             expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT, SCE_ROOT].sort());
