@@ -555,6 +555,24 @@ const storeObject : any = {
                 store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
             }
         },
+        async archiveBranches (context: any, params: { branchUuids: string[], componentUuid: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveBranches($branchUuids: [ID!]!) {
+                        archiveBranches(branchUuids: $branchUuids) {
+                            results { branchUuid outcome message }
+                            archivedCount
+                            skippedCount
+                            failedCount
+                        }
+                    }`,
+                variables: { branchUuids: params.branchUuids }
+            })
+            // Awaited (unlike archiveBranch) so the caller re-derives its selection from the
+            // refreshed list; a thrown mutate skips the refresh and reaches the caller untouched.
+            await store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
+            return response.data.archiveBranches
+        },
         async cloneBranch (context: any, brProps: any) {
             const data = await graphqlClient.mutate({
                 mutation: gql`
