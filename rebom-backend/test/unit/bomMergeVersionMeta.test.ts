@@ -65,3 +65,26 @@ describe('the release root lists in the stored meta', () => {
         expect(fromNestedMeta(nested)).not.toHaveProperty('releaseRootIds');
     });
 });
+
+/** SCORE-69 T-4: the merge row's two store-side records round-trip through the nested meta. */
+describe('the merge row records in the nested meta', () => {
+    it('round-trips nestedProductSerials and listedRootKeys under merge', () => {
+        const meta = { ...createTestRebomOptions({ mergeVersion: 17 }), nestedProductSerials: ['urn:uuid:s1'], listedRootKeys: ['pkg:npm/a@1.0.0', 'ref-a'] };
+
+        const nested = toNestedMeta(meta);
+        expect(nested.merge?.nestedProductSerials).toStrictEqual(['urn:uuid:s1']);
+        expect(nested.merge?.listedRootKeys).toStrictEqual(['pkg:npm/a@1.0.0', 'ref-a']);
+        const back = fromNestedMeta(nested);
+        expect(back.nestedProductSerials).toStrictEqual(['urn:uuid:s1']);
+        expect(back.listedRootKeys).toStrictEqual(['pkg:npm/a@1.0.0', 'ref-a']);
+    });
+
+    it('keeps them absent when the row has none', () => {
+        const nested = toNestedMeta(createTestRebomOptions({ mergeVersion: 17 }));
+        expect(nested.merge).not.toHaveProperty('nestedProductSerials');
+        expect(nested.merge).not.toHaveProperty('listedRootKeys');
+        const back = fromNestedMeta(nested);
+        expect(back).not.toHaveProperty('nestedProductSerials');
+        expect(back).not.toHaveProperty('listedRootKeys');
+    });
+});

@@ -7,9 +7,12 @@ import * as path from 'path';
 // returns, and every pass rebom runs on it afterwards runs for real.
 const findBomObjectById = vi.fn();
 const shellExec = vi.fn();
+// SCORE-69 T-2: the row meta findBomObjectWithMetaById serves beside each document, by id.
+const rowMeta = vi.hoisted(() => ({ byId: {} as Record<string, any> }));
 
 vi.mock('../../src/services/bom/bomCrudService', () => ({
-    findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any)
+    findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any),
+    findBomObjectWithMetaById: async (id: string, org: string) => ({ bom: await findBomObjectById(id, org), meta: rowMeta.byId[id] })
 }));
 vi.mock('../../src/utils', async (importOriginal) => {
     const actual: any = await importOriginal();
@@ -86,6 +89,7 @@ describe('mergeBoms: services carried from the inputs (SCORE-9 T-4)', () => {
     beforeEach(() => {
         findBomObjectById.mockReset();
         shellExec.mockReset();
+        rowMeta.byId = {};
     });
 
     it('carries the nginx sysvinit services the dependency entries name, so every ref resolves', async () => {

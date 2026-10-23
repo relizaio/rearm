@@ -14,9 +14,12 @@ const listed = vi.hoisted(() => ({ calls: [] as { args: any[], result?: any }[] 
 const mergeInputs = vi.hoisted(() => ({ objs: [] as any[] }));
 // SCORE-44 T-4: the settle, the validations, the CLI-path record and the de-dup, in call order.
 const steps = vi.hoisted(() => ({ names: [] as string[] }));
+// SCORE-69 T-2: the row meta findBomObjectWithMetaById serves beside each document, by id.
+const rowMeta = vi.hoisted(() => ({ byId: {} as Record<string, any> }));
 
 vi.mock('../../src/services/bom/bomCrudService', () => ({
-    findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any)
+    findBomObjectById: (...a: any[]) => findBomObjectById.apply(null, a as any),
+    findBomObjectWithMetaById: async (id: string, org: string) => ({ bom: await findBomObjectById(id, org), meta: rowMeta.byId[id] })
 }));
 vi.mock('../../src/utils', async (importOriginal) => {
     const actual: any = await importOriginal();
@@ -84,9 +87,10 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
     };
 });
 
-import { mergeBoms } from '../../src/services/bom/bomMergeService';
+import { mergeBoms, mergeBomsWithInputRecord } from '../../src/services/bom/bomMergeService';
 import { logger } from '../../src/logger';
-import { BomStructure } from '../../src/types';
+import { BomStructure, RootComponentMergeMode } from '../../src/types';
+import { REBOM_MERGE_MOD } from '../../src/services/bom/releaseNodeStamp';
 import {
     BOM_REFS_DEDUPLICATED_PROPERTY,
     COMPONENTS_WITHOUT_SBOM_PROPERTY,
@@ -168,6 +172,7 @@ function serveInputsAndMergeBomsOutput() {
     listed.calls.length = 0;
     steps.names.length = 0;
     mergeInputs.objs = [];
+    rowMeta.byId = {};
 }
 
 describe('mergeBoms: bom-ref de-dup before the file filter', () => {
@@ -1151,6 +1156,138 @@ describe('mergeBoms: the re-key of unlisted inputs before merge-boms', () => {
         expect(row.hashes).toStrictEqual(OWN);
         expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: [Q, 'pkg:npm/one@1.0.0'] });
         expect(bom.dependencies.filter((d: any) => d.ref === ROOT)).toHaveLength(1);
+    });
+});
+
+/**
+ * SCORE-69 (T-2, ADR-2 to ADR-4): mergeBoms reads each row's meta beside its document and hands it to
+ * the re-key as its fourth argument, aligned with the ids; the records the row stores come from the
+ * original inputs and the row meta; a nested product's keys are reserved against the other inputs.
+ */
+describe('mergeBoms: the row meta and the nested product keys (SCORE-69)', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    const PRESERVE = RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT;
+    const productMetaOf = (serial?: string, extra: any = {}) => ({ mod: REBOM_MERGE_MOD, rootComponentMergeMode: PRESERVE, nestedProductSerials: [], listedRootKeys: [], ...(serial ? { serialNumber: serial } : {}), ...extra });
+    const componentMeta = () => ({ mod: REBOM_MERGE_MOD, rootComponentMergeMode: RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT });
+    const ONE_SERIAL = 'urn:uuid:69000000-0000-4000-8000-000000000001';
+    const TWO_SERIAL = 'urn:uuid:69000000-0000-4000-8000-000000000002';
+
+    it('hands the re-key the row meta of each id, aligned, beside the placeholders and after the filters (T-2 (a))', async () => {
+        rowMeta.byId.one = productMetaOf(ONE_SERIAL);
+        rowMeta.byId.two = componentMeta();
+        await mergeBoms(['one', 'two'], options(), 'org');
+        expect(passes.calls[0].args[3]).toStrictEqual([rowMeta.byId.one, rowMeta.byId.two]);
+        expect(passes.calls[0].args[3][0]).toBe(rowMeta.byId.one);
+
+        serveInputsAndMergeBomsOutput();
+        await mergeBoms(['one', 'two'], options(), 'org');
+        expect(passes.calls[0].args[3]).toStrictEqual([undefined, undefined]);
+
+        serveInputsAndMergeBomsOutput();
+        rowMeta.byId.two = componentMeta();
+        await mergeBoms(['one', 'two'], options({ tldOnly: true, ignoreDev: true, missingSbomComponents: [missing(HTTPD, 'httpd'), missing(FLYWAY, 'flyway')] }), 'org');
+        expect(passes.calls[0].args[1]).toHaveLength(4);
+        expect(passes.calls[0].args[3]).toStrictEqual([undefined, rowMeta.byId.two]);
+    });
+
+    it('writes apart a listing of a nested product key before merge-boms, and the product node stays its own (T-2 (b))', async () => {
+        const X_IN = 'pkg:generic/Example/inner@2.0.0';
+        const A_IN = 'pkg:npm/example/inner@2.0.0?belongsto=SCE';
+        const LISTER_ROOT = 'pkg:generic/Example/lister@1.0.0';
+        const INNER_SERIAL = 'urn:uuid:69000000-0000-4000-8000-000000000010';
+        const LISTER_SERIAL = 'urn:uuid:69000000-0000-4000-8000-000000000011';
+        const MIT = [{ license: { id: 'MIT' } }];
+        const innerRoot = { type: 'application', name: 'inner', version: '2.0.0', purl: X_IN, 'bom-ref': X_IN, supplier: { name: 'Example' } };
+        const sceRoot = { type: 'library', name: 'sce', version: '2.0.0', purl: A_IN, 'bom-ref': A_IN };
+        const docs: Record<string, any> = {
+            inner: {
+                bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: INNER_SERIAL,
+                metadata: { component: innerRoot }, components: [sceRoot],
+                dependencies: [{ ref: X_IN, dependsOn: [A_IN] }, { ref: A_IN, dependsOn: [] }]
+            },
+            lister: {
+                bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: LISTER_SERIAL,
+                metadata: { component: { type: 'library', name: 'lister', version: '1.0.0', purl: LISTER_ROOT, 'bom-ref': LISTER_ROOT } },
+                components: [
+                    { type: 'library', name: 'inner', version: '2.0.0', purl: X_IN, 'bom-ref': 'lister-inner', licenses: MIT },
+                    { type: 'library', name: 'sce', version: '2.0.0', purl: A_IN, 'bom-ref': A_IN, licenses: MIT }
+                ],
+                services: [{ 'bom-ref': X_IN, name: 'forged-svc' }],
+                dependencies: [{ ref: LISTER_ROOT, dependsOn: ['lister-inner', A_IN, X_IN] }, { ref: 'lister-inner', dependsOn: [] }, { ref: A_IN, dependsOn: [] }, { ref: X_IN, dependsOn: [] }]
+            },
+            one: input('one')
+        };
+        rowMeta.byId.inner = productMetaOf(INNER_SERIAL, { listedRootKeys: [A_IN] });
+        rowMeta.byId.lister = componentMeta();
+        findBomObjectById.mockImplementation(async (id: string) => docs[id]);
+        const Q = (ref: string) => `${LISTER_SERIAL}#${ref}`;
+        const P = (purl: string) => `${purl}${purl.includes('?') ? '&' : '?'}rearm_input=${encodeURIComponent(LISTER_SERIAL)}`;
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            out.components = [
+                innerRoot, sceRoot,
+                docs.lister.metadata.component,
+                { type: 'library', name: 'inner', version: '2.0.0', purl: P(X_IN), 'bom-ref': 'lister-inner', licenses: MIT },
+                { type: 'library', name: 'sce', version: '2.0.0', purl: P(A_IN), 'bom-ref': Q(A_IN), licenses: MIT },
+                { type: 'application', name: 'one', 'bom-ref': 'pkg:npm/one@1.0.0' }
+            ];
+            out.dependencies = [
+                { ref: ROOT, dependsOn: [X_IN, LISTER_ROOT, 'pkg:npm/one@1.0.0'] },
+                { ref: X_IN, dependsOn: [A_IN] }, { ref: A_IN, dependsOn: [] },
+                { ref: LISTER_ROOT, dependsOn: ['lister-inner', Q(A_IN), Q(X_IN)] },
+                { ref: 'lister-inner', dependsOn: [] }, { ref: Q(A_IN), dependsOn: [] }, { ref: Q(X_IN), dependsOn: [] },
+                { ref: 'pkg:npm/one@1.0.0', dependsOn: [] }
+            ];
+            return JSON.stringify(out);
+        });
+
+        const bom = await mergeBoms(['inner', 'lister', 'one'], options(), 'org');
+
+        expect(mergeInputs.objs[0]).toBe(docs.inner);
+        expect(mergeInputs.objs[1].components.map((c: any) => [c['bom-ref'], c.purl])).toStrictEqual([['lister-inner', P(X_IN)], [Q(A_IN), P(A_IN)]]);
+        expect(mergeInputs.objs[1].services[0]['bom-ref']).toBe(Q(X_IN));
+        expect(bom.components.find((c: any) => c['bom-ref'] === X_IN)).toStrictEqual(innerRoot);
+        expect(bom.components.find((c: any) => c['bom-ref'] === A_IN)).toStrictEqual(sceRoot);
+        expect(bom.services.map((s: any) => s['bom-ref'])).toStrictEqual([Q(X_IN)]);
+        expect(property(bom, NODES_REKEYED_PROPERTY)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '3' }]);
+        expect(property(bom, BOM_REFS_DEDUPLICATED_PROPERTY)).toStrictEqual([]);
+    });
+
+    it('returns the records from the row meta beside the same document mergeBoms returns (T-2 (c))', async () => {
+        rowMeta.byId.one = productMetaOf(ONE_SERIAL);
+        rowMeta.byId.two = componentMeta();
+        const request = () => options({ releaseRootIds: ['listed'], missingSbomComponents: [missing(HTTPD, 'httpd')] });
+
+        const recorded = await mergeBomsWithInputRecord(['listed', 'one', 'two'], request(), 'org');
+        expect(recorded.nestedProductSerials).toStrictEqual([ONE_SERIAL]);
+        expect(recorded.listedRootKeys).toStrictEqual(['pkg:npm/listed@1.0.0']);
+        const plain = await mergeBoms(['listed', 'one', 'two'], request(), 'org');
+        expect(recorded.bom).toStrictEqual(plain);
+
+        rowMeta.byId = {};
+        const without = await mergeBomsWithInputRecord(['listed', 'one', 'two'], request(), 'org');
+        expect(without.nestedProductSerials).toStrictEqual([]);
+        expect(without.listedRootKeys).toStrictEqual(['pkg:npm/listed@1.0.0']);
+
+        rowMeta.byId.one = productMetaOf(ONE_SERIAL);
+        const flatten = await mergeBomsWithInputRecord(['listed', 'one'], options({ releaseRootIds: ['listed'], rootComponentMergeMode: RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT }), 'org');
+        expect(flatten.nestedProductSerials).toStrictEqual([ONE_SERIAL]);
+        expect(flatten.listedRootKeys).toStrictEqual(['pkg:npm/listed@1.0.0']);
+    });
+
+    it('records the row by its serial, whatever the re-key does to its root (T-2 (d))', async () => {
+        const two = input('two');
+        two.metadata.component = { type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT };
+        findBomObjectById.mockImplementation(async (id: string) => (id === 'two' ? two : input(id)));
+        rowMeta.byId.two = productMetaOf(TWO_SERIAL);
+
+        const recorded = await mergeBomsWithInputRecord(['listed', 'two'], options({ releaseRootIds: ['listed'] }), 'org');
+
+        expect(passes.calls[0].result.count).toBe(1);
+        expect(recorded.nestedProductSerials).toStrictEqual([TWO_SERIAL]);
+        expect(recorded.listedRootKeys).toStrictEqual(['pkg:npm/listed@1.0.0']);
     });
 });
 
