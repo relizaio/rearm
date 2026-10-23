@@ -277,6 +277,15 @@ describe('rekeyUnlistedInputs: release keys (K)', () => {
         expect(result.inputs[1].components[0].purl).toBe(`pkg:generic/g/n@1?a=b&rearm_input=${encodeURIComponent(SERIAL_A)}&c=d`);
     });
 
+    it('replaces an existing rearm_input qualifier regardless of its key case, instead of doubling it', () => {
+        const key = 'pkg:generic/g/n@1?a=b&REARM_INPUT=old&c=d';
+        const row = componentRow(SERIAL_A, [{ type: 'library', name: 'n', purl: key, 'bom-ref': 'n' }]);
+
+        const result = run(['listed', 'row'], [listedDoc(), row], options({ purl: key }));
+
+        expect(result.inputs[1].components[0].purl).toBe(`pkg:generic/g/n@1?a=b&rearm_input=${encodeURIComponent(SERIAL_A)}&c=d`);
+    });
+
     it('writes the qualifier straight after an empty query instead of an empty pair', () => {
         const key = 'pkg:generic/g/n@1?';
         const row = componentRow(SERIAL_A, [{ type: 'library', name: 'n', purl: key, 'bom-ref': 'n' }]);
