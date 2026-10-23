@@ -238,6 +238,14 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
         expect(info).not.toHaveBeenCalled();
     });
 
+    it('a third root of the same key after an expression loss: the survivor licenses still stand, no second line (ADR-3: the loss fold must return, never fall through to the union)', () => {
+        const third = [{ license: { id: 'ISC' } }];
+
+        expect(run([rooted('one', L()), rooted('one', XP()), rooted('one', third)])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([line(L(), XP())]);
+    });
+
     it('a root that took a first listing whole keeps it beside a second listing\'s expression, as merge-boms holds it (departure D-2)', () => {
         expect(run([rooted('one'), listing(listedOne(L2())), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
 
