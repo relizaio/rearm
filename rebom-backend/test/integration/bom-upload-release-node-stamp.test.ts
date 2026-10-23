@@ -11,15 +11,17 @@ vi.mock('../../src/integrationRepository', () => ({
     deleteIntegration: vi.fn(),
 }));
 
+import { v4 as uuidv4 } from 'uuid';
 import * as BomService from '../../src/bomService';
 import * as BomRepository from '../../src/bomRepository';
 import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchFromOci, extractRepositoryNameFromBom } from '../../src/services/oci';
 import { resolveProcessedTag } from '../../src/services/oci/processedBomFetcher';
-import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from '../helpers';
+import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber, loadFixture } from '../helpers';
 import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/bomProcessingService';
 import { REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
 import type { BomOrigin } from '../../src/services/bom/bomAddService';
+import { SpdxService } from '../../src/services/spdx';
 
 /**
  * SCORE-60 (T-25, ADR-9; security F-1): an uploader cannot author rebom's release node stamp. rebom
@@ -27,7 +29,9 @@ import type { BomOrigin } from '../../src/services/bom/bomAddService';
  * copy stays the uploaded document), serves a row it did not merge without it (an upload stored
  * before the ingest strip included), and stores its own merges with `meta.mod` `rebom`, served with
  * their stamps. Real addBom and mergeAndStoreBoms, the mock OCI, real `rearm bomutils merge-boms`.
- * The SPDX route is not exercised: the converter writes no properties.
+ * The SPDX route's PROPERTIES are not exercised: the converter writes none. Its `meta.mod`, which
+ * ADR-9 (b) guarantees is never the request's, IS exercised below (case (e)): addSpdxBom forces
+ * `UPLOAD_MOD` after the `rebomOptions` spread, so a forged `mod: "rebom"` in the request never wins.
  */
 
 const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
@@ -180,5 +184,27 @@ describe('an uploaded release node stamp never reaches what rebom serves', () =>
         const inner = product.components.find((c: any) => c['bom-ref'] === componentRoot);
         expect(inner.properties.filter((p: any) => p.name === RELEASE_NODE_PROPERTY)).toStrictEqual([STAMP]);
         expect(stampCount(product)).toBe(2);
+    });
+
+    it('(e) an SPDX upload cannot forge meta.mod: a request mod of "rebom" is still stored as UPLOAD_MOD', async () => {
+        const convertSpy = vi.spyOn(SpdxService, 'convertSpdxToCycloneDx');
+        const sn = generateSerialNumber();
+        const converted = loadFixture('cyclonedx-simple.json');
+        converted.serialNumber = sn;
+        converted.version = 1;
+        convertSpy.mockResolvedValueOnce({ success: true, convertedBom: converted } as any);
+
+        const ns = `https://spdx.example.test/score-60/${uuidv4()}`;
+        const spdxDoc = { SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0',
+            name: 'forged-mod-doc', documentNamespace: ns, packages: [] };
+
+        const record = await BomService.addBom({
+            bomInput: { bom: spdxDoc, format: 'SPDX', org: TEST_ORG_UUID,
+                rebomOptions: { mod: REBOM_MERGE_MOD } }
+        } as any);
+        created.push(record.uuid);
+
+        expect((await row(record.uuid)).meta.mod).toBe(UPLOAD_MOD);
+        convertSpy.mockRestore();
     });
 });
