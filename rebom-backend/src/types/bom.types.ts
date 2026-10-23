@@ -216,6 +216,13 @@ export type RebomOptions = {
     // the re-key (ADR-9). Absent or empty: nothing is filled. Derived by ReARM at generation time:
     // not part of the options ReARM matches stored merges on, not stored.
     attachedRootIds?: string[] | null,
+    // Store-side, merge rows only (SCORE-69 ADR-3): written by rebom at the merge from the inputs it
+    // was handed, never from a request (the GraphQL input does not declare them, and the store deletes
+    // both for every origin but MERGE). nestedProductSerials: the recorded serials (meta.serialNumber)
+    // of the unlisted inputs that were product rows; listedRootKeys: the root purls and bom-refs of the
+    // listed inputs. Read by a product merge above to reserve a nested product's keys (ADR-4, ADR-5).
+    nestedProductSerials?: string[],
+    listedRootKeys?: string[],
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

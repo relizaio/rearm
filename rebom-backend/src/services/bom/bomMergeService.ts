@@ -2,27 +2,41 @@ import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
-import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { findBomObjectWithMetaById } from './bomCrudService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 
 export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: string): Promise<any> {
+  return (await mergeBomsWithInputRecord(ids, rebomOptions, org)).bom
+}
+
+/**
+ * mergeBoms, returning beside the merged document the two records the merge row stores
+ * (SCORE-69 ADR-3): the recorded serials of the unlisted inputs that were product rows, and the
+ * root keys of the listed inputs, both computed from the original inputs and their row meta.
+ */
+export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: RebomOptions, org: string): Promise<{ bom: any, nestedProductSerials: string[], listedRootKeys: string[] }> {
   try {
     let mergedBom = null
-    const found = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    const { bomObjs: found, rowMeta } = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
     // Component releases without an SBOM join as synthetic inputs, after the per-input
     // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
     // them and lists them in the root's dependencies like every other input.
     found.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
+    // From the original inputs, before the re-key, and from the rows' meta: what this row records of
+    // the nested product rows it merged and of its own listed roots (SCORE-69 ADR-3). Not a pass.
+    const records = mergeRootKeyRecords(ids, found, rebomOptions, rowMeta)
     // Before merge-boms, the only point where a node's input is known: in a product merge a node of
     // an input rearm-saas did not list that carries the product root's key, a listed root's key
     // (either list: releaseRootIds or attachedRootIds, SCORE-63 ADR-9) or another input's root key
     // is written apart, so neither merge-boms nor the de-dup folds it into that release's node
-    // (SCORE-66 ADR-1). Same length and order: the listed entries are the
-    // original objects, so the fold below sees what it saw before.
-    const rekeyed = rekeyUnlistedInputs(ids, found, rebomOptions)
+    // (SCORE-66 ADR-1). A nested product row's root key and its listed root keys are reserved
+    // against every other unlisted input too, except a product row that merged that very row
+    // (SCORE-69 ADR-4, ADR-5), read from the rows' meta. Same length and order: the listed entries
+    // are the original objects, so the fold below sees what it saw before.
+    const rekeyed = rekeyUnlistedInputs(ids, found, rebomOptions, rowMeta)
     const bomObjs = rekeyed.inputs
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
@@ -71,7 +85,7 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     // After it: adds no dependency ref, and describes the placeholders that survived.
     if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
-    return mergedBom
+    return { bom: mergedBom, ...records }
   } catch (e) {
     logger.error({ err: e }, "Error During merge")
     throw e
@@ -82,7 +96,10 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
   try {
     logger.info({ bomIds: ids, serialNumber: rebomOptions.serialNumber, org }, "Starting BOM merge and store operation")
     
-    const mergedBom = await mergeBoms(ids, rebomOptions, org)
+    const { bom: mergedBom, nestedProductSerials, listedRootKeys } = await mergeBomsWithInputRecord(ids, rebomOptions, org)
+    // Store-side records on the row's meta, like mergeVersion (SCORE-69 ADR-3).
+    rebomOptions.nestedProductSerials = nestedProductSerials
+    rebomOptions.listedRootKeys = listedRootKeys
     logger.debug({ componentCount: mergedBom?.components?.length || 0 }, "BOM merge completed")
     
     const bomInput: BomInput = {
@@ -105,9 +122,12 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
 }
 
 
-async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string) {
+// Each row's document and, aligned by index, its meta (SCORE-69 ADR-2): rowMeta[i] is the meta of ids[i].
+async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string): Promise<{ bomObjs: any[], rowMeta: (MergeRowMeta | undefined)[] }> {
   logger.info(`findBomsForMerge: ${ids}`)
-  let bomRecords = await Promise.all(ids.map(async (id) => findBomObjectById(id, org)))
+  const rows = await Promise.all(ids.map(async (id) => findBomObjectWithMetaById(id, org)))
+  const rowMeta: (MergeRowMeta | undefined)[] = rows.map(row => row?.meta)
+  let bomRecords = rows.map(row => row?.bom)
   let bomObjs: any[] = []
   logger.info(`bomrecords found # ${bomRecords.length}`)
   if (bomRecords && bomRecords.length) {
@@ -122,7 +142,7 @@ async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: bool
       return processedBom;
     });
   }
-  return bomObjs
+  return { bomObjs, rowMeta }
 }
 
 export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOptions): Promise<any> {

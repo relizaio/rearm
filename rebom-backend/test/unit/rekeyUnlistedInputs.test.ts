@@ -9,6 +9,7 @@ import {
 } from '../../src/services/bom/bomProcessingService';
 import { logger } from '../../src/logger';
 import { RootComponentMergeMode } from '../../src/types';
+import { REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
 
 /**
  * SCORE-66 (T-1; ADR-2 to ADR-5): in a product merge, a node of an input rearm-saas did not list that
@@ -641,6 +642,415 @@ describe('rekeyUnlistedInputs: log lines (ADR-6)', () => {
         } finally {
             info.mockRestore();
         }
+    });
+});
+
+// SCORE-69 T-1 (ADR-1, ADR-4, ADR-5): in a product merge, an unlisted input that is a product row
+// (row meta: mod rebom, mode not FLATTEN) reserves its root's keys, its listed root keys and their
+// images against every other unlisted input, except a product row whose record names its recorded
+// serial while no other unlisted root carries its root's key.
+const SERIAL_F = 'urn:uuid:66000000-0000-4000-8000-00000000000f';
+const SERIAL_G = 'urn:uuid:66000000-0000-4000-8000-00000000000e';
+const X_P = 'pkg:generic/Facts%20Org/inner@2.0.0';
+const A_P = 'pkg:npm/facts%20org/inner@2.0.0?belongsto=SCE&hash=4f1c2a9e';
+const OUTER = 'pkg:generic/Facts%20Org/outer@1.0.0';
+const NESTED_LINE = 'nested product keys reserved';
+const DENIED_LINE = 'nested product exemption denied';
+const REKEYED_LINE = 'node re-keyed: an unlisted input carries a reserved key';
+
+function productRow(serial: string | undefined, key: string = X_P, components: any[] = [lib(LIB_B)]): any {
+    return doc(serial, { type: 'application', name: 'inner', version: '2.0.0', purl: key, 'bom-ref': key, supplier: { name: ORG } }, components);
+}
+
+function productMeta(extra: any = {}): any {
+    return { mod: REBOM_MERGE_MOD, rootComponentMergeMode: PRESERVE, nestedProductSerials: [], listedRootKeys: [], ...extra };
+}
+
+function productMetaOf(serial: string, extra: any = {}): any {
+    return productMeta({ serialNumber: serial, ...extra });
+}
+
+function componentMeta(): any {
+    return { mod: REBOM_MERGE_MOD, rootComponentMergeMode: FLATTEN };
+}
+
+function uploadMeta(): any {
+    return { mod: UPLOAD_MOD, rootComponentMergeMode: PRESERVE };
+}
+
+function listing(key: string, extra: any = {}): any {
+    return lib(key, { name: 'inner', version: '2.0.0', licenses: [{ license: { id: 'MIT' } }], hashes: [{ alg: 'SHA-512', content: 'f'.repeat(128) }], ...extra });
+}
+
+/** Runs the pass with the row meta and checks the inputs and the meta were not changed. */
+function run4(ids: string[], inputs: any[], rowMeta: any[], opts: any = options()) {
+    const before = structuredClone(inputs);
+    const metaBefore = structuredClone(rowMeta);
+    const result = rekeyUnlistedInputs(ids, inputs, opts, rowMeta);
+    expect(inputs).toStrictEqual(before);
+    expect(rowMeta).toStrictEqual(metaBefore);
+    expect(result.inputs).toHaveLength(inputs.length);
+    return result;
+}
+
+/** `j`: a product row carrying copies of p's root, of p's listed root and of p's written-apart root. */
+function carrier(): any {
+    return productRow(SERIAL_L, OUTER, [lib(X_P, { name: 'inner' }), lib(A_P), lib(P(X_P, SERIAL_B), { 'bom-ref': Q(SERIAL_B, X_P) })]);
+}
+
+/** The three copies of `carrier()` as written apart under `j`'s base. */
+function expectCarrierRekeyed(j: any) {
+    expect(j.components.map((c: any) => c['bom-ref'])).toStrictEqual([Q(SERIAL_L, X_P), Q(SERIAL_L, A_P), Q(SERIAL_L, Q(SERIAL_B, X_P))]);
+    expect(j.components.map((c: any) => c.purl)).toStrictEqual([P(X_P, SERIAL_L), P(A_P, SERIAL_L), P(X_P, SERIAL_L)]);
+}
+
+describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
+    const lister = () => componentRow(SERIAL_A, [lib(LIB_A), listing(X_P)]);
+
+    it('(a) writes apart a listing of a nested product root key, in either input order', () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            const p = productRow(SERIAL_B);
+            const c = lister();
+            const result = run4(['listed', 'p', 'c'], [listedDoc(), p, c], [undefined, productMeta(), componentMeta()]);
+
+            expect(result.count).toBe(1);
+            expect(result.inputs[1]).toBe(p);
+            expect(result.inputs[2].components[1]).toStrictEqual({ ...listing(X_P), 'bom-ref': Q(SERIAL_A, X_P), purl: P(X_P, SERIAL_A) });
+            expect(result.inputs[2].dependencies.find((d: any) => d.ref === Q(SERIAL_A, X_P))).toBeDefined();
+            expect(result.inputs[2].dependencies.find((d: any) => d.ref === X_P)).toBeUndefined();
+            const lines = info.mock.calls.filter(c => c[1] === REKEYED_LINE).map(c => c[0] as any);
+            expect(lines.map(l => l.reason)).toStrictEqual(['nested product key']);
+
+            const swapped = run4(['listed', 'c', 'p'], [listedDoc(), lister(), productRow(SERIAL_B)], [undefined, componentMeta(), productMeta()]);
+            expect(swapped.count).toBe(1);
+            expect(swapped.inputs[1].components[1]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+            expect(swapped.inputs[1].components[1].purl).toBe(P(X_P, SERIAL_A));
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('(b) writes apart a listing two levels down and leaves the nodes above it', () => {
+        const c = componentRow(SERIAL_A, [lib(LIB_A, { components: [lib('pkg:npm/mid@1.0.0', { components: [listing(X_P)] })] })]);
+        const result = run4(['p', 'c'], [productRow(SERIAL_B), c], [productMeta(), componentMeta()]);
+
+        expect(result.count).toBe(1);
+        const top = result.inputs[1].components[0];
+        expect(top['bom-ref']).toBe(LIB_A);
+        expect(top.components[0]['bom-ref']).toBe('pkg:npm/mid@1.0.0');
+        expect(top.components[0].components[0]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+        expect(top.components[0].components[0].purl).toBe(P(X_P, SERIAL_A));
+    });
+
+    it('(c) re-keys only the field that carries the key', () => {
+        const byRef = componentRow(SERIAL_A, [lib('pkg:npm/other@1.0.0', { 'bom-ref': X_P })]);
+        const refResult = run4(['p', 'c'], [productRow(SERIAL_B), byRef], [productMeta(), componentMeta()]);
+        expect(refResult.count).toBe(1);
+        expect(refResult.inputs[1].components[0]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+        expect(refResult.inputs[1].components[0].purl).toBe('pkg:npm/other@1.0.0');
+
+        const byPurl = componentRow(SERIAL_A, [lib(X_P, { 'bom-ref': 'other-ref' })]);
+        const purlResult = run4(['p', 'c'], [productRow(SERIAL_B), byPurl], [productMeta(), componentMeta()]);
+        expect(purlResult.count).toBe(1);
+        expect(purlResult.inputs[1].components[0]['bom-ref']).toBe('other-ref');
+        expect(purlResult.inputs[1].components[0].purl).toBe(P(X_P, SERIAL_A));
+    });
+
+    it('(d) writes apart a service under the key and re-points its references, nested services too', () => {
+        const c = componentRow(SERIAL_A, [lib(LIB_A)], {
+            services: [{ 'bom-ref': X_P, name: 'svc' }],
+            dependencies: [{ ref: COMPONENT_ROOT, dependsOn: [LIB_A] }, { ref: X_P, dependsOn: [LIB_A] }, { ref: LIB_A, provides: [X_P] }]
+        });
+        const result = run4(['p', 'c'], [productRow(SERIAL_B), c], [productMeta(), componentMeta()]);
+
+        expect(result.count).toBe(1);
+        expect(result.inputs[1].services[0]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+        expect(result.inputs[1].dependencies).toStrictEqual([
+            { ref: COMPONENT_ROOT, dependsOn: [LIB_A] }, { ref: Q(SERIAL_A, X_P), dependsOn: [LIB_A] }, { ref: LIB_A, provides: [Q(SERIAL_A, X_P)] }
+        ]);
+
+        const nested = componentRow(SERIAL_A, [lib(LIB_A)], { services: [{ 'bom-ref': 'svc-top', name: 'top', services: [{ 'bom-ref': X_P, name: 'inner-svc' }] }] });
+        const nestedResult = run4(['p', 'c'], [productRow(SERIAL_B), nested], [productMeta(), componentMeta()]);
+        expect(nestedResult.count).toBe(1);
+        expect(nestedResult.inputs[1].services[0]['bom-ref']).toBe('svc-top');
+        expect(nestedResult.inputs[1].services[0].services[0]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+    });
+
+    it('(e) reserves the nested product listed root keys from its row meta, and nothing without them', () => {
+        const c = componentRow(SERIAL_A, [lib(LIB_A), listing(A_P)], { services: [{ 'bom-ref': A_P, name: 'svc' }] });
+        const result = run4(['p', 'c'], [productRow(SERIAL_B), c], [productMeta({ listedRootKeys: [A_P] }), componentMeta()]);
+        expect(result.count).toBe(2);
+        expect(result.inputs[1].components[1]['bom-ref']).toBe(Q(SERIAL_A, A_P));
+        expect(result.inputs[1].components[1].purl).toBe(P(A_P, SERIAL_A));
+        expect(result.inputs[1].services[0]['bom-ref']).toBe(Q(SERIAL_A, A_P));
+
+        for (const meta of [productMeta({ listedRootKeys: undefined }), productMeta({ listedRootKeys: [] })]) {
+            const both = componentRow(SERIAL_A, [listing(A_P), listing(X_P)]);
+            const out = run4(['p', 'c'], [productRow(SERIAL_B), both], [meta, componentMeta()]);
+            expect(out.count).toBe(1);
+            expect(out.inputs[1].components[0]).toBe(both.components[0]);
+            expect(out.inputs[1].components[1]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+        }
+    });
+
+    it('(f) never touches the merge listed input', () => {
+        const listed = doc(SERIAL_L, { type: 'application', name: 'facts-product', version: '3.0.0', purl: LISTED_ROOT, 'bom-ref': LISTED_REF }, [lib(LIB_B), listing(X_P)]);
+        const inputs = [listed, productRow(SERIAL_B)];
+        const result = run4(['listed', 'p'], inputs, [undefined, productMeta()]);
+        expect(result.count).toBe(0);
+        expect(result.inputs).toBe(inputs);
+    });
+
+    describe('(g) the carried-copy exemption (ADR-5)', () => {
+        const pMeta = () => productMetaOf(SERIAL_B, { listedRootKeys: [A_P] });
+        const jMeta = (record: string[]) => productMetaOf(SERIAL_L, { nestedProductSerials: record });
+
+        it('first sub-case: a product row whose record names the nested product row keeps its copies', () => {
+            const j = carrier();
+            const result = run4(['p', 'j', 'c'], [productRow(SERIAL_B), j, lister()], [pMeta(), jMeta([SERIAL_B]), componentMeta()]);
+            expect(result.inputs[1]).toBe(j);
+            expect(result.inputs[2].components[1]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+            expect(result.count).toBe(1);
+        });
+
+        it('second sub-case: the exemption is by row, not by key', () => {
+            const p = doc(SERIAL_B, { type: 'application', name: 'inner', version: '2.0.0', purl: X_P, 'bom-ref': 'inner-ref' }, [lib(LIB_B)]);
+            const j = carrier();
+            const result = run4(['p', 'j', 'c'], [p, j, lister()], [pMeta(), jMeta([SERIAL_B]), componentMeta()]);
+            expect(result.inputs[1]).toBe(j);
+            expect(result.count).toBe(1);
+        });
+
+        it('third sub-case: a record naming nothing of the nested product row earns nothing (the forged identifier shape)', () => {
+            for (const record of [[], [SERIAL_F]]) {
+                const p = productRow(SERIAL_B);
+                const result = run4(['p', 'j', 'c'], [p, carrier(), lister()], [pMeta(), jMeta(record), componentMeta()]);
+                expectCarrierRekeyed(result.inputs[1]);
+                expect(result.inputs[0]).toBe(p);
+                expect(result.inputs[2].components[1]['bom-ref']).toBe(Q(SERIAL_A, X_P));
+                expect(result.count).toBe(4);
+            }
+        });
+
+        it('fourth sub-case: a component row is never exempt', () => {
+            const meta = { ...componentMeta(), serialNumber: SERIAL_L, nestedProductSerials: [SERIAL_B] };
+            const result = run4(['p', 'j', 'c'], [productRow(SERIAL_B), carrier(), lister()], [pMeta(), meta, componentMeta()]);
+            expectCarrierRekeyed(result.inputs[1]);
+            expect(result.count).toBe(4);
+        });
+
+        it('fifth sub-case: another product row under the nested product key denies the exemption, in both orders', () => {
+            for (const record of [[SERIAL_B], [SERIAL_F]]) {
+                const pp = productRow(SERIAL_F, X_P, [lib(LIB_A)]);
+                const result = run4(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp], [pMeta(), jMeta(record), productMetaOf(SERIAL_F)]);
+                expectCarrierRekeyed(result.inputs[1]);
+                expect(result.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
+                expect(result.inputs[0].metadata.component.purl).toBe(P(X_P, SERIAL_B));
+                expect(result.inputs[2].metadata.component['bom-ref']).toBe(Q(SERIAL_F, X_P));
+                expect(result.inputs[2].metadata.component.purl).toBe(P(X_P, SERIAL_F));
+                expect(result.inputs[0].components[0]['bom-ref']).toBe(LIB_B);
+                expect(result.inputs[2].components[0]['bom-ref']).toBe(LIB_A);
+                expect(result.count).toBe(5);
+            }
+            const swapped = run4(['pp', 'j', 'p'], [productRow(SERIAL_F, X_P, [lib(LIB_A)]), carrier(), productRow(SERIAL_B)], [productMetaOf(SERIAL_F), jMeta([SERIAL_B]), pMeta()]);
+            expectCarrierRekeyed(swapped.inputs[1]);
+            expect(swapped.count).toBe(5);
+        });
+
+        it('sixth sub-case: a placeholder under the nested product key denies the exemption', () => {
+            const result = run4(['p', 'j'], [productRow(SERIAL_B), carrier(), placeholderDoc(X_P)], [pMeta(), jMeta([SERIAL_B])]);
+            expectCarrierRekeyed(result.inputs[1]);
+            expect(result.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
+            expect(result.inputs[0].metadata.component.purl).toBe(P(X_P, SERIAL_B));
+            expect(result.inputs[2].metadata.component['bom-ref']).toBe(PLACEHOLDER_REF);
+            expect(result.inputs[2].metadata.component.purl).toBe(P(X_P, PLACEHOLDER_REF));
+            expect(result.count).toBe(5);
+        });
+
+        it('seventh sub-case: a stale record (the sibling rebuilt, absent, or a key recorded) earns nothing', () => {
+            const readings: { ids: string[], inputs: any[], meta: any[] }[] = [];
+            const pp = productRow(SERIAL_G, 'pkg:generic/Facts%20Org/other@1.0.0', [lib(LIB_A)]);
+            readings.push({ ids: ['p', 'j', 'pp'], inputs: [productRow(SERIAL_B), carrier(), pp], meta: [pMeta(), jMeta([SERIAL_F]), productMetaOf(SERIAL_G)] });
+            readings.push({ ids: ['p', 'j'], inputs: [productRow(SERIAL_B), carrier()], meta: [pMeta(), jMeta([SERIAL_F])] });
+            readings.push({ ids: ['p', 'j'], inputs: [productRow(SERIAL_B), carrier()], meta: [pMeta(), jMeta([X_P])] });
+            for (const reading of readings) {
+                const result = run4(reading.ids, reading.inputs, reading.meta);
+                expectCarrierRekeyed(result.inputs[1]);
+                expect(result.inputs[0]).toBe(reading.inputs[0]);
+                if (reading.inputs[2]) expect(result.inputs[2]).toBe(reading.inputs[2]);
+                expect(result.count).toBe(3);
+            }
+        });
+
+        it('eighth sub-case: the record is compared with the row recorded serial, never the served document serial', () => {
+            const meta = productMetaOf(SERIAL_F, { listedRootKeys: [A_P] });
+            const j = carrier();
+            const exempt = run4(['p', 'j', 'c'], [productRow(SERIAL_B), j, lister()], [meta, jMeta([SERIAL_F]), componentMeta()]);
+            expect(exempt.inputs[1]).toBe(j);
+            expect(exempt.count).toBe(1);
+
+            const denied = run4(['p', 'j', 'c'], [productRow(SERIAL_B), carrier(), lister()], [meta, jMeta([SERIAL_B]), componentMeta()]);
+            expectCarrierRekeyed(denied.inputs[1]);
+            expect(denied.count).toBe(4);
+        });
+    });
+
+    it('(h) writes apart a component root and two product roots under one key, whichever comes first', () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            const result = run4(['p', 'c'], [productRow(SERIAL_B), rowWithRoot(SERIAL_A, X_P)], [productMeta(), componentMeta()]);
+            expect(result.count).toBe(2);
+            expect(result.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
+            expect(result.inputs[1].metadata.component['bom-ref']).toBe(Q(SERIAL_A, X_P));
+            const reasons = Object.fromEntries(info.mock.calls.filter(c => c[1] === REKEYED_LINE).map(c => [(c[0] as any).input, (c[0] as any).reason]));
+            expect(reasons).toStrictEqual({ [SERIAL_B]: 'root collision', [SERIAL_A]: 'nested product key' });
+        } finally {
+            info.mockRestore();
+        }
+        for (const ids of [['p', 'q'], ['q', 'p']]) {
+            const rows: Record<string, any> = { p: productRow(SERIAL_B), q: productRow(SERIAL_F) };
+            const result = run4(ids, ids.map(id => rows[id]), [productMeta(), productMeta()]);
+            expect(result.count).toBe(2);
+            expect(result.inputs.map((b: any) => b.metadata.component['bom-ref']).sort()).toStrictEqual([Q(SERIAL_B, X_P), Q(SERIAL_F, X_P)].sort());
+        }
+    });
+
+    it('(i) a release key takes precedence over a nested product key', () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            const listed = listedDoc({ type: 'application', name: 'inner', version: '2.0.0', purl: X_P, 'bom-ref': X_P });
+            run4(['listed', 'p', 'c'], [listed, productRow(SERIAL_B), lister()], [undefined, productMeta(), componentMeta()], options({ releaseRootIds: ['listed'] }));
+            const line = info.mock.calls.filter(c => c[1] === REKEYED_LINE).map(c => c[0] as any).find(l => l.input === SERIAL_A);
+            expect(line.reason).toBe('release key');
+        } finally {
+            info.mockRestore();
+        }
+    });
+
+    it('(j) a product row is told by its row meta alone (ADR-1)', () => {
+        const inputs = () => [listedDoc(), productRow(SERIAL_B), lister()];
+        const upload = inputs();
+        const uploadResult = run4(['listed', 'p', 'c'], upload, [undefined, uploadMeta(), componentMeta()]);
+        expect(uploadResult.inputs).toBe(upload);
+        expect(uploadResult.count).toBe(0);
+
+        expect(run4(['listed', 'p', 'c'], inputs(), [undefined, { mod: REBOM_MERGE_MOD }, componentMeta()]).count).toBe(1);
+        expect(run4(['listed', 'p', 'c'], inputs(), [undefined, componentMeta(), componentMeta()]).count).toBe(0);
+        expect(run(['listed', 'p', 'c'], inputs()).count).toBe(0);
+        expect(run4(['listed', 'c', 'p'], [listedDoc(), lister(), productRow(SERIAL_B)], [undefined, componentMeta()]).count).toBe(0);
+
+        const withPlaceholder = [listedDoc(), lister(), placeholderDoc(X_P)];
+        const placeholderResult = run4(['listed', 'c'], withPlaceholder, [undefined, componentMeta(), productMeta()]);
+        expect(placeholderResult.inputs).toBe(withPlaceholder);
+        expect(placeholderResult.count).toBe(0);
+    });
+
+    it('(k) a FLATTEN merge is never touched', () => {
+        const inputs = [productRow(SERIAL_B), lister()];
+        const result = run4(['p', 'c'], inputs, [productMeta(), componentMeta()], options({ rootComponentMergeMode: FLATTEN }));
+        expect(result.inputs).toBe(inputs);
+        expect(result.count).toBe(0);
+    });
+
+    it('(l) a placeholder under a nested product key is qualified, and under the root key the product root collides', () => {
+        const info = vi.spyOn(logger, 'info');
+        try {
+            const result = run4(['p'], [productRow(SERIAL_B), placeholderDoc(X_P)], [productMeta()]);
+            expect(result.count).toBe(2);
+            expect(result.inputs[1].metadata.component['bom-ref']).toBe(PLACEHOLDER_REF);
+            expect(result.inputs[1].metadata.component.purl).toBe(P(X_P, PLACEHOLDER_REF));
+            expect(result.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
+            expect(result.inputs[0].metadata.component.purl).toBe(P(X_P, SERIAL_B));
+            const reasons = Object.fromEntries(info.mock.calls.filter(c => c[1] === REKEYED_LINE).map(c => [(c[0] as any).input, (c[0] as any).reason]));
+            expect(reasons).toStrictEqual({ [SERIAL_B]: 'root collision', [PLACEHOLDER_REF]: 'nested product key' });
+        } finally {
+            info.mockRestore();
+        }
+        const p = productRow(SERIAL_B);
+        const attached = run4(['p'], [p, placeholderDoc(A_P)], [productMeta({ listedRootKeys: [A_P] })]);
+        expect(attached.count).toBe(1);
+        expect(attached.inputs[0]).toBe(p);
+        expect(attached.inputs[1].metadata.component.purl).toBe(P(A_P, PLACEHOLDER_REF));
+        expect(attached.inputs[1].metadata.component['bom-ref']).toBe(PLACEHOLDER_REF);
+    });
+
+    it('(m) empty keys reserve nothing, and keys are compared exactly', () => {
+        const p = doc(SERIAL_B, { type: 'application', name: 'inner', version: '2.0.0', purl: '', 'bom-ref': 'inner-ref' }, [lib(LIB_B)]);
+        const c = componentRow(SERIAL_A, [{ type: 'library', name: 'empty', purl: '', 'bom-ref': 'empty-ref' }, lib(`${X_P}?x=1`)]);
+        const inputs = [p, c];
+        const result = run4(['p', 'c'], inputs, [productMeta({ listedRootKeys: [''] }), componentMeta()]);
+        expect(result.inputs).toBe(inputs);
+        expect(result.count).toBe(0);
+
+        const exact = [productRow(SERIAL_B), componentRow(SERIAL_A, [lib(`${X_P}?x=1`)])];
+        expect(run4(['p', 'c'], exact, [productMeta(), componentMeta()]).inputs).toBe(exact);
+    });
+
+    it('(n) logs the reserved count per product row, the node lines, and the exemption lines at debug only', () => {
+        const info = vi.spyOn(logger, 'info');
+        const debug = vi.spyOn(logger, 'debug');
+        const linesOf = (spy: any, msg: string) => spy.mock.calls.filter((c: any[]) => c[1] === msg).map((c: any[]) => c[0]);
+        try {
+            run4(['p', 'c'], [productRow(SERIAL_B), lister()], [productMeta({ listedRootKeys: [A_P] }), componentMeta()]);
+            expect(linesOf(info, NESTED_LINE)).toStrictEqual([{ input: SERIAL_B, keys: 6 }]);
+            expect(linesOf(info, REKEYED_LINE)).toStrictEqual([
+                { input: SERIAL_A, kind: 'component', reason: 'nested product key', from: { bomRef: X_P, purl: X_P }, to: { bomRef: Q(SERIAL_A, X_P), purl: P(X_P, SERIAL_A) } }
+            ]);
+            expect(info.mock.calls.some(c => c[0] === 'node re-key: 1 nodes of unlisted merge inputs re-keyed before the merge')).toBe(true);
+
+            info.mockClear();
+            debug.mockClear();
+            const pMeta = productMetaOf(SERIAL_B, { listedRootKeys: [A_P] });
+            run4(['p', 'j'], [productRow(SERIAL_B), carrier()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_B] })]);
+            expect(linesOf(debug, 'nested product exemption: the input merged this product row')).toStrictEqual([{ input: SERIAL_L, product: SERIAL_B, recordedSerial: SERIAL_B }]);
+            expect(linesOf(info, 'nested product exemption: the input merged this product row')).toStrictEqual([]);
+            expect(linesOf(info, NESTED_LINE)).toHaveLength(2);
+
+            const denied = (ids: string[], inputs: any[], meta: any[]) => {
+                debug.mockClear();
+                info.mockClear();
+                run4(ids, inputs, meta);
+                expect(linesOf(info, DENIED_LINE)).toStrictEqual([]);
+                return linesOf(debug, DENIED_LINE);
+            };
+            const pp = () => productRow(SERIAL_F, X_P, [lib(LIB_A)]);
+            expect(denied(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_B] }), productMetaOf(SERIAL_F)]))
+                .toStrictEqual([{ input: SERIAL_L, product: SERIAL_B, recordedSerial: SERIAL_B, key: X_P }]);
+            expect(denied(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_F] }), productMetaOf(SERIAL_F)]))
+                .toStrictEqual([{ input: SERIAL_L, product: SERIAL_F, recordedSerial: SERIAL_F, key: X_P }]);
+            expect(denied(['p', 'j'], [productRow(SERIAL_B), carrier(), placeholderDoc(X_P)], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_B] })])).toHaveLength(1);
+            expect(denied(['p', 'j'], [productRow(SERIAL_B), carrier()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_F] })])).toStrictEqual([]);
+        } finally {
+            info.mockRestore();
+            debug.mockRestore();
+        }
+    });
+
+    it('(o) reserves the images of the nested product root and listed roots under its own base alone', () => {
+        const image = componentRow(SERIAL_A, [lib(LIB_A), lib(P(X_P, SERIAL_B), { 'bom-ref': Q(SERIAL_B, X_P) })]);
+        const imageResult = run4(['p', 'c'], [productRow(SERIAL_B), image], [productMeta(), componentMeta()]);
+        expect(imageResult.count).toBe(1);
+        expect(imageResult.inputs[1].components[1]['bom-ref']).toBe(Q(SERIAL_A, Q(SERIAL_B, X_P)));
+        expect(imageResult.inputs[1].components[1].purl).toBe(P(X_P, SERIAL_A));
+
+        const listedImage = componentRow(SERIAL_A, [lib(P(A_P, SERIAL_B), { 'bom-ref': Q(SERIAL_B, A_P) })]);
+        expect(run4(['p', 'c'], [productRow(SERIAL_B), listedImage], [productMeta({ listedRootKeys: [A_P] }), componentMeta()]).count).toBe(1);
+
+        const otherBases = componentRow(SERIAL_A, [lib(P(X_P, 'other'), { 'bom-ref': Q('other', X_P) }), lib(P(X_P, SERIAL_A), { 'bom-ref': Q(SERIAL_A, X_P) })]);
+        const otherResult = run4(['p', 'c'], [productRow(SERIAL_B), otherBases], [productMeta(), componentMeta()]);
+        expect(otherResult.inputs[1]).toBe(otherBases);
+        expect(otherResult.count).toBe(0);
+
+        const p = productRow(SERIAL_B);
+        const j = productRow(SERIAL_L, OUTER, [lib(P(X_P, SERIAL_B), { 'bom-ref': Q(SERIAL_B, X_P) })]);
+        const carried = run4(['p', 'j'], [p, j], [productMetaOf(SERIAL_B), productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_B] })]);
+        expect(carried.inputs[0]).toBe(p);
+        expect(carried.inputs[1]).toBe(j);
+        expect(carried.count).toBe(0);
+
+        const noSerial = componentRow(SERIAL_A, [lib(P(X_P, X_P), { 'bom-ref': Q(X_P, X_P) })]);
+        expect(run4(['p', 'c'], [productRow(undefined), noSerial], [productMeta(), componentMeta()]).count).toBe(1);
     });
 });
 

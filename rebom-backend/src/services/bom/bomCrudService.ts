@@ -1,5 +1,5 @@
 import * as BomRepository from '../../bomRepository';
-import { BomDto, BomMetaDto, BomRecord, BomSearch, SearchObject } from '../../types';
+import { BomDto, BomMetaDto, BomRecord, BomSearch, SearchObject, RebomOptions } from '../../types';
 import { BomNotFoundError, BomDataIntegrityError } from '../../types/errors';
 import { BomMapper } from './bomMapper';
 import { logger } from '../../logger';
@@ -13,6 +13,15 @@ export async function findAllBoms(): Promise<BomDto[]> {
 }
 
 export async function findBomObjectById(id: string, org: string): Promise<Object> {
+    return (await findBomObjectWithMetaById(id, org)).bom;
+}
+
+/**
+ * findBomObjectById with the row's meta beside the document (SCORE-69 ADR-2): the merge reads a
+ * row's kind (mod, rootComponentMergeMode), its recorded serial and its merge records from the meta
+ * rebom stored, never from the document. `bom` is exactly what findBomObjectById returns.
+ */
+export async function findBomObjectWithMetaById(id: string, org: string): Promise<{ bom: any, meta: RebomOptions }> {
     logger.debug({ id, org }, "findBomObjectById called");
     
     // Try to find by UUID first
@@ -60,7 +69,7 @@ export async function findBomObjectById(id: string, org: string): Promise<Object
     // Rows stored before SCORE-30 carry no supplier or hash on their root: filled from the
     // attachment facts stored with the row, as an upload today is (ADR-4). A no-op on a row
     // that has them.
-    return fillRootFromRecordMeta(repaired, bomRecord.meta);
+    return { bom: fillRootFromRecordMeta(repaired, bomRecord.meta), meta: bomRecord.meta };
 }
 
 /**

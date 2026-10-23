@@ -14,7 +14,9 @@ vi.mock('../../src/integrationRepository', () => ({
 import * as BomService from '../../src/bomService';
 import { pool } from '../../src/utils';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber, cleanupTestBoms } from '../helpers';
-import { BomValidationError } from '../../src/types/errors';
+import { BomValidationError, BomNotFoundError } from '../../src/types/errors';
+import { REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
+import { RootComponentMergeMode } from '../../src/types';
 
 /**
  * Integration tests for BOM CRUD operations
@@ -288,4 +290,51 @@ describe('an uploaded mixed licenses array is refused at store', () => {
             expect(served.components.filter((c: any) => c['bom-ref'] === MIXED).map((c: any) => c.licenses)).toStrictEqual([licenses]);
         });
     }
+});
+
+/** SCORE-69 T-5 (ADR-2): the document and the row's meta, read in one call. */
+describe('findBomObjectWithMetaById', () => {
+    const created: string[] = [];
+
+    afterAll(async () => {
+        if (created.length > 0) await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+    });
+
+    async function upload(): Promise<{ uuid: string, serialNumber: string }> {
+        const bom = loadFixture('cyclonedx-simple.json');
+        bom.serialNumber = generateSerialNumber();
+        const record = await BomService.addBom({
+            bomInput: { format: 'CYCLONEDX' as const, bom, org: TEST_ORG_UUID, rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, name: 'meta-app', version: '1.0.0' }) }
+        });
+        created.push(record.uuid);
+        return { uuid: record.uuid, serialNumber: bom.serialNumber };
+    }
+
+    it('returns what findBomObjectById returns beside the row meta, by uuid and by serial number', async () => {
+        const { uuid, serialNumber } = await upload();
+        // by serial number as rearm-saas names an artifact's internal BOM: the bare uuid of the serial
+        for (const id of [uuid, serialNumber.replace('urn:uuid:', '')]) {
+            const { bom, meta } = await BomService.findBomObjectWithMetaById(id, TEST_ORG_UUID);
+            expect(bom).toStrictEqual(await BomService.findBomObjectById(id, TEST_ORG_UUID));
+            expect(meta.serialNumber).toBe(serialNumber);
+            expect(meta.mod).toBe(UPLOAD_MOD);
+        }
+    });
+
+    it('throws BomNotFoundError for an unknown id', async () => {
+        await expect(BomService.findBomObjectWithMetaById('3c7e2a51-9d40-4b6e-8f21-000000006905', TEST_ORG_UUID)).rejects.toBeInstanceOf(BomNotFoundError);
+    });
+
+    it('reads a merged row as before, with mod rebom in its meta', async () => {
+        const { uuid } = await upload();
+        const record = await BomService.mergeAndStoreBoms([uuid],
+            createTestRebomOptions({ serialNumber: generateSerialNumber(), name: 'meta-product', version: '1.0.0', rootComponentMergeMode: RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT }),
+            TEST_ORG_UUID, BomService.addBom);
+        created.push(record.uuid);
+
+        const { bom, meta } = await BomService.findBomObjectWithMetaById(record.uuid, TEST_ORG_UUID);
+        expect(bom).toStrictEqual(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
+        expect(bom.metadata.component.name).toBe('meta-product');
+        expect(meta.mod).toBe(REBOM_MERGE_MOD);
+    });
 });

@@ -1196,6 +1196,74 @@ export function listedReleaseInputs(ids: string[], inputs: any[], releaseRootIds
 }
 
 /**
+ * SCORE-69 ADR-1 to ADR-4: what the merge reads of a row's meta, beside its document. `mod` and the
+ * mode tell the row's kind; `serialNumber` is the row's recorded serial (the CLI's, stored once,
+ * never the served copy's); the two records are the row's own merge's (ADR-3).
+ */
+export type MergeRowMeta = Pick<RebomOptions, 'mod' | 'rootComponentMergeMode' | 'serialNumber' | 'nestedProductSerials' | 'listedRootKeys'>
+
+/**
+ * SCORE-69 ADR-1: a product row is a row rebom stored from its own merge (`mod` `rebom`, written
+ * from the in-process origin, never from a request) under a mode other than FLATTEN_UNDER_NEW_ROOT
+ * (absent read as PRESERVE). An upload row carries PRESERVE too, which is why `mod` is required.
+ */
+export function isProductRow(meta: MergeRowMeta | undefined): boolean {
+  if (!meta || typeof meta !== 'object') return false
+  return isRebomMergeOutput(meta) && meta.rootComponentMergeMode !== RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT
+}
+
+/** A root's purl and bom-ref, the non-empty strings among them, once each (SCORE-66 ADR-1). */
+function rootKeysOf(root: any): string[] {
+  const keys = new Set<string>()
+  if (root && typeof root === 'object') {
+    if (typeof root.purl === 'string' && root.purl !== '') keys.add(root.purl)
+    const ref = bomRefOf(root)
+    if (ref) keys.add(ref)
+  }
+  return Array.from(keys)
+}
+
+/** The non-empty strings of `value` when it is an array, else none. */
+function stringsOf(value: any): string[] {
+  return Array.isArray(value) ? value.filter((v: any) => typeof v === 'string' && v !== '') : []
+}
+
+/** The recorded serial of a row's meta when it is a non-empty string. */
+function recordedSerialOf(meta: MergeRowMeta | undefined): string | undefined {
+  const serial = meta?.serialNumber
+  return typeof serial === 'string' && serial !== '' ? serial : undefined
+}
+
+/**
+ * SCORE-69 ADR-3: the two records a merge row stores, from the merge's original inputs (before the
+ * re-key; a placeholder has no id and records nothing) and the rows' meta. `listedRootKeys`: the root purl and bom-ref of
+ * every input whose id is in `releaseRootIds` or `attachedRootIds`. `nestedProductSerials`: the
+ * recorded serial (`rowMeta[i].serialNumber`, never the document's) of every unlisted input that is a
+ * product row (isProductRow); a placeholder (no row) or an input without a recorded serial records
+ * nothing. Each sorted and de-duplicated. Pure.
+ */
+export function mergeRootKeyRecords(ids: string[], inputs: any[],
+  options: Pick<RebomOptions, 'releaseRootIds' | 'attachedRootIds'>,
+  rowMeta: ReadonlyArray<MergeRowMeta | undefined> = []): { nestedProductSerials: string[], listedRootKeys: string[] } {
+  const idList = Array.isArray(ids) ? ids : []
+  const inputList = Array.isArray(inputs) ? inputs : []
+  const metaList = Array.isArray(rowMeta) ? rowMeta : []
+  const listedIds = new Set([...stringsOf(options?.releaseRootIds), ...stringsOf(options?.attachedRootIds)])
+  const serials = new Set<string>()
+  const listedKeys = new Set<string>()
+  for (let i = 0; i < idList.length; i++) {
+    if (listedIds.has(idList[i])) {
+      rootKeysOf(inputList[i]?.metadata?.component).forEach(k => listedKeys.add(k))
+      continue
+    }
+    if (!isProductRow(metaList[i])) continue
+    const serial = recordedSerialOf(metaList[i])
+    if (serial) serials.add(serial)
+  }
+  return { nestedProductSerials: Array.from(serials).sort(), listedRootKeys: Array.from(listedKeys).sort() }
+}
+
+/**
  * Metadata property a merged BOM carries when nodes of unlisted inputs were re-keyed before the
  * merge (SCORE-66 ADR-6): how many nodes, components and services, each counted once. Written only
  * above 0; internal, stripped on egress like BOM_REFS_DEDUPLICATED_PROPERTY.
@@ -1209,8 +1277,12 @@ export type RekeyResult = {
 
 const REARM_INPUT_QUALIFIER = 'rearm_input'
 const NODE_REKEYED_LINE = 'node re-keyed: an unlisted input carries a reserved key'
+const NESTED_PRODUCT_KEYS_LINE = 'nested product keys reserved'
+const NESTED_PRODUCT_EXEMPT_LINE = 'nested product exemption: the input merged this product row'
+const NESTED_PRODUCT_DENIED_LINE = 'nested product exemption denied'
 
-type RekeyReason = 'release key' | 'root collision'
+type RekeyReason = 'release key' | 'nested product key' | 'root collision'
+const REASON_PRECEDENCE: RekeyReason[] = ['release key', 'nested product key', 'root collision']
 
 /**
  * SCORE-66 ADR-4: `purl` with the qualifier `rearm_input=<encodeURIComponent(base)>`. Textual, no
@@ -1309,13 +1381,21 @@ function renameReferences(bom: any, renamed: Map<string, string>): any {
  * A reserved bom-ref becomes `<base>#<ref>` and every reference to it inside that input is re-pointed;
  * a reserved purl gains the qualifier `rearm_input=<base>` (withRearmInputQualifier); a field not
  * reserved is kept. `base` is the input's serialNumber, else its root bom-ref, else `input-<i>`.
+ * SCORE-69 ADR-4, ADR-5: with `rowMeta` (aligned with `ids`), every unlisted input `p` that is a
+ * product row (isProductRow) reserves `M_p`: its root's keys, its row's `listedRootKeys` and their
+ * images under `p`'s base (`<base_p>#<k>`, the purl qualified with `base_p`), against every
+ * component node and service at any depth of every other unlisted input `j`, placeholders included,
+ * unless `j` is a product row whose `nestedProductSerials` names `p`'s recorded serial and no other
+ * unlisted root carries a key of `p`'s root. Reasons in precedence: release key, nested product key,
+ * root collision.
  * A listed input is never touched, nor is any input of a FLATTEN_UNDER_NEW_ROOT merge. One info line
  * per re-keyed node and one with the count. Returns the same array (and count 0) when nothing is
  * re-keyed; otherwise a new array of the same length and order whose changed entries are shallow
  * copies, the inputs untouched.
  */
 export function rekeyUnlistedInputs(ids: string[], inputs: any[],
-  options: Pick<RebomOptions, 'name' | 'version' | 'group' | 'purl' | 'belongsTo' | 'hash' | 'tldOnly' | 'structure' | 'rootComponentMergeMode' | 'releaseRootIds' | 'attachedRootIds'>): RekeyResult {
+  options: Pick<RebomOptions, 'name' | 'version' | 'group' | 'purl' | 'belongsTo' | 'hash' | 'tldOnly' | 'structure' | 'rootComponentMergeMode' | 'releaseRootIds' | 'attachedRootIds'>,
+  rowMeta: ReadonlyArray<MergeRowMeta | undefined> = []): RekeyResult {
   const none = { inputs, count: 0 }
   if (!Array.isArray(inputs) || inputs.length === 0) return none
   // ADR-2: compared as sent; anything but FLATTEN is a product merge, an absent mode included.
@@ -1329,14 +1409,13 @@ export function rekeyUnlistedInputs(ids: string[], inputs: any[],
   ])
   const idList = Array.isArray(ids) ? ids : []
   const isListed = (i: number) => i < idList.length && listedIds.has(idList[i])
-  const keysOf = (root: any): string[] => {
-    const keys = new Set<string>()
-    if (root && typeof root === 'object') {
-      if (typeof root.purl === 'string' && root.purl !== '') keys.add(root.purl)
-      const ref = bomRefOf(root)
-      if (ref) keys.add(ref)
-    }
-    return Array.from(keys)
+  const keysOf = rootKeysOf
+  const metaList: ReadonlyArray<MergeRowMeta | undefined> = Array.isArray(rowMeta) ? rowMeta : []
+  // ADR-1: a row of `ids` (never a placeholder), unlisted, whose meta says product row.
+  const isProductInput = (i: number) => i < idList.length && !isListed(i) && isProductRow(metaList[i])
+  const baseOf = (input: any, i: number): string => {
+    const serial = typeof input?.serialNumber === 'string' && input.serialNumber !== '' ? input.serialNumber : undefined
+    return serial ?? bomRefOf(input?.metadata?.component) ?? `input-${i}`
   }
 
   const releaseKeys = new Set<string>()
@@ -1350,19 +1429,68 @@ export function rekeyUnlistedInputs(ids: string[], inputs: any[],
   const rootKeys: string[][] = inputs.map((input: any, i: number) => (isListed(i) ? [] : keysOf(input?.metadata?.component)))
   rootKeys.forEach(keys => keys.forEach(k => rootKeyCount.set(k, (rootKeyCount.get(k) || 0) + 1)))
 
+  // ADR-4: the nested product keys, M_p per product row p, from the original inputs before any
+  // input is walked: key -> the product rows that reserve it.
+  const productRows: number[] = []
+  const reservedBy = new Map<string, number[]>()
+  inputs.forEach((input: any, p: number) => {
+    if (!isProductInput(p) || !input || typeof input !== 'object') return
+    productRows.push(p)
+    const baseP = baseOf(input, p)
+    const ownKeys = new Set([...keysOf(input.metadata?.component), ...stringsOf(metaList[p]?.listedRootKeys)])
+    const reserved = new Set<string>(ownKeys)
+    ownKeys.forEach(k => {
+      reserved.add(`${baseP}#${k}`)
+      reserved.add(withRearmInputQualifier(k, baseP))
+    })
+    reserved.forEach(k => {
+      const rows = reservedBy.get(k)
+      if (rows) rows.push(p)
+      else reservedBy.set(k, [p])
+    })
+    logger.info({ input: baseP, keys: reserved.size }, NESTED_PRODUCT_KEYS_LINE)
+  })
+  // ADR-5: j is exempt from M_p when j is a product row whose record names p's recorded serial and
+  // p's root is the only unlisted root under each of its keys. Per (p, j), decided once.
+  const exemptions = new Map<string, boolean>()
+  const isExempt = (p: number, j: number): boolean => {
+    const pair = `${p}:${j}`
+    const known = exemptions.get(pair)
+    if (known !== undefined) return known
+    let exempt = false
+    const serialP = recordedSerialOf(metaList[p])
+    if (isProductInput(j) && serialP !== undefined && stringsOf(metaList[j]?.nestedProductSerials).includes(serialP)) {
+      const shared = keysOf(inputs[p]?.metadata?.component).find(k => rootKeyCount.get(k) !== 1)
+      const bases = { input: baseOf(inputs[j], j), product: baseOf(inputs[p], p), recordedSerial: serialP }
+      if (shared === undefined) {
+        exempt = true
+        logger.debug(bases, NESTED_PRODUCT_EXEMPT_LINE)
+      } else {
+        logger.debug({ ...bases, key: shared }, NESTED_PRODUCT_DENIED_LINE)
+      }
+    }
+    exemptions.set(pair, exempt)
+    return exempt
+  }
+  // Every pair decided up front, so each debug line is written once whatever the walk meets.
+  inputs.forEach((_: any, j: number) => {
+    if (!isListed(j)) productRows.forEach(p => { if (p !== j) isExempt(p, j) })
+  })
+
   let count = 0
   const out = inputs.map((input: any, i: number) => {
     if (isListed(i) || !input || typeof input !== 'object') return input
     const own = new Set(rootKeys[i])
     const collides = (key: string) => (rootKeyCount.get(key) || 0) - (own.has(key) ? 1 : 0) > 0
+    const reservedForMe = (key: string) => (reservedBy.get(key) || []).some(p => p !== i && !isExempt(p, i))
     const reasonOf = (value: string | undefined, isRoot: boolean): RekeyReason | undefined => {
       if (value === undefined || value === '') return undefined
       if (releaseKeys.has(value)) return 'release key'
+      if (reservedForMe(value)) return 'nested product key'
       if (isRoot && collides(value)) return 'root collision'
       return undefined
     }
-    const serial = typeof input.serialNumber === 'string' && input.serialNumber !== '' ? input.serialNumber : undefined
-    const base = serial ?? bomRefOf(input.metadata?.component) ?? `input-${i}`
+    const base = baseOf(input, i)
     const renamed = new Map<string, string>()
 
     const rekeyNode = (node: any, kind: 'component' | 'service', isRoot: boolean): any => {
@@ -1384,7 +1512,7 @@ export function rekeyUnlistedInputs(ids: string[], inputs: any[],
         logger.info({
           input: base,
           kind,
-          reason: refReason === 'release key' || purlReason === 'release key' ? 'release key' : 'root collision',
+          reason: REASON_PRECEDENCE.find(r => r === refReason || r === purlReason),
           from: { bomRef: ref, purl },
           to: { bomRef: next['bom-ref'], purl: kind === 'component' ? next.purl : undefined }
         }, NODE_REKEYED_LINE)

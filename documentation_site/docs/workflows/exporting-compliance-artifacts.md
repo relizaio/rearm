@@ -159,6 +159,13 @@ serial number of the component's own merged SBOM, and its bom-ref is that serial
 by `#` and the purl without the qualifier. Two component releases that share a name and version
 under one product are kept apart the same way.
 
+**A nested product's node.** In the export of a product that bundles another product, the bundled
+product's node, and the roots of the SBOMs attached to that product's release and to its source
+code entries, carry only what that product's own export states. An SBOM of another release in the bundle that lists the bundled
+product by its ReARM purl is kept as its own node with the `rearm_input` qualifier, as above, and
+never adds to the bundled product's node. A listing of a component release by its ReARM purl still
+folds into that release's node.
+
 **What still fails.** The root of an SBOM attached to a deliverable the release ships or to the
 release's source code entry keeps its own entry, and carries the release's declared licence where its
 generator wrote none; a licence the generator wrote, `NOASSERTION` or `NONE` included, is kept.

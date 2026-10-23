@@ -247,6 +247,11 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
   // From the in-process origin, never from the request (SCORE-60 ADR-9 (b)).
   rebomOptions.mod = origin === 'MERGE' ? REBOM_MERGE_MOD : UPLOAD_MOD;
+  // The merge row's records are rebom's, written at the merge; an upload never carries them (SCORE-69 ADR-3).
+  if (origin !== 'MERGE') {
+    delete rebomOptions.nestedProductSerials;
+    delete rebomOptions.listedRootKeys;
+  }
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -529,6 +534,8 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     // After the spread, so a request `mod` never wins: no merge is stored through this route
     // (SCORE-60 ADR-9 (b)).
     mergedOptions.mod = UPLOAD_MOD;
+    delete mergedOptions.nestedProductSerials;
+    delete mergedOptions.listedRootKeys;
     
     let serialNumber: string;
     if (existingSerialNumber) {

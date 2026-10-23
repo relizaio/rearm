@@ -16,7 +16,8 @@ import * as BomService from '../../src/bomService';
 import validateBom from '../../src/validateBom';
 import { pool } from '../../src/utils';
 import { clearMockOciStorage } from '../../src/services/oci';
-import { TEST_ORG_UUID } from '../helpers';
+import { TEST_ORG_UUID, createTestRebomOptions } from '../helpers';
+import * as BomRepository from '../../src/bomRepository';
 import { logger } from '../../src/logger';
 import {
     FOLDED_ROOT_PROPERTY,
@@ -730,6 +731,444 @@ describe('the merged release export folds the uploaded root that describes the r
                     await expect(validateBom(bom)).resolves.toBeTruthy();
                 });
             }
+        });
+
+        describe('a nested product\'s keys are reserved against every other input (SCORE-69)', () => {
+            const LISTING = {
+                type: 'library', name: 'facts-product', version: '3.0.0', 'bom-ref': PRODUCT_ROOT, purl: PRODUCT_ROOT,
+                supplier: { name: 'Forged' }, licenses: [{ license: { id: 'MIT' } }],
+                hashes: [{ alg: 'SHA-512', content: 'f'.repeat(128) }], properties: [{ name: 'forged', value: '1' }]
+            };
+            const FORGED_HASH = { alg: 'SHA-512', content: 'f'.repeat(128) };
+            const FORGER_ID = 'pkg:generic/Facts%20Org/forger@1.0.0';
+            const SUITE = { name: 'facts-suite', version: '1.0.0' };
+            const LIB_A = 'pkg:npm/lib-a@1.0.0';
+            // the serial numbers, the producer bom-link that names the request's serial, and the timestamp are per document
+            const strip = (b: any) => JSON.stringify({ ...b, serialNumber: undefined, metadata: { ...b.metadata, timestamp: undefined } })
+                .replace(/urn:cdx:[0-9a-f-]+\/\d+/g, 'BOM-LINK');
+
+            async function rowMetaOf(id: string): Promise<any> {
+                return (await BomRepository.bomById(id))[0].meta;
+            }
+
+            /** The listing of `key` (purl and bom-ref) with the forged facts. */
+            function listingOf(key: string, ref: string = key): any {
+                return { ...LISTING, 'bom-ref': ref, purl: key };
+            }
+
+            /** The component row and the web upload of (i), and a product over them (root PRODUCT_ROOT, no list). */
+            async function innerPlain(overrides: any = {}, extra: any = {}): Promise<{ inner: { id: string, bom: any }, component: { id: string, bom: any }, web: string }> {
+                const u = await uploads();
+                const component = await componentMerge([u.sce, u.deliverable, u.release], { releaseRootIds: [u.release] });
+                const web = await storeUpload(created, releaseUpload(), { name: 'web', version: '2.0.0', belongsTo: 'RELEASE' });
+                const inner = await productMerge([component.id, web], overrides, extra);
+                return { inner, component, web };
+            }
+
+            /** (xix): a product whose own SCE upload is listed in attachedRootIds, and that upload's stored root. */
+            async function innerWithSce(): Promise<{ inner: { id: string, bom: any }, component: { id: string, bom: any }, web: string, sceOwn: string, sceOwnRoot: any }> {
+                const sceOwn = await storeUpload(created, sceUpload(), { name: 'facts-product', version: '3.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
+                const sceOwnRoot = (await BomService.findBomObjectById(sceOwn, TEST_ORG_UUID)).metadata.component;
+                const u = await uploads();
+                const component = await componentMerge([u.sce, u.deliverable, u.release], { releaseRootIds: [u.release] });
+                const web = await storeUpload(created, releaseUpload(), { name: 'web', version: '2.0.0', belongsTo: 'RELEASE' });
+                const inner = await productMerge([sceOwn, component.id, web], {}, { attachedRootIds: [sceOwn] });
+                return { inner, component, web, sceOwn, sceOwnRoot };
+            }
+
+            /** A component row `lister` 1.0.0 over an SCE upload (no hash) edited by `edit`. */
+            async function lister(edit: (doc: any) => void, overrides: any = {}): Promise<{ id: string, bom: any }> {
+                const doc = sceUpload();
+                edit(doc);
+                const sce = await storeUpload(created, doc, { name: 'lister', version: '1.0.0', belongsTo: 'SCE', supplierName: ORG });
+                return componentMerge([sce], {}, { name: 'lister', ...overrides });
+            }
+
+            const pushListing = (key: string = PRODUCT_ROOT) => (doc: any) => {
+                doc.components.push(listingOf(key));
+                doc.dependencies.push({ ref: key, dependsOn: [LIB_A] });
+            };
+
+            function forgedNodes(bom: any): any[] {
+                return allComponents(bom).filter(c => property(c.properties, 'forged').length > 0);
+            }
+
+            function rearmInput(purl: string): string | undefined {
+                return (PackageURL.fromString(purl).qualifiers as any)?.rearm_input;
+            }
+
+            function expectNoForgedFacts(n: any): void {
+                expect(n).toBeDefined();
+                expect((n.licenses || []).some((l: any) => l?.license?.id === 'MIT')).toBe(false);
+                expect(n.hashes || []).not.toContainEqual(FORGED_HASH);
+                expect(property(n.properties, 'forged')).toStrictEqual([]);
+                expect(JSON.stringify(n)).not.toContain('Forged');
+            }
+
+            function rekeyedCount(bom: any): any[] {
+                return property(bom.metadata.properties, NODES_REKEYED_PROPERTY);
+            }
+
+            it('(xvii) keeps a component listing of a nested product root apart from that product node, in both orders (the acceptance)', async () => {
+                const { inner } = await innerPlain();
+                const lst = await lister(pushListing());
+                const listerSerial = lst.bom.serialNumber;
+                expect(node(lst.bom, PRODUCT_ROOT)?.supplier).toStrictEqual({ name: 'Forged' });
+
+                const outs: any[] = [];
+                for (const ids of [[inner.id, lst.id], [lst.id, inner.id]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    const product = node(bom, PRODUCT_ROOT);
+                    expectNoForgedFacts(product);
+                    expect(product.supplier).toStrictEqual({ name: ORG });
+                    expect(product.licenses).toStrictEqual([{ license: { id: PRODUCT_LICENSE } }]);
+                    expect(product).not.toHaveProperty('hashes');
+                    const apart = allComponents(bom).filter(c => c['bom-ref'] === Q(listerSerial, PRODUCT_ROOT));
+                    expect(apart).toHaveLength(1);
+                    expect(apart[0].purl).toBe(P(PRODUCT_ROOT, listerSerial));
+                    expect(apart[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+                    expect(apart[0].hashes).toContainEqual(FORGED_HASH);
+                    expect(property(apart[0].properties, 'forged')).toStrictEqual([{ name: 'forged', value: '1' }]);
+                    const productEntries = bom.dependencies.filter((d: any) => d.ref === PRODUCT_ROOT);
+                    expect(productEntries).toHaveLength(1);
+                    expect(productEntries[0].dependsOn || []).not.toContain(LIB_A);
+                    expect(bom.dependencies.find((d: any) => d.ref === Q(listerSerial, PRODUCT_ROOT)).dependsOn).toContain(LIB_A);
+                    expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+                    expectUniqueBomRefs(bom);
+                    await expect(validateBom(bom)).resolves.toBeTruthy();
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+            });
+
+            it('(xviii) keeps a service under the nested product root and its edges off that product', async () => {
+                const { inner } = await innerPlain();
+                const lst = await lister(doc => {
+                    doc.services = [{ 'bom-ref': PRODUCT_ROOT, name: 'forged-svc' }];
+                    doc.dependencies.push({ ref: PRODUCT_ROOT, dependsOn: [LIB_A] });
+                });
+                expect(allServices(lst.bom).map(s => s['bom-ref'])).toContain(PRODUCT_ROOT);
+                expect(lst.bom.dependencies).toContainEqual({ ref: PRODUCT_ROOT, dependsOn: [LIB_A] });
+                expect(property(lst.bom.metadata.properties, DANGLING_REFS_DROPPED_PROPERTY)).toStrictEqual([]);
+                const innerEntry = inner.bom.dependencies.find((d: any) => d.ref === PRODUCT_ROOT);
+
+                const { bom } = await productMerge([inner.id, lst.id], SUITE);
+
+                const entries = bom.dependencies.filter((d: any) => d.ref === PRODUCT_ROOT);
+                expect(entries).toHaveLength(1);
+                expect(entries[0].dependsOn).toStrictEqual(innerEntry.dependsOn);
+                const q = Q(lst.bom.serialNumber, PRODUCT_ROOT);
+                expect(allServices(bom).map(s => s['bom-ref'])).toStrictEqual([q]);
+                expect(bom.dependencies).toContainEqual({ ref: q, dependsOn: [LIB_A] });
+                expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+                expectUniqueBomRefs(bom);
+            });
+
+            it('(xix) keeps a listing of the nested product SCE root apart from that root', async () => {
+                const { inner, sceOwnRoot } = await innerWithSce();
+                expect(sceOwnRoot.purl).toBe(sceOwnRoot['bom-ref']);
+                expect((await rowMetaOf(inner.id)).listedRootKeys).toStrictEqual([sceOwnRoot.purl]);
+                const carried = node(inner.bom, sceOwnRoot['bom-ref']);
+                const lst = await lister(pushListing(sceOwnRoot.purl));
+
+                const { bom } = await productMerge([inner.id, lst.id], SUITE);
+
+                const sceNode = node(bom, sceOwnRoot['bom-ref']);
+                expectNoForgedFacts(sceNode);
+                expect(sceNode.licenses).toStrictEqual(carried.licenses);
+                const apart = node(bom, Q(lst.bom.serialNumber, sceOwnRoot['bom-ref']));
+                expect(apart.purl).toBe(P(sceOwnRoot.purl, lst.bom.serialNumber));
+                expect(apart.licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+                expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+                expectUniqueBomRefs(bom);
+            });
+
+            it('(xx) keeps the copy a product row carries of the nested product it merged, once, until that product is rebuilt alone', async () => {
+                const { inner: inner0, component, web } = await innerPlain();
+                const inner1 = await productMerge([inner0.id, component.id, web], { name: 'facts-mid', version: '1.0.0' });
+                const inner0Serial = (await rowMetaOf(inner0.id)).serialNumber;
+                expect((await rowMetaOf(inner1.id)).nestedProductSerials).toStrictEqual([inner0Serial]);
+                expect(inner0Serial).not.toBe(inner0.bom.serialNumber);
+                const inner0Root = inner0.bom.metadata.component;
+
+                const outs: any[] = [];
+                for (const ids of [[inner1.id, inner0.id, component.id, web], [inner0.id, inner1.id, component.id, web]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    const product = allComponents(bom).filter(c => c.purl === PRODUCT_ROOT);
+                    expect(product).toHaveLength(1);
+                    for (const field of ['supplier', 'licenses', 'hashes']) expect(product[0][field]).toStrictEqual(inner0Root[field]);
+                    expect(allComponents(bom).filter(c => typeof c.purl === 'string' && c.purl.startsWith(PRODUCT_ROOT + '?rearm_input'))).toStrictEqual([]);
+                    expect(rekeyedCount(bom)).toStrictEqual([]);
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+
+                // the same with the nested product listing its own SCE root: that root once
+                const sce = await innerWithSce();
+                const mid = await productMerge([sce.inner.id, sce.component.id, sce.web], { name: 'facts-mid', version: '1.0.0' });
+                const { bom: withSce } = await productMerge([mid.id, sce.inner.id, sce.component.id, sce.web], SUITE);
+                expect(allComponents(withSce).filter(c => typeof c.purl === 'string' && c.purl.startsWith(sce.sceOwnRoot.purl))).toHaveLength(1);
+                expect(rekeyedCount(withSce)).toStrictEqual([]);
+
+                // the nested product rebuilt alone while the row above is not: the carried copy is written apart
+                const inner0b = await productMerge([component.id, web]);
+                expect((await rowMetaOf(inner0b.id)).serialNumber).not.toBe(inner0Serial);
+                const inner1Serial = inner1.bom.serialNumber;
+                const { bom: stale } = await productMerge([inner1.id, inner0b.id, component.id, web], SUITE);
+                const clean = node(stale, PRODUCT_ROOT);
+                for (const field of ['supplier', 'licenses', 'hashes']) expect(clean[field]).toStrictEqual(inner0b.bom.metadata.component[field]);
+                const copy = node(stale, Q(inner1Serial, PRODUCT_ROOT));
+                expect(copy).toBeDefined();
+                expect(copy.purl).toBe(P(PRODUCT_ROOT, inner1Serial));
+                expect(rekeyedCount(stale)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+
+                // the row above rebuilt: once again
+                const inner1b = await productMerge([inner0b.id, component.id, web], { name: 'facts-mid', version: '1.0.0' });
+                expect((await rowMetaOf(inner1b.id)).nestedProductSerials).toStrictEqual([(await rowMetaOf(inner0b.id)).serialNumber]);
+                const { bom: rebuilt } = await productMerge([inner1b.id, inner0b.id, component.id, web], SUITE);
+                expect(allComponents(rebuilt).filter(c => typeof c.purl === 'string' && c.purl.startsWith(PRODUCT_ROOT))).toHaveLength(1);
+                expect(rekeyedCount(rebuilt)).toStrictEqual([]);
+            });
+
+            it('(xxi) writes apart a sibling product copy of a listing beside the lister own node', async () => {
+                const { inner: innerA, web } = await innerPlain();
+                const lst = await lister(pushListing());
+                const innerB = await productMerge([lst.id, web], { name: 'facts-b', version: '1.0.0' });
+                expect(node(innerB.bom, PRODUCT_ROOT)?.supplier).toStrictEqual({ name: 'Forged' });
+                expect((await rowMetaOf(innerB.id)).nestedProductSerials).toStrictEqual([]);
+
+                const { bom } = await productMerge([innerA.id, innerB.id, lst.id], SUITE);
+
+                expectNoForgedFacts(node(bom, PRODUCT_ROOT));
+                for (const base of [innerB.bom.serialNumber, lst.bom.serialNumber]) {
+                    const apart = node(bom, Q(base, PRODUCT_ROOT));
+                    expect(apart?.purl).toBe(P(PRODUCT_ROOT, base));
+                    expect(apart.supplier).toStrictEqual({ name: 'Forged' });
+                }
+                expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '2' }]);
+                expectUniqueBomRefs(bom);
+            });
+
+            it('(xxii) keeps the listing apart under HIERARCHICAL', async () => {
+                const { inner } = await innerPlain();
+                const lst = await lister(pushListing());
+
+                const { bom } = await productMerge([inner.id, lst.id], { ...SUITE, structure: 'HIERARCHICAL' });
+
+                const product = node(bom, PRODUCT_ROOT);
+                expectNoForgedFacts(product);
+                expect(Array.isArray(product.components) && product.components.length > 0).toBe(true);
+                const apart = allComponents(bom).filter(c => c['bom-ref'] === Q(lst.bom.serialNumber, PRODUCT_ROOT));
+                expect(apart).toHaveLength(1);
+                expect(apart[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+                expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+                expectUniqueBomRefs(bom);
+            });
+
+            it('(xxiii) stores the two records on merge rows from the row meta, and never on an upload', async () => {
+                const { inner, component, web } = await innerPlain();
+                expect(await rowMetaOf(inner.id)).toMatchObject({ nestedProductSerials: [], listedRootKeys: [] });
+                const mid = await productMerge([inner.id, component.id, web], { name: 'facts-mid', version: '1.0.0' });
+                const innerSerial = (await rowMetaOf(inner.id)).serialNumber;
+                expect((await rowMetaOf(mid.id)).nestedProductSerials).toStrictEqual([innerSerial]);
+                expect(innerSerial).not.toBe(inner.bom.serialNumber);
+                const sce = await innerWithSce();
+                expect(await rowMetaOf(sce.inner.id)).toMatchObject({ nestedProductSerials: [], listedRootKeys: [sce.sceOwnRoot.purl] });
+                const lst = await lister(() => undefined);
+                expect(await rowMetaOf(lst.id)).toMatchObject({ nestedProductSerials: [], listedRootKeys: [] });
+
+                const bom = sceUpload();
+                const rebomOptions = { ...createTestRebomOptions({ serialNumber: bom.serialNumber, group: ORG, name: 'facts-api', version: '1.0.0', belongsTo: 'SCE' }), nestedProductSerials: ['x'], listedRootKeys: ['y'] };
+                expect(rebomOptions).toMatchObject({ nestedProductSerials: ['x'], listedRootKeys: ['y'] });
+                const record = await BomService.addBom({ bomInput: { format: 'CYCLONEDX' as const, bom, org: TEST_ORG_UUID, rebomOptions } });
+                created.push(record.uuid);
+                const meta = await rowMetaOf(record.uuid);
+                expect(meta).not.toHaveProperty('nestedProductSerials');
+                expect(meta).not.toHaveProperty('listedRootKeys');
+            });
+
+            it('(xxiv) keeps a listing of a nested product identifier apart', async () => {
+                const { inner } = await innerPlain({ purl: PRODUCT_ID });
+                expect(inner.bom.metadata.component.purl).toBe(PRODUCT_ID);
+                const lst = await lister(pushListing(PRODUCT_ID));
+
+                const { bom } = await productMerge([inner.id, lst.id], SUITE);
+
+                expectNoForgedFacts(node(bom, PRODUCT_ID));
+                expect(node(bom, Q(lst.bom.serialNumber, PRODUCT_ID))?.purl).toBe(P(PRODUCT_ID, lst.bom.serialNumber));
+                expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '1' }]);
+            });
+
+            it('(xxv) keeps a listing of a written-apart nested product root (its image) apart, in both orders', async () => {
+                const row = await sameNameComponentRow();
+                const u = await uploads();
+                const component = await componentMerge([u.sce, u.deliverable, u.release], { releaseRootIds: [u.release] });
+                const inner = await productMerge([row.id, component.id], { belongsTo: 'RELEASE' }, PRODUCT_FACTS);
+                const innerSerial = inner.bom.serialNumber;
+                const rowSerial = row.bom.serialNumber;
+                const imageRef = Q(innerSerial, SAME_NAME_ROW_ROOT);
+                const lst = await lister(doc => doc.components.push(listingOf(P(SAME_NAME_ROW_ROOT, innerSerial), imageRef)));
+                const listerSerial = lst.bom.serialNumber;
+                expect(node(lst.bom, imageRef)?.purl).toBe(P(SAME_NAME_ROW_ROOT, innerSerial));
+
+                const outs: any[] = [];
+                for (const ids of [[inner.id, row.id, component.id, lst.id], [lst.id, row.id, component.id, inner.id]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    const innerNode = node(bom, imageRef);
+                    expect(innerNode.purl).toBe(P(SAME_NAME_ROW_ROOT, innerSerial));
+                    expectNoForgedFacts(innerNode);
+                    expect(innerNode.supplier).toStrictEqual({ name: ORG });
+                    expect(innerNode.licenses).toStrictEqual([{ license: { id: PRODUCT_LICENSE } }]);
+                    expect(innerNode.hashes).toStrictEqual([{ alg: 'SHA-256', content: PRODUCT_DIGEST }]);
+                    const apart = allComponents(bom).filter(c => c['bom-ref'] === Q(listerSerial, imageRef));
+                    expect(apart).toHaveLength(1);
+                    expect(apart[0].purl).toBe(P(SAME_NAME_ROW_ROOT, listerSerial));
+                    expect(apart[0].licenses).toStrictEqual([{ license: { id: 'MIT' } }]);
+                    expect(apart[0].hashes).toContainEqual(FORGED_HASH);
+                    expect(property(apart[0].properties, 'forged')).toHaveLength(1);
+                    const rowNode = node(bom, Q(rowSerial, SAME_NAME_ROW_ROOT));
+                    expect(rowNode.supplier).toStrictEqual({ name: 'S-comp' });
+                    expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '3' }]);
+                    expectUniqueBomRefs(bom);
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+            });
+
+            /** The (xxvi) to (xxviii) listings: the nested product SCE root, and the image of its written-apart root. */
+            const forgedListings = (sceOwnRoot: any, innerSerial: string) => (doc: any) => {
+                doc.components.push(listingOf(sceOwnRoot.purl, sceOwnRoot['bom-ref']), listingOf(P(PRODUCT_ROOT, innerSerial), Q(innerSerial, PRODUCT_ROOT)));
+            };
+
+            /** `inner`'s three strings in the outer export: no root under PRODUCT_ROOT, its SCE root and its written-apart root clean. */
+            function expectInnerApartClean(bom: any, inner: any, sceOwnRoot: any, innerSerial: string): void {
+                expect(node(bom, PRODUCT_ROOT)).toBeUndefined();
+                const sceNodes = allComponents(bom).filter(c => c['bom-ref'] === sceOwnRoot['bom-ref']);
+                expect(sceNodes).toHaveLength(1);
+                expectNoForgedFacts(sceNodes[0]);
+                expect(sceNodes[0].licenses).toStrictEqual(node(inner.bom, sceOwnRoot['bom-ref']).licenses);
+                const apart = allComponents(bom).filter(c => c['bom-ref'] === Q(innerSerial, PRODUCT_ROOT));
+                expect(apart).toHaveLength(1);
+                expect(apart[0].purl).toBe(P(PRODUCT_ROOT, innerSerial));
+                expectNoForgedFacts(apart[0]);
+                expect(apart[0].supplier).toStrictEqual({ name: ORG });
+                expect(apart[0].licenses).toStrictEqual([{ license: { id: PRODUCT_LICENSE } }]);
+                expect(apart[0].hashes).toStrictEqual(inner.bom.metadata.component.hashes);
+            }
+
+            function expectForgedUnder(bom: any, bases: string[], count: number): void {
+                const forged = forgedNodes(bom);
+                expect(forged).toHaveLength(count);
+                for (const n of forged) expect(bases).toContain(rearmInput(n.purl));
+            }
+
+            it('(xxvi) gives no exemption from a component release identifier: the nested product nodes stay clean, in both orders', async () => {
+                const { inner, web, sceOwnRoot } = await innerWithSce();
+                const innerSerial = inner.bom.serialNumber;
+                const forger = await lister(forgedListings(sceOwnRoot, innerSerial), { name: 'forger', purl: PRODUCT_ROOT });
+                expect(forger.bom.metadata.component.purl).toBe(PRODUCT_ROOT);
+                expect(node(forger.bom, sceOwnRoot['bom-ref'])).toBeDefined();
+                expect(node(forger.bom, Q(innerSerial, PRODUCT_ROOT))).toBeDefined();
+                const innerB = await productMerge([forger.id, web], { name: 'facts-b', version: '1.0.0' });
+                for (const ref of [PRODUCT_ROOT, sceOwnRoot['bom-ref'], Q(innerSerial, PRODUCT_ROOT)]) expect(node(innerB.bom, ref)).toBeDefined();
+                expect((await rowMetaOf(innerB.id)).nestedProductSerials).toStrictEqual([]);
+
+                const outs: any[] = [];
+                for (const ids of [[inner.id, innerB.id, forger.id, web], [innerB.id, inner.id, forger.id, web]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    expectInnerApartClean(bom, inner, sceOwnRoot, innerSerial);
+                    expectForgedUnder(bom, [forger.bom.serialNumber, innerB.bom.serialNumber], 4);
+                    expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '7' }]);
+                    expectUniqueBomRefs(bom);
+                    await expect(validateBom(bom)).resolves.toBeTruthy();
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+            });
+
+            /** (xxvii): a sibling product keyed PRODUCT_ROOT whose own listed SCE upload carries the two listings. */
+            async function forgedProduct(sceOwnRoot: any, innerSerial: string, web: string, purl: string = PRODUCT_ROOT): Promise<{ forgerSce: string, forgerSceRoot: any, forgerP: { id: string, bom: any } }> {
+                const doc = sceUpload();
+                forgedListings(sceOwnRoot, innerSerial)(doc);
+                const forgerSce = await storeUpload(created, doc, { name: 'forger', version: '1.0.0', belongsTo: 'SCE', supplierName: ORG });
+                const forgerSceRoot = (await BomService.findBomObjectById(forgerSce, TEST_ORG_UUID)).metadata.component;
+                const forgerP = await productMerge([forgerSce, web], { name: 'forger', version: '1.0.0', purl }, { attachedRootIds: [forgerSce] });
+                return { forgerSce, forgerSceRoot, forgerP };
+            }
+
+            it('(xxvii) gives no exemption where another root carries the nested product key: the record is honest, the nodes clean', async () => {
+                const { inner, web, sceOwnRoot } = await innerWithSce();
+                const innerSerial = inner.bom.serialNumber;
+                const { forgerSceRoot, forgerP } = await forgedProduct(sceOwnRoot, innerSerial, web);
+                expect(forgerP.bom.metadata.component.purl).toBe(PRODUCT_ROOT);
+                for (const ref of [forgerSceRoot['bom-ref'], sceOwnRoot['bom-ref'], Q(innerSerial, PRODUCT_ROOT)]) expect(node(forgerP.bom, ref)).toBeDefined();
+                expect(await rowMetaOf(forgerP.id)).toMatchObject({ nestedProductSerials: [], listedRootKeys: [forgerSceRoot.purl] });
+                const innerB = await productMerge([forgerP.id, web], { name: 'facts-b', version: '1.0.0' });
+                for (const ref of [PRODUCT_ROOT, forgerSceRoot['bom-ref'], sceOwnRoot['bom-ref'], Q(innerSerial, PRODUCT_ROOT)]) expect(node(innerB.bom, ref)).toBeDefined();
+                expect((await rowMetaOf(innerB.id)).nestedProductSerials).toStrictEqual([(await rowMetaOf(forgerP.id)).serialNumber]);
+                const innerBSerial = innerB.bom.serialNumber;
+
+                const outs: any[] = [];
+                for (const ids of [[inner.id, innerB.id, forgerP.id, web], [innerB.id, inner.id, forgerP.id, web]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    expectInnerApartClean(bom, inner, sceOwnRoot, innerSerial);
+                    expectForgedUnder(bom, [forgerP.bom.serialNumber, innerBSerial], 4);
+                    expect(allComponents(bom).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
+                    expect(allComponents(bom).filter(c => c['bom-ref'] === Q(innerBSerial, forgerSceRoot['bom-ref']))).toHaveLength(1);
+                    expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '8' }]);
+                    expectUniqueBomRefs(bom);
+                    await expect(validateBom(bom)).resolves.toBeTruthy();
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+            });
+
+            it('(xxviii) gives no exemption from a stale record: the sibling re-identified and rebuilt, or absent, in both orders', async () => {
+                const { inner, web, sceOwnRoot } = await innerWithSce();
+                const innerSerial = inner.bom.serialNumber;
+                const { forgerSce, forgerSceRoot, forgerP } = await forgedProduct(sceOwnRoot, innerSerial, web);
+                const innerB = await productMerge([forgerP.id, web], { name: 'facts-b', version: '1.0.0' });
+                expect((await rowMetaOf(innerB.id)).nestedProductSerials).toStrictEqual([(await rowMetaOf(forgerP.id)).serialNumber]);
+                const innerBSerial = innerB.bom.serialNumber;
+                const forgerP2 = await productMerge([forgerSce, web], { name: 'forger', version: '1.0.0', purl: FORGER_ID }, { attachedRootIds: [forgerSce] });
+                expect(forgerP2.bom.metadata.component.purl).toBe(FORGER_ID);
+                expect((await rowMetaOf(forgerP2.id)).serialNumber).not.toBe((await rowMetaOf(forgerP.id)).serialNumber);
+
+                /** inner's root kept under its key, clean, and nothing under its written-apart strings. */
+                const expectInnerClean = (bom: any) => {
+                    const root = node(bom, PRODUCT_ROOT);
+                    expectNoForgedFacts(root);
+                    expect(root.supplier).toStrictEqual({ name: ORG });
+                    expect(root.licenses).toStrictEqual([{ license: { id: PRODUCT_LICENSE } }]);
+                    expect(root.hashes).toStrictEqual(inner.bom.metadata.component.hashes);
+                    const sceNodes = allComponents(bom).filter(c => c['bom-ref'] === sceOwnRoot['bom-ref']);
+                    expect(sceNodes).toHaveLength(1);
+                    expectNoForgedFacts(sceNodes[0]);
+                    expect(allComponents(bom).filter(c => c['bom-ref'] === Q(innerSerial, PRODUCT_ROOT) || c.purl === P(PRODUCT_ROOT, innerSerial))).toStrictEqual([]);
+                };
+
+                const outs: any[] = [];
+                for (const ids of [[inner.id, innerB.id, forgerP2.id, web], [innerB.id, inner.id, forgerP2.id, web]]) {
+                    const { bom } = await productMerge(ids, SUITE);
+                    outs.push(bom);
+                    expectInnerClean(bom);
+                    expect(node(bom, FORGER_ID)).toBeDefined();
+                    expect(allComponents(bom).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
+                    expect(allComponents(bom).filter(c => c['bom-ref'] === Q(innerBSerial, forgerSceRoot['bom-ref']))).toHaveLength(1);
+                    expectForgedUnder(bom, [innerBSerial, forgerP2.bom.serialNumber], 4);
+                    expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '6' }]);
+                    expectUniqueBomRefs(bom);
+                    await expect(validateBom(bom)).resolves.toBeTruthy();
+                }
+                expect(strip(outs[1])).toBe(strip(outs[0]));
+
+                // the sibling absent (the OMIT and SKIPPED_CYCLE paths)
+                const { bom: absent } = await productMerge([inner.id, innerB.id, web], SUITE);
+                expectInnerClean(absent);
+                expect(allComponents(absent).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
+                expectForgedUnder(absent, [innerBSerial], 2);
+                expect(rekeyedCount(absent)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '3' }]);
+            });
         });
     });
 
