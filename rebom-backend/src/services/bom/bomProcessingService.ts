@@ -19,7 +19,8 @@ import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
-import { RELEASE_NODE_PROPERTY, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
+import { RELEASE_NODE_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
+export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -1421,8 +1422,6 @@ export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undef
   }
 }
 
-export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp'
-
 export type ReleaseNodeMarkResult = {
   bom: any,
   marked: boolean
@@ -1440,7 +1439,7 @@ export function markReleaseNode(bom: any): ReleaseNodeMarkResult {
   const root = bom?.metadata?.component
   if (!root || typeof root !== 'object' || Array.isArray(root)) return { bom, marked: false }
   const kept = Array.isArray(root.properties)
-    ? root.properties.filter((p: any) => !(p && typeof p === 'object' && p.name === RELEASE_NODE_PROPERTY))
+    ? root.properties.filter((p: any) => !isReleaseNodeStamp(p))
     : []
   const component = { ...root, properties: [...kept, { name: RELEASE_NODE_PROPERTY, value: 'true' }] }
   return { bom: { ...bom, metadata: { ...bom.metadata, component } }, marked: true }
@@ -2983,9 +2982,9 @@ export async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any |
     // The raw copy is the uploaded document by contract, uploaded stamps included: a row rebom did
     // not merge is re-stored without them, as at ingest (SCORE-60 ADR-9 (f)).
     if (!isRebomMergeOutput(bomRecord.meta)) {
-      const stripped = stripReleaseNodeStamps(rawBom)
-      if (stripped.count > 0) logger.debug({ bomUuid: bomRecord.uuid, removed: stripped.count }, 'Removed release node stamps from a re-processed upload')
-      rawBom = stripped.bom
+      const stripped = stripReleaseNodeStamps(rawBom);
+      if (stripped.count > 0) logger.debug({ bomUuid: bomRecord.uuid, removed: stripped.count }, 'Removed release node stamps from a re-processed upload');
+      rawBom = stripped.bom;
     }
 
     // Re-augment the BOM with component context

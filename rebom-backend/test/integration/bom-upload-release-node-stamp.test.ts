@@ -18,6 +18,8 @@ import { clearMockOciStorage, fetchFromOci, extractRepositoryNameFromBom } from 
 import { resolveProcessedTag } from '../../src/services/oci/processedBomFetcher';
 import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from '../helpers';
 import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/bomProcessingService';
+import { REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
+import type { BomOrigin } from '../../src/services/bom/bomAddService';
 
 /**
  * SCORE-60 (T-25, ADR-9; security F-1): an uploader cannot author rebom's release node stamp. rebom
@@ -92,7 +94,7 @@ describe('an uploaded release node stamp never reaches what rebom serves', () =>
         }
     });
 
-    async function upload(bom: any, name: string, origin?: 'UPLOAD' | 'MERGE'): Promise<string> {
+    async function upload(bom: any, name: string, origin?: BomOrigin): Promise<string> {
         const input = { bomInput: { format: 'CYCLONEDX' as const, bom, org: TEST_ORG_UUID,
             rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, group: ORG, name, version: '1.0.0' }) } };
         const record = origin ? await BomService.addBom(input, origin) : await BomService.addBom(input);
@@ -128,7 +130,7 @@ describe('an uploaded release node stamp never reaches what rebom serves', () =>
 
         expect(stampCount(await storedBlob(id))).toBe(0);
         expect(stampCount(await rawBlob(id))).toBe(4);
-        expect((await row(id)).meta.mod).toBe('raw');
+        expect((await row(id)).meta.mod).toBe(UPLOAD_MOD);
         expect(stampCount(await BomService.findBomObjectById(id, TEST_ORG_UUID))).toBe(0);
     });
 
@@ -139,7 +141,7 @@ describe('an uploaded release node stamp never reaches what rebom serves', () =>
         const product = await merge([component, plain], 'stamp-product', 'PRESERVE_UNDER_NEW_ROOT');
 
         for (const id of [component, product]) {
-            expect((await row(id)).meta.mod).toBe('rebom');
+            expect((await row(id)).meta.mod).toBe(REBOM_MERGE_MOD);
         }
         const stored = await storedBlob(component);
         expect(stampCount(stored)).toBe(1);

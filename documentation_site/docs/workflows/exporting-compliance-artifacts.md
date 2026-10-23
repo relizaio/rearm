@@ -324,7 +324,7 @@ What "ReARM's own markers" means, precisely:
 | Removed when off | Note |
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
-| `reliza:export:releaseNode` | rebom's stamp on the node it made for a release. The server reads it to mark the release's own entries (`reliza:support:selfComponent`) before the strip. A copy in an uploaded SBOM never reaches an export: rebom removes it when the upload is stored |
+| `reliza:export:releaseNode` | rebom's stamp on the node it made for a release. The server reads it to mark the release's own entries (`reliza:support:selfComponent`) before the strip. A copy in an uploaded SBOM never reaches a merged export or a processed download: rebom removes it when the upload is stored. The raw download serves the uploaded document as it was, and no support statement is made on it |
 
 **Not removed: what your SBOM generator wrote.** It is your content, and this setting does not
 touch it. Component properties (including cdxgen's `SrcFile`, `ResolvedUrl` and similar working

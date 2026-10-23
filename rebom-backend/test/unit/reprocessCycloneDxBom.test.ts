@@ -10,6 +10,7 @@ vi.mock('../../src/services/oci', async (importOriginal) => {
 
 import { reprocessCycloneDxBom } from '../../src/services/bom/bomProcessingService';
 import { createTestRebomOptions } from '../helpers';
+import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/releaseNodeStamp';
 
 /**
  * SCORE-60 (T-27, ADR-9 (f)): rearm-saas always forces a re-enrichment, which rebuilds the processed
@@ -17,7 +18,7 @@ import { createTestRebomOptions } from '../helpers';
  * is re-stored without `reliza:export:releaseNode`, as at ingest; a merge output keeps its own.
  */
 
-const STAMP = { name: 'reliza:export:releaseNode', value: 'true' };
+const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
 const KEEP = { name: 'acme:keep', value: 'yes' };
 
 function raw(withStamps = true): any {

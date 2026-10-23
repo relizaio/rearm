@@ -14,7 +14,7 @@ import {
 } from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom, mintProcessedSerialNumber } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
-import { REBOM_MERGE_MOD, stripReleaseNodeStamps } from './releaseNodeStamp';
+import { REBOM_MERGE_MOD, UPLOAD_MOD, stripReleaseNodeStamps } from './releaseNodeStamp';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
 import { withTransaction } from '../../utils';
@@ -35,7 +35,7 @@ const AUGMENT_ON_STORAGE = true;
  * (mergeAndStoreBoms only): the document is rebom's own merge output, kept with its stamps, and
  * stored with `meta.mod` `rebom` (SCORE-60 ADR-9). In-process only, never read from a request.
  */
-export type BomOrigin = 'UPLOAD' | 'MERGE'
+export type BomOrigin = 'UPLOAD' | 'MERGE';
 
 export async function addBom(bomInput: BomInput, origin: BomOrigin = 'UPLOAD'): Promise<BomRecord> {
   const input = withCanonicalOrg(bomInput);
@@ -212,7 +212,9 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
   // CDX 2.0+ (e.g. HBOM prototype) can't go through the 1.x processing/validation
   // stack -- store the document unprocessed and skip processing/validation. That
   // copy is what gets stored under both keys below, so parseBom/parseHbom read the
-  // real 2.0 content. Re-process once the libraries support the new spec.
+  // real 2.0 content, less any reliza:export:releaseNode an upload carries (SCORE-60
+  // ADR-9 (a): only rebom's own stamp is ever stored under the processed key).
+  // Re-process once the libraries support the new spec.
   const processable = isProcessableCycloneDxSpec(rawBom?.specVersion);
   let processedBom: any;
   if (processable) {
@@ -244,7 +246,7 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
   rebomOptions.serialNumber = processedBom.serialNumber;
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
   // From the in-process origin, never from the request (SCORE-60 ADR-9 (b)).
-  rebomOptions.mod = origin === 'MERGE' ? REBOM_MERGE_MOD : 'raw';
+  rebomOptions.mod = origin === 'MERGE' ? REBOM_MERGE_MOD : UPLOAD_MOD;
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -266,8 +268,8 @@ async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<B
   //
   // meta.serialNumber stays the producer's -- it is the row's identity and what
   // every lookup keys on; this records which document the row currently serves.
-  // The non-processable path is left alone: that copy really is the uploaded
-  // bytes, verbatim, so it keeps the uploaded identity.
+  // The non-processable path is left alone: that copy is the uploaded document
+  // (less any uploaded release node stamp, ADR-9 (a)), so it keeps the uploaded identity.
   if (processable) {
     finalBom = mintProcessedSerialNumber(finalBom);
     rebomOptions.processedSerialNumber = finalBom.serialNumber;
@@ -526,7 +528,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
     const mergedOptions = { ...rebomOptions, ...bomInput.bomInput.rebomOptions };
     // After the spread, so a request `mod` never wins: no merge is stored through this route
     // (SCORE-60 ADR-9 (b)).
-    mergedOptions.mod = 'raw';
+    mergedOptions.mod = UPLOAD_MOD;
     
     let serialNumber: string;
     if (existingSerialNumber) {

@@ -54,7 +54,8 @@ metadata, fails those two checks until the components are assessed in ReARM and 
 support metadata.
 
 The two support checks do not judge the release's own entries: in a product, its component
-releases; in any release, its own uploaded root, which the merge folds into the release's node.
+releases; in any release, the root of an SBOM attached to the release itself, which the merge
+folds into the release's node.
 The export with support metadata marks each of them `reliza:support:selfComponent` = `true`, and
 the report says how many it left out under `selfComponentsSkipped` on each of the two checks; the
 **Score** dialog shows the same number under the check. The coverage gauge and bulk attestation

@@ -10,8 +10,16 @@
  */
 export const RELEASE_NODE_PROPERTY = 'reliza:export:releaseNode'
 
-/** The `meta.mod` rebom writes on a row it stored from its own merge; every upload carries `raw`. */
+/** The `meta.mod` rebom writes on a row it stored from its own merge. */
 export const REBOM_MERGE_MOD = 'rebom'
+
+/** The `meta.mod` rebom writes on every row it did not merge (every upload). */
+export const UPLOAD_MOD = 'raw'
+
+/** True for a `properties` entry named RELEASE_NODE_PROPERTY, whatever its value. */
+export function isReleaseNodeStamp(property: any): boolean {
+  return !!property && typeof property === 'object' && property.name === RELEASE_NODE_PROPERTY
+}
 
 /** True only for a row rebom stored from its own merge: `meta.mod` exactly `rebom`. */
 export function isRebomMergeOutput(meta: any): boolean {
@@ -47,7 +55,7 @@ export function stripReleaseNodeStamps(bom: any): ReleaseNodeStripResult {
       const value = node[key]
       let next = walk(value)
       if (key === 'properties' && Array.isArray(next)) {
-        const kept = next.filter((p: any) => !(p && typeof p === 'object' && p.name === RELEASE_NODE_PROPERTY))
+        const kept = next.filter((p: any) => !isReleaseNodeStamp(p))
         if (kept.length !== next.length) {
           count += next.length - kept.length
           next = kept

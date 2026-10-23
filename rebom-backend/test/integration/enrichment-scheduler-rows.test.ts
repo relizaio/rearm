@@ -4,6 +4,7 @@ import crypto from 'node:crypto';
 import { findBomsNeedingEnrichment } from '../../src/services/enrichmentScheduler';
 import { fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { runQuery } from '../../src/utils';
+import { RELEASE_NODE_PROPERTY, REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
 
 /**
  * SCORE-60 (T-26, ADR-9 (d); functional F-7): the enrichment scheduler's candidate rows carry `meta`,
@@ -17,10 +18,10 @@ describe('the enrichment scheduler reads whole rows', () => {
     const merge = crypto.randomUUID();
     const upload = crypto.randomUUID();
     const REPO = 'rebom-artifacts-2026-08';
-    const STAMP = { name: 'reliza:export:releaseNode', value: 'true' };
-    const mergeMeta = { serialNumber: `urn:uuid:${crypto.randomUUID()}`, mod: 'rebom', enrichmentStatus: 'FAILED',
+    const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
+    const mergeMeta = { serialNumber: `urn:uuid:${crypto.randomUUID()}`, mod: REBOM_MERGE_MOD, enrichmentStatus: 'FAILED',
         processedTag: `${merge}-e1`, processedFileDigest: 'd1' };
-    const uploadMeta = { serialNumber: `urn:uuid:${crypto.randomUUID()}`, mod: 'raw', processedFileDigest: 'd2' };
+    const uploadMeta = { serialNumber: `urn:uuid:${crypto.randomUUID()}`, mod: UPLOAD_MOD, processedFileDigest: 'd2' };
     const stamped = () => ({ bomFormat: 'CycloneDX', metadata: { component: { name: 'root', properties: [STAMP] } }, components: [] });
 
     beforeEach(async () => {

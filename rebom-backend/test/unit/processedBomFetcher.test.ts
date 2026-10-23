@@ -12,6 +12,7 @@ vi.mock('../../src/logger', () => ({
 import { fetchProcessedBomWithRetry, resolveProcessedTag } from '../../src/services/oci/processedBomFetcher';
 import { logger } from '../../src/logger';
 import { DigestValidationError, OciNotFoundError } from '../../src/types/errors';
+import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/releaseNodeStamp';
 
 const UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const OLD_DIGEST = 'digest-before-enrichment';
@@ -155,7 +156,7 @@ describe('processed tag resolution (enrichment writes a new artifact, never in p
 describe('release node stamps on a served document', () => {
     beforeEach(() => vi.clearAllMocks());
 
-    const STAMP = { name: 'reliza:export:releaseNode', value: 'true' };
+    const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
     const KEEP = { name: 'acme:keep', value: 'yes' };
     const stamped = () => ({
         bomFormat: 'CycloneDX',

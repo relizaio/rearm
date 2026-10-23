@@ -17,6 +17,7 @@ import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { TEST_ORG_UUID } from '../helpers';
 import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/bomProcessingService';
+import { REBOM_MERGE_MOD } from '../../src/services/bom/releaseNodeStamp';
 import {
     ORG, COMMIT, UPLOAD_DIGEST, PLACEHOLDER_REF, SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
     buildProductExport, productMergeRequest, storeUpload, storeMerge, sceUpload, deliverableUpload, releaseUpload
@@ -68,7 +69,7 @@ describe('merged roots carry rebom\'s release node stamp', () => {
         expect(stampsOf(componentMerge.metadata.component)).toStrictEqual([STAMP]);
         expect(componentMerge.metadata.component.properties.at(-1)).toStrictEqual(STAMP);
         const [row] = await BomRepository.bomById(ids.componentMerge);
-        expect((row.meta as any).mod).toBe('rebom');
+        expect((row.meta as any).mod).toBe(REBOM_MERGE_MOD);
         const stored: any = await fetchProcessedBomWithRetry(row);
         expect(stampsOf(stored.metadata.component)).toStrictEqual([STAMP]);
         expect(stampedRefs(componentMerge)).toStrictEqual([RELEASE_NODE]);

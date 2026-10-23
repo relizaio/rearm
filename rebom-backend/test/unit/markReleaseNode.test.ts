@@ -8,7 +8,7 @@ import { RELEASE_NODE_PROPERTY as LEAF_RELEASE_NODE_PROPERTY } from '../../src/s
  */
 
 const ROOT = 'pkg:generic/Acme/api@1.0.0';
-const STAMP = { name: 'reliza:export:releaseNode', value: 'true' };
+const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
 const P = { name: 'reliza:export:foldedRoot', value: 'pkg:npm/api@1.0.0' };
 
 function merged(root: any = {}): any {
