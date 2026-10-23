@@ -120,9 +120,11 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
     // The forEach + async pattern was also broken (doesn't actually await)
     
     const purl = establishPurl(undefined, rebomOptions)
-    // merge-boms folds by purl or bom-ref under FLAT (any structure but HIERARCHICAL) and drops a
-    // listed expression beside the survivor's licences without a word: name it here (SCORE-40 ADR-8),
-    // and keep what it names for the record on the merged node (SCORE-44 ADR-2).
+    // merge-boms folds by purl or bom-ref under FLAT (any structure but HIERARCHICAL) and, from
+    // rearm-cli 26.10.15, prints bounded `merge-boms:` lines on stderr (every same-key root fold, a
+    // licence loss, a dropped keyless root, hash and property mismatches); its stderr is logged at
+    // info (SCORE-68 ADR-4), and a failed merge still logs its exit code at error. rebom still predicts the drops from the inputs (SCORE-40 ADR-8)
+    // to record them on the merged node (SCORE-44 ADR-2), and logs its own line beside the CLI's.
     const drops = rebomOptions.structure !== BomStructure.HIERARCHICAL ? logListedLicenseDrops(bomObjects) : []
     bomPaths = await createTmpFiles(bomObjects)
     const command = ['bomutils', 'merge-boms']
@@ -144,7 +146,7 @@ export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOpti
       command.push('--input-files', path)
     })
     command.push('--purl', purl)
-    const mergeResponse: string = await shellExec('rearm', command)
+    const mergeResponse: string = await shellExec('rearm', command, undefined, 'info')
     
     await deleteTmpFiles(bomPaths)
 

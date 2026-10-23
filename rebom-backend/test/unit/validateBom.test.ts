@@ -1,4 +1,6 @@
 import { describe, it, expect } from 'vitest';
+import * as fs from 'fs';
+import * as path from 'path';
 import validateBom from '../../src/validateBom';
 import { BomValidationError } from '../../src/types/errors';
 
@@ -116,5 +118,37 @@ describe('BOM Validation - Unit Tests', () => {
                 expect(enumErr.actualValue).toBe('platform');
             }
         });
+    });
+});
+
+/**
+ * SCORE-68 T-1 (c): the two fixtures the Dockerfile's merge engine check merges (ADR-2) are valid
+ * CycloneDX 1.6 documents whose roots share one key while their top-level components differ, so a
+ * later fixture edit cannot make the `folds into root` check vacuous.
+ */
+describe('the merge engine check fixtures (SCORE-68 ADR-2)', () => {
+    const KEY = 'pkg:generic/engine-check@1.0.0';
+    const read = (name: string) => JSON.parse(fs.readFileSync(path.join(__dirname, '..', 'fixtures', 'merge', name), 'utf8'));
+    const a = read('engine-check-a.cdx.json');
+    const b = read('engine-check-b.cdx.json');
+
+    it('both resolve through validateBom', async () => {
+        await expect(validateBom(structuredClone(a))).resolves.toBe(true);
+        await expect(validateBom(structuredClone(b))).resolves.toBe(true);
+    });
+
+    it('both roots carry the same purl and bom-ref', () => {
+        for (const doc of [a, b]) {
+            expect(doc.specVersion).toBe('1.6');
+            expect(doc.metadata.component.purl).toBe(KEY);
+            expect(doc.metadata.component['bom-ref']).toBe(KEY);
+        }
+    });
+
+    it('their top-level components differ', () => {
+        const keys = (doc: any) => doc.components.map((c: any) => c.purl);
+        expect(keys(a)).toHaveLength(1);
+        expect(keys(b)).toHaveLength(1);
+        expect(keys(a)).not.toStrictEqual(keys(b));
     });
 });

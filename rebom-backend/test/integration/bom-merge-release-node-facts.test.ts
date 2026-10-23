@@ -471,11 +471,12 @@ const FOLD_LINES = [
 ];
 
 /**
- * SCORE-40 (T-10, ADR-6 line 1 as round 4 states it, ADR-8): an empty licences list on the release
- * node, an uploaded root of the product merge, beside a listing of its purl with an expression.
- * Where merge-boms folds (the listing at the top level) `[]` is held: the expression is dropped and
- * ADR-8 logs it. Where dedupeBomRefs folds (the listing nested) `[]` is absent: the node takes the
- * listing whole and nothing is logged. Real `rearm bomutils merge-boms`, in memory and stored.
+ * SCORE-40 (T-10, ADR-6 line 1, ADR-8), SCORE-68 T-3: an empty licences list on the release node, an
+ * uploaded root of the product merge, beside a listing of its purl with an expression. `[]` is absent
+ * on both paths: where merge-boms folds (the listing at the top level; rearm-cli 26.10.15, SCORE-67
+ * ADR-3) and where dedupeBomRefs folds (the listing nested; SCORE-40 ADR-6), the node takes the
+ * listing whole and nothing is logged or recorded. The two rows are the two layouts with one
+ * expectation. Real `rearm bomutils merge-boms`, in memory and stored.
  */
 describe('a product merge folds a release node with an empty licences list and a listing of its purl', () => {
     const created: string[] = [];
@@ -503,8 +504,7 @@ describe('a product merge folds a release node with an empty licences list and a
     // [layout, nested, the release node's licenses in the product, the fold lines over the four merges,
     // its reliza:license:dropped entries (SCORE-44 T-5)]
     const CASES: [string, boolean, any[], () => any[][], any[]][] = [
-        ['top level, merge-boms holds [] and drops the expression, logged and recorded', false, [],
-            () => Array(4).fill([{ bomRef: RELEASE_NODE, kept: [], dropped: X2 }, LISTED_DROP]), [P('BSD-3-Clause OR MIT')]],
+        ['top level, merge-boms reads [] as absent and takes the listing, nothing logged or recorded', false, X2, () => [], []],
         ['nested, the de-dup reads [] as absent and takes the listing, nothing logged or recorded', true, X2, () => [], []]
     ];
 
@@ -512,7 +512,7 @@ describe('a product merge folds a release node with an empty licences list and a
         it(`${label}: the release node carries ${JSON.stringify(expected)}, in both orders (T-10, SCORE-44 T-5)`, async () => {
             const { merged, stored } = await buildListingProducts(created, undefined, X2, nested, []);
 
-            // one ADR-8 line per product merge on the top level (two in memory, two stored), none nested
+            // no fold line on either layout: [] takes the listing whole (SCORE-68 T-3)
             expect(foldLines()).toStrictEqual(lines());
             const products = [['merged, release node first', merged[0]], ['merged, listing first', merged[1]],
                 ['stored, release node first', stored[0]], ['stored, listing first', stored[1]]];

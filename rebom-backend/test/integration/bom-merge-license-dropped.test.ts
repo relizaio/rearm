@@ -127,15 +127,19 @@ describe('a product of products records each listed expression dropped on the re
         }
     });
 
-    it('listing first: the listing\'s expression stands, the inner record is carried, the dropped id is not recorded (T-7, F-3)', async () => {
+    it('listing first: the listing\'s expression stands, the inner record is carried, the dropped id is logged and not recorded (T-7, F-3, SCORE-68 T-4)', async () => {
         const { inner, listing } = await inputs();
 
         for (const [where, product, lines] of await outer([listing, inner])) {
             const releaseNode = node(product, RELEASE_NODE);
             expect(releaseNode.licenses, where).toStrictEqual([{ expression: X3_TEXT }]);
             expect(droppedRecords(releaseNode), where).toStrictEqual([P(X2_TEXT)]);
-            expect(lines.filter(call => call[1] === LISTED_DROP), where).toStrictEqual([]);
-            expect(lines.filter(call => call[1] === SETTLED && call[0]?.bomRef === RELEASE_NODE), where).toHaveLength(1);
+            // rearm-cli 26.10.15 drops the id beside the kept expression (SCORE-68 T-4): rebom's
+            // prediction names it, and nothing is left for the settle
+            expect(lines.filter(call => call[1] === LISTED_DROP), where).toStrictEqual([[
+                { bomRef: RELEASE_NODE, kept: [{ expression: X3_TEXT }], dropped: [{ license: { id: 'AGPL-3.0-only' } }] }, LISTED_DROP
+            ]]);
+            expect(lines.filter(call => call[1] === SETTLED && call[0]?.bomRef === RELEASE_NODE), where).toHaveLength(0);
             expectNoRecordElsewhere(product, where);
             await expect(validateBom(product), where).resolves.toBeTruthy();
         }

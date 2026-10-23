@@ -1,5 +1,6 @@
-import { describe, it, expect } from 'vitest';
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 import { shellExecDetailed, shellExec } from '../../src/utils';
+import { logger } from '../../src/logger';
 
 // Real processes: the node binary running this suite, with an inline script.
 const NODE = process.execPath;
@@ -107,5 +108,65 @@ describe('shellExec (H-7: behaviour unchanged)', () => {
 
     it('rejects with stdout on a non-zero exit', async () => {
         await expect(shellExec(NODE, ['-e', 'process.stdout.write("partial"); process.exit(1)'])).rejects.toBe('partial');
+    });
+});
+
+// SCORE-68 T-6 (ADR-4): shellExec logs each stderr chunk at the level its caller names; the default
+// keeps the historical error line. 'exit' may fire before the last stderr chunk is read, so the
+// logger is awaited with vi.waitFor.
+describe('shellExec logs stderr at the level given (SCORE-68 ADR-4)', () => {
+    const ERR_LINE = 'process.stdout.write("out"); process.stderr.write("err line\\n")';
+    let spies: Record<'info' | 'warn' | 'error', ReturnType<typeof vi.spyOn>>;
+
+    beforeEach(() => {
+        spies = {
+            info: vi.spyOn(logger, 'info').mockImplementation(() => undefined as any),
+            warn: vi.spyOn(logger, 'warn').mockImplementation(() => undefined as any),
+            error: vi.spyOn(logger, 'error').mockImplementation(() => undefined as any)
+        };
+    });
+
+    afterEach(() => {
+        vi.restoreAllMocks();
+    });
+
+    /** The string messages `spy` saw. */
+    function messages(spy: ReturnType<typeof vi.spyOn>): string[] {
+        return spy.mock.calls.map((call: any[]) => call[0]).filter((m: any) => typeof m === 'string');
+    }
+
+    function sawStderr(spy: ReturnType<typeof vi.spyOn>, prefix: string): boolean {
+        return messages(spy).some(m => m.includes(prefix) && m.includes('err line'));
+    }
+
+    it("'info': resolves with stdout, the chunk at info as shell command stderr, nothing at error", async () => {
+        await expect(shellExec(NODE, ['-e', ERR_LINE], undefined, 'info')).resolves.toBe('out');
+
+        await vi.waitFor(() => expect(sawStderr(spies.info, 'shell command stderr: ')).toBe(true));
+        expect(spies.error).not.toHaveBeenCalled();
+        expect(spies.warn).not.toHaveBeenCalled();
+    });
+
+    it('no level: the chunk at error as shell command error, nothing at info', async () => {
+        await expect(shellExec(NODE, ['-e', ERR_LINE])).resolves.toBe('out');
+
+        await vi.waitFor(() => expect(sawStderr(spies.error, 'shell command error: ')).toBe(true));
+        expect(spies.info).not.toHaveBeenCalled();
+    });
+
+    it("'warn': the chunk at warn as shell command stderr", async () => {
+        await expect(shellExec(NODE, ['-e', ERR_LINE], undefined, 'warn')).resolves.toBe('out');
+
+        await vi.waitFor(() => expect(sawStderr(spies.warn, 'shell command stderr: ')).toBe(true));
+        expect(spies.error).not.toHaveBeenCalled();
+        expect(spies.info).not.toHaveBeenCalled();
+    });
+
+    it("'info' and exit 3: rejects with stdout, the chunk at info, the exit line still at error", async () => {
+        await expect(shellExec(NODE, ['-e', `${ERR_LINE}; process.exit(3)`], undefined, 'info')).rejects.toBe('out');
+
+        await vi.waitFor(() => expect(sawStderr(spies.info, 'shell command stderr: ')).toBe(true));
+        expect(messages(spies.error)).toContain('shell process exited with code 3');
+        expect(messages(spies.error).some(m => m.includes('err line'))).toBe(false);
     });
 });

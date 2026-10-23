@@ -1,0 +1,35 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "version": 1,
+  "metadata": {
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/engine-check@1.0.0",
+      "name": "engine-check",
+      "version": "1.0.0",
+      "purl": "pkg:generic/engine-check@1.0.0",
+      "licenses": [
+        { "license": { "id": "Apache-2.0" } }
+      ],
+      "hashes": [
+        { "alg": "SHA-512", "content": "bdc1c2dd1d03b06f4d45561b48d33b99d3300057bc0ee234908f517c4b89056a7674056294417be74d0fcb19294b9c378ff0918c562f747f3e7f3f156fcfa303" }
+      ]
+    }
+  },
+  "components": [
+    {
+      "type": "library",
+      "bom-ref": "pkg:npm/engine-check-right@1.0.0",
+      "name": "engine-check-right",
+      "version": "1.0.0",
+      "purl": "pkg:npm/engine-check-right@1.0.0"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/engine-check@1.0.0",
+      "dependsOn": ["pkg:npm/engine-check-right@1.0.0"]
+    }
+  ]
+}

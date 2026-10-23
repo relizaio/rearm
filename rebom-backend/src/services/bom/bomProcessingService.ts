@@ -452,8 +452,19 @@ function hasExpressionEntry(list: any[]): boolean {
  * nothing.
  */
 function losesLicenseEntry(kept: any[], dropped: any[], specVersion?: string): boolean {
-  const keys = new Set(kept.map((e: any) => licenseKey(e, specVersion)))
-  return dropped.some((entry: any) => !keys.has(licenseKey(entry, specVersion)))
+  return losesLicenseEntryBy(kept, dropped, (e: any) => licenseKey(e, specVersion))
+}
+
+/**
+ * losesLicenseEntry with the key given: whether `dropped` holds an entry whose key no entry of
+ * `kept` has. An entry keyed '' is ignored on both sides (SCORE-68 ADR-3: merge-boms ignores it).
+ */
+function losesLicenseEntryBy(kept: any[], dropped: any[], keyOf: (entry: any) => string): boolean {
+  const keys = new Set(kept.map(keyOf).filter((k: string) => k !== ''))
+  return dropped.some((entry: any) => {
+    const k = keyOf(entry)
+    return k !== '' && !keys.has(k)
+  })
 }
 
 /** The expression texts that assert no licence (SCORE-44 ADR-2): a fold that drops one loses nothing. */
@@ -2353,68 +2364,109 @@ function mergeBomsKey(component: any): string {
   return ''
 }
 
-/** A license entry's key in the merge-boms union: its id, else its name; none for an expression. */
+/**
+ * A licence entry's key as rearm-cli merge-boms (26.10.15, SCORE-67 ADR-1) keys it in the licence
+ * fold: licenseKey read as for 1.6 (an expression's text, else the id, else the name, each with the
+ * acknowledgement and the licence bom-ref) whatever the document's specVersion, since the CLI reads
+ * both fields from every entry; '' for an entry with no non-empty expression, id or name, which the
+ * CLI ignores (never licenseKey's `json:` fallback).
+ */
 function mergeBomsLicenseKey(entry: any): string {
-  return entry?.license ? (entry.license.id || entry.license.name || '') : ''
+  if (isMergeBomsExpression(entry)) return licenseKey(entry, '1.6')
+  const license = entry?.license
+  if (isNonEmptyString(license?.id)) return licenseKey({ license }, '1.6')
+  // an empty id reads as none in the CLI: key by the name
+  if (isNonEmptyString(license?.name)) return licenseKey({ license: { ...license, id: undefined } }, '1.6')
+  return ''
+}
+
+function isNonEmptyString(value: any): boolean {
+  return typeof value === 'string' && value !== ''
+}
+
+/** An expression entry as merge-boms reads one: a non-empty `expression` (an empty one is no expression to the CLI). */
+function isMergeBomsExpression(entry: any): boolean {
+  return isNonEmptyString(entry?.expression)
 }
 
 /**
- * SCORE-40 ADR-8: logs, from the inputs alone and before rearm-cli merge-boms runs under FLAT, the
- * listed licences the CLI will drop. The CLI keys every input's `metadata.component` (a later root
- * of a key replaces an earlier one), then every input's top-level `components[]` in input order, by
- * purl else bom-ref; a component whose key is taken folds into the holder, which survives. A
- * survivor without a `licenses` array takes the component's whole; otherwise the component's
- * `license` entries it lacks by id or name are appended and every `expression` entry is skipped.
- * So a folded component whose `licenses` holds an `expression` entry, beside a survivor holding a
- * `licenses` array, loses it: one info line per such component, with the survivor's bom-ref, the
- * survivor's licenses as the CLI holds them at that fold, and the component's, unless that list
- * already holds the expression by key (ADR-9: nothing is lost). Reads the inputs only and returns
- * one ListedLicenseDrop per line logged (SCORE-44 ADR-2), for recordListedLicenseDrops.
+ * SCORE-68 ADR-3: one merge-boms licence fold of `folded` into `survivor`, on the tracked lists, as
+ * rearm-cli 26.10.15 applies it (SCORE-67 ADR-1 to ADR-3), "absent" meaning no array or `[]`:
+ * (1) the folded list absent: nothing; (2) the survivor's absent: it takes the folded list whole;
+ * (3) an expression entry (a non-empty `expression`, as the CLI reads it) on either side: the survivor's list stands whole, and when the folded list
+ * holds an entry whose mergeBomsLicenseKey the survivor's lacks (ids included) the line is logged and
+ * the drop pushed; (4) otherwise the union by mergeBomsLicenseKey, the folded list's new keyed
+ * entries appended in its order, nothing logged. Never writes to the inputs: a changed list is a new
+ * array on the tracked survivor.
+ */
+function trackMergeBomsFold(survivor: { bomRef: any, licenses: any }, folded: { bomRef: any, licenses: any }, key: string, drops: ListedLicenseDrop[]): void {
+  const listed = folded.licenses
+  if (!Array.isArray(listed) || listed.length === 0) return
+  if (!Array.isArray(survivor.licenses) || survivor.licenses.length === 0) {
+    survivor.licenses = listed
+    return
+  }
+  const kept: any[] = survivor.licenses
+  if (kept.some(isMergeBomsExpression) || listed.some(isMergeBomsExpression)) {
+    if (losesLicenseEntryBy(kept, listed, mergeBomsLicenseKey)) {
+      logger.info({ bomRef: survivor.bomRef, kept, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
+      drops.push({
+        key,
+        bomRef: survivor.bomRef,
+        kept,
+        dropped: listed,
+        expressions: droppedLicenseExpressions(normalizeLicenses(kept), normalizeLicenses(listed))
+      })
+    }
+    return
+  }
+  const seen = new Set(kept.map(mergeBomsLicenseKey).filter((k: string) => k !== ''))
+  const added = listed.filter((entry: any) => {
+    const k = mergeBomsLicenseKey(entry)
+    if (k === '' || seen.has(k)) return false
+    seen.add(k)
+    return true
+  })
+  if (added.length > 0) survivor.licenses = [...kept, ...added]
+}
+
+/**
+ * SCORE-40 ADR-8, re-aligned by SCORE-68 ADR-3: logs, from the inputs alone and before rearm-cli
+ * merge-boms runs under FLAT, the listed licences the CLI will drop, replaying rearm-cli 26.10.15
+ * (SCORE-67 ADR-1 to ADR-3). The CLI keys every input's `metadata.component` in input order by purl
+ * else bom-ref (a keyless root is dropped); the first root of a key survives and a later root of the
+ * key folds into it. Then every input's top-level `components[]` in input order: a new key is placed,
+ * a taken key folds into the holder, which survives; a keyless component is skipped. Each fold applies
+ * the licence rule of trackMergeBomsFold: an absent or `[]` list on the folded side changes nothing,
+ * an absent or `[]` survivor takes the folded list whole, an expression on either side keeps the
+ * survivor's list whole, otherwise the union by licence key (id or name with acknowledgement and
+ * licence bom-ref). One info line per fold beside an expression that loses an entry by that key (ids
+ * included; SCORE-40 ADR-9: nothing is lost when every entry is already kept), with the survivor's
+ * bom-ref, its licences as the CLI holds them at that fold, and the folded list. The CLI prints its
+ * own `merge-boms:` line for the same loss; this one is kept because the record on the merged node
+ * (recordListedLicenseDrops, SCORE-44 ADR-2) needs the prediction. Reads the inputs only and returns
+ * one ListedLicenseDrop per line logged.
  */
 export function logListedLicenseDrops(bomObjects: any[]): ListedLicenseDrop[] {
   const drops: ListedLicenseDrop[] = []
   if (!Array.isArray(bomObjects)) return drops
   const survivors = new Map<string, { bomRef: any, licenses: any }>()
+  const place = (key: string, component: any) => {
+    const entry = { bomRef: component['bom-ref'], licenses: component.licenses }
+    const survivor = survivors.get(key)
+    if (survivor) trackMergeBomsFold(survivor, entry, key, drops)
+    else survivors.set(key, entry)
+  }
   for (const bom of bomObjects) {
     const root = bom?.metadata?.component
     const key = mergeBomsKey(root)
-    if (key !== '') survivors.set(key, { bomRef: root['bom-ref'], licenses: root.licenses })
+    if (key !== '') place(key, root)
   }
   for (const bom of bomObjects) {
     if (!Array.isArray(bom?.components)) continue
     for (const component of bom.components) {
       const key = mergeBomsKey(component)
-      if (key === '') continue
-      const survivor = survivors.get(key)
-      if (!survivor) {
-        survivors.set(key, { bomRef: component['bom-ref'], licenses: component.licenses })
-        continue
-      }
-      const listed = component.licenses
-      if (!Array.isArray(listed)) continue
-      if (!Array.isArray(survivor.licenses)) {
-        survivor.licenses = listed
-        continue
-      }
-      // The CLI drops the listed expression entries; ADR-9: logged only when one is not already kept.
-      if (losesLicenseEntry(survivor.licenses, listed.filter(isExpressionEntry))) {
-        logger.info({ bomRef: survivor.bomRef, kept: survivor.licenses, dropped: listed }, 'merge-boms will drop the listed expression: the survivor licenses stand')
-        drops.push({
-          key,
-          bomRef: survivor.bomRef,
-          kept: survivor.licenses,
-          dropped: listed,
-          expressions: droppedLicenseExpressions(normalizeLicenses(survivor.licenses), normalizeLicenses(listed))
-        })
-      }
-      const seen = new Set(survivor.licenses.map(mergeBomsLicenseKey).filter((k: string) => k !== ''))
-      const added = listed.filter((entry: any) => {
-        const k = mergeBomsLicenseKey(entry)
-        if (k === '' || seen.has(k)) return false
-        seen.add(k)
-        return true
-      })
-      if (added.length > 0) survivor.licenses = [...survivor.licenses, ...added]
+      if (key !== '') place(key, component)
     }
   }
   return drops

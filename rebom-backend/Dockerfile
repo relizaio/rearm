@@ -7,8 +7,10 @@ ARG TARGETOS
 # (hashes from <cdn>/rearm-download/<version>/sha256sums.txt, SCORE-7 design 3.5). The engine
 # checks in the tools RUN fail the build on a zip without `bomutils score` or with an older engine:
 # the fda report on test/fixtures/score/full.self.cdx.json must carry both "skippedTypes" (SCORE-20)
-# and "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2).
-ARG REARM_CLI_VERSION=26.10.14
+# and "selfComponentsSkipped" (SCORE-59; pinned by SCORE-60 ADR-2). The merge of the two
+# engine-check fixtures (test/fixtures/merge/engine-check-a.cdx.json and engine-check-b.cdx.json)
+# must print `folds into root` on stderr (SCORE-67; pinned by SCORE-68 ADR-2).
+ARG REARM_CLI_VERSION=26.10.15
 
 # Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
 RUN apk add postgresql postgresql-contrib unzip wget
@@ -31,6 +33,8 @@ WORKDIR /app
 # Download rearm-cli and cyclonedx-cli before tests (needed for merge/diff operations)
 COPY tools.${TARGETARCH}.sha256 /tmp/tools.sha256
 COPY test/fixtures/score/full.self.cdx.json /tmp/engine-check.cdx.json
+COPY test/fixtures/merge/engine-check-a.cdx.json /tmp/engine-check-a.cdx.json
+COPY test/fixtures/merge/engine-check-b.cdx.json /tmp/engine-check-b.cdx.json
 RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION}/rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
     unzip rearm-${REARM_CLI_VERSION}-linux-${TARGETARCH}.zip && \
     if [ "$TARGETARCH" = "amd64" ]; then \
@@ -48,7 +52,10 @@ RUN wget https://d7ge14utcyki8.cloudfront.net/rearm-download/${REARM_CLI_VERSION
     rearm bomutils score --format json --profile fda --infile /tmp/engine-check.cdx.json > /tmp/engine-check.json && \
     grep -q '"skippedTypes"' /tmp/engine-check.json && \
     grep -q '"selfComponentsSkipped"' /tmp/engine-check.json && \
-    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json
+    rearm bomutils merge-boms --name engine-check --version 1.0.0 --input-files /tmp/engine-check-a.cdx.json --input-files /tmp/engine-check-b.cdx.json --outfile /tmp/engine-check-merged.json 2> /tmp/engine-check-merge.err && \
+    test -s /tmp/engine-check-merged.json && \
+    grep -q 'folds into root' /tmp/engine-check-merge.err && \
+    rm -f /tmp/engine-check.cdx.json /tmp/engine-check.json /tmp/engine-check-a.cdx.json /tmp/engine-check-b.cdx.json /tmp/engine-check-merged.json /tmp/engine-check-merge.err
 
 # cyclonedx-cli has no musl build for arm64 (v0.32.0 publishes cyclonedx-linux-musl-x64 and
 # cyclonedx-linux-musl-arm only); the arm64 pin is the glibc build and needs gcompat on alpine

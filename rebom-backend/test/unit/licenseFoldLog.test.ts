@@ -11,7 +11,9 @@ import {
  * with the bom-ref, the list kept and the entries dropped: the settle of a mixed array, the de-dup
  * union beside an expression, and the drop rearm-cli merge-boms performs under FLAT, predicted
  * from the inputs before the CLI runs. A fold that loses no entry by key (an expression beside the
- * same expression) logs nothing.
+ * same expression) logs nothing. SCORE-68 T-2 (ADR-3): the merge-boms prediction replays rearm-cli
+ * 26.10.15 (the first root of a key survives, `[]` is absent, ids beside an expression are lost, the
+ * licence key carries acknowledgement and bom-ref).
  */
 
 const SETTLED = 'license fold settled: the survivor licenses stand';
@@ -26,6 +28,7 @@ const L2 = () => [{ license: { id: 'Apache-2.0' } }, { license: { name: 'Custom'
 const XP = () => [{ expression: 'MIT OR Apache-2.0' }];
 const X2 = () => [{ expression: 'BSD-3-Clause OR MIT' }];
 const N = () => [{ expression: 'NOASSERTION' }];
+const LC = () => [{ license: { id: 'MIT', acknowledgement: 'concluded' } }];
 
 let info: ReturnType<typeof vi.spyOn>;
 
@@ -166,6 +169,9 @@ describe('the de-dup licence union logs the duplicate it drops (T-13)', () => {
 });
 
 describe('logListedLicenseDrops names the expression merge-boms will drop under FLAT (T-13, ADR-8)', () => {
+    /** The one line logged for a fold into pkg:npm/one@1.0.0 that keeps `kept` and drops `dropped`. */
+    const line = (kept: any[], dropped: any[]) => [{ bomRef: ONE, kept, dropped }, LISTED_DROP];
+
     /** Runs it on `inputs`, checks it left them as they were, and returns the number of drops (SCORE-44: one per line). */
     function run(inputs: any[]): number {
         const copies = structuredClone(inputs);
@@ -203,19 +209,33 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
         expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: L(), dropped: X2() }, LISTED_DROP]]);
     });
 
-    it('a root with an empty licenses array: merge-boms unions into it and drops the expression, logged (departure D-1)', () => {
-        expect(run([rooted('one', []), listing(listedOne(X2()))])).toBe(1);
+    it('a root with an empty licenses array takes the listing whole (rearm-cli 26.10.15: [] is absent; SCORE-68 T-2)', () => {
+        expect(run([rooted('one', []), listing(listedOne(X2()))])).toBe(0);
+        expect(info).not.toHaveBeenCalled();
 
-        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: [], dropped: X2() }, LISTED_DROP]]);
+        // the tracked list is X2, taken whole: a third input's ids are dropped beside it
+        expect(run([rooted('one', []), listing(listedOne(X2())), rooted('three', undefined, [listedOne(L())])])).toBe(1);
+        expect(info.mock.calls).toStrictEqual([line(X2(), L())]);
     });
 
-    it('two roots of one key: the later root is the one merge-boms keeps and folds into (departure D-2)', () => {
-        // the later root has no licenses: merge-boms copies the listing's whole, nothing dropped
-        expect(run([rooted('one', L()), rooted('one'), listing(listedOne(X2()))])).toBe(0);
-        // the later root has ids: the listing's expression is dropped beside them
+    it('two roots of one key: the first survives and the later folds in (rearm-cli 26.10.15; SCORE-68 T-2)', () => {
+        expect(run([rooted('one', L()), rooted('one'), listing(listedOne(X2()))])).toBe(1);
+        // the first root took L from the second
         expect(run([rooted('one'), rooted('one', L()), listing(listedOne(X2()))])).toBe(1);
 
-        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: L(), dropped: X2() }, LISTED_DROP]]);
+        expect(info.mock.calls).toStrictEqual([line(L(), X2()), line(L(), X2())]);
+    });
+
+    it('two roots of one key, the later with an expression: the loss is on the root fold itself (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', L()), rooted('one', X2())])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([line(L(), X2())]);
+    });
+
+    it('two roots of one key with id lists: a union on the root fold, nothing logged (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', L()), rooted('one', L2())])).toBe(0);
+
+        expect(info).not.toHaveBeenCalled();
     });
 
     it('a root that took a first listing whole keeps it beside a second listing\'s expression, as merge-boms holds it (departure D-2)', () => {
@@ -242,10 +262,10 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
         expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }], dropped: X2() }, LISTED_DROP]]);
     });
 
-    it('a root without licenses takes a first listing\'s empty array whole, and the next listing\'s expression is dropped beside it', () => {
-        expect(run([rooted('one'), listing(listedOne([])), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+    it('a root without licenses, a listing with [], then a listing with an expression: the empty list changes nothing and the expression is taken whole (SCORE-68 T-2)', () => {
+        expect(run([rooted('one'), listing(listedOne([])), rooted('three', undefined, [listedOne(X2())])])).toBe(0);
 
-        expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: [], dropped: X2() }, LISTED_DROP]]);
+        expect(info).not.toHaveBeenCalled();
     });
 
     it('a root with an expression and a listing with a different expression: one line (the control for ADR-9)', () => {
@@ -254,14 +274,59 @@ describe('logListedLicenseDrops names the expression merge-boms will drop under 
         expect(info.mock.calls).toStrictEqual([[{ bomRef: ONE, kept: XP(), dropped: X2() }, LISTED_DROP]]);
     });
 
+    it('a root with an expression and a listing with ids: the ids are dropped beside the kept expression, one line (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', XP()), listing(listedOne(L2()))])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([line(XP(), L2())]);
+    });
+
+    it('a root with an expression, a listing with ids, then a listing with the root\'s expression: one line, the second loses nothing (SCORE-68 T-2; SCORE-40 ADR-9)', () => {
+        expect(run([rooted('one', XP()), listing(listedOne(L2())), rooted('three', undefined, [listedOne(XP())])])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([line(XP(), L2())]);
+    });
+
+    it('the licence key carries the acknowledgement: MIT and MIT concluded are a union of two entries (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', L()), listing(listedOne(LC()))])).toBe(0);
+        expect(info).not.toHaveBeenCalled();
+
+        expect(run([rooted('one', L()), listing(listedOne(LC())), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+        expect(info.mock.calls).toStrictEqual([line([...L(), ...LC()], X2())]);
+    });
+
+    it('an id with an acknowledgement beside a kept expression is dropped and logged (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', XP()), listing(listedOne(LC()))])).toBe(1);
+
+        expect(info.mock.calls).toStrictEqual([line(XP(), LC())]);
+    });
+
+    it('a keyless licence entry is ignored by the union and not appended (SCORE-68 T-2)', () => {
+        const keyless = () => [{ license: { url: 'https://x' } }];
+        expect(run([rooted('one', L()), listing(listedOne(keyless()))])).toBe(0);
+        expect(info).not.toHaveBeenCalled();
+
+        expect(run([rooted('one', L()), listing(listedOne(keyless())), rooted('three', undefined, [listedOne(X2())])])).toBe(1);
+        expect(info.mock.calls).toStrictEqual([line(L(), X2())]);
+    });
+
+    it('an empty expression is no expression to merge-boms: two roots fold by the union, nothing logged (SCORE-68 T-2)', () => {
+        expect(run([rooted('one', [{ expression: '' }]), rooted('one', L()), listing(listedOne(X2()))])).toBe(1);
+
+        // the union kept the empty entry and added MIT; the listing's expression is then dropped beside them
+        expect(info.mock.calls).toStrictEqual([line([{ expression: '' }, ...L()], X2())]);
+    });
+
+    it('a keyless root is not a survivor: the listing is placed, nothing logged (SCORE-68 T-2)', () => {
+        expect(run([doc({ type: 'application', name: 'nokey', licenses: L() }), listing(listedOne(X2()))])).toBe(0);
+
+        expect(info).not.toHaveBeenCalled();
+    });
+
     const QUIET: [string, () => any[]][] = [
         ['a listing with the root\'s own expression (ADR-9: nothing is lost)', () => [rooted('one', XP()), listing(listedOne(XP()))]],
         ['a listing with NOASSERTION beside a root with NOASSERTION (ADR-9: nothing is lost)', () => [rooted('one', N()), listing(listedOne(N()))]],
-        ['a listing with the root\'s expression after a listing with ids was appended to it (ADR-9: the tracked list holds it; the settle logs the ids)',
-            () => [rooted('one', XP()), listing(listedOne(L2())), rooted('three', undefined, [listedOne(XP())])]],
         ['a listing with ids (a union, nothing dropped)', () => [rooted('one', L()), listing(listedOne(L2()))]],
         ['a root without licenses (the listing is copied whole)', () => [rooted('one'), listing(listedOne(X2()))]],
-        ['a root with an expression and a listing with ids (the settle\'s case)', () => [rooted('one', XP()), listing(listedOne(L2()))]],
         ['a listing nested one level down (not the merge-boms fold)', () => [rooted('one', L()),
             rooted('two', undefined, [{ type: 'library', name: 'mid', version: '1.0.0', purl: 'pkg:npm/mid@1.0.0', 'bom-ref': 'pkg:npm/mid@1.0.0', components: [listedOne(X2())] }])]],
         ['a listing whose purl differs from the root\'s (different keys)', () => [rooted('one', L()),
