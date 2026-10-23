@@ -185,7 +185,8 @@ export async function storeMerge(created: string[], ids: string[], overrides: an
  * product root and the INTERNAL placeholder. `releaseNodeLicenses`, when set, also attaches
  * releaseNodeUpload(releaseNodeLicenses) to the component release. `releaseAttached` (SCORE-57 T-8)
  * also attaches releaseAttachedUpload() to the component release (belongsTo RELEASE) and lists it in
- * the component merge's releaseRootIds, as rearm-saas does.
+ * the component merge's releaseRootIds, as rearm-saas does. The component merge lists the SCE and
+ * deliverable uploads in attachedRootIds on every call, as rearm-saas does (SCORE-63 ADR-5).
  */
 export async function buildProductExport(created: string[], withFacts: boolean, withLicenses = false,
     releaseNodeLicenses?: any[], releaseAttached = false): Promise<Built> {
@@ -211,7 +212,9 @@ export async function buildProductExport(created: string[], withFacts: boolean, 
         {
             ...(withFacts || withLicenses ? { releaseNode: { ...componentFacts, ...componentLicence } } : {}),
             // SCORE-57: rearm-saas lists the release's own RELEASE-attached artifacts
-            ...(releaseAttachedId ? { releaseRootIds: [releaseAttachedId] } : {})
+            ...(releaseAttachedId ? { releaseRootIds: [releaseAttachedId] } : {}),
+            // SCORE-63 ADR-5: and its own SCE- and outbound-deliverable-attached ones
+            attachedRootIds: [sce, deliverable]
         });
     const productRequest = productMergeRequest(withFacts, withLicenses ? PRODUCT_LICENSE : undefined);
     const product = await merge([componentMerge, release], productRequest.overrides, productRequest.extra);
@@ -221,6 +224,19 @@ export async function buildProductExport(created: string[], withFacts: boolean, 
         product: await BomService.findBomObjectById(product, TEST_ORG_UUID),
         ids: { sce, deliverable, release, releaseNodeCopy, releaseAttached: releaseAttachedId, componentMerge, product }
     };
+}
+
+/** SCORE-66: the bom-ref a node of the input with serial `base` is written apart under. */
+export function Q(base: string, ref: string): string {
+    return `${base}#${ref}`;
+}
+
+/** SCORE-66: `purl` with the rearm_input qualifier naming `base` (ADR-4: `&` after a `?`, before any subpath). */
+export function P(purl: string, base: string): string {
+    const at = purl.indexOf('#');
+    const head = at < 0 ? purl : purl.slice(0, at);
+    const tail = at < 0 ? '' : purl.slice(at);
+    return `${head}${head.includes('?') ? '&' : '?'}rearm_input=${encodeURIComponent(base)}${tail}`;
 }
 
 /** The component with bom-ref `ref` at the top level of `bom`, or undefined. */

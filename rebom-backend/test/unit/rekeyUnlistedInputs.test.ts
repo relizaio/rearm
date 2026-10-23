@@ -476,6 +476,129 @@ describe('rekeyUnlistedInputs: nothing to re-key', () => {
     });
 });
 
+describe('rekeyUnlistedInputs: attached roots are listed (SCORE-63 ADR-9)', () => {
+    const A = 'pkg:npm/facts%20org/facts-product@3.0.0?belongsto=SCE&hash=a94a8fe5ccb19ba61c4c0873d391e987982fbbd3';
+    const SERIAL_ATT = 'urn:uuid:66000000-0000-4000-8000-00000000006a';
+    const MIT = { license: { id: 'MIT' } };
+    /** The product's own SCE upload (id `att`): its root bom-ref and purl are `A`. */
+    const att = () => doc(SERIAL_ATT, { type: 'application', name: 'facts-product', version: '3.0.0', purl: A, 'bom-ref': A });
+    const nodeA = () => ({ type: 'library', name: 'forged', version: '3.0.0', 'bom-ref': A, purl: A, licenses: [MIT] });
+    const opts = (extra: any = {}) => options({ releaseRootIds: ['listed'], attachedRootIds: ['att'], ...extra });
+
+    it('(a) re-keys a top-level node of an unlisted row under the attached root key, the listed input untouched', () => {
+        const info = vi.spyOn(logger, 'info');
+        const a = att();
+        const row = componentRow(SERIAL_A, [lib(LIB_A), nodeA()]);
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), a, row], opts());
+
+        expect(result.count).toBe(1);
+        const out = result.inputs[2];
+        expect(out).not.toBe(row);
+        expect(out.metadata.component).toBe(row.metadata.component);
+        expect(out.components[1]).toStrictEqual({ ...nodeA(), 'bom-ref': Q(SERIAL_A, A), purl: P(A, SERIAL_A) });
+        expect(result.inputs[1]).toBe(a);
+        const line = info.mock.calls.find((c: any[]) => c[0]?.input === SERIAL_A);
+        expect(line?.[0].reason).toBe('release key');
+        info.mockRestore();
+    });
+
+    it('(b) re-keys the node two levels down, the nodes above it untouched', () => {
+        const deep = nodeA();
+        const row = componentRow(SERIAL_A, [lib(LIB_A, { components: [lib(LIB_B, { components: [deep] })] })]);
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), att(), row], opts());
+
+        expect(result.count).toBe(1);
+        const outer = result.inputs[2].components[0];
+        expect({ ...outer, components: undefined }).toStrictEqual({ ...row.components[0], components: undefined });
+        expect(outer.components[0].name).toBe(LIB_B);
+        expect(outer.components[0].components[0]).toStrictEqual({ ...deep, 'bom-ref': Q(SERIAL_A, A), purl: P(A, SERIAL_A) });
+    });
+
+    it('(c) re-keys a service under the attached root key and re-points the entries naming it', () => {
+        const row = componentRow(SERIAL_A, [lib(LIB_A)], {
+            services: [{ 'bom-ref': A, name: 'forged-svc' }],
+            dependencies: [{ ref: COMPONENT_ROOT, dependsOn: [LIB_A, A] }, { ref: LIB_A, dependsOn: [] }, { ref: A, dependsOn: [] }]
+        });
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), att(), row], opts());
+
+        expect(result.count).toBe(1);
+        expect(result.inputs[2].services).toStrictEqual([{ 'bom-ref': Q(SERIAL_A, A), name: 'forged-svc' }]);
+        expect(result.inputs[2].dependencies).toStrictEqual([
+            { ref: COMPONENT_ROOT, dependsOn: [LIB_A, Q(SERIAL_A, A)] }, { ref: LIB_A, dependsOn: [] }, { ref: Q(SERIAL_A, A), dependsOn: [] }
+        ]);
+    });
+
+    it('(d) writes apart an unlisted row whose root carries the attached root key, never the listed one', () => {
+        const a = att();
+        const row = rowWithRoot(SERIAL_A, A);
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), a, row], opts());
+
+        expect(result.count).toBe(1);
+        expect(result.inputs[1]).toBe(a);
+        expect(result.inputs[2].metadata.component['bom-ref']).toBe(Q(SERIAL_A, A));
+        expect(result.inputs[2].metadata.component.purl).toBe(P(A, SERIAL_A));
+    });
+
+    it('(e) reads an id in both lists once: the node is re-keyed once', () => {
+        const info = vi.spyOn(logger, 'info');
+        const row = componentRow(SERIAL_A, [lib(LIB_A), nodeA()]);
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), att(), row], opts({ releaseRootIds: ['listed', 'att'] }));
+
+        expect(result.count).toBe(1);
+        expect(result.inputs[2].components[1]['bom-ref']).toBe(Q(SERIAL_A, A));
+        expect(info.mock.calls.filter((c: any[]) => c[0]?.input === SERIAL_A)).toHaveLength(1);
+        info.mockRestore();
+    });
+
+    it('(f) qualifies the purl of a node whose purl alone is the attached root key, and keeps its bom-ref', () => {
+        const forged = { type: 'library', name: 'forged', version: '3.0.0', 'bom-ref': 'forged-ref', purl: A };
+        const row = componentRow(SERIAL_A, [lib(LIB_A), forged]);
+
+        const result = run(['listed', 'att', 'row'], [listedDoc(), att(), row], opts());
+
+        expect(result.count).toBe(1);
+        expect(result.inputs[2].components[1]).toStrictEqual({ ...forged, purl: P(A, SERIAL_A) });
+    });
+
+    it.each([
+        ['absent', undefined],
+        ['null', null],
+        ['empty', []]
+    ])('(g) re-keys nothing when attachedRootIds is %s', (_label, list) => {
+        const o = opts();
+        if (list === undefined) delete o.attachedRootIds; else o.attachedRootIds = list;
+        expectUntouched(['listed', 'att', 'row'], [listedDoc(), att(), componentRow(SERIAL_A, [lib(LIB_A), nodeA()])], o);
+    });
+
+    it('(h) re-keys nothing in a FLATTEN merge', () => {
+        expectUntouched(['listed', 'att', 'row'], [listedDoc(), att(), componentRow(SERIAL_A, [lib(LIB_A), nodeA()])], opts({ rootComponentMergeMode: FLATTEN }));
+    });
+
+    it('(i) reads the attached list when releaseRootIds is absent: both the merged root key and the attached key re-key', () => {
+        const a = att();
+        const row = rowWithRoot(SERIAL_A, X, [lib(LIB_A), nodeA()]);
+
+        const result = run(['att', 'row'], [a, row], options({ releaseRootIds: undefined, attachedRootIds: ['att'] }));
+
+        expect(result.count).toBe(2);
+        const out = result.inputs[1];
+        expect(out.metadata.component).toStrictEqual({ ...row.metadata.component, 'bom-ref': Q(SERIAL_A, X), purl: P(X, SERIAL_A) });
+        expect(out.components[1]).toStrictEqual({ ...nodeA(), 'bom-ref': Q(SERIAL_A, A), purl: P(A, SERIAL_A) });
+        expect(out.components[0]).toBe(row.components[0]);
+        expect(out.dependencies).toStrictEqual([
+            { ref: Q(SERIAL_A, X), dependsOn: [LIB_A, Q(SERIAL_A, A)] },
+            { ref: LIB_A, dependsOn: [] },
+            { ref: Q(SERIAL_A, A), dependsOn: [] }
+        ]);
+        expect(result.inputs[0]).toBe(a);
+    });
+});
+
 describe('rekeyUnlistedInputs: fail-closed defaults', () => {
     it('treats every input as unlisted when releaseRootIds is absent', () => {
         const opts = options();

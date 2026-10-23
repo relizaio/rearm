@@ -168,7 +168,7 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
     const PRODUCT_ID_FORM = [{ license: { id: PRODUCT_LICENSE } }];
     const LIBRARIES = ['lib-a', 'lib-b', 'lib-c', 'lib-d', 'lib-e'].map(name => `pkg:npm/${name}@1.0.0`);
 
-    it('a component merge: the root carries the declared licence in the named form, the uploaded roots none (SCORE-40 T-5)', async () => {
+    it('a component merge: the root carries the declared licence in the named form, and so do the attached roots (SCORE-40 T-5, SCORE-63)', async () => {
         const { componentMerge } = await buildProductExport(created, true, true);
 
         expect(componentMerge.metadata.component).toStrictEqual({
@@ -178,15 +178,16 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
             licenses: [{ license: { name: 'LicenseRef-Facts-Commercial', url: 'https://facts.example/licence' } }],
             properties: [STAMP]
         });
-        expect(node(componentMerge, SCE_ROOT)).not.toHaveProperty('licenses');
-        expect(node(componentMerge, DELIVERABLE_ROOT)).not.toHaveProperty('licenses');
+        // SCORE-63: the listed SCE- and deliverable-attached roots carry the declared licence, absent-only
+        expect(node(componentMerge, SCE_ROOT).licenses).toStrictEqual(NAMED);
+        expect(node(componentMerge, DELIVERABLE_ROOT).licenses).toStrictEqual(NAMED);
         for (const ref of LIBRARIES.slice(0, 3)) {
             expect(node(componentMerge, ref).licenses, ref).toStrictEqual([{ license: { id: 'MIT' } }]);
         }
         await expect(validateBom(componentMerge)).resolves.toBeTruthy();
     });
 
-    it('a product merge: the root and the INTERNAL placeholder in the id form, the release node in the named form, nothing else (SCORE-40 T-5)', async () => {
+    it('a product merge: the root and the INTERNAL placeholder in the id form, the release node and the attached roots in the named form, nothing else (SCORE-40 T-5, SCORE-63)', async () => {
         const { product } = await buildProductExport(created, true, true);
 
         expect(product.metadata.component.purl).toBe(PRODUCT_ROOT);
@@ -194,7 +195,11 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         // the normaliser of the product merge leaves the named form alone
         expect(node(product, RELEASE_NODE).licenses).toStrictEqual(NAMED);
         expect(node(product, PLACEHOLDER_REF).licenses).toStrictEqual(PRODUCT_ID_FORM);
-        for (const ref of [EXTERNAL_PLACEHOLDER_REF, SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT]) {
+        // SCORE-63: the component's attached roots carry the component's licence from its row, never the product's
+        for (const ref of [SCE_ROOT, DELIVERABLE_ROOT]) {
+            expect(node(product, ref).licenses, ref).toStrictEqual(NAMED);
+        }
+        for (const ref of [EXTERNAL_PLACEHOLDER_REF, RELEASE_ROOT]) {
             expect(node(product, ref), ref).toBeDefined();
             expect(node(product, ref), ref).not.toHaveProperty('licenses');
         }

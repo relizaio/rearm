@@ -70,6 +70,8 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
             return call.result;
         },
         fillReleaseNode: recorded('fillReleaseNode'),
+        // SCORE-63 T-2: the attached root fill, right after the release node fill.
+        fillAttachedRoots: recorded('fillAttachedRoots'),
         // SCORE-60 T-9: the release node stamp, right after the fill.
         markReleaseNode: recorded('markReleaseNode'),
         extractFileFilteredBom: recorded('extractFileFilteredBom'),
@@ -219,7 +221,7 @@ describe('mergeBoms: pass order', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
         const carry = passes.calls[3];
         expect(carry.args[1]).toHaveLength(2);
         expect(carry.args[1][0]).toBe(inputs[0]);
@@ -227,23 +229,23 @@ describe('mergeBoms: pass order', () => {
         expect(carry.args[2]).toStrictEqual({ referencedOnly: false });
         // each pass works on what the one before it returned
         expect(passes.calls[4].args[0]).toBe(carry.args[0]);
-        expect(passes.calls[8].args[0]).toBe(passes.calls[7].result.bom);
-        expect(passes.calls[9].args[0]).not.toBe(passes.calls[8].args[0]);
-        expect(passes.calls[9].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
+        expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
+        expect(passes.calls[10].args[0]).not.toBe(passes.calls[9].args[0]);
+        expect(passes.calls[10].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
         expect(bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0'] }]);
     });
 
     it('skips the file filter without the switch and still runs dropDanglingRefs then declareUnknownCompositions (T-12)', async () => {
         await mergeBoms(['one', 'two'], options(), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[3].args[2]).toStrictEqual({ referencedOnly: false });
     });
 
     it('asks carryServices for referenced services only in the top-level-only merge (T-12)', async () => {
         await mergeBoms(['one', 'two'], options({ tldOnly: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[3].args[2]).toStrictEqual({ referencedOnly: true });
     });
 
@@ -260,16 +262,19 @@ describe('mergeBoms: pass order', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ releaseNode }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[6].name).toBe('fillReleaseNode');
         expect(passes.calls[6].args[1]).toBe(releaseNode);
         expect(passes.calls[6].args[0]).toBe(passes.calls[5].result.bom);
         expect(passes.calls[6].args[0].metadata.component).not.toHaveProperty('licenses');
         expect(passes.calls[6].result.filled).toStrictEqual({ supplier: true, hashes: false, licenses: true });
-        // the stamp works on the filled document, the pass after it on the stamped one (SCORE-60 T-9)
-        expect(passes.calls[7].name).toBe('markReleaseNode');
+        // the attached root fill works on the filled document, the stamp on what it returned, the pass
+        // after it on the stamped one (SCORE-60 T-9, SCORE-63 T-2)
+        expect(passes.calls[7].name).toBe('fillAttachedRoots');
         expect(passes.calls[7].args[0]).toBe(passes.calls[6].result.bom);
+        expect(passes.calls[8].name).toBe('markReleaseNode');
         expect(passes.calls[8].args[0]).toBe(passes.calls[7].result.bom);
+        expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
         expect(bom.metadata.component).toStrictEqual({
             type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
             supplier: { name: 'Acme' },
@@ -302,7 +307,7 @@ describe('mergeBoms: a licence fold merge-boms left mixed', () => {
 
         expect(bom.components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/one@1.0.0', 'pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0']);
         expect(bom.components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // the de-dup already sees the settled list
         expect(passes.calls[4].args[0].components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
     });
@@ -563,13 +568,13 @@ describe('mergeBoms: component releases without an SBOM', () => {
         const list = [missing(HTTPD, 'httpd'), missing(FLYWAY, 'flyway')];
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, missingSbomComponents: list }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // carryServices sees every input merge-boms saw, the placeholders included
         expect(passes.calls[3].args[1].map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual([
             'pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`
         ]);
-        expect(passes.calls[10].args[0]).toBe(passes.calls[9].args[0]);
-        expect(passes.calls[10].args[1]).toBe(list);
+        expect(passes.calls[11].args[0]).toBe(passes.calls[10].args[0]);
+        expect(passes.calls[11].args[1]).toBe(list);
         expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [`urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] }]);
         expect(bom.metadata.properties).toContainEqual({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: '2' });
         expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] });
@@ -641,14 +646,14 @@ describe('mergeBoms: the release node fill', () => {
         const releaseNode = facts();
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, releaseNode }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
         const fill = passes.calls[6];
         expect(fill.args[1]).toBe(releaseNode);
         // its input is the de-dup's output: the de-dup property is already on it
         expect(fill.args[0].metadata.properties).toContainEqual({ name: BOM_REFS_DEDUPLICATED_PROPERTY, value: '1' });
         expect(fill.args[0].metadata.component).not.toHaveProperty('supplier');
         // the file filter works on the filled document
-        expect(passes.calls[8].args[0].metadata.component.supplier).toStrictEqual({ name: 'Example' });
+        expect(passes.calls[9].args[0].metadata.component.supplier).toStrictEqual({ name: 'Example' });
         expect(bom.metadata.component).toStrictEqual({
             type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
             supplier: { name: 'Example' },
@@ -663,7 +668,8 @@ describe('mergeBoms: the release node fill', () => {
         const fill = passes.calls.find(c => c.name === 'fillReleaseNode')!;
         expect(fill.args[1]).toBeUndefined();
         expect(passes.calls[7].args[0]).toBe(fill.args[0]);
-        expect(passes.calls[8].args[0]).toBe(passes.calls[7].result.bom);
+        expect(passes.calls[8].args[0]).toBe(fill.args[0]);
+        expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
         expect(bom.metadata.component).toStrictEqual({ type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT, properties: [STAMP] });
     });
 
@@ -694,7 +700,7 @@ describe('mergeBoms: the release node fill', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ releaseNode: { supplierName: 'Example' }, missingSbomComponents: [withHashes, missing(FLYWAY, 'flyway')] }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(bom.metadata.component.supplier).toStrictEqual({ name: 'Example' });
         expect(bom.metadata.component).not.toHaveProperty('hashes');
         expect(mergeInputs.objs[2].metadata.component.hashes).toStrictEqual([{ alg: 'SHA-256', content: SHA256 }]);
@@ -747,8 +753,9 @@ describe('mergeBoms: the release root fold', () => {
 
         const bom = await mergeBoms(['one', 'rel', 'two'], options({ releaseRootIds: ['rel'] }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
-        expect(listed.calls).toHaveLength(1);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        // SCORE-63 T-2: listedReleaseInputs is called twice per merge, the fold's call first
+        expect(listed.calls).toHaveLength(2);
         expect(listed.calls[0].args[0]).toStrictEqual(['one', 'rel', 'two']);
         expect(listed.calls[0].args[2]).toStrictEqual(['rel']);
         const foldCall = passes.calls[5];
@@ -824,8 +831,8 @@ describe('mergeBoms: the release root fold', () => {
 
         const bom = await mergeBoms(['rel', 'one'], options({ releaseRootIds: ['rel'], excludeFileComponents: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
-        expect(passes.calls[8].args[0].metadata.component.components).toStrictEqual([{ type: 'file', name: '/etc/conf', 'bom-ref': 'file-conf' }]);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls[9].args[0].metadata.component.components).toStrictEqual([{ type: 'file', name: '/etc/conf', 'bom-ref': 'file-conf' }]);
         expect(bom.metadata.component.components ?? []).toStrictEqual([]);
         expect(property(bom, FILE_COMPONENTS_EXCLUDED_PROPERTY)).toStrictEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '2' }]);
         expect(property(bom, DANGLING_REFS_DROPPED_PROPERTY)).toStrictEqual([]);
@@ -854,6 +861,97 @@ describe('mergeBoms: the release root fold', () => {
  * rebom's merge inputs are read without uploaded stamps (ADR-9), and rearm-saas's row rule (ADR-4
  * rule 2: a node the organization lists as a dependency is never its own) stays as the defence.
  */
+/**
+ * SCORE-63 (T-2, ADR-1): the roots of the release's own SCE- and deliverable-attached uploads, as
+ * rearm-saas listed them in attachedRootIds, get the declared licence right after the release node
+ * fill, before the stamp, handed exactly the documents listedReleaseInputs returns for that list.
+ */
+describe('mergeBoms: the attached root fill', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    const SCE = 'pkg:npm/example/merged@1.0.0?belongsto=SCE&hash=0123456789abcdef0123456789abcdef01234567';
+
+    /** An upload attached to the release's source code entry: ReARM's identity fields and the qualifier. */
+    function sceInput(root: any = {}): any {
+        return {
+            bomFormat: 'CycloneDX', specVersion: '1.6', version: 1,
+            serialNumber: 'urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-000000006301',
+            metadata: { component: { type: 'library', name: 'merged', version: '1.0.0', group: 'Example', purl: SCE, 'bom-ref': SCE, ...root } },
+            components: []
+        };
+    }
+
+    /** merge-boms's output with the SCE input's root at the top level (FLAT). */
+    function serveWithSceRoot() {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.splice(1, 0, { type: 'library', name: 'merged', version: '1.0.0', group: 'Example', purl: SCE, 'bom-ref': SCE });
+            return JSON.stringify(out);
+        });
+    }
+
+    it('runs after fillReleaseNode and before markReleaseNode, handed exactly the documents the list names', async () => {
+        const docs: Record<string, any> = { sce: sceInput(), one: input('one'), two: input('two') };
+        findBomObjectById.mockImplementation(async (id: string) => docs[id]);
+        serveWithSceRoot();
+        const releaseNode = { licenseExpression: 'Apache-2.0' };
+        const rebomOptions = options({ attachedRootIds: ['sce'], releaseNode });
+
+        const bom = await mergeBoms(['sce', 'one', 'two'], rebomOptions, 'org');
+
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(listed.calls).toHaveLength(2);
+        expect(listed.calls[0].args[2]).toBeUndefined();
+        expect(listed.calls[1].args[0]).toStrictEqual(['sce', 'one', 'two']);
+        expect(listed.calls[1].args[1]).toBe(passes.calls[0].result.inputs);
+        expect(listed.calls[1].args[2]).toStrictEqual(['sce']);
+        expect(listed.calls[1].args[3]).toBe('attached root');
+        const fillCall = passes.calls[7];
+        expect(fillCall.name).toBe('fillAttachedRoots');
+        expect(fillCall.args[0]).toBe(passes.calls[6].result.bom);
+        expect(fillCall.args[1]).toBe(listed.calls[1].result);
+        expect(fillCall.args[1]).toStrictEqual([docs.sce]);
+        expect(fillCall.args[1][0]).toBe(docs.sce);
+        expect(fillCall.args[2]).toBe(releaseNode);
+        expect(fillCall.args[3]).toBe(rebomOptions);
+        expect(fillCall.result.count).toBe(1);
+        expect(passes.calls[8].args[0]).toBe(fillCall.result.bom);
+        expect(bom.metadata.component.licenses).toStrictEqual([{ license: { id: 'Apache-2.0' } }]);
+        expect(bom.components.find((c: any) => c['bom-ref'] === SCE).licenses).toStrictEqual([{ license: { id: 'Apache-2.0' } }]);
+        expect(bom.components.find((c: any) => c['bom-ref'] === 'pkg:npm/a@1.0.0')).not.toHaveProperty('licenses');
+    });
+
+    it('hands the fill no document when the request carries no list, and an unlisted same-name root stays unlicensed', async () => {
+        const docs: Record<string, any> = { sce: sceInput(), one: input('one') };
+        findBomObjectById.mockImplementation(async (id: string) => docs[id]);
+        serveWithSceRoot();
+
+        const bom = await mergeBoms(['sce', 'one'], options({ releaseNode: { licenseExpression: 'Apache-2.0' } }), 'org');
+
+        expect(listed.calls).toHaveLength(2);
+        expect(listed.calls[1].args[2]).toBeUndefined();
+        expect(passes.calls[7].name).toBe('fillAttachedRoots');
+        expect(passes.calls[7].args[1]).toStrictEqual([]);
+        expect(passes.calls[7].result.bom).toBe(passes.calls[7].args[0]);
+        expect(bom.metadata.component.licenses).toStrictEqual([{ license: { id: 'Apache-2.0' } }]);
+        expect(bom.components.find((c: any) => c['bom-ref'] === SCE)).not.toHaveProperty('licenses');
+    });
+
+    it('hands the fill the attached list, never releaseRootIds', async () => {
+        const docs: Record<string, any> = { sce: sceInput(), one: input('one') };
+        findBomObjectById.mockImplementation(async (id: string) => docs[id]);
+        serveWithSceRoot();
+
+        await mergeBoms(['sce', 'one'], options({ releaseRootIds: ['one'], attachedRootIds: ['sce'] }), 'org');
+
+        expect(listed.calls[0].args[2]).toStrictEqual(['one']);
+        expect(listed.calls[1].args[2]).toStrictEqual(['sce']);
+        expect(listed.calls[1].result).toStrictEqual([docs.sce]);
+    });
+});
+
 describe('mergeBoms: the release node stamp', () => {
     beforeEach(serveInputsAndMergeBomsOutput);
 
@@ -981,6 +1079,44 @@ describe('mergeBoms: the re-key of unlisted inputs before merge-boms', () => {
         expect(mergeInputs.objs[1]).toBe(docs.one);
         expect(passes.calls[0].result.count).toBe(0);
         expect(property(bom, NODES_REKEYED_PROPERTY)).toStrictEqual([]);
+    });
+
+    it('treats the attached ids as listed for the re-key: a child node under the SCE root key is written apart (SCORE-63 T-2, ADR-9)', async () => {
+        const SCE_REF = 'pkg:npm/sce@1.0.0';
+        const SCE_PURL = 'pkg:npm/sce@1.0.0?belongsto=SCE&hash=0123456789abcdef0123456789abcdef01234567';
+        const CHILD = 'pkg:npm/child@1.0.0';
+        const FORGED = { type: 'library', name: 'sce', version: '1.0.0', 'bom-ref': SCE_REF, purl: SCE_PURL, licenses: [{ license: { id: 'MIT' } }] };
+        const Q_SCE = SERIAL + '#' + SCE_REF;
+        const P_SCE = SCE_PURL + '&rearm_input=' + encodeURIComponent(SERIAL);
+        /** A child row with a root of its own, listing a node under the product SCE root's key. */
+        const childRow = (): any => ({
+            bomFormat: 'CycloneDX', specVersion: '1.6', version: 1, serialNumber: SERIAL,
+            metadata: { component: { type: 'application', name: 'child', version: '1.0.0', purl: CHILD, 'bom-ref': CHILD } },
+            components: [FORGED],
+            dependencies: [{ ref: CHILD, dependsOn: [SCE_REF] }, { ref: SCE_REF, dependsOn: [] }]
+        });
+        const sce = input('sce');
+        sce.metadata.component.purl = SCE_PURL;
+        const docs: Record<string, any> = { sce, row: childRow(), rel: input('rel') };
+        findBomObjectById.mockImplementation(async (id: string) => docs[id]);
+        serveRekeyedOutput();
+
+        await mergeBoms(['sce', 'row', 'rel'], options({ releaseRootIds: ['rel'], attachedRootIds: ['sce'], releaseNode: facts() }), 'org');
+
+        expect(passes.calls[0].result.count).toBe(1);
+        expect(mergeInputs.objs).toHaveLength(3);
+        expect(mergeInputs.objs[0]).toBe(docs.sce);
+        expect(mergeInputs.objs[2]).toBe(docs.rel);
+        expect(mergeInputs.objs[1]).not.toBe(docs.row);
+        expect(mergeInputs.objs[1].metadata.component).toStrictEqual(docs.row.metadata.component);
+        expect(mergeInputs.objs[1].components[0]['bom-ref']).toBe(Q_SCE);
+        expect(mergeInputs.objs[1].components[0].purl).toBe(P_SCE);
+        expect(mergeInputs.objs[1].components[0].licenses).toStrictEqual(FORGED.licenses);
+        expect(mergeInputs.objs[1].dependencies).toStrictEqual([{ ref: CHILD, dependsOn: [Q_SCE] }, { ref: Q_SCE, dependsOn: [] }]);
+        expect(docs.row.components[0]['bom-ref']).toBe(SCE_REF);
+        // the fold's list is not widened; the fill's list is the attached one
+        expect(listed.calls[0].result).toStrictEqual([docs.rel]);
+        expect(listed.calls[1].result).toStrictEqual([docs.sce]);
     });
 
     it('keeps the product root to the declared facts and the row node apart, with the count (the (iv) shape)', async () => {

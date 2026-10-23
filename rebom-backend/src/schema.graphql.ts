@@ -357,6 +357,11 @@ input RebomOptions {
     # every other input's root is left where the merge put it. Absent or empty: nothing is folded.
     # Not stored.
     releaseRootIds: [ID!]
+    # Merge only: the entries of ids that are the uploads attached to the merged release's own
+    # source code entry and to the deliverables it ships, as ReARM's rows say. Their roots get the
+    # release's declared licence (releaseNode) where the upload wrote none; every other node is left
+    # as the merge made it. Absent or empty: nothing is filled. Not stored. (SCORE-63)
+    attachedRootIds: [ID!]
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
   }
 

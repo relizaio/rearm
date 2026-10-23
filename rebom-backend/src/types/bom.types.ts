@@ -209,6 +209,13 @@ export type RebomOptions = {
     // into the merged root and no other. Absent or empty: nothing is folded. Derived by ReARM at
     // generation time: not part of the options ReARM matches stored merges on, not stored.
     releaseRootIds?: string[] | null,
+    // Merge only: the entries of ids that are the uploads attached to the merged release's own
+    // source code entry and to the deliverables it ships, as ReARM's rows say (SCORE-63 ADR-5).
+    // Their roots get the release's declared licence (releaseNode) where the upload wrote none; every
+    // other node is left as the merge made it. In a product merge they are also listed inputs for
+    // the re-key (ADR-9). Absent or empty: nothing is filled. Derived by ReARM at generation time:
+    // not part of the options ReARM matches stored merges on, not stored.
+    attachedRootIds?: string[] | null,
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

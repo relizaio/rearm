@@ -1172,19 +1172,21 @@ export type ReleaseRootFoldResult = {
 }
 
 /**
- * SCORE-57 ADR-2 (c), ADR-11: the merge inputs whose ids rearm-saas listed in `releaseRootIds` as the
- * merging release's own RELEASE-attached BOM artifacts, in input order. `inputs[i]` is the document
+ * SCORE-57 ADR-2 (c), ADR-11: the merge inputs whose ids rearm-saas listed, in input order: in
+ * `releaseRootIds` the merging release's own RELEASE-attached BOM artifacts, in `attachedRootIds` its
+ * own SCE- and outbound-deliverable-attached ones (SCORE-63). `inputs[i]` is the document
  * of `ids[i]` (findBomsForMerge keeps the order); inputs beyond `ids.length` (the placeholders) are
  * never returned. The ids are compared as strings exactly, each list repeat counted once; an id
- * listed that is not among `ids` is one warn line. An absent or empty list returns none.
+ * listed that is not among `ids` is one warn line, naming the list by `label` (SCORE-63 ADR-1:
+ * `'attached root'` for `attachedRootIds`). An absent or empty list returns none.
  */
-export function listedReleaseInputs(ids: string[], inputs: any[], releaseRootIds: string[] | null | undefined): any[] {
+export function listedReleaseInputs(ids: string[], inputs: any[], releaseRootIds: string[] | null | undefined, label: string = 'release root'): any[] {
   if (!Array.isArray(releaseRootIds) || releaseRootIds.length === 0) return []
   if (!Array.isArray(ids) || !Array.isArray(inputs)) return []
   const listed = new Set(releaseRootIds)
   const known = new Set(ids)
   for (const id of listed) {
-    if (!known.has(id)) logger.warn({ releaseRootId: id }, 'release root listed but not an input')
+    if (!known.has(id)) logger.warn({ releaseRootId: id }, `${label} listed but not an input`)
   }
   const out: any[] = []
   for (let i = 0; i < ids.length && i < inputs.length; i++) {
@@ -1299,7 +1301,9 @@ function renameReferences(bom: any, renamed: Map<string, string>): any {
  * rearm-saas did not list whose key would make it fold into a release's node:
  * - the release keys `K`: the merged root's key (`establishPurl(undefined, options)`, the `--purl`
  *   mergeBomObjects sends) and the root purl and bom-ref of every listed input (`ids[i]` in
- *   `releaseRootIds`); they apply to every component node at any depth and every service at any depth;
+ *   `releaseRootIds` or in `attachedRootIds`, SCORE-63 ADR-9: the release's own SCE- and
+ *   deliverable-attached uploads are a release's nodes too, each list read on its own); they apply
+ *   to every component node at any depth and every service at any depth;
  * - the root collision `C_i`: the root purl and bom-ref of every other unlisted input, the
  *   placeholders included; it applies to the input's root only.
  * A reserved bom-ref becomes `<base>#<ref>` and every reference to it inside that input is re-pointed;
@@ -1311,13 +1315,18 @@ function renameReferences(bom: any, renamed: Map<string, string>): any {
  * copies, the inputs untouched.
  */
 export function rekeyUnlistedInputs(ids: string[], inputs: any[],
-  options: Pick<RebomOptions, 'name' | 'version' | 'group' | 'purl' | 'belongsTo' | 'hash' | 'tldOnly' | 'structure' | 'rootComponentMergeMode' | 'releaseRootIds'>): RekeyResult {
+  options: Pick<RebomOptions, 'name' | 'version' | 'group' | 'purl' | 'belongsTo' | 'hash' | 'tldOnly' | 'structure' | 'rootComponentMergeMode' | 'releaseRootIds' | 'attachedRootIds'>): RekeyResult {
   const none = { inputs, count: 0 }
   if (!Array.isArray(inputs) || inputs.length === 0) return none
   // ADR-2: compared as sent; anything but FLATTEN is a product merge, an absent mode included.
   if (options?.rootComponentMergeMode === RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT) return none
 
-  const listedIds = new Set(Array.isArray(options.releaseRootIds) ? options.releaseRootIds : [])
+  // SCORE-63 ADR-9: listed by either list, each read on its own (a product with an SCE upload and
+  // no RELEASE upload sends attachedRootIds alone).
+  const listedIds = new Set([
+    ...(Array.isArray(options.releaseRootIds) ? options.releaseRootIds : []),
+    ...(Array.isArray(options.attachedRootIds) ? options.attachedRootIds : [])
+  ])
   const idList = Array.isArray(ids) ? ids : []
   const isListed = (i: number) => i < idList.length && listedIds.has(idList[i])
   const keysOf = (root: any): string[] => {
@@ -1660,6 +1669,118 @@ export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undef
     bom: { ...bom, metadata: { ...bom.metadata, component } },
     filled: { supplier, hashes: fillHashes, licenses: fillLicenses }
   }
+}
+
+export type AttachedRootFillResult = {
+  bom: any,
+  count: number
+}
+
+/**
+ * Why a listed attached input's root is not filled (SCORE-63 ADR-2 (a), (b)), or, when it is a
+ * candidate, its belongsto qualifier as written (undefined for none). A purl without a belongsto
+ * qualifier is accepted: the deliverable identifier case (rearm-saas sent the deliverable's
+ * identifier as the purl), where the list says what the row is.
+ */
+function attachedRootSkip(root: any, options: Pick<RebomOptions, 'name' | 'version' | 'group'>): { reason: string, detail?: any } | { belongsTo: unknown } {
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return { reason: 'the input has no metadata.component' }
+  if (typeof root.purl !== 'string' || root.purl === '') return { reason: 'the input root has no purl' }
+  let parsed: PackageURL
+  try {
+    parsed = PackageURL.fromString(root.purl)
+  } catch (e) {
+    return { reason: 'the input root purl does not parse', detail: { purl: root.purl } }
+  }
+  const qualifiers: Record<string, unknown> = parsed.qualifiers ? { ...parsed.qualifiers } : {}
+  const key = Object.keys(qualifiers).find((k) => k.toLowerCase() === 'belongsto')
+  if (key !== undefined) {
+    const kind = normalizeArtifactBelongsTo(qualifiers[key])
+    if (kind === ArtifactBelongsTo.RELEASE) {
+      return { reason: 'attached root listed but its root is attached to the release; the fold owns it', detail: { purl: root.purl } }
+    }
+    if (kind !== ArtifactBelongsTo.SCE && kind !== ArtifactBelongsTo.DELIVERABLE) {
+      return { reason: 'the input root is attached to another kind', detail: { purl: root.purl, belongsTo: qualifiers[key] } }
+    }
+  }
+  if (root.name !== options.name || root.version !== options.version || root.group !== options.group) {
+    return {
+      reason: 'attached root listed but its identity fields differ',
+      detail: {
+        purl: root.purl,
+        name: [root.name, options.name],
+        version: [root.version, options.version],
+        group: [root.group, options.group]
+      }
+    }
+  }
+  return { belongsTo: key === undefined ? undefined : qualifiers[key] }
+}
+
+/**
+ * SCORE-63 ADR-1 to ADR-3: writes the release's declared licence (`facts.licenseExpression` and
+ * `facts.licenseUrl`, declaredLicenses) on the roots of the merging release's own SCE- and
+ * deliverable-attached uploads where the upload wrote none. `candidates` are the inputs
+ * listedReleaseInputs returned for `attachedRootIds`: an input rearm-saas did not list is never a
+ * candidate (ADR-2 (c)). Each candidate's root must carry a belongsto qualifier of SCE or
+ * DELIVERABLE, or none (the identifier case), and the options' name, version and group exactly
+ * (ADR-2 (a), (b)); the node filled is the top-level component with that root's bom-ref, never the
+ * merged root. Absent-only: a node that carries a license, NOASSERTION or NONE included, stands
+ * (SCORE-30 ADR-6, SCORE-40 ADR-3). Writes `licenses` only: no hash, supplier or property (ADR-3).
+ * With nothing to fill the input itself is returned; otherwise a copy sharing every untouched
+ * subtree, the input and the candidates untouched.
+ */
+export function fillAttachedRoots(bom: any, candidates: any[], facts: ReleaseNodeFacts | null | undefined, options: Pick<RebomOptions, 'name' | 'version' | 'group'>): AttachedRootFillResult {
+  const none = { bom, count: 0 }
+  if (!bom || typeof bom !== 'object' || !Array.isArray(candidates) || candidates.length === 0 || !facts) return none
+  if (declaredLicenses(facts.licenseExpression, facts.licenseUrl) === undefined) return none
+  if (!Array.isArray(bom.components) || bom.components.length === 0) return none
+  const components: any[] = bom.components
+  const rootRef = bomRefOf(bom.metadata?.component)
+
+  const seen = new Set<string>()
+  const fill = new Map<number, unknown>()
+  for (const candidate of candidates) {
+    const candidateRoot = candidate?.metadata?.component
+    const checked = attachedRootSkip(candidateRoot, options)
+    if ('reason' in checked) {
+      logger.info({ ...(checked.detail || {}) }, `attached root fill: listed input skipped: ${checked.reason}`)
+      continue
+    }
+    const ref = bomRefOf(candidateRoot)
+    if (!ref) {
+      logger.info({ purl: candidateRoot.purl }, 'attached root fill: listed input skipped: the input root has no bom-ref')
+      continue
+    }
+    if (ref === rootRef) {
+      logger.info({ bomRef: ref }, 'attached root fill: listed input skipped: its root is the merged root')
+      continue
+    }
+    if (seen.has(ref)) {
+      logger.info({ bomRef: ref }, 'attached root fill: listed input skipped: its bom-ref was looked at already')
+      continue
+    }
+    seen.add(ref)
+    const index = components.findIndex((c: any) => bomRefOf(c) === ref)
+    if (index < 0) {
+      logger.info({ bomRef: ref }, 'attached root fill: listed input skipped: no top-level component carries its bom-ref')
+      continue
+    }
+    if (hasLicenses(components[index])) {
+      logger.info({ bomRef: ref }, 'attached root keeps its own licence')
+      continue
+    }
+    fill.set(index, checked.belongsTo)
+  }
+  if (fill.size === 0) return none
+
+  const out = components.map((c: any, i: number) => {
+    if (!fill.has(i)) return c
+    logger.info({ bomRef: bomRefOf(c), belongsTo: fill.get(i) }, 'declared licence filled on an attached root')
+    // A fresh array per node: declaredLicenses returns a new one on every call.
+    return { ...c, licenses: declaredLicenses(facts.licenseExpression, facts.licenseUrl) }
+  })
+  logger.info(`attached root fill: the declared licence filled on ${fill.size} attached roots`)
+  return { bom: { ...bom, components: out }, count: fill.size }
 }
 
 export type ReleaseNodeMarkResult = {

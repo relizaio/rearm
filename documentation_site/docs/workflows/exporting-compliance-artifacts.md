@@ -159,9 +159,12 @@ serial number of the component's own merged SBOM, and its bom-ref is that serial
 by `#` and the purl without the qualifier. Two component releases that share a name and version
 under one product are kept apart the same way.
 
-**What still fails.** The scoring checks Component License and Component Hash still fail on the
-root of an SBOM attached to a deliverable or to a source code entry whose generator wrote none:
-those roots keep their own entries. See
+**What still fails.** The root of an SBOM attached to a deliverable the release ships or to the
+release's source code entry keeps its own entry, and carries the release's declared licence where its
+generator wrote none; a licence the generator wrote, `NOASSERTION` or `NONE` included, is kept.
+Component License still fails on such a root when the release declares no licence, and then on the
+release's node too. Component Hash still fails on the root of an SBOM attached to a source code
+entry, whose commit is a pedigree fact, not a hash. See
 [Reading the report](./sbom-scoring#reading-the-report).
 
 ### Listed licences a merge dropped
