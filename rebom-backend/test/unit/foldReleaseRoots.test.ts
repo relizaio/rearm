@@ -563,6 +563,17 @@ describe('listedReleaseInputs (T-19, ADR-2 (c))', () => {
         expect(listedReleaseInputs(ids, inputs, ['A'])).toStrictEqual([]);
     });
 
+    it('names the list in the warn line by its label, and returns the same documents for either label (SCORE-63 T-3)', () => {
+        const plain = listedReleaseInputs(ids, inputs, ['b', 'x']);
+        const labelled = listedReleaseInputs(ids, inputs, ['b', 'x'], 'attached root');
+        expect(warn).toHaveBeenCalledTimes(2);
+        expect(warn.mock.calls[0][1]).toBe('release root listed but not an input');
+        expect(warn.mock.calls[1][1]).toBe('attached root listed but not an input');
+        expect(warn.mock.calls[1][0]).toStrictEqual({ releaseRootId: 'x' });
+        expect(labelled).toStrictEqual(plain);
+        expect(labelled[0]).toBe(B);
+    });
+
     it('returns a document at each position its id holds in ids', () => {
         const twice = ['a', 'b', 'a'];
         const docs = [A, B, { n: 'A again' }];

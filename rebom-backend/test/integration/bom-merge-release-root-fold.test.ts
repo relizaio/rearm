@@ -31,7 +31,7 @@ import {
     COMPONENT_LICENSE, COMPONENT_LICENSE_URL, LICENSE_MERGE_VERSION,
     sceUpload, deliverableUpload, releaseUpload, releaseNodeUpload, releaseAttachedUpload, productMergeRequest, node,
     storeUpload, storeMerge, RELEASE_ATTACHED_ROOT, RELEASE_ATTACHED_WEBSITE,
-    PRODUCT_ROOT, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, placeholder, externalPlaceholder
+    PRODUCT_ROOT, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, placeholder, externalPlaceholder, Q, P
 } from '../releaseNodeFacts.fixture';
 
 /**
@@ -85,19 +85,6 @@ function hasBelongsToRelease(purl: unknown): boolean {
 
 function rootEntry(bom: any): any {
     return (bom.dependencies || []).find((d: any) => d.ref === bom.metadata.component['bom-ref']);
-}
-
-/** SCORE-66: the bom-ref a node of the input with serial `base` is written apart under. */
-function Q(base: string, ref: string): string {
-    return `${base}#${ref}`;
-}
-
-/** SCORE-66: `purl` with the rearm_input qualifier naming `base` (ADR-4: `&` after a `?`, before any subpath). */
-function P(purl: string, base: string): string {
-    const at = purl.indexOf('#');
-    const head = at < 0 ? purl : purl.slice(0, at);
-    const tail = at < 0 ? '' : purl.slice(at);
-    return `${head}${head.includes('?') ? '&' : '?'}rearm_input=${encodeURIComponent(base)}${tail}`;
 }
 
 /** Every service at any depth. */

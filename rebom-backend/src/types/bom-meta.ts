@@ -83,7 +83,7 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             ignoreDev: opts.ignoreDev ?? false,
             excludeFileComponents: opts.excludeFileComponents,
             mergeVersion: opts.mergeVersion
-            // missingSbomComponents, releaseNode and releaseRootIds are generation-time inputs: not stored.
+            // missingSbomComponents, releaseNode, releaseRootIds and attachedRootIds are generation-time inputs: not stored.
         };
     }
 

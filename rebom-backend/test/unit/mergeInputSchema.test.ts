@@ -104,3 +104,40 @@ describe('the merge input schema', () => {
         }
     });
 });
+
+/** SCORE-63 T-4: attachedRootIds beside releaseRootIds on the merge options. */
+describe('the merge input schema: the release root lists', () => {
+    const A1 = '0b0f4a52-6c55-4d1f-9a8e-000000006301';
+    const A2 = '0b0f4a52-6c55-4d1f-9a8e-000000006302';
+    const R1 = '0b0f4a52-6c55-4d1f-9a8e-000000006303';
+
+    it('accepts attachedRootIds beside releaseRootIds, both coerced to the arrays sent', () => {
+        const { value, errors } = coerce({ releaseRootIds: [R1], attachedRootIds: [A1, A2] });
+
+        expect(errors).toStrictEqual([]);
+        expect(value.releaseRootIds).toStrictEqual([R1]);
+        expect(value.attachedRootIds).toStrictEqual([A1, A2]);
+    });
+
+    it('refuses a null entry, naming the field', () => {
+        const { errors } = coerce({ attachedRootIds: [A1, null] });
+
+        expect(errors).toHaveLength(1);
+        expect(errors[0][0]).toBe('attachedRootIds.1');
+    });
+
+    it('refuses a non-array value that is not an id, naming the field', () => {
+        const { errors } = coerce({ attachedRootIds: { id: A1 } });
+
+        expect(errors).toHaveLength(1);
+        expect(errors[0][0]).toBe('attachedRootIds');
+    });
+
+    it('coerces a request without it, with no attachedRootIds key', () => {
+        const { value, errors } = coerce({ releaseRootIds: [R1] });
+
+        expect(errors).toStrictEqual([]);
+        expect(value).not.toHaveProperty('attachedRootIds');
+    });
+});
+

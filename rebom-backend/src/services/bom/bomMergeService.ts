@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, markReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -17,9 +17,10 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     // them and lists them in the root's dependencies like every other input.
     found.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
     // Before merge-boms, the only point where a node's input is known: in a product merge a node of
-    // an input rearm-saas did not list that carries the product root's key, a listed root's key or
-    // another input's root key is written apart, so neither merge-boms nor the de-dup folds it into
-    // that release's node (SCORE-66 ADR-1). Same length and order: the listed entries are the
+    // an input rearm-saas did not list that carries the product root's key, a listed root's key
+    // (either list: releaseRootIds or attachedRootIds, SCORE-63 ADR-9) or another input's root key
+    // is written apart, so neither merge-boms nor the de-dup folds it into that release's node
+    // (SCORE-66 ADR-1). Same length and order: the listed entries are the
     // original objects, so the fold below sees what it saw before.
     const rekeyed = rekeyUnlistedInputs(ids, found, rebomOptions)
     const bomObjs = rekeyed.inputs
@@ -43,6 +44,11 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     // root its own supplier, hashes and licenses, which the release's facts never replace
     // (SCORE-30 ADR-6, SCORE-40 ADR-3).
     if (mergedBom) mergedBom = fillReleaseNode(mergedBom, rebomOptions.releaseNode).bom
+    // Beside the release node's fill, from the same declared facts under the same absent-only rule:
+    // the roots of the release's own SCE- and deliverable-attached uploads, as rearm-saas listed them
+    // in attachedRootIds, get the declared licence where the upload wrote none (SCORE-63 ADR-1).
+    // After the fold (a folded root is gone) and before the stamp (the stamp stays the last write).
+    if (mergedBom) mergedBom = fillAttachedRoots(mergedBom, listedReleaseInputs(ids, bomObjs, rebomOptions.attachedRootIds, 'attached root'), rebomOptions.releaseNode, rebomOptions).bom
     // After the fill, before the file filter: stamp the merged root as the node rebom built for the
     // release, from which rearm-saas marks the organization's own entries (SCORE-58 ADR-5). Always on;
     // the CLI copies a component row's root with its properties into a product above it.
