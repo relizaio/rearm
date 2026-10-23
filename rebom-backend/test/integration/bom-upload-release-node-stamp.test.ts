@@ -207,4 +207,28 @@ describe('an uploaded release node stamp never reaches what rebom serves', () =>
         expect((await row(record.uuid)).meta.mod).toBe(UPLOAD_MOD);
         convertSpy.mockRestore();
     });
+
+    it('(f) an SPDX upload cannot forge the merge row records: a request naming nestedProductSerials or listedRootKeys stores neither (SCORE-69 ADR-3)', async () => {
+        const convertSpy = vi.spyOn(SpdxService, 'convertSpdxToCycloneDx');
+        const sn = generateSerialNumber();
+        const converted = loadFixture('cyclonedx-simple.json');
+        converted.serialNumber = sn;
+        converted.version = 1;
+        convertSpy.mockResolvedValueOnce({ success: true, convertedBom: converted } as any);
+
+        const ns = `https://spdx.example.test/score-69/${uuidv4()}`;
+        const spdxDoc = { SPDXID: 'SPDXRef-DOCUMENT', spdxVersion: 'SPDX-2.3', dataLicense: 'CC0-1.0',
+            name: 'forged-merge-record-doc', documentNamespace: ns, packages: [] };
+
+        const record = await BomService.addBom({
+            bomInput: { bom: spdxDoc, format: 'SPDX', org: TEST_ORG_UUID,
+                rebomOptions: { nestedProductSerials: ['forged-serial'], listedRootKeys: ['forged-key'] } }
+        } as any);
+        created.push(record.uuid);
+
+        const meta = (await row(record.uuid)).meta;
+        expect(meta).not.toHaveProperty('nestedProductSerials');
+        expect(meta).not.toHaveProperty('listedRootKeys');
+        convertSpy.mockRestore();
+    });
 });
