@@ -7,7 +7,7 @@
 // no branch pane, so the branch they named was not shown. The page resolves
 // its tab here instead, so all of them open the tab that lists the branch.
 
-export type ComponentPageTab = 'latest' | 'branches' | 'tags'
+export type ComponentPageTab = 'latest' | 'branches' | 'tags' | 'submissions'
 
 /** The tab with no branch and no explicit tab: one row per branch, newest release. */
 export const LATEST_TAB: ComponentPageTab = 'latest'
@@ -15,6 +15,8 @@ export const LATEST_TAB: ComponentPageTab = 'latest'
 export const BRANCHES_TAB: ComponentPageTab = 'branches'
 /** Tags; components only. */
 export const TAGS_TAB: ComponentPageTab = 'tags'
+/** Regulatory submissions; products on Pro only (TEA-30). Reached by an explicit ?tab=submissions. */
+export const SUBMISSIONS_TAB: ComponentPageTab = 'submissions'
 
 export interface ComponentPageTabInput {
     /** route.query.tab: an explicit tab always wins. */

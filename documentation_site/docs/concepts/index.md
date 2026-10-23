@@ -118,6 +118,15 @@ This includes SBOMs, HBOMs, FBOMs, VEX, BOV, SARIF, attestations, build metadata
 
 The system provides traceability from sources to build, component, component release, product, product release, deployment and then decomission across multi-tier suppliers, and supports sharing with customers, auditors, and regulators through manual export and sharing and/or controlled transparency APIs.
 
+## SBOM Profile
+An SBOM Profile is a named recipe of an aggregated SBOM (dependency depth, structure, sources, excluded coverage, support and internal metadata), defined at the organization, a perspective or a component scope; a lower scope overrides a higher one by defining the same name. It carries no visibility: TEA publishing settings and package settings name SBOM profiles, and decide where what they produce goes. See [SBOM profiles](../tea/#sbom-profiles).
+
+## TEA Publishing Settings
+TEA Publishing Settings say whether, how and to whom a scope's releases are published on the Transparency Exchange API, and which SBOM profiles are published, one aggregated SBOM each. They own visibility, TEI, the product cascade and the ride-along artifacts. See [TEA publishing settings](../tea/#tea-publishing-settings).
+
+## Regulatory Package and Submission
+A Regulatory Package is what ReARM assembles for one regulator from one release: a package kind (`FDA_PREMARKET` today) lists its parts, and package settings at a scope say how each part is produced. A Submission is the immutable, versioned record of one assembly of a package for one release, and it is never public. ReARM Pro only. See [Regulatory Packages and Submissions](../workflows/regulatory-packages).
+
 ## Changelog
 
 Changelog is a date-range comparison that shows what changed across one or more components between two points in time. It covers three types of changes: Code, SBOM dependencies, and Security Findings.
