@@ -2,6 +2,8 @@ module github.com/relizaio/reliza-oci-artifacts-client
 
 go 1.26.0
 
+toolchain go1.26.10
+
 require (
 	github.com/gin-gonic/gin v1.12.0
 	github.com/google/uuid v1.6.0

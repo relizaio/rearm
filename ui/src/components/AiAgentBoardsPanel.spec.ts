@@ -266,7 +266,7 @@ describe('the board page: groups and tags', () => {
     it('filters the kanban and the table by group and tag, kept in the URL', () => {
         expect(template).toContain('data-testid="group-filter"')
         expect(template).toContain('data-testid="tag-filter"')
-        expect(source).toContain('&& passesGroupAndTag(t, groupFilter.value, tagFilter.value)),')
+        expect(source).toContain('&& passesGroupAndTag(t, groupFilter.value, tagFilter.value)')
         expect(source).toContain('groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value)')
         expect(source).toContain('const groupFilter = ref<string | null>(groupFromQuery(route.query))')
         expect(source).toContain('const tagFilter = ref<string | null>(tagFromQuery(route.query))')
@@ -295,6 +295,47 @@ describe('the board page: groups and tags', () => {
 
     it('moves and tags a task from the drawer', () => {
         expect(template).toContain('@set-group="setGroup" @set-tags="setTags"')
+    })
+})
+
+// A stale task (TPF-69): the card's chip, and the kanban bar's "stale only" filter, which acts only on a board whose
+// staleness block shows it and is kept in the URL with the other filters.
+describe('the kanban: stale marks', () => {
+    const card = source.slice(source.indexOf('const TaskCard = defineComponent'))
+
+    it('puts the stale chip on the card between the assigned tag and the hold chip', () => {
+        const assigned = card.indexOf("{ default: () => 'assigned' }")
+        const chip = card.indexOf("'data-testid': 'card-stale'")
+        const hold = card.indexOf('holdChip(p.t) ? h(NTooltip')
+        expect(assigned).toBeGreaterThan(-1)
+        expect(chip).toBeGreaterThan(assigned)
+        expect(hold).toBeGreaterThan(chip)
+        const chipCode = card.slice(card.lastIndexOf('staleChip(p.t) ? h(NTooltip', chip), hold)
+        expect(chipCode).toContain("type: 'error'")
+        expect(chipCode).toContain('{ default: () => staleChip(p.t)?.label }')
+        expect(chipCode).toContain('default: () => staleChip(p.t)?.tooltip')
+    })
+
+    it('offers "stale only" in the kanban bar only on a board with a staleness block', () => {
+        const bar = template.slice(template.indexOf('data-testid="kanban-bar"'), template.indexOf('</n-space>', template.indexOf('data-testid="kanban-bar"')))
+        const at = bar.indexOf('data-testid="stale-filter"')
+        expect(at).toBeGreaterThan(-1)
+        const tag = bar.slice(bar.lastIndexOf('<n-checkbox', at), bar.indexOf('</n-checkbox>', at))
+        expect(tag).toContain('v-if="currentBoard?.staleness"')
+        expect(tag).toContain(':checked="staleOnly"')
+        expect(tag).toContain('@update:checked="setStaleOnly"')
+        expect(tag).toContain('stale only')
+    })
+
+    it('applies the filter only where its checkbox shows, and keeps it in the URL', () => {
+        const lanes = source.slice(source.indexOf('const kanbanLanes = computed'), source.indexOf('const roles = ref'))
+        expect(lanes).toContain('passesStale(t, staleOnly.value && !!currentBoard.value?.staleness)')
+        const sync = source.slice(source.indexOf('function syncQuery'), source.indexOf('const groupBy = ref'))
+        expect(sync).toContain('withStaleQuery(')
+        expect(sync).toContain('staleOnly.value)')
+        expect(source).toContain('const staleOnly = ref<boolean>(staleFromQuery(route.query))')
+        const set = source.slice(source.indexOf('function setStaleOnly'), source.indexOf('const groupFilterOptions'))
+        expect(set).toContain('syncQuery()')
     })
 })
 
@@ -439,7 +480,7 @@ describe('board pages at 1280', () => {
 // RD2-13 (sweep UI-21, UI-21b, UI-36, UI-42, UI-38): the kanban's cards and columns; the rules are agentKanban's
 // and agentTaskLabels', whose specs cover them.
 describe('the kanban: cards and columns', () => {
-    const card = source.slice(source.indexOf('const TaskCard = defineComponent'), source.indexOf('const TaskCard = defineComponent') + 6000)
+    const card = source.slice(source.indexOf('const TaskCard = defineComponent'), source.indexOf('const TaskCard = defineComponent') + 7000)
 
     it('tells an empty board how tasks arrive, with New task for who may add one', () => {
         const hint = template.indexOf('data-testid="empty-board"')

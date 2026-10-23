@@ -168,6 +168,9 @@
                 <n-select v-if="tagFilterOptions.length" :value="tagFilter" :options="tagFilterOptions" size="small" clearable filterable
                           placeholder="any tag" style="width: 150px" data-testid="tag-filter"
                           @update:value="setTagFilter"/>
+                <!-- Only on a board with a staleness block (TPF-69), in the URL as ?stale=1. -->
+                <n-checkbox v-if="currentBoard?.staleness" :checked="staleOnly" size="small" data-testid="stale-filter"
+                            @update:checked="setStaleOnly">stale only</n-checkbox>
             </n-space>
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">
@@ -1006,6 +1009,7 @@ import AgentBoardLadderEditor from '@/components/AgentBoardLadderEditor.vue'
 import { groupColour, groupFromQuery, groupLabel, groupByKey, groupOptions, NO_GROUP, parseTags, passesGroupAndTag,
     registerGroupFields, tagFromQuery, tagOptions, tagsProblem, waitingOnLabel, withGroupQuery } from '@/utils/agentTaskGroups'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
+import { passesStale, staleChip, staleFromQuery, withStaleQuery } from '@/utils/agentTaskStale'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
 
@@ -1048,8 +1052,8 @@ const boardView = ref<string>(
     BOARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : 'kanban')
 
 function syncQuery () {
-    const q: Record<string, string> = withGroupQuery(withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
-        groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value)
+    const q: Record<string, string> = withStaleQuery(withGroupQuery(withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
+        groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value), staleOnly.value)
     if (selectedBoard.value) q.board = selectedBoard.value
     else delete q.board
     q.view = boardView.value
@@ -1081,6 +1085,12 @@ function setTagFilter (v: string | null) {
     tagFilter.value = v ?? null
     syncQuery()
 }
+// The kanban's "stale only" filter (TPF-69), kept in the URL; it acts only on a board whose block shows it.
+const staleOnly = ref<boolean>(staleFromQuery(route.query))
+function setStaleOnly (v: boolean) {
+    staleOnly.value = !!v
+    syncQuery()
+}
 const groupFilterOptions = computed(() => [{ label: 'ungrouped', value: NO_GROUP }, ...groupOptions(currentBoard.value)])
 const tagFilterOptions = computed(() => tagOptions(tasks.value))
 
@@ -1095,7 +1105,8 @@ const tasks = ref<any[]>([])
 // The kanban's tasks under the level filter, in lanes by the grouping (one lane for "none").
 const kanbanLanes = computed(() => groupTasks(
     tasks.value.filter(t => passesLevel(t, currentBoard.value, levelFilter.value)
-        && passesGroupAndTag(t, groupFilter.value, tagFilter.value)),
+        && passesGroupAndTag(t, groupFilter.value, tagFilter.value)
+        && passesStale(t, staleOnly.value && !!currentBoard.value?.staleness)),
     groupBy.value, currentBoard.value))
 const roles = ref<any[]>([])
 const showRoles = ref(false)
@@ -1511,6 +1522,12 @@ const TaskCard = defineComponent({
             h('div', { class: 'tcard__meta' }, [
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
+                // A staleness rule the task breaches now (TPF-69), with the ALERT text on hover.
+                staleChip(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error', class: 'tcard__stale', 'data-testid': 'card-stale' },
+                        { default: () => staleChip(p.t)?.label }),
+                    default: () => staleChip(p.t)?.tooltip,
+                }) : null,
                 roleTagFor(p.t)?.kind === 'history' ? h(NTooltip, { trigger: 'hover' }, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tag--history' }, { default: () => roleTagFor(p.t)?.text }),
                     default: () => roleTagFor(p.t)?.tooltip,

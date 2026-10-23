@@ -14,6 +14,10 @@ answer "SBOM scoring is not available on this server".
 
 ## What a score is
 
+::: tip A scoring profile is not an SBOM profile
+A scoring profile (`cisa-2026`, `fda`) is a list of required SBOM content the score checks against; it is not an SBOM profile, which is a named recipe for generating an aggregated SBOM (see [SBOM profiles](../tea/#sbom-profiles)). An export generated with any SBOM profile can be scored.
+:::
+
 A score report has one section per **profile** (a published list of required SBOM content). For
 each profile it gives:
 

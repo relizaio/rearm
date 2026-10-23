@@ -88,6 +88,7 @@ const AGENT_TASK_SELECTION = `
     hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo linked { prUrl by at } }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
+    stale { rule since minutes message }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
@@ -553,6 +554,24 @@ const storeObject : any = {
                 // reload branches
                 store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
             }
+        },
+        async archiveBranches (context: any, params: { branchUuids: string[], componentUuid: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveBranches($branchUuids: [ID!]!) {
+                        archiveBranches(branchUuids: $branchUuids) {
+                            results { branchUuid outcome message }
+                            archivedCount
+                            skippedCount
+                            failedCount
+                        }
+                    }`,
+                variables: { branchUuids: params.branchUuids }
+            })
+            // Awaited (unlike archiveBranch) so the caller re-derives its selection from the
+            // refreshed list; a thrown mutate skips the refresh and reaches the caller untouched.
+            await store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
+            return response.data.archiveBranches
         },
         async cloneBranch (context: any, brProps: any) {
             const data = await graphqlClient.mutate({

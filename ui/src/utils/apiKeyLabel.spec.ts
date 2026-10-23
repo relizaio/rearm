@@ -4,7 +4,8 @@ import { actAsKeyLabel, actAsKeyLabelOf, API_KEY_TYPE_WORDS, apiKeyLabel, apiKey
 
 describe('apiKeyLabel', () => {
     it('names every key type in words, and falls back to the raw type', () => {
-        expect(Object.keys(API_KEY_TYPE_WORDS).sort()).toEqual(['APPROVAL', 'CLUSTER', 'COMPONENT', 'FEDERATED', 'FREEFORM', 'INSTANCE', 'ORGANIZATION', 'ORGANIZATION_RW', 'USER'])
+        expect(Object.keys(API_KEY_TYPE_WORDS).sort()).toEqual(['APPROVAL', 'CLUSTER', 'COMPONENT', 'EXTERNAL', 'FEDERATED', 'FREEFORM', 'INSTANCE', 'ORGANIZATION', 'ORGANIZATION_RW', 'USER'])
+        expect(apiKeyTypeWord('EXTERNAL')).toBe('External')
         expect(apiKeyTypeWord('FREEFORM')).toBe('Free Form')
         expect(apiKeyTypeWord('REGISTRY_USER')).toBe('REGISTRY_USER')
         expect(apiKeyTypeWord(null)).toBe('Key')

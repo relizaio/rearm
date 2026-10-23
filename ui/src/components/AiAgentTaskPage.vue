@@ -42,6 +42,7 @@
                                   @set-work-level="setWorkLevel" @set-group="setGroup" @set-tags="setTags" @declare-delivery="declareDelivery"/>
                     <task-commission v-if="canReopen" :task="task" :board="board" :roles="roles" @commission="commission"/>
                     <task-dependencies :task="task" :tasks="tasks" @open="openTask"/>
+                    <task-stale :task="task"/>
                     <task-assignment :task="task" :agent-names="agentNames" :agent-dir="agentDir"/>
                     <task-usage :task="task" :board="board"/>
                     <task-pull-requests :task="task" :can-operate="canReopen" @declare-delivery="declareDelivery" @supersede="supersedePr"
@@ -75,6 +76,7 @@ import TaskOperatorQuestions from './task/TaskOperatorQuestions.vue'
 import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
 import TaskPullRequests from './task/TaskPullRequests.vue'
 import TaskQuestions from './task/TaskQuestions.vue'
+import TaskStale from './task/TaskStale.vue'
 import TaskAnsweredQuestions from './task/TaskAnsweredQuestions.vue'
 import TaskTitle from './task/TaskTitle.vue'
 import TaskUsage from './task/TaskUsage.vue'
