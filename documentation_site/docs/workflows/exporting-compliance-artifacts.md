@@ -162,9 +162,10 @@ under one product are kept apart the same way.
 **What still fails.** The root of an SBOM attached to a deliverable the release ships or to the
 release's source code entry keeps its own entry, and carries the release's declared licence where its
 generator wrote none; a licence the generator wrote, `NOASSERTION` or `NONE` included, is kept.
-Component License still fails on such a root when the release declares no licence, and then on the
-release's node too. Component Hash still fails on the root of an SBOM attached to a source code
-entry, whose commit is a pedigree fact, not a hash. See
+Such a root is a direct dependency of the release's node in the export, so the structure check
+`structure.no-orphans` does not name it. Component License still fails on such a root when the
+release declares no licence, and then on the release's node too. Component Hash still fails on the
+root of an SBOM attached to a source code entry, whose commit is a pedigree fact, not a hash. See
 [Reading the report](./sbom-scoring#reading-the-report).
 
 ### Listed licences a merge dropped

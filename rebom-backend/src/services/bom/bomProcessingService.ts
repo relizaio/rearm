@@ -1806,6 +1806,89 @@ export function markReleaseNode(bom: any): ReleaseNodeMarkResult {
   return { bom: { ...bom, metadata: { ...bom.metadata, component } }, marked: true }
 }
 
+export type UnfoldedRootLinkResult = {
+  bom: any,
+  count: number
+}
+
+/**
+ * SCORE-64 ADR-2: makes every input root that survived the merge as a top-level node a direct
+ * dependency of the merged root. merge-boms under FLATTEN_UNDER_NEW_ROOT drops the input roots'
+ * own dependency entries and names no root, so structure.no-orphans named each one. `inputs` is the
+ * aligned list merge-boms was handed, in order; no list of ids is read (every input is the merging
+ * release's own). An input root is skipped when it has no bom-ref, carries the merged root's
+ * bom-ref, was looked at already, no top-level component carries its bom-ref (exact match), or a
+ * `dependencies[]` entry whose own `ref` resolves to a component or service already names it as
+ * `ref` or in `dependsOn` (an entry with an unresolvable ref is one dropDanglingRefs removes next, so
+ * it names nothing). The others are appended, in input order, to the `dependsOn` of the merged
+ * root's entry (the first entry with its ref; created at index 0 when there is none); the store
+ * sorts every `dependsOn` list, so a stored row reads them sorted. With nothing to link the input
+ * itself is returned; otherwise a copy sharing every untouched entry and subtree, the input and the
+ * inputs untouched. No property is written: the edge is the record. Skips log at debug (one line
+ * per input at most), so a product merge of many rows logs no line per row at info (ADR-2).
+ */
+export function linkUnfoldedRoots(bom: any, inputs: any[]): UnfoldedRootLinkResult {
+  const none = { bom, count: 0 }
+  if (!bom || typeof bom !== 'object' || !Array.isArray(inputs) || inputs.length === 0) return none
+  const rootRef = bomRefOf(bom.metadata?.component)
+  if (!rootRef) return none
+  if (!Array.isArray(bom.components) || bom.components.length === 0) return none
+  const dependencies: any[] = Array.isArray(bom.dependencies) ? bom.dependencies : []
+
+  const topLevel = new Set<string>()
+  for (const c of bom.components) {
+    const ref = bomRefOf(c)
+    if (ref) topLevel.add(ref)
+  }
+  const resolvable = componentBomRefs(bom)
+  if (Array.isArray(bom.services)) bom.services.forEach((s: any) => serviceBomRefs(s, resolvable))
+  const named = new Set<string>()
+  for (const dep of dependencies) {
+    if (typeof dep?.ref !== 'string' || !resolvable.has(dep.ref)) continue
+    named.add(dep.ref)
+    if (Array.isArray(dep?.dependsOn)) dep.dependsOn.forEach((r: any) => { if (typeof r === 'string') named.add(r) })
+  }
+
+  const seen = new Set<string>()
+  const linked: string[] = []
+  for (const input of inputs) {
+    const ref = bomRefOf(input?.metadata?.component)
+    if (!ref) {
+      logger.debug('unfolded root link: input skipped: its root has no bom-ref')
+      continue
+    }
+    if (ref === rootRef) {
+      logger.debug({ bomRef: ref }, 'unfolded root link: input skipped: its root is the merged root')
+      continue
+    }
+    if (seen.has(ref)) {
+      logger.debug({ bomRef: ref }, 'unfolded root link: input skipped: its bom-ref was looked at already')
+      continue
+    }
+    seen.add(ref)
+    if (!topLevel.has(ref)) {
+      logger.debug({ bomRef: ref }, 'unfolded root link: input skipped: no top-level component carries its bom-ref')
+      continue
+    }
+    if (named.has(ref)) {
+      logger.debug({ bomRef: ref }, 'unfolded root link: input skipped: a dependency entry names it already')
+      continue
+    }
+    linked.push(ref)
+  }
+  if (linked.length === 0) return none
+
+  for (const bomRef of linked) logger.info({ bomRef }, 'unfolded input root linked under the merged root')
+  logger.info(`unfolded root link: ${linked.length} input roots linked under the merged root`)
+
+  const index = dependencies.findIndex((d: any) => d?.ref === rootRef)
+  const out = index < 0
+    ? [{ ref: rootRef, dependsOn: linked }, ...dependencies]
+    : dependencies.map((d: any, i: number) => i !== index ? d
+      : { ...d, dependsOn: [...(Array.isArray(d.dependsOn) ? d.dependsOn : []), ...linked] })
+  return { bom: { ...bom, dependencies: out }, count: linked.length }
+}
+
 export type UnknownCompositionsResult = {
   bom: any,
   count: number

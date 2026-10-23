@@ -1,3 +1,4 @@
+import { expect } from 'vitest';
 import * as BomService from '../src/bomService';
 import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from './helpers';
 
@@ -346,4 +347,27 @@ export async function buildListingProducts(created: string[], declared: Declared
         stored.push(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
     }
     return { merged, stored, storedIds };
+}
+
+/** SCORE-64: a structure check of a `rearm bomutils score` report, carried under `structure.checks`, never in a profile. */
+export function structureCheck(report: any, id: string): any {
+    const found = (report.structure?.checks || []).find((c: any) => c.id === id);
+    if (!found) throw new Error(`no structure check ${id} in the report`);
+    return found;
+}
+
+/**
+ * SCORE-64: no node of the scored document is an orphan (structure.no-orphans: COMPONENT scope,
+ * `failing` empty, every node counted as passing), and every dependency ref resolves
+ * (structure.refs-resolve: DOCUMENT scope, its `failing` always empty, so `status` and `note` are read).
+ */
+export function expectNoOrphansAndRefsResolve(report: any, label?: string): void {
+    const orphans = structureCheck(report, 'structure.no-orphans');
+    expect(orphans.failing, label).toStrictEqual([]);
+    expect(orphans.total, label).toBeGreaterThan(0);
+    expect(orphans.passed, label).toBe(orphans.total);
+    expect(orphans.status, label).toBe('PASS');
+    const refs = structureCheck(report, 'structure.refs-resolve');
+    expect(refs.status, label).toBe('PASS');
+    expect(refs.note || '', label).toBe('');
 }
