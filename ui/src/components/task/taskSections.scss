@@ -66,7 +66,8 @@
     &__outputs { width: 100%; display: flex; flex-wrap: wrap; gap: 8px; padding-left: 2px; margin-top: 3px; }
     &__reviewed { width: 100%; display: flex; flex-wrap: wrap; gap: 4px; padding-left: 2px; margin-top: 3px; }
     &__output { font-size: 11.5px; color: #666; }
-    &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; }
+    // A sign-off note keeps the line breaks it was written with (TPF-89).
+    &__note { width: 100%; color: #555; font-size: 12px; padding-left: 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
 }
 .qstack {
     font-size: 11.5px;
@@ -83,7 +84,7 @@
     &__arrow { color: #555; }
     &__trig { font-size: 10px; color: #888; background: rgba(128, 128, 128, 0.1); padding: 0 4px; border-radius: 4px; }
     &__by { color: #777; font-size: 10.5px; }
-    &__note { color: #666; font-size: 10.5px; font-style: italic; }
+    &__note { color: #666; font-size: 10.5px; font-style: italic; white-space: pre-wrap; overflow-wrap: anywhere; }
     &__dur { color: #b0854a; font-size: 10.5px; }
 }
 .holdmeta { font-size: 11.5px; color: #888; margin-top: 4px; white-space: pre-wrap; }

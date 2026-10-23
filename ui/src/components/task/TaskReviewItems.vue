@@ -33,8 +33,8 @@
             <n-button v-if="canDecide && f.status === 'OPEN'" size="tiny" quaternary
                       @click="toggleDecide(r.spec, f)">decide</n-button>
             <div v-if="deciding === r.spec + '/' + f.id" class="fedit">
-                <n-input v-model:value="decisionWords" size="small"
-                         placeholder="Why (needed to accept or dismiss)"/>
+                <growing-text-input v-model:value="decisionWords"
+                                    placeholder="Why (needed to accept or dismiss)" data-testid="decision-words"/>
                 <n-space :size="6" style="margin-top: 6px" align="center">
                     <n-button size="tiny" type="warning" :disabled="!decisionWords.trim()"
                               @click="decideOne(r.spec, { action: 'ACCEPT', reviewItemId: f.id, resolution: decisionWords.trim() })">
@@ -87,6 +87,7 @@ import { computed, ref, watch } from 'vue'
 import { atHumanGate, fileNowLine, fileNowPriorities, standaloneReviewItemShown } from '@/utils/agentGateReviewItem'
 import { NButton, NInput, NSelect, NSpace, NTag } from 'naive-ui'
 import ActorRef from '../ActorRef.vue'
+import GrowingTextInput from './GrowingTextInput.vue'
 import { reviewItemElement } from '@/utils/agentElements'
 import {
     DECIDABLE_STATUSES,

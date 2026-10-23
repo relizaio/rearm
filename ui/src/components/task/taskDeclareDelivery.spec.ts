@@ -77,7 +77,7 @@ describe('a PR row on a DELIVERING task', () => {
         expect(w.find('[data-testid="declare-commit-error"]').text()).toBe('A commit is 7 to 40 hex characters')
         expect(w.find('[data-testid="declare-submit"]').attributes('disabled')).toBeDefined()
         await w.find('[data-testid="declare-commit"] input').setValue('0123abcd')
-        await w.find('[data-testid="declare-note"] input').setValue('merged on the mirror')
+        await w.find('[data-testid="declare-note"] textarea').setValue('merged on the mirror')
         await w.find('[data-testid="declare-submit"]').trigger('click')
         expect(w.emitted('declare-delivery')?.[0]?.[0]).toEqual({ task, unit: open, commit: '0123abcd', outcome: 'DELIVERED',
             note: 'merged on the mirror' })
@@ -90,7 +90,7 @@ describe('a PR row on a DELIVERING task', () => {
         await rowOf(w, open).find('[data-testid="mark-abandoned"]').trigger('click')
         expect(w.find('[data-testid="declare-commit"]').exists()).toBe(false)
         expect(w.find('[data-testid="declare-submit"]').attributes('disabled')).toBeDefined()
-        await w.find('[data-testid="declare-note"] input').setValue('closed in favour of #10')
+        await w.find('[data-testid="declare-note"] textarea').setValue('closed in favour of #10')
         await w.find('[data-testid="declare-submit"]').trigger('click')
         expect(w.emitted('declare-delivery')?.[0]?.[0]).toEqual({ task, unit: open, commit: null, outcome: 'ABANDONED',
             note: 'closed in favour of #10' })
