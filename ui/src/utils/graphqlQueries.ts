@@ -544,6 +544,324 @@ query ComponentsOfPerspective($perspectiveUuid: ID!) {
     }
 }`
 
+// TEA profiles (task TEA-2): the profile editor reads one view per scope, the org settings list
+// every row and the discovery block.
+const TEA_PROFILE_FIELDS_GQL = `
+    uuid
+    scope
+    object
+    mode
+    followedPerspective
+    publishing
+    visibility
+    rawArtifacts
+    productComponents
+    minimumLifecycle
+    tei
+    teiDomain
+    profiles
+    revision
+`
+
+const TEA_RESOLVED_PROFILE_GQL = `
+    status
+    source
+    sourceObject
+    profile {
+        ${TEA_PROFILE_FIELDS_GQL}
+    }
+    conflictingPerspectives {
+        uuid
+        name
+        type
+    }
+`
+
+const TEA_PROFILE_EDITOR_VIEW = gql`
+query TeaProfileEditorView($org: ID!, $scope: TeaProfileScope!, $object: ID) {
+    teaProfileEditorView(org: $org, scope: $scope, object: $object) {
+        stored {
+            ${TEA_PROFILE_FIELDS_GQL}
+        }
+        effective {
+            ${TEA_RESOLVED_PROFILE_GQL}
+        }
+        parent {
+            ${TEA_RESOLVED_PROFILE_GQL}
+        }
+        publishedReleases
+        supportInjection
+    }
+}`
+
+const TEA_PROFILES_OF_ORG = gql`
+query TeaProfilesOfOrg($org: ID!) {
+    teaProfilesOfOrg(org: $org) {
+        uuid
+        scope
+        object
+        mode
+        followedPerspective
+        publishing
+        visibility
+    }
+}`
+
+const TEA_ORG_DISCOVERY = gql`
+query TeaOrgDiscovery($org: ID!) {
+    teaOrgDiscovery(org: $org) {
+        org
+        teaUuid
+        apiBase
+        wellKnownDocument
+    }
+}`
+
+const SAVE_TEA_PROFILE = gql`
+mutation SaveTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput!) {
+    saveTeaProfile(org: $org, scope: $scope, object: $object, profile: $profile) {
+        ${TEA_PROFILE_FIELDS_GQL}
+    }
+}`
+
+// Every field of TeaExposureChange; widened lists the other components a write makes PUBLIC (TEA-9).
+const TEA_EXPOSURE_CHANGE_FIELDS_GQL = `
+    before
+    after
+    path
+    afterSource
+    afterSourceObject
+    publishedReleases
+    widened {
+        component
+        name
+        afterSource
+        afterSourceObject
+    }
+`
+
+const TEA_PROFILE_EXPOSURE_CHANGE = gql`
+query TeaProfileExposureChange($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput) {
+    teaProfileExposureChange(org: $org, scope: $scope, object: $object, profile: $profile) {
+        ${TEA_EXPOSURE_CHANGE_FIELDS_GQL}
+    }
+}`
+
+// What setPerspectivesOnComponent with exactly these perspectives would do to the component's
+// effective visibility (TEA-9 round 2); the membership writes confirm on it.
+const TEA_MEMBERSHIP_EXPOSURE_CHANGE = gql`
+query TeaMembershipExposureChange($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
+    teaMembershipExposureChange(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
+        ${TEA_EXPOSURE_CHANGE_FIELDS_GQL}
+    }
+}`
+
+const TEA_COMPONENT_NAME = gql`
+query TeaComponentName($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) {
+        uuid
+        name
+        type
+        status
+    }
+}`
+
+// The members dialog's stored-perspectives read (TEA-16): the dry-run before an add asks about the
+// stored list plus the one being added. Long-standing fields only, valid on CE and Pro.
+const TEA_COMPONENT_PERSPECTIVES = gql`
+query TeaComponentPerspectives($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) {
+        uuid
+        perspectiveDetails {
+            uuid
+            name
+        }
+    }
+}`
+
+const DELETE_TEA_PROFILE = gql`
+mutation DeleteTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID) {
+    deleteTeaProfile(org: $org, scope: $scope, object: $object)
+}`
+
+// TEA publications (task TEA-5): the release page's view, and publish, re-publish and hide. A
+// Pro-only schema surface like the profiles above (no CE backend sync): the release page sends
+// them only where teaProfilesAvailable says the backend serves TEA, and Release.teaPublication is
+// deliberately absent from the shared release fragments. teaProfileSchemaDrift.spec.ts pins both
+// schemas.
+const TEA_PUBLICATION_FIELDS_GQL = `
+    uuid
+    org
+    release
+    component
+    componentType
+    state
+    latestVersion
+    profile
+    profileRevision
+    profileSource
+    profileSourceObject
+    cascadeOf
+    aggregateArtifact
+    aggregateArtifacts {
+        profileName
+        artifact
+    }
+    tei
+    firstPublishedDate
+    lastPublishedDate
+    lastHiddenDate
+    lastPublishedBy
+    exposure
+    concealedBecause
+    cascadeOfLabel
+    publicUrl
+`
+
+const TEA_PUBLISHED_COLLECTION_FIELDS_GQL = `
+    uuid
+    version
+    createdDate
+    createdBy
+    belongsTo
+    updateReasonType
+    updateReasonComment
+    profileRevision
+    documentSha256
+    document
+    entries {
+        artifact
+        teaUuid
+        revision
+        origin
+        type
+        name
+        mediaType
+        url
+        checksums {
+            algType
+            algValue
+        }
+        signatureArtifact
+        signatureRevision
+        sbomProfileName
+        sbomProfileUuid
+        sbomProfileRevision
+    }
+`
+
+const TEA_PUBLISH_RESULT_FIELDS_GQL = `
+    publication {
+        ${TEA_PUBLICATION_FIELDS_GQL}
+    }
+    collection {
+        ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
+    }
+    outcome
+    artifacts {
+        artifact
+        status
+        detail
+    }
+    children {
+        release
+        componentName
+        version
+        outcome
+        refusal
+        detail
+        publication
+    }
+`
+
+const RELEASE_TEA_PUBLICATION_VIEW = gql`
+query ReleaseTeaPublicationView($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        release
+        kind
+        canPublish
+        refusal
+        refusalMessage
+        effectiveVisibility
+        profileSource
+        profileSourceObject
+        apiBase
+        publicUrl
+        cascades
+        cascadeChildren
+        profileRevision
+        publication {
+            ${TEA_PUBLICATION_FIELDS_GQL}
+        }
+        collections {
+            ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
+        }
+    }
+}`
+
+const PUBLISH_RELEASE_ON_TEA = gql`
+mutation PublishReleaseOnTea($release: ID!, $comment: String) {
+    publishReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLISH_RESULT_FIELDS_GQL}
+    }
+}`
+
+const REPUBLISH_RELEASE_ON_TEA = gql`
+mutation RepublishReleaseOnTea($release: ID!, $comment: String) {
+    republishReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLISH_RESULT_FIELDS_GQL}
+    }
+}`
+
+const HIDE_RELEASE_ON_TEA = gql`
+mutation HideReleaseOnTea($release: ID!, $comment: String) {
+    hideReleaseOnTea(release: $release, comment: $comment) {
+        ${TEA_PUBLICATION_FIELDS_GQL}
+    }
+}`
+
+// EXTERNAL API keys (task TEA-3): keys handed to a party outside the organization, which reach
+// nothing but TEA. Pro only, like the TEA profile documents above: the CE schema has none of these
+// fields or operations, so the External Keys pane reads them itself and the shared apiKeys
+// document of OrgSettings never names keyId, holderName or teaOrg.
+const EXTERNAL_API_KEYS = gql`
+query ExternalApiKeys($orgUuid: ID!) {
+    externalApiKeys(orgUuid: $orgUuid) {
+        uuid
+        keyId
+        holderName
+        teaOrg
+        object
+        type
+        keyOrder
+        createdDate
+        accessDate
+        notes
+        status
+        adminDisabled
+        secrets { slot active createdDate lastUsedDate expiresDate }
+        permissions { permissions { org scope object type functions } }
+    }
+}`
+
+const CREATE_EXTERNAL_API_KEY = gql`
+mutation CreateExternalApiKey($orgUuid: ID!, $holderName: String!, $notes: String) {
+    createExternalApiKey(orgUuid: $orgUuid, holderName: $holderName, notes: $notes) {
+        uuid
+        keyId
+        holderName
+        teaOrg
+    }
+}`
+
+const SET_API_KEY_HOLDER_NAME = gql`
+mutation SetApiKeyHolderName($apiKeyUuid: ID!, $holderName: String!) {
+    setApiKeyHolderName(apiKeyUuid: $apiKeyUuid, holderName: $holderName) {
+        uuid
+        holderName
+    }
+}`
+
 // Org default view (Pro org setting). Deliberately its own tiny document:
 // the boot-time organizations query must keep working on a backend that
 // predates the field. Uses the organizations list (the single-organization
@@ -1164,6 +1482,8 @@ const COMPONENT_FULL_DATA = `
     org
     resourceGroup
     type
+    # Read by the TEA tab: an archived component's TEA profile can only hide it (TEA-9).
+    status
     # Read by ComponentView to decide whether the device support window panel applies (D7).
     # CE declares Component.deviceClass too, so this needs no CORE/FULL split -- unlike
     # medicalProfile.deviceSupportWindow, which CE does not declare and which therefore has
@@ -1784,6 +2104,21 @@ query releaseApprovalRequests($releaseID: ID!, $orgID: ID) {
     }
 }`
 
+// TEA-4: the documents ReARM generated for a release (aggregated SBOMs, VDR snapshots). A Pro-only
+// schema surface: the CE backend has no Release.syntheticArtifactDetails (the 2026-10 TEA work ships
+// no CE backend sync), so it rides this separate query, sent only where syntheticArtifactsAvailable
+// says the backend serves it, instead of the shared release fragments whose failure would blank the
+// whole release page on CE. generatedArtifactsSchemaDrift.spec.ts pins both schemas.
+const RELEASE_SYNTHETIC_ARTIFACTS_GQL = gql`
+query releaseSyntheticArtifacts($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) {
+        uuid
+        syntheticArtifactDetails {
+            ${ARTIFACT_DETAIL_DATA}
+        }
+    }
+}`
+
 const COMPONENT_SHORT_DATA = `
     uuid
     name
@@ -1952,6 +2287,22 @@ export default {
     OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
     DeployedToGql: DEPLOYED_TO_GQL,
     ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
+    TeaProfileEditorViewGql: TEA_PROFILE_EDITOR_VIEW,
+    TeaProfilesOfOrgGql: TEA_PROFILES_OF_ORG,
+    TeaOrgDiscoveryGql: TEA_ORG_DISCOVERY,
+    SaveTeaProfileGql: SAVE_TEA_PROFILE,
+    TeaProfileExposureChangeGql: TEA_PROFILE_EXPOSURE_CHANGE,
+    TeaMembershipExposureChangeGql: TEA_MEMBERSHIP_EXPOSURE_CHANGE,
+    TeaComponentNameGql: TEA_COMPONENT_NAME,
+    TeaComponentPerspectivesGql: TEA_COMPONENT_PERSPECTIVES,
+    DeleteTeaProfileGql: DELETE_TEA_PROFILE,
+    ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
+    PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
+    RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
+    HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,
+    ExternalApiKeysGql: EXTERNAL_API_KEYS,
+    CreateExternalApiKeyGql: CREATE_EXTERNAL_API_KEY,
+    SetApiKeyHolderNameGql: SET_API_KEY_HOLDER_NAME,
     MultiReleaseGqlData: MULTI_RELEASE_GQL_DATA,
     BranchReleaseListGqlData: BRANCH_RELEASE_LIST_GQL_DATA,
     ChildReleaseGqlData: CHILD_RELEASE_GQL_DATA,
@@ -1969,6 +2320,7 @@ export default {
     ApproveReleaseGqlMutate: APPROVE_RELEASE_GQL_MUTATE,
     RequestReleaseApprovalsGqlMutate: REQUEST_RELEASE_APPROVALS_GQL_MUTATE,
     ReleaseApprovalRequestsGql: RELEASE_APPROVAL_REQUESTS_GQL,
+    ReleaseSyntheticArtifactsGql: RELEASE_SYNTHETIC_ARTIFACTS_GQL,
     ComponentShortData: COMPONENT_SHORT_DATA,
     MarketingRelease: MARKETING_RELEASE_GQL_DATA,
     UserData: USER_GQL_DATA,

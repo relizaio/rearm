@@ -1,0 +1,4 @@
+#!/bin/sh
+# Stand-in for curl, used by selftest.sh as GATE_CURL: ignores its arguments
+# and exits with $STUB_CURL_EXIT.
+exit "${STUB_CURL_EXIT:-1}"

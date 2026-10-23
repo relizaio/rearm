@@ -31,11 +31,18 @@ export const EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS = new Set([
     'AGENT_BOARD_ALERT', 'AGENT_TASK_NEEDS_PERSON', 'AGENT_TASK_RETURNED', 'AGENT_TASK_QUEUE_AGE',
 ])
 
+/**
+ * @param pro whether the backend is Pro. A Pro-only option (`proOnly`, e.g. the TEA publication
+ *            events) is not offered on CE: the CE schema has no such enum value, and an exclusion
+ *            list naming one would fail the whole team save there.
+ */
 export function ownedComponentEventTypes (
-    allOptions: Array<{ label: string, value: string, disabled?: boolean }>,
+    allOptions: Array<{ label: string, value: string, disabled?: boolean, proOnly?: boolean }>,
+    pro: boolean = true,
 ): Array<{ label: string, value: string }> {
     return (allOptions || [])
         .filter(o => o && !EVENT_TYPES_WITHOUT_AFFECTED_COMPONENTS.has(o.value))
+        .filter(o => pro || !o.proOnly)
         .map(o => ({ label: o.label, value: o.value }))
 }
 

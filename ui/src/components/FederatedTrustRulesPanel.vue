@@ -156,6 +156,7 @@ import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import { apiKeyIdsColumn, apiKeyLastAccessColumn, apiKeySorters, filterApiKeysBySearch } from '../utils/apiKeyControls'
+import { editionPermissionFunctions } from '@/utils/teaProfile'
 import { apiKeyPagination } from '@/utils/apiKeyTable'
 import { uuidCopyColumn } from '../utils/uuidCopyColumn'
 import { normalizeSearchTerm } from '@/utils/tableSearch'
@@ -367,9 +368,10 @@ const providerOptions = [{ label: 'GitHub Actions', value: 'GITHUB_ACTIONS' }]
 const vcsPermissionOptions = ['NONE', 'READ_ONLY', 'READ_WRITE'].map(v => ({ label: v, value: v }))
 const orgPermissionOptions = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY'].map(v => ({ label: v, value: v }))
 const extraTypeOptions = ['READ_ONLY', 'READ_WRITE'].map(v => ({ label: v, value: v }))
-const permissionFunctions: string[] = constants.PermissionFunctions
-const functionOptions = permissionFunctions.map(f => ({ label: translateFunctionName(f), value: f }))
 const installationType = computed(() => store.getters.myuser?.installationType)
+// The TEA functions only where the backend serves TEA (editionPermissionFunctions).
+const permissionFunctions = computed((): string[] => editionPermissionFunctions(constants.PermissionFunctions, installationType.value))
+const functionOptions = computed(() => permissionFunctions.value.map(f => ({ label: translateFunctionName(f), value: f })))
 const scopeOptions = computed(() => {
     const o = [{ label: 'Component / Product', value: 'COMPONENT' }, { label: 'Perspective', value: 'PERSPECTIVE' }]
     if (installationType.value !== 'OSS') o.push({ label: 'Instance / Cluster', value: 'INSTANCE' })

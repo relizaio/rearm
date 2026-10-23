@@ -1,3 +1,7 @@
+# Node stays on 26.7.0 here (TPF-80 risk 1 fallback): the 26.12.1 binary needs libatomic.so.1,
+# which the plain alpine deliverable below does not carry (Error loading shared library
+# libatomic.so.1, needed by /usr/local/bin/node). The interim NODE_OPTIONS/SSL_CERT_FILE closes
+# the trust window on its own; the 26.12.1 bump is the follow-up.
 FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS builder
 
 ARG TARGETARCH
@@ -7,6 +11,11 @@ ARG TARGETOS
 # (hashes from <cdn>/rearm-download/<version>/sha256sums.txt, SCORE-7 design 3.5). The two engine
 # checks in the tools RUN fail the build on a zip without `bomutils score` or with an older engine.
 ARG REARM_CLI_VERSION=26.10.8
+
+# October 2026 eMudhra CA compromise: the fixed Alpine bundle, and Node on it (--use-openssl-ca)
+# until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
+ENV NODE_OPTIONS=--use-openssl-ca SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
 
 # Install PostgreSQL and unzip for running tests (same approach as the ReARM backend)
 RUN apk add postgresql postgresql-contrib unzip wget
@@ -54,6 +63,8 @@ RUN if [ "$TARGETARCH" = "arm64" ]; then apk add --no-cache gcompat; fi
 COPY package*.json ./
 RUN npm ci --ignore-scripts
 COPY ./ .
+# Trust-store probe: the node that ran npm ci refuses the compromised chains.
+RUN node ci/trust-gate/trust-gate.mjs
 
 # Run ALL tests (unit + integration) with PostgreSQL running
 ENV MOCK_OCI=true
@@ -93,7 +104,7 @@ RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
 # signature verification, ICU for cyclonedx-cli); libstdc++ is for node itself.
 # On arm64 only, gcompat lets the glibc-linked cyclonedx-cli start on musl (no musl
 # arm64 build exists; SCORE-7 design round 3, ADR-8).
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6 AS deliverable
+FROM alpine:3.24.3@sha256:b3413572228e34bd1c9245f5565e6cd127005655e8a7899aef33d8e83255c9e6 AS deliverable
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
@@ -105,11 +116,16 @@ COPY --from=builder /usr/local/bin/node /usr/local/bin/node
 COPY --from=builder /usr/local/bin/cyclonedx-cli /usr/local/bin/
 COPY --from=builder /usr/local/bin/rearm /usr/local/bin/
 
+# NODE_OPTIONS and SSL_CERT_FILE: Node reads the fixed Alpine bundle (October 2026 eMudhra CA
+# compromise) until FIXED_NODE is set in ci/trust-gate/trust-gate.mjs.
 ENV \
     DOTNET_SYSTEM_GLOBALIZATION_INVARIANT=false \
     LC_ALL=en_US.UTF-8 \
-    LANG=en_US.UTF-8
-RUN apk add --no-cache \
+    LANG=en_US.UTF-8 \
+    NODE_OPTIONS=--use-openssl-ca \
+    SSL_CERT_FILE=/etc/ssl/certs/ca-certificates.crt
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle && \
+    apk add --no-cache \
     libstdc++ \
     icu-data-full \
     icu-libs \
@@ -137,3 +153,14 @@ LABEL version=$VERSION
 EXPOSE 4000
 
 CMD ["node", "src/index.js"]
+
+# Trust-store gate (October 2026 eMudhra CA compromise): the shipped store must refuse the
+# compromised chains. release copies the marker, so this stage always builds.
+FROM deliverable AS trust-gate
+USER root
+RUN apk add --no-cache curl openssl
+COPY ci/trust-gate/ /gate/
+RUN sh /gate/trust-gate.sh && node /gate/trust-gate.mjs && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok
+
+FROM deliverable AS release
+COPY --from=trust-gate /gate/ok /trust-gate-ok
