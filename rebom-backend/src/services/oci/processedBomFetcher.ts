@@ -3,6 +3,7 @@ import { DigestValidationError } from '../../types/errors';
 import { fetchFromOci as defaultFetchFromOci } from './index';
 import { extractRepositoryNameFromBom } from './ociRepositoryHelpers';
 import type { BomRecord } from '../../types/bom.types';
+import { isRebomMergeOutput, stripReleaseNodeStamps } from '../bom/releaseNodeStamp';
 
 /**
  * Processed-BOM fetch, by the tag the row points at.
@@ -28,8 +29,12 @@ import type { BomRecord } from '../../types/bom.types';
  * ORIGINAL error is rethrown untouched. One retry only: a second mismatch
  * against fresh row state is not a race artifact.
  */
-/** Structural minimum: callers like the enrichment scheduler carry partial rows. */
-type ProcessedBomSource = Pick<BomRecord, 'uuid' | 'meta' | 'bom'>;
+/**
+ * Structural minimum. A row handed without its `meta` key is re-read by uuid before anything is
+ * decided on it (tag, repository, digest, the stamp strip): a row without `meta` in hand is never
+ * taken for one that is not a merge output (SCORE-60 ADR-9 (e)).
+ */
+type ProcessedBomSource = Pick<BomRecord, 'uuid' | 'bom'> & { meta?: BomRecord['meta'] };
 
 /**
  * Which artifact holds this row's processed BOM.
@@ -43,17 +48,19 @@ export function resolveProcessedTag(bomRecord: Pick<BomRecord, 'uuid' | 'meta'>)
 }
 
 export async function fetchProcessedBomWithRetry(
-    bomRecord: ProcessedBomSource,
+    source: ProcessedBomSource,
     fetchFromOci: (tag: string, repo?: string, digest?: string) => Promise<any> = defaultFetchFromOci,
     reReadRow: (uuid: string) => Promise<BomRecord[]> = defaultReReadRow
 ): Promise<any> {
-    const bomUuid = bomRecord.uuid;
+    const bomUuid = source.uuid;
+    const bomRecord: Pick<BomRecord, 'uuid' | 'meta' | 'bom'> =
+        source.meta === undefined ? await wholeRow(bomUuid, reReadRow) : source as Pick<BomRecord, 'uuid' | 'meta' | 'bom'>;
     const tag = resolveProcessedTag(bomRecord);
     const repo = extractRepositoryNameFromBom(bomRecord);
     const digest = bomRecord.meta?.processedFileDigest;
 
     try {
-        return await fetchFromOci(tag, repo, digest);
+        return servedAs(bomRecord, await fetchFromOci(tag, repo, digest));
     } catch (error) {
         if (!(error instanceof DigestValidationError)) throw error;
 
@@ -88,8 +95,31 @@ export async function fetchProcessedBomWithRetry(
             staleRepo: repo,
             freshRepo
         }, 'Digest mismatch was a concurrent enrichment write (row changed under the reader); retrying with fresh row state');
-        return fetchFromOci(freshTag!, freshRepo, freshDigest);
+        return servedAs(fresh, await fetchFromOci(freshTag!, freshRepo, freshDigest));
     }
+}
+
+/** The row read whole by uuid, for a caller that handed it without `meta` (SCORE-60 ADR-9 (e)). */
+async function wholeRow(uuid: string, reReadRow: (uuid: string) => Promise<BomRecord[]>): Promise<BomRecord> {
+    const whole = (await reReadRow(uuid))[0];
+    if (!whole) {
+        throw new Error(`BOM ${uuid} was handed without meta and re-reading it by uuid found no row`);
+    }
+    return whole;
+}
+
+/**
+ * Only rebom's own stamp is served: a row that is not a merge output (`meta.mod` other than
+ * `rebom`: every upload, and the uploads stored before the ingest strip) loses every
+ * `reliza:export:releaseNode` entry; a merge output comes back as fetched (SCORE-60 ADR-9 (c)).
+ */
+function servedAs(row: Pick<BomRecord, 'uuid' | 'meta'>, content: any): any {
+    if (isRebomMergeOutput(row.meta)) return content;
+    const stripped = stripReleaseNodeStamps(content);
+    if (stripped.count > 0) {
+        logger.debug({ bomUuid: row.uuid, removed: stripped.count }, 'Removed release node stamps from a row that is not a merge output');
+    }
+    return stripped.bom;
 }
 
 async function defaultReReadRow(uuid: string): Promise<BomRecord[]> {

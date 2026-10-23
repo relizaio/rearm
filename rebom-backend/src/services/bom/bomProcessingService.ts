@@ -19,6 +19,8 @@ import { getBearCredentials, getBearIntegration } from '../integrationService';
 import { SpdxService } from '../spdx';
 import { downgradeCycloneDxSpecIfNeeded } from '../cyclonedx/cdxSpecDowngrade';
 import { effectiveSkipPatterns } from './enrichmentSkipPatterns';
+import { RELEASE_NODE_PROPERTY, isReleaseNodeStamp, isRebomMergeOutput, stripReleaseNodeStamps } from './releaseNodeStamp';
+export { RELEASE_NODE_PROPERTY } from './releaseNodeStamp';
 import { SPDX as CDXSpdx } from '@cyclonedx/cyclonedx-library';
 const canonicalize = require('canonicalize');
 import { createHash } from 'crypto';
@@ -1649,6 +1651,29 @@ export function fillReleaseNode(bom: any, facts: ReleaseNodeFacts | null | undef
   }
 }
 
+export type ReleaseNodeMarkResult = {
+  bom: any,
+  marked: boolean
+}
+
+/**
+ * Stamps the merged root as the node rebom built for a release: `reliza:export:releaseNode` =
+ * `true`, last in the root's `properties`, any earlier entry of that name replaced (SCORE-58 ADR-5,
+ * built as SCORE-60 ADR-1). rearm-saas marks a node it holds no row for as the organization's own
+ * from this stamp. Only the root: `components[]` and every nested node are left as they are. Without
+ * a `metadata.component` the input comes back unchanged; otherwise a copy in the fillReleaseNode
+ * shape, the input and its root untouched.
+ */
+export function markReleaseNode(bom: any): ReleaseNodeMarkResult {
+  const root = bom?.metadata?.component
+  if (!root || typeof root !== 'object' || Array.isArray(root)) return { bom, marked: false }
+  const kept = Array.isArray(root.properties)
+    ? root.properties.filter((p: any) => !isReleaseNodeStamp(p))
+    : []
+  const component = { ...root, properties: [...kept, { name: RELEASE_NODE_PROPERTY, value: 'true' }] }
+  return { bom: { ...bom, metadata: { ...bom.metadata, component } }, marked: true }
+}
+
 export type UnknownCompositionsResult = {
   bom: any,
   count: number
@@ -3172,9 +3197,9 @@ async function reprocessAndEnrichAsync(bomRecord: BomRecord, org: string, creden
  * Reprocesses a CycloneDX BOM from its raw artifact.
  * Fetches uuid-raw, applies augmentation, returns BOM ready for enrichment.
  */
-async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
+export async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> {
   try {
-    const rawBom = await resolveAndFetchRawBom(bomRecord);
+    let rawBom = await resolveAndFetchRawBom(bomRecord);
 
     // Apply the same 1.7→1.6 downgrade shim that addCycloneDxBom uses on
     // ingest. Forced re-enrichment is the recovery path for artifacts that
@@ -3182,6 +3207,14 @@ async function reprocessCycloneDxBom(bomRecord: BomRecord): Promise<any | null> 
     // FAILED-enrichment loop because their canonical copy is still 1.7.
     // Mutating in place is safe — `rawBom` was just fetched fresh from OCI.
     downgradeCycloneDxSpecIfNeeded(rawBom);
+
+    // The raw copy is the uploaded document by contract, uploaded stamps included: a row rebom did
+    // not merge is re-stored without them, as at ingest (SCORE-60 ADR-9 (f)).
+    if (!isRebomMergeOutput(bomRecord.meta)) {
+      const stripped = stripReleaseNodeStamps(rawBom);
+      if (stripped.count > 0) logger.debug({ bomUuid: bomRecord.uuid, removed: stripped.count }, 'Removed release node stamps from a re-processed upload');
+      rawBom = stripped.bom;
+    }
 
     // Re-augment the BOM with component context
     const rebomOptions = bomRecord.meta;

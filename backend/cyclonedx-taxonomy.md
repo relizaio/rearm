@@ -27,7 +27,7 @@ For details about the taxonomy, refer to the official CycloneDX Taxonomy Reposit
 | `reliza:componentMetadata` | Namespace for additional component metadat properties |
 | `reliza:support` | Namespace for per-component software support disclosure (level of support, end-of-support dates and their provenance) |
 | `reliza:device` | Namespace for the enclosing device release's own lifecycle dates |
-| `reliza:export` | Namespace for document-level records of how an exported BOM was produced |
+| `reliza:export` | Namespace for records of how an exported BOM was produced (document-level, plus two node-level records: `foldedRoot`, kept, and `releaseNode`, internal) |
 | `reliza:license` | Namespace for component-level records of what a merge decided about a node's licence |
 
 
@@ -73,8 +73,9 @@ uploaded: ReARM does not alter it and does not claim to have authored anything i
 
 Unless stated otherwise, each property MUST occur at most once per component and is
 placed in `components[].properties`. Two exceptions are noted in the table:
-`reliza:support:disclosure` and the two component counts
-(`reliza:support:unidentifiedComponents`, `reliza:support:unassessedComponents`) are written
+`reliza:support:disclosure` and the three component counts
+(`reliza:support:unidentifiedComponents`, `reliza:support:unassessedComponents`,
+`reliza:support:selfComponents`) are written
 once per document in `metadata.properties`, and the `reliza:device:*` pair is written on
 `metadata.component`.
 
@@ -102,7 +103,9 @@ CE release yet; those arrive together at the next source sync.
 | `reliza:support:deviceSupportRisk` | DERIVED: whether the component's end-of-support falls before the enclosing device release's own end-of-support. Known values: `OK`, `EOS_BEFORE_DEVICE`, `UNKNOWN`. Emitted only for a product/device release | unreleased; reaches CE at the next sync |
 | `reliza:support:disclosure` | Document-level marker in `metadata.properties` (NOT on `metadata.component`, where the `reliza:device:*` pair goes), describing how the support properties in this BOM were produced. Known values: `derived-non-attested-current-state` (support properties in this document were derived from recorded dates at serve time; a component with none means no date is recorded for it) and `provenance-stripped-no-disclosure` (server-owned properties were removed so nothing here is an uploader's forged claim, but NOTHING was disclosed either -- absence of a support property says nothing about what is recorded; emitted on the SPDX-augmented download and the JSON release SBOM export). TWO KINDS OF DOCUMENT CARRY NO MARKER: the raw download, which is served as uploaded and makes no claim about its contents, and any export whose caller passed `includeSupportMetadata=false`, because the marker qualifies a support statement and a caller who declined the disclosure is not making one. Both are still SWEPT -- the sweep is the anti-spoofing control, the marker is a statement about it. Do not read the second value as the first, and do not read an ABSENT marker as either | first value CE 26.08.95; second unreleased, reaches CE at the next sync |
 | `reliza:support:unidentifiedComponents` | Document-level, in `metadata.properties`, written only beside `reliza:support:disclosure` = `derived-non-attested-current-state` (never with the second value, never without a marker). The number of component nodes in this document, as a decimal string, that could not be identified, so no support fact can be matched to them. Identified = purl, or a purl-shaped bom-ref, or cpe. Counts every node in `components[]` at any depth and `metadata.component`, so two nodes with the same purl count twice. `0` is written too | unreleased; reaches CE at the next sync |
-| `reliza:support:unassessedComponents` | Document-level, in `metadata.properties`, written only beside `reliza:support:disclosure` = `derived-non-attested-current-state`. The number of component nodes in this document, as a decimal string, that were identified but carry no support property because nobody has assessed them (or the assessment was withdrawn). Identified = purl, or a purl-shaped bom-ref, or cpe. Same node walk as `reliza:support:unidentifiedComponents`; `0` is written too | unreleased; reaches CE at the next sync |
+| `reliza:support:unassessedComponents` | Document-level, in `metadata.properties`, written only beside `reliza:support:disclosure` = `derived-non-attested-current-state`. The number of component nodes in this document, as a decimal string, that were identified but carry no support property because nobody has assessed them (or the assessment was withdrawn). Identified = purl, or a purl-shaped bom-ref, or cpe. Same node walk as `reliza:support:unidentifiedComponents`; `0` is written too; a node marked `reliza:support:selfComponent` is not counted | unreleased; reaches CE at the next sync |
+| `reliza:support:selfComponent` | Written on a component node that is the organization's own release or artifact rather than a third-party dependency: its `sbom_components` row is a root (the `metadata.component` of an SBOM the organization uploaded), or ReARM's merge wrote the node as a release's root and the organization lists its purl nowhere as a component. The value is the literal `true`. The fda support checks of `rearm bomutils score` do not judge such a node; the coverage gauge and bulk attestation leave it out for the same reason. Server-owned: a copy in an uploaded document is removed | unreleased; reaches CE at the next sync |
+| `reliza:support:selfComponents` | Document-level, beside the other two counts: the number of nodes carrying `reliza:support:selfComponent`, as a decimal string; `0` is written too; `reliza:support:unassessedComponents` does not count them | unreleased; reaches CE at the next sync |
 
 ### A note for renderer authors
 
@@ -191,14 +194,20 @@ product/device release that declares at least one of them.
 ## reliza:export Namespace Taxonomy
 
 Document-level records, in `metadata.properties`, of what an export option did to the
-document and whether ReARM signed it. They describe the document a reader holds, so the
-"include internal metadata" option does not remove them.
+document and whether ReARM signed it, and two node-level records: `reliza:export:foldedRoot`,
+of an uploaded root the merge folded into a release's node, and `reliza:export:releaseNode`,
+rebom's stamp on the node it built for a release. A record describes the document a reader
+holds, so the "include internal metadata" option does not remove it, unless its row says it is
+internal: `releaseNode` is, because the server reads it to mark the organization's own entries
+and the reader needs the marker, not the stamp.
 
 | Property | Description | Since |
 |----------|-------------|-------|
 | `reliza:export:fileComponentsExcluded` | Written by the merge of a release BOM exported with "Leave out file components" (`excludeFileComponents: true`): the number of components of CycloneDX type `file` left out of this document, as a decimal string. `0` means the option was on and nothing matched; an ABSENT property means the option was off and nothing was left out. On a product release it adds what the component merges it was made from had already left out | unreleased; reaches CE at the next sync |
 | `reliza:export:danglingRefsDropped` | Written by the merge of a release BOM when `dependencies[]` named bom-refs that resolve to no component or service of the document: the number of dependency entries and `dependsOn`/`provides` items dropped for it, as a decimal string. ABSENT means every reference resolved and nothing was dropped. Counts this document's merge only, not what the merges it was made from dropped | unreleased; reaches CE at the next sync |
 | `reliza:export:componentsWithoutSbom` | Written by the merge of a product release BOM when it lists component releases ReARM holds no SBOM for: the number of components carrying `reliza:sbom:missing`, as a decimal string. ABSENT means every component release of the product had an SBOM | unreleased; reaches CE at the next sync |
+| `reliza:export:foldedRoot` | Written by the merge of a component or product release BOM on its root (`metadata.component`) when an SBOM uploaded against the release itself (for a product, the product release's own upload) described the release (its root purl carries `belongsto=RELEASE` and its name, version and group are the release's): that uploaded root was folded into the release's own node, which took the upload's values and kept its own where the upload had none. One entry per folded root, the value that root's bom-ref. It travels with the node: in a product release BOM it sits on that release's node. ABSENT means no uploaded root was folded | unreleased; reaches CE at the next sync |
+| `reliza:export:releaseNode` | Written by rebom on the `metadata.component` of every merged release BOM it builds, value `true`; travels into a product export on each component release's root. Internal: the server reads it to mark the organization's own entries (`reliza:support:selfComponent`) and the include internal metadata option removes it; rebom removes it from every uploaded document, when the upload is stored and whenever it serves a row it did not merge, so the property is only ever rebom's own stamp (SCORE-60 ADR-9) | unreleased; reaches CE at the next sync |
 | `reliza:export:signed` | Written by ReARM on every merged CycloneDX JSON release export, last on the way out and inside the signed payload: `true` when the document carries a root JSF `signature` made with the exporting organization's current SBOM signing key, `false` when it does not (see `reliza:export:unsignedReason`). An ABSENT property means the export predates signing. A copy anywhere else in the document, an uploaded component's included, is removed before the stamp | unreleased; reaches CE at the next sync |
 | `reliza:export:signatureKeyId` | Written beside `reliza:export:signed` = `true`: the `keyId` of the organization key that signed this document, equal to the root signature's `keyId` and to the `kid` of the key in the organization's public JWKS | unreleased; reaches CE at the next sync |
 | `reliza:export:unsignedReason` | Written beside `reliza:export:signed` = `false`: why the document is unsigned. `NO_KEY` = the organization has no current signing key (none made, or the current one revoked); `SIGNING_ERROR` = it has one and signing failed (the server logs the cause) | unreleased; reaches CE at the next sync |

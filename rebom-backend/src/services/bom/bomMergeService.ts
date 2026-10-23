@@ -1,8 +1,9 @@
 import { logger } from '../../logger';
 import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../types';
+import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, markReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -42,6 +43,10 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
     // root its own supplier, hashes and licenses, which the release's facts never replace
     // (SCORE-30 ADR-6, SCORE-40 ADR-3).
     if (mergedBom) mergedBom = fillReleaseNode(mergedBom, rebomOptions.releaseNode).bom
+    // After the fill, before the file filter: stamp the merged root as the node rebom built for the
+    // release, from which rearm-saas marks the organization's own entries (SCORE-58 ADR-5). Always on;
+    // the CLI copies a component row's root with its properties into a product above it.
+    if (mergedBom) mergedBom = markReleaseNode(mergedBom).bom
     if (mergedBom && rebomOptions.excludeFileComponents === true) {
       // On the merged graph, not per input: merge-boms re-roots the inputs, and the
       // splice has to run on the graph the root actually has. The inputs of a product
@@ -61,7 +66,7 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
   }
 }
 
-export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOptions, org: string, addBomFn: (bomInput: BomInput) => Promise<BomRecord>): Promise<BomRecord> {
+export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOptions, org: string, addBomFn: (bomInput: BomInput, origin?: BomOrigin) => Promise<BomRecord>): Promise<BomRecord> {
   try {
     logger.info({ bomIds: ids, serialNumber: rebomOptions.serialNumber, org }, "Starting BOM merge and store operation")
     
@@ -76,7 +81,8 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
         org: org
       }
     }
-    const bomRecord = await addBomFn(bomInput)
+    // Stored as rebom's own merge output: no ingest strip, meta.mod `rebom` (SCORE-60 ADR-9).
+    const bomRecord = await addBomFn(bomInput, 'MERGE')
     logger.info({ bomUuid: bomRecord.uuid, serialNumber: rebomOptions.serialNumber }, "BOM merge and store completed successfully")
     
     return bomRecord

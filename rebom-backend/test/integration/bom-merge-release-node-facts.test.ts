@@ -18,7 +18,7 @@ import { pool } from '../../src/utils';
 import { clearMockOciStorage, fetchProcessedBomWithRetry } from '../../src/services/oci';
 import { TEST_ORG_UUID, createTestRebomOptions } from '../helpers';
 import { logger } from '../../src/logger';
-import { DROPPED_LICENSE_PROPERTY } from '../../src/services/bom/bomProcessingService';
+import { DROPPED_LICENSE_PROPERTY, RELEASE_NODE_PROPERTY } from '../../src/services/bom/bomProcessingService';
 import {
     ORG, COMMIT, UPLOAD_DIGEST, RELEASE_DIGEST, PLACEHOLDER_DIGEST, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF,
     SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PRODUCT_ROOT,
@@ -34,6 +34,8 @@ import {
  */
 
 const COMMITS = { commits: [{ uid: COMMIT }] };
+/** SCORE-60 ADR-1: rebom's stamp on every merged root. */
+const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
 
 describe('merged SBOM nodes carry the facts ReARM holds', () => {
     const created: string[] = [];
@@ -87,7 +89,8 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
         expect(componentMerge.metadata.component).toStrictEqual({
             type: 'application', name: 'facts-api', group: ORG, version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE,
             supplier: { name: ORG },
-            hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }]
+            hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }],
+            properties: [STAMP]
         });
         const sce = node(componentMerge, SCE_ROOT);
         expect(sce.supplier).toStrictEqual({ name: ORG });
@@ -172,7 +175,8 @@ describe('merged SBOM nodes carry the facts ReARM holds', () => {
             type: 'application', name: 'facts-api', group: ORG, version: '1.0.0', purl: RELEASE_NODE, 'bom-ref': RELEASE_NODE,
             supplier: { name: ORG },
             hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }],
-            licenses: [{ license: { name: 'LicenseRef-Facts-Commercial', url: 'https://facts.example/licence' } }]
+            licenses: [{ license: { name: 'LicenseRef-Facts-Commercial', url: 'https://facts.example/licence' } }],
+            properties: [STAMP]
         });
         expect(node(componentMerge, SCE_ROOT)).not.toHaveProperty('licenses');
         expect(node(componentMerge, DELIVERABLE_ROOT)).not.toHaveProperty('licenses');
