@@ -66,7 +66,10 @@
                                         <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
                                     <n-form-item label="Type" path="type">
-                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
+                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptionsForSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'TEA_PUBLISH' || globalOutputEvent.type === 'TEA_HIDE'" label="Settings">
+                                        <span class="text-muted">None: the effective TEA profile at firing time decides what is published or hidden.</span>
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                         <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -763,6 +766,9 @@
                         <FederatedTrustRulesPanel ref="federatedPanel" :org-uuid="orgResolved" :notify="notify" :identities="computedFederatedIdentities"
                             :free-form-keys="computedFreeFormKeys" :can-manage="isOrgAdmin" :api-key-controls="apiKeyControls" @changed="loadProgrammaticAccessKeys(false)" />
                     </n-tab-pane>
+                    <n-tab-pane name="externalKeys" tab="External Keys" v-if="teaProfilesAvailable(myUser?.installationType)">
+                        <ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />
+                    </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :sibling-keys="programmaticAccessKeys" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
@@ -837,6 +843,56 @@
                                 :uuid="selectedPerspectiveUuid"
                                 :org-uuid="orgResolved"
                                 :is-writable="isOrgAdmin"/>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        v-model:show="showPerspectiveTeaModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :bordered="false" role="dialog" aria-modal="true"
+                            :title="'TEA profile of perspective: ' + selectedPerspectiveName">
+                            <!-- A product-derived perspective is the product: its TEA profile is the
+                                 product component's COMPONENT-scope row (TEA-2 design 3.2). -->
+                            <TeaProfileEditor
+                                v-if="showPerspectiveTeaModal"
+                                ref="perspectiveTeaEditor"
+                                :org-uuid="orgResolved"
+                                :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                :object-uuid="selectedPerspectiveUuid"
+                                :object-name="selectedPerspectiveName"
+                                :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                :is-writable="isOrgAdmin"
+                                :is-org-admin="isOrgAdmin"
+                                :installation-type="myUser.installationType"/>
+                            <!-- TEA-30: the perspective's SBOM profile overrides and package settings. -->
+                            <n-collapse v-if="showPerspectiveTeaModal" class="mt-3">
+                                <n-collapse-item title="SBOM profiles of this perspective" name="sbom-profiles">
+                                    <SbomProfileOverrides
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap"
+                                        @changed="reloadPerspectiveSbomConsumers" />
+                                </n-collapse-item>
+                                <n-collapse-item v-if="regulatoryPackagesAvailable(myUser.installationType)"
+                                    title="Package settings of this perspective" name="package-settings">
+                                    <PackageSettingsEditor
+                                        ref="perspectivePackageEditor"
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap" />
+                                </n-collapse-item>
+                            </n-collapse>
                         </n-card>
                     </n-modal>
                     <n-modal
@@ -1312,6 +1368,22 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
                     </n-form>
                 </div>
             </n-tab-pane>
+            <n-tab-pane name="profiles" tab="Profiles" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
+                <SbomProfilesPanel
+                    :org-uuid="orgResolved"
+                    :is-org-admin="isOrgAdmin"
+                    :installation-type="myUser.installationType"
+                    :perspectives="perspectives"
+                    :components="teaNamedObjects" />
+            </n-tab-pane>
+            <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
+                <TeaOrgPanel
+                    :org-uuid="orgResolved"
+                    :is-org-admin="isOrgAdmin"
+                    :installation-type="myUser.installationType"
+                    :perspectives="perspectives"
+                    :components="teaNamedObjects" />
+            </n-tab-pane>
             <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
                 <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
                     <n-tab-pane name="downloadLog" tab="Download Log">
@@ -1383,12 +1455,12 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NEmpty } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem, NEmpty } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
@@ -1418,10 +1490,11 @@ import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
+import ExternalKeysPanel from './ExternalKeysPanel.vue'
 import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
 import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
 import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
-import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
+import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn, apiKeyActivityColumn, apiKeyLeadColumns, escapeHtml } from '../utils/apiKeyControls'
 import { uuidCopyColumn } from '../utils/uuidCopyColumn'
 import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
 import { normalizeSearchTerm } from '@/utils/tableSearch'
@@ -1429,6 +1502,15 @@ import { filterUsersBySearch } from '@/utils/orgUsersSearch'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
+import TeaOrgPanel from './TeaOrgPanel.vue'
+import SbomProfilesPanel from './SbomProfilesPanel.vue'
+import SbomProfileOverrides from './SbomProfileOverrides.vue'
+import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
+import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
+import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeGlobalAutoPublish, TeaEditorView,
+    teaOrgPublicBadgeTitle, teaOrgPublicSources, TeaOrgPublicSources, TeaProfileRow } from '@/utils/teaOutputEvents'
+import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
@@ -1508,6 +1590,20 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     } else if (tabName === "perspectives") {
         loadPerspectives()
+    } else if (tabName === "tea") {
+        // The Transparency Exchange table names its rows from the perspectives list (Pro) and the
+        // products store; load both here so the tab reads the same when it is opened directly.
+        // Components come from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
+    } else if (tabName === "profiles") {
+        // The Profiles tab (TEA-30) names its rows the same way as the Transparency Exchange tab.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
         loadOrgSettings()
@@ -1522,7 +1618,7 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
-const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities' | 'externalKeys'>('freeFormKeys')
 const federatedPanel = ref<any>(null)
 function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
@@ -1749,8 +1845,9 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings']
-const proOnlyTabs = ['policies', 'committers', 'perspectives']
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea', 'profiles']
+// tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
+const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea', 'profiles']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
@@ -2269,6 +2366,8 @@ const userGroupPermissionsDirty = computed(() => {
 })
 
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
+// Names for the TEA profile rows of the organization: components and products.
+const teaNamedObjects = computed(() => [...orgComponents.value, ...(store.getters.productsOfOrg(orgResolved.value) || [])])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
 
@@ -2375,6 +2474,19 @@ const newPerspective: Ref<any> = ref({
 })
 const showPerspectiveComponentsModal = ref(false)
 const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
+const showPerspectiveTeaModal: Ref<boolean> = ref(false)
+// The perspective TEA dialog's editors (TEA-30): an override change reloads their SBOM profile catalogs only.
+const perspectiveTeaEditor = ref<any>(null)
+const perspectivePackageEditor = ref<any>(null)
+function reloadPerspectiveSbomConsumers () {
+    perspectiveTeaEditor.value?.reloadCatalog()
+    perspectivePackageEditor.value?.reloadCatalog()
+}
+const perspectiveNamesMap = computed((): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const p of perspectives.value) if (p?.uuid) out[p.uuid] = p.name
+    return out
+})
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')
@@ -2525,6 +2637,22 @@ const perspectiveFields = [
                 )
             ]
 
+            // The TEA profile of every row: a real perspective's own, a product's as its
+            // COMPONENT-scope profile (TEA-2).
+            actions.push(
+                h(
+                    NIcon,
+                    {
+                        title: 'TEA profile',
+                        class: 'icons clickable',
+                        size: 25,
+                        'data-testid': 'perspective-tea-action',
+                        onClick: () => showPerspectiveTeaModalFn(row.uuid, row.name, row.type)
+                    },
+                    () => h(WorldIcon)
+                )
+            )
+
             // Guards are readable on every real perspective; product-derived ones are not
             // editable at all, so they carry none.
             if (row.type !== 'PRODUCT') {
@@ -2647,6 +2775,13 @@ function resetCreatePerspective() {
     showCreatePerspectiveModal.value = false
 }
 
+function showPerspectiveTeaModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    selectedPerspectiveType.value = perspectiveType
+    showPerspectiveTeaModal.value = true
+}
+
 function showPerspectiveGuardsModalFn(perspectiveUuid: string, perspectiveName: string) {
     selectedPerspectiveUuid.value = perspectiveUuid
     selectedPerspectiveName.value = perspectiveName
@@ -2731,6 +2866,31 @@ const availableProductsOptions: ComputedRef<SelectOption[]> = computed(() => {
         }))
 })
 
+// TEA-9's PUBLIC confirmation on main's one-membership add (TEA-16): the dry-run asks about the list
+// the add produces, the component's stored perspectives plus the one being added, which is the list
+// the server gate evaluates. The stored perspectives are read here: the dialog fills the store with
+// ComponentShortData, which carries none. true when the add may go ahead.
+async function confirmTeaMembershipAdd (componentUuid: string, scopeWord: 'component' | 'product'): Promise<boolean> {
+    if (!teaProfilesAvailable(myUser.value.installationType)) return true
+    const storedResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaComponentPerspectivesGql,
+        variables: { componentUuid },
+        fetchPolicy: 'no-cache'
+    })
+    const current: any[] = storedResp.data.component?.perspectiveDetails ?? []
+    const afterAdd: string[] = [...current.map((p: any) => p.uuid).filter((u: string) => u !== selectedPerspectiveUuid.value), selectedPerspectiveUuid.value]
+    const exposureResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaMembershipExposureChangeGql,
+        variables: { componentUuid, perspectiveUuids: afterAdd },
+        fetchPolicy: 'no-cache'
+    })
+    const delta = teaMembershipDelta(afterAdd, current, perspectives.value)
+    const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added, delta.removed, delta.names, scopeWord)
+    if (!confirm) return true
+    const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return !!answer?.isConfirmed
+}
+
 async function addComponentToPerspective() {
     if (!selectedComponentToAdd.value) {
         notify('error', 'Error', 'Please select a component')
@@ -2739,6 +2899,7 @@ async function addComponentToPerspective() {
     
     processingMode.value = true
     try {
+        if (!(await confirmTeaMembershipAdd(selectedComponentToAdd.value, 'component'))) return
         const added = await addPerspectiveToComponent(graphqlClient, selectedComponentToAdd.value, selectedPerspectiveUuid.value)
         
         if (added) {
@@ -2764,6 +2925,7 @@ async function addProductToPerspective() {
     
     processingMode.value = true
     try {
+        if (!(await confirmTeaMembershipAdd(selectedProductToAdd.value, 'product'))) return
         const added = await addPerspectiveToComponent(graphqlClient, selectedProductToAdd.value, selectedPerspectiveUuid.value)
         
         if (added) {
@@ -5202,7 +5364,8 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
     // scoped keys: everything that is not an RBAC key (FREEFORM, USER and FEDERATED have their own sub-tabs)
-    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED').map((accesKey: any) => {
+    // nor an EXTERNAL key (the External Keys sub-tab, which reads them itself)
+    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED' && k.type !== 'EXTERNAL').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
             accesKey.object_val = store.getters.orgById(accesKey.object)?.name || 'Organization'
         } else if (accesKey.type === 'COMPONENT') {
@@ -5613,6 +5776,41 @@ const outputTriggerTypeOptions = [
     {label: 'Pull Request Comment', value: 'PR_COMMENT'},
     {label: 'Lock', value: 'LOCK'}
 ]
+// TEA-13: TEA Publish and TEA Hide after VDR Snapshot Artifact, where the backend serves TEA.
+const outputTriggerTypeOptionsForSelect = computed(() => outputEventTypeOptionsForEdition(outputTriggerTypeOptions, myUser.value?.installationType))
+
+// TEA-13: what resolves PUBLIC in this organization, for the badge on policy-wide TEA_PUBLISH rows.
+// Read for writers only (the warning is for the person who can save); advisory, the confirmation in
+// addGlobalOutputEvent reads fresh.
+const teaOrgSources: Ref<TeaOrgPublicSources | null> = ref(null)
+
+/** The two organization reads of design 3.4: the organization's own effective profile and every profile row. */
+interface TeaOrgExposureRead { view: TeaEditorView | null, rows: TeaProfileRow[] }
+
+/**
+ * Reads the organization's TEA view and profile rows fresh and sets the badge's sources from them.
+ * Answers the read, or null when it was not sent (CE, not a writer) or failed (logged; the badge is
+ * then left off).
+ */
+async function loadTeaOrgExposure (): Promise<TeaOrgExposureRead | null> {
+    if (!teaProfilesAvailable(myUser.value?.installationType) || !isWritable.value) {
+        teaOrgSources.value = null
+        return null
+    }
+    try {
+        const [viewResp, rowsResp]: any[] = await Promise.all([
+            graphqlClient.query({ query: graphqlQueries.TeaProfileEditorViewGql, variables: { org: orgResolved.value, scope: 'ORGANIZATION', object: null }, fetchPolicy: 'no-cache' }),
+            graphqlClient.query({ query: graphqlQueries.TeaProfilesOfOrgGql, variables: { org: orgResolved.value }, fetchPolicy: 'no-cache' }),
+        ])
+        const read: TeaOrgExposureRead = { view: viewResp.data.teaProfileEditorView ?? null, rows: rowsResp.data.teaProfilesOfOrg ?? [] }
+        teaOrgSources.value = teaOrgPublicSources(read.view, read.rows)
+        return read
+    } catch (err: any) {
+        console.error(err)
+        teaOrgSources.value = null
+        return null
+    }
+}
 
 const externalValidationConclusionOptions = [
     {label: 'Success', value: 'success'},
@@ -5688,6 +5886,7 @@ function selectPolicyForGlobalEvents(policyUuid: string) {
         globalOutputEvents.value = policy.globalOutputEvents || []
         globalInputEvents.value = policy.globalInputEvents || []
     }
+    loadTeaOrgExposure()
 }
 
 function approvalPolicyRowProps (row: any) {
@@ -5782,6 +5981,7 @@ async function fetchApprovalPolicies () {
                 globalOutputEvents.value = policy.globalOutputEvents || []
                 globalInputEvents.value = policy.globalInputEvents || []
             }
+            loadTeaOrgExposure()
         }
     } else {
         approvalPolicyTableData.value = []
@@ -5848,6 +6048,8 @@ async function saveGlobalOutputEvents () {
             if (policyIndex > -1) {
                 approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
             }
+            // TEA-13: the PUBLIC badge follows what was just saved.
+            loadTeaOrgExposure()
         }
         notify('success', 'Success', 'Policy-wide actions saved.')
     } catch (err: any) {
@@ -5919,7 +6121,7 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
     showCreateGlobalOutputEventModal.value = true
 }
 
-function addGlobalOutputEvent () {
+async function addGlobalOutputEvent () {
     // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
     // for them the whole time a form is open. Sending them regardless would persist a scope, a
     // level and a requirement on every rejection and notification -- noise in the stored JSONB
@@ -5954,6 +6156,22 @@ function addGlobalOutputEvent () {
     if (!validation.valid) {
         notify('error', 'Validation Error', validation.error!)
         return
+    }
+    // TEA-13: the public warning when a new policy-wide TEA_PUBLISH is configured (a new entry, or
+    // one whose stored type was not TEA_PUBLISH; design 3.5). Reads fresh and fails closed: nothing
+    // is pushed or saved on a failed read or a cancel, and the modal stays open.
+    const storedType = eventToPush.uuid ? globalOutputEvents.value.find((e: any) => e.uuid === eventToPush.uuid)?.type : null
+    if (eventToPush.type === 'TEA_PUBLISH' && storedType !== 'TEA_PUBLISH' && teaProfilesAvailable(myUser.value?.installationType)) {
+        const read = await loadTeaOrgExposure()
+        if (!read) {
+            notify('error', 'Error', 'Could not read the TEA profiles of this organization; nothing was saved.')
+            return
+        }
+        const c = teaConfirmBeforeGlobalAutoPublish(teaOrgPublicSources(read.view, read.rows), eventToPush.name)
+        if (c) {
+            const answer: any = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+            if (!answer?.isConfirmed) return
+        }
     }
     if (eventToPush.uuid) {
         const existingIndex = globalOutputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
@@ -6098,8 +6316,10 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = row.type === 'TEA_PUBLISH' ? teaOrgPublicBadgeTitle(teaOrgSources.value) : null
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {

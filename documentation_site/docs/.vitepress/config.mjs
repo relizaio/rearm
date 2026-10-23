@@ -28,6 +28,7 @@ function sidebar() {
           {text: 'Importing VEX', link: '/workflows/importing-vex'},
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
+          {text: 'Regulatory Packages and Submissions', link: '/workflows/regulatory-packages'},
           {text: 'Scoring an SBOM', link: '/workflows/sbom-scoring'},
           {text: 'Signing exported SBOMs', link: '/workflows/signing-exported-sboms'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
