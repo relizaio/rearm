@@ -152,6 +152,13 @@ the export: the node keeps the upload's description, supplier and licence, the d
 and the deliverable digest fill what the upload left out, and the folded root's bom-ref is
 recorded on the node as `reliza:export:foldedRoot`.
 
+**A component release named and versioned like the product.** Its node keeps its own supplier,
+licence and hash in the product's export and is never folded into the product root. Because the
+two would share a purl, the component node's purl carries a `rearm_input` qualifier naming the
+serial number of the component's own merged SBOM, and its bom-ref is that serial number followed
+by `#` and the purl without the qualifier. Two component releases that share a name and version
+under one product are kept apart the same way.
+
 **What still fails.** The scoring checks Component License and Component Hash still fail on the
 root of an SBOM attached to a deliverable or to a source code entry whose generator wrote none:
 those roots keep their own entries. See

@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, markReleaseNode, establishPurl, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, markReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -11,13 +11,21 @@ import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
 export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: string): Promise<any> {
   try {
     let mergedBom = null
-    const bomObjs = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    const found = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
     // Component releases without an SBOM join as synthetic inputs, after the per-input
     // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
     // them and lists them in the root's dependencies like every other input.
-    bomObjs.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
+    found.push(...placeholderBomObjects(rebomOptions.missingSbomComponents))
+    // Before merge-boms, the only point where a node's input is known: in a product merge a node of
+    // an input rearm-saas did not list that carries the product root's key, a listed root's key or
+    // another input's root key is written apart, so neither merge-boms nor the de-dup folds it into
+    // that release's node (SCORE-66 ADR-1). Same length and order: the listed entries are the
+    // original objects, so the fold below sees what it saw before.
+    const rekeyed = rekeyUnlistedInputs(ids, found, rebomOptions)
+    const bomObjs = rekeyed.inputs
     if (bomObjs && bomObjs.length)
       mergedBom = await mergeBomObjects(bomObjs, rebomOptions)
+    if (mergedBom) mergedBom = recordRekeyedNodes(mergedBom, rekeyed.count)
     // merge-boms carries the inputs' dependency entries but not their services; put the
     // services back first, so a service-vs-component bom-ref clash is settled before the
     // de-dup keys components by bom-ref. In the top-level-only export only the services a
