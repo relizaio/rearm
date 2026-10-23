@@ -1370,7 +1370,13 @@
                                 @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
                         <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
-                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                            <div v-if="bulkArchiveMode" data-testid="bulk-archive-bar" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <n-button size="small" @click="checkedBranchKeys = selectableKeys(branches)">Select all</n-button>
+                                <n-button size="small" @click="checkedBranchKeys = []">Clear</n-button>
+                                <span>{{ checkedBranchKeys.length }} selected</span>
+                                <n-button size="small" type="error" data-testid="bulk-archive-run" :disabled="checkedBranchKeys.length === 0 || bulkArchiveRunning" @click="runBulkArchive('branches')">Archive selected ({{ checkedBranchKeys.length }})</n-button>
+                            </div>
+                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" v-model:checked-row-keys="checkedBranchKeys" />
                         </n-tab-pane>
                         <n-tab-pane v-if="componentData?.type === 'PRODUCT' && submissionsAvailable(myUser.installationType)" name="submissions" tab="Submissions">
                             <ProductSubmissionsPanel
@@ -1383,7 +1389,13 @@
                                 :refresh-token="latestRefreshToken" />
                         </n-tab-pane>
                         <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
-                            <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                            <div v-if="bulkArchiveMode" data-testid="bulk-archive-bar" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <n-button size="small" @click="checkedTagKeys = selectableKeys(tags)">Select all</n-button>
+                                <n-button size="small" @click="checkedTagKeys = []">Clear</n-button>
+                                <span>{{ checkedTagKeys.length }} selected</span>
+                                <n-button size="small" type="error" data-testid="bulk-archive-run" :disabled="checkedTagKeys.length === 0 || bulkArchiveRunning" @click="runBulkArchive('tags')">Archive selected ({{ checkedTagKeys.length }})</n-button>
+                            </div>
+                            <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" v-model:checked-row-keys="checkedTagKeys" />
                         </n-tab-pane>
                     </n-tabs>
                 </div>
@@ -1421,6 +1433,7 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import DocumentComponentPanel from './DocumentComponentPanel.vue'
 import { isDocumentComponent } from '@/utils/agentDocumentsView'
+import { BranchArchiveResult, chunk, confirmText, keepFailedSelected, rowClickAction, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter } from '@/utils/branchBulkArchive'
 import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
@@ -2076,6 +2089,11 @@ const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
+// TPF-78: the selection mode of the Branches / Feature Sets and Tags tables ("Archive selected").
+const bulkArchiveMode = ref(false)
+const checkedBranchKeys = ref<string[]>([])
+const checkedTagKeys = ref<string[]>([])
+const bulkArchiveRunning = ref(false)
 // An explicit ?tab= wins; a branch or feature-set link (a :branchuuid with no
 // tab) opens Branches / Feature Sets; a plain component link opens Latest.
 const selectedTab: Ref<string> = ref(resolveComponentPageTab({
@@ -3630,6 +3648,7 @@ const rowProps = (row: any) => {
     return {
         style: 'cursor: pointer;',
         onDblclick: () => {
+            if (bulkArchiveMode.value) return   // TPF-78 T-1: no navigation in the selection mode
             // Clear the single-click timer and prevent single-click action
             if (clickTimer) {
                 clearTimeout(clickTimer)
@@ -3649,7 +3668,17 @@ const rowProps = (row: any) => {
                 }
             })
         },
-        onClick: () => {
+        onClick: (e: MouseEvent) => {
+            // TPF-78 T-1: in the selection mode a row click toggles the row and never navigates; a
+            // click in the selection cell is naive-ui's own checkbox, which already updated the keys
+            // through v-model:checked-row-keys and bubbles here (architecture 3.7).
+            const keysRef = row.type === 'TAG' ? checkedTagKeys : checkedBranchKeys
+            const r = rowClickAction(bulkArchiveMode.value, row, e.target, keysRef.value)
+            if (r.action !== 'select') {
+                if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
+                if (r.action === 'toggle') keysRef.value = r.keys
+                return
+            }
             // Delay single-click action to detect if it's part of a double-click
             if (clickTimer) {
                 clearTimeout(clickTimer)
@@ -3722,6 +3751,17 @@ const branchFields: any[] = [
                         onClick: () => { showAddBranchModal.value = true }
                     },
                     () => h(CirclePlus)
+                ) : null,
+                (isWritable.value && myUser.installationType !== 'OSS') ? h(
+                    Icon,
+                    {
+                        class: 'clickable',
+                        size: 20,
+                        title: 'Select ' + words.value.branchFirstUpperPlural + ' to archive',
+                        'data-testid': 'bulk-archive-toggle',
+                        onClick: () => { bulkArchiveMode.value = !bulkArchiveMode.value; if (!bulkArchiveMode.value) { checkedBranchKeys.value = []; checkedTagKeys.value = [] } }
+                    },
+                    () => h(Trash)
                 ) : null
             ])
         },
@@ -3783,13 +3823,38 @@ const cloneBranchColumn = {
         ))
     }
 }
-const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
+// TPF-78: the one selection column of both tables, shown only in the selection mode; the base
+// branch's checkbox is disabled.
+const selectionColumn = {
+    type: 'selection',
+    disabled: (row: any) => !selectableBranch(row)
+}
+
+const branchColumns = computed(() => {
+    const base = (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields
+    return bulkArchiveMode.value ? [selectionColumn, ...base] : base
+})
 
 const branchTableRowKey = (row: any) => row.uuid
 
-const tagFields: any[] = [
+const tagBaseFields: any[] = [
     {
-        title: 'Tag',
+        title: () => {
+            return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+                h('span', 'Tag'),
+                (isWritable.value && myUser.installationType !== 'OSS') ? h(
+                    Icon,
+                    {
+                        class: 'clickable',
+                        size: 20,
+                        title: 'Select ' + words.value.branchFirstUpperPlural + ' to archive',
+                        'data-testid': 'bulk-archive-toggle',
+                        onClick: () => { bulkArchiveMode.value = !bulkArchiveMode.value; if (!bulkArchiveMode.value) { checkedBranchKeys.value = []; checkedTagKeys.value = [] } }
+                    },
+                    () => h(Trash)
+                ) : null
+            ])
+        },
         key: 'name'
     },
     {
@@ -3804,6 +3869,58 @@ const tagFields: any[] = [
         render: archiveActionCell,
     }
 ]
+
+const tagFields = computed(() => {
+    return bulkArchiveMode.value ? [selectionColumn, ...tagBaseFields] : tagBaseFields
+})
+
+// TPF-78: "Archive selected" for one pane. One confirmation, then the selection in sequential
+// calls of at most 200; one summary; what was not archived (failed, or never sent after a thrown
+// call) stays selected.
+async function runBulkArchive (which: 'branches' | 'tags') {
+    const keysRef = which === 'branches' ? checkedBranchKeys : checkedTagKeys
+    const paneRows = (): any[] => (which === 'branches' ? branches.value : tags.value) || []
+    const keys = [...keysRef.value]
+    if (!keys.length) return
+    const rows = paneRows()
+    const rowsByUuid = new Map<string, any>(rows.map((r: any) => [r.uuid, r]))
+    const keySet = new Set(keys)
+    const names = rows.filter((r: any) => keySet.has(r.uuid)).map((r: any) => r.name)
+    const answer = await Swal.fire({
+        title: 'Are you sure?',
+        text: confirmText(names, words.value),
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, archive',
+        cancelButtonText: 'No'
+    })
+    if (!answer.isConfirmed) { notify('error', 'Cancelled', 'Archive cancelled.'); return }
+    bulkArchiveRunning.value = true
+    const batches = chunk(keys)
+    let sent = 0
+    const results: BranchArchiveResult[] = []
+    let unsent: string[] = []
+    try {
+        for (const batch of batches) {
+            const r = await store.dispatch('archiveBranches', { branchUuids: batch, componentUuid: componentUuid })
+            results.push(...r.results)
+            sent += 1
+        }
+    } catch (err: any) {
+        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        unsent = unsentAfter(batches, sent)
+    } finally {
+        bulkArchiveRunning.value = false
+    }
+    if (results.length) {
+        const s = summarizeOutcomes(results, rowsByUuid, words.value)
+        notify(s.type, s.title, s.text)
+    }
+    keysRef.value = [...keepFailedSelected(results, paneRows()), ...unsent]
+    if (!checkedBranchKeys.value.length && !checkedTagKeys.value.length) bulkArchiveMode.value = false
+    const archived = results.filter((r) => r.outcome === 'ARCHIVED').map((r) => r.branchUuid)
+    if (archived.includes(selectedBranchUuid.value) && mainBranch.value) selectBranch(mainBranch.value)
+}
 
 // "+ Create new action" inside the Local Rule modal sets this before
 // opening the action-create modal so addOutputTrigger can attach the
