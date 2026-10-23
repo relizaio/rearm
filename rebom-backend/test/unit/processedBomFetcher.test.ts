@@ -12,6 +12,7 @@ vi.mock('../../src/logger', () => ({
 import { fetchProcessedBomWithRetry, resolveProcessedTag } from '../../src/services/oci/processedBomFetcher';
 import { logger } from '../../src/logger';
 import { DigestValidationError, OciNotFoundError } from '../../src/types/errors';
+import { RELEASE_NODE_PROPERTY } from '../../src/services/bom/releaseNodeStamp';
 
 const UUID = 'aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee';
 const OLD_DIGEST = 'digest-before-enrichment';
@@ -143,5 +144,118 @@ describe('processed tag resolution (enrichment writes a new artifact, never in p
         expect(logger.error).not.toHaveBeenCalled();
         expect(logger.warn).toHaveBeenCalledTimes(1);
         expect(fetch).toHaveBeenLastCalledWith(`${UUID}-e1`, 'rebom-artifacts-2026-09', NEW_DIGEST);
+    });
+});
+
+/**
+ * SCORE-60 (T-24, ADR-9 (c), (e)): only rebom's own release node stamp is served. A row that is not a
+ * merge output (meta.mod other than `rebom`) is served without any `reliza:export:releaseNode`, on
+ * both fetch paths; and a row handed without its `meta` key (the enrichment scheduler's shape before
+ * ADR-9 (d)) is re-read by uuid before the tag, the digest or the strip is decided on it.
+ */
+describe('release node stamps on a served document', () => {
+    beforeEach(() => vi.clearAllMocks());
+
+    const STAMP = { name: RELEASE_NODE_PROPERTY, value: 'true' };
+    const KEEP = { name: 'acme:keep', value: 'yes' };
+    const stamped = () => ({
+        bomFormat: 'CycloneDX',
+        metadata: { component: { name: 'root', properties: [STAMP, KEEP] } },
+        components: [{ name: 'lib', components: [{ name: 'nested', properties: [STAMP] }] }]
+    });
+    const clean = () => ({
+        bomFormat: 'CycloneDX',
+        metadata: { component: { name: 'root', properties: [KEEP] } },
+        components: [{ name: 'lib', components: [{ name: 'nested', properties: [] }] }]
+    });
+    const withMeta = (meta: any) => ({ uuid: UUID, meta, bom: { ociRepositoryName: 'rebom-artifacts-2026-08' } });
+    const partial = () => ({ uuid: UUID, organization: 'org', serialNumber: 'urn:uuid:x', bom: { ociRepositoryName: 'rebom-artifacts-2026-08' } });
+
+    it.each([
+        ['meta.mod raw', { mod: 'raw', processedFileDigest: OLD_DIGEST }],
+        ['meta without mod', { processedFileDigest: OLD_DIGEST }],
+        ['meta {}', {}],
+        ['meta null', null]
+    ])('serves a row that is not a merge output (%s) without the stamp, and re-reads nothing', async (_label, meta) => {
+        const fetch = vi.fn(async () => stamped());
+        const reRead = vi.fn();
+
+        expect(await fetchProcessedBomWithRetry(withMeta(meta) as any, fetch, reRead)).toStrictEqual(clean());
+        expect(reRead).not.toHaveBeenCalled();
+        expect(logger.debug).toHaveBeenCalledWith({ bomUuid: UUID, removed: 2 }, expect.any(String));
+    });
+
+    it('serves a merge output as fetched', async () => {
+        const content = stamped();
+        const fetch = vi.fn(async () => content);
+
+        expect(await fetchProcessedBomWithRetry(withMeta({ mod: 'rebom', processedFileDigest: OLD_DIGEST }) as any, fetch, vi.fn())).toBe(content);
+        expect(logger.debug).not.toHaveBeenCalled();
+    });
+
+    it('lets the fresh row decide on the retry path: a merge output keeps its stamps', async () => {
+        const content = stamped();
+        const fetch = vi.fn(async (_t: string, _r?: string, digest?: string) => {
+            if (digest === OLD_DIGEST) digestFailure();
+            return content;
+        });
+        const reRead = vi.fn(async () => [withMeta({ mod: 'rebom', processedFileDigest: NEW_DIGEST })]);
+
+        expect(await fetchProcessedBomWithRetry(withMeta({ mod: 'raw', processedFileDigest: OLD_DIGEST }) as any, fetch, reRead)).toBe(content);
+    });
+
+    it('lets the fresh row decide on the retry path: an upload is stripped', async () => {
+        const fetch = vi.fn(async (_t: string, _r?: string, digest?: string) => {
+            if (digest === OLD_DIGEST) digestFailure();
+            return stamped();
+        });
+        const reRead = vi.fn(async () => [withMeta({ mod: 'raw', processedFileDigest: NEW_DIGEST })]);
+
+        expect(await fetchProcessedBomWithRetry(withMeta({ mod: 'rebom', processedFileDigest: OLD_DIGEST }) as any, fetch, reRead)).toStrictEqual(clean());
+    });
+
+    it('re-reads a row handed without meta before any fetch, and fetches what the whole row points at', async () => {
+        const content = stamped();
+        const fetch = vi.fn(async () => content);
+        const reRead = vi.fn(async () => [{ uuid: UUID, meta: { mod: 'rebom', processedTag: `${UUID}-e1`, processedFileDigest: NEW_DIGEST },
+            bom: { ociRepositoryName: 'rebom-artifacts-2026-09' } }]);
+
+        expect(await fetchProcessedBomWithRetry(partial() as any, fetch, reRead)).toBe(content);
+        expect(reRead).toHaveBeenCalledTimes(1);
+        expect(reRead).toHaveBeenCalledWith(UUID);
+        expect(reRead.mock.invocationCallOrder[0]).toBeLessThan(fetch.mock.invocationCallOrder[0]);
+        expect(fetch).toHaveBeenCalledTimes(1);
+        expect(fetch).toHaveBeenCalledWith(`${UUID}-e1`, 'rebom-artifacts-2026-09', NEW_DIGEST);
+    });
+
+    it('serves a row handed without meta stripped when the whole row is an upload', async () => {
+        const fetch = vi.fn(async () => stamped());
+        const reRead = vi.fn(async () => [withMeta({ mod: 'raw', processedFileDigest: NEW_DIGEST })]);
+
+        expect(await fetchProcessedBomWithRetry(partial() as any, fetch, reRead)).toStrictEqual(clean());
+    });
+
+    it('refuses a row handed without meta that re-reads as nothing, and fetches nothing', async () => {
+        const fetch = vi.fn();
+        const reRead = vi.fn(async () => []);
+
+        await expect(fetchProcessedBomWithRetry(partial() as any, fetch, reRead)).rejects.toThrow(new RegExp(`${UUID}.*meta`));
+        expect(fetch).not.toHaveBeenCalled();
+    });
+
+    it('keeps the one-shot digest retry for a row handed without meta, and keeps a merge output its stamps', async () => {
+        const content = stamped();
+        const fetch = vi.fn(async (_t: string, _r?: string, digest?: string) => {
+            if (digest === OLD_DIGEST) digestFailure();
+            return content;
+        });
+        const reRead = vi.fn()
+            .mockResolvedValueOnce([withMeta({ mod: 'rebom', processedTag: `${UUID}-e1`, processedFileDigest: OLD_DIGEST })])
+            .mockResolvedValueOnce([withMeta({ mod: 'rebom', processedTag: `${UUID}-e2`, processedFileDigest: NEW_DIGEST })]);
+
+        expect(await fetchProcessedBomWithRetry(partial() as any, fetch, reRead)).toBe(content);
+        expect(reRead).toHaveBeenCalledTimes(2);
+        expect(fetch).toHaveBeenCalledTimes(2);
+        expect(fetch).toHaveBeenLastCalledWith(`${UUID}-e2`, 'rebom-artifacts-2026-08', NEW_DIGEST);
     });
 });

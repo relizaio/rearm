@@ -324,6 +324,7 @@ What "ReARM's own markers" means, precisely:
 | Removed when off | Note |
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
+| `reliza:export:releaseNode` | rebom's stamp on the node it made for a release. The server reads it to mark the release's own entries (`reliza:support:selfComponent`) before the strip. A copy in an uploaded SBOM never reaches a merged export or a processed download: rebom removes it when the upload is stored. The raw download serves the uploaded document as it was, and no support statement is made on it |
 
 **Not removed: what your SBOM generator wrote.** It is your content, and this setting does not
 touch it. Component properties (including cdxgen's `SrcFile`, `ResolvedUrl` and similar working
@@ -431,6 +432,7 @@ Two layers, both emitted together and both governed by that single setting.
 | `reliza:support:party` | Whether the manufacturer is a first or third party to the component |
 | `reliza:support:source:<milestone>` | Where each milestone date came from |
 | `cdx:lifecycle:milestone:endOfSupport` (and `endOfLife`, `endOfGuaranteedSupport`) | Standard CycloneDX milestone dates |
+| `reliza:support:selfComponent` | `true` on the organization's own release or artifact listed in the export: its row is a root, or ReARM's merge wrote the node as a release's root and the organization lists its purl nowhere as a component. The fda support checks of `rearm bomutils score` do not judge it |
 
 **A `declarations` block** at the document level, in CycloneDX's own attestation vocabulary:
 
@@ -463,7 +465,7 @@ requested it declined the support disclosure**. When the marker is there it has 
 | `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
 | *no marker at all* | The requester asked for a document without the support disclosure (`includeSupportMetadata: false`), so there is no support statement for a marker to qualify. Also the case for the raw download |
 
-With `derived-non-attested-current-state` the document also carries two counts in
+With `derived-non-attested-current-state` the document also carries three counts in
 `metadata.properties`, as decimal strings, written even when 0. A component is identified when it
 has a purl, or a purl-shaped `bom-ref` (some tools, Trivy for Go's `stdlib` for example, put the
 purl only there), or a cpe. Every component node is counted, nested ones and `metadata.component`
@@ -472,9 +474,10 @@ included.
 | Property | Meaning |
 |---|---|
 | `reliza:support:unidentifiedComponents` | How many components could not be identified, so no support fact can be matched to them |
-| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn) |
+| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn), and are not the organization's own |
+| `reliza:support:selfComponents` | How many components are the organization's own; they are in neither other count |
 
-Neither appears with `provenance-stripped-no-disclosure` or without a marker.
+None of them appears with `provenance-stripped-no-disclosure` or without a marker.
 
 Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
 when it does, and reading the third as either is how they conclude the server made a claim it did
