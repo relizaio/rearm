@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -61,6 +61,12 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
       const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
       mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
     }
+    // Every input root that survived the merge as a top-level node (an SCE- or deliverable-attached
+    // root, an inbound deliverable's root; a RELEASE-attached one is folded) and that no entry names
+    // yet becomes a dependency of the merged root: merge-boms drops the roots' own entries under
+    // FLATTEN_UNDER_NEW_ROOT and names no root, so structure.no-orphans named each of them
+    // (SCORE-64 ADR-2). After every pass that removes or renames a node, before the dangling check.
+    if (mergedBom) mergedBom = linkUnfoldedRoots(mergedBom, bomObjs).bom
     // A check on the final graph, after every pass that may repair a reference.
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     // After it: adds no dependency ref, and describes the placeholders that survived.

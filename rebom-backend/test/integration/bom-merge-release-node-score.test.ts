@@ -18,7 +18,8 @@ vi.mock('../../src/integrationRepository', () => ({
 import { pool } from '../../src/utils';
 import { clearMockOciStorage } from '../../src/services/oci';
 import {
-    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, buildProductExport
+    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, buildProductExport,
+    expectNoOrphansAndRefsResolve
 } from '../releaseNodeFacts.fixture';
 
 /**
@@ -147,6 +148,13 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         }
     });
 
+    it('passes structure.no-orphans and structure.refs-resolve on every node of the product export (SCORE-64)', async () => {
+        const { componentMerge, product } = await buildProductExport(created, true, true);
+
+        expectNoOrphansAndRefsResolve(score(componentMerge), 'component merge');
+        expectNoOrphansAndRefsResolve(score(product), 'product');
+    });
+
     it('without the facts the release node names no supplier and carries no hash, nor does the placeholder (T-10)', async () => {
         const { product } = await buildProductExport(created, false);
         const report = score(product);
@@ -208,5 +216,12 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose com
             expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT, SCE_ROOT].sort());
         }
         expect(product.components.some((c: any) => c['bom-ref'] === RELEASE_NODE)).toBe(true);
+    });
+
+    it('passes structure.no-orphans and structure.refs-resolve on every node of both exports (SCORE-64)', async () => {
+        const { componentMerge, product } = await buildProductExport(created, true, true, undefined, true);
+
+        expectNoOrphansAndRefsResolve(score(componentMerge), 'component merge');
+        expectNoOrphansAndRefsResolve(score(product), 'product');
     });
 });

@@ -74,6 +74,8 @@ vi.mock('../../src/services/bom/bomProcessingService', async (importOriginal) =>
         fillAttachedRoots: recorded('fillAttachedRoots'),
         // SCORE-60 T-9: the release node stamp, right after the fill.
         markReleaseNode: recorded('markReleaseNode'),
+        // SCORE-64 T-2: the unfolded root link, after the stamp and the file filter, before the dangling check.
+        linkUnfoldedRoots: recorded('linkUnfoldedRoots'),
         extractFileFilteredBom: recorded('extractFileFilteredBom'),
         dropDanglingRefs: recorded('dropDanglingRefs'),
         declareUnknownCompositions: recorded('declareUnknownCompositions'),
@@ -221,7 +223,7 @@ describe('mergeBoms: pass order', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         const carry = passes.calls[3];
         expect(carry.args[1]).toHaveLength(2);
         expect(carry.args[1][0]).toBe(inputs[0]);
@@ -232,20 +234,23 @@ describe('mergeBoms: pass order', () => {
         expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
         expect(passes.calls[10].args[0]).not.toBe(passes.calls[9].args[0]);
         expect(passes.calls[10].args[0].metadata.properties).toContainEqual({ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '1' });
+        // SCORE-64 T-2: the unfolded root link is handed the file filter's result, the dangling check what it returned
+        expect(passes.calls[10].name).toBe('linkUnfoldedRoots');
+        expect(passes.calls[11].args[0]).toBe(passes.calls[10].result.bom);
         expect(bom.dependencies).toStrictEqual([{ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0'] }]);
     });
 
     it('skips the file filter without the switch and still runs dropDanglingRefs then declareUnknownCompositions (T-12)', async () => {
         await mergeBoms(['one', 'two'], options(), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[3].args[2]).toStrictEqual({ referencedOnly: false });
     });
 
     it('asks carryServices for referenced services only in the top-level-only merge (T-12)', async () => {
         await mergeBoms(['one', 'two'], options({ tldOnly: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[3].args[2]).toStrictEqual({ referencedOnly: true });
     });
 
@@ -262,7 +267,7 @@ describe('mergeBoms: pass order', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ releaseNode }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[6].name).toBe('fillReleaseNode');
         expect(passes.calls[6].args[1]).toBe(releaseNode);
         expect(passes.calls[6].args[0]).toBe(passes.calls[5].result.bom);
@@ -275,6 +280,9 @@ describe('mergeBoms: pass order', () => {
         expect(passes.calls[8].name).toBe('markReleaseNode');
         expect(passes.calls[8].args[0]).toBe(passes.calls[7].result.bom);
         expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
+        // SCORE-64 T-2: [9] is the unfolded root link, handed the stamp's result; the dangling check runs on what it returned
+        expect(passes.calls[9].name).toBe('linkUnfoldedRoots');
+        expect(passes.calls[10].args[0]).toBe(passes.calls[9].result.bom);
         expect(bom.metadata.component).toStrictEqual({
             type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT,
             supplier: { name: 'Acme' },
@@ -307,7 +315,7 @@ describe('mergeBoms: a licence fold merge-boms left mixed', () => {
 
         expect(bom.components.map((c: any) => c['bom-ref'])).toStrictEqual(['pkg:npm/one@1.0.0', 'pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0']);
         expect(bom.components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // the de-dup already sees the settled list
         expect(passes.calls[4].args[0].components[0].licenses).toStrictEqual([{ expression: 'MIT OR Apache-2.0' }]);
     });
@@ -568,13 +576,13 @@ describe('mergeBoms: component releases without an SBOM', () => {
         const list = [missing(HTTPD, 'httpd'), missing(FLYWAY, 'flyway')];
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, missingSbomComponents: list }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // carryServices sees every input merge-boms saw, the placeholders included
         expect(passes.calls[3].args[1].map((b: any) => b.metadata.component['bom-ref'])).toStrictEqual([
             'pkg:npm/one@1.0.0', 'pkg:npm/two@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`
         ]);
-        expect(passes.calls[11].args[0]).toBe(passes.calls[10].args[0]);
-        expect(passes.calls[11].args[1]).toBe(list);
+        expect(passes.calls[12].args[0]).toBe(passes.calls[11].args[0]);
+        expect(passes.calls[12].args[1]).toBe(list);
         expect(bom.compositions).toStrictEqual([{ aggregate: 'unknown', dependencies: [`urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] }]);
         expect(bom.metadata.properties).toContainEqual({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: '2' });
         expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0', `urn:rearm:release:${HTTPD}`, `urn:rearm:release:${FLYWAY}`] });
@@ -646,7 +654,7 @@ describe('mergeBoms: the release node fill', () => {
         const releaseNode = facts();
         const bom = await mergeBoms(['one', 'two'], options({ excludeFileComponents: true, releaseNode }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         const fill = passes.calls[6];
         expect(fill.args[1]).toBe(releaseNode);
         // its input is the de-dup's output: the de-dup property is already on it
@@ -670,6 +678,9 @@ describe('mergeBoms: the release node fill', () => {
         expect(passes.calls[7].args[0]).toBe(fill.args[0]);
         expect(passes.calls[8].args[0]).toBe(fill.args[0]);
         expect(passes.calls[9].args[0]).toBe(passes.calls[8].result.bom);
+        // SCORE-64 T-2: [9] is the unfolded root link, handed the stamp's result; the dangling check runs on what it returned
+        expect(passes.calls[9].name).toBe('linkUnfoldedRoots');
+        expect(passes.calls[10].args[0]).toBe(passes.calls[9].result.bom);
         expect(bom.metadata.component).toStrictEqual({ type: 'application', name: 'merged', version: '1.0.0', purl: ROOT, 'bom-ref': ROOT, properties: [STAMP] });
     });
 
@@ -700,7 +711,7 @@ describe('mergeBoms: the release node fill', () => {
 
         const bom = await mergeBoms(['one', 'two'], options({ releaseNode: { supplierName: 'Example' }, missingSbomComponents: [withHashes, missing(FLYWAY, 'flyway')] }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(bom.metadata.component.supplier).toStrictEqual({ name: 'Example' });
         expect(bom.metadata.component).not.toHaveProperty('hashes');
         expect(mergeInputs.objs[2].metadata.component.hashes).toStrictEqual([{ alg: 'SHA-256', content: SHA256 }]);
@@ -753,7 +764,7 @@ describe('mergeBoms: the release root fold', () => {
 
         const bom = await mergeBoms(['one', 'rel', 'two'], options({ releaseRootIds: ['rel'] }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         // SCORE-63 T-2: listedReleaseInputs is called twice per merge, the fold's call first
         expect(listed.calls).toHaveLength(2);
         expect(listed.calls[0].args[0]).toStrictEqual(['one', 'rel', 'two']);
@@ -831,7 +842,7 @@ describe('mergeBoms: the release root fold', () => {
 
         const bom = await mergeBoms(['rel', 'one'], options({ releaseRootIds: ['rel'], excludeFileComponents: true }), 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'extractFileFilteredBom', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(passes.calls[9].args[0].metadata.component.components).toStrictEqual([{ type: 'file', name: '/etc/conf', 'bom-ref': 'file-conf' }]);
         expect(bom.metadata.component.components ?? []).toStrictEqual([]);
         expect(property(bom, FILE_COMPONENTS_EXCLUDED_PROPERTY)).toStrictEqual([{ name: FILE_COMPONENTS_EXCLUDED_PROPERTY, value: '2' }]);
@@ -901,7 +912,7 @@ describe('mergeBoms: the attached root fill', () => {
 
         const bom = await mergeBoms(['sce', 'one', 'two'], rebomOptions, 'org');
 
-        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        expect(passes.calls.map(c => c.name)).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
         expect(listed.calls).toHaveLength(2);
         expect(listed.calls[0].args[2]).toBeUndefined();
         expect(listed.calls[1].args[0]).toStrictEqual(['sce', 'one', 'two']);
@@ -1140,5 +1151,122 @@ describe('mergeBoms: the re-key of unlisted inputs before merge-boms', () => {
         expect(row.hashes).toStrictEqual(OWN);
         expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: [Q, 'pkg:npm/one@1.0.0'] });
         expect(bom.dependencies.filter((d: any) => d.ref === ROOT)).toHaveLength(1);
+    });
+});
+
+/**
+ * SCORE-64 (T-2, ADR-2, ADR-3): every input root that survived the merge as a top-level node is a
+ * dependency of the merged root. The pass runs after the stamp and the file filter, right before the
+ * dangling check, handed the aligned list merge-boms saw; it reads no list of ids.
+ */
+describe('mergeBoms: the unfolded root link', () => {
+    beforeEach(serveInputsAndMergeBomsOutput);
+
+    const SCE = 'pkg:npm/example/merged@1.0.0?belongsto=SCE&hash=0123456789abcdef0123456789abcdef01234567';
+
+    function sceInput(): any {
+        return {
+            bomFormat: 'CycloneDX', specVersion: '1.6', version: 1,
+            serialNumber: 'urn:uuid:5d0b7f6e-0a5c-4b8e-9d1e-000000006401',
+            metadata: { component: { type: 'library', name: 'merged', version: '1.0.0', group: 'Example', purl: SCE, 'bom-ref': SCE } },
+            components: []
+        };
+    }
+
+    /** merge-boms's FLATTEN output with the SCE input's root at the top level, the root entry not naming it. */
+    function serveWithSceRoot() {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            delete out.components[1].components;
+            out.components.splice(1, 0, { type: 'library', name: 'merged', version: '1.0.0', group: 'Example', purl: SCE, 'bom-ref': SCE });
+            return JSON.stringify(out);
+        });
+    }
+
+    /** merge-boms's PRESERVE output: every input root a top-level node the root entry names. */
+    function servePreserveOutput() {
+        shellExec.mockImplementation(async (...args: any[]) => {
+            passes.calls.push({ name: 'merge-boms', args });
+            const out = mergeBomsOutput();
+            out.components = [
+                { type: 'library', name: 'merged', version: '1.0.0', group: 'Example', purl: SCE, 'bom-ref': SCE },
+                { type: 'application', name: 'one', 'bom-ref': 'pkg:npm/one@1.0.0' }
+            ];
+            out.dependencies = [{ ref: ROOT, dependsOn: [SCE, 'pkg:npm/one@1.0.0'] }, { ref: SCE, dependsOn: [] }, { ref: 'pkg:npm/one@1.0.0', dependsOn: [] }];
+            return JSON.stringify(out);
+        });
+    }
+
+    const docs = (): Record<string, any> => ({ sce: sceInput(), one: input('one'), two: input('two') });
+    const releaseNode = { licenseExpression: 'Apache-2.0' };
+
+    it('runs after markReleaseNode, right before dropDanglingRefs, on the aligned inputs, and links the SCE root', async () => {
+        const d = docs();
+        findBomObjectById.mockImplementation(async (id: string) => d[id]);
+        serveWithSceRoot();
+
+        const bom = await mergeBoms(['sce', 'one', 'two'], options({ rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', attachedRootIds: ['sce'], releaseNode }), 'org');
+
+        const names = passes.calls.map(c => c.name);
+        expect(names).toStrictEqual(['rekeyUnlistedInputs', 'merge-boms', 'recordRekeyedNodes', 'carryServices', 'dedupeBomRefs', 'foldReleaseRoots', 'fillReleaseNode', 'fillAttachedRoots', 'markReleaseNode', 'linkUnfoldedRoots', 'dropDanglingRefs', 'declareUnknownCompositions']);
+        const link = passes.calls[9];
+        expect(link.name).toBe('linkUnfoldedRoots');
+        expect(link.args[0]).toBe(passes.calls[8].result.bom);
+        expect(link.args[1]).toBe(passes.calls[0].result.inputs);
+        expect(link.result.count).toBe(1);
+        expect(link.result.bom.dependencies[0].dependsOn.at(-1)).toBe(SCE);
+        const dangling = passes.calls[10];
+        expect(dangling.args[0]).toBe(link.result.bom);
+        expect(dangling.result.bom).toBe(dangling.args[0]);
+        expect(dangling.result.count).toBe(0);
+        expect(property(bom, DANGLING_REFS_DROPPED_PROPERTY)).toStrictEqual([]);
+        expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0', SCE] });
+        expect(bom.metadata.component.properties.at(-1)).toStrictEqual(STAMP);
+    });
+
+    it('runs after the file filter when the switch is on', async () => {
+        const d = docs();
+        findBomObjectById.mockImplementation(async (id: string) => d[id]);
+        serveWithSceRoot();
+
+        const bom = await mergeBoms(['sce', 'one', 'two'], options({ rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', attachedRootIds: ['sce'], excludeFileComponents: true }), 'org');
+
+        const names = passes.calls.map(c => c.name);
+        expect(names.indexOf('linkUnfoldedRoots')).toBe(names.indexOf('extractFileFilteredBom') + 1);
+        expect(names.indexOf('dropDanglingRefs')).toBe(names.indexOf('linkUnfoldedRoots') + 1);
+        const link = passes.calls[names.indexOf('linkUnfoldedRoots')];
+        expect(link.args[0]).toBe(passes.calls[names.indexOf('extractFileFilteredBom')].result.bom);
+        expect(link.result.count).toBe(1);
+        expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'pkg:npm/b@1.0.0', SCE] });
+        expect(property(bom, DANGLING_REFS_DROPPED_PROPERTY)).toStrictEqual([]);
+    });
+
+    it('links the root all the same without attachedRootIds: the pass reads no list', async () => {
+        const d = docs();
+        findBomObjectById.mockImplementation(async (id: string) => d[id]);
+        serveWithSceRoot();
+
+        const bom = await mergeBoms(['sce', 'one', 'two'], options({ rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', releaseNode }), 'org');
+
+        const link = passes.calls.find(c => c.name === 'linkUnfoldedRoots')!;
+        expect(link.args).toHaveLength(2);
+        expect(link.args[1]).toBe(passes.calls[0].result.inputs);
+        expect(link.args[1]).toHaveLength(3);
+        expect(link.result.count).toBe(1);
+        expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: ['pkg:npm/a@1.0.0', 'file-tool', 'pkg:npm/b@1.0.0', SCE] });
+    });
+
+    it('does nothing on a PRESERVE output, where every root is named already', async () => {
+        const d: Record<string, any> = { sce: sceInput(), one: input('one') };
+        findBomObjectById.mockImplementation(async (id: string) => d[id]);
+        servePreserveOutput();
+
+        const bom = await mergeBoms(['sce', 'one'], options({ rootComponentMergeMode: 'PRESERVE_UNDER_NEW_ROOT', attachedRootIds: ['sce'] }), 'org');
+
+        const link = passes.calls.find(c => c.name === 'linkUnfoldedRoots')!;
+        expect(link.result.count).toBe(0);
+        expect(link.result.bom).toBe(link.args[0]);
+        expect(bom.dependencies[0]).toStrictEqual({ ref: ROOT, dependsOn: [SCE, 'pkg:npm/one@1.0.0'] });
     });
 });
