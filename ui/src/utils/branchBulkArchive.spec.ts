@@ -1,7 +1,7 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
-    BULK_ARCHIVE_CHUNK, BranchArchiveResult, NO_UNDO_SENTENCE, chunk, confirmText, keepFailedSelected,
-    pluralOf, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter
+    BULK_ARCHIVE_CHUNK, BranchArchiveResult, NO_UNDO_SENTENCE, chunk, confirmText, inSelectionCell, keepFailedSelected,
+    pluralOf, rowClickAction, selectableBranch, selectableKeys, summarizeOutcomes, toggleKey, unsentAfter
 } from './branchBulkArchive'
 
 // TPF-78 test 4 (TPF-73 part 2, ARCHITECTURE round 2 3.1): the pure helpers behind "Archive selected".
@@ -166,5 +166,83 @@ describe('chunk and unsentAfter', () => {
         expect(unsentAfter(batches, 0)).toEqual(all)
         expect(unsentAfter(batches, 3)).toEqual([])
         expect(unsentAfter(batches, 2)).toEqual(all.slice(400))
+    })
+})
+
+// TPF-78 ARCHITECTURE round 3 3.1 and 3.7 (tester run 1 T-1): a row click in the selection mode.
+const REGULAR = (uuid: string) => ({ uuid, type: 'REGULAR' })
+const BASE = (uuid: string) => ({ uuid, type: 'BASE' })
+const checkboxCell = () => ({ closest: (s: string) => s === '.n-data-table-td--selection' ? {} : null })
+const plainCell = () => ({ closest: () => null })
+
+describe('toggleKey', () => {
+    it('appends an absent selectable row and removes a present one, keeping the order of the rest', () => {
+        const keys = ['a', 'c']
+        expect(toggleKey(keys, REGULAR('b'))).toEqual(['a', 'c', 'b'])
+        expect(toggleKey(keys, REGULAR('a'))).toEqual(['c'])
+        expect(keys).toEqual(['a', 'c'])
+    })
+
+    it('gives the same array back for the base row, present or not', () => {
+        const keys = ['a', 'c']
+        expect(toggleKey(keys, BASE('b'))).toBe(keys)
+        const withBase = ['a', 'b']
+        expect(toggleKey(withBase, BASE('b'))).toBe(withBase)
+        expect(withBase).toEqual(['a', 'b'])
+    })
+
+    it('never mutates the keys', () => {
+        const keys = Object.freeze(['a', 'c']) as unknown as string[]
+        expect(toggleKey(keys, REGULAR('b'))).toEqual(['a', 'c', 'b'])
+        expect(toggleKey(keys, REGULAR('c'))).toEqual(['a'])
+        expect(keys).toEqual(['a', 'c'])
+    })
+})
+
+describe('inSelectionCell', () => {
+    it('is true inside naive-ui selection cell', () => {
+        expect(inSelectionCell(checkboxCell())).toBe(true)
+    })
+
+    it('is false outside it, for null and for a target without closest', () => {
+        expect(inSelectionCell(plainCell())).toBe(false)
+        expect(inSelectionCell(null)).toBe(false)
+        expect(inSelectionCell({})).toBe(false)
+    })
+
+    it('asks closest for exactly the selection cell class', () => {
+        const closest = vi.fn(() => null)
+        inSelectionCell({ closest })
+        expect(closest).toHaveBeenCalledTimes(1)
+        expect(closest).toHaveBeenCalledWith('.n-data-table-td--selection')
+    })
+})
+
+describe('rowClickAction', () => {
+    it('outside the mode the click selects as today, for any row and target, without reading the keys', () => {
+        const keys = new Proxy([] as string[], { get: () => { throw new Error('keys read') } })
+        expect(rowClickAction(false, REGULAR('a'), plainCell(), keys)).toEqual({ action: 'select' })
+        expect(rowClickAction(false, BASE('m'), plainCell(), keys)).toEqual({ action: 'select' })
+        expect(rowClickAction(false, REGULAR('a'), checkboxCell(), keys)).toEqual({ action: 'select' })
+    })
+
+    it('in the mode the checkbox click is ignored and does not navigate (no double toggle)', () => {
+        expect(rowClickAction(true, REGULAR('a'), checkboxCell(), [])).toEqual({ action: 'ignore' })
+        expect(rowClickAction(true, REGULAR('a'), checkboxCell(), ['a'])).toEqual({ action: 'ignore' })
+    })
+
+    it('in the mode a row click toggles and does not navigate', () => {
+        expect(rowClickAction(true, REGULAR('b'), plainCell(), ['a'])).toEqual({ action: 'toggle', keys: ['a', 'b'] })
+        expect(rowClickAction(true, REGULAR('a'), plainCell(), ['a', 'b'])).toEqual({ action: 'toggle', keys: ['b'] })
+    })
+
+    it('in the mode the base row is not toggled by a click', () => {
+        expect(rowClickAction(true, BASE('m'), plainCell(), ['a'])).toEqual({ action: 'ignore' })
+        expect(rowClickAction(true, BASE('m'), null, ['a'])).toEqual({ action: 'ignore' })
+    })
+
+    it('in the mode a TAG row toggles like a REGULAR row', () => {
+        expect(rowClickAction(true, { uuid: 't', type: 'TAG' }, plainCell(), [])).toEqual({ action: 'toggle', keys: ['t'] })
+        expect(rowClickAction(true, { uuid: 't', type: 'TAG' }, plainCell(), ['t'])).toEqual({ action: 'toggle', keys: [] })
     })
 })

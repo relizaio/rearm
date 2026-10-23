@@ -1372,7 +1372,7 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import DocumentComponentPanel from './DocumentComponentPanel.vue'
 import { isDocumentComponent } from '@/utils/agentDocumentsView'
-import { BranchArchiveResult, chunk, confirmText, keepFailedSelected, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter } from '@/utils/branchBulkArchive'
+import { BranchArchiveResult, chunk, confirmText, keepFailedSelected, rowClickAction, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter } from '@/utils/branchBulkArchive'
 import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
@@ -3457,6 +3457,7 @@ const rowProps = (row: any) => {
     return {
         style: 'cursor: pointer;',
         onDblclick: () => {
+            if (bulkArchiveMode.value) return   // TPF-78 T-1: no navigation in the selection mode
             // Clear the single-click timer and prevent single-click action
             if (clickTimer) {
                 clearTimeout(clickTimer)
@@ -3476,7 +3477,17 @@ const rowProps = (row: any) => {
                 }
             })
         },
-        onClick: () => {
+        onClick: (e: MouseEvent) => {
+            // TPF-78 T-1: in the selection mode a row click toggles the row and never navigates; a
+            // click in the selection cell is naive-ui's own checkbox, which already updated the keys
+            // through v-model:checked-row-keys and bubbles here (architecture 3.7).
+            const keysRef = row.type === 'TAG' ? checkedTagKeys : checkedBranchKeys
+            const r = rowClickAction(bulkArchiveMode.value, row, e.target, keysRef.value)
+            if (r.action !== 'select') {
+                if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
+                if (r.action === 'toggle') keysRef.value = r.keys
+                return
+            }
             // Delay single-click action to detect if it's part of a double-click
             if (clickTimer) {
                 clearTimeout(clickTimer)

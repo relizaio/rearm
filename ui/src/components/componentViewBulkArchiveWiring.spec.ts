@@ -64,6 +64,7 @@ describe('ComponentView: the bulk archive selection mode (template)', () => {
             expect(directive(table, 'model', 'checked-row-keys')).toBe(keys)
             expect(directive(table, 'bind', 'row-key')).toBe('branchTableRowKey')
             expect(directive(table, 'bind', 'columns')).toBe(columns)
+            expect(directive(table, 'bind', 'row-props')).toBe('rowProps')
         })
 
         it(`puts one bar before the ${name} table, only in the mode, with a guarded run button`, () => {
@@ -192,5 +193,70 @@ describe('ComponentView: the bulk archive selection mode (script)', () => {
     await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
 }
 `)
+    })
+})
+
+// TPF-78 ARCHITECTURE round 3 3.7 (tester run 1 T-1): in the selection mode a row click toggles the
+// row and never navigates; outside the mode the click and double click behave as before.
+describe('ComponentView: rowProps in the selection mode', () => {
+    const rp = body('const rowProps = (row: any) => {')
+    const onClickOpening = 'onClick: (e: MouseEvent) => {'
+    const dblAt = rp.indexOf('onDblclick: () => {')
+    const clickAt = rp.indexOf(onClickOpening)
+    const dbl = rp.slice(dblAt, clickAt)
+    const click = rp.slice(clickAt)
+    const count = (text: string, needle: string): number => text.split(needle).length - 1
+
+    it('is one top-level arrow and imports rowClickAction from the util', () => {
+        expect(rp).not.toBe('')
+        expect(dblAt).toBeGreaterThan(0)
+        expect(clickAt).toBeGreaterThan(dblAt)
+        const imports = code.split('\n').filter((l) => l.includes("from '@/utils/branchBulkArchive'"))
+        expect(imports).toHaveLength(1)
+        expect(imports[0]).toMatch(/[{,]\s*rowClickAction\s*[,}]/)
+    })
+
+    it('returns from the double click in the mode before it navigates', () => {
+        const guardAt = dbl.indexOf('if (bulkArchiveMode.value) return')
+        expect(guardAt).toBeGreaterThan(0)
+        expect(dbl.indexOf('router.push(')).toBeGreaterThan(guardAt)
+    })
+
+    it('decides the click with rowClickAction and only selects the branch on select', () => {
+        const steps = [
+            "const keysRef = row.type === 'TAG' ? checkedTagKeys : checkedBranchKeys",
+            'rowClickAction(bulkArchiveMode.value, row, e.target, keysRef.value)',
+            "if (r.action !== 'select') {",
+            'clearTimeout(clickTimer)',
+            "if (r.action === 'toggle') keysRef.value = r.keys",
+            'return',
+            'clickTimer = setTimeout(',
+            'selectBranch(row.uuid)',
+        ]
+        let from = 0
+        for (const step of steps) {
+            const at = click.indexOf(step, from)
+            expect(at, step).toBeGreaterThanOrEqual(from)
+            from = at + step.length
+        }
+    })
+
+    it('navigates only from the timer outside the mode and from the guarded double click', () => {
+        expect(count(rp, 'selectBranch(')).toBe(1)
+        expect(rp.indexOf('selectBranch(')).toBeGreaterThan(rp.indexOf('clickTimer = setTimeout('))
+        expect(count(rp, 'router.push(')).toBe(1)
+        expect(rp.indexOf('router.push(')).toBeLessThan(clickAt)
+        const branchAt = click.indexOf("if (r.action !== 'select') {")
+        const nonSelect = click.slice(branchAt, click.indexOf('return', branchAt))
+        expect(nonSelect).not.toContain('selectBranch(')
+        expect(nonSelect).not.toContain('router.push(')
+    })
+
+    it('leaves the row class and the row key untouched', () => {
+        expect(bodyOf(source, 'const branchRowClassName')).toBe(`const branchRowClassName = (row: any) => {
+    return selectedBranchUuid.value === row.uuid ? 'selectedRow' : ''
+}
+`)
+        expect(source.split('\n').filter((l) => l.startsWith('const branchTableRowKey'))).toEqual(['const branchTableRowKey = (row: any) => row.uuid'])
     })
 })

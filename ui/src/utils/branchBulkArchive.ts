@@ -93,3 +93,33 @@ export function chunk (uuids: string[], size = BULK_ARCHIVE_CHUNK): string[][] {
 export function unsentAfter (batches: string[][], sent: number): string[] {
     return batches.slice(sent).flat()
 }
+
+/** What a row click does: the page's own select, nothing, or the next selection (TPF-78 T-1). */
+export type RowClickAction = { action: 'select' } | { action: 'ignore' } | { action: 'toggle', keys: string[] }
+
+/** naive-ui's selection cell, the td that holds a row's checkbox. */
+const SELECTION_CELL = '.n-data-table-td--selection'
+
+/** The keys with the row ticked or unticked; the same array for a row that cannot be selected. Never mutates keys. */
+export function toggleKey (keys: string[], row: { uuid: string, type?: string }): string[] {
+    if (!selectableBranch(row)) return keys
+    return keys.includes(row.uuid) ? keys.filter((k) => k !== row.uuid) : [...keys, row.uuid]
+}
+
+/** Whether a click target sits in naive-ui's selection cell (the checkbox already handled that click). */
+export function inSelectionCell (target: any): boolean {
+    return !!target && typeof target.closest === 'function' && target.closest(SELECTION_CELL) != null
+}
+
+/**
+ * The whole decision of a row click, checked in this order: outside the selection mode the page
+ * selects the branch as before; in the mode a click in the selection cell is the checkbox's own
+ * (ignored, else the tick would be undone), the base row is never toggled, and any other click
+ * toggles the row and never navigates (ARCHITECTURE round 3 3.7).
+ */
+export function rowClickAction (mode: boolean, row: { uuid: string, type?: string }, target: any, keys: string[]): RowClickAction {
+    if (!mode) return { action: 'select' }
+    if (inSelectionCell(target)) return { action: 'ignore' }
+    if (!selectableBranch(row)) return { action: 'ignore' }
+    return { action: 'toggle', keys: toggleKey(keys, row) }
+}
