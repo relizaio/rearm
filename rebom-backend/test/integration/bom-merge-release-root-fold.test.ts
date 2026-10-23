@@ -1062,6 +1062,16 @@ describe('the merged release export folds the uploaded root that describes the r
                 for (const n of forged) expect(bases).toContain(rearmInput(n.purl));
             }
 
+            /** The `forged` nodes counted per `rearm_input` base. */
+            function forgedPerBase(bom: any): Record<string, number> {
+                const counts: Record<string, number> = {};
+                for (const n of forgedNodes(bom)) {
+                    const base = rearmInput(n.purl) as string;
+                    counts[base] = (counts[base] || 0) + 1;
+                }
+                return counts;
+            }
+
             it('(xxvi) gives no exemption from a component release identifier: the nested product nodes stay clean, in both orders', async () => {
                 const { inner, web, sceOwnRoot } = await innerWithSce();
                 const innerSerial = inner.bom.serialNumber;
@@ -1079,6 +1089,7 @@ describe('the merged release export folds the uploaded root that describes the r
                     outs.push(bom);
                     expectInnerApartClean(bom, inner, sceOwnRoot, innerSerial);
                     expectForgedUnder(bom, [forger.bom.serialNumber, innerB.bom.serialNumber], 4);
+                    expect(forgedPerBase(bom)).toStrictEqual({ [forger.bom.serialNumber]: 2, [innerB.bom.serialNumber]: 2 });
                     expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '7' }]);
                     expectUniqueBomRefs(bom);
                     await expect(validateBom(bom)).resolves.toBeTruthy();
@@ -1114,6 +1125,7 @@ describe('the merged release export folds the uploaded root that describes the r
                     outs.push(bom);
                     expectInnerApartClean(bom, inner, sceOwnRoot, innerSerial);
                     expectForgedUnder(bom, [forgerP.bom.serialNumber, innerBSerial], 4);
+                    expect(forgedPerBase(bom)).toStrictEqual({ [forgerP.bom.serialNumber]: 2, [innerBSerial]: 2 });
                     expect(allComponents(bom).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
                     expect(allComponents(bom).filter(c => c['bom-ref'] === Q(innerBSerial, forgerSceRoot['bom-ref']))).toHaveLength(1);
                     expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '8' }]);
@@ -1133,6 +1145,7 @@ describe('the merged release export folds the uploaded root that describes the r
                 const forgerP2 = await productMerge([forgerSce, web], { name: 'forger', version: '1.0.0', purl: FORGER_ID }, { attachedRootIds: [forgerSce] });
                 expect(forgerP2.bom.metadata.component.purl).toBe(FORGER_ID);
                 expect((await rowMetaOf(forgerP2.id)).serialNumber).not.toBe((await rowMetaOf(forgerP.id)).serialNumber);
+                const forgerP2Root = structuredClone(forgerP2.bom.metadata.component);
 
                 /** inner's root kept under its key, clean, and nothing under its written-apart strings. */
                 const expectInnerClean = (bom: any) => {
@@ -1152,10 +1165,11 @@ describe('the merged release export folds the uploaded root that describes the r
                     const { bom } = await productMerge(ids, SUITE);
                     outs.push(bom);
                     expectInnerClean(bom);
-                    expect(node(bom, FORGER_ID)).toBeDefined();
+                    expect(node(bom, FORGER_ID)).toStrictEqual(forgerP2Root);
                     expect(allComponents(bom).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
                     expect(allComponents(bom).filter(c => c['bom-ref'] === Q(innerBSerial, forgerSceRoot['bom-ref']))).toHaveLength(1);
                     expectForgedUnder(bom, [innerBSerial, forgerP2.bom.serialNumber], 4);
+                    expect(forgedPerBase(bom)).toStrictEqual({ [innerBSerial]: 2, [forgerP2.bom.serialNumber]: 2 });
                     expect(rekeyedCount(bom)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '6' }]);
                     expectUniqueBomRefs(bom);
                     await expect(validateBom(bom)).resolves.toBeTruthy();
@@ -1167,6 +1181,7 @@ describe('the merged release export folds the uploaded root that describes the r
                 expectInnerClean(absent);
                 expect(allComponents(absent).filter(c => c['bom-ref'] === forgerSceRoot['bom-ref'])).toHaveLength(1);
                 expectForgedUnder(absent, [innerBSerial], 2);
+                expect(forgedPerBase(absent)).toStrictEqual({ [innerBSerial]: 2 });
                 expect(rekeyedCount(absent)).toStrictEqual([{ name: NODES_REKEYED_PROPERTY, value: '3' }]);
             });
         });

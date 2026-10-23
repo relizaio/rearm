@@ -704,6 +704,29 @@ function expectCarrierRekeyed(j: any) {
     expect(j.components.map((c: any) => c.purl)).toStrictEqual([P(X_P, SERIAL_L), P(A_P, SERIAL_L), P(X_P, SERIAL_L)]);
 }
 
+type RekeyedLine = { input: string, from: string, reason: string };
+
+/** Orders re-keyed lines by input, then by the bom-ref they were re-keyed from. */
+function sortedLines(lines: RekeyedLine[]): RekeyedLine[] {
+    return [...lines].sort((a, b) => `${a.input} ${a.from}`.localeCompare(`${b.input} ${b.from}`));
+}
+
+/** Runs `fn` with `logger.info` spied; returns its result and each re-keyed line as `{ input, from, reason }`, sorted. */
+function withRekeyedLines<T>(fn: () => T): { result: T, lines: RekeyedLine[] } {
+    const info = vi.spyOn(logger, 'info');
+    try {
+        const result = fn();
+        const lines = info.mock.calls.filter(c => c[1] === REKEYED_LINE)
+            .map(c => ({ input: (c[0] as any).input, from: (c[0] as any).from.bomRef, reason: (c[0] as any).reason }));
+        return { result, lines: sortedLines(lines) };
+    } finally {
+        info.mockRestore();
+    }
+}
+
+/** The re-keyed lines expected for `carrier()`'s three copies, each with the reason `nested product key`. */
+const CARRIER_LINES: RekeyedLine[] = [X_P, A_P, Q(SERIAL_B, X_P)].map(from => ({ input: SERIAL_L, from, reason: 'nested product key' }));
+
 describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
     const lister = () => componentRow(SERIAL_A, [lib(LIB_A), listing(X_P)]);
 
@@ -825,11 +848,12 @@ describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
         it('third sub-case: a record naming nothing of the nested product row earns nothing (the forged identifier shape)', () => {
             for (const record of [[], [SERIAL_F]]) {
                 const p = productRow(SERIAL_B);
-                const result = run4(['p', 'j', 'c'], [p, carrier(), lister()], [pMeta(), jMeta(record), componentMeta()]);
+                const { result, lines } = withRekeyedLines(() => run4(['p', 'j', 'c'], [p, carrier(), lister()], [pMeta(), jMeta(record), componentMeta()]));
                 expectCarrierRekeyed(result.inputs[1]);
                 expect(result.inputs[0]).toBe(p);
                 expect(result.inputs[2].components[1]['bom-ref']).toBe(Q(SERIAL_A, X_P));
                 expect(result.count).toBe(4);
+                expect(lines).toStrictEqual(sortedLines([...CARRIER_LINES, { input: SERIAL_A, from: X_P, reason: 'nested product key' }]));
             }
         });
 
@@ -841,9 +865,12 @@ describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
         });
 
         it('fifth sub-case: another product row under the nested product key denies the exemption, in both orders', () => {
+            const fifthLines = sortedLines([...CARRIER_LINES,
+                { input: SERIAL_B, from: X_P, reason: 'nested product key' }, { input: SERIAL_F, from: X_P, reason: 'nested product key' }]);
             for (const record of [[SERIAL_B], [SERIAL_F]]) {
                 const pp = productRow(SERIAL_F, X_P, [lib(LIB_A)]);
-                const result = run4(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp], [pMeta(), jMeta(record), productMetaOf(SERIAL_F)]);
+                const { result, lines } = withRekeyedLines(() => run4(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp], [pMeta(), jMeta(record), productMetaOf(SERIAL_F)]));
+                expect(lines).toStrictEqual(fifthLines);
                 expectCarrierRekeyed(result.inputs[1]);
                 expect(result.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
                 expect(result.inputs[0].metadata.component.purl).toBe(P(X_P, SERIAL_B));
@@ -853,9 +880,13 @@ describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
                 expect(result.inputs[2].components[0]['bom-ref']).toBe(LIB_A);
                 expect(result.count).toBe(5);
             }
-            const swapped = run4(['pp', 'j', 'p'], [productRow(SERIAL_F, X_P, [lib(LIB_A)]), carrier(), productRow(SERIAL_B)], [productMetaOf(SERIAL_F), jMeta([SERIAL_B]), pMeta()]);
+            const { result: swapped, lines: swappedLines } = withRekeyedLines(() =>
+                run4(['pp', 'j', 'p'], [productRow(SERIAL_F, X_P, [lib(LIB_A)]), carrier(), productRow(SERIAL_B)], [productMetaOf(SERIAL_F), jMeta([SERIAL_B]), pMeta()]));
             expectCarrierRekeyed(swapped.inputs[1]);
+            expect(swapped.inputs[0].metadata.component['bom-ref']).toBe(Q(SERIAL_F, X_P));
+            expect(swapped.inputs[2].metadata.component['bom-ref']).toBe(Q(SERIAL_B, X_P));
             expect(swapped.count).toBe(5);
+            expect(swappedLines).toStrictEqual(fifthLines);
         });
 
         it('sixth sub-case: a placeholder under the nested product key denies the exemption', () => {
@@ -1020,7 +1051,11 @@ describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
             expect(denied(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), pp()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_F] }), productMetaOf(SERIAL_F)]))
                 .toStrictEqual([{ input: SERIAL_L, product: SERIAL_F, recordedSerial: SERIAL_F, key: X_P }]);
             expect(denied(['p', 'j'], [productRow(SERIAL_B), carrier(), placeholderDoc(X_P)], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_B] })])).toHaveLength(1);
+            // the seventh sub-case, all three readings: never denied, since no record names a recorded serial of this merge
+            const sibling = productRow(SERIAL_G, 'pkg:generic/Facts%20Org/other@1.0.0', [lib(LIB_A)]);
+            expect(denied(['p', 'j', 'pp'], [productRow(SERIAL_B), carrier(), sibling], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_F] }), productMetaOf(SERIAL_G)])).toStrictEqual([]);
             expect(denied(['p', 'j'], [productRow(SERIAL_B), carrier()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [SERIAL_F] })])).toStrictEqual([]);
+            expect(denied(['p', 'j'], [productRow(SERIAL_B), carrier()], [pMeta, productMetaOf(SERIAL_L, { nestedProductSerials: [X_P] })])).toStrictEqual([]);
         } finally {
             info.mockRestore();
             debug.mockRestore();
@@ -1029,7 +1064,8 @@ describe('rekeyUnlistedInputs: the nested product keys (M, SCORE-69)', () => {
 
     it('(o) reserves the images of the nested product root and listed roots under its own base alone', () => {
         const image = componentRow(SERIAL_A, [lib(LIB_A), lib(P(X_P, SERIAL_B), { 'bom-ref': Q(SERIAL_B, X_P) })]);
-        const imageResult = run4(['p', 'c'], [productRow(SERIAL_B), image], [productMeta(), componentMeta()]);
+        const { result: imageResult, lines: imageLines } = withRekeyedLines(() => run4(['p', 'c'], [productRow(SERIAL_B), image], [productMeta(), componentMeta()]));
+        expect(imageLines).toStrictEqual([{ input: SERIAL_A, from: Q(SERIAL_B, X_P), reason: 'nested product key' }]);
         expect(imageResult.count).toBe(1);
         expect(imageResult.inputs[1].components[1]['bom-ref']).toBe(Q(SERIAL_A, Q(SERIAL_B, X_P)));
         expect(imageResult.inputs[1].components[1].purl).toBe(P(X_P, SERIAL_A));
