@@ -1,5 +1,5 @@
 import { logger } from '../../logger';
-import { RebomOptions, HIERARCHICHAL, BomStructure, normalizeBomStructure, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
+import { RebomOptions, RootComponentMergeMode, HIERARCHICHAL, BomStructure, normalizeBomStructure, EnrichmentStatus, BomRecord, MissingSbomComponent, BomHash, ReleaseNodeFacts, ArtifactBelongsTo, normalizeArtifactBelongsTo } from '../../types';
 import { BomValidationError, BomStorageError, OciStorageError, BomConversionError } from '../../types/errors';
 import { PackageURL } from 'packageurl-js';
 import { createTempFile, deleteTempFile, shellExec, runQuery } from '../../utils';
@@ -1178,6 +1178,235 @@ export function listedReleaseInputs(ids: string[], inputs: any[], releaseRootIds
     if (listed.has(ids[i])) out.push(inputs[i])
   }
   return out
+}
+
+/**
+ * Metadata property a merged BOM carries when nodes of unlisted inputs were re-keyed before the
+ * merge (SCORE-66 ADR-6): how many nodes, components and services, each counted once. Written only
+ * above 0; internal, stripped on egress like BOM_REFS_DEDUPLICATED_PROPERTY.
+ */
+export const NODES_REKEYED_PROPERTY = 'reliza:export:nodesRekeyed'
+
+export type RekeyResult = {
+  inputs: any[],
+  count: number
+}
+
+const REARM_INPUT_QUALIFIER = 'rearm_input'
+const NODE_REKEYED_LINE = 'node re-keyed: an unlisted input carries a reserved key'
+
+type RekeyReason = 'release key' | 'root collision'
+
+/**
+ * SCORE-66 ADR-4: `purl` with the qualifier `rearm_input=<encodeURIComponent(base)>`. Textual, no
+ * parse: the subpath (from the first `#`) is kept as it is, the qualifier goes at the end of the
+ * head (`&` after an existing `?`, else `?`), and a `rearm_input` qualifier already in the head is
+ * replaced, never doubled. Every other byte of the purl is left as it was.
+ */
+function withRearmInputQualifier(purl: string, base: string): string {
+  const qualifier = `${REARM_INPUT_QUALIFIER}=${encodeURIComponent(base)}`
+  const hashAt = purl.indexOf('#')
+  const head = hashAt < 0 ? purl : purl.slice(0, hashAt)
+  const subpath = hashAt < 0 ? '' : purl.slice(hashAt)
+  const queryAt = head.indexOf('?')
+  if (queryAt < 0) return `${head}?${qualifier}${subpath}`
+  if (queryAt === head.length - 1) return `${head}${qualifier}${subpath}`
+  const pairs = head.slice(queryAt + 1).split('&')
+  const isRearmInput = (pair: string) => pair.split('=')[0].toLowerCase() === REARM_INPUT_QUALIFIER
+  if (!pairs.some(isRearmInput)) return `${head}&${qualifier}${subpath}`
+  const kept: string[] = []
+  let placed = false
+  for (const pair of pairs) {
+    if (!isRearmInput(pair)) kept.push(pair)
+    else if (!placed) {
+      kept.push(qualifier)
+      placed = true
+    }
+  }
+  return `${head.slice(0, queryAt)}?${kept.join('&')}${subpath}`
+}
+
+/** `list` with every renamed ref read as its new name; the same list when it names none. */
+function renameList(list: any, renamed: Map<string, string>): any {
+  if (!Array.isArray(list) || !list.some((r: any) => typeof r === 'string' && renamed.has(r))) return list
+  return list.map((r: any) => (typeof r === 'string' && renamed.has(r) ? renamed.get(r) : r))
+}
+
+/**
+ * SCORE-66 ADR-4: every reference inside one input to a re-keyed bom-ref, re-pointed to its new
+ * name: `dependencies[].ref`, `dependsOn[]` and `provides[]`, `compositions[].assemblies` and
+ * `.dependencies`, `vulnerabilities[].affects[].ref`, `annotations[].subjects`. Shallow copies on the
+ * changed path only.
+ */
+function renameReferences(bom: any, renamed: Map<string, string>): any {
+  const out: any = { ...bom }
+  if (Array.isArray(bom.dependencies)) {
+    out.dependencies = mapIfChanged(bom.dependencies, (dep: any) => {
+      if (!dep || typeof dep !== 'object') return dep
+      let next = dep
+      if (typeof dep.ref === 'string' && renamed.has(dep.ref)) next = { ...dep, ref: renamed.get(dep.ref) }
+      for (const key of ['dependsOn', 'provides']) {
+        const list = renameList(dep[key], renamed)
+        if (list === dep[key]) continue
+        next = next === dep ? { ...dep } : next
+        next[key] = list
+      }
+      return next
+    })
+  }
+  if (Array.isArray(bom.compositions)) {
+    out.compositions = mapIfChanged(bom.compositions, (c: any) => {
+      if (!c || typeof c !== 'object') return c
+      const assemblies = renameList(c.assemblies, renamed)
+      const dependencies = renameList(c.dependencies, renamed)
+      if (assemblies === c.assemblies && dependencies === c.dependencies) return c
+      return { ...c, ...(assemblies !== c.assemblies ? { assemblies } : {}), ...(dependencies !== c.dependencies ? { dependencies } : {}) }
+    })
+  }
+  if (Array.isArray(bom.vulnerabilities)) {
+    out.vulnerabilities = mapIfChanged(bom.vulnerabilities, (v: any) => {
+      if (!Array.isArray(v?.affects)) return v
+      const affects = mapIfChanged(v.affects, (a: any) => (typeof a?.ref === 'string' && renamed.has(a.ref) ? { ...a, ref: renamed.get(a.ref) } : a))
+      return affects === v.affects ? v : { ...v, affects }
+    })
+  }
+  if (Array.isArray(bom.annotations)) {
+    out.annotations = mapIfChanged(bom.annotations, (a: any) => {
+      if (!a || typeof a !== 'object') return a
+      const subjects = renameList(a.subjects, renamed)
+      return subjects === a.subjects ? a : { ...a, subjects }
+    })
+  }
+  return out
+}
+
+/**
+ * SCORE-66 ADR-1 to ADR-5: in a product merge (`rootComponentMergeMode` PRESERVE_UNDER_NEW_ROOT, or
+ * absent, as the CLI reads it), writes apart, before the CLI merge, every node of an input
+ * rearm-saas did not list whose key would make it fold into a release's node:
+ * - the release keys `K`: the merged root's key (`establishPurl(undefined, options)`, the `--purl`
+ *   mergeBomObjects sends) and the root purl and bom-ref of every listed input (`ids[i]` in
+ *   `releaseRootIds`); they apply to every component node at any depth and every service at any depth;
+ * - the root collision `C_i`: the root purl and bom-ref of every other unlisted input, the
+ *   placeholders included; it applies to the input's root only.
+ * A reserved bom-ref becomes `<base>#<ref>` and every reference to it inside that input is re-pointed;
+ * a reserved purl gains the qualifier `rearm_input=<base>` (withRearmInputQualifier); a field not
+ * reserved is kept. `base` is the input's serialNumber, else its root bom-ref, else `input-<i>`.
+ * A listed input is never touched, nor is any input of a FLATTEN_UNDER_NEW_ROOT merge. One info line
+ * per re-keyed node and one with the count. Returns the same array (and count 0) when nothing is
+ * re-keyed; otherwise a new array of the same length and order whose changed entries are shallow
+ * copies, the inputs untouched.
+ */
+export function rekeyUnlistedInputs(ids: string[], inputs: any[],
+  options: Pick<RebomOptions, 'name' | 'version' | 'group' | 'purl' | 'belongsTo' | 'hash' | 'tldOnly' | 'structure' | 'rootComponentMergeMode' | 'releaseRootIds'>): RekeyResult {
+  const none = { inputs, count: 0 }
+  if (!Array.isArray(inputs) || inputs.length === 0) return none
+  // ADR-2: compared as sent; anything but FLATTEN is a product merge, an absent mode included.
+  if (options?.rootComponentMergeMode === RootComponentMergeMode.FLATTEN_UNDER_NEW_ROOT) return none
+
+  const listedIds = new Set(Array.isArray(options.releaseRootIds) ? options.releaseRootIds : [])
+  const idList = Array.isArray(ids) ? ids : []
+  const isListed = (i: number) => i < idList.length && listedIds.has(idList[i])
+  const keysOf = (root: any): string[] => {
+    const keys = new Set<string>()
+    if (root && typeof root === 'object') {
+      if (typeof root.purl === 'string' && root.purl !== '') keys.add(root.purl)
+      const ref = bomRefOf(root)
+      if (ref) keys.add(ref)
+    }
+    return Array.from(keys)
+  }
+
+  const releaseKeys = new Set<string>()
+  const mergedRootKey = establishPurl(undefined, options as RebomOptions)
+  if (mergedRootKey) releaseKeys.add(mergedRootKey)
+  inputs.forEach((input: any, i: number) => {
+    if (isListed(i)) keysOf(input?.metadata?.component).forEach(k => releaseKeys.add(k))
+  })
+  // How many unlisted roots carry each key: a key is in C_i when another unlisted root carries it.
+  const rootKeyCount = new Map<string, number>()
+  const rootKeys: string[][] = inputs.map((input: any, i: number) => (isListed(i) ? [] : keysOf(input?.metadata?.component)))
+  rootKeys.forEach(keys => keys.forEach(k => rootKeyCount.set(k, (rootKeyCount.get(k) || 0) + 1)))
+
+  let count = 0
+  const out = inputs.map((input: any, i: number) => {
+    if (isListed(i) || !input || typeof input !== 'object') return input
+    const own = new Set(rootKeys[i])
+    const collides = (key: string) => (rootKeyCount.get(key) || 0) - (own.has(key) ? 1 : 0) > 0
+    const reasonOf = (value: string | undefined, isRoot: boolean): RekeyReason | undefined => {
+      if (value === undefined || value === '') return undefined
+      if (releaseKeys.has(value)) return 'release key'
+      if (isRoot && collides(value)) return 'root collision'
+      return undefined
+    }
+    const serial = typeof input.serialNumber === 'string' && input.serialNumber !== '' ? input.serialNumber : undefined
+    const base = serial ?? bomRefOf(input.metadata?.component) ?? `input-${i}`
+    const renamed = new Map<string, string>()
+
+    const rekeyNode = (node: any, kind: 'component' | 'service', isRoot: boolean): any => {
+      if (!node || typeof node !== 'object' || Array.isArray(node)) return node
+      const ref = bomRefOf(node)
+      const purl = kind === 'component' && typeof node.purl === 'string' && node.purl !== '' ? node.purl : undefined
+      const refReason = reasonOf(ref, isRoot)
+      const purlReason = reasonOf(purl, isRoot)
+      let next = node
+      if (refReason || purlReason) {
+        next = { ...node }
+        if (refReason) {
+          const q = `${base}#${ref}`
+          next['bom-ref'] = q
+          renamed.set(ref as string, q)
+        }
+        if (purlReason) next.purl = withRearmInputQualifier(purl as string, base)
+        count++
+        logger.info({
+          input: base,
+          kind,
+          reason: refReason === 'release key' || purlReason === 'release key' ? 'release key' : 'root collision',
+          from: { bomRef: ref, purl },
+          to: { bomRef: next['bom-ref'], purl: kind === 'component' ? next.purl : undefined }
+        }, NODE_REKEYED_LINE)
+      }
+      const childKey = kind === 'component' ? 'components' : 'services'
+      const children = mapIfChanged(node[childKey], (child: any) => rekeyNode(child, kind, false))
+      if (children !== node[childKey]) {
+        next = next === node ? { ...node } : next
+        next[childKey] = children
+      }
+      return next
+    }
+
+    const root = input.metadata?.component
+    const rootOut = rekeyNode(root, 'component', true)
+    const components = mapIfChanged(input.components, (c: any) => rekeyNode(c, 'component', false))
+    const services = mapIfChanged(input.services, (s: any) => rekeyNode(s, 'service', false))
+    if (rootOut === root && components === input.components && services === input.services) return input
+
+    const next: any = renamed.size ? renameReferences(input, renamed) : { ...input }
+    if (rootOut !== root) next.metadata = { ...input.metadata, component: rootOut }
+    if (components !== input.components) next.components = components
+    if (services !== input.services) next.services = services
+    return next
+  })
+  if (count === 0) return none
+  logger.info(`node re-key: ${count} nodes of unlisted merge inputs re-keyed before the merge`)
+  return { inputs: out, count }
+}
+
+/**
+ * SCORE-66 ADR-6: writes NODES_REKEYED_PROPERTY with `count` on the merged document's
+ * `metadata.properties`, replacing a value already there. With 0 (or no document) the document
+ * itself is returned; otherwise a copy.
+ */
+export function recordRekeyedNodes(bom: any, count: number): any {
+  if (!bom || typeof bom !== 'object' || !(count > 0)) return bom
+  const metadata = { ...(bom.metadata || {}) }
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => p?.name !== NODES_REKEYED_PROPERTY)
+    : []
+  properties.push({ name: NODES_REKEYED_PROPERTY, value: String(count) })
+  metadata.properties = properties
+  return { ...bom, metadata }
 }
 
 /**
