@@ -160,6 +160,18 @@ describe('linkUnfoldedRoots (SCORE-64 T-1)', () => {
         expect(result.bom.dependencies[0].dependsOn).not.toContain(R);
     });
 
+    it('(e) skips an input root whose bom-ref is the merged root even when no existing entry already names it: no new self-referencing entry', () => {
+        const bom = flattenDoc();
+        bom.components.push(node(R));
+        bom.dependencies = bom.dependencies.slice(1);
+
+        const result = linkUnfoldedRoots(bom, [input(R), input(A), input(B)]);
+
+        expect(result.count).toBe(2);
+        expect(result.bom.dependencies[0]).toStrictEqual({ ref: R, dependsOn: [A, B] });
+        expect(result.bom.dependencies[0].dependsOn).not.toContain(R);
+    });
+
     it('(f) links two inputs with one root bom-ref once', () => {
         const result = linkUnfoldedRoots(flattenDoc(), [input(A), input(A), input(B)]);
 
@@ -228,6 +240,17 @@ describe('linkUnfoldedRoots (SCORE-64 T-1)', () => {
 
         expect(result.bom).toBe(bom);
         expect(result.count).toBe(0);
+    });
+
+    it('(k) still links when the merged root has exactly one top-level component', () => {
+        const bom = flattenDoc();
+        bom.components = [node(A)];
+        bom.dependencies = [];
+
+        const result = linkUnfoldedRoots(bom, [input(A)]);
+
+        expect(result.count).toBe(1);
+        expect(result.bom.dependencies).toStrictEqual([{ ref: R, dependsOn: [A] }]);
     });
 
     it('(l) returns the input itself without a merged root, without components, or without inputs', () => {
