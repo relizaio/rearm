@@ -139,6 +139,53 @@ describe('the org lists, the cases the first round leaves open (TPF-101)', () =>
         expect(store.getters.productsOfOrg('O').map((r: any) => r.uuid)).toEqual(['p1'])
     })
 
+    it('the product list sends a selected perspective and not the default one, on the refs and on the full document', async () => {
+        query.mockResolvedValue({ data: { componentRefs: PRODUCTS } })
+        store.state.iam.perspectiveUuid = 'P'
+        await store.dispatch('fetchProducts', 'O')
+        expect(call(0).query).toBe(graphqlQueries.ComponentRefsGql)
+        expect(call(0).variables.perspective).toBe('P')
+        expect(call(0).variables).toEqual({ orgUuid: 'O', componentType: 'PRODUCT', perspective: 'P' })
+        store.state.iam.perspectiveUuid = 'default'
+        await store.dispatch('fetchProducts', 'O')
+        expect('perspective' in call(1).variables).toBe(false)
+        expect(call(1).variables).toEqual({ orgUuid: 'O', componentType: 'PRODUCT' })
+
+        query.mockReset()
+        query.mockResolvedValue({ data: { components: PRODUCTS } })
+        store.state.componentRefsSupported = false
+        store.state.iam.perspectiveUuid = 'P'
+        await store.dispatch('fetchProducts', 'O')
+        expect(call(0).query).not.toBe(graphqlQueries.ComponentRefsGql)
+        expect(call(0).variables).toEqual({ orgUuid: 'O', componentType: 'PRODUCT', perspective: 'P' })
+        store.state.iam.perspectiveUuid = 'default'
+        await store.dispatch('fetchProducts', 'O')
+        expect(call(1).variables).toEqual({ orgUuid: 'O', componentType: 'PRODUCT' })
+    })
+
+    it('a row with a null field lays over a full record: the null overwrites, the fields the row does not carry stay', async () => {
+        store.commit('SET_COMPONENTS_OF_ORG', { orgUuid: 'O', componentType: 'COMPONENT', components: [
+            { uuid: 'c1', name: 'a', type: 'COMPONENT', org: 'O', vcs: 'V', status: 'ACTIVE', effectiveLifecycle: 'X', versionSchema: 'semver' }] })
+        query.mockResolvedValue({ data: { componentRefs: [Object.freeze({ uuid: 'c1', name: 'b', type: 'COMPONENT', status: 'ACTIVE', org: 'O', vcs: null })] } })
+        await store.dispatch('fetchComponents', 'O')
+        const c = store.state.components.find((x: any) => x.uuid === 'c1')
+        expect(c.vcs).toBe(null)
+        expect(c.name).toBe('b')
+        expect(c.effectiveLifecycle).toBe('X')
+        expect(c.versionSchema).toBe('semver')
+        expect(store.state.components.filter((x: any) => x.uuid === 'c1')).toHaveLength(1)
+    })
+
+    it('every field a row carries wins over the cached entry: name, type, org, vcs and a changed status', async () => {
+        store.commit('SET_COMPONENTS_OF_ORG', { orgUuid: 'O', componentType: 'COMPONENT', components: [
+            { uuid: 'c1', name: 'old', type: 'COMPONENT', org: 'O', vcs: 'V1', status: 'ACTIVE', effectiveLifecycle: 'X' }] })
+        query.mockResolvedValue({ data: { componentRefs: [Object.freeze({ uuid: 'c1', name: 'new', type: 'COMPONENT', status: 'ARCHIVED', org: 'O', vcs: 'V2' })] } })
+        await store.dispatch('fetchComponents', 'O')
+        expect(store.state.components.find((x: any) => x.uuid === 'c1')).toEqual({
+            uuid: 'c1', name: 'new', type: 'COMPONENT', status: 'ARCHIVED', org: 'O', vcs: 'V2', effectiveLifecycle: 'X' })
+        expect(store.getters.componentsOfOrg('O').some((r: any) => r.uuid === 'c1')).toBe(false)
+    })
+
     it('the refs document declares the four variables of the backend field with their types', () => {
         const op = operation(graphqlQueries.ComponentRefsGql)
         expect(op.name?.value).toBe('ComponentRefs')
