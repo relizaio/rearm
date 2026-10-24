@@ -1,7 +1,6 @@
 backendReplicaCount: 1
 uiReplicaCount: 1
 ociArtifactReplicaCount: 1
-enableBetaTea: false
 
 use_external_postgres: false
 rearm_postgres_host: ""

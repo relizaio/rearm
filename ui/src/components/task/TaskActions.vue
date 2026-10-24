@@ -111,7 +111,7 @@
         </div>
         <!-- task RD3-4: a person takes a stalled assignment back to the queue for the same role. -->
         <div v-if="!terminal" class="deprow unassignrow">
-            <n-input v-model:value="unassignReason" size="small" placeholder="Why unassign it (required)"
+            <n-input ref="unassignInput" v-model:value="unassignReason" size="small" placeholder="Why unassign it (required)"
                      style="width: 260px" data-testid="unassign-reason"/>
             <disabled-hint :reason="hint('unassign')">
                 <n-button size="small" type="warning" ghost :disabled="!!hint('unassign')" data-testid="unassign"
@@ -302,6 +302,13 @@ const groupChanged = computed(() => groupToSend(groupDraft.value) !== (props.tas
 const tagsDraft = ref<string[]>([])
 const tagsReady = computed(() => tagsToSet(props.task, tagsDraft.value) !== undefined && !tagsProblem(tagsDraft.value))
 const unassignReason = ref('')
+// The drawer's stale line links here (TPF-69): NInput's own focus() focuses its inner <input>, not the wrapper.
+const unassignInput = ref<InstanceType<typeof NInput> | null>(null)
+function focusUnassign () {
+    unassignInput.value?.focus()
+    ;(unassignInput.value?.$el as HTMLElement | undefined)?.scrollIntoView?.({ block: 'nearest' })
+}
+defineExpose({ focusUnassign })
 function unassign () {
     const p = unassignPayload(props.task, unassignReason.value)
     if (p) {
