@@ -195,3 +195,34 @@ describe('ScopedPermissions: externalKey (task TEA-3)', () => {
         expect(dispatch).not.toHaveBeenCalledWith('fetchAgentBoardNamesOfOrg', 'o1')
     })
 })
+
+// TPF-101 test 2.2 (TPF-74 child 2): the lists CliLogin, ApiKeyPermissionsModal and OrgSettings pass
+// through are ref rows now (the six componentRefs scalars, frozen as Apollo hands them out).
+describe('ScopedPermissions: ref rows from the store lists (TPF-101)', () => {
+    const REF_PRODUCT = Object.freeze({ uuid: 'prod1', name: 'Shop', type: 'PRODUCT', status: 'ACTIVE', org: 'o1', vcs: null })
+    const REF_COMPONENT = Object.freeze({ uuid: 'c1', name: 'api', type: 'COMPONENT', status: 'ACTIVE', org: 'o1', vcs: 'v1' })
+    const mountRefs = (scoped: any[]) => mountEditor(scoped, 'READ_ONLY', { products: [REF_PRODUCT], components: [REF_COMPONENT] })
+    const selectByPlaceholder = (w: any, placeholder: string) =>
+        w.findAllComponents(NSelect).find((s: any) => s.props('placeholder') === placeholder)!
+
+    it('offers the product and the component by name and uuid', () => {
+        const w = mountRefs([])
+        expect(selectByPlaceholder(w, 'Add product...').props('options')).toEqual([{ label: 'Shop', value: 'prod1' }])
+        expect(selectByPlaceholder(w, 'Add component...').props('options')).toEqual([{ label: 'api', value: 'c1' }])
+    })
+
+    it('lists a COMPONENT-scope grant on a product among the product grants, not the component grants', () => {
+        const w = mountRefs([grant('COMPONENT', 'prod1')])
+        expect(selectByPlaceholder(w, 'Add product...').props('options')).toEqual([])
+        expect(selectByPlaceholder(w, 'Add component...').props('options')).toEqual([{ label: 'api', value: 'c1' }])
+        const text = w.text()
+        const productHeader = text.indexOf('Per-Product Permissions:')
+        const componentHeader = text.indexOf('Per-Component Permissions:')
+        const shop = text.indexOf('Shop')
+        expect(productHeader).toBeGreaterThan(-1)
+        expect(componentHeader).toBeGreaterThan(productHeader)
+        expect(shop).toBeGreaterThan(productHeader)
+        expect(shop).toBeLessThan(componentHeader)
+        expect(text.indexOf('Shop', componentHeader)).toBe(-1)
+    })
+})
