@@ -5,7 +5,7 @@ import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
-import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
+import { loadWithSchemaDriftFallback, isSchemaDriftError } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
@@ -201,6 +201,33 @@ const AGENT_TASK_SELECTION = `
     completedAt
 `
 
+// TPF-101 (TPF-74 child 2): the organization's component and product lists read the componentRefs
+// projection (six scalars, no component document, no effectiveLifecycle). A backend without the field
+// refuses the document as schema drift (a validation verdict or an HTTP 400, isSchemaDriftError); the
+// call then sends the caller's full components document, and only when THAT was served is the session
+// latched onto it, so the refused document is not sent again until a reload (the loadRichestServed
+// rule: nothing served, nothing remembered). Any other error of the refs document (401, 403, 5xx,
+// transport) is rethrown unchanged; an error of the full document is rethrown unchanged.
+async function loadComponentRows (context: any, fullQuery: any, variables: any,
+    fetchPolicy: 'network-only' | 'cache-first'): Promise<any[]> {
+    let refsError: any = null
+    if (context.state.componentRefsSupported) {
+        try {
+            const response = await graphqlClient.query({ query: graphqlQueries.ComponentRefsGql, variables, fetchPolicy })
+            return response.data.componentRefs || []
+        } catch (err: any) {
+            if (!isSchemaDriftError(err)) throw err
+            refsError = err
+        }
+    }
+    const response = await graphqlClient.query({ query: fullQuery, variables, fetchPolicy })
+    if (refsError) {
+        console.error('componentRefs not available on this backend; the lists read components instead', refsError)
+        context.commit('SET_COMPONENT_REFS_SUPPORTED', false)
+    }
+    return response.data.components || []
+}
+
 const storeObject : any = {
     state () {
         return {
@@ -228,6 +255,15 @@ const storeObject : any = {
              * clears it. A failed request does not set it.
              */
             declaredLicenseSupported: true,
+            /**
+             * False once the organization lists' componentRefs document (TPF-101) was refused as
+             * schema drift AND the full components document was then served: a backend without the
+             * field (a CE mirror before its sync). The lists then read the full document. Latched for
+             * the session, like the flags above; a reload clears it. A refusal of another kind does
+             * not set it, and neither does a drift refusal whose fallback failed too (a blanket 400
+             * from an edge proxy must not hide the refs document after it clears).
+             */
+            componentRefsSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -433,9 +469,20 @@ const storeObject : any = {
             })
         },
         SET_COMPONENTS_OF_ORG (state: any, payload: { orgUuid: string, componentType: string, components: any[] }) {
-            // Remove all components of this org and type, then add the fresh list
-            state.components = state.components.filter((c: any) => !(c.org === payload.orgUuid && c.type === payload.componentType))
-            payload.components.forEach((c: any) => state.components.push(c))
+            // TPF-101: the one cache holds refs as its floor and fuller records above them. The org's
+            // entries of this type are dropped (an archived component leaves the list), then each
+            // fresh row is laid over the entry of the same uuid, if any: every field the row carries
+            // takes the row's value, every other field the entry had is kept. Apollo rows are frozen,
+            // so the merged entry is a new object.
+            const fresh = new Set(payload.components.map((c: any) => c.uuid))
+            const existingByUuid = new Map(state.components.map((c: any) => [c.uuid, c]))
+            const kept = state.components.filter((c: any) =>
+                !(c.org === payload.orgUuid && c.type === payload.componentType) && !fresh.has(c.uuid))
+            payload.components.forEach((row: any) => {
+                const existing = existingByUuid.get(row.uuid)
+                kept.push(existing ? { ...existing, ...row } : row)
+            })
+            state.components = kept
         },
         ADD_UPDATE_COMPONENT (state: any, component: any) {
             const compIndex = state.components.findIndex((c: any) => (c.uuid === component.uuid))
@@ -464,6 +511,9 @@ const storeObject : any = {
         },
         SET_DECLARED_LICENSE_SUPPORTED (state : any, supported : boolean) {
             state.declaredLicenseSupported = supported
+        },
+        SET_COMPONENT_REFS_SUPPORTED (state : any, supported : boolean) {
+            state.componentRefsSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -872,18 +922,16 @@ const storeObject : any = {
                 variables.perspective = perspectiveUuid
             }
             
-            const response = await graphqlClient.query({
-                query: gql`
+            const fullQuery = gql`
                     query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID, $kinds: [ComponentKind]) {
                         components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective, kinds: $kinds) {
                             ${graphqlQueries.ComponentShortData}
                         }
-                    }`,
-                variables,
-                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-            })
-            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components: response.data.components })
-            return response.data.components
+                    }`
+            const components = await loadComponentRows(context, fullQuery, variables,
+                forceRefresh ? 'network-only' : 'cache-first')
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components })
+            return components
         },
         async fetchProducts (context : any, payload: string | { orgid: string, forceRefresh?: boolean }) : Promise<any[]> {
             // Support both string orgid and object payload for backwards compatibility
@@ -901,18 +949,16 @@ const storeObject : any = {
                 variables.perspective = perspectiveUuid
             }
             
-            const response = await graphqlClient.query({
-                query: gql`
+            const fullQuery = gql`
                     query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
                         components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
                             ${graphqlQueries.ComponentShortData}
                         }
-                    }`,
-                variables,
-                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-            })
-            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components: response.data.components })
-            return response.data.components
+                    }`
+            const components = await loadComponentRows(context, fullQuery, variables,
+                forceRefresh ? 'network-only' : 'cache-first')
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components })
+            return components
         },
         async fetchComponent (context: any, uuid: any) {
             const response = await graphqlClient.query({
