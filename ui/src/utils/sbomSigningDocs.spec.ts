@@ -29,9 +29,12 @@ describe('documentation: Signing exported SBOMs', () => {
         expect(sections).toEqual(['What a signed export is', 'Configure', 'Rotate and revoke', 'Import', 'How a consumer verifies', 'What the UI shows', 'Limitations'])
     })
 
-    it('gives the JWKS URL shape, the cache time and the three command lines', () => {
-        expect(page).toContain('https://<your ReARM>/api/public/v1/organization/<organization uuid>/sbom-signing-keys')
-        expect(page).toContain('max-age=300')
+    it('advertises no public JWKS URL (withdrawn, rearm-saas #892) and gives the command lines', () => {
+        expect(page).not.toContain('/api/public/v1/organization/')
+        expect(page).not.toContain('max-age=300')
+        expect(page).not.toContain('curl ')
+        expect(flat(page)).toContain('public URL (JWKS), so consumers can verify signed exports without an account, is upcoming experimental functionality and is not available yet')
+        expect(page).toContain('rearm bomutils verify-signature -f release.cdx.json --key pub.pem')
         expect(page).toContain('rearm bomutils verify-signature -f release.cdx.json --key org-sbom-keys.jwks.json')
         expect(page).toContain('rearm exportreleasebom --releaseid <release uuid> | rearm bomutils verify-signature --key pub.pem')
         expect(page).toContain('rearm bomutils score -f release.cdx.json --signature-key org-sbom-keys.jwks.json --fail-on-not-ready')

@@ -50,8 +50,10 @@ An organization admin manages the key in **Organization Settings**, **Admin Sett
 1. Press **Generate key**. ReARM creates an Ed25519 key for the organization.
 2. The section shows the current key: its key id, algorithm, source (generated or imported), when
    it was created, and its public key as a JWK and as PEM, each with a copy button. Below it is
-   the organization's public JWKS URL, and a table of earlier keys (retired and revoked) with their
-   dates.
+   a note that publishing the organization's public signing keys at a public URL (JWKS), so
+   consumers can verify signed exports without an account, is upcoming experimental functionality
+   and is not available yet. The section also shows a table of earlier keys (retired and revoked)
+   with their dates.
 
 Exports are signed from the next request on. There is no per-export switch: while the organization
 has a current key, every merged JSON export is signed; without one, every export says
@@ -71,23 +73,23 @@ A ReARM CE installation gains SBOM export signing at its next sync; until then t
 
 **Rotate.** With a current key, the button reads **Rotate key**, and it asks first:
 
-> The current key is retired and new exports sign with the new key. Retired keys stay published in the JWKS so documents signed with them keep verifying.
+> The current key is retired and new exports sign with the new key. Earlier keys are listed without their public key, so copy the current public key first if consumers will verify documents it signed.
 
-Documents signed before the rotation keep verifying with the retired key, which stays in the
-organization's public keys with the status `RETIRED`.
+Documents signed before the rotation keep verifying with the retired key. The retired key stays
+in the table of earlier keys with the status `RETIRED`, but the table shows its key id and dates
+only, not the public key: copy the PEM or JWK of the current key before you rotate if consumers
+will need it to verify documents signed with it.
 
 **Revoke.** Revoke is offered on the current key and on every retired key, and asks first:
 
-> Verification of documents signed with this key will report KEY_REVOKED. If it is the current key, exports are unsigned until a new key exists.
+> A check against a key list that marks this key revoked reports KEY_REVOKED; a copied PEM or JWK carries no status, so tell consumers who hold it. If it is the current key, exports are unsigned until a new key exists.
 
-A revoked key stays in the public keys with the status `REVOKED`, and a consumer verifying a
-document signed with it gets `KEY_REVOKED`. Revoking the current key leaves the organization
-without one: every export from then on says `reliza:export:unsignedReason` `NO_KEY` until you
-generate or import a new key.
-
-The public keys are served with `Cache-Control: max-age=300`, so a consumer, or a proxy between
-you and the consumer, can keep reading the earlier key list for up to five minutes after a rotate
-or a revoke.
+A revoked key stays listed under earlier keys with the status `REVOKED`. A consumer gets
+`KEY_REVOKED` only when verifying against a JWKS that marks the key `REVOKED`; a PEM or JWK file
+carries no status, so while the public keys are not published, tell consumers who hold a revoked
+key to stop trusting it. Revoking the current key leaves the
+organization without one: every export from then on says `reliza:export:unsignedReason` `NO_KEY`
+until you generate or import a new key.
 
 ## Import
 
@@ -110,26 +112,28 @@ openssl genpkey -algorithm ed25519 -out org-sbom-signing.pem
 
 ## How a consumer verifies
 
-The organization's public keys, every key with its status, are a JWKS at:
+To verify a signed export, you need the organization's public key. Ask an organization admin to
+give you the public key from **Organization Settings**, **Admin Settings**, **SBOM export signing**;
+the admin can copy it as PEM or JWK using the copy buttons. For older documents signed with
+retired or revoked keys, you need the key you were given at the time: the settings panel lists
+earlier keys with their dates and status, but not their public keys.
 
-```
-https://<your ReARM>/api/public/v1/organization/<organization uuid>/sbom-signing-keys
-```
-
-It is public: no account and no API key are needed. The settings section shows the exact URL with
-a copy button. Each entry's `kid` is the key id, and `rearm:status` is `CURRENT`, `RETIRED` or
-`REVOKED`.
-
-Save it to a file and verify with the ReARM CLI:
+Save the key to a file and verify with the ReARM CLI:
 
 ```bash
-curl -fsS https://<your ReARM>/api/public/v1/organization/<organization uuid>/sbom-signing-keys -o org-sbom-keys.jwks.json
+rearm bomutils verify-signature -f release.cdx.json --key pub.pem
+```
+
+A JWKS file is also accepted, for example one you assemble from the JWKs an admin gave you
+(`{"keys": [ ... ]}`), so one file can verify documents signed before and after a rotation:
+
+```bash
 rearm bomutils verify-signature -f release.cdx.json --key org-sbom-keys.jwks.json
 ```
 
 The key whose `kid` equals the signature's `keyId` is used, and the `publicKey` embedded in the
-signature must equal it. A single public key works too, as PEM or JWK, for example the PEM the
-settings section shows:
+signature must equal it. A single public key works too, as PEM or JWK, for example the PEM an
+admin copied for you:
 
 ```bash
 rearm exportreleasebom --releaseid <release uuid> | rearm bomutils verify-signature --key pub.pem
@@ -147,7 +151,7 @@ or that the CLI cannot verify, makes the `cisa-2026` profile NOT READY.
 **The embedded key proves integrity, not authorship.** Without `--key`, `verify-signature` checks
 the signature against the `publicKey` it embeds. That proves the document was not changed since it
 was signed under that key, but anyone can sign a document with a key of their own and embed it.
-Only a check against the organization's published keys says who signed it.
+Only a check against the organization's key, as an admin gave it to you, says who signed it.
 
 The outcome, `input.signature.verification` in the CLI's JSON output (from the
 [rearm-cli bomutils documentation](https://github.com/relizaio/rearm-cli/blob/main/docs/bomutils.md),
@@ -197,5 +201,5 @@ with a lower-case letter (`signed with organization key <key id>`).
 - SPDX documents are not signed.
 - The server scores without a key: in ReARM the score checks only that a signature is present and
   well-formed. Verify with the CLI and the organization's public keys.
-- The JWKS is public by design: public keys are meant to be handed out, and a consumer should not
-  need a ReARM account to verify.
+- Public keys are meant to be handed out to consumers by an organization admin; they need only a
+  copy of the key, not a ReARM account, to verify.

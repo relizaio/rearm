@@ -37,16 +37,16 @@ export const UNSUPPORTED_TEXT = 'This server does not offer SBOM export signing 
 /** The confirm before Generate replaces a CURRENT key (Swal.fire options). */
 export const ROTATE_CONFIRM = Object.freeze({
     title: 'Rotate the SBOM signing key?',
-    text: 'The current key is retired and new exports sign with the new key. Retired keys stay published'
-        + ' in the JWKS so documents signed with them keep verifying.',
+    text: 'The current key is retired and new exports sign with the new key. Earlier keys are listed'
+        + ' without their public key, so copy the current public key first if consumers will verify documents it signed.',
     confirmButtonText: 'Rotate',
 })
 
 /** The confirm before a revoke (Swal.fire options). */
 export const REVOKE_CONFIRM = Object.freeze({
     title: 'Revoke this SBOM signing key?',
-    text: 'Verification of documents signed with this key will report KEY_REVOKED. If it is the current key,'
-        + ' exports are unsigned until a new key exists.',
+    text: 'A check against a key list that marks this key revoked reports KEY_REVOKED; a copied PEM or JWK carries'
+        + ' no status, so tell consumers who hold it. If it is the current key, exports are unsigned until a new key exists.',
     confirmButtonText: 'Revoke',
 })
 

@@ -51,12 +51,12 @@ describe('the confirm and hint texts', () => {
     it('are the design texts', () => {
         expect(ROTATE_CONFIRM).toEqual({
             title: 'Rotate the SBOM signing key?',
-            text: 'The current key is retired and new exports sign with the new key. Retired keys stay published in the JWKS so documents signed with them keep verifying.',
+            text: 'The current key is retired and new exports sign with the new key. Earlier keys are listed without their public key, so copy the current public key first if consumers will verify documents it signed.',
             confirmButtonText: 'Rotate',
         })
         expect(REVOKE_CONFIRM).toEqual({
             title: 'Revoke this SBOM signing key?',
-            text: 'Verification of documents signed with this key will report KEY_REVOKED. If it is the current key, exports are unsigned until a new key exists.',
+            text: 'A check against a key list that marks this key revoked reports KEY_REVOKED; a copied PEM or JWK carries no status, so tell consumers who hold it. If it is the current key, exports are unsigned until a new key exists.',
             confirmButtonText: 'Revoke',
         })
         expect(IMPORT_HINT).toBe('An Ed25519 private key as PKCS#8 PEM (BEGIN PRIVATE KEY). The key is encrypted at rest with this installation\'s encryption settings.')
