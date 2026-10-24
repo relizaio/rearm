@@ -89,10 +89,10 @@ describe('AiAgentTaskDetailDrawer', () => {
             const link = w.find('[data-testid="summary-unassign-link"]')
             expect(link.exists()).toBe(true)
             await link.trigger('click')
-            const input = w.find('[data-testid="unassign-reason"] input')
+            const input = w.find('[data-testid="unassign-reason"] textarea')
             expect(input.exists()).toBe(true)
             expect(document.activeElement).toBe(input.element)
-            expect(document.activeElement?.tagName).toBe('INPUT')
+            expect(document.activeElement?.tagName).toBe('TEXTAREA')
         } finally {
             w.unmount()
         }

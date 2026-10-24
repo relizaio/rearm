@@ -46,8 +46,8 @@
                 <span v-if="unlinkWarning(task, c.url)" class="declare__err" data-testid="unlink-warning">
                     {{ unlinkWarning(task, c.url) }}
                 </span>
-                <n-input v-model:value="unlinks[c.url].note" size="small" data-testid="unlink-note" :maxlength="DESCRIPTION_MAX"
-                         show-count placeholder="Why it should never have counted (optional)"/>
+                <growing-text-input v-model:value="unlinks[c.url].note" data-testid="unlink-note" :maxlength="DESCRIPTION_MAX"
+                                    show-count placeholder="Why it should never have counted (optional)"/>
                 <n-space :size="6">
                     <n-button size="tiny" type="warning" data-testid="unlink-submit" @click="submitUnlink(c.url)">Unlink</n-button>
                     <n-button size="tiny" quaternary @click="closeUnlink(c.url)">Cancel</n-button>
@@ -56,8 +56,8 @@
             <div v-if="supersedes[c.url]" class="declare" :data-supersede="c.url">
                 <n-select v-model:value="supersedes[c.url].byUrl" size="small" data-testid="supersede-by"
                           placeholder="The PR that replaces it" :options="candidateOptions(c.url)"/>
-                <n-input v-model:value="supersedes[c.url].note" size="small" data-testid="supersede-note"
-                         placeholder="Why it was replaced (optional)"/>
+                <growing-text-input v-model:value="supersedes[c.url].note" data-testid="supersede-note"
+                                    placeholder="Why it was replaced (optional)"/>
                 <n-space :size="6">
                     <n-button size="tiny" type="primary" data-testid="supersede-submit"
                               :disabled="!supersedePayload(task, c.url, supersedes[c.url].byUrl, supersedes[c.url].note)"
@@ -74,8 +74,8 @@
                         {{ commitProblem(drafts[c.url].commit) }}
                     </span>
                 </template>
-                <n-input v-model:value="drafts[c.url].note" size="small" data-testid="declare-note"
-                         :placeholder="drafts[c.url].outcome === 'ABANDONED' ? 'Why it will not land (required)' : 'Note (optional)'"/>
+                <growing-text-input v-model:value="drafts[c.url].note" data-testid="declare-note"
+                                    :placeholder="drafts[c.url].outcome === 'ABANDONED' ? 'Why it will not land (required)' : 'Note (optional)'"/>
                 <n-space :size="6">
                     <n-button size="tiny" :type="drafts[c.url].outcome === 'ABANDONED' ? 'error' : 'primary'" data-testid="declare-submit"
                               :disabled="!declarationPayload(task, drafts[c.url])" @click="submit(c.url)">
@@ -108,6 +108,7 @@ import { offersSupersede, offersUnlink, supersedeCandidates, supersedeDisabledRe
 import ActorRef from '../ActorRef.vue'
 import AgentTime from '../AgentTime.vue'
 import DisabledHint from './DisabledHint.vue'
+import GrowingTextInput from './GrowingTextInput.vue'
 
 const props = defineProps<{
     task: any

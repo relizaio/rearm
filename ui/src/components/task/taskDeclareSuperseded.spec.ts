@@ -79,7 +79,7 @@ describe('the task page row', () => {
         expect((select.props('options') as any[]).map(o => o.value)).toEqual([replacement, merged])
         select.vm.$emit('update:value', replacement)
         await nextTick()
-        await w.find('[data-testid="supersede-note"] input').setValue('dropped trailer-less merges')
+        await w.find('[data-testid="supersede-note"] textarea').setValue('dropped trailer-less merges')
         await w.find('[data-testid="supersede-submit"]').trigger('click')
         expect(w.emitted('supersede')?.[0]?.[0]).toMatchObject({ oldUrl: old, byUrl: replacement, note: 'dropped trailer-less merges' })
     })

@@ -17,7 +17,7 @@
                     <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
                 </template>
                 <div>Returns every task this session holds to the queue and closes the session.</div>
-                <n-input v-model:value="closeReasonInput" size="small" class="forceclose-reason" placeholder="Reason (optional)" />
+                <growing-text-input v-model:value="closeReasonInput" class="forceclose-reason" placeholder="Reason (optional)" />
             </n-popconfirm>
             <n-tooltip v-if="isIdleWarned(session)" trigger="hover" :width="320">
                 <template #trigger>
@@ -228,7 +228,7 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
@@ -239,6 +239,7 @@ import { isOrgAdmin } from '@/utils/agentReopen'
 import { apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import AgentTime from './AgentTime.vue'
+import GrowingTextInput from './task/GrowingTextInput.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'
@@ -812,6 +813,8 @@ const policyColumns: DataTableColumns<any> = [
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
+/* A force-close reason keeps the line breaks it was written with (TPF-89). */
+.close-attribution { white-space: pre-wrap; overflow-wrap: anywhere; }
 .provider-sessions { display: flex; flex-direction: column; gap: 4px; }
 .provider-session { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .copyable { cursor: pointer; }

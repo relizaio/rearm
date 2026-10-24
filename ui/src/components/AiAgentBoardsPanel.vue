@@ -1603,7 +1603,9 @@ const TaskCard = defineComponent({
                 p.t.signOffs.map((s: any, i: number) => h(NTooltip, { trigger: 'hover', key: i }, {
                     trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] },
                         (s.reviewedBy ? '\u270b ' : '') + s.role),
-                    default: () => `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + actorLabel(s.reviewedBy) : ''}${s.note ? ' — ' + s.note : ''}`,
+                    // The note keeps the line breaks it was written with (TPF-89).
+                    default: () => h('span', { style: 'white-space: pre-wrap' },
+                        `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + actorLabel(s.reviewedBy) : ''}${s.note ? ' — ' + s.note : ''}`),
                 }))) : null,
         ] })
     },
