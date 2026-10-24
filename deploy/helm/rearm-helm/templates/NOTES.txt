@@ -9,3 +9,19 @@ To learn more about the release, try:
 
 Get the application secret:
    echo $(kubectl get secret --namespace {{ .Release.Namespace }} system-secret -o jsonpath="{.data.systemSecret}" | base64 --decode)
+{{- if .Values.networkPolicy.enabled }}
+
+NetworkPolicies are ON (networkPolicy.enabled): chart pods accept connections only from the
+pods that need them; the UI accepts the ingress controller selected by
+networkPolicy.ingressController (default: pods labelled app.kubernetes.io/name=traefik in any
+namespace). They are enforced only by a CNI that implements NetworkPolicy; a cluster without
+one accepts them and ignores them silently. Verify enforcement:
+  kubectl -n {{ .Release.Namespace }} run np-probe --rm -i --restart=Never --image=docker.io/library/busybox:1.37 -- nc -z -w 5 {{ .Release.Name }}-postgresql 5432; echo exit=$?
+  expected: exit=1 (no connection); exit=0 means the policies are not enforced.
+If the UI is unreachable after an upgrade, check the ingress controller labels against
+networkPolicy.ingressController, or roll back with --set networkPolicy.enabled=false.
+{{- else }}
+
+NetworkPolicies are OFF (networkPolicy.enabled=false): every chart pod accepts connections from
+any pod in the cluster.
+{{- end }}

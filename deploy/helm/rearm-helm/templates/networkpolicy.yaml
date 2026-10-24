@@ -1,0 +1,388 @@
+{{- /*
+Ingress NetworkPolicies (TPF-90): every chart pod is reachable only from the
+pods that need it, on the port it listens on. Ingress only: nothing here
+restricts what a pod may connect to (policyTypes carries Ingress alone), so
+outbound traffic, DNS included, is untouched. Egress is a documented
+follow-up.
+
+Pods are selected by the labels their workloads already carry in
+spec.selector (immutable, so they are the stable identity of the pod); no
+label is added anywhere. The subchart's own primary NetworkPolicy is turned
+off in values.yaml (postgresql.primary.networkPolicy.enabled: false): its
+default shape allows every source on 5432, and NetworkPolicies are a union
+of allows, so leaving it on would undo the policy below.
+
+This file is byte-identical in the Pro and the CE chart. Pro-only pieces
+(the backup cronjob pods) key off hasKey .Values "backups", which the CE
+values do not define.
+
+Values (networkPolicy.*):
+  enabled                       render the whole set (false: no policy at all)
+  ingressController             who may reach the UI: namespaceSelector and
+                                podSelector of the ingress controller pods,
+                                plus extraFrom (raw NetworkPolicyPeer list,
+                                e.g. an ipBlock for a hostNetwork controller)
+  namespaceDefaultDeny          opt-in: one podSelector {} deny-ingress policy
+                                for the whole namespace (covers pods this
+                                chart cannot label, affects every pod there)
+  <service>.enabled             per-service opt-out (no policy for that pod)
+  <service>.allowFromNamespace  open that service's port to every pod in the
+                                namespace
+  <service>.extraIngress        raw ingress rules appended (metrics scraper...)
+  backend.fromIngressController, keycloak.fromIngressController
+                                also let the ingress controller reach that
+                                service directly (needed only by a cluster
+                                with IngressRoutes outside this chart)
+*/ -}}
+{{- define "rearm.networkPolicy.serviceOn" -}}
+{{- $svc := index .np .key | default dict -}}
+{{- if and (hasKey $svc "enabled") (not $svc.enabled) -}}false{{- else -}}true{{- end -}}
+{{- end -}}
+
+{{- define "rearm.networkPolicy.ingressControllerFrom" -}}
+{{- $ic := .ingressController | default dict }}
+- namespaceSelector:
+    {{- toYaml ($ic.namespaceSelector | default dict) | nindent 4 }}
+  podSelector:
+    {{- toYaml ($ic.podSelector | default dict) | nindent 4 }}
+{{- with $ic.extraFrom }}
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{- define "rearm.networkPolicy.peer" -}}
+- podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" .ctx | nindent 6 }}
+      {{- range $k, $v := .labels }}
+      {{ $k }}: {{ $v | quote }}
+      {{- end }}
+{{- end -}}
+
+{{- define "rearm.networkPolicy.extra" -}}
+{{- $svc := index .np .key | default dict }}
+{{- if $svc.allowFromNamespace }}
+- from:
+    - podSelector: {}
+  ports:
+    {{- range .ports }}
+    - port: {{ . }}
+      protocol: TCP
+    {{- end }}
+{{- end }}
+{{- with $svc.extraIngress }}
+{{ toYaml . }}
+{{- end }}
+{{- end -}}
+
+{{- $np := .Values.networkPolicy | default dict }}
+{{- if $np.enabled }}
+{{- $on := dict "np" $np }}
+{{- $pg := .Values.postgresql | default dict }}
+{{- $pgOn := or (not (hasKey $pg "enabled")) $pg.enabled }}
+{{- $pgPort := ((($pg.containerPorts | default dict).postgresql) | default 5432) }}
+{{- $bundledOn := and .Values.ociArtifactService.enabled .Values.ociArtifactService.bundledRegistry.enabled }}
+{{- $backupsOn := and (hasKey .Values "backups") (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "backups")) "true") }}
+{{- $bk := .Values.backups | default dict }}
+{{- $bkOn := dict }}
+{{- range $k := list "rearmDb" "rebomDb" "keycloakDb" "ociArtifacts" "rearmDbAuditPermanentBackup" "rearmDbMetricsAuditPermanentBackup" }}
+{{- $_ := set $bkOn $k (and $backupsOn ((index $bk $k | default dict).enabled | default false)) }}
+{{- end }}
+{{- /* The artifact backup cronjob renders only with a non-empty registryBasePaths (Pro templates/oci-artifacts-backup-cronjob.yaml line 1): its zot peer and the backups policy follow the same condition. */}}
+{{- $_ := set $bkOn "ociArtifacts" (and $bkOn.ociArtifacts (gt (len ((index $bk "ociArtifacts" | default dict).registryBasePaths | default list)) 0)) }}
+{{- $anyBackup := or $bkOn.rearmDb $bkOn.rebomDb $bkOn.keycloakDb $bkOn.ociArtifacts $bkOn.rearmDbAuditPermanentBackup $bkOn.rearmDbMetricsAuditPermanentBackup }}
+{{- $ui := dict "ctx" . "labels" (dict "name" "rearm-ui-pod") }}
+{{- $backend := dict "ctx" . "labels" (dict "name" "rearm-backend-pod") }}
+{{- $keycloak := dict "ctx" . "labels" (dict "name" "rearm-keycloak") }}
+{{- $rebom := dict "ctx" . "labels" (dict "name" "rebom-backend" "app" "rebom") }}
+{{- $oci := dict "ctx" . "labels" (dict "name" "rearm-oci-artifact-pod") }}
+{{- $backup := dict "ctx" . }}
+{{- if $np.namespaceDefaultDeny }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-namespace-default-deny-ingress
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector: {}
+  policyTypes:
+    - Ingress
+{{- end }}
+{{- if eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "ui")) "true" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-ui
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-ui-pod
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+      ports:
+        - port: 80
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "ui" "ports" (list 80)) | nindent 4 }}
+{{- end }}
+{{- if eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "backend")) "true" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-backend-pod
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $ui | nindent 8 }}
+        {{- if ($np.backend | default dict).fromIngressController }}
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 8086
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "backend" "ports" (list 8086)) | nindent 4 }}
+{{- end }}
+{{- if and .Values.keycloak.enabled (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "keycloak")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-keycloak
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-keycloak
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $ui | nindent 8 }}
+        {{- include "rearm.networkPolicy.peer" $backend | nindent 8 }}
+        {{- if ($np.keycloak | default dict).fromIngressController }}
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 9080
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "keycloak" "ports" (list 9080)) | nindent 4 }}
+{{- end }}
+{{- if and .Values.keycloak.enabled (not .Values.use_external_postgres) (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "keycloakPostgres")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-keycloak-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-keycloak-postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $keycloak | nindent 8 }}
+        {{- if $bkOn.keycloakDb }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "keycloak-db-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "keycloakPostgres" "ports" (list 5432)) | nindent 4 }}
+{{- end }}
+{{- if eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "rebomBackend")) "true" }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-rebom-backend
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      app: rebom
+      name: rebom-backend
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $backend | nindent 8 }}
+      ports:
+        - port: 4000
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "rebomBackend" "ports" (list 4000)) | nindent 4 }}
+{{- end }}
+{{- if and (not .Values.use_external_postgres) (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "rebomPostgres")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-rebom-postgres
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      app: rebom
+      name: postgres
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $rebom | nindent 8 }}
+        {{- if $bkOn.rebomDb }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "rebom-db-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 5432
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "rebomPostgres" "ports" (list 5432)) | nindent 4 }}
+{{- end }}
+{{- if and .Values.ociArtifactService.enabled (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "ociArtifactService")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-oci-artifact
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-oci-artifact-pod
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $backend | nindent 8 }}
+        {{- include "rearm.networkPolicy.peer" $rebom | nindent 8 }}
+      ports:
+        - port: 8083
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "ociArtifactService" "ports" (list 8083)) | nindent 4 }}
+{{- end }}
+{{- if and $bundledOn (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "zot")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-zot
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+      name: rearm-zot-pod
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $oci | nindent 8 }}
+        {{- if $bkOn.ociArtifacts }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "oci-artifacts-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: 5000
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "zot" "ports" (list 5000)) | nindent 4 }}
+{{- end }}
+{{- if and $pgOn (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "postgresql")) "true") }}
+---
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-postgresql
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  # The postgresql subchart's primary pod: its labels are the subchart's
+  # (common.labels.matchLabels plus the component), not this chart's.
+  podSelector:
+    matchLabels:
+      app.kubernetes.io/name: postgresql
+      app.kubernetes.io/instance: {{ .Release.Name }}
+      app.kubernetes.io/component: primary
+  policyTypes:
+    - Ingress
+  ingress:
+    - from:
+        {{- include "rearm.networkPolicy.peer" $backend | nindent 8 }}
+        {{- if $bkOn.rearmDb }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "rearm-db-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+        {{- if $bkOn.rearmDbAuditPermanentBackup }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "rearm-db-audit-permanent-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+        {{- if $bkOn.rearmDbMetricsAuditPermanentBackup }}
+        {{- include "rearm.networkPolicy.peer" (merge (dict "labels" (dict "name" "rearm-db-metrics-audit-permanent-backup-pod")) $backup) | nindent 8 }}
+        {{- end }}
+      ports:
+        - port: {{ $pgPort }}
+          protocol: TCP
+    {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "postgresql" "ports" (list $pgPort)) | nindent 4 }}
+{{- end }}
+{{- if $anyBackup }}
+---
+# The backup cronjob pods are clients only: nothing connects to them.
+apiVersion: networking.k8s.io/v1
+kind: NetworkPolicy
+metadata:
+  name: {{ .Release.Name }}-backups
+  namespace: {{ .Release.Namespace }}
+  labels:
+    {{- include "rearm.labels" . | nindent 4 }}
+spec:
+  podSelector:
+    matchLabels:
+      {{- include "rearm.selectorLabels" . | nindent 6 }}
+    matchExpressions:
+      - key: name
+        operator: In
+        values:
+          - rearm-db-backup-pod
+          - rebom-db-backup-pod
+          - keycloak-db-backup-pod
+          - oci-artifacts-backup-pod
+          - rearm-db-audit-permanent-backup-pod
+          - rearm-db-metrics-audit-permanent-backup-pod
+  policyTypes:
+    - Ingress
+{{- end }}
+{{- end }}
