@@ -88,6 +88,8 @@ Values (networkPolicy.*):
 {{- range $k := list "rearmDb" "rebomDb" "keycloakDb" "ociArtifacts" "rearmDbAuditPermanentBackup" "rearmDbMetricsAuditPermanentBackup" }}
 {{- $_ := set $bkOn $k (and $backupsOn ((index $bk $k | default dict).enabled | default false)) }}
 {{- end }}
+{{- /* The artifact backup cronjob renders only with a non-empty registryBasePaths (Pro templates/oci-artifacts-backup-cronjob.yaml line 1): its zot peer and the backups policy follow the same condition. */}}
+{{- $_ := set $bkOn "ociArtifacts" (and $bkOn.ociArtifacts (gt (len ((index $bk "ociArtifacts" | default dict).registryBasePaths | default list)) 0)) }}
 {{- $anyBackup := or $bkOn.rearmDb $bkOn.rebomDb $bkOn.keycloakDb $bkOn.ociArtifacts $bkOn.rearmDbAuditPermanentBackup $bkOn.rearmDbMetricsAuditPermanentBackup }}
 {{- $ui := dict "ctx" . "labels" (dict "name" "rearm-ui-pod") }}
 {{- $backend := dict "ctx" . "labels" (dict "name" "rearm-backend-pod") }}
