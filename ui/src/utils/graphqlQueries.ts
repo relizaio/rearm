@@ -1484,6 +1484,10 @@ const COMPONENT_FULL_DATA = `
     type
     # Read by the TEA tab: an archived component's TEA profile can only hide it (TEA-9).
     status
+    # Read by ComponentView's lifecycle tag (TPF-101). The org lists read componentRefs, which never
+    # carries it, so every document that writes a full record to the store selects it here: one
+    # indexed statement per component (releases_component_version). CE declares it too.
+    effectiveLifecycle
     # Read by ComponentView to decide whether the device support window panel applies (D7).
     # CE declares Component.deviceClass too, so this needs no CORE/FULL split -- unlike
     # medicalProfile.deviceSupportWindow, which CE does not declare and which therefore has
@@ -2135,6 +2139,23 @@ const COMPONENT_SHORT_DATA = `
     effectiveLifecycle
 `
 
+// TPF-101 (TPF-74 child 2): the organization's component and product lists read light rows. A static
+// document (the COMPONENTS_OF_PERSPECTIVE_GQL shape) so scripts/validate-graphql.mjs validates it and a
+// spec can import it; the store's two list actions share it (fetchProducts sends no kinds, as today).
+// The documents the lists send when a backend lacks the field stay inline in store.ts (their text is
+// under documentsViewContract.spec.ts).
+const COMPONENT_REFS_GQL = gql`
+query ComponentRefs($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID, $kinds: [ComponentKind]) {
+    componentRefs(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective, kinds: $kinds) {
+        uuid
+        name
+        type
+        status
+        org
+        vcs
+    }
+}`
+
 const MARKETING_RELEASE_GQL_DATA = `
     uuid
     version
@@ -2287,6 +2308,7 @@ export default {
     OrgDefaultViewGql: ORG_DEFAULT_VIEW_GQL,
     DeployedToGql: DEPLOYED_TO_GQL,
     ComponentsOfPerspectiveGql: COMPONENTS_OF_PERSPECTIVE_GQL,
+    ComponentRefsGql: COMPONENT_REFS_GQL,
     TeaProfileEditorViewGql: TEA_PROFILE_EDITOR_VIEW,
     TeaProfilesOfOrgGql: TEA_PROFILES_OF_ORG,
     TeaOrgDiscoveryGql: TEA_ORG_DISCOVERY,
