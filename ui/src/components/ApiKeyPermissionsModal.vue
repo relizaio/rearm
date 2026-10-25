@@ -73,6 +73,10 @@
             </n-alert>
             <n-tabs v-model:value="editTab" type="segment" animated>
                 <n-tab-pane name="permissions" tab="Permissions">
+                    <p v-if="apiKey?.type === 'FREEFORM' && apiKeyGroups?.length" class="subtle" style="margin-top: 0;" data-testid="api-key-groups-of-key">
+                        Also in API key groups: {{ apiKeyGroups.map(g => g.name).join(', ') }}. Their permissions are added to
+                        this key's at call time; edit them on the API Key Groups tab.
+                    </p>
                     <n-spin :show="loading">
                         <ScopedPermissions
                             v-model="scoped"
@@ -139,6 +143,8 @@ const props = defineProps<{
     mode?: 'edit' | 'request' | 'view'
     /** the keys listed alongside, so the header's short id is unique among them */
     siblingKeys?: any[]
+    /** the ACTIVE API key groups holding this key (admin surface); absent on the profile page */
+    apiKeyGroups?: { uuid: string, name: string }[]
 }>()
 const isRequest = computed(() => props.mode === 'request')
 const isView = computed(() => props.mode === 'view')

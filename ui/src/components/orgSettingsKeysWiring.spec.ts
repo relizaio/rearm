@@ -133,7 +133,8 @@ describe('TPF-88 OrgSettings: the key tables show the filtered lists', () => {
     })
     it('row 27: the four tables scroll wider by the added columns', () => {
         expect(byColumns('keyRequestFields').map((t) => directive(t, 'bind', 'scroll-x'))).toEqual(['1520'])
-        expect(byColumns('freeFormKeyFields').map((t) => directive(t, 'bind', 'scroll-x'))).toEqual(['1840'])
+        // 1840 at TPF-88, plus the 160 of the TPF-92 Groups column
+        expect(byColumns('freeFormKeyFields').map((t) => directive(t, 'bind', 'scroll-x'))).toEqual(['2000'])
         expect(byColumns('userKeyFields').map((t) => directive(t, 'bind', 'scroll-x'))).toEqual(['1730'])
         expect(byColumns('programmaticAccessFields').map((t) => directive(t, 'bind', 'scroll-x'))).toEqual(['1820'])
     })

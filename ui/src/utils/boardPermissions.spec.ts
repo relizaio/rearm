@@ -68,7 +68,10 @@ describe('the editors keep BOARD grants', () => {
         expect(org).toContain("} else if ((up.scope === 'PERSPECTIVE' || up.scope === 'COMPONENT' || up.scope === 'BOARD') && up.org === orgResolved.value) {")
         expect(org).toContain('} else if (editorKeepsScope(p.scope) && p.org === orgResolved.value) {')
         expect(org).toContain('return boardNameOf(orgBoards.value, objectId) ?? objectId')
-        expect(org.match(/:boards="orgBoards"/g)).toHaveLength(2)
+        // the user group editor, the user permissions editor and the API Key Groups pane (TPF-92 row 19)
+        expect(org.match(/:boards="orgBoards"/g)).toHaveLength(3)
+        const pane = org.slice(org.indexOf('<ApiKeyGroupsOfOrg'), org.indexOf('@changed="loadApiKeyGroupsOfOrg"'))
+        expect(pane).toContain(':boards="orgBoards"')
         // the users table's permission summary names a BOARD grant's board
         expect(org).toContain("} else if (p.scope === 'BOARD' && p.object) {")
     })
