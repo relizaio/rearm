@@ -32,9 +32,9 @@ const key = (type: string) => ({
     permissions: { permissions: [{ org: 'o1', scope: 'COMPONENT', object: 'c1', type: 'READ_ONLY', functions: ['TEA_READ'], approvals: [] }] },
 })
 
-async function open (type: string) {
+async function open (type: string, extra: Record<string, any> = {}) {
     const w = mount(Modal, {
-        props: { show: false, apiKey: key(type), orgUuid: 'o1', notify: vi.fn() },
+        props: { show: false, apiKey: key(type), orgUuid: 'o1', notify: vi.fn(), ...extra },
         global: { stubs: { ScopedPermissions: true, SessionLimitEditor: true } },
         attachTo: document.body,
     })
@@ -71,5 +71,28 @@ describe('ApiKeyPermissionsModal: EXTERNAL keys', () => {
         expect(tabs(w)).toEqual(['Permissions', 'Device Login', 'Notes'])
         expect(w.findComponent(ScopedPermissions).props('externalKey')).toBe(false)
         w.unmount()
+    })
+})
+
+// TPF-92 (architecture 4.7, test row 15): the groups line names the ACTIVE groups holding a Free Form key.
+describe('ApiKeyPermissionsModal: the API key groups line', () => {
+    beforeEach(() => { document.body.innerHTML = '' })
+    const line = () => document.body.querySelector('[data-testid="api-key-groups-of-key"]')
+
+    it('names the groups of a Free Form key', async () => {
+        const w = await open('FREEFORM', { apiKeyGroups: [{ uuid: 'g', name: 'ci' }] })
+        expect(line()).not.toBeNull()
+        expect(line()!.textContent).toContain('Also in API key groups: ci.')
+        w.unmount()
+    })
+
+    it('is absent without the prop, and on a USER key with the prop set', async () => {
+        const a = await open('FREEFORM')
+        expect(line()).toBeNull()
+        a.unmount()
+        document.body.innerHTML = ''
+        const b = await open('USER', { apiKeyGroups: [{ uuid: 'g', name: 'ci' }] })
+        expect(line()).toBeNull()
+        b.unmount()
     })
 })

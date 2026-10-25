@@ -691,6 +691,24 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane v-if="isOrgAdmin" name="apiKeyGroups" tab="API Key Groups">
+                <ApiKeyGroupsOfOrg
+                    :orguuid="orgResolved"
+                    :isWritable="isWritable"
+                    :groups="apiKeyGroups"
+                    :supported="apiKeyGroupsSupported"
+                    :keys="programmaticAccessKeys"
+                    :approval-roles="myorg.approvalRoles || []"
+                    :perspectives="perspectives"
+                    :products="orgProducts"
+                    :components="orgComponents"
+                    :instances="orgInstances"
+                    :clusters="orgClusters"
+                    :boards="orgBoards"
+                    :notify="notify"
+                    @changed="loadApiKeyGroupsOfOrg" />
+            </n-tab-pane>
+
             <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
                 <TeamsOfOrg
                     :orguuid="orgResolved"
@@ -713,7 +731,7 @@
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="1840"
+                            <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="2000"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                                 <template #empty><n-empty data-testid="keys-empty-freeFormKeys" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
@@ -780,7 +798,7 @@
                         <ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />
                     </n-tab-pane>
                 </n-tabs>
-                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" :api-key-groups="apiKeyGroupsOfKey(apiKeyGroups, selectedEditKey?.uuid)" @saved="loadProgrammaticAccessKeys(false)" />
                 <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :sibling-keys="programmaticAccessKeys" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
                     <template #header>CLI sessions on key {{ keySessionsKey ? keyLabelOf(keySessionsKey) : '' }}</template>
@@ -1524,6 +1542,7 @@ import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
+import ApiKeyGroupsOfOrg from './ApiKeyGroupsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
@@ -1531,6 +1550,9 @@ import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTy
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
+import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
+import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
+import { extractError } from '@/utils/notificationsCommon'
 
 const route = useRoute()
 const router = useRouter()
@@ -1580,6 +1602,19 @@ async function loadTabSpecificData (tabName: string) {
         await loadUsers()
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
+    } else if (tabName === "apiKeyGroups") {
+        // the editor's pickers (ScopedPermissions) and the member picker (FREEFORM keys)
+        await loadUsers()
+        await Promise.all([
+            loadPerspectives(),
+            loadBoardNames(),
+            store.dispatch('fetchComponents', orgResolved.value),
+            store.dispatch('fetchProducts', orgResolved.value),
+            ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
+        ])
+        loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
     } else if (tabName === "freeFormKeys") {
         // Same as programmaticAccess — formatValuesForApiKeys() resolves
         // the Updated By column against users.value, so the user list
@@ -1590,6 +1625,7 @@ async function loadTabSpecificData (tabName: string) {
         await loadUsers()
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
     } else if (tabName === "policies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
@@ -1865,7 +1901,7 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings', 'tea', 'profiles']
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'terminology', 'adminSettings', 'tea', 'profiles']
 // tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
 const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea', 'profiles']
 function isTabAccessible (t: string): boolean {
@@ -2201,6 +2237,13 @@ const freeFormKeyFields: Ref<any> = ref([
     apiKeyNotesColumn(110),
     apiKeyDeclaredColumn,
     {
+        key: 'apiKeyGroups', width: 160, title: 'Groups',
+        render: (row: any) => {
+            const names = apiKeyGroupsOfKey(apiKeyGroups.value, row.uuid).map(g => g.name)
+            return names.length ? h('div', names.join(', ')) : h('span', { class: 'text-muted' }, '—')
+        }
+    },
+    {
         key: 'boundAgents',
         width: 130,
         title: 'Bound Agent(s)',
@@ -2317,6 +2360,22 @@ const canInactivateUsers = computed(() => {
 // User Groups
 const showInactiveGroups = ref(false)
 const userGroups: Ref<any[]> = ref([])
+
+// API key groups (TPF-92 decision 1): one list for the API Key Groups tab, the Free Form Keys
+// Groups column and the key modal's groups line; false once the server proves it has no groups.
+const apiKeyGroups: Ref<any[]> = ref([])
+const apiKeyGroupsSupported = ref(true)
+async function loadApiKeyGroupsOfOrg () {
+    try {
+        const r = await loadApiKeyGroups(graphqlClient, orgResolved.value)
+        apiKeyGroups.value = r.groups
+        apiKeyGroupsSupported.value = r.supported
+    } catch (error: any) {
+        console.error('Error loading API key groups:', error)
+        notify('error', 'Error', 'Failed to load API key groups: ' + extractError(error))
+    }
+}
+
 const filteredUserGroups = computed(() => {
     const groups = showInactiveGroups.value
         ? userGroups.value
