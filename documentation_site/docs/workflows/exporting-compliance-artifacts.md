@@ -133,9 +133,14 @@ another uploaded SBOM lists for the same purl appear beside it, while a listed e
 ReARM never reads a LICENSE file or an artifact to find a licence.
 
 **When a change shows.** A release's own exports show a change at their next request. A change of
-a release's licence also rebuilds the product exports above it. A change of the organization default
-or of a component does not: a product exported before it serves its stored export until something
-rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
+a release's licence also rebuilds the product exports above it. A change of a release's preferred
+PURL identifier (set on the release, or filled from its component with "Propagate To Releases With
+Missing Identifiers" on the component page), of its artifacts, source code entry or deliverables (a
+CI rebuild included), or of a product's supplier name, discards the stored exports of the release and
+of every product above it, and the next export of each rebuilds it; a release whose last SBOM is
+detached is listed as a component without an SBOM again. A change of the organization default, or of
+a component's supplier name, does not: a product exported before it serves its stored export until
+something rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
 regenerates merged exports). Likewise a release exported before an upload keeps serving its stored
 export until a product above it is rebuilt or the release's declared facts change.
 
