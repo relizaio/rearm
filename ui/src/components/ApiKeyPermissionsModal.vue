@@ -39,6 +39,14 @@
                 <n-form-item label="Purpose / notes (admins see this)">
                     <n-input v-model:value="notes" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="e.g. CI pipeline for repo X needs release write on component Y" />
                 </n-form-item>
+                <PermissionTemplatePicker
+                    :org-uuid="orgUuid"
+                    :model="scoped"
+                    :disabled="loading"
+                    :name-of="resolveScopedObjectName"
+                    :notify="notify"
+                    @apply="onTemplateApply"
+                />
                 <n-spin :show="loading">
                     <ScopedPermissions
                         v-model="scoped"
@@ -130,6 +138,7 @@ import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import ScopedPermissions from './ScopedPermissions.vue'
 import SessionLimitEditor from './SessionLimitEditor.vue'
+import PermissionTemplatePicker from './PermissionTemplatePicker.vue'
 import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
 import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
@@ -239,6 +248,11 @@ function permissionsPayload (): { orgPermType: string, permissions: any[] } {
         if (sp.type && sp.type !== 'NONE') permissions.push({ org: props.orgUuid, scope: sp.scope, type: sp.type, object: sp.objectId, functions: sp.functions || [], approvals: sp.approvals || [] })
     }
     return { orgPermType: orgPermType || 'NONE', permissions }
+}
+
+// request mode (TPF-113): a template pick fills the proposal by value; nothing is clipped, the admins decide
+function onTemplateApply (model: { orgPermission: any, scopedPermissions: any[] }) {
+    scoped.value = model
 }
 
 async function sendRequest () {

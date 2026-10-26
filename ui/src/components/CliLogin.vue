@@ -41,6 +41,23 @@
                                 <n-form-item label="Organization"><n-select v-model:value="newKeyOrg" :options="orgOptions" style="min-width: 260px;" /></n-form-item>
                                 <n-form-item label="Notes"><n-input v-model:value="newKeyNotes" :placeholder="defaultNotes" style="min-width: 260px;" /></n-form-item>
                             </n-space>
+                            <PermissionTemplatePicker
+                                :org-uuid="newKeyOrg"
+                                :model="scoped"
+                                :max-org-type="ownerOrgType"
+                                :allowed-functions="ownerFunctions"
+                                :org-functions="ownerOrgFunctions"
+                                :disabled="loadingBounds"
+                                :name-of="resolveName"
+                                :notify="notify"
+                                @apply="onTemplateApply"
+                            />
+                            <div v-if="templatePicked" class="subtle" data-testid="template-reductions" style="margin: 0 0 8px 0;">
+                                <div>{{ REDUCTIONS_SENTENCE }}</div>
+                                <ul v-if="templateReductions.length" style="margin: 4px 0 0 0;">
+                                    <li v-for="r in templateReductions" :key="r">{{ r }}</li>
+                                </ul>
+                            </div>
                             <p class="subtle" style="margin: 0 0 8px 0;">Give the key what this session needs. Whatever you set is stored reduced to your own permissions in the organization, and every call is checked against them again; the key can never exceed you. It is deleted when the session ends.</p>
                             <n-alert v-if="boundsError" type="warning" :show-icon="true" style="margin-bottom: 8px;">
                                 Your own permissions in this organization could not be read, so this form is not bounded here: {{ boundsError }}.
@@ -122,6 +139,7 @@
 import { NAlert, NButton, NCheckbox, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTag, useNotification, NotificationType } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import PermissionTemplatePicker from './PermissionTemplatePicker.vue'
 import constants from '../utils/constants'
 import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
@@ -131,6 +149,7 @@ import commonFunctions from '@/utils/commonFunctions'
 import { approvalLifetimeProblem, describeMinutes, sessionEndSentence } from '@/utils/cliSessionLifetime'
 import { boundAgentsLabel, isBoundToAgent, keysToOffer, permissionSummary } from '@/utils/cliLoginKeys'
 import { apiKeyLabel, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord } from '@/utils/apiKeyLabel'
+import { REDUCTIONS_SENTENCE } from '@/utils/permissionTemplates'
 
 const route = useRoute()
 const store = useStore()
@@ -203,6 +222,11 @@ const ownerFunctions = computed<string[] | undefined>(() => {
     for (const p of ownerPerms.value) for (const f of (p.functions || [])) set.add(f)
     return Array.from(set)
 })
+// the owner's organization-wide functions: the server intersects the key's ORGANIZATION row with these only (TPF-113 F-4)
+const ownerOrgFunctions = computed<string[] | undefined>(() => {
+    if (me.value?.isGlobalAdmin || ownerOrgType.value === 'ADMIN' || boundsError.value) return undefined
+    return ownerOrgPerm.value?.functions || []
+})
 const approvalRoles = computed(() => store.getters.orgById(newKeyOrg.value)?.approvalRoles || [])
 const orgComponents = computed(() => store.getters.componentsOfOrg(newKeyOrg.value) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(newKeyOrg.value) || [])
@@ -219,6 +243,8 @@ async function loadBounds () {
     boundsError.value = ''
     ownerPerms.value = []
     scoped.value = { orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] }
+    templatePicked.value = false
+    templateReductions.value = []
     try {
         // every list is best effort: the queries already return only what this user may read
         const loads: Promise<any>[] = [
@@ -236,6 +262,36 @@ async function loadBounds () {
     } finally { loadingBounds.value = false }
 }
 watch(newKeyOrg, () => loadBounds())
+
+// ---- permission templates (TPF-113): a pick fills the form only; Approve stays the user's explicit click ----
+const templatePicked = ref(false)
+const templateReductions = ref<string[]>([])
+function onTemplateApply (model: { orgPermission: any, scopedPermissions: any[] }, reductions: string[]) {
+    scoped.value = model
+    templateReductions.value = reductions
+    templatePicked.value = true
+}
+// a grant's object name for the form, the request modal's resolver over this page's lists; the page loads no
+// boards (the editor names BOARD cards from its own list), so a BOARD row keeps its uuid here
+async function resolveName (scope: string, objectId: string): Promise<string> {
+    if (scope === 'BOARD') return objectId
+    if (scope === 'PERSPECTIVE') {
+        const p = perspectives.value.find((x: any) => x.uuid === objectId); return p ? p.name : objectId
+    }
+    if (scope === 'INSTANCE') {
+        const obj = orgInstancesAndClusters.value.find((x: any) => x.uuid === objectId)
+        if (!obj) return objectId
+        if (obj.instanceType === constants.InstanceType.CLUSTER_INSTANCE) {
+            const parent = orgClusters.value.find((c: any) => Array.isArray(c.instances) && c.instances.includes(obj.uuid))
+            return `${parent ? parent.name : '(cluster)'} / ${obj.namespace || obj.uuid}`
+        }
+        if (obj.instanceType === constants.InstanceType.CLUSTER) return obj.name || obj.uri || obj.uuid
+        return obj.uri || obj.name || obj.uuid
+    }
+    const known = [...orgComponents.value, ...orgProducts.value].find((c: any) => c.uuid === objectId)
+    if (known) return known.name
+    try { const fetched = await store.dispatch('fetchComponent', objectId); return fetched?.name || objectId } catch { return objectId }
+}
 function permissionsPayload () {
     const permissions: any[] = []
     const orgPermType = scoped.value.orgPermission.type

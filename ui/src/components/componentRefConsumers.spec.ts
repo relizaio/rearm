@@ -47,7 +47,7 @@ function sources (dir = SRC): string[] {
 
 type Getter = 'componentsOfOrg' | 'productsOfOrg'
 const BOTH: Getter[] = ['componentsOfOrg', 'productsOfOrg']
-/** The fourteen readers of 2.5 and the getters each calls. */
+/** The fifteen readers (the fourteen of 2.5 and the TPF-113 permission templates panel) and the getters each calls. */
 const READERS: Record<string, Getter[]> = {
     'components/AddComponent.vue': BOTH,
     'components/AddComponentBranch.vue': ['productsOfOrg'],
@@ -61,6 +61,7 @@ const READERS: Record<string, Getter[]> = {
     'components/ExternalKeysPanel.vue': ['productsOfOrg'],
     'components/FederatedTrustRulesPanel.vue': BOTH,
     'components/OrgSettings.vue': BOTH,
+    'components/PermissionTemplatesPanel.vue': BOTH,
     'components/VcsReposOfOrg.vue': ['componentsOfOrg'],
     'components/VulnerabilityAnalysis.vue': BOTH,
 }
