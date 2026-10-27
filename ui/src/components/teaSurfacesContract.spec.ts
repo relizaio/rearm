@@ -377,16 +377,34 @@ describe('TEA surfaces contract', () => {
         expect(src('../utils/componentPageTab.ts')).toContain("export const SUBMISSIONS_TAB: ComponentPageTab = 'submissions'")
     })
 
-    it('ReleaseView carries the Regulatory submissions section after Generated artifacts and before Produced Deliverables, for the offered kinds', () => {
+    it('ReleaseView carries the Regulatory submissions in their own Regulatory tab right after TEA, for the offered kinds, and no longer in Components', () => {
         const rv = src('ReleaseView.vue')
-        const line = '<div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound && regulatoryPackageKinds.length" data-testid="submissions-section">'
+        const line = '<n-tab-pane v-if="regulatoryTabShown" name="regulatory" tab="Regulatory" data-testid="release-regulatory-tab">'
         const at = rv.indexOf(line)
-        expect(at).toBeGreaterThan(rv.indexOf('<h3>Generated artifacts</h3>'))
-        expect(at).toBeLessThan(rv.indexOf('Produced Deliverables'))
-        expect(rv.slice(at + line.length).trimStart().startsWith('<h3>Regulatory submissions</h3>')).toBe(true)
-        const block = rv.slice(at, rv.indexOf('</div>', at))
-        expect(block).toContain('<ReleaseSubmissionsPanel')
-        expect(block).toContain(':kinds="regulatoryPackageKinds"')
+        const tea = rv.indexOf('<n-tab-pane v-if="teaTabShown" name="tea" tab="TEA" data-testid="release-tea-tab">')
+        expect(tea).toBeGreaterThan(0)
+        expect(at).toBeGreaterThan(tea)
+        // Right after the TEA pane: nothing but the comment between them.
+        const between = rv.slice(rv.indexOf('</n-tab-pane>', tea) + '</n-tab-pane>'.length, at)
+        expect(between.replace(/<!--[\s\S]*?-->/g, '').trim()).toBe('')
+        expect(at).toBeLessThan(rv.indexOf('<n-tab-pane name="meta" tab="Meta">'))
+        const pane = rv.slice(at, rv.indexOf('</n-tab-pane>', at))
+        expect(pane).toContain('<div class="container" data-testid="submissions-section">')
+        expect(pane).toContain('<h3>Regulatory submissions</h3>')
+        expect(pane).toContain('<ReleaseSubmissionsPanel')
+        expect(pane).toContain(':kinds="regulatoryPackageKinds"')
+        expect(pane).toContain(':narrative-override="releaseNarrativeBaseline"')
+        expect(pane).toContain(':org-narrative="orgNarrativeDefault"')
+        expect(pane).toContain('@narrative-saved="onSubmissionNarrativeSaved"')
+        // The gate: Pro, not a document round, and a kind the release offers or holds a submission of.
+        expect(rv).toMatch(/const regulatoryTabShown: ComputedRef<boolean> = computed\(\(\) => submissionsAvailable\(myUser\?\.installationType\)\s*&& !isDocumentRound\.value && regulatoryPackageKinds\.value\.length > 0\)/)
+        // An open Regulatory tab that goes away falls back to Components, as the TEA tab does.
+        expect(rv).toMatch(/watch\(regulatoryTabShown, \(shown\) => \{\s*if \(!shown && activeTab\.value === 'regulatory'\) activeTab\.value = 'components'\s*\}\)/)
+        const components = rv.indexOf('<n-tab-pane name="components" tab="Components">')
+        const componentsPane = rv.slice(components, rv.indexOf('</n-tab-pane>', components))
+        expect(componentsPane).not.toContain('ReleaseSubmissionsPanel')
+        expect(componentsPane).not.toContain('Regulatory submissions')
+        expect(rv.match(/<ReleaseSubmissionsPanel/g)).toHaveLength(1)
     })
 
     it('ReleaseView reads the offered kinds through their own Pro-gated query, never the shared release fragments', () => {

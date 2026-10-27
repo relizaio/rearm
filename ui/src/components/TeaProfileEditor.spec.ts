@@ -6,7 +6,8 @@
 // save and removal first asks the server's exposure dry-run and confirms on its answer, and an
 // archived object shows its notice. The Inherit mode (UI only): with no stored row the editor opens
 // in INHERIT, read-only and without Save; INHERIT over a stored row asks "Inherit again?" (naive's
-// dialog) and removes the row. The GraphQL client, Swal and naive's dialog are mocked; the query mock
+// dialog) and removes the row; at COMPONENT scope with perspectives a muted hint under its source line
+// says inheriting can stop with a conflict. The GraphQL client, Swal and naive's dialog are mocked; the query mock
 // answers by document.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -433,6 +434,34 @@ describe('TeaProfileEditor', () => {
         expect(fire.mock.calls[0][0]).toEqual({ title: 'Error!', text: 'minimumLifecycle DRAFT is too low', icon: 'error' })
         expect(fire.mock.calls[0][0]).not.toHaveProperty('html')
         expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('INHERIT at COMPONENT scope with perspectives shows the conflict hint under the source line; Override and Follow do not', async () => {
+        const w = await mountWith(view())
+        expect(checkedMode(w)).toBe('INHERIT')
+        const hint = w.find('[data-testid="tea-inherit-hint"]')
+        expect(hint.text()).toBe("Inheriting resolves through this component's perspectives: if more than one of them carries its own "
+            + 'TEA profile, inheriting stops with a conflict \u2014 use Follow one of its perspectives to pin one.')
+        expect(hint.classes()).toContain('text-muted')
+        const html = w.html()
+        expect(html.indexOf('data-testid="tea-source"')).toBeLessThan(html.indexOf('data-testid="tea-inherit-hint"'))
+        await pickMode(w, 'OVERRIDE')
+        expect(w.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        await pickMode(w, 'FOLLOW_PERSPECTIVE')
+        expect(w.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+    })
+
+    it('no conflict hint for a component without perspectives, at a perspective, or under a CONFLICT (its line stays)', async () => {
+        const none = await mountWith(view(), { perspectiveOptions: [] })
+        expect(checkedMode(none)).toBe('INHERIT')
+        expect(none.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        const perspective = await mountWith(view(), { scope: 'PERSPECTIVE', objectUuid: 'p1' })
+        expect(checkedMode(perspective)).toBe('INHERIT')
+        expect(perspective.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        const conflicted = await mountWith(view({ parent: { status: 'CONFLICT', source: null, sourceObject: null, profile: null,
+            conflictingPerspectives: [P1, P2] } }))
+        expect(conflicted.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        expect(conflicted.find('[data-testid="tea-source"]').text()).toBe('Cannot inherit: its perspectives each carry a TEA profile')
     })
 
     it('shows the archived notice on an archived object only', async () => {

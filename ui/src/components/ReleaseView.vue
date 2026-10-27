@@ -1385,23 +1385,6 @@
                         <h3>Generated artifacts</h3>
                         <n-data-table :data="generatedArtifacts" :columns="generatedArtifactsTableFields" :row-key="artifactsRowKey" />
                     </div>
-                    <!-- TEA-30: the release's regulatory submissions (Pro), per kind with every version: one row
-                         per kind the release offers (switched on for its component, or already submitted). -->
-                    <div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound && regulatoryPackageKinds.length" data-testid="submissions-section">
-                        <h3>Regulatory submissions</h3>
-                        <ReleaseSubmissionsPanel
-                            :org-uuid="updatedRelease?.org"
-                            :release-uuid="updatedRelease?.uuid"
-                            :release-version="updatedRelease?.version"
-                            :lifecycle="updatedRelease?.lifecycle"
-                            :component-uuid="updatedRelease?.componentDetails?.uuid"
-                            :component-name="updatedRelease?.componentDetails?.name"
-                            :kinds="regulatoryPackageKinds"
-                            :is-writable="isWritable"
-                            :installation-type="myUser?.installationType"
-                            :names="teaPerspectiveNames()"
-                            :user-label="resolveUserById" />
-                    </div>
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
                             Produced Deliverables
@@ -1789,9 +1772,11 @@
                      what this release IS; this tab is what we CLAIM about it, and the two
                      were only ever adjacent by accident.
 
-                     PRODUCT-gated as a whole. A component release has no assessment narrative
-                     -- the org prose is a device-level statement -- and its disclosure gauge
-                     already sits above the SBOM list where the attesting happens, so a tab
+                     PRODUCT-gated as a whole. The assessment narrative of any release, a
+                     component's included, is set at submission time: Create and Resubmit in the
+                     Regulatory tab ask for it (the organization default or one for this release)
+                     and write the same override this tab edits. A component release's disclosure
+                     gauge already sits above the SBOM list where the attesting happens, so a tab
                      here would carry one number and nothing to do with it.
 
                      ATTESTATION EDITING IS DELIBERATELY NOT HERE. "Attest all shown", the
@@ -1906,6 +1891,31 @@
                         <p>This release is not published on TEA.</p>
                         <p v-if="!teaView.canPublish && teaView.refusalMessage" data-testid="tea-not-published-reason" class="text-muted">{{ teaView.refusalMessage }}</p>
                         <p v-else-if="teaView.canPublish" data-testid="tea-not-published-hint" class="text-muted">Publish it with the publish button beside the release title.</p>
+                    </div>
+                </n-tab-pane>
+                <!-- TEA-30: the release's regulatory submissions (Pro), per kind with every version, its own
+                     tab right after TEA: one row per kind the release offers (switched on for its
+                     component, or already submitted, so the history keeps the tab). Create and
+                     Resubmit of a kind carrying the assessment narrative ask for it first, on any
+                     release: the organization default or one written for this release. -->
+                <n-tab-pane v-if="regulatoryTabShown" name="regulatory" tab="Regulatory" data-testid="release-regulatory-tab">
+                    <div class="container" data-testid="submissions-section">
+                        <h3>Regulatory submissions</h3>
+                        <ReleaseSubmissionsPanel
+                            :org-uuid="updatedRelease?.org"
+                            :release-uuid="updatedRelease?.uuid"
+                            :release-version="updatedRelease?.version"
+                            :lifecycle="updatedRelease?.lifecycle"
+                            :component-uuid="updatedRelease?.componentDetails?.uuid"
+                            :component-name="updatedRelease?.componentDetails?.name"
+                            :kinds="regulatoryPackageKinds"
+                            :is-writable="isWritable"
+                            :installation-type="myUser?.installationType"
+                            :names="teaPerspectiveNames()"
+                            :user-label="resolveUserById"
+                            :narrative-override="releaseNarrativeBaseline"
+                            :org-narrative="orgNarrativeDefault"
+                            @narrative-saved="onSubmissionNarrativeSaved" />
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
@@ -2337,6 +2347,7 @@ import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
+import { UPDATE_RELEASE_NARRATIVE_GQL } from '@/utils/submissionNarrative'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
@@ -2616,10 +2627,7 @@ async function saveReleaseNarrative () {
         // something happened.
         if (!vars) return
         const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation updateReleaseNarrative($release: ReleaseInput!) {
-                    updateRelease(release: $release) { uuid fdaAssessmentNarrative }
-                }`,
+            mutation: UPDATE_RELEASE_NARRATIVE_GQL,
             variables: { release: vars }
         })
         // From the mutation's OWN response, before anything that can throw. The write has
@@ -4366,6 +4374,30 @@ function openTeaTab () {
 watch(teaTabShown, (shown) => {
     if (!shown && activeTab.value === 'tea') activeTab.value = 'components'
 })
+
+/**
+ * The Regulatory tab: Pro, not a document round, and a kind the release offers (switched on for its
+ * component, or one it already holds a submission of).
+ */
+const regulatoryTabShown: ComputedRef<boolean> = computed(() => submissionsAvailable(myUser?.installationType)
+    && !isDocumentRound.value && regulatoryPackageKinds.value.length > 0)
+
+// As the TEA tab: a Regulatory tab that goes away while open falls back to Components.
+watch(regulatoryTabShown, (shown) => {
+    if (!shown && activeTab.value === 'regulatory') activeTab.value = 'components'
+})
+
+/**
+ * The submission prompt wrote the release's narrative override: refetch, which re-seeds the Support
+ * tab's editor from the stored value. A failed refetch leaves the page as it was; the write stands.
+ */
+async function onSubmissionNarrativeSaved () {
+    try {
+        await fetchRelease()
+    } catch (e) {
+        console.warn('Failed to refresh the release after its narrative was saved', e)
+    }
+}
 
 async function runTeaPublish (mutation: any, field: string) {
     const view = teaView.value

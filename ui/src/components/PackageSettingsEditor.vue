@@ -17,6 +17,7 @@
 
                 <template v-if="view">
                     <p data-testid="package-source" class="text-muted">{{ sourceLine }}</p>
+                    <p v-if="inheritHint" data-testid="package-inherit-hint" class="text-muted">{{ inheritHint }}</p>
                     <p data-testid="package-effective" class="text-muted">{{ effectiveLine }}</p>
                     <n-alert v-if="view.parent?.status === 'CONFLICT'" data-testid="package-conflict" type="warning" class="package-alert">
                         {{ sourceLine }}
@@ -126,7 +127,7 @@ import {
     Option, PackageScope, PackageSettingsForm, PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_FIELD_HELP,
     PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_INHERIT, PACKAGE_SELECTION_OPTIONS,
     PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp,
-    packageEnabledLine, packageFormError, packageInheritConfirm, packageInheritedForm, packageModeOptions,
+    packageEnabledLine, packageFormError, packageInheritConfirm, packageInheritConflictHint, packageInheritedForm, packageModeOptions,
     packageFormFromView, packageKindLabel, packagePartFields, packagePartLabel, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine,
 } from '@/utils/packageSettings'
@@ -197,7 +198,10 @@ const shown = computed((): PackageSettingsForm => inherits.value ? inheritedForm
 const sourceLine = computed(() => packageSourceLine(view.value, allNames.value, form.value.mode))
 const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value))
 const effectiveEnabledLine = computed(() => packageEnabledLine(view.value?.effective))
-const enabledHelp = computed(() => packageEnabledHelp(kind.value))
+// Follows the value the switch shows, the read-only INHERIT display included.
+const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.enabled))
+const inheritHint = computed(() => packageInheritConflictHint(props.scope, form.value.mode, props.perspectiveOptions.length,
+    view.value, kind.value))
 const formError = computed(() => view.value ? packageFormError(form.value) : null)
 const profileValue = computed(() => shown.value.sbomProfile ? [shown.value.sbomProfile] : [])
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))

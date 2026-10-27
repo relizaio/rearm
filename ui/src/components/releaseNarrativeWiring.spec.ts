@@ -102,6 +102,20 @@ describe('the release narrative editor is wired into ReleaseView', () => {
         expect(elseWarn).toBeGreaterThan(success)
     })
 
+    // The submission prompt (Regulatory tab, any release) writes the same override through the same
+    // mutation, then the page refetches so this editor re-seeds from the stored value.
+    it('shares the narrative mutation with the submission prompt and refetches after the prompt wrote', () => {
+        expect(functionBody('saveReleaseNarrative')).toContain('mutation: UPDATE_RELEASE_NARRATIVE_GQL')
+        expect(source).toMatch(/import\s+\{[^}]*\bUPDATE_RELEASE_NARRATIVE_GQL\b[^}]*\}\s+from\s+'@\/utils\/submissionNarrative'/)
+        expect(functionBody('onSubmissionNarrativeSaved')).toContain('await fetchRelease()')
+        expect(source).toContain('@narrative-saved="onSubmissionNarrativeSaved"')
+        expect(source).toContain(':narrative-override="releaseNarrativeBaseline"')
+        expect(source).toContain(':org-narrative="orgNarrativeDefault"')
+        // The Support tab stays product-only; its comment says the narrative is set at submission time.
+        expect(source).not.toContain('A component release has no assessment narrative')
+        expect(source).toContain('is set at submission time')
+    })
+
     // A FDA_NARRATIVE event carries no objectId, so without its own branch the history row
     // renders blank -- a Scope column saying the justification changed beside nothing.
     it('renders FDA_NARRATIVE history rows through the length formatter', () => {

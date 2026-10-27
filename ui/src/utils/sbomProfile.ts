@@ -174,6 +174,23 @@ export function sbomFormFromView (view: SbomEditorView | null | undefined, scope
     }
 }
 
+/**
+ * The component's perspectives that define the view's name, read off its parent resolution: at
+ * COMPONENT scope the parent is the perspective step and below with no fallback, so one defining
+ * perspective resolves with source PERSPECTIVE and that perspective as its object, more than one is a
+ * CONFLICT listing every one of them, and none falls through to the organization or the defaults.
+ */
+export function sbomPerspectivesDefiningName (view: SbomEditorView | null | undefined): { uuid: string, name?: string | null }[] {
+    const parent = view?.parent
+    if (!parent) return []
+    if (parent.status === 'CONFLICT') return (parent.conflictingPerspectives ?? []).filter(p => p?.uuid)
+    if (parent.source === 'PERSPECTIVE' && parent.sourceObject) return [{ uuid: parent.sourceObject }]
+    return []
+}
+
+/** The line create mode shows in place of Follow while no perspective of the component defines the name. */
+export const SBOM_FOLLOW_UNAVAILABLE = "Follow is available once one of this component's perspectives defines this name"
+
 /** The SbomProfileInput a save sends: a FOLLOW row sends its mode and perspective only. */
 export function sbomProfileInput (form: SbomProfileForm, scope: SbomScope): Record<string, any> {
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {

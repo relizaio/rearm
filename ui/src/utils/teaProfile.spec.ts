@@ -10,7 +10,7 @@ import {
     teaConfirmBeforeMembership, teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaMembershipDelta,
     teaNeedsPublicConfirm, teaProfileInput,
     teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
-    teaInheritConfirm, teaInheritedForm, teaInitialMode, teaModeOptions, teaRowLink,
+    teaInheritConfirm, teaInheritedForm, teaInitialMode, teaModeOptions, teaRowLink, teaInheritConflictHint,
 } from './teaProfile'
 
 const values = (opts: { label: string, value: string }[]) => opts.map(o => o.value)
@@ -379,5 +379,25 @@ describe('the org table links each override to where it is edited', () => {
         expect(teaRowLink({ scope: 'PERSPECTIVE', object: 'p1' }, 'o1')).toBe('/orgSettings/o1?tab=perspectives')
         expect(teaRowLink({ scope: 'ORGANIZATION', object: null }, 'o1')).toBeNull()
         expect(teaRowLink({ scope: 'COMPONENT', object: null }, 'o1')).toBeNull()
+    })
+})
+
+describe('the INHERIT conflict hint', () => {
+    const resolved = { parent: { status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: 'p1', profile: {} } }
+
+    it('says how inheriting resolves at COMPONENT scope in INHERIT, for a component with perspectives', () => {
+        expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 1, resolved)).toBe("Inheriting resolves through this "
+            + "component's perspectives: if more than one of them carries its own TEA profile, inheriting stops with a "
+            + 'conflict \u2014 use Follow one of its perspectives to pin one.')
+        expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 3, null)).not.toBeNull()
+    })
+
+    it('is null in Override or Follow, at another scope, without perspectives, and under a CONFLICT', () => {
+        expect(teaInheritConflictHint('COMPONENT', 'OVERRIDE', 1, resolved)).toBeNull()
+        expect(teaInheritConflictHint('COMPONENT', 'FOLLOW_PERSPECTIVE', 1, resolved)).toBeNull()
+        expect(teaInheritConflictHint('PERSPECTIVE', TEA_INHERIT, 1, resolved)).toBeNull()
+        expect(teaInheritConflictHint('ORGANIZATION', TEA_INHERIT, 1, resolved)).toBeNull()
+        expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 0, resolved)).toBeNull()
+        expect(teaInheritConflictHint('COMPONENT', TEA_INHERIT, 2, { parent: { status: 'CONFLICT' } })).toBeNull()
     })
 })

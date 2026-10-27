@@ -5,7 +5,7 @@
 // server's packageKinds answer, never from this file.
 
 import { isProEdition } from './editionCapabilities'
-import { TEA_INHERIT, teaSourceLabel } from './teaProfile'
+import { TEA_INHERIT, teaInheritConflictHint, teaSourceLabel } from './teaProfile'
 
 /**
  * Whether this edition serves regulatory package settings and submissions. The Pro backend does;
@@ -74,8 +74,9 @@ export function packagePartLabel (part: string | null | undefined): string {
     return (part && PACKAGE_PART_LABELS[part]) || part || ''
 }
 
-/** The help text of the Enabled switch, naming the kind. */
-export function packageEnabledHelp (kind: string | null | undefined): string {
+/** The help text of the Enabled switch, naming the kind and describing the value the switch shows. */
+export function packageEnabledHelp (kind: string | null | undefined, enabled: boolean | null | undefined): string {
+    if (enabled === true) return 'On: releases of this scope offer ' + packageKindLabel(kind) + ' and can be submitted.'
     return 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
         + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
 }
@@ -247,6 +248,12 @@ function sourceWithRevision (r: any, map: Record<string, string>): string {
     const rev = r?.settings?.revision
     if (!r?.source || r.source === 'DEFAULT' || rev == null) return label
     return label + ', revision ' + rev
+}
+
+/** The INHERIT hint of the TEA editor, worded for a kind's package settings. */
+export function packageInheritConflictHint (scope: PackageScope, mode: string | null | undefined, perspectiveCount: number,
+    view: any, kind: string | null | undefined): string | null {
+    return teaInheritConflictHint(scope, mode, perspectiveCount, view, packageKindLabel(kind) + ' settings')
 }
 
 /** The editor's source line, the SBOM editor's text with "package settings" for the name; in INHERIT, where they come from. */

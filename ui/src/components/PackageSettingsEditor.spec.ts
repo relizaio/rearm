@@ -8,7 +8,9 @@
 // fields, off by default, sent on a save, absent from a FOLLOW row which shows the followed state.
 // The Inherit mode (UI only): with no stored row the editor opens in INHERIT, every field and the
 // Enabled switch read-only at the inherited value, without Save; INHERIT over a stored row asks
-// "Inherit again?" (naive's dialog, mocked) and removes the row.
+// "Inherit again?" (naive's dialog, mocked) and removes the row. The Enabled help follows the value
+// the switch shows, the read-only INHERIT and reader displays included. At COMPONENT scope in INHERIT,
+// with perspectives and no conflict yet, a muted hint says inheriting can stop with a conflict.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { readFileSync } from 'fs'
@@ -368,5 +370,65 @@ describe('PackageSettingsEditor', () => {
         const sw = w.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!
         expect(sw.props('value')).toBe(true)
         expect(sw.props('disabled')).toBe(true)
+    })
+
+    it('the Enabled help follows the switch: Off text when off, On text once switched on', async () => {
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: false, sbomProfile: 'default', parts: [] } })
+        const w = await mountWith()
+        const help = () => w.find('.package-enabled-help').text()
+        expect(help()).toBe('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
+            + 'existing submissions stay readable and can be withdrawn.')
+        await enabledSwitch(w).vm.$emit('update:value', true)
+        await flushPromises()
+        expect(help()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+    })
+
+    it('the Enabled help describes the shown value when read-only: an inherited on, a reader on a stored on', async () => {
+        views.FDA_PREMARKET = viewOf(FDA, { parent: { ...resolution, settings: { ...resolution.settings, enabled: true } } })
+        const inherit = await mountWith()
+        expect(checkedMode(inherit)).toBe('INHERIT')
+        expect(inherit.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+        // Override pre-filled from the parent: switched off there, the text follows.
+        await pickMode(inherit, 'OVERRIDE')
+        await enabledSwitch(inherit).vm.$emit('update:value', false)
+        await flushPromises()
+        expect(inherit.find('.package-enabled-help').text()).toContain('Off: releases of this scope do not offer FDA premarket')
+        inherit.unmount()
+
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        const reader = await mountWith({ isWritable: false })
+        expect(reader.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+    })
+
+    it('INHERIT at COMPONENT scope with perspectives shows the conflict hint under the source line, naming the kind', async () => {
+        const w = await mountWith({ perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' }] })
+        expect(checkedMode(w)).toBe('INHERIT')
+        const hint = w.find('[data-testid="package-inherit-hint"]')
+        expect(hint.text()).toBe("Inheriting resolves through this component's perspectives: if more than one of them carries its own "
+            + 'FDA premarket settings, inheriting stops with a conflict \u2014 use Follow one of its perspectives to pin one.')
+        expect(hint.classes()).toContain('text-muted')
+        const html = w.html()
+        expect(html.indexOf('data-testid="package-source"')).toBeLessThan(html.indexOf('data-testid="package-inherit-hint"'))
+        await pickMode(w, 'OVERRIDE')
+        expect(w.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
+        await pickMode(w, 'FOLLOW_PERSPECTIVE')
+        expect(w.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
+    })
+
+    it('no conflict hint without perspectives, at a perspective, or once the resolution conflicts (its own line stays)', async () => {
+        const none = await mountWith()
+        expect(checkedMode(none)).toBe('INHERIT')
+        expect(none.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
+        none.unmount()
+        const perspective = await mountWith({ scope: 'PERSPECTIVE', objectUuid: 'p1',
+            perspectiveOptions: [{ label: 'Payments', value: 'p1' }] })
+        expect(perspective.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
+        perspective.unmount()
+        const conflict = { status: 'CONFLICT', source: null, sourceObject: null, settings: null,
+            conflictingPerspectives: [{ uuid: 'p1', name: 'Payments' }, { uuid: 'p2', name: 'Retail' }] }
+        views.FDA_PREMARKET = viewOf(FDA, { parent: conflict, effective: conflict })
+        const conflicted = await mountWith({ perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' }] })
+        expect(conflicted.find('[data-testid="package-inherit-hint"]').exists()).toBe(false)
+        expect(conflicted.find('[data-testid="package-conflict"]').exists()).toBe(true)
     })
 })

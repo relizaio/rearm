@@ -7,6 +7,7 @@ import {
     packageEnabledHelp, packageEnabledLine, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
     PACKAGE_MODE_OPTIONS, PACKAGE_PERSPECTIVE_MODE_OPTIONS, packageInheritConfirm, packageInheritedForm, packageModeOptions,
+    packageInheritConflictHint, PACKAGE_INHERIT,
 } from './packageSettings'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
@@ -163,9 +164,12 @@ describe('the form and the save over two kinds (row 21)', () => {
             .not.toHaveProperty('enabled')
     })
 
-    it('the Enabled help names the kind, and the effective line reads the resolved settings', () => {
-        expect(packageEnabledHelp('FDA_PREMARKET')).toBe('Off: releases of this scope do not offer FDA premarket and no new '
-            + 'submission can be made; existing submissions stay readable and can be withdrawn.')
+    it('the Enabled help names the kind and follows the value shown, and the effective line reads the resolved settings', () => {
+        const off = 'Off: releases of this scope do not offer FDA premarket and no new '
+            + 'submission can be made; existing submissions stay readable and can be withdrawn.'
+        expect(packageEnabledHelp('FDA_PREMARKET', false)).toBe(off)
+        expect(packageEnabledHelp('FDA_PREMARKET', null)).toBe(off)
+        expect(packageEnabledHelp('FDA_PREMARKET', true)).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
         expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: true } })).toBe('Enabled here: on')
         expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: false } })).toBe('Enabled here: off')
         expect(packageEnabledLine({ status: 'NOT_FOUND', settings: null })).toBe('Enabled here: off')
@@ -232,5 +236,23 @@ describe('the Inherit mode (UI only, never sent)', () => {
             content: "Remove this component's override and inherit the perspective or organization settings again?" })
         expect(packageInheritConfirm('PERSPECTIVE', 'perspective').content)
             .toBe("Remove this perspective's override and inherit the organization settings again?")
+    })
+})
+
+describe('the INHERIT conflict hint', () => {
+    const hint = "Inheriting resolves through this component's perspectives: if more than one of them carries its own "
+        + 'FDA premarket settings, inheriting stops with a conflict \u2014 use Follow one of its perspectives to pin one.'
+    const resolved = { parent: { status: 'RESOLVED', source: 'ORGANIZATION' } }
+
+    it('names the kind, at COMPONENT scope in INHERIT with a perspective', () => {
+        expect(packageInheritConflictHint('COMPONENT', PACKAGE_INHERIT, 2, resolved, 'FDA_PREMARKET')).toBe(hint)
+    })
+
+    it('is null in another mode or scope, without perspectives, and once the resolution conflicts', () => {
+        expect(packageInheritConflictHint('COMPONENT', 'OVERRIDE', 2, resolved, 'FDA_PREMARKET')).toBeNull()
+        expect(packageInheritConflictHint('COMPONENT', 'FOLLOW_PERSPECTIVE', 2, resolved, 'FDA_PREMARKET')).toBeNull()
+        expect(packageInheritConflictHint('PERSPECTIVE', PACKAGE_INHERIT, 2, resolved, 'FDA_PREMARKET')).toBeNull()
+        expect(packageInheritConflictHint('COMPONENT', PACKAGE_INHERIT, 0, resolved, 'FDA_PREMARKET')).toBeNull()
+        expect(packageInheritConflictHint('COMPONENT', PACKAGE_INHERIT, 2, { parent: { status: 'CONFLICT' } }, 'FDA_PREMARKET')).toBeNull()
     })
 })

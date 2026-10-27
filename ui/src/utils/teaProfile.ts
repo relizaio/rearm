@@ -228,6 +228,20 @@ export function teaInheritedLine (view: any, names: Record<string, string> = {})
     return 'Inherited from ' + from + (view?.stored ? ': Save removes the stored override' : '')
 }
 
+/**
+ * The muted hint under an INHERIT form's source line at COMPONENT scope: inheriting resolves through the
+ * component's perspectives, and more than one of them with its own row is a conflict. Null elsewhere,
+ * for a component with no perspective, and once the resolution already conflicts (the source line
+ * says so itself).
+ */
+export function teaInheritConflictHint (scope: TeaScope, mode: string | null | undefined, perspectiveCount: number,
+    view: any, carried = 'TEA profile'): string | null {
+    if (scope !== 'COMPONENT' || mode !== TEA_INHERIT || perspectiveCount < 1) return null
+    if (view?.parent?.status === 'CONFLICT') return null
+    return "Inheriting resolves through this component's perspectives: if more than one of them carries its own "
+        + carried + ', inheriting stops with a conflict — use Follow one of its perspectives to pin one.'
+}
+
 /** The editor's source line; in INHERIT, where the inherited values come from. */
 export function teaSourceLine (view: any, names: Record<string, string> = {}, mode: string | null = null): string {
     if (mode === TEA_INHERIT) return teaInheritedLine(view, names)

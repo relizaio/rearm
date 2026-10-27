@@ -8,7 +8,7 @@ import {
     SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS, SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults,
     sbomCatalogRows, sbomDeleteConfirm, sbomEffectiveLine, sbomFormFromView, sbomNameError, sbomPickerLines,
     sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomProfileNamesAvailable, sbomRowsForEdition, sbomSourceLine,
-    sbomValueText,
+    sbomValueText, sbomPerspectivesDefiningName,
 } from './sbomProfile'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
@@ -253,5 +253,19 @@ describe('the delete confirmation (row 8, functional F-10)', () => {
         expect(marked.confirmButtonText).toBe('Delete')
         expect(marked.text).toContain('Remove the definition of <b>x</b> at this product. ')
         expect(marked.text).toContain('naming <b>x</b> at or below')
+    })
+})
+
+describe('the perspectives defining a name', () => {
+    it('reads one defining perspective off a PERSPECTIVE parent, every one off a CONFLICT, none otherwise', () => {
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: 'p1' } }))
+            .toEqual([{ uuid: 'p1' }])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'CONFLICT', source: 'PERSPECTIVE', sourceObject: null,
+            conflictingPerspectives: [{ uuid: 'p1', name: 'Payments' }, { uuid: 'p2', name: 'Retail' }] } }).map(p => p.uuid))
+            .toEqual(['p1', 'p2'])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null } })).toEqual([])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'NOT_FOUND', source: null } })).toEqual([])
+        expect(sbomPerspectivesDefiningName({ parent: null })).toEqual([])
+        expect(sbomPerspectivesDefiningName(null)).toEqual([])
     })
 })

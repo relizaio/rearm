@@ -7,6 +7,7 @@
             <div v-if="loadError" data-testid="tea-load-error" class="text-danger">{{ loadError }}</div>
             <template v-else-if="view">
                 <p data-testid="tea-source" class="text-muted">{{ sourceLine }}</p>
+                <p v-if="inheritHint" data-testid="tea-inherit-hint" class="text-muted">{{ inheritHint }}</p>
                 <n-alert v-if="objectArchived" data-testid="tea-archived" type="warning" :closable="false" class="tea-alert">
                     This {{ scopeWord }} is archived: its TEA profile can only hide what it published (publishing
                     DISABLED, visibility PRIVATE); any other save is refused.
@@ -101,7 +102,7 @@ import {
     CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_INHERIT, TEA_MINIMUM_LIFECYCLE_OPTIONS,
     TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS,
     TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView,
-    teaInheritConfirm, teaInheritedForm, teaModeOptions, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner,
+    teaInheritConfirm, teaInheritConflictHint, teaInheritedForm, teaModeOptions, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner,
     teaSourceLine, TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
 import { sbomProfileNamesAvailable } from '@/utils/sbomProfile'
@@ -159,6 +160,7 @@ const readOnly = computed(() => !props.isWritable || inherits.value)
 const shown = computed((): TeaProfileForm => inherits.value ? teaInheritedForm(view.value) : form.value)
 const showProductComponents = computed(() => props.scope !== 'COMPONENT' || props.objectIsProduct)
 const sourceLine = computed(() => teaSourceLine(view.value, perspectiveNames.value, form.value.mode))
+const inheritHint = computed(() => teaInheritConflictHint(props.scope, form.value.mode, props.perspectiveOptions.length, view.value))
 const banner = computed(() => teaPublicBanner(view.value, perspectiveNames.value))
 const conflictNames = computed(() => (view.value?.parent?.conflictingPerspectives ?? []).map((p: any) => p.name).join(', '))
 const scopeWord = computed(() => props.objectIsProduct ? 'product' : props.scope.toLowerCase())
