@@ -253,7 +253,8 @@ rebom:
 #
 # UPGRADING an existing release: the policies apply on the next
 # `helm upgrade`. Before that, check that your ingress controller matches
-# ingressController below (`kubectl get pods -A -l app.kubernetes.io/name=traefik`)
+# ingressController below (`kubectl get pods -A -l app.kubernetes.io/name=traefik`
+# for the Traefik default)
 # and that no IngressRoute outside this chart targets the backend or keycloak
 # Services (`kubectl get ingressroute -A -o yaml | grep -E 'backend-service|name: keycloak'`);
 # if one does, set backend.fromIngressController / keycloak.fromIngressController.
@@ -263,18 +264,26 @@ rebom:
 # behaviour: enabled: false.
 networkPolicy:
   enabled: true
-  # The pods allowed to reach the UI (port 80). Defaults match the Traefik
-  # Helm chart and the k3s bundled Traefik in any namespace; narrow
-  # namespaceSelector in production, e.g.
-  #   namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
-  ingressController:
-    namespaceSelector: {}
-    podSelector:
-      matchLabels:
-        app.kubernetes.io/name: traefik
-    # Extra NetworkPolicyPeer entries, e.g. for a hostNetwork controller:
-    #   - ipBlock: { cidr: 10.0.0.0/8 }
-    extraFrom: []
+  # The pods allowed to reach the UI (port 80). Set any of namespaceSelector,
+  # podSelector or extraFrom to name your controller, e.g. ingress-nginx:
+  #   ingressController:
+  #     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+  #     podSelector: { matchLabels: { app.kubernetes.io/name: ingress-nginx } }
+  # extraFrom takes extra NetworkPolicyPeer entries, e.g. for a hostNetwork
+  # controller:  extraFrom: [ { ipBlock: { cidr: 10.0.0.0/8 } } ]
+  # Left unset (the default):
+  # - with useTraefikLe or traefikBehindLb (the chart renders Traefik
+  #   IngressRoutes) the UI admits the Traefik pods in any namespace
+  #   (app.kubernetes.io/name: traefik, as labelled by the Traefik Helm chart
+  #   and the k3s bundled Traefik); narrow it in production with
+  #     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+  #     podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+  # - with both false (you bring your own ingress) the controller is unknown,
+  #   so NO UI policy is rendered and the UI accepts any pod as without
+  #   policies, unless ui.extraIngress or ui.allowFromNamespace gives the UI
+  #   rules of its own; backend/keycloak.fromIngressController then fail the
+  #   render. Every other service keeps its policy.
+  ingressController: {}
   # One deny-ingress policy with podSelector {} for the WHOLE namespace. Off
   # by default: it also covers pods this chart does not label (the
   # ecr-regcred subchart's job pods in the Pro chart) and any other release
