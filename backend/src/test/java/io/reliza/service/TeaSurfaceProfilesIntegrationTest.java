@@ -5,7 +5,6 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertArrayEquals;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertNotEquals;
 
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
@@ -17,9 +16,6 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 
 import io.reliza.common.Utils;
-import io.reliza.model.SbomProfileData.SbomDependencyDepth;
-import io.reliza.model.SbomProfileData.SbomInternalMetadata;
-import io.reliza.model.SettingsScope;
 import io.reliza.model.TeaProfileData.TeaRawArtifacts;
 import io.reliza.model.TeaProfileData.TeaProductComponents;
 import io.reliza.model.TeaProfileData.TeaProfileScope;
@@ -96,41 +92,8 @@ class TeaSurfaceProfilesIntegrationTest extends TeaSurfaceIntegrationTestBase {
 						TeaProductComponents.PUBLISH_WITH_PRODUCT).profiles(List.of(names)).build(), TeaCaller.ORG_ADMIN, WU);
 	}
 
-	@Test
-	void twoNamedAggregatesAreServedAndARemovedOneStaysServedAndAReaddedOneIsTheSameObject() throws Exception {
-		saveOrgRecipe();
-		saveSbomProfile(SettingsScope.ORGANIZATION, null, "top", SbomDependencyDepth.TOP_LEVEL_ONLY,
-				SbomInternalMetadata.EXCLUDE);
-		saveOrgProfileNaming(TeaVisibility.PUBLIC, TeaRawArtifacts.NONE, "default", "top");
-		World w = componentReleaseWithPurl(org, "pkg:generic/tea28-" + tag() + "@1.0.0", List.of());
-		tldOnlyPurls.put(w.release(), List.of());
-		UUID head = publish(w.release(), TeaPublishMode.PUBLISH).publication().getUuid();
-
-		JsonNode v1 = collection(head, "1");
-		assertEquals(List.of("default", "top"), names(v1));
-		v1.get("artifacts").forEach(a -> assertEquals("BOM", a.get("type").asString()));
-		TeaPublishedEntry def = entry(head, 1, "default");
-		TeaPublishedEntry top = entry(head, 1, "top");
-		assertNotEquals(def.teaUuid(), top.teaUuid());
-		for (TeaPublishedEntry e : List.of(def, top)) {
-			assertEquals(e.sbomProfileName(), artifact(e.teaUuid(), 1).get("name").asString());
-			assertDownloads(e, e.sbomProfileName() + ".cdx.json");
-		}
-		JsonNode topObject = artifact(top.teaUuid(), 1);
-
-		// top removed: the latest lists one, version 1 still two, and top's revision is still served
-		nameTheOrgRow("default");
-		publish(w.release(), TeaPublishMode.REPUBLISH);
-		assertEquals(List.of("default"), names(collection(head, "latest")));
-		assertEquals(List.of("default", "top"), names(collection(head, "1")));
-		assertDownloads(top, "top.cdx.json");
-
-		// top added back with unchanged content: the same object at the same revision
-		nameTheOrgRow("default", "top");
-		publish(w.release(), TeaPublishMode.REPUBLISH);
-		assertEquals(topObject, artifact(top.teaUuid(), 1));
-		assertEquals(topObject, elementOf(collection(head, "latest"), top.teaUuid()));
-	}
+	// CE (SCORE-72 3.6): twoNamedAggregatesAreServedAndARemovedOneStaysServedAndAReaddedOneIsTheSameObject is not
+	// here. It saves a two-profile TEA row, which CE refuses; Pro's copy of this test keeps it.
 
 	@Test
 	void aLegacyNamedRevisionIsServedUnderItsFrozenNameUntilItsContentChanges() throws Exception {

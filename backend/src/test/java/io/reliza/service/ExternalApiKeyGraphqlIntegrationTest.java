@@ -143,27 +143,9 @@ public class ExternalApiKeyGraphqlIntegrationTest extends ExternalKeyIntegration
 	}
 
 	// run 2, T-6: the approvals surface writes the org-wide grant directly, so it refuses an EXTERNAL key
-	@Test
-	public void theApprovalsSurfaceRefusesAnExternalKeyAndChangesNothing() throws Exception {
-		Organization org = testInitializer.obtainOrganization();
-		UserData admin = admin(org);
-		ok(exec(admin, "mutation($o: ID!, $r: ApprovalRoleInput!) { addApprovalRole(orgUuid: $o, approvalRole: $r) { uuid } }",
-				"o", org.getUuid().toString(), "r", Map.of("id", "TEA3QA", "displayView", "TEA-3 QA")), "addApprovalRole");
-		String key = (String) createKey(admin, org, "Acme").get("uuid");
-		ok(exec(admin, SET_GRANTS, "k", key, "t", null, "p", List.of(grant("ORGANIZATION", org.getUuid(), "READ_ONLY", List.of()))),
-				"setPermissionsOnFreeformApiKey");
-		Map<String, Object> before = stateOf(admin, org, key);
-		failsWith(exec(admin, SET_APPROVALS, "k", key, "a", List.of(), "n", "n"), ApiKeyService.EXTERNAL_APPROVALS_REFUSAL);
-		failsWith(exec(admin, SET_APPROVALS, "k", key, "a", List.of("TEA3QA"), "n", "n"), ApiKeyService.EXTERNAL_APPROVALS_REFUSAL);
-		assertEquals(before, stateOf(admin, org, key), "the org-wide READ_ONLY grant stays and no approval is stored");
-		List<Map<String, Object>> notes = ok(exec(admin, "query($o: ID!) { externalApiKeys(orgUuid: $o) { uuid notes } }",
-				"o", org.getUuid().toString()), "externalApiKeys");
-		assertEquals("tea3 test", notes.get(0).get("notes"), "the notes stay as created");
-		// control: the same approval is valid for a Free Form key of the org, so the refusal above is the key type's
-		String freeform = (String) ((Map<?, ?>) ok(exec(admin, "mutation($o: ID!) { createOrgApiKey(orgUuid: $o, apiType: FREEFORM) { uuid } }",
-				"o", org.getUuid().toString()), "createOrgApiKey")).get("uuid");
-		ok(exec(admin, SET_APPROVALS, "k", freeform, "a", List.of("TEA3QA"), "n", "n"), "setApprovalsOnApiKey");
-	}
+	// CE (SCORE-72 3.6): theApprovalsSurfaceRefusesAnExternalKeyAndChangesNothing is not here. It drives
+	// addApprovalRole and setApprovalsOnFreeformApiKey, the approvals surface CE does not have (stubs);
+	// Pro's copy of this test keeps it.
 
 	// 39
 	@Test

@@ -212,13 +212,10 @@ class SbomUpdateGuardMetaNotExposedTest {
 	// T-21
 	@Test
 	void onlyTheVdrTriggerUsesNoPrincipalAndNoAuthorityIsConstantlyOrgWide() throws Exception {
+		// CE: Pro's only NO_PRINCIPAL caller is saas/ReleaseTriggerService (the VDR trigger), which CE
+		// does not have, so on CE nothing but its declaration names it (SCORE-55 3.6).
 		List<String> users = mainSourcesMatching(Pattern.compile("NO_PRINCIPAL"));
-		assertEquals(List.of("io/reliza/service/SbomWriteAuthority.java",
-				"io/reliza/service/saas/ReleaseTriggerService.java"), users);
-		String trigger = Files.readString(MAIN_SOURCES.resolve("io/reliza/service/saas/ReleaseTriggerService.java"));
-		int use = trigger.indexOf("SbomWriteAuthority.NO_PRINCIPAL");
-		String before = trigger.substring(Math.max(0, use - 2500), use);
-		assertTrue(before.contains("ArtifactType.VDR"), "the NO_PRINCIPAL upload is the VDR's");
+		assertEquals(List.of("io/reliza/service/SbomWriteAuthority.java"), users);
 		assertEquals(List.of(), mainSourcesMatching(Pattern.compile(
 				"boolean\\s+orgWideWrite\\s*\\(\\s*\\)\\s*\\{\\s*return\\s+true\\s*;")));
 	}

@@ -53,7 +53,6 @@ import io.reliza.service.ExternalApiKeyService;
 import io.reliza.service.FederatedTrustRuleService;
 import io.reliza.service.SbomWriteAuthority;
 import io.reliza.service.UserGroupService;
-import io.reliza.service.saas.PerspectiveService;
 
 /**
  * SCORE-52 T-10 (ADR-2): {@code SbomWriteAuthorityService}, one case per row of
@@ -67,7 +66,6 @@ class SbomWriteAuthorityServiceTest extends SbomUpdateGuardProgrammaticTestBase 
 	@MockitoSpyBean private FederatedTrustRuleService federatedTrustRuleService;
 	@MockitoSpyBean private ApiKeyAccessService apiKeyAccessService;
 	@Autowired private UserGroupService userGroupService;
-	@Autowired private PerspectiveService perspectiveService;
 	@Autowired private AuthorizationService authorizationService;
 	@Autowired private ExternalApiKeyService externalApiKeyService;
 
@@ -107,10 +105,8 @@ class SbomWriteAuthorityServiceTest extends SbomUpdateGuardProgrammaticTestBase 
 		assertRights(user(w, writer(w.org(), PermissionScope.RELEASE, w.releaseA())), false, false, false, w);
 		UUID branchA = branchService.getBaseBranchOfComponent(w.a().getUuid()).orElseThrow().getUuid();
 		assertRights(user(w, writer(w.org(), PermissionScope.BRANCH, branchA)), false, false, false, w);
-
-		UUID perspective = perspectiveService.createPerspective(org, "score52-" + UUID.randomUUID(), WU).getUuid();
-		componentService.setPerspectives(w.a().getUuid(), List.of(perspective), WU);
-		assertRights(user(w, writer(w.org(), PermissionScope.PERSPECTIVE, perspective)), false, true, false, w);
+		// CE: no PERSPECTIVE case. CE has no perspectives, so a perspective grant cannot be set up
+		// here (SCORE-55 3.6); Pro's copy of this test keeps it.
 	}
 
 	@Test

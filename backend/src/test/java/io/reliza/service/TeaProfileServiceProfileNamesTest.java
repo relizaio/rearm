@@ -108,10 +108,14 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void theSaveGoesThroughTheEditionSeam() throws RelizaException {
-		// This JVM is Pro: two names save; the CE branch is validateProfileNames(names, true) above.
-		TeaProfileData saved = save(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda"),
+		// CE (SCORE-72 3.6): this JVM is CE, so the save takes the validateProfileNames(names, true) branch
+		// above: two names are refused, one name saves. Pro's copy of this test saves two names.
+		assertEquals("ReARM CE publishes one SBOM profile per TEA publishing settings; several profiles "
+				+ "are a ReARM Pro feature",
+				refused(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda")).getMessage());
+		TeaProfileData saved = save(TeaProfileScope.ORGANIZATION, null, names(full(), "default"),
 				TeaCaller.ORG_ADMIN);
-		assertEquals(List.of("default", "fda"), saved.getProfiles(), "the order given is kept");
+		assertEquals(List.of("default"), saved.getProfiles());
 	}
 
 	@Test

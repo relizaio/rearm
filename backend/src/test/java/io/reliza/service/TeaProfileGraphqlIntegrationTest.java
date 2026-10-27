@@ -249,19 +249,8 @@ public class TeaProfileGraphqlIntegrationTest extends TeaProfileGraphqlIntegrati
 				c.getUuid().toString(), "n", "premarket"), "deleteSbomProfile"));
 	}
 
-	@Test
-	public void aFollowRowSendsNoProfiles() throws RelizaException {
-		Organization org = testInitializer.obtainOrganization();
-		UserData admin = admin(org);
-		Component c = component(org);
-		UUID p = perspective(admin, org, "names");
-		perspectivesOf(admin, c, p);
-		Map<String, Object> follow = profile("mode", "FOLLOW_PERSPECTIVE", "followedPerspective", p.toString());
-		failsWith(save(admin, org, "COMPONENT", c.getUuid(), follow), "profiles must be empty when mode is FOLLOW_PERSPECTIVE");
-		follow.remove("profiles");
-		Map<String, Object> saved = ok(save(admin, org, "COMPONENT", c.getUuid(), follow), "saveTeaProfile");
-		assertNull(saved.get("profiles"));
-	}
+	// CE (SCORE-72 3.6): aFollowRowSendsNoProfiles is not here. It creates a perspective through createPerspective,
+	// a ReARM Pro mutation with no CE fetcher; Pro's copy of this test keeps it.
 
 	@Test
 	public void discoveryAppearsWithTheMint() throws RelizaException {

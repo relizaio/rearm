@@ -5,7 +5,6 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -24,19 +23,14 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.CommonVariables.PerspectiveType;
-import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
-import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoard;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.UserPermission;
-import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
-import io.reliza.model.saas.PerspectiveData;
 import io.reliza.repositories.AgentBoardRepository;
 import io.reliza.service.oss.OssPerspectiveService;
 
@@ -86,13 +80,8 @@ public class AuthorizationServiceBoardTest {
 		when(repo.findByOrg(anyString())).thenAnswer(i -> rows.values().stream()
 				.filter(r -> AgentBoardData.dataFromRecord(r).getOrg().toString().equals(i.getArgument(0))).toList());
 		ReflectionTestUtils.setField(svc, "agentBoardRepository", repo);
-		// A PERSPECTIVE grant clears a call only on a live perspective of its org (task TEA-8, D6).
-		PerspectiveData pd = new PerspectiveData();
-		pd.setUuid(perspective);
-		pd.setOrg(org);
-		pd.setType(PerspectiveType.PERSPECTIVE);
-		pd.setStatus(StatusEnum.ACTIVE);
-		when(ossPerspectiveService.getPerspectiveData(perspective)).thenReturn(Optional.of(pd));
+		// CE: no live perspective is stubbed. CE has no perspectives (SCORE-72 3.6, as SCORE-55); Pro's
+		// copy of this test stubs one for its PERSPECTIVE grant cases.
 		ReflectionTestUtils.setField(svc, "ossPerspectiveService", ossPerspectiveService);
 		return svc;
 	}
@@ -229,27 +218,8 @@ public class AuthorizationServiceBoardTest {
 
 	// ---------- 5. grant objects: PERSPECTIVE (TPF-15) ----------
 
-	@Test
-	void aPerspectiveGrantOnALivePerspectiveIsAccepted() throws Exception {
-		AuthorizationService svc = service();
-		when(ossPerspectiveService.requireLivePerspective(org, perspective)).thenReturn(new PerspectiveData());
-		svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective);
-	}
-
-	@Test
-	void aPerspectiveGrantOnADeadOrForeignPerspectiveIsRefused() throws Exception {
-		AuthorizationService svc = service();
-		when(ossPerspectiveService.requireLivePerspective(org, perspective))
-				.thenThrow(new RelizaException("Perspective not found: " + perspective));
-		RelizaException one = assertThrows(RelizaException.class,
-				() -> svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective));
-		assertEquals("Perspective not found: " + perspective, one.getMessage());
-		PermissionDto dto = new PermissionDto(org, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY,
-				Set.of(PermissionFunction.RESOURCE), null);
-		RelizaException all = assertThrows(RelizaException.class,
-				() -> svc.assertGrantObjectsExist(org, List.of(dto)));
-		assertEquals("Perspective not found: " + perspective, all.getMessage());
-	}
+	// CE: no PERSPECTIVE grant cases. CE has no perspectives, so a live or dead one cannot be set up
+	// here (SCORE-72 3.6, as SCORE-55); Pro's copy of this test keeps them.
 
 	@Test
 	void otherScopesAreNotAskedAboutPerspectives() throws Exception {

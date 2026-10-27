@@ -9,7 +9,6 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
-import java.util.Map;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -21,16 +20,11 @@ import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.TeaProfileData.TeaProductComponents;
-import io.reliza.model.TeaProfileData.TeaPublishing;
 import io.reliza.model.TeaProfileData.TeaRawArtifacts;
-import io.reliza.model.TeaProfileData.TeaVisibility;
 import io.reliza.model.TeaPublicationData;
 import io.reliza.model.TeaPublishedCollectionData.TeaArtifactOrigin;
 import io.reliza.service.TeaPublicationService.TeaChildOutcome;
 import io.reliza.service.TeaPublicationService.TeaChildPublishResult;
-import io.reliza.model.SettingsScope;
-import io.reliza.model.SbomProfileData.SbomDependencyDepth;
-import io.reliza.model.SbomProfileData.SbomInternalMetadata;
 import io.reliza.service.TeaPublicationService.TeaConcealReason;
 import io.reliza.service.TeaPublicationService.TeaExposureState;
 import io.reliza.service.TeaPublicationService.TeaPublicationExposure;
@@ -95,49 +89,8 @@ public class TeaPublicationCascadeIntegrationTest extends TeaPublicationIntegrat
 
 	// ---------------------------------------------------------------- 72
 
-	@Test
-	@SuppressWarnings("unchecked")
-	void aChildsOwnProfileGatesAndCapsTheCascade() throws Exception {
-		// task TEA-28: the organization's row names two profiles, so every published child carries both
-		saveOrgRecipe();
-		saveSbomProfile(SettingsScope.ORGANIZATION, null, "top", SbomDependencyDepth.FULL, SbomInternalMetadata.EXCLUDE);
-		saveOrgProfileNaming(TeaVisibility.PUBLIC, TeaRawArtifacts.NONE, "default", "top");
-		World a = componentRelease("pkg:generic/a@1.0.0");
-		World b = componentRelease("pkg:generic/b@1.0.0");
-		saveComponentProfile(b.component(), TeaPublishing.DISABLED, TeaVisibility.PRIVATE, TeaRawArtifacts.NONE);
-		UUID product = product(List.of(a.release(), b.release()));
-
-		TeaPublishResult first = publish(product, TeaPublishMode.PUBLISH);
-
-		assertEquals(TeaChildOutcome.PUBLISHED, childOf(first, a.release()).outcome());
-		assertEquals(TeaChildOutcome.REFUSED, childOf(first, b.release()).outcome());
-		assertEquals(TeaPublishRefusal.PUBLISHING_DISABLED, childOf(first, b.release()).refusal());
-		assertTrue(teaPublicationService.getPublicationOfRelease(b.release()).isEmpty(), "the refused child has no head");
-
-		// enabled but PRIVATE on its own row, under a PUBLIC organization profile
-		saveComponentProfile(b.component(), TeaPublishing.ENABLED, TeaVisibility.PRIVATE, TeaRawArtifacts.NONE);
-		TeaPublishResult second = publish(product, TeaPublishMode.REPUBLISH);
-		assertEquals(TeaChildOutcome.PUBLISHED, childOf(second, b.release()).outcome());
-		assertEquals(TeaChildOutcome.UNCHANGED, childOf(second, a.release()).outcome());
-		TeaPublicationData childB = teaPublicationService.getPublicationOfRelease(b.release()).orElseThrow();
-		TeaPublicationExposure eb = teaPublicationService.exposureOf(childB);
-		assertEquals(TeaExposureState.PRIVATE, eb.state());
-		assertEquals(b.component(), eb.governingComponent().getUuid());
-		assertEquals(TeaExposureState.PUBLIC, teaPublicationService.exposureOf(
-				teaPublicationService.getPublicationOfRelease(a.release()).orElseThrow()).state());
-		Map<String, Object> view = data(asUser(admin(), VIEW, vars("r", b.release().toString())),
-				"releaseTeaPublicationView");
-		assertEquals("PRIVATE", ((Map<String, Object>) view.get("publication")).get("exposure"));
-
-		// raw artifacts: the organization says ALL, the child's own row NONE, then ALL
-		saveOrgProfileNaming(TeaVisibility.PUBLIC, TeaRawArtifacts.ALL, "default", "top");
-		publish(product, TeaPublishMode.REPUBLISH);
-		assertEquals(List.of(TeaArtifactOrigin.SYNTHETIC, TeaArtifactOrigin.SYNTHETIC), latestOrigins(b.release()));
-		saveComponentProfile(b.component(), TeaPublishing.ENABLED, TeaVisibility.PRIVATE, TeaRawArtifacts.ALL);
-		publish(product, TeaPublishMode.REPUBLISH);
-		assertEquals(List.of(TeaArtifactOrigin.SYNTHETIC, TeaArtifactOrigin.SYNTHETIC, TeaArtifactOrigin.REAL),
-				latestOrigins(b.release()));
-	}
+	// CE (SCORE-72 3.6): aChildsOwnProfileGatesAndCapsTheCascade is not here. It saves a two-profile TEA row,
+	// which CE refuses (one SBOM profile per TEA publishing settings); Pro's copy of this test keeps it.
 
 	// ---------------------------------------------------------------- 73
 
