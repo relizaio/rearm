@@ -204,6 +204,25 @@ export type RebomOptions = {
     // release at generation time, like missingSbomComponents: not part of the options ReARM
     // matches stored merges on.
     releaseNode?: ReleaseNodeFacts | null,
+    // Merge only: the entries of the merge's ids whose roots describe the merged release itself (its
+    // own RELEASE-attached uploads, as ReARM's rows say, SCORE-57 ADR-11); their roots are folded
+    // into the merged root and no other. Absent or empty: nothing is folded. Derived by ReARM at
+    // generation time: not part of the options ReARM matches stored merges on, not stored.
+    releaseRootIds?: string[] | null,
+    // Merge only: the entries of ids that are the uploads attached to the merged release's own
+    // source code entry and to the deliverables it ships, as ReARM's rows say (SCORE-63 ADR-5).
+    // Their roots get the release's declared licence (releaseNode) where the upload wrote none; every
+    // other node is left as the merge made it. In a product merge they are also listed inputs for
+    // the re-key (ADR-9). Absent or empty: nothing is filled. Derived by ReARM at generation time:
+    // not part of the options ReARM matches stored merges on, not stored.
+    attachedRootIds?: string[] | null,
+    // Store-side, merge rows only (SCORE-69 ADR-3): written by rebom at the merge from the inputs it
+    // was handed, never from a request (the GraphQL input does not declare them, and the store deletes
+    // both for every origin but MERGE). nestedProductSerials: the recorded serials (meta.serialNumber)
+    // of the unlisted inputs that were product rows; listedRootKeys: the root purls and bom-refs of the
+    // listed inputs. Read by a product merge above to reserve a nested product's keys (ADR-4, ADR-5).
+    nestedProductSerials?: string[],
+    listedRootKeys?: string[],
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

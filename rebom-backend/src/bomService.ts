@@ -20,6 +20,7 @@
 export {
   findAllBoms,
   findBomObjectById,
+  findBomObjectWithMetaById,
   parseBomById,
   parseHbomById,
   findBomMetasBySerialNumber,
@@ -67,6 +68,7 @@ export type { EnrichedBomProbeResult } from './services/bom/bomProcessingService
 // Merge Operations
 export {
   mergeBoms,
+  mergeBomsWithInputRecord,
   mergeAndStoreBoms,
   mergeBomObjects
 } from './services/bom/bomMergeService';

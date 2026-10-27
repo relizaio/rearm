@@ -47,11 +47,13 @@ let isRunning = false;
  * The EXISTS guard mirrors getBearCredentials' configured-check (type=BEAR with
  * non-null uri + secretUuid).
  * Returns up to ENRICHMENT_BATCH_LIMIT records.
- * IMPORTANT: Must include 'bom' field so extractRepositoryNameFromBom can find repository name.
+ * IMPORTANT: Must include 'bom' field so extractRepositoryNameFromBom can find repository name,
+ * and 'meta' so fetchProcessedBomWithRetry resolves the row's processedTag against its digest and
+ * keeps a merge output's own release node stamps (meta.mod, SCORE-60 ADR-9 (d)).
  */
-async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organization: string; serialNumber: string; meta: any; bom: any }>> {
+export async function findBomsNeedingEnrichment(): Promise<Array<{ uuid: string; organization: string; serialNumber: string; meta: any; bom: any }>> {
   const queryText = `
-    SELECT b.uuid, b.organization, b.meta->>'serialNumber' as "serialNumber", b.bom
+    SELECT b.uuid, b.organization, b.meta->>'serialNumber' as "serialNumber", b.meta, b.bom
     FROM rebom.boms b
     WHERE EXISTS (
             SELECT 1 FROM rebom.integrations i

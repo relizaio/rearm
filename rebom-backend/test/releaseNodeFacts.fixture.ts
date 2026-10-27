@@ -1,3 +1,4 @@
+import { expect } from 'vitest';
 import * as BomService from '../src/bomService';
 import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from './helpers';
 
@@ -75,6 +76,21 @@ export function releaseUpload(): any {
         [complete('lib-d', 'd'), complete('lib-e', 'e')]);
 }
 
+/**
+ * SCORE-57 T-5: an upload attached to the component release itself (belongsTo RELEASE) whose root
+ * describes the release, with a description and a website and no supplier, licence or hash, as a
+ * build tool writes it. Stored with no `purl` sent, its root reads RELEASE_ATTACHED_ROOT.
+ */
+export function releaseAttachedUpload(): any {
+    return uploadDoc({ type: 'application', name: 'facts-api', version: '1.0.0', purl: 'pkg:npm/facts-api@1.0.0', 'bom-ref': 'pkg:npm/facts-api@1.0.0',
+        description: 'The facts API', externalReferences: [RELEASE_ATTACHED_WEBSITE] },
+        [complete('lib-g', '1')]);
+}
+
+export const RELEASE_ATTACHED_WEBSITE = { type: 'website', url: 'https://facts.example/api' };
+/** The stored root of releaseAttachedUpload (the generator's npm type kept, the org as namespace, lower-cased). */
+export const RELEASE_ATTACHED_ROOT = 'pkg:npm/facts%20org/facts-api@1.0.0?belongsto=RELEASE';
+
 export function placeholder(withHashes: boolean): any {
     return {
         releaseUuid: PLACEHOLDER_UUID, name: 'worker', version: '4.0.0', type: 'library',
@@ -133,8 +149,32 @@ export function productMergeRequest(withFacts: boolean, productLicense?: string)
 export type Built = {
     componentMerge: any,
     product: any,
-    ids: { sce: string, deliverable: string, release: string, releaseNodeCopy?: string, componentMerge: string, product: string }
+    ids: { sce: string, deliverable: string, release: string, releaseNodeCopy?: string, releaseAttached?: string, componentMerge: string, product: string }
 };
+
+/** Stores `bom` as an upload of the test org under the options ReARM sends (group ORG plus `overrides`); returns its id. */
+export async function storeUpload(created: string[], bom: any, overrides: any): Promise<string> {
+    const record = await BomService.addBom({
+        bomInput: {
+            format: 'CYCLONEDX' as const,
+            bom,
+            org: TEST_ORG_UUID,
+            rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, group: ORG, ...overrides })
+        }
+    });
+    created.push(record.uuid);
+    return record.uuid;
+}
+
+/** Merges and stores `ids` as rearm-saas asks (group ORG, FACTS_MERGE_VERSION, `overrides`, then the merge-only `extra`); returns its id. */
+export async function storeMerge(created: string[], ids: string[], overrides: any, extra: any): Promise<string> {
+    const record = await BomService.mergeAndStoreBoms(ids, {
+        ...createTestRebomOptions({ serialNumber: generateSerialNumber(), group: ORG, mergeVersion: FACTS_MERGE_VERSION, ...overrides }),
+        ...extra
+    }, TEST_ORG_UUID, BomService.addBom);
+    created.push(record.uuid);
+    return record.uuid;
+}
 
 /**
  * Uploads the three SBOMs as ReARM attaches them (the SCE and deliverable uploads with
@@ -144,31 +184,15 @@ export type Built = {
  * placeholder hashes. `withLicenses` (SCORE-40 T-5) adds the licences ReARM declares, under merge
  * version 7: COMPONENT_LICENSE with its url on the component release's node, PRODUCT_LICENSE on the
  * product root and the INTERNAL placeholder. `releaseNodeLicenses`, when set, also attaches
- * releaseNodeUpload(releaseNodeLicenses) to the component release.
+ * releaseNodeUpload(releaseNodeLicenses) to the component release. `releaseAttached` (SCORE-57 T-8)
+ * also attaches releaseAttachedUpload() to the component release (belongsTo RELEASE) and lists it in
+ * the component merge's releaseRootIds, as rearm-saas does. The component merge lists the SCE and
+ * deliverable uploads in attachedRootIds on every call, as rearm-saas does (SCORE-63 ADR-5).
  */
 export async function buildProductExport(created: string[], withFacts: boolean, withLicenses = false,
-    releaseNodeLicenses?: any[]): Promise<Built> {
-    async function upload(bom: any, overrides: any): Promise<string> {
-        const record = await BomService.addBom({
-            bomInput: {
-                format: 'CYCLONEDX' as const,
-                bom,
-                org: TEST_ORG_UUID,
-                rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, group: ORG, ...overrides })
-            }
-        });
-        created.push(record.uuid);
-        return record.uuid;
-    }
-
-    async function merge(ids: string[], overrides: any, extra: any): Promise<string> {
-        const record = await BomService.mergeAndStoreBoms(ids, {
-            ...createTestRebomOptions({ serialNumber: generateSerialNumber(), group: ORG, mergeVersion: FACTS_MERGE_VERSION, ...overrides }),
-            ...extra
-        }, TEST_ORG_UUID, BomService.addBom);
-        created.push(record.uuid);
-        return record.uuid;
-    }
+    releaseNodeLicenses?: any[], releaseAttached = false): Promise<Built> {
+    const upload = (bom: any, overrides: any) => storeUpload(created, bom, overrides);
+    const merge = (ids: string[], overrides: any, extra: any) => storeMerge(created, ids, overrides, extra);
 
     const sce = await upload(sceUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'SCE', hash: COMMIT, supplierName: ORG });
     const deliverable = await upload(deliverableUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'DELIVERABLE', hash: 'sha256:' + UPLOAD_DIGEST, supplierName: ORG });
@@ -177,19 +201,43 @@ export async function buildProductExport(created: string[], withFacts: boolean, 
         ? await upload(releaseNodeUpload(releaseNodeLicenses), { name: 'facts-api', version: '1.0.0', purl: RELEASE_NODE })
         : undefined;
 
+    const releaseAttachedId = releaseAttached
+        ? await upload(releaseAttachedUpload(), { name: 'facts-api', version: '1.0.0', belongsTo: 'RELEASE', supplierName: ORG })
+        : undefined;
+
     const componentLicence = withLicenses ? { licenseExpression: COMPONENT_LICENSE, licenseUrl: COMPONENT_LICENSE_URL } : {};
     const componentFacts = withFacts ? { supplierName: ORG, hashes: [{ alg: 'SHA-256', content: RELEASE_DIGEST }] } : {};
-    const componentMerge = await merge(releaseNodeCopy ? [sce, deliverable, releaseNodeCopy] : [sce, deliverable],
+    const componentIds = [sce, deliverable, ...(releaseNodeCopy ? [releaseNodeCopy] : []), ...(releaseAttachedId ? [releaseAttachedId] : [])];
+    const componentMerge = await merge(componentIds,
         { name: 'facts-api', version: '1.0.0', rootComponentMergeMode: 'FLATTEN_UNDER_NEW_ROOT', mergeVersion: withLicenses ? LICENSE_MERGE_VERSION : FACTS_MERGE_VERSION },
-        withFacts || withLicenses ? { releaseNode: { ...componentFacts, ...componentLicence } } : {});
+        {
+            ...(withFacts || withLicenses ? { releaseNode: { ...componentFacts, ...componentLicence } } : {}),
+            // SCORE-57: rearm-saas lists the release's own RELEASE-attached artifacts
+            ...(releaseAttachedId ? { releaseRootIds: [releaseAttachedId] } : {}),
+            // SCORE-63 ADR-5: and its own SCE- and outbound-deliverable-attached ones
+            attachedRootIds: [sce, deliverable]
+        });
     const productRequest = productMergeRequest(withFacts, withLicenses ? PRODUCT_LICENSE : undefined);
     const product = await merge([componentMerge, release], productRequest.overrides, productRequest.extra);
 
     return {
         componentMerge: await BomService.findBomObjectById(componentMerge, TEST_ORG_UUID),
         product: await BomService.findBomObjectById(product, TEST_ORG_UUID),
-        ids: { sce, deliverable, release, releaseNodeCopy, componentMerge, product }
+        ids: { sce, deliverable, release, releaseNodeCopy, releaseAttached: releaseAttachedId, componentMerge, product }
     };
+}
+
+/** SCORE-66: the bom-ref a node of the input with serial `base` is written apart under. */
+export function Q(base: string, ref: string): string {
+    return `${base}#${ref}`;
+}
+
+/** SCORE-66: `purl` with the rearm_input qualifier naming `base` (ADR-4: `&` after a `?`, before any subpath). */
+export function P(purl: string, base: string): string {
+    const at = purl.indexOf('#');
+    const head = at < 0 ? purl : purl.slice(0, at);
+    const tail = at < 0 ? '' : purl.slice(at);
+    return `${head}${head.includes('?') ? '&' : '?'}rearm_input=${encodeURIComponent(base)}${tail}`;
 }
 
 /** The component with bom-ref `ref` at the top level of `bom`, or undefined. */
@@ -299,4 +347,27 @@ export async function buildListingProducts(created: string[], declared: Declared
         stored.push(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
     }
     return { merged, stored, storedIds };
+}
+
+/** SCORE-64: a structure check of a `rearm bomutils score` report, carried under `structure.checks`, never in a profile. */
+export function structureCheck(report: any, id: string): any {
+    const found = (report.structure?.checks || []).find((c: any) => c.id === id);
+    if (!found) throw new Error(`no structure check ${id} in the report`);
+    return found;
+}
+
+/**
+ * SCORE-64: no node of the scored document is an orphan (structure.no-orphans: COMPONENT scope,
+ * `failing` empty, every node counted as passing), and every dependency ref resolves
+ * (structure.refs-resolve: DOCUMENT scope, its `failing` always empty, so `status` and `note` are read).
+ */
+export function expectNoOrphansAndRefsResolve(report: any, label?: string): void {
+    const orphans = structureCheck(report, 'structure.no-orphans');
+    expect(orphans.failing, label).toStrictEqual([]);
+    expect(orphans.total, label).toBeGreaterThan(0);
+    expect(orphans.passed, label).toBe(orphans.total);
+    expect(orphans.status, label).toBe('PASS');
+    const refs = structureCheck(report, 'structure.refs-resolve');
+    expect(refs.status, label).toBe('PASS');
+    expect(refs.note || '', label).toBe('');
 }

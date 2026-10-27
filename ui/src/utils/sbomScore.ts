@@ -26,6 +26,13 @@ export interface SbomScoreCheck {
     ref: string
     remedy: string
     note: string
+    // Entries the engine left out of `total` (rearm-cli internal/bomscore check.go): on the
+    // two FDA support checks only, omitted at 0 and by engines older than the field.
+    // componentsSkipped and skippedTypes: components that are not software packages (SCORE-20).
+    componentsSkipped?: number
+    skippedTypes?: string[]
+    // The subject's own entries, marked reliza:support:selfComponent (SCORE-59).
+    selfComponentsSkipped?: number
 }
 
 export interface SbomScoreProfile {

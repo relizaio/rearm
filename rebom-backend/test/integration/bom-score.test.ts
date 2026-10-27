@@ -151,6 +151,23 @@ describe('scoreBomProbe with the real rearm CLI', () => {
         }
     });
 
+    // SCORE-60 T-11 (ADR-2): the fixture of rearm-cli's SCORE-59 contract (a byte copy of its
+    // internal/bomscore/testdata/full.self.cdx.json); an engine before 26.10.14 reports no self skip.
+    it('T-11 fda support checks skip the component marked as the subject\'s own', async () => {
+        const report = JSON.parse(await scored(fixture('full.self.cdx.json'), ['fda']));
+        expect(report.input.components).toBe(7);
+        const checks = report.profiles[0].checks;
+        for (const id of ['fda.component.support-level', 'fda.component.end-of-support']) {
+            const check = checks.find((c: any) => c.id === id);
+            expect(check, id).toBeDefined();
+            expect(check.selfComponentsSkipped, id).toBe(1);
+            expect(check.componentsSkipped, id).toBe(2);
+            expect(check.skippedTypes, id).toEqual(['cryptographic-asset', 'file']);
+            expect(check.total, id).toBe(4);
+            expect(check.passed, id).toBe(4);
+        }
+    });
+
     it('T-4 dependency checks fail when the root declares no direct dependency', async () => {
         const report = JSON.parse(await scored(fixture('root-no-deps.cdx.json'), ['cisa-2026', 'ntia-2021']));
         const status = (profile: string, id: string) =>

@@ -18,7 +18,8 @@ vi.mock('../../src/integrationRepository', () => ({
 import { pool } from '../../src/utils';
 import { clearMockOciStorage } from '../../src/services/oci';
 import {
-    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, buildProductExport
+    SCE_ROOT, DELIVERABLE_ROOT, RELEASE_ROOT, RELEASE_NODE, PLACEHOLDER_REF, EXTERNAL_PLACEHOLDER_REF, buildProductExport,
+    expectNoOrphansAndRefsResolve
 } from '../releaseNodeFacts.fixture';
 
 /**
@@ -131,19 +132,27 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         expect(check(report, 'cisa-2026.component-license').passed).toBe(5);
     });
 
-    it('with the declared licences the licence fails only on the uploaded roots without one and the EXTERNAL placeholder (SCORE-40 T-6)', async () => {
+    it('with the declared licences the licence fails only on the release-attached root of another release and the EXTERNAL placeholder (SCORE-40 T-6, SCORE-63)', async () => {
         const { product } = await buildProductExport(created, true, true);
         const report = score(product);
 
         // the release node passes in the named form (the engine reads license.name), the INTERNAL
         // placeholder in the id form; the product root is metadata.component, not scored per component
+        // SCORE-63: the component's SCE- and deliverable-attached roots carry its declared licence
         expect(failing(report, 'cisa-2026.component-license'))
-            .toStrictEqual([DELIVERABLE_ROOT, RELEASE_ROOT, SCE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+            .toStrictEqual([RELEASE_ROOT, EXTERNAL_PLACEHOLDER].sort());
         expect(check(report, 'cisa-2026.component-license').total).toBe(11);
-        expect(check(report, 'cisa-2026.component-license').passed).toBe(7);
+        expect(check(report, 'cisa-2026.component-license').passed).toBe(9);
         for (const id of PRODUCER_CHECKS) {
             expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT].sort());
         }
+    });
+
+    it('passes structure.no-orphans and structure.refs-resolve on every node of the product export (SCORE-64)', async () => {
+        const { componentMerge, product } = await buildProductExport(created, true, true);
+
+        expectNoOrphansAndRefsResolve(score(componentMerge), 'component merge');
+        expectNoOrphansAndRefsResolve(score(product), 'product');
     });
 
     it('without the facts the release node names no supplier and carries no hash, nor does the placeholder (T-10)', async () => {
@@ -167,5 +176,52 @@ describe.skipIf(process.arch !== 'x64')('the score of a product export whose upl
         }
         expect(failing(report, 'fda.baseline.component-hash'))
             .toStrictEqual([DELIVERABLE_ROOT, EXTERNAL_PLACEHOLDER, PLACEHOLDER, RELEASE_NODE, RELEASE_ROOT, SCE_ROOT].sort());
+    });
+});
+
+/**
+ * SCORE-57 (T-8): the same product export with an upload attached to the component release itself
+ * and listed by rearm-saas. The upload's root folds into the release node, which then carries the
+ * declared licence, the deliverable digest and the supplier: no node of facts-api@1.0.0 fails the
+ * licence or hash checks, and every other node fails exactly as above.
+ */
+describe.skipIf(process.arch !== 'x64')('the score of a product export whose component release has a listed RELEASE-attached upload', () => {
+    const created: string[] = [];
+
+    beforeEach(() => {
+        clearMockOciStorage();
+    });
+
+    afterEach(async () => {
+        if (created.length > 0) {
+            await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+            created.length = 0;
+        }
+    });
+
+    const ofRelease = (refs: string[]) => refs.filter(r => r.includes('facts-api@1.0.0'));
+
+    it('fails the licence and hash checks on no node of the release, and on the other nodes as before (T-8)', async () => {
+        const { product } = await buildProductExport(created, true, true, undefined, true);
+        const report = score(product);
+
+        for (const id of ['cisa-2026.component-license', 'cisa-2026.component-hash-value', 'cisa-2026.component-hash-algorithm', 'fda.baseline.component-hash']) {
+            expect(ofRelease(failing(report, id)), id).toStrictEqual([]);
+        }
+        // SCORE-63: the attached roots carry the declared licence too
+        expect(failing(report, 'cisa-2026.component-license'))
+            .toStrictEqual([RELEASE_ROOT, EXTERNAL_PLACEHOLDER].sort());
+        expect(check(report, 'cisa-2026.component-license').total).toBe(12);
+        for (const id of HASH_CHECKS) {
+            expect(failing(report, id), id).toStrictEqual([EXTERNAL_PLACEHOLDER, RELEASE_ROOT, SCE_ROOT].sort());
+        }
+        expect(product.components.some((c: any) => c['bom-ref'] === RELEASE_NODE)).toBe(true);
+    });
+
+    it('passes structure.no-orphans and structure.refs-resolve on every node of both exports (SCORE-64)', async () => {
+        const { componentMerge, product } = await buildProductExport(created, true, true, undefined, true);
+
+        expectNoOrphansAndRefsResolve(score(componentMerge), 'component merge');
+        expectNoOrphansAndRefsResolve(score(product), 'product');
     });
 });

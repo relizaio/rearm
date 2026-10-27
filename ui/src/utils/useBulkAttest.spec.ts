@@ -1,8 +1,9 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-    useBulkAttest, validateBulkInput,
-    BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS
+    useBulkAttest, validateBulkInput, groupNotWritten,
+    BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS, SAMPLE_SIZE
 } from './useBulkAttest'
+import type { BulkLabel, BulkOutcome } from './useBulkAttest'
 
 /** A client whose page responses are scripted, and whose mutations are recorded. */
 function scripted (pages: Array<{ items: string[], hasMore: boolean }>) {
@@ -12,7 +13,10 @@ function scripted (pages: Array<{ items: string[], hasMore: boolean }>) {
         return {
             data: {
                 getReleaseSbomComponentsPage: {
-                    items: p.items.map(id => ({ sbomComponentUuid: id, component: { uuid: id } })),
+                    items: p.items.map(id => ({
+                        sbomComponentUuid: id,
+                        component: { uuid: id, name: `n-${id}`, version: `v-${id}` }
+                    })),
                     totalCount: 999,
                     endCursor: p.items[p.items.length - 1] ?? null,
                     hasMore: p.hasMore
@@ -99,6 +103,92 @@ describe('collecting the work queue', () => {
         const { client } = scripted([{ items: [], hasMore: false }])
         const b = useBulkAttest()
         expect((await b.collect(client, 'rel-1', 'UNATTESTED', '')).ids).toEqual([])
+    })
+
+    // The done stage names every entry not written, and the walk is the only moment the UI
+    // holds the names: a label for every collected id, not only the confirm stage's sample.
+    it('keeps a label for every collected id, not only the sample', async () => {
+        const { client } = scripted([
+            { items: ids(20), hasMore: true },
+            { items: ids(3, 'd'), hasMore: false }
+        ])
+        const b = useBulkAttest()
+        const res = await b.collect(client, 'rel-1', 'UNATTESTED', '')
+        expect(Object.keys(res.labels)).toHaveLength(23)
+        expect(res.labels.c0).toEqual({ name: 'n-c0', version: 'v-c0' })
+        expect(res.labels.c19).toEqual({ name: 'n-c19', version: 'v-c19' })
+        expect(res.labels.d2).toEqual({ name: 'n-d2', version: 'v-d2' })
+        expect(res.sample).toHaveLength(SAMPLE_SIZE)
+        expect(res.sample.map(x => x.uuid)).toEqual(ids(10))
+        expect(b.labels.value).toEqual(res.labels)
+    })
+
+    it('labels a row with no name or version by the same fallbacks as the sample', async () => {
+        const query = vi.fn(async () => ({ data: { getReleaseSbomComponentsPage: {
+            items: [
+                { sbomComponentUuid: 'a', component: { uuid: 'a', version: '1.0' } },
+                { sbomComponentUuid: 'b', component: { uuid: 'b', name: 'bee' } },
+                { component: { uuid: 'x', name: 'no id', version: '9' } },
+                { sbomComponentUuid: 'c' }
+            ],
+            totalCount: 4, endCursor: 'c', hasMore: false
+        } } }))
+        const res = await useBulkAttest().collect({ query } as any, 'rel-1', 'UNATTESTED', '')
+        expect(res.labels).toEqual({
+            a: { name: '(unnamed)', version: '1.0' },
+            b: { name: 'bee', version: '' },
+            c: { name: '(unnamed)', version: '' }
+        })
+    })
+
+    it('keeps the first row\'s label for a duplicate id', async () => {
+        const query = vi.fn(async () => ({ data: { getReleaseSbomComponentsPage: {
+            items: [
+                { sbomComponentUuid: 'a', component: { name: 'first', version: '1' } },
+                { sbomComponentUuid: 'b', component: { name: 'bee', version: '2' } },
+                { sbomComponentUuid: 'a', component: { name: 'second', version: '3' } }
+            ],
+            totalCount: 3, endCursor: 'a', hasMore: false
+        } } }))
+        const res = await useBulkAttest().collect({ query } as any, 'rel-1', 'UNATTESTED', '')
+        expect(res.ids).toEqual(['a', 'b'])
+        expect(res.labels).toEqual({ a: { name: 'first', version: '1' }, b: { name: 'bee', version: '2' } })
+    })
+
+    it('hands back no labels from a refused walk', async () => {
+        const page = (totalCount: number, hasMore: boolean, items: string[]) => ({ data: {
+            getReleaseSbomComponentsPage: {
+                items: items.map(id => ({ sbomComponentUuid: id, component: { name: id, version: '1' } })),
+                totalCount, endCursor: 'cur', hasMore
+            }
+        } })
+        // too large
+        const big = useBulkAttest()
+        expect((await big.collect({ query: vi.fn(async () => page(12000, true, ids(500))) } as any,
+            'rel-1', 'UNATTESTED', '')).labels).toEqual({})
+        expect(big.labels.value).toEqual({})
+        // a thrown page, after a page that did collect labels
+        let n = 0
+        const thrown = useBulkAttest()
+        const res = await thrown.collect({ query: vi.fn(async () => {
+            if (++n === 2) throw new Error('unknown pagination cursor: cur')
+            return page(900, true, ids(500))
+        }) } as any, 'rel-1', 'UNATTESTED', '')
+        expect(res.refused).toBe(true)
+        expect(res.labels).toEqual({})
+        expect(thrown.labels.value).toEqual({})
+        // an empty page claiming more
+        const stuck = useBulkAttest()
+        expect((await stuck.collect({ query: vi.fn(async () => page(10, true, [])) } as any,
+            'rel-1', 'UNATTESTED', '')).labels).toEqual({})
+        // the ref is reset by the next walk, not left over from the last one
+        const reused = useBulkAttest()
+        const ok = scripted([{ items: ids(2), hasMore: false }])
+        await reused.collect(ok.client, 'rel-1', 'UNATTESTED', '')
+        expect(Object.keys(reused.labels.value)).toHaveLength(2)
+        await reused.collect({ query: vi.fn(async () => page(12000, true, ids(500))) } as any,
+            'rel-1', 'UNATTESTED', '')
+        expect(reused.labels.value).toEqual({})
     })
 })
 
@@ -423,5 +513,139 @@ describe('submitting', () => {
         expect(r.applied).toBe(BULK_BATCH_SIZE)
         expect(r.aborted).toBe(true)
         expect(r.error).toContain('gateway timeout')
+    })
+})
+
+describe('naming what was not written', () => {
+    type Result = BulkOutcome['results'][number]
+    const r = (sbomComponentUuid: string, outcome: string, message: string | null = null): Result =>
+        ({ sbomComponentUuid, outcome, message })
+    const outcomeOf = (results: Result[], flags: Partial<BulkOutcome> = {}): BulkOutcome => ({
+        applied: results.filter(x => x.outcome === 'APPLIED').length,
+        skippedAttested: 0, skippedRoot: 0, failed: 0, unknownOutcomes: 0, results,
+        aborted: false, stoppedEarly: false, error: null, retryable: false,
+        concurrentWriteDetected: false, ...flags
+    })
+    const labelsFor = (list: string[]): Record<string, BulkLabel> =>
+        Object.fromEntries(list.map(id => [id, { name: `n-${id}`, version: `v-${id}` }]))
+    const uuids = (g: { entries: Array<{ uuid: string }> } | undefined) => g?.entries.map(e => e.uuid)
+
+    it('groups every entry not written by reason, in a fixed order, with its name and detail', () => {
+        const all = ['a', 'b', 'c', 'd', 'e', 'f', 'g', 'h']
+        const outcome = outcomeOf([
+            r('a', 'APPLIED'), r('b', 'SKIPPED_ROOT'), r('c', 'SKIPPED_ATTESTED'),
+            r('d', 'FAILED', 'component not found in this organization'), r('e', 'FAILED'),
+            r('f', 'DEFERRED'), r('g', 'APPLIED')
+        ], { aborted: true, retryable: true })
+        const groups = groupNotWritten(all, outcome, labelsFor(all.filter(x => x !== 'd')))
+        expect(groups.map(g => g.reason))
+            .toEqual(['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'FAILED', 'UNKNOWN', 'NO_RESULT'])
+        expect(groups.map(uuids)).toEqual([['b'], ['c'], ['d', 'e'], ['f'], ['h']])
+        const entry = (id: string) => groups.flatMap(g => g.entries).find(e => e.uuid === id)
+        expect(entry('b')?.label).toBe('n-b v-b')
+        expect(entry('d')?.label).toBe('d')
+        expect(entry('d')?.detail).toBe('component not found in this organization')
+        expect(entry('e')?.detail).toBe('no reason given')
+        expect(entry('f')?.detail).toBe('DEFERRED')
+        expect(entry('b')?.detail).toBeNull()
+        expect(entry('h')?.detail).toBeNull()
+        expect(entry('a')).toBeUndefined()
+        expect(entry('g')).toBeUndefined()
+        expect(groups.map(g => g.title)).toEqual([
+            '1 skipped: the release\'s own component',
+            '1 skipped: already attested',
+            '2 failed',
+            '1 with a result this version cannot interpret',
+            '1 with no result'
+        ])
+        for (const g of groups) expect(g.explanation.length).toBeGreaterThan(0)
+        expect(groups[0].explanation).toContain('FDA support checks')
+        expect(groups[0].explanation).toContain('coverage gauge')
+        const listed = groups.reduce((n, g) => n + g.entries.length, 0)
+        expect(listed).toBe(all.length - outcome.applied)
+    })
+
+    it('inflects the ROOT title at more than one', () => {
+        const groups = groupNotWritten(['a', 'b'],
+            outcomeOf([r('a', 'SKIPPED_ROOT'), r('b', 'SKIPPED_ROOT')]), {})
+        expect(groups.map(g => g.title)).toEqual(['2 skipped: the release\'s own components'])
+    })
+
+    it('lists nothing when everything was written', () => {
+        expect(groupNotWritten(['a', 'b'], outcomeOf([r('a', 'APPLIED'), r('b', 'APPLIED')]),
+            labelsFor(['a', 'b']))).toEqual([])
+    })
+
+    it('lists a result for an id the walk did not collect, by its uuid', () => {
+        const groups = groupNotWritten(['a'],
+            outcomeOf([r('a', 'APPLIED'), r('stray', 'FAILED', 'boom')]), labelsFor(['a']))
+        expect(groups).toHaveLength(1)
+        expect(groups[0].entries).toEqual([{ uuid: 'stray', label: 'stray', detail: 'boom' }])
+    })
+
+    it('leaves no trailing space when the version is empty', () => {
+        const groups = groupNotWritten(['a'], outcomeOf([r('a', 'SKIPPED_ATTESTED')]),
+            { a: { name: 'lib', version: '' } })
+        expect(groups[0].entries[0].label).toBe('lib')
+    })
+
+    describe('the NO_RESULT explanation follows how the sweep ended', () => {
+        const all = Array.from({ length: 450 }, (_, i) => `id-${i}`)
+        const firstBatch = all.slice(0, 200).map(id => r(id, 'APPLIED'))
+        const noResult = (outcome: BulkOutcome) => {
+            const groups = groupNotWritten(all, outcome, {})
+            return { groups, g: groups.find(x => x.reason === 'NO_RESULT') }
+        }
+
+        it('a thrown batch: may have been written, re-running settles it', () => {
+            const { g } = noResult(outcomeOf(firstBatch, { aborted: true, retryable: true }))
+            expect(uuids(g)).toEqual(all.slice(200))
+            expect(g?.explanation).toContain('may still have been written')
+            expect(g?.explanation).toContain('re-running')
+        })
+
+        it('a validation abort: refused, and no re-run is promised', () => {
+            const { g } = noResult(outcomeOf(firstBatch, { aborted: true, retryable: false }))
+            expect(g?.entries).toHaveLength(250)
+            expect(g?.explanation).toContain('refused')
+            expect(g?.explanation).not.toContain('re-run')
+            expect(g?.explanation).not.toContain('Re-running')
+        })
+
+        it('nothing sent at all: every id, the same refused explanation, no other group', () => {
+            const { groups, g } = noResult(outcomeOf([], { aborted: true, retryable: false }))
+            expect(groups).toHaveLength(1)
+            expect(uuids(g)).toEqual(all)
+            expect(g?.explanation).toContain('refused')
+            expect(g?.explanation).not.toContain('re-run')
+            expect(g?.explanation).not.toContain('Re-running')
+        })
+
+        // retryable stays false on a stop, so a rule keyed on retryable alone would call a
+        // stop a refusal and withhold the re-run the stopped alert offers.
+        it('a stop between batches: not sent, and the re-run is promised', () => {
+            const { g } = noResult(outcomeOf(firstBatch, { stoppedEarly: true, retryable: false }))
+            expect(g?.entries).toHaveLength(250)
+            expect(g?.explanation).toContain('stopped')
+            expect(g?.explanation).toContain('Re-running')
+            expect(g?.explanation).not.toContain('refused')
+        })
+
+        it('a batch answered short: no result came back', () => {
+            const { g } = noResult(outcomeOf(all.filter(id => id !== 'id-7').map(id => r(id, 'APPLIED'))))
+            expect(uuids(g)).toEqual(['id-7'])
+            expect(g?.explanation).toContain('No result came back')
+        })
+
+        it('finds a missing result by membership, not by position', () => {
+            const results = firstBatch.filter(x => x.sbomComponentUuid !== 'id-100')
+            const { g } = noResult(outcomeOf(results, { aborted: true, retryable: true }))
+            const listed = uuids(g) ?? []
+            expect(listed).toHaveLength(251)
+            expect(listed).toContain('id-100')
+            expect(listed).toContain('id-200')
+            expect(listed).not.toContain('id-199')
+            expect(listed[0]).toBe('id-100')
+        })
     })
 })

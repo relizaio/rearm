@@ -196,3 +196,86 @@ describe('SbomScoreReport', () => {
         w.unmount()
     })
 })
+
+// SCORE-61 (design ADR-4): the entries a check left out of its total, under the check, on every
+// status, the type line before the self line, both before the status lines.
+describe('SbomScoreReport skipped entries per check', () => {
+    const TYPE_LINE = '2 components of type cryptographic-asset, file not counted (not software packages)'
+    const SELF_LINE = "1 of the subject's own components not counted (reliza:support:selfComponent)"
+    const SUPPORT = ['fda.component.support-level', 'fda.component.end-of-support']
+    const rowOf = (w: ReturnType<typeof mountReport>, id: string) => bodyRows(w).find(r => r.text().includes(id))!
+
+    it('shows both lines on the two PASS support checks of a real engine report', () => {
+        const w = mountReport('self')
+        for (const id of SUPPORT) {
+            const text = rowOf(w, id).text()
+            expect(text, id).toContain('PASS')
+            expect(text, id).toContain('4/4')
+            expect(text, id).toContain(TYPE_LINE)
+            expect(text, id).toContain(SELF_LINE)
+            expect(text.indexOf(TYPE_LINE), id).toBeLessThan(text.indexOf(SELF_LINE))
+            expect(rowOf(w, id).findAll('.sbom-score-skipped')).toHaveLength(2)
+        }
+        const others = bodyRows(w).filter(r => !SUPPORT.some(id => r.text().includes(id)))
+        expect(others.length).toBeGreaterThan(0)
+        for (const r of others) expect(r.text()).not.toContain('not counted')
+        const header = w.find('[data-testid="sbom-score-header"]').text()
+        expect(header).toContain('7 components')
+        expect(header).not.toContain('skipped')
+        w.unmount()
+    })
+
+    it('puts the skip lines before the note and the remedy of a FAIL', () => {
+        const w = mountEdited('fda.cdx', r => {
+            const c = r.profiles[0].checks.find((x: any) => x.id === 'fda.component.support-level')
+            Object.assign(c, {
+                status: 'FAIL', passed: 1, total: 2, failing: ['x'], componentsSkipped: 3,
+                skippedTypes: ['data', 'file'], note: 'one component has no support level',
+                remedy: 'attest the component'
+            })
+        })
+        const text = rowOf(w, 'fda.component.support-level').text()
+        const line = text.indexOf('3 components of type data, file not counted (not software packages)')
+        expect(line).toBeGreaterThanOrEqual(0)
+        expect(line).toBeLessThan(text.indexOf('one component has no support level'))
+        expect(line).toBeLessThan(text.indexOf('Remedy: attest the component'))
+        w.unmount()
+    })
+
+    it.each(['NOT_ASSESSED', 'ERROR'])('shows the self line on a %s check', (status) => {
+        const w = mountEdited('fda.cdx', r => {
+            const c = r.profiles[0].checks.find((x: any) => x.id === 'fda.component.end-of-support')
+            Object.assign(c, { status, selfComponentsSkipped: 1, note: 'a note' })
+        })
+        expect(rowOf(w, 'fda.component.end-of-support').text())
+            .toContain("1 of the subject's own components not counted (reliza:support:selfComponent)")
+        w.unmount()
+    })
+
+    it('says something true when the count comes without its types', () => {
+        const w = mountEdited('fda.cdx', r => {
+            const c = r.profiles[0].checks.find((x: any) => x.id === 'fda.component.support-level')
+            c.componentsSkipped = 1
+            delete c.skippedTypes
+        })
+        const text = rowOf(w, 'fda.component.support-level').text()
+        expect(text).toContain('1 component not counted (not software packages)')
+        expect(text).not.toContain(' of type')
+        w.unmount()
+    })
+
+    it('shows nothing for zero counts or a report without the fields', () => {
+        const zero = mountEdited('fda.cdx', r => {
+            const c = r.profiles[0].checks.find((x: any) => x.id === 'fda.component.support-level')
+            Object.assign(c, { componentsSkipped: 0, selfComponentsSkipped: 0, skippedTypes: [] })
+        })
+        expect(zero.text()).not.toContain('not counted')
+        zero.unmount()
+        const plain = mountReport('fda.cdx')
+        expect(plain.text()).not.toContain('not counted')
+        plain.unmount()
+        const files = mountReport('skip-files')
+        expect(files.find('[data-testid="sbom-score-header"]').text()).toContain('3 file components skipped')
+        files.unmount()
+    })
+})

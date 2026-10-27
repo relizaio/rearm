@@ -133,9 +133,14 @@ another uploaded SBOM lists for the same purl appear beside it, while a listed e
 ReARM never reads a LICENSE file or an artifact to find a licence.
 
 **When a change shows.** A release's own exports show a change at their next request. A change of
-a release's licence also rebuilds the product exports above it. A change of the organization default
-or of a component does not: a product exported before it serves its stored export until something
-rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
+a release's licence also rebuilds the product exports above it. A change of a release's preferred
+PURL identifier (set on the release, or filled from its component with "Propagate To Releases With
+Missing Identifiers" on the component page), of its artifacts, source code entry or deliverables (a
+CI rebuild included), or of a product's supplier name, discards the stored exports of the release and
+of every product above it, and the next export of each rebuilds it; a release whose last SBOM is
+detached is listed as a component without an SBOM again. A change of the organization default, or of
+a component's supplier name, does not: a product exported before it serves its stored export until
+something rebuilds it (an SBOM added below it, a release licence change below it, or a ReARM upgrade that
 regenerates merged exports). Likewise a release exported before an upload keeps serving its stored
 export until a product above it is rebuilt or the release's declared facts change.
 
@@ -147,9 +152,32 @@ a release's **Meta** tab, **Declared licence for this release**. On the API:
 `supplierName`); `updateRelease` and `addReleaseProgrammatic` (`licenseExpression`). The ReARM CLI
 and the Terraform provider gain them in a later release.
 
-**What still fails.** The scoring check Component License still fails on the root of an uploaded
-SBOM whose generator wrote no licence, which is the release's own software in an SBOM attached to
-the release or to a deliverable: the declared licence is not written there. See
+**The root of an SBOM uploaded against the release.** It is folded into the release's node in
+the export: the node keeps the upload's description, supplier and licence, the declared licence
+and the deliverable digest fill what the upload left out, and the folded root's bom-ref is
+recorded on the node as `reliza:export:foldedRoot`.
+
+**A component release named and versioned like the product.** Its node keeps its own supplier,
+licence and hash in the product's export and is never folded into the product root. Because the
+two would share a purl, the component node's purl carries a `rearm_input` qualifier naming the
+serial number of the component's own merged SBOM, and its bom-ref is that serial number followed
+by `#` and the purl without the qualifier. Two component releases that share a name and version
+under one product are kept apart the same way.
+
+**A nested product's node.** In the export of a product that bundles another product, the bundled
+product's node, and the roots of the SBOMs attached to that product's release and to its source
+code entries, carry only what that product's own export states. An SBOM of another release in the bundle that lists the bundled
+product by its ReARM purl is kept as its own node with the `rearm_input` qualifier, as above, and
+never adds to the bundled product's node. A listing of a component release by its ReARM purl still
+folds into that release's node.
+
+**What still fails.** The root of an SBOM attached to a deliverable the release ships or to the
+release's source code entry keeps its own entry, and carries the release's declared licence where its
+generator wrote none; a licence the generator wrote, `NOASSERTION` or `NONE` included, is kept.
+Such a root is a direct dependency of the release's node in the export, so the structure check
+`structure.no-orphans` does not name it. Component License still fails on such a root when the
+release declares no licence, and then on the release's node too. Component Hash still fails on the
+root of an SBOM attached to a source code entry, whose commit is a pedigree fact, not a hash. See
 [Reading the report](./sbom-scoring#reading-the-report).
 
 ### Listed licences a merge dropped
@@ -319,6 +347,7 @@ What "ReARM's own markers" means, precisely:
 | Removed when off | Note |
 |---|---|
 | `reliza:*` properties outside the support namespaces | Today `reliza:containerSafeVersion`, `reliza:devops:integrationType` and `reliza:rearmImport:*`. Anything ReARM adds later is internal by default |
+| `reliza:export:releaseNode` | rebom's stamp on the node it made for a release. The server reads it to mark the release's own entries (`reliza:support:selfComponent`) before the strip. A copy in an uploaded SBOM never reaches a merged export or a processed download: rebom removes it when the upload is stored. The raw download serves the uploaded document as it was, and no support statement is made on it |
 
 **Not removed: what your SBOM generator wrote.** It is your content, and this setting does not
 touch it. Component properties (including cdxgen's `SrcFile`, `ResolvedUrl` and similar working
@@ -426,6 +455,7 @@ Two layers, both emitted together and both governed by that single setting.
 | `reliza:support:party` | Whether the manufacturer is a first or third party to the component |
 | `reliza:support:source:<milestone>` | Where each milestone date came from |
 | `cdx:lifecycle:milestone:endOfSupport` (and `endOfLife`, `endOfGuaranteedSupport`) | Standard CycloneDX milestone dates |
+| `reliza:support:selfComponent` | `true` on the organization's own release or artifact listed in the export: its row is a root, or ReARM's merge wrote the node as a release's root and the organization lists its purl nowhere as a component. The fda support checks of `rearm bomutils score` do not judge it |
 
 **A `declarations` block** at the document level, in CycloneDX's own attestation vocabulary:
 
@@ -458,7 +488,7 @@ requested it declined the support disclosure**. When the marker is there it has 
 | `provenance-stripped-no-disclosure` | **Nothing was asserted.** The document says nothing about support -- including about components that DO have an end-of-support date recorded |
 | *no marker at all* | The requester asked for a document without the support disclosure (`includeSupportMetadata: false`), so there is no support statement for a marker to qualify. Also the case for the raw download |
 
-With `derived-non-attested-current-state` the document also carries two counts in
+With `derived-non-attested-current-state` the document also carries three counts in
 `metadata.properties`, as decimal strings, written even when 0. A component is identified when it
 has a purl, or a purl-shaped `bom-ref` (some tools, Trivy for Go's `stdlib` for example, put the
 purl only there), or a cpe. Every component node is counted, nested ones and `metadata.component`
@@ -467,9 +497,10 @@ included.
 | Property | Meaning |
 |---|---|
 | `reliza:support:unidentifiedComponents` | How many components could not be identified, so no support fact can be matched to them |
-| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn) |
+| `reliza:support:unassessedComponents` | How many components were identified but carry no support property, because nobody has assessed them (or the assessment was withdrawn), and are not the organization's own |
+| `reliza:support:selfComponents` | How many components are the organization's own; they are in neither other count |
 
-Neither appears with `provenance-stripped-no-disclosure` or without a marker.
+None of them appears with `provenance-stripped-no-disclosure` or without a marker.
 
 Reading the second as the first is how a reviewer concludes a device has no out-of-support parts
 when it does, and reading the third as either is how they conclude the server made a claim it did

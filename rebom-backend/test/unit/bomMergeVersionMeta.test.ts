@@ -49,3 +49,42 @@ describe('mergeVersion in the stored meta', () => {
         expect(fromNestedMeta(without).mergeVersion).toBeUndefined();
     });
 });
+
+/** SCORE-63 T-4: the generation-time lists are not stored. */
+describe('the release root lists in the stored meta', () => {
+    it('stores neither attachedRootIds nor releaseRootIds', () => {
+        // createTestRebomOptions names its fields; the two lists are set on the request as sent.
+        const meta = { ...createTestRebomOptions({ mergeVersion: 14 }), releaseRootIds: ['r1'], attachedRootIds: ['a1', 'a2'] };
+
+        const nested = toNestedMeta(meta);
+        const text = JSON.stringify(nested);
+
+        expect(text).not.toContain('attachedRootIds');
+        expect(text).not.toContain('releaseRootIds');
+        expect(fromNestedMeta(nested)).not.toHaveProperty('attachedRootIds');
+        expect(fromNestedMeta(nested)).not.toHaveProperty('releaseRootIds');
+    });
+});
+
+/** SCORE-69 T-4: the merge row's two store-side records round-trip through the nested meta. */
+describe('the merge row records in the nested meta', () => {
+    it('round-trips nestedProductSerials and listedRootKeys under merge', () => {
+        const meta = { ...createTestRebomOptions({ mergeVersion: 17 }), nestedProductSerials: ['urn:uuid:s1'], listedRootKeys: ['pkg:npm/a@1.0.0', 'ref-a'] };
+
+        const nested = toNestedMeta(meta);
+        expect(nested.merge?.nestedProductSerials).toStrictEqual(['urn:uuid:s1']);
+        expect(nested.merge?.listedRootKeys).toStrictEqual(['pkg:npm/a@1.0.0', 'ref-a']);
+        const back = fromNestedMeta(nested);
+        expect(back.nestedProductSerials).toStrictEqual(['urn:uuid:s1']);
+        expect(back.listedRootKeys).toStrictEqual(['pkg:npm/a@1.0.0', 'ref-a']);
+    });
+
+    it('keeps them absent when the row has none', () => {
+        const nested = toNestedMeta(createTestRebomOptions({ mergeVersion: 17 }));
+        expect(nested.merge).not.toHaveProperty('nestedProductSerials');
+        expect(nested.merge).not.toHaveProperty('listedRootKeys');
+        const back = fromNestedMeta(nested);
+        expect(back).not.toHaveProperty('nestedProductSerials');
+        expect(back).not.toHaveProperty('listedRootKeys');
+    });
+});
