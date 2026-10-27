@@ -97,7 +97,7 @@ describe('the task page', () => {
         await row(w, a).find('[data-testid="unlink-pr"]').trigger('click')
         await nextTick()
         expect(w.find('[data-testid="unlink-warning"]').exists()).toBe(false)
-        await w.find('[data-testid="unlink-note"] input').setValue('the superseded half of the pair')
+        await w.find('[data-testid="unlink-note"] textarea').setValue('the superseded half of the pair')
         await w.find('[data-testid="unlink-submit"]').trigger('click')
         expect(w.emitted('unlink')?.[0]?.[0]).toMatchObject({ prUrl: a, note: 'the superseded half of the pair' })
     })

@@ -113,6 +113,11 @@
                 <h4 class="mt-4">CLI sessions</h4>
                 <p class="subtle">Where <code>rearm login</code> signed in with one of your keys. Revoking a session signs that CLI out at once; a key created for the session is deleted with it.</p>
                 <n-data-table :columns="cliSessionFields" :data="cliSessions" :scroll-x="1860" class="table-hover"></n-data-table>
+                <template v-if="templatesPanel?.supported">
+                    <h4 class="mt-4">Permission templates</h4>
+                    <p class="subtle">Saved permission sets you can start a device-login approval or a key request from. A template grants nothing by itself: what you approve from it is reduced to your own permissions at that moment.</p>
+                </template>
+                <PermissionTemplatesPanel ref="templatesPanel" :org-uuid="newKeyOrg" :notify="notify" />
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :mode="editModalMode" :api-key="selectedEditKey" :sibling-keys="myKeys" :org-uuid="selectedEditKey.org || ''" :notify="notify" @saved="loadMyKeys" />
             </div>
         </n-tab-pane>
@@ -134,6 +139,7 @@ import { OnChange } from 'naive-ui/es/upload/src/interface'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
+import PermissionTemplatesPanel from './PermissionTemplatesPanel.vue'
 import { createApiKeyControls, apiKeyLabelColumn } from '../utils/apiKeyControls'
 import { apiKeyLabel, apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import { hardEndCell } from '@/utils/cliSessionLifetime'
@@ -401,6 +407,9 @@ const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
 const orgOptions = computed(() => (organizations.value || []).map((o: any) => ({ label: o.name, value: o.uuid })))
 const showRequestModal = ref(false)
+// TPF-113: a template saved from the request modal's picker shows in the panel once the modal closes
+const templatesPanel = ref<InstanceType<typeof PermissionTemplatesPanel> | null>(null)
+watch(showRequestModal, (show) => { if (!show) templatesPanel.value?.reload() })
 // an org admin creates Free Form keys directly in org settings; a request would only go to themselves
 const isAdminOfSelectedOrg = computed(() => {
     const perms = myUser.value?.permissions?.permissions || []

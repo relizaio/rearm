@@ -7,7 +7,7 @@
     <n-alert v-if="task.hold" type="error"
              :title="task.hold.kind === 'HUMAN_GATE' ? 'Awaiting human review'
                  : awaiting ? 'Awaiting the operator' : `On hold (${holdWord(task.hold)})`">
-        {{ task.hold.reason }}
+        <div class="holdreason" data-testid="hold-reason-text">{{ task.hold.reason }}</div>
         <!-- A gated sign-off is held by the gate, not by the system actor that placed it (RD2-23). -->
         <div class="holdmeta"><template v-if="task.hold.kind === 'HUMAN_GATE'">{{ holdPhrase(task.hold) }}</template><template
             v-else>held by <actor-ref :actor="task.hold.heldBy" :task="task"/></template> · <agent-time :at="task.hold.heldAt"/>
@@ -19,8 +19,8 @@
             {{ linkedLine(l) }} <agent-time :at="l.at"/>
         </div>
         <template v-if="task.hold.kind === 'HUMAN_GATE' && canOperate">
-            <n-input v-model:value="reviewNote" size="small" placeholder="Review note (optional)"
-                     style="margin-top: 8px"/>
+            <growing-text-input v-model:value="reviewNote" placeholder="Review note (optional)"
+                                style="margin-top: 8px" data-testid="gate-review-note"/>
             <!-- A rejection with a review item attached routes like a reviewer's: to whoever
                  produces what it is about. Without one it goes to the coordinator. An
                  acceptance with one files it as a correction, which never blocks, and hands the
@@ -57,8 +57,8 @@
                         <n-radio-button value="ACCEPT" class="gateitem__accept">accept</n-radio-button>
                         <n-radio-button value="DISMISS" class="gateitem__dismiss">dismiss</n-radio-button>
                     </n-radio-group>
-                    <n-input v-model:value="decisionOf(f.id).reason" size="small" class="gateitem__reason"
-                             placeholder="why (required)" style="width: 200px"/>
+                    <growing-text-input v-model:value="decisionOf(f.id).reason" class="gateitem__reason"
+                                        placeholder="why (required)" style="width: 200px" data-testid="gate-item-reason"/>
                 </div>
             </div>
             <n-space style="margin-top: 8px">
@@ -116,8 +116,8 @@
                 completing, reopening, cancelling, a new order or level) answers it too, and is recorded as the
                 answer.
             </div>
-            <n-input v-model:value="liftNote" size="small" data-testid="lift-note"
-                     :placeholder="awaiting ? 'Your answer (required)' : 'Note on lifting (optional)'" style="margin-top: 8px"/>
+            <growing-text-input v-model:value="liftNote" data-testid="lift-note"
+                                :placeholder="awaiting ? 'Your answer (required)' : 'Note on lifting (optional)'" style="margin-top: 8px"/>
             <!-- Every lift a person gives may name the role it routes to, a manual hold's as well as a
                  stop's (RD2-20): the verb takes one, and the feed says "routed to <role>". -->
             <n-space style="margin-top: 8px" align="center">
@@ -138,8 +138,8 @@
 
     <n-alert v-if="humanStageRole && canOperate" type="info" :title="`Human stage: ${humanStageRole.name}`">
         <div v-if="humanStageRole.prompt" class="holdmeta">{{ humanStageRole.prompt }}</div>
-        <n-input v-model:value="reviewNote" size="small" placeholder="Sign-off note (optional)"
-                 style="margin-top: 8px"/>
+        <growing-text-input v-model:value="reviewNote" placeholder="Sign-off note (optional)"
+                            style="margin-top: 8px" data-testid="signoff-note"/>
         <n-space style="margin-top: 8px">
             <n-button size="small" type="primary"
                       @click="emit('human-signoff', { task, outcome: 'PASSED', note: reviewNote })">
@@ -178,6 +178,7 @@ import { acceptConfirm, acceptLabel, gateBlockingReviewItems, gateDecisions, Gat
     undecided } from '@/utils/agentGateReview'
 import ActorRef from '../ActorRef.vue'
 import AgentTime from '../AgentTime.vue'
+import GrowingTextInput from './GrowingTextInput.vue'
 import { isTerminal } from '@/utils/agentTaskFormat'
 import { holdPhrase, holdWord } from '@/utils/agentWords'
 import { aboutOptionsOf, priorityOptionsOf } from '@/utils/agentTaskOptions'
@@ -272,6 +273,9 @@ watch(() => props.task?.uuid, () => {
 
 <style scoped lang="scss">
 @use './taskSections';
+
+/* A hold reason (or a parked hop's question) keeps the line breaks it was written with (TPF-89). */
+.holdreason { white-space: pre-wrap; overflow-wrap: anywhere; }
 
 .gateitems { margin-top: 8px; }
 .gateitem {

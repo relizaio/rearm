@@ -42,6 +42,18 @@ describe('taskSections.scss', () => {
         }
     })
 
+    it('keeps the line breaks of a status history note (TPF-89)', () => {
+        const d = declarations('.shist__note')
+        expect(d['white-space']).toBe('pre-wrap')
+        expect(d['overflow-wrap']).toBe('anywhere')
+    })
+
+    it('keeps the line breaks of a hop sign-off note (TPF-89)', () => {
+        const d = declarations('.hist__note')
+        expect(d['white-space']).toBe('pre-wrap')
+        expect(d['overflow-wrap']).toBe('anywhere')
+    })
+
     it('the location tooltip is the whole location, path and ref (9a118a2a T-2)', () => {
         const src = readFileSync(here('./TaskReviewItems.vue'), 'utf8')
         expect(src).toContain('class="frow__loc" :title="reviewItemLocationFull(f)"')
