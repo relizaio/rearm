@@ -4,7 +4,9 @@
 // versions and a withdrawn second kind; the head lines, the version history newest first with the
 // reason as text kept in its line breaks, the parts of the newest version with a download per
 // generated part through the one URL builder, none for a skipped part or one with no version
-// recorded, the manifest download and text, and the withdrawn kind's reason and actions.
+// recorded, the manifest download and text, and the withdrawn kind's reason and actions. With the
+// host's kinds (Release.regulatoryPackageKinds) the rows are those kinds in their order, and the
+// catalog is not read.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -168,5 +170,38 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(create.attributes('disabled')).toBeDefined()
         expect(create.attributes('title')).toBe('The release must be ASSEMBLED or above')
         empty.unmount()
+    })
+
+    it('renders one row per kind the host passes, in that order, without reading the catalog', async () => {
+        query.mockImplementation(async (opts: any) => {
+            if (operation(opts) === 'SubmissionsOfRelease') return { data: { submissionsOfRelease: [] } }
+            throw new Error('unexpected query ' + operation(opts))
+        })
+        const w = await mountPanel({ kinds: ['TEST_KIND', 'FDA_PREMARKET'] })
+        const rows = w.findAll('.submission-kind').map((r: any) => r.attributes('data-testid'))
+        expect(rows).toEqual(['submission-kind-TEST_KIND', 'submission-kind-FDA_PREMARKET'])
+        expect(query.mock.calls.some(c => operation(c[0]) === 'PackageKinds')).toBe(false)
+        w.unmount()
+
+        // A kind switched off for the component is not passed and gets no row.
+        const one = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(one.findAll('.submission-kind').map((r: any) => r.attributes('data-testid'))).toEqual(['submission-kind-FDA_PREMARKET'])
+        expect(one.find('[data-testid="submission-kind-TEST_KIND"]').exists()).toBe(false)
+        one.unmount()
+    })
+
+    it('keeps a kind the release holds a submission of after the passed kinds', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(w.findAll('.submission-kind').map((r: any) => r.attributes('data-testid')))
+            .toEqual(['submission-kind-FDA_PREMARKET', 'submission-kind-TEST_KIND'])
+        expect(query.mock.calls.some(c => operation(c[0]) === 'PackageKinds')).toBe(false)
+        w.unmount()
+    })
+
+    it('without kinds from the host, reads the catalog for its rows', async () => {
+        const w = await mountPanel()
+        expect(query.mock.calls.some(c => operation(c[0]) === 'PackageKinds')).toBe(true)
+        expect(w.findAll('.submission-kind')).toHaveLength(2)
+        w.unmount()
     })
 })

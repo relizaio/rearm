@@ -73,13 +73,15 @@ describe('the TEA row names SBOM profiles (TEA-30)', () => {
             parent: { profile: parent } }, 'COMPONENT').profiles).toEqual(['parent-one'])
     })
 
-    it('row 10: a save sends profiles as a copy in order on Pro, the first name only on CE, none on FOLLOW', () => {
+    it('row 10: a save sends profiles as a copy in order on Pro, default only on CE, none on FOLLOW', () => {
         const form = { ...teaBuiltInDefaults(), mode: 'OVERRIDE', profiles: ['top', 'default'] }
         const pro = teaProfileInput(form, 'COMPONENT')
         expect(pro.profiles).toEqual(['top', 'default'])
         expect(pro.profiles).not.toBe(form.profiles)
         expect(teaProfileInput(form, 'COMPONENT', 'SAAS').profiles).toEqual(['top', 'default'])
-        expect(teaProfileInput(form, 'ORGANIZATION', 'OSS').profiles).toEqual(['top'])
+        // CE stores the one `default` SBOM profile whatever the form holds.
+        expect(teaProfileInput(form, 'ORGANIZATION', 'OSS').profiles).toEqual(['default'])
+        expect(teaProfileInput({ ...form, profiles: [] }, 'COMPONENT', 'OSS').profiles).toEqual(['default'])
         expect(teaProfileInput({ ...form, mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT'))
             .toEqual({ mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' })
         expect(Object.keys(pro).sort()).toEqual([...TEA_PROFILE_FIELDS, 'mode'].sort())

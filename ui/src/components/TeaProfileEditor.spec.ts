@@ -363,7 +363,7 @@ describe('TeaProfileEditor', () => {
             expect(line.text()).toContain('Payments, Retail')
         })
 
-        it('saves exactly the channel fields with mode, profiles in the picker order, one name on CE', async () => {
+        it('saves exactly the channel fields with mode, profiles in the picker order; CE sends default', async () => {
             const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }))
             await select(w, 'sbom-profile-picker').vm.$emit('update:value', ['top', 'default'])
             await w.find('[data-testid="tea-save"]').trigger('click')
@@ -373,13 +373,30 @@ describe('TeaProfileEditor', () => {
             expect(sent.profiles).toEqual(['top', 'default'])
 
             mutate.mockClear()
-            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }),
+            // A CE row stored before the CE rule may still name another profile: CE sends default regardless.
+            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }),
                 { installationType: 'OSS' })
-            expect(select(ce, 'sbom-profile-picker').props('multiple')).toBe(false)
-            await select(ce, 'sbom-profile-picker').vm.$emit('update:value', 'top')
             await ce.find('[data-testid="tea-save"]').trigger('click')
             await flushPromises()
-            expect(mutate.mock.calls[0][0].variables.profile.profiles).toEqual(['top'])
+            expect(mutate.mock.calls[0][0].variables.profile.profiles).toEqual(['default'])
+        })
+
+        it('CE: no picker, a read-only "SBOM profile: default" line in its place', async () => {
+            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }),
+                { installationType: 'OSS' })
+            expect(ce.find('[data-testid="tea-profiles"]').exists()).toBe(false)
+            expect(select(ce, 'sbom-profile-picker')).toBeUndefined()
+            const line = ce.find('[data-testid="tea-profiles-ce"]')
+            expect(line.exists()).toBe(true)
+            expect(line.text()).toBe('SBOM profile: default')
+            const html = ce.html()
+            const at = (id: string) => html.indexOf(`data-testid="${id}"`)
+            expect(at('tea-profiles-ce')).toBeGreaterThan(at('tea-visibility'))
+            expect(at('tea-profiles-ce')).toBeLessThan(at('tea-raw-artifacts'))
+
+            const pro = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }))
+            expect(pro.find('[data-testid="tea-profiles-ce"]').exists()).toBe(false)
+            expect(pro.find('[data-testid="tea-profiles"]').exists()).toBe(true)
         })
 
         it('shows a refused save naming a perspective as text in the object form, with one argument', async () => {

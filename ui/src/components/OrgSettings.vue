@@ -807,27 +807,6 @@
                 </n-modal>
             </n-tab-pane>
 
-            <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
-                <div class="terminologyBlock mt-4">
-                    <h5>Custom Terminology</h5>
-                    <p class="text-muted">Customize the labels used throughout the application for your organization.</p>
-                    <n-form :model="terminologyForm" label-placement="left" label-width="200px" style="max-width: 500px;">
-                        <n-form-item label="Feature Set Label" path="featureSetLabel">
-                            <n-input 
-                                v-model:value="terminologyForm.featureSetLabel" 
-                                placeholder="Feature Set"
-                                maxlength="50"
-                                show-count
-                            />
-                        </n-form-item>
-                        <n-space>
-                            <n-button type="success" @click="saveTerminology" :loading="savingTerminology">Save</n-button>
-                            <n-button type="warning" @click="resetTerminology">Reset to Default</n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-            </n-tab-pane>
-
             <n-tab-pane name="perspectives" tab="Perspectives" v-if="myUser.installationType !== 'OSS'">
                 <div class="perspectivesBlock mt-4">
                     <h5>Perspectives ({{ perspectives.length }})
@@ -1050,367 +1029,405 @@
                 </div>
             </n-tab-pane>
             <n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">
-                <div class="adminSettingsBlock mt-4">
-                    <h5>Violation Ignore Regexes</h5>
-                    <p class="text-muted">Configure regex patterns to ignore specific violations. Matching violations will be excluded from reports.</p>
+                <!-- The organization-wide settings, one sub-tab per area (?adminTab=, like the Audit sub-tabs).
+                     SBOM Profiles and Transparency Exchange API show on every edition (CE: the single
+                     `default` SBOM profile); Regulatory is Pro only. -->
+                <n-tabs type="segment" :value="adminSubTab" @update:value="handleAdminSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
+                    <n-tab-pane name="general" tab="General">
+                        <div class="adminSettingsBlock mt-4">
+                            <h5>Violation Ignore Regexes</h5>
+                            <p class="text-muted">Configure regex patterns to ignore specific violations. Matching violations will be excluded from reports.</p>
                     
-                    <n-form>
-                        <n-form-item label="License Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.licenseViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                            <n-form>
+                                <n-form-item label="License Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.licenseViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-form-item label="Security Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.securityViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                                <n-form-item label="Security Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.securityViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-form-item label="Operational Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.operationalViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                                <n-form-item label="Operational Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.operationalViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-space>
-                            <n-button type="primary" @click="saveIgnoreViolation" :loading="savingIgnoreViolation">
-                                Save Ignore Patterns
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
-                    <h5>Agent Review Items</h5>
-                    <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
-                    <n-form>
-                        <n-form-item label="Priority levels">
-                            <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
-                                            :min="1" :max="10" style="width: 120px;"/>
-                            <span class="ml-2 text-muted">
-                                1 is highest. Validated when a document is published, so lowering
-                                this leaves older rounds carrying higher numbers — they are still
-                                shown rather than hidden.
-                            </span>
-                        </n-form-item>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
-                    <h5>Agent Sessions</h5>
-                    <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
-                    <n-form>
-                        <n-form-item label="Idle close (hours)">
-                            <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
-                                            :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
-                            <span class="ml-2 text-muted">
-                                Any call with a session's id counts as activity. The session is warned two hours
-                                before it closes (half the window when shorter); one that holds a task or a
-                                coordinator seat is given twice the window. Its tasks go back to the queue.
-                            </span>
-                        </n-form-item>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4">
-                    <h5>Finding Analysis Settings</h5>
-                    <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
-
-                    <n-form>
-                        <n-form-item label="Justification Mandatory">
-                            <n-switch v-model:value="orgSettings.justificationMandatory" />
-                            <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
-                        </n-form-item>
-
-                        <!-- FDA-Readiness-1 7f. These four are rendered into the generated
-                             submission and labeling documents. No default text ships: they
-                             are the manufacturer's own commitments, and words nobody here
-                             wrote going out over their name is the failure the whole
-                             feature exists to avoid. -->
-                        <n-divider />
-                        <h6 style="display: inline-flex; align-items: center;">
-                            Submission and labeling text
-                            <!-- The heading no longer says FDA; the tooltip does. "FDA" on
-                                 the heading made a general-purpose settings section look
-                                 like a regulator-specific one to every operator who is not
-                                 preparing a submission, while the text itself -- support
-                                 commitments and risk statements -- is ordinary product
-                                 labeling. What it is FOR still has to be discoverable, so it
-                                 moved one hover away rather than disappearing. -->
-                            <n-tooltip trigger="hover" style="max-width: 380px;">
-                                <template #trigger>
-                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
-                                        <QuestionMark />
-                                    </n-icon>
-                                </template>
-                                Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
-                            </n-tooltip>
-                        </h6>
-                        <p class="text-muted" style="max-width: 760px;">
-                            Written once here, rendered into every generated document. A
-                            document whose required text is missing is <strong>not
-                            generated</strong> rather than generated with the section
-                            blank &mdash; on a submission a reviewer expects gaps, but on a
-                            patient-facing statement a silent gap is itself misleading.
-                            To remove text, clear the box and save &mdash; an emptied field
-                            is recorded as deliberately blank, and a field you do not touch
-                            is left exactly as it was.
-                        </p>
-
-                        <n-form-item label="Assessment justification (submission)">
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                    type="textarea" :rows="5" style="max-width: 760px;"
-                                    placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
-                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
-                                    What the guidance asks for literally: the justification
-                                    for why per-component support information cannot be
-                                    included. Most components in a real SBOM have no
-                                    published upstream date, so this is the centre of the
-                                    submission, not a footnote.
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item label="Patches may cease at end of support (labeling)">
-                            <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                type="textarea" :rows="3" style="max-width: 760px;"
-                                placeholder="After end of support, security patches and software updates may no longer be provided." />
-                        </n-form-item>
-
-                        <n-form-item label="Risk-transfer process reference (labeling)">
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                    style="max-width: 760px;"
-                                    placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
-                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
-                                    A <strong>reference</strong>, not the process itself.
-                                    Pasting the process here creates a second, unversioned
-                                    copy that will drift from the controlled original.
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item label="Risk increases over time (labeling)">
-                            <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                type="textarea" :rows="3" style="max-width: 760px;"
-                                placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
-                        </n-form-item>
-
-                        <!-- ITS OWN SECTION, AFTER all three labeling slots.
-                             It previously sat between slot 2 and slot 3, which read as a
-                             fourth piece of labeling text and broke the three apart -- an
-                             operator working down the FDA labeling statements met a switch
-                             about export behaviour in the middle of them. The three slots are
-                             prose that ships INSIDE documents; this decides whether a
-                             document carries attestations at all. Related, not the same kind
-                             of thing, and the ordering now says so. Reported by an operator
-                             running the walkthrough, board t20260909-061338-23148. -->
-                        <!-- Hidden entirely on a backend that does not declare the field --
-                             a CE mirror before the deferred sync. Offering a switch whose
-                             write the server would reject is worse than not offering it. -->
-                        <div v-if="supportInjectionSupported" style="margin-top: 18px;">
-                            <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
-                            <!-- The switch is ADJACENT to the words it controls, not in a
-                                 form-item label column that pushed it to the far right with
-                                 760px of whitespace between the two. A control that far from
-                                 its label is one an operator has to aim at. -->
-                            <n-space align="center" :size="10" style="margin: 8px 0 4px;">
-                                <n-switch v-model:value="supportInjectionEnabled"
-                                    :disabled="savingOrgSettings" />
-                                <span>Carry support attestations in BOM exports</span>
-                            </n-space>
-                            <span class="text-muted" style="display: block; max-width: 760px;">
-                                Off by default. When on, BOM exports carry this
-                                organization's support attestations &mdash; the artifact
-                                download, the SPDX-augmented download and the release SBOM
-                                export. The raw artifact download never carries them.
-                                <strong>Forged support properties are always removed,
-                                whatever this is set to</strong>; this controls only
-                                whether our own attestations are added.
-                            </span>
+                                <n-space>
+                                    <n-button type="primary" @click="saveIgnoreViolation" :loading="savingIgnoreViolation">
+                                        Save Ignore Patterns
+                                    </n-button>
+                                </n-space>
+                            </n-form>
                         </div>
-
-                        <n-divider style="margin: 22px 0 10px;" />
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>VEX Compliance Framework</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">CycloneDX is always the baseline data model. A compliance framework layers extra validation rules on vulnerability analysis create/update:
-- None: no extra rules (pure CycloneDX baseline).
-- CISA: CISA VEX minimum requirements — NOT_AFFECTED requires a Justification or Details (impact statement); EXPLOITABLE requires a Response or Recommendation.
-
-Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.vexComplianceFramework"
-                                    :options="vexComplianceFrameworkOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    {{ orgSettings.vexComplianceFramework === 'CISA'
-                                        ? 'CISA VEX rules enforced on create/update.'
-                                        : 'No framework rules enforced (CycloneDX baseline).' }}
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>Branch Suffix Mode</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.branchSuffixMode"
-                                    :options="orgBranchSuffixModeOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">Current: {{ branchSuffixModeLabels[orgSettings.branchSuffixMode] }}</span>
-                            </div>
-                        </n-form-item>
-
-                        <n-divider style="margin: 12px 0;" />
-                        <h6 style="margin-bottom: 8px;">Software Identification (sid PURL)</h6>
-                        <p class="text-muted" style="margin-bottom: 12px;">
-                            sid is a CPE-successor PURL type for vendor-asserted software identity.
-                            <strong>Enabling sid is forward-only</strong> — releases created before the
-                            toggle keep their existing identifiers unchanged. EXTERNAL components
-                            never receive a platform-stamped sid PURL.
-                        </p>
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>sid PURL Mode</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlModeTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.sidPurlMode"
-                                    :options="sidPurlModeOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    Current: {{ sidPurlModeLabels[orgSettings.sidPurlMode] }}
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item v-if="sidPurlIsEnabled">
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>
-                                        Authority Segments
-                                        <span v-if="sidPurlSegmentsRequired" style="color: #d03050;">*</span>
+                        <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                            <h5>Agent Review Items</h5>
+                            <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
+                            <n-form>
+                                <n-form-item label="Priority levels">
+                                    <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
+                                                    :min="1" :max="10" style="width: 120px;"/>
+                                    <span class="ml-2 text-muted">
+                                        1 is highest. Validated when a document is published, so lowering
+                                        this leaves older rounds carrying higher numbers — they are still
+                                        shown rather than hidden.
                                     </span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlAuthorityTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%; max-width: 600px;">
-                                <n-dynamic-input
-                                    v-model:value="orgSettings.sidAuthoritySegments"
-                                    :on-create="() => ''"
-                                    placeholder='e.g. "reliza.io" or "Acme Robotics"' />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    First segment is the authority; subsequent segments are publisher / business unit / product line.
-                                </span>
-                                <span v-if="sidPurlAuthorityRegistryWarning" class="text-warning" style="margin-top: 4px; color: #f0a020;">
-                                    The first segment has no dot — the upstream sid spec requires registry-form authorities to be registered in the PURL registry. Domain-form authorities (e.g. <code>reliza.io</code>) are self-asserted and don't need registration.
-                                </span>
-                            </div>
-                        </n-form-item>
+                                </n-form-item>
+                            </n-form>
+                        </div>
+                        <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                            <h5>Agent Sessions</h5>
+                            <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
+                            <n-form>
+                                <n-form-item label="Idle close (hours)">
+                                    <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
+                                                    :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
+                                    <span class="ml-2 text-muted">
+                                        Any call with a session's id counts as activity. The session is warned two hours
+                                        before it closes (half the window when shorter); one that holds a task or a
+                                        coordinator seat is given twice the window. Its tasks go back to the queue.
+                                    </span>
+                                </n-form-item>
+                            </n-form>
+                        </div>
+                        <div class="adminSettingsBlock mt-4">
+                            <h5>Finding Analysis Settings</h5>
+                            <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
 
-                        <n-space>
-                            <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
-                                Save Settings
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-                <!-- SCORE-42: the organization's default declared licence, written on the SBOM nodes
-                     ReARM makes. Its own block and its own documents, not fields of the form above:
-                     the CE mirror lacks them, and the form's mutation response must stay valid there.
-                     Hidden for the session once the panel's read is refused as schema drift. -->
-                <div v-if="declaredLicenseSupported" class="adminSettingsBlock mt-4" data-testid="org-default-license-block">
-                    <OrgDeclaredLicensePanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markDeclaredLicenseUnsupported" />
-                </div>
-                <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="org-default-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
-                <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
-                     because both decide what an export carries. Its own block, not a field of the
-                     form above: four mutations of its own and no Save. Hidden for the session once
-                     the panel's list query is refused as schema drift (a CE mirror before its sync). -->
-                <div v-if="sbomSigningSupported" class="adminSettingsBlock mt-4" data-testid="sbom-signing-block">
-                    <SbomSigningKeysPanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markSbomSigningUnsupported" />
-                </div>
-                <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">
-                    This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.
-                </div>
-                <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
-                    <h5>Default View</h5>
-                    <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
-                    <n-form>
-                        <n-form-item label="Default View">
-                            <n-select
-                                v-model:value="orgDefaultView"
-                                :options="defaultViewOptions"
-                                style="max-width: 240px;"
-                                data-testid="org-default-view-select" />
-                        </n-form-item>
-                        <n-space>
-                            <n-button type="primary" @click="saveOrgDefaultView" :loading="savingOrgDefaultView" data-testid="org-default-view-save">
-                                Save Default View
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-            </n-tab-pane>
-            <n-tab-pane name="profiles" tab="Profiles" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
-                <SbomProfilesPanel
-                    :org-uuid="orgResolved"
-                    :is-org-admin="isOrgAdmin"
-                    :installation-type="myUser.installationType"
-                    :perspectives="perspectives"
-                    :components="teaNamedObjects" />
-            </n-tab-pane>
-            <n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">
-                <TeaOrgPanel
-                    :org-uuid="orgResolved"
-                    :is-org-admin="isOrgAdmin"
-                    :installation-type="myUser.installationType"
-                    :perspectives="perspectives"
-                    :components="teaNamedObjects" />
+                            <n-form>
+                                <n-form-item label="Justification Mandatory">
+                                    <n-switch v-model:value="orgSettings.justificationMandatory" />
+                                    <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
+                                </n-form-item>
+
+                                <!-- FDA-Readiness-1 7f. These four are rendered into the generated
+                                     submission and labeling documents. No default text ships: they
+                                     are the manufacturer's own commitments, and words nobody here
+                                     wrote going out over their name is the failure the whole
+                                     feature exists to avoid. -->
+                                <n-divider />
+                                <h6 style="display: inline-flex; align-items: center;">
+                                    Submission and labeling text
+                                    <!-- The heading no longer says FDA; the tooltip does. "FDA" on
+                                         the heading made a general-purpose settings section look
+                                         like a regulator-specific one to every operator who is not
+                                         preparing a submission, while the text itself -- support
+                                         commitments and risk statements -- is ordinary product
+                                         labeling. What it is FOR still has to be discoverable, so it
+                                         moved one hover away rather than disappearing. -->
+                                    <n-tooltip trigger="hover" style="max-width: 380px;">
+                                        <template #trigger>
+                                            <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
+                                                <QuestionMark />
+                                            </n-icon>
+                                        </template>
+                                        Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
+                                    </n-tooltip>
+                                </h6>
+                                <p class="text-muted" style="max-width: 760px;">
+                                    Written once here, rendered into every generated document. A
+                                    document whose required text is missing is <strong>not
+                                    generated</strong> rather than generated with the section
+                                    blank &mdash; on a submission a reviewer expects gaps, but on a
+                                    patient-facing statement a silent gap is itself misleading.
+                                    To remove text, clear the box and save &mdash; an emptied field
+                                    is recorded as deliberately blank, and a field you do not touch
+                                    is left exactly as it was.
+                                </p>
+
+                                <n-form-item label="Assessment justification (submission)">
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                            type="textarea" :rows="5" style="max-width: 760px;"
+                                            placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
+                                        <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                            What the guidance asks for literally: the justification
+                                            for why per-component support information cannot be
+                                            included. Most components in a real SBOM have no
+                                            published upstream date, so this is the centre of the
+                                            submission, not a footnote.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item label="Patches may cease at end of support (labeling)">
+                                    <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                        type="textarea" :rows="3" style="max-width: 760px;"
+                                        placeholder="After end of support, security patches and software updates may no longer be provided." />
+                                </n-form-item>
+
+                                <n-form-item label="Risk-transfer process reference (labeling)">
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                            style="max-width: 760px;"
+                                            placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
+                                        <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                            A <strong>reference</strong>, not the process itself.
+                                            Pasting the process here creates a second, unversioned
+                                            copy that will drift from the controlled original.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item label="Risk increases over time (labeling)">
+                                    <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                        type="textarea" :rows="3" style="max-width: 760px;"
+                                        placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
+                                </n-form-item>
+
+                                <!-- ITS OWN SECTION, AFTER all three labeling slots.
+                                     It previously sat between slot 2 and slot 3, which read as a
+                                     fourth piece of labeling text and broke the three apart -- an
+                                     operator working down the FDA labeling statements met a switch
+                                     about export behaviour in the middle of them. The three slots are
+                                     prose that ships INSIDE documents; this decides whether a
+                                     document carries attestations at all. Related, not the same kind
+                                     of thing, and the ordering now says so. Reported by an operator
+                                     running the walkthrough, board t20260909-061338-23148. -->
+                                <!-- Hidden entirely on a backend that does not declare the field --
+                                     a CE mirror before the deferred sync. Offering a switch whose
+                                     write the server would reject is worse than not offering it. -->
+                                <div v-if="supportInjectionSupported" style="margin-top: 18px;">
+                                    <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
+                                    <!-- The switch is ADJACENT to the words it controls, not in a
+                                         form-item label column that pushed it to the far right with
+                                         760px of whitespace between the two. A control that far from
+                                         its label is one an operator has to aim at. -->
+                                    <n-space align="center" :size="10" style="margin: 8px 0 4px;">
+                                        <n-switch v-model:value="supportInjectionEnabled"
+                                            :disabled="savingOrgSettings" />
+                                        <span>Carry support attestations in BOM exports</span>
+                                    </n-space>
+                                    <span class="text-muted" style="display: block; max-width: 760px;">
+                                        Off by default. When on, BOM exports carry this
+                                        organization's support attestations &mdash; the artifact
+                                        download, the SPDX-augmented download and the release SBOM
+                                        export. The raw artifact download never carries them.
+                                        <strong>Forged support properties are always removed,
+                                        whatever this is set to</strong>; this controls only
+                                        whether our own attestations are added.
+                                    </span>
+                                </div>
+
+                                <n-divider style="margin: 22px 0 10px;" />
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>VEX Compliance Framework</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">CycloneDX is always the baseline data model. A compliance framework layers extra validation rules on vulnerability analysis create/update:
+        - None: no extra rules (pure CycloneDX baseline).
+        - CISA: CISA VEX minimum requirements — NOT_AFFECTED requires a Justification or Details (impact statement); EXPLOITABLE requires a Response or Recommendation.
+
+        Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.vexComplianceFramework"
+                                            :options="vexComplianceFrameworkOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            {{ orgSettings.vexComplianceFramework === 'CISA'
+                                                ? 'CISA VEX rules enforced on create/update.'
+                                                : 'No framework rules enforced (CycloneDX baseline).' }}
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>Branch Suffix Mode</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.branchSuffixMode"
+                                            :options="orgBranchSuffixModeOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">Current: {{ branchSuffixModeLabels[orgSettings.branchSuffixMode] }}</span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-divider style="margin: 12px 0;" />
+                                <h6 style="margin-bottom: 8px;">Software Identification (sid PURL)</h6>
+                                <p class="text-muted" style="margin-bottom: 12px;">
+                                    sid is a CPE-successor PURL type for vendor-asserted software identity.
+                                    <strong>Enabling sid is forward-only</strong> — releases created before the
+                                    toggle keep their existing identifiers unchanged. EXTERNAL components
+                                    never receive a platform-stamped sid PURL.
+                                </p>
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>sid PURL Mode</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlModeTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.sidPurlMode"
+                                            :options="sidPurlModeOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            Current: {{ sidPurlModeLabels[orgSettings.sidPurlMode] }}
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item v-if="sidPurlIsEnabled">
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>
+                                                Authority Segments
+                                                <span v-if="sidPurlSegmentsRequired" style="color: #d03050;">*</span>
+                                            </span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlAuthorityTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%; max-width: 600px;">
+                                        <n-dynamic-input
+                                            v-model:value="orgSettings.sidAuthoritySegments"
+                                            :on-create="() => ''"
+                                            placeholder='e.g. "reliza.io" or "Acme Robotics"' />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            First segment is the authority; subsequent segments are publisher / business unit / product line.
+                                        </span>
+                                        <span v-if="sidPurlAuthorityRegistryWarning" class="text-warning" style="margin-top: 4px; color: #f0a020;">
+                                            The first segment has no dot — the upstream sid spec requires registry-form authorities to be registered in the PURL registry. Domain-form authorities (e.g. <code>reliza.io</code>) are self-asserted and don't need registration.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-space>
+                                    <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
+                                        Save Settings
+                                    </n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                        <!-- SCORE-42: the organization's default declared licence, written on the SBOM nodes
+                             ReARM makes. Its own block and its own documents, not fields of the form above:
+                             the CE mirror lacks them, and the form's mutation response must stay valid there.
+                             Hidden for the session once the panel's read is refused as schema drift. -->
+                        <div v-if="declaredLicenseSupported" class="adminSettingsBlock mt-4" data-testid="org-default-license-block">
+                            <OrgDeclaredLicensePanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markDeclaredLicenseUnsupported" />
+                        </div>
+                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="org-default-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
+                        <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
+                             because both decide what an export carries. Its own block, not a field of the
+                             form above: four mutations of its own and no Save. Hidden for the session once
+                             the panel's list query is refused as schema drift (a CE mirror before its sync). -->
+                        <div v-if="sbomSigningSupported" class="adminSettingsBlock mt-4" data-testid="sbom-signing-block">
+                            <SbomSigningKeysPanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markSbomSigningUnsupported" />
+                        </div>
+                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">
+                            This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.
+                        </div>
+                        <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
+                            <h5>Default View</h5>
+                            <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
+                            <n-form>
+                                <n-form-item label="Default View">
+                                    <n-select
+                                        v-model:value="orgDefaultView"
+                                        :options="defaultViewOptions"
+                                        style="max-width: 240px;"
+                                        data-testid="org-default-view-select" />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button type="primary" @click="saveOrgDefaultView" :loading="savingOrgDefaultView" data-testid="org-default-view-save">
+                                        Save Default View
+                                    </n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="terminology" tab="Terminology">
+                        <div class="terminologyBlock mt-4">
+                            <h5>Custom Terminology</h5>
+                            <p class="text-muted">Customize the labels used throughout the application for your organization.</p>
+                            <n-form :model="terminologyForm" label-placement="left" label-width="200px" style="max-width: 500px;">
+                                <n-form-item label="Feature Set Label" path="featureSetLabel">
+                                    <n-input 
+                                        v-model:value="terminologyForm.featureSetLabel" 
+                                        placeholder="Feature Set"
+                                        maxlength="50"
+                                        show-count
+                                    />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button type="success" @click="saveTerminology" :loading="savingTerminology">Save</n-button>
+                                    <n-button type="warning" @click="resetTerminology">Reset to Default</n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">
+                        <SbomProfilesPanel
+                            :org-uuid="orgResolved"
+                            :is-org-admin="isOrgAdmin"
+                            :installation-type="myUser.installationType"
+                            :perspectives="perspectives"
+                            :components="teaNamedObjects" />
+                    </n-tab-pane>
+                    <n-tab-pane name="regulatory" tab="Regulatory" v-if="regulatoryPackagesAvailable(myUser.installationType)">
+                        <div class="mt-4" data-testid="org-regulatory-block">
+                            <h5>Regulatory package settings</h5>
+                            <PackageSettingsEditor
+                                :org-uuid="orgResolved"
+                                scope="ORGANIZATION"
+                                :is-writable="isOrgAdmin"
+                                :installation-type="myUser.installationType"
+                                :names="perspectiveNamesMap" />
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">
+                        <TeaOrgPanel
+                            :org-uuid="orgResolved"
+                            :is-org-admin="isOrgAdmin"
+                            :installation-type="myUser.installationType"
+                            :perspectives="perspectives"
+                            :components="teaNamedObjects" />
+                    </n-tab-pane>
+                </n-tabs>
             </n-tab-pane>
             <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
                 <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
@@ -1636,23 +1653,24 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') loadCiIntegrations(true)
     } else if (tabName === "perspectives") {
         loadPerspectives()
-    } else if (tabName === "tea") {
-        // The Transparency Exchange table names its rows from the perspectives list (Pro) and the
-        // products store; load both here so the tab reads the same when it is opened directly.
-        // Components come from onMounted.
-        await Promise.all([
-            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
-            store.dispatch('fetchProducts', orgResolved.value)
-        ])
-    } else if (tabName === "profiles") {
-        // The Profiles tab (TEA-30) names its rows the same way as the Transparency Exchange tab.
-        await Promise.all([
-            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
-            store.dispatch('fetchProducts', orgResolved.value)
-        ])
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
         loadOrgSettings()
+        loadAdminSubTabData(adminSubTab.value)
+    }
+}
+
+/** The data an Admin Settings sub-tab needs beyond what the tab itself loads. */
+async function loadAdminSubTabData (subTab: string) {
+    if (subTab === "sbomProfiles" || subTab === "regulatory" || subTab === "tea") {
+        // The SBOM Profiles and Transparency Exchange API tables name their rows from the
+        // perspectives list (Pro) and the products store, and the Regulatory editor names perspectives;
+        // load both here so each sub-tab reads the same when it is opened directly. Components come
+        // from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     }
 }
 
@@ -1901,9 +1919,10 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'terminology', 'adminSettings', 'tea', 'profiles']
-// tea: Pro only until the CE backend serves TEA profiles (teaProfilesAvailable in utils/teaProfile).
-const proOnlyTabs = ['policies', 'committers', 'perspectives', 'tea', 'profiles']
+// Terminology, SBOM Profiles, Regulatory and Transparency Exchange API are sub-tabs of Admin Settings
+// (?adminTab=), gated per sub-tab by isAdminSubTabAccessible below.
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'adminSettings']
+const proOnlyTabs = ['policies', 'committers', 'perspectives']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
     if (proOnlyTabs.includes(t) && myUser.value?.installationType === 'OSS') return false
@@ -1919,9 +1938,23 @@ if (currentTab.value === 'freeFormKeys') currentTab.value = 'programmaticAccess'
 // watch below so the fallbacks stay in one place.
 const DEFAULT_POLICY_SUBTAB = 'approvalPoliciesInner'
 const DEFAULT_AUDIT_SUBTAB = 'downloadLog'
+const DEFAULT_ADMIN_SUBTAB = 'general'
 const policySubTab = ref(route.query.policyTab as string || DEFAULT_POLICY_SUBTAB)
 // Audit sub-tab: Download Log + Delivery History, both on all editions.
 const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
+// Admin Settings sub-tab. SBOM Profiles and Transparency Exchange API show on every edition,
+// Regulatory on Pro only; an unknown or hidden one falls back to General rather than a blank body.
+const ADMIN_SUBTABS = ['general', 'terminology', 'sbomProfiles', 'regulatory', 'tea']
+function isAdminSubTabAccessible (t: string): boolean {
+    if (!ADMIN_SUBTABS.includes(t)) return false
+    if (t === 'regulatory') return regulatoryPackagesAvailable(myUser.value?.installationType)
+    if (t === 'sbomProfiles' || t === 'tea') return teaProfilesAvailable(myUser.value?.installationType)
+    return true
+}
+function resolveAdminSubTab (t: string | undefined | null): string {
+    return t && isAdminSubTabAccessible(t) ? t : DEFAULT_ADMIN_SUBTAB
+}
+const adminSubTab = ref(resolveAdminSubTab(route.query.adminTab as string))
 
 // Keep the tab selection in sync when the URL query changes while OrgSettings
 // stays mounted -- e.g. an in-app "View delivery log" deep-link pushing
@@ -1930,11 +1963,17 @@ const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
 // which the setup-time reads would otherwise miss. Idempotent: each branch
 // no-ops when the value is unchanged, so a user's own handleTabSwitch push
 // doesn't double-load.
-watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab], () => {
+watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab, route.query.adminTab], () => {
+    // The admin sub-tab first: switching to Admin Settings loads the data of its sub-tab.
+    const adt = resolveAdminSubTab(route.query.adminTab as string)
+    const adminSubTabChanged = adt !== adminSubTab.value
+    if (adminSubTabChanged) adminSubTab.value = adt
     const t = (route.query.tab as string) || defaultTab
     if (isTabAccessible(t) && t !== currentTab.value) {
         currentTab.value = t
         loadTabSpecificData(t)
+    } else if (adminSubTabChanged && currentTab.value === 'adminSettings') {
+        loadAdminSubTabData(adt)
     }
     const at = (route.query.auditTab as string) || DEFAULT_AUDIT_SUBTAB
     if (at !== auditSubTab.value) auditSubTab.value = at
@@ -4958,6 +4997,14 @@ async function handleAuditSubTabSwitch(tabName: string) {
     await router.push({
         query: { ...route.query, auditTab: tabName }
     })
+}
+
+async function handleAdminSubTabSwitch(tabName: string) {
+    adminSubTab.value = tabName
+    await router.push({
+        query: { ...route.query, adminTab: tabName }
+    })
+    loadAdminSubTabData(tabName)
 }
 
 async function loadInvitedUsers(useCache: boolean) {

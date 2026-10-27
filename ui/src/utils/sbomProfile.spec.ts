@@ -7,7 +7,8 @@ import {
     SBOM_MODE_OPTIONS, SBOM_OPTIONAL_DEPENDENCIES_OPTIONS, SBOM_PROFILE_FIELDS, SBOM_SOURCES_OPTIONS,
     SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS, SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults,
     sbomCatalogRows, sbomDeleteConfirm, sbomEffectiveLine, sbomFormFromView, sbomNameError, sbomPickerLines,
-    sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomSourceLine, sbomValueText,
+    sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomProfileNamesAvailable, sbomRowsForEdition, sbomSourceLine,
+    sbomValueText,
 } from './sbomProfile'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
@@ -213,6 +214,15 @@ describe('the picker options (row 7)', () => {
         expect(sbomPickerMultiple('SAAS')).toBe(true)
         expect(sbomPickerMultiple('SAAS', true)).toBe(false)
         expect(sbomPickerMultiple('OSS')).toBe(false)
+    })
+
+    it('CE names no SBOM profile but default: the rows filter to it, Pro keeps every row', () => {
+        const rows = [{ name: 'default' }, { name: 'top' }, { name: null }, { name: 'default' }]
+        expect(sbomProfileNamesAvailable('OSS')).toBe(false)
+        for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE']) expect(sbomProfileNamesAvailable(t)).toBe(true)
+        expect(sbomRowsForEdition(rows, 'OSS')).toEqual([{ name: 'default' }, { name: 'default' }])
+        expect(sbomRowsForEdition(rows, 'SAAS')).toBe(rows)
+        expect(sbomRowsForEdition(null, 'OSS')).toEqual([])
     })
 })
 

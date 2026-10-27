@@ -33,7 +33,14 @@
                             :options="perspectiveOptions" :filterable="false" placeholder="Choose one of this component's perspectives" />
                     </n-form-item>
 
+                    <p v-if="follows" data-testid="package-effective-enabled" class="text-muted">{{ effectiveEnabledLine }}</p>
+
                     <div v-if="!follows" data-testid="package-fields">
+                        <n-form-item label-for="package-enabled">
+                            <template #label><FieldLabel label="Enabled" :tip="enabledHelp" /></template>
+                            <n-switch data-testid="package-enabled" v-model:value="form.enabled" :disabled="!isWritable" />
+                            <span class="text-muted package-enabled-help">{{ enabledHelp }}</span>
+                        </n-form-item>
                         <n-form-item label-for="package-sbom-profile">
                             <template #label><FieldLabel label="SBOM profile" :tip="PACKAGE_FIELD_HELP.sbomProfile" /></template>
                             <SbomProfilePicker data-testid="package-sbom-profile" :model-value="profileValue" single
@@ -96,12 +103,13 @@
 
 <script setup lang="ts">
 // The regulatory package settings editor (task TEA-30, design 3.4.2), Pro only: one kind at one
-// scope, generic over the kinds packageKinds answers -- nothing here names a kind. The parts, their
+// scope, generic over the kinds packageKinds answers -- nothing here names a kind. Each kind is off
+// until the Enabled switch turns it on at a scope; a FOLLOW row shows the followed state. The parts, their
 // requirement, their defaults and whether a generator is registered come from the server's
 // descriptor; the SBOM profile is the picker in single mode. Errors show through the SweetAlert2
 // object form with the server's text in `text` (design 3.8, D18).
 import { computed, onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTag } from 'naive-ui'
+import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NSwitch, NTag } from 'naive-ui'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
@@ -111,7 +119,8 @@ import SbomProfilePicker from './SbomProfilePicker.vue'
 import {
     Option, PackageScope, PackageSettingsForm, PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_FIELD_HELP,
     PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_MODE_OPTIONS, PACKAGE_SELECTION_OPTIONS,
-    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageFormError,
+    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp,
+    packageEnabledLine, packageFormError,
     packageFormFromView, packageKindLabel, packagePartFields, packagePartLabel, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine,
 } from '@/utils/packageSettings'
@@ -142,7 +151,7 @@ const emit = defineEmits<{ (e: 'saved', settings: any): void, (e: 'removed'): vo
 const kinds = ref<any[]>([])
 const kind = ref<string | null>(null)
 const view = ref<any>(null)
-const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, sbomProfile: 'default', description: '', parts: [] })
+const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, enabled: false, sbomProfile: 'default', description: '', parts: [] })
 const catalog = ref<any[]>([])
 const catalogError = ref<string | null>(null)
 const loading = ref(false)
@@ -172,6 +181,8 @@ const showMode = computed(() => props.scope === 'COMPONENT' && props.installatio
 const follows = computed(() => props.scope === 'COMPONENT' && form.value.mode === 'FOLLOW_PERSPECTIVE')
 const sourceLine = computed(() => packageSourceLine(view.value, allNames.value))
 const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value))
+const effectiveEnabledLine = computed(() => packageEnabledLine(view.value?.effective))
+const enabledHelp = computed(() => packageEnabledHelp(kind.value))
 const formError = computed(() => view.value ? packageFormError(form.value) : null)
 const profileValue = computed(() => form.value.sbomProfile ? [form.value.sbomProfile] : [])
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))
@@ -306,5 +317,9 @@ defineExpose({ load, reloadCatalog })
 }
 .package-option {
     margin-bottom: 4px;
+}
+.package-enabled-help {
+    margin-left: 12px;
+    font-size: 0.85em;
 }
 </style>

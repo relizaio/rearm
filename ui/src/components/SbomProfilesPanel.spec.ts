@@ -1,31 +1,27 @@
 // @vitest-environment happy-dom
 //
-// The organization Profiles tab (task TEA-30, design 4.3 row 16): the catalog rows with the built-in
-// default first and undeletable, the profiles of perspectives and components named (an archived one
-// read by uuid and tagged), create and edit in the hosted editor, and afterCatalogChange(): after
-// every successful write the reads run again and then the package editor reloads its catalog, once,
-// and never after a cancelled or refused delete. A failed read shows a notification and Retry.
+// The organization SBOM Profiles sub-tab (task TEA-30, design 4.3 row 16): the catalog rows with the
+// built-in default first and undeletable, the profiles of perspectives and components named (an
+// archived one read by uuid and tagged), create and edit in the hosted editor, and
+// afterCatalogChange(): after every successful write the reads run again, and never after a
+// cancelled or refused delete. A failed read shows a notification and Retry. The regulatory package
+// settings are their own Regulatory sub-tab, never hosted here. On CE only `default` is listed and
+// no new name can be created.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NNotificationProvider } from 'naive-ui'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const query = vi.fn()
 const mutate = vi.fn()
 const fire = vi.fn()
 const log: string[] = []
-const reloadCatalog = vi.fn(() => { log.push('reloadCatalog') })
 vi.mock('@/utils/graphql', () => ({ default: { query: (...a: any[]) => query(...a), mutate: (...a: any[]) => mutate(...a) } }))
 vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a) } }))
 vi.mock('./SbomProfileEditor.vue', () => ({ default: { name: 'SbomProfileEditor', props: ['name', 'scope', 'orgUuid'],
     emits: ['saved', 'removed', 'cancel'], render: () => null } }))
-vi.mock('./PackageSettingsEditor.vue', async () => {
-    const { defineComponent } = await import('vue')
-    return { default: defineComponent({ name: 'PackageSettingsEditor', setup (_p, { expose }) {
-        expose({ reloadCatalog })
-        return () => null
-    } }) }
-})
 
 const { default: Panel } = await import('./SbomProfilesPanel.vue')
 
@@ -83,7 +79,6 @@ describe('SbomProfilesPanel', () => {
         query.mockReset()
         mutate.mockReset()
         fire.mockReset()
-        reloadCatalog.mockClear()
         log.length = 0
         catalogFails = false
         answers()
@@ -129,27 +124,22 @@ describe('SbomProfilesPanel', () => {
         w.unmount()
     })
 
-    it('after saved, removed and a confirmed row delete: the reads again, then reloadCatalog once each', async () => {
+    it('after saved, removed and a confirmed row delete: the reads again, once each', async () => {
         const w = await mountPanel()
-        expect(reloadCatalog).not.toHaveBeenCalled()
         await w.find('[data-testid="sbom-create"]').trigger('click')
         await flushPromises()
 
         let mark = log.length
         editor(w).vm.$emit('saved', { name: 'fresh' })
         await flushPromises()
-        expect(reloadCatalog).toHaveBeenCalledTimes(1)
-        expect(since(mark).slice(-1)).toEqual(['reloadCatalog'])
-        expect(since(mark)).toEqual(expect.arrayContaining(['SbomProfileCatalog', 'SbomProfiles']))
-        expect(since(mark).indexOf('SbomProfileCatalog')).toBeLessThan(since(mark).indexOf('reloadCatalog'))
-        expect(since(mark).indexOf('SbomProfiles')).toBeLessThan(since(mark).indexOf('reloadCatalog'))
+        expect(since(mark)).toEqual(expect.arrayContaining(['SbomProfileCatalog', 'SbomProfiles', 'SbomProfilesOfOrg']))
+        expect(since(mark).filter(op => op === 'SbomProfileCatalog')).toHaveLength(1)
 
         mark = log.length
         editor(w).vm.$emit('removed', 'fresh')
         await flushPromises()
-        expect(reloadCatalog).toHaveBeenCalledTimes(2)
-        expect(since(mark).slice(-1)).toEqual(['reloadCatalog'])
         expect(since(mark)).toEqual(expect.arrayContaining(['SbomProfileCatalog', 'SbomProfiles']))
+        expect(since(mark).filter(op => op === 'SbomProfileCatalog')).toHaveLength(1)
 
         mark = log.length
         fire.mockResolvedValueOnce({ isConfirmed: true })
@@ -157,9 +147,8 @@ describe('SbomProfilesPanel', () => {
         await flushPromises()
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(mutate.mock.calls[0][0].variables).toEqual({ org: ORG, scope: 'ORGANIZATION', object: null, name: 'top' })
-        expect(reloadCatalog).toHaveBeenCalledTimes(3)
-        expect(since(mark).slice(-1)).toEqual(['reloadCatalog'])
         expect(since(mark)).toEqual(expect.arrayContaining(['SbomProfileCatalog', 'SbomProfiles']))
+        expect(since(mark).filter(op => op === 'SbomProfileCatalog')).toHaveLength(1)
         w.unmount()
     })
 
@@ -178,7 +167,6 @@ describe('SbomProfilesPanel', () => {
         await flushPromises()
         expect(fire.mock.calls[2][0].title).toBe('Error!')
         expect(fire.mock.calls[2][0].text).toContain('the TEA publishing settings of the organization name it')
-        expect(reloadCatalog).not.toHaveBeenCalled()
         expect(reads('SbomProfileCatalog')).toBe(catalogReads)
         w.unmount()
     })
@@ -197,12 +185,32 @@ describe('SbomProfilesPanel', () => {
         w.unmount()
     })
 
-    it('hosts the package settings block on Pro only', async () => {
-        const pro = await mountPanel('SAAS')
-        expect(pro.findComponent({ name: 'PackageSettingsEditor' }).exists()).toBe(true)
-        pro.unmount()
-        const ce = await mountPanel('OSS')
-        expect(ce.findComponent({ name: 'PackageSettingsEditor' }).exists()).toBe(false)
-        ce.unmount()
+    it('hosts no package settings editor on any edition: the Regulatory sub-tab holds it', async () => {
+        for (const t of ['SAAS', 'OSS']) {
+            const w = await mountPanel(t)
+            expect(w.findComponent({ name: 'PackageSettingsEditor' }).exists(), t).toBe(false)
+            w.unmount()
+        }
+        expect(readFileSync(resolve(__dirname, 'SbomProfilesPanel.vue'), 'utf8')).not.toContain('PackageSettingsEditor')
+    })
+
+    it('CE: lists the default profile only, in both lists, and offers no Create', async () => {
+        const w = await mountPanel('OSS')
+        const rows = w.findAll('[data-testid="sbom-profile-rows"] tbody tr')
+        expect(rows).toHaveLength(1)
+        expect(rows[0].text()).toContain('default')
+        expect(rows[0].find('[data-testid="sbom-edit"]').exists()).toBe(true)
+        expect(w.find('[data-testid="sbom-create"]').exists()).toBe(false)
+        // The overrides of the other scopes name `top` and `legacy` only: none is listed on CE.
+        expect(w.find('[data-testid="sbom-other-rows"]').text()).not.toContain('legacy')
+        expect(w.find('[data-testid="sbom-other-rows"]').text()).not.toContain('widget')
+        w.unmount()
+    })
+
+    it('Pro: lists every profile and offers Create', async () => {
+        const w = await mountPanel('SAAS')
+        expect(w.findAll('[data-testid="sbom-profile-rows"] tbody tr')).toHaveLength(2)
+        expect(w.find('[data-testid="sbom-create"]').exists()).toBe(true)
+        w.unmount()
     })
 })

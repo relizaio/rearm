@@ -4,10 +4,11 @@
 // answers FDA_PREMARKET and a second kind TEST_KIND, and the editor renders whatever the descriptor
 // says -- the parts in order, REQUIRED locked to INCLUDE, the applicable options per part, the
 // no-generator tag, the picker in single mode, the save, the removal, the conflict alert, the
-// catalog-only reload and the host testid on the picker root.
+// catalog-only reload and the host testid on the picker root, and the Enabled switch: first in the
+// fields, off by default, sent on a save, absent from a FOLLOW row which shows the followed state.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
-import { NSelect } from 'naive-ui'
+import { NSelect, NSwitch } from 'naive-ui'
 
 const query = vi.fn()
 const mutate = vi.fn()
@@ -194,5 +195,49 @@ describe('PackageSettingsEditor', () => {
         expect(calls('SbomProfileCatalog').at(-1)![0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1' })
         expect(calls('PackageSettingsEditorView')).toHaveLength(viewReads)
         expect(select(w, 'package-selection-VEX').props('value')).toBe('EXCLUDE')
+    })
+
+    it('shows the Enabled switch first in the fields, off by default, with the kind in its help, and sends it', async () => {
+        const w = await mountWith()
+        const fields = w.find('[data-testid="package-fields"]')
+        const html = fields.html()
+        expect(html.indexOf('data-testid="package-enabled"')).toBeGreaterThan(-1)
+        expect(html.indexOf('data-testid="package-enabled"')).toBeLessThan(html.indexOf('data-testid="package-sbom-profile"'))
+        const sw = w.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!
+        expect(sw.props('value')).toBe(false)
+        expect(fields.text()).toContain('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
+            + 'existing submissions stay readable and can be withdrawn.')
+        await sw.vm.$emit('update:value', true)
+        await w.find('[data-testid="package-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables.settings.enabled).toBe(true)
+    })
+
+    it('pre-fills Enabled from the stored row, and a FOLLOW row sends no enabled and shows the followed state', async () => {
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        const on = await mountWith()
+        expect(on.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!.props('value'))
+            .toBe(true)
+        on.unmount()
+
+        views.FDA_PREMARKET = viewOf(FDA, {
+            stored: { uuid: 'r', mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', enabled: null },
+            effective: { ...resolution, source: 'FOLLOWED_PERSPECTIVE', sourceObject: 'p1',
+                settings: { ...resolution.settings, enabled: true } },
+        })
+        const follow = await mountWith({ perspectiveOptions: [{ label: 'Payments', value: 'p1' }] })
+        expect(follow.find('[data-testid="package-enabled"]').exists()).toBe(false)
+        expect(follow.find('[data-testid="package-effective-enabled"]').text()).toBe('Enabled here: on')
+        await follow.find('[data-testid="package-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables.settings).toEqual({ mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' })
+    })
+
+    it('a read-only editor shows the switch disabled at the stored value', async () => {
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        const w = await mountWith({ isWritable: false })
+        const sw = w.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!
+        expect(sw.props('value')).toBe(true)
+        expect(sw.props('disabled')).toBe(true)
     })
 })

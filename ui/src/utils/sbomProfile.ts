@@ -6,7 +6,7 @@
 
 import { isProEdition } from './editionCapabilities'
 import { regulatoryPackagesAvailable } from './packageSettings'
-import { teaSourceLabel } from './teaProfile'
+import { CE_SBOM_PROFILE, teaSourceLabel } from './teaProfile'
 
 export type SbomScope = 'ORGANIZATION' | 'PERSPECTIVE' | 'COMPONENT'
 
@@ -350,6 +350,21 @@ export function sbomPickerLines (entries: any[] | null | undefined, selected: st
 /** Whether the picker takes several names: Pro, unless the host forces one (the package editor). */
 export function sbomPickerMultiple (installationType: string | null | undefined, single = false): boolean {
     return !single && isProEdition(installationType)
+}
+
+/**
+ * Whether this edition names SBOM profiles. CE serves the one `default` profile and stores every
+ * save under it, so its surfaces list and edit `default` only and offer no new name.
+ */
+export function sbomProfileNamesAvailable (installationType: string | null | undefined): boolean {
+    return installationType !== 'OSS'
+}
+
+/** The rows a surface lists on this edition: every row on Pro, the `default` rows only on CE. */
+export function sbomRowsForEdition<T extends { name?: string | null }> (rows: T[] | null | undefined,
+    installationType: string | null | undefined): T[] {
+    const all = rows ?? []
+    return sbomProfileNamesAvailable(installationType) ? all : all.filter(r => r?.name === CE_SBOM_PROFILE)
 }
 
 /** A Swal confirmation: a constant title, the names in the text only. */

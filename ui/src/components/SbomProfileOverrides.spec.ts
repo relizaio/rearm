@@ -3,7 +3,8 @@
 // Per-scope SBOM profile overrides (task TEA-30, design 4.3 row 17), at COMPONENT scope: the stored
 // and CONFLICT tags, the effective line per row, Override and Define opening the hosted editor at
 // this scope, Remove override with the COMPONENT prefix, and `changed`: emitted once after each
-// successful write, after the two reads ran again, never on a cancel or a refusal.
+// successful write, after the two reads ran again, never on a cancel or a refusal. On CE the rows are
+// the `default` profile only and Define is hidden.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h } from 'vue'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -44,11 +45,11 @@ function answers () {
     })
 }
 
-async function mountOverrides () {
+async function mountOverrides (installationType = 'SAAS') {
     let inner: any = null
     const w = mount(defineComponent({
         render: () => h(NNotificationProvider, () => h(Overrides, { orgUuid: 'o1', scope: 'COMPONENT', objectUuid: 'c1',
-            objectName: 'widget', isWritable: true, installationType: 'SAAS',
+            objectName: 'widget', isWritable: true, installationType,
             onChanged: () => { log.push('changed') } })),
     }), { attachTo: document.body })
     await flushPromises()
@@ -149,6 +150,25 @@ describe('SbomProfileOverrides', () => {
         expect(fire.mock.calls[2]).toHaveLength(1)
         expect(fire.mock.calls[2][0].text).toContain('cannot be deleted')
         expect(changedCount()).toBe(0)
+        w.unmount()
+    })
+
+    it('CE: lists the default profile only and offers no Define; Override on it still opens the editor', async () => {
+        const { w } = await mountOverrides('OSS')
+        const rows = w.findAll('[data-testid="sbom-override-rows"] tbody tr')
+        expect(rows).toHaveLength(1)
+        expect(rows[0].find('td').text()).toBe('default')
+        expect(w.find('[data-testid="sbom-define"]').exists()).toBe(false)
+        await rows[0].find('[data-testid="sbom-override"]').trigger('click')
+        await flushPromises()
+        expect(editor(w).props('name')).toBe('default')
+        w.unmount()
+    })
+
+    it('Pro: lists every name and offers Define', async () => {
+        const { w } = await mountOverrides('SAAS')
+        expect(w.findAll('[data-testid="sbom-override-rows"] tbody tr')).toHaveLength(3)
+        expect(w.find('[data-testid="sbom-define"]').exists()).toBe(true)
         w.unmount()
     })
 })

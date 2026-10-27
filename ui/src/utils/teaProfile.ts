@@ -4,20 +4,22 @@
 // since task TEA-9), plus how the org table names a row. Kept out of the .vue files so the specs
 // pin them.
 
-import { isProEdition } from './editionCapabilities'
-
 export type TeaScope = 'ORGANIZATION' | 'PERSPECTIVE' | 'COMPONENT'
 
 /**
- * Whether this edition serves TEA profiles. Both do: the CE backend serves TEA profiles, SBOM
- * profiles, EXTERNAL keys and the TEA publication reads since the CE sync of SCORE-72 (Pro main
- * 3befcf24a), so the TEA tabs, the page banner and PUBLISH_EXTERNALLY show on CE too. The parameter
- * is kept so the call sites and the specs keep their shape; teaProfileSchemaDrift.spec.ts ties this
- * to the CE schema. TEA output events stay Pro-only (teaOutputEvents.ts).
+ * Whether this edition serves TEA profiles. Every edition does: the CE backend serves TEA profiles,
+ * SBOM profiles, EXTERNAL keys and the TEA publication reads since the CE sync of SCORE-72 (Pro main
+ * 3befcf24a), with the single built-in `default` SBOM profile on CE, so the TEA tabs, the page banner
+ * and PUBLISH_EXTERNALLY show on CE too. The parameter is kept so the call sites and the specs keep
+ * their shape; teaProfileSchemaDrift.spec.ts ties this to the CE schema. TEA output events stay
+ * Pro-only (teaOutputEvents.ts).
  */
 export function teaProfilesAvailable (installationType: string | undefined | null): boolean {
-    return isProEdition(installationType) || true
+    return true
 }
+
+/** The one SBOM profile name CE serves: its backend stores every profile under it, whatever name is sent. */
+export const CE_SBOM_PROFILE = 'default'
 
 /** The permission functions that exist only where the backend serves TEA (task TEA-3); both editions do since SCORE-72. */
 export const TEA_PERMISSION_FUNCTIONS: string[] = ['PUBLISH_EXTERNALLY']
@@ -162,8 +164,8 @@ export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installa
         out[f] = Array.isArray(v) ? [...v] : v
     }
     out.teiDomain = form.tei === 'UUID' ? (form.teiDomain || null) : null
-    const profiles = [...(form.profiles ?? [])]
-    out.profiles = installationType === 'OSS' ? profiles.slice(0, 1) : profiles
+    // CE stores every TEA profile with the one `default` SBOM profile, whatever the form holds.
+    out.profiles = installationType === 'OSS' ? [CE_SBOM_PROFILE] : [...(form.profiles ?? [])]
     return out
 }
 

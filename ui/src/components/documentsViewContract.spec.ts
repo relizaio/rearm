@@ -86,8 +86,10 @@ describe('documents view contract', () => {
         const sections = [...pane.matchAll(/<div class="container"(?: v-if="([^"]*)")?[^>]*>\s*<h3>\s*([^<\n]*?)\s*(?:<|\n)/g)]
             .map(m => ({ guard: m[1] ?? '', heading: m[2] }))
         expect(sections.map(s => s.heading)).toEqual(['Document round', 'Components', 'Source Code Entries',
-            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Generated artifacts', 'Transparency Exchange (TEA)',
+            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Generated artifacts',
             'Regulatory submissions', 'Produced Deliverables', 'Inbound Deliverables'])
+        // The TEA section is a tab of its own now, hidden for a round as the section was.
+        expect(rv).toContain("computed(() => teaView.value?.publishing === 'ENABLED' && !isDocumentRound.value)")
         // A round's component is never a PRODUCT, so a PRODUCT-only section does not render for one.
         const shownForARound = sections.filter(s => s.guard !== 'false' && !s.guard.includes('!isDocumentRound')
             && !/componentDetails\.type === 'PRODUCT'$/.test(s.guard))

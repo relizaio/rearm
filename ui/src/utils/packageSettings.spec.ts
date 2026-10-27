@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
     PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_KIND_LABELS, PACKAGE_PART_LABELS,
     PACKAGE_SELECTION_OPTIONS, PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine,
-    packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
+    packageEnabledHelp, packageEnabledLine, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
 } from './packageSettings'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
@@ -139,5 +139,35 @@ describe('the form and the save over two kinds (row 21)', () => {
             + 'its parent or the built-in defaults.')
         expect(values(PACKAGE_SELECTION_OPTIONS)).toEqual(['INCLUDE', 'EXCLUDE'])
         expect(values(PACKAGE_VEX_FORMAT_OPTIONS)).toEqual(['CYCLONEDX_VEX', 'OPENVEX'])
+    })
+
+    it('enabled: off by default, pre-filled from the stored row or the parent, sent on every row but FOLLOW', () => {
+        expect(packageFormFromView(view(TEST_PARTS), 'ORGANIZATION').enabled).toBe(false)
+        expect(packageFormFromView(view(TEST_PARTS, { parent: { status: 'NOT_FOUND', settings: null } }), 'ORGANIZATION').enabled)
+            .toBe(false)
+        const onParent = view(TEST_PARTS, { parent: { status: 'RESOLVED', source: 'ORGANIZATION', conflictingPerspectives: [],
+            settings: { sbomProfile: 'p', enabled: true, parts: [] } } })
+        expect(packageFormFromView(onParent, 'PERSPECTIVE').enabled).toBe(true)
+        // A stored row with fields wins over the parent.
+        expect(packageFormFromView({ ...onParent, stored: { mode: 'OVERRIDE', enabled: false, sbomProfile: 'x', parts: [] } },
+            'COMPONENT').enabled).toBe(false)
+        // A stored FOLLOW row (enabled null) pre-fills from the parent, as its other fields do.
+        expect(packageFormFromView({ ...onParent, stored: { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', enabled: null } },
+            'COMPONENT').enabled).toBe(true)
+
+        const f = packageFormFromView(onParent, 'COMPONENT')
+        expect(packageSettingsInput(f, 'COMPONENT').enabled).toBe(true)
+        expect(packageSettingsInput({ ...f, enabled: false }, 'ORGANIZATION').enabled).toBe(false)
+        expect(packageSettingsInput({ ...f, mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT'))
+            .not.toHaveProperty('enabled')
+    })
+
+    it('the Enabled help names the kind, and the effective line reads the resolved settings', () => {
+        expect(packageEnabledHelp('FDA_PREMARKET')).toBe('Off: releases of this scope do not offer FDA premarket and no new '
+            + 'submission can be made; existing submissions stay readable and can be withdrawn.')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: true } })).toBe('Enabled here: on')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: false } })).toBe('Enabled here: off')
+        expect(packageEnabledLine({ status: 'NOT_FOUND', settings: null })).toBe('Enabled here: off')
+        expect(packageEnabledLine(null)).toBe('Enabled here: off')
     })
 })

@@ -42,7 +42,9 @@
 
 <script setup lang="ts">
 // The release page's Regulatory submissions section (task TEA-30, design 3.5.4), Pro only: per
-// kind the head, the acts, and the version history with each version's parts and manifest. Reasons,
+// kind the head, the acts, and the version history with each version's parts and manifest. The
+// kinds are the host's (Release.regulatoryPackageKinds: switched on for the component, plus any the
+// release holds a submission of), in that order; without them, the whole packageKinds catalog. Reasons,
 // file names and the manifest are text bindings; downloads go through the one URL builder with the
 // record's uuid and integer version (design 3.5.2).
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
@@ -66,6 +68,7 @@ const props = withDefaults(defineProps<{
     lifecycle?: string | null
     componentUuid?: string | null
     componentName?: string | null
+    kinds?: string[] | null
     isWritable?: boolean
     installationType?: string
     names?: Record<string, string>
@@ -77,6 +80,7 @@ const props = withDefaults(defineProps<{
     lifecycle: null,
     componentUuid: null,
     componentName: null,
+    kinds: null,
     isWritable: false,
     installationType: 'OSS',
     names: () => ({}),
@@ -86,7 +90,7 @@ const props = withDefaults(defineProps<{
 const NOT_DOWNLOADABLE = 'not downloadable: no artifact version recorded'
 
 const notification = useNotification()
-const kinds = ref<any[]>([])
+const catalogKinds = ref<any[]>([])
 const heads = ref<any[]>([])
 const loaded = ref(false)
 const loadError = ref<string | null>(null)
@@ -96,7 +100,7 @@ const shownManifests = reactive<Record<string, boolean>>({})
 const acts = useSubmissionActs({ client: graphqlClient, reload: () => read(), names: () => props.names })
 
 const kindList = computed((): string[] => {
-    const list = kinds.value.map((k: any) => k.kind)
+    const list = props.kinds ? [...props.kinds] : catalogKinds.value.map((k: any) => k.kind)
     for (const hd of heads.value) if (hd?.kind && !list.includes(hd.kind)) list.push(hd.kind)
     return list
 })
@@ -205,12 +209,14 @@ async function read () {
     if (!props.releaseUuid) return
     loadError.value = null
     try {
+        // The catalog only when the host passes no kinds.
         const [k, s]: any[] = await Promise.all([
-            graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' }),
+            props.kinds ? Promise.resolve(null)
+                : graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' }),
             graphqlClient.query({ query: submissionQueries.SubmissionsOfReleaseGql, variables: { release: props.releaseUuid },
                 fetchPolicy: 'no-cache' }),
         ])
-        kinds.value = k.data.packageKinds ?? []
+        if (k) catalogKinds.value = k.data.packageKinds ?? []
         heads.value = s.data.submissionsOfRelease ?? []
         for (const hd of heads.value) {
             const newest = Math.max(0, ...(hd.versions ?? []).map((v: any) => v.version ?? 0))

@@ -140,16 +140,36 @@ describe('EXTERNAL key documents, the TEA functions and the edition gate', () =>
     })
 })
 
+// The view's `publishing` switch (the release page's TEA tab) arrives on CE with the next sync of the
+// mirror; until then ReleaseView.loadTeaPublication falls back to the CORE view, which leaves it out.
+const ceHasTeaPublishing = () => {
+    const t: any = ceSchema.getType('TeaPublishPreview')
+    return Boolean(t?.getFields?.().publishing)
+}
+
 describe('TEA publication documents (TEA-5) and the edition gate', () => {
     it('none of the four validates against the CE schema while CE serves no TEA, so the gate must hold them back', () => {
         expect(Object.keys(PUBLICATION_DOCS)).toHaveLength(4)
         for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
-            expect(validate(ceSchema, doc).length === 0, name).toBe(ceServesTea())
+            const served = name === 'ReleaseTeaPublicationViewGql' ? ceServesTea() && ceHasTeaPublishing() : ceServesTea()
+            expect(validate(ceSchema, doc).length === 0, name).toBe(served)
         }
     })
 
+    it('the CORE publication view, without publishing, validates on CE exactly when CE serves TEA', () => {
+        expect(validate(ceSchema, graphqlQueries.ReleaseTeaPublicationViewCoreGql).length === 0).toBe(ceServesTea())
+        const full = graphqlQueries.ReleaseTeaPublicationViewGql.loc!.source.body
+        const core = graphqlQueries.ReleaseTeaPublicationViewCoreGql.loc!.source.body
+        expect(full).toMatch(/\bpublishing\b/)
+        expect(core).not.toMatch(/\bpublishing\b/)
+        // The same selection otherwise.
+        expect(full.replace('ReleaseTeaPublicationView(', 'ReleaseTeaPublicationViewCore(').replace(/\s*publishing\n/, '\n')
+            .replace(/\s+/g, ' ')).toBe(core.replace(/\s+/g, ' '))
+    })
+
     it.runIf(proSchema)('every TEA publication document validates against the Pro schema', () => {
-        for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
+        for (const [name, doc] of Object.entries({ ...PUBLICATION_DOCS,
+            ReleaseTeaPublicationViewCoreGql: graphqlQueries.ReleaseTeaPublicationViewCoreGql })) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
     })
@@ -212,10 +232,20 @@ const SUBMISSION_DOCS = {
     WithdrawSubmissionGql: submissionQueries.WithdrawSubmissionGql,
 }
 const RELEASES_OF_BRANCH = submissionQueries.SubmissionReleasesOfBranchGql
+// The release page's offered kinds (Release.regulatoryPackageKinds): Pro-only, sent behind submissionsAvailable.
+const RELEASE_KINDS = submissionQueries.ReleaseRegulatoryPackageKindsGql
 
 const ceServesSbomProfiles = () => Boolean(ceSchema.getQueryType()?.getFields().sbomProfileCatalog)
 const ceServesPackageSettings = () => Boolean(ceSchema.getQueryType()?.getFields().packageKinds)
 const ceServesSubmissions = () => Boolean(ceSchema.getQueryType()?.getFields().submissionsOfComponent)
+// The Enabled switch (PackageSettings.enabled) and Release.regulatoryPackageKinds arrive on CE with
+// the next sync of the mirror; the documents that select them are sent on Pro only.
+const ceFieldOf = (type: string, field: string) => {
+    const t: any = ceSchema.getType(type)
+    return Boolean(t?.getFields?.()[field])
+}
+const ceHasPackageEnabled = () => ceFieldOf('PackageSettings', 'enabled')
+const ceHasReleaseKinds = () => ceFieldOf('Release', 'regulatoryPackageKinds')
 
 describe('SBOM profile, package settings and submission documents (TEA-30) and their gates', () => {
     it('row 23: the TEA editor documents select the channel fields and profiles only (no recipe field on TeaProfile)', () => {
@@ -227,7 +257,8 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
 
     const GROUPS: [string, Record<string, any>, () => boolean][] = [
         ['profiles', PROFILE_DOCS, ceServesSbomProfiles],
-        ['package settings', PACKAGE_DOCS, ceServesPackageSettings],
+        // Every package settings document selects PackageSettings.enabled except PackageKinds and the delete.
+        ['package settings', PACKAGE_DOCS, () => ceServesPackageSettings() && ceHasPackageEnabled()],
         ['submissions', SUBMISSION_DOCS, ceServesSubmissions],
     ]
 
@@ -245,9 +276,23 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
     it('row 24: on CE each document validates exactly when its canary says the CE schema serves the surface', () => {
         for (const [group, docs, canary] of GROUPS) {
             for (const [name, doc] of Object.entries(docs)) {
-                expect(validate(ceSchema, doc).length === 0, group + ' ' + name).toBe(canary())
+                const served = name === 'PackageKindsGql' || name === 'DeletePackageSettingsGql' ? ceServesPackageSettings() : canary()
+                expect(validate(ceSchema, doc).length === 0, group + ' ' + name).toBe(served)
             }
         }
+    })
+
+    it('the package settings documents select enabled; the offered-kinds read validates on CE exactly when CE has the field', () => {
+        for (const [name, doc] of Object.entries(PACKAGE_DOCS)) {
+            if (name === 'PackageKindsGql' || name === 'DeletePackageSettingsGql') continue
+            expect(doc.loc!.source.body, name).toMatch(/\benabled\b/)
+        }
+        expect(validate(ceSchema, RELEASE_KINDS).length === 0).toBe(ceHasReleaseKinds())
+    })
+
+    it.runIf(proSchema)('the offered-kinds read validates against the Pro schema, and SubmissionRefusal has KIND_DISABLED', () => {
+        expect(validate(proSchema!, RELEASE_KINDS).map(e => e.message)).toEqual([])
+        expect(enumValuesOf(proSchema!, 'SubmissionRefusal')).toContain('KIND_DISABLED')
     })
 
     it('row 24: the feature-set release read validates on CE as well', () => {

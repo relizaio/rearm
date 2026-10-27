@@ -74,6 +74,17 @@ export function packagePartLabel (part: string | null | undefined): string {
     return (part && PACKAGE_PART_LABELS[part]) || part || ''
 }
 
+/** The help text of the Enabled switch, naming the kind. */
+export function packageEnabledHelp (kind: string | null | undefined): string {
+    return 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
+        + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
+}
+
+/** The effective on/off of a kind at a scope, from the resolver's settings; off when nothing resolves. */
+export function packageEnabledLine (resolution: any): string {
+    return 'Enabled here: ' + (resolution?.settings?.enabled === true ? 'on' : 'off')
+}
+
 export const PACKAGE_FIELD_HELP: Record<string, string> = {
     kind: 'The regulatory package kind these settings tailor; each kind has its own parts.',
     sbomProfile: 'The SBOM profile the aggregate SBOM part is generated under; one name, resolved at this scope',
@@ -120,6 +131,7 @@ export interface PackagePartForm {
 export interface PackageSettingsForm {
     mode: string | null
     followedPerspective: string | null
+    enabled: boolean
     sbomProfile: string
     description: string
     parts: PackagePartForm[]
@@ -133,6 +145,7 @@ function partOptions (settings: any, part: string): any {
  * What the form starts from. The parts come from the kind's descriptor in its order; each part's
  * options from the stored row when it carries fields (not FOLLOW), else the parent's settings, else
  * nothing, with nulls filled as the server fills them. A REQUIRED part is INCLUDE whatever a row says.
+ * `enabled` comes the same way and is off by default (the built-in default).
  */
 export function packageFormFromView (view: any, scope: PackageScope): PackageSettingsForm {
     const stored = view?.stored
@@ -156,19 +169,21 @@ export function packageFormFromView (view: any, scope: PackageScope): PackageSet
     return {
         mode: scope === 'COMPONENT' ? (stored?.mode ?? 'OVERRIDE') : null,
         followedPerspective: scope === 'COMPONENT' ? (stored?.followedPerspective ?? null) : null,
+        enabled: base?.enabled === true,
         sbomProfile: (storedHasFields ? stored?.sbomProfile : null) ?? view?.parent?.settings?.sbomProfile ?? 'default',
         description: stored?.description ?? '',
         parts,
     }
 }
 
-/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only. */
+/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only (no `enabled`). */
 export function packageSettingsInput (form: PackageSettingsForm, scope: PackageScope): Record<string, any> {
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
         return { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: form.followedPerspective }
     }
     const out: Record<string, any> = {}
     if (scope === 'COMPONENT') out.mode = 'OVERRIDE'
+    out.enabled = form.enabled === true
     out.sbomProfile = form.sbomProfile
     const description = (form.description ?? '').trim()
     out.description = description || null

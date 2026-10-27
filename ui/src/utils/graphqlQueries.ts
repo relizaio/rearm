@@ -774,9 +774,9 @@ const TEA_PUBLISH_RESULT_FIELDS_GQL = `
     }
 `
 
-const RELEASE_TEA_PUBLICATION_VIEW = gql`
-query ReleaseTeaPublicationView($release: ID!) {
-    releaseTeaPublicationView(release: $release) {
+// The publication view's selection, less `publishing`: what the CE mirror serves before its sync
+// brings TeaPublishPreview.publishing (the CORE document of loadTeaPublication's drift fallback).
+const RELEASE_TEA_PUBLICATION_VIEW_CORE_FIELDS_GQL = `
         release
         kind
         canPublish
@@ -796,6 +796,20 @@ query ReleaseTeaPublicationView($release: ID!) {
         collections {
             ${TEA_PUBLISHED_COLLECTION_FIELDS_GQL}
         }
+`
+
+const RELEASE_TEA_PUBLICATION_VIEW = gql`
+query ReleaseTeaPublicationView($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        ${RELEASE_TEA_PUBLICATION_VIEW_CORE_FIELDS_GQL}
+        publishing
+    }
+}`
+
+const RELEASE_TEA_PUBLICATION_VIEW_CORE = gql`
+query ReleaseTeaPublicationViewCore($release: ID!) {
+    releaseTeaPublicationView(release: $release) {
+        ${RELEASE_TEA_PUBLICATION_VIEW_CORE_FIELDS_GQL}
     }
 }`
 
@@ -2319,6 +2333,7 @@ export default {
     TeaComponentPerspectivesGql: TEA_COMPONENT_PERSPECTIVES,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
+    ReleaseTeaPublicationViewCoreGql: RELEASE_TEA_PUBLICATION_VIEW_CORE,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
     RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,
     HideReleaseOnTeaGql: HIDE_RELEASE_ON_TEA,

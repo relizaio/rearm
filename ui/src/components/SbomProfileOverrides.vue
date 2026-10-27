@@ -3,7 +3,7 @@
         <div v-if="loadFailed">
             <n-button size="small" data-testid="sbom-retry" @click="reload">Retry</n-button>
         </div>
-        <n-button v-else-if="isWritable" size="small" class="mb-2" data-testid="sbom-define" @click="openEditor(null)">
+        <n-button v-else-if="isWritable && namesAvailable" size="small" class="mb-2" data-testid="sbom-define" @click="openEditor(null)">
             Define a new name here
         </n-button>
         <n-data-table data-testid="sbom-override-rows" :columns="columns" :data="rows" :row-key="rowKey"
@@ -37,13 +37,16 @@
 // perspective or a component, its effective resolution here, and whether this scope stores its own
 // definition. An override is edited in SbomProfileEditor, pre-filled from the effective parent.
 // After every successful write here, once the two reads ran again, the panel emits `changed` so the
-// host can reload the catalogs of the TEA and package editors beside it.
+// host can reload the catalogs of the TEA and package editors beside it. On CE the rows are the
+// `default` profile only and no new name can be defined (sbomProfileNamesAvailable).
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NDataTable, NModal, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
-import { Option, sbomCatalogRows, sbomEffectiveLine, sbomScopeWord } from '@/utils/sbomProfile'
+import {
+    Option, sbomCatalogRows, sbomEffectiveLine, sbomProfileNamesAvailable, sbomRowsForEdition, sbomScopeWord,
+} from '@/utils/sbomProfile'
 import { deleteSbomProfileConfirmed } from '@/utils/sbomProfileDelete'
 import SbomProfileEditor from './SbomProfileEditor.vue'
 
@@ -80,7 +83,9 @@ const allNames = computed((): Record<string, string> => {
     for (const o of props.perspectiveOptions) out[o.value] = o.label
     return out
 })
-const rows = computed(() => sbomCatalogRows(catalog.value, stored.value, allNames.value))
+const namesAvailable = computed(() => sbomProfileNamesAvailable(props.installationType))
+const rows = computed(() => sbomRowsForEdition(sbomCatalogRows(catalog.value, stored.value, allNames.value),
+    props.installationType))
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))
 const rowKey = (r: any) => r.name
 

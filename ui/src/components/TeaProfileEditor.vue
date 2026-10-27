@@ -43,7 +43,11 @@
                                 <span v-else>{{ TEA_FIELD_HELP.visibility }}</span>
                             </template>
                         </n-form-item>
-                        <n-form-item label="SBOM profiles">
+                        <!-- CE serves the one `default` SBOM profile: a fixed line, and teaProfileInput sends it. -->
+                        <n-form-item v-if="!sbomProfileNamesAvailable(installationType)" label="SBOM profile">
+                            <span data-testid="tea-profiles-ce">SBOM profile: {{ CE_SBOM_PROFILE }}</span>
+                        </n-form-item>
+                        <n-form-item v-else label="SBOM profiles">
                             <SbomProfilePicker data-testid="tea-profiles" v-model="form.profiles" :entries="catalog"
                                 :installation-type="installationType" :names="perspectiveNames" :disabled="!isWritable" />
                             <template #feedback>
@@ -93,11 +97,12 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import profilesQueries from '@/utils/profilesQueries'
 import {
-    Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS,
+    CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS,
     TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS,
     TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView,
     teaProfileInput, teaPublicBanner, teaSourceLine, TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
+import { sbomProfileNamesAvailable } from '@/utils/sbomProfile'
 import SbomProfilePicker from './SbomProfilePicker.vue'
 
 const props = withDefaults(defineProps<{

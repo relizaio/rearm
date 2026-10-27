@@ -6,6 +6,8 @@
 import { describe, expect, it } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 import { NSelect } from 'naive-ui'
+import { readFileSync } from 'node:fs'
+import { resolve } from 'node:path'
 
 const { default: Picker } = await import('./SbomProfilePicker.vue')
 
@@ -95,5 +97,15 @@ describe('SbomProfilePicker', () => {
         expect(inner.exists()).toBe(true)
         expect(select(w).attributes('data-testid')).toBe('sbom-profile-picker')
         expect(w.findAll('[data-testid="tea-profiles"]')).toHaveLength(1)
+    })
+
+    it('the root fills the form item, so an empty select keeps the width its menu takes', () => {
+        const source = readFileSync(resolve(__dirname, 'SbomProfilePicker.vue'), 'utf8')
+        const style = source.slice(source.indexOf('<style'))
+        const rule = style.slice(style.indexOf('.sbom-profile-picker-root {'))
+        const body = rule.slice(0, rule.indexOf('}'))
+        expect(body).toMatch(/\bflex: 1;/)
+        expect(body).toMatch(/\bmin-width: 0;/)
+        expect(body).toMatch(/\bwidth: 100%;/)
     })
 })

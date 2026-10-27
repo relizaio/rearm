@@ -97,6 +97,13 @@ query SubmissionReleasesOfBranch($branch: ID!, $numRecords: Int) {
     releases(branchFilter: $branch, numRecords: $numRecords) { uuid version lifecycle createdDate }
 }`
 
+// The kinds the release page offers (switched on for the component, plus any the release holds a
+// submission of): its own read, never the shared release fragments, for the reason above.
+const RELEASE_REGULATORY_PACKAGE_KINDS = gql`
+query ReleaseRegulatoryPackageKinds($releaseID: ID!, $orgID: ID) {
+    release(releaseUuid: $releaseID, orgUuid: $orgID) { uuid regulatoryPackageKinds }
+}`
+
 export default {
     SubmissionsOfComponentGql: SUBMISSIONS_OF_COMPONENT,
     SubmissionsOfReleaseGql: SUBMISSIONS_OF_RELEASE,
@@ -105,4 +112,5 @@ export default {
     ResubmitSubmissionGql: RESUBMIT_SUBMISSION,
     WithdrawSubmissionGql: WITHDRAW_SUBMISSION,
     SubmissionReleasesOfBranchGql: SUBMISSION_RELEASES_OF_BRANCH,
+    ReleaseRegulatoryPackageKindsGql: RELEASE_REGULATORY_PACKAGE_KINDS,
 }
