@@ -4,7 +4,8 @@
 // TEA_PUBLISH fire on a component, and the copy of the confirmation and the badge. Kept out of the
 // .vue files so the specs pin them.
 
-import { LISTED_NAMES, Option, TeaConfirm, teaProfilesAvailable, teaSourceLabel } from './teaProfile'
+import { isProEdition } from './editionCapabilities'
+import { LISTED_NAMES, Option, TeaConfirm, teaSourceLabel } from './teaProfile'
 
 /** A resolved TEA profile as teaProfileEditorView answers it (TEA_RESOLVED_PROFILE_GQL). */
 export interface TeaResolvedView {
@@ -46,10 +47,12 @@ const INSERT_AFTER = 'VDR_SNAPSHOT_ARTIFACT'
 
 /**
  * The base list with the two TEA entries inserted right after VDR_SNAPSHOT_ARTIFACT (at the end if the
- * base has none), where the backend serves TEA; the base unchanged on CE, whose schema has neither value.
+ * base has none), on Pro; the base unchanged on CE. The CE schema has both values since the SCORE-72
+ * sync, but the engine that fires them is Pro's and the CE backend refuses a component save carrying
+ * one (SCORE-72 design 3.3.3), so the CE select never offers them.
  */
 export function outputEventTypeOptionsForEdition (base: Option[], installationType: string | null | undefined): Option[] {
-    if (!teaProfilesAvailable(installationType)) return [...base]
+    if (!isProEdition(installationType)) return [...base]
     const at = base.findIndex(o => o.value === INSERT_AFTER)
     const cut = at < 0 ? base.length : at + 1
     return [...base.slice(0, cut), ...TEA_OUTPUT_EVENT_TYPE_OPTIONS, ...base.slice(cut)]

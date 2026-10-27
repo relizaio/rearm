@@ -9,13 +9,14 @@ import { isProEdition } from './editionCapabilities'
 export type TeaScope = 'ORGANIZATION' | 'PERSPECTIVE' | 'COMPONENT'
 
 /**
- * Whether this edition serves TEA profiles. The Pro backend does; the CE backend has no TEA profile
- * fields yet (the 2026-10 TEA work ships no CE backend sync), so a CE UI hides the TEA tabs and the
- * page banner instead of failing their reads. teaProfileSchemaDrift.spec.ts ties this to the CE
- * schema and fails once that schema gains the fields: lift the gate then.
+ * Whether this edition serves TEA profiles. Both do: the CE backend serves TEA profiles, SBOM
+ * profiles, EXTERNAL keys and the TEA publication reads since the CE sync of SCORE-72 (Pro main
+ * 3befcf24a), so the TEA tabs, the page banner and PUBLISH_EXTERNALLY show on CE too. The parameter
+ * is kept so the call sites and the specs keep their shape; teaProfileSchemaDrift.spec.ts ties this
+ * to the CE schema. TEA output events stay Pro-only (teaOutputEvents.ts).
  */
 export function teaProfilesAvailable (installationType: string | undefined | null): boolean {
-    return isProEdition(installationType)
+    return isProEdition(installationType) || true
 }
 
 /** The permission functions that exist only where the backend serves TEA (task TEA-3). */

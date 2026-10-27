@@ -273,11 +273,11 @@ describe('teaCollectionRows, teaEntryRows and teaPublicationHistoryText (57)', (
 })
 
 describe('editionPermissionFunctions (PUBLISH_EXTERNALLY only where TEA is served)', () => {
-    it('offers PUBLISH_EXTERNALLY on Pro and drops it on CE, keeping every other function', async () => {
+    it('offers PUBLISH_EXTERNALLY on Pro and on CE (served since the SCORE-72 sync), keeping every other function', async () => {
         const { editionPermissionFunctions } = await import('./teaProfile')
         const all = ['RESOURCE', 'ARTIFACT_DOWNLOAD', 'PUBLISH_EXTERNALLY', 'AGENT']
         expect(editionPermissionFunctions(all, 'SAAS')).toEqual(all)
-        expect(editionPermissionFunctions(all, 'OSS')).toEqual(['RESOURCE', 'ARTIFACT_DOWNLOAD', 'AGENT'])
+        expect(editionPermissionFunctions(all, 'OSS')).toEqual(all)
     })
 })
 
