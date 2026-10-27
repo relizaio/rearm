@@ -19,6 +19,7 @@ import java.util.Map;
 import java.util.Set;
 import java.util.TreeSet;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -86,6 +87,15 @@ public class ProgrammaticReleaseWriteOrderTest extends ProgrammaticReleaseWriteO
 	/** The TEA rows: their release read is scoped to the verified key's organisation (TEA-25). */
 	private static boolean teaRow(Row r) {
 		return r.n() >= 17;
+	}
+
+	/**
+	 * CE: the parameterized cases run every row but 9. approveReleaseProgrammatic is a stub on CE, which
+	 * has no approvals, so its order cannot be checked here (SCORE-72 3.6; CE's own
+	 * ws/oss/ProgrammaticReleaseWriteOrderTest leaves it out too). Hides the base's rows().
+	 */
+	static Stream<Row> rows() {
+		return ProgrammaticReleaseWriteOrderTestBase.rows().filter(r -> r.n() != 9);
 	}
 
 	// ---------- completeness ----------
@@ -340,7 +350,7 @@ public class ProgrammaticReleaseWriteOrderTest extends ProgrammaticReleaseWriteO
 		Ids missingRelease = a.random(Names.RELEASE);
 		assertEquals("Release not found: " + missingRelease.release(),
 				refusal(call(row(8), w.a().freeformKey(), missingRelease), row(8).field()));
-		assertEquals("Release not valid", refusal(call(row(9), w.a().freeformKey(), missingRelease), row(9).field()));
+		// CE: no row 9 check. approveReleaseProgrammatic is a stub on CE, which has no approvals (SCORE-72 3.6).
 		assertEquals(CommonVariables.PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE,
 				refusal(call(row(7), w.a().freeformKey(), missingRelease), row(7).field()));
 		for (int n : List.of(13, 14)) {
@@ -376,7 +386,8 @@ public class ProgrammaticReleaseWriteOrderTest extends ProgrammaticReleaseWriteO
 		int attestations = attestationCount(w.a());
 		licenseStatus.setSystemSealed(true);
 
-		for (int n : List.of(5, 6, 9, 11, 12)) {
+		// CE: row 9 (approveReleaseProgrammatic) is left out, a stub on CE (SCORE-72 3.6).
+		for (int n : List.of(5, 6, 11, 12)) {
 			Row r = row(n);
 			assertEquals(SEALED, refusal(call(r, w.keyOfA(r.kind()), a), r.field()), r.field());
 		}

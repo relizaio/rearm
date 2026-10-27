@@ -23,6 +23,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.PerspectiveType;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.model.AgentBoard;
 import io.reliza.model.AgentBoardData;
@@ -80,8 +82,15 @@ public class AuthorizationServiceBoardTest {
 		when(repo.findByOrg(anyString())).thenAnswer(i -> rows.values().stream()
 				.filter(r -> AgentBoardData.dataFromRecord(r).getOrg().toString().equals(i.getArgument(0))).toList());
 		ReflectionTestUtils.setField(svc, "agentBoardRepository", repo);
-		// CE: no live perspective is stubbed. CE has no perspectives (SCORE-72 3.6, as SCORE-55); Pro's
-		// copy of this test stubs one for its PERSPECTIVE grant cases.
+		// A PERSPECTIVE grant clears a call only on a live perspective of its org (task TEA-8, D6).
+		// CE: the live perspective is a mock of CE's OssPerspectiveService.PerspectiveData, the type
+		// getPerspectiveData answers on CE; Pro's copy builds a saas PerspectiveData (SCORE-72 3.6).
+		OssPerspectiveService.PerspectiveData pd = mock(OssPerspectiveService.PerspectiveData.class);
+		when(pd.getUuid()).thenReturn(perspective);
+		when(pd.getOrg()).thenReturn(org);
+		when(pd.getType()).thenReturn(PerspectiveType.PERSPECTIVE);
+		when(pd.getStatus()).thenReturn(StatusEnum.ACTIVE);
+		when(ossPerspectiveService.getPerspectiveData(perspective)).thenReturn(Optional.of(pd));
 		ReflectionTestUtils.setField(svc, "ossPerspectiveService", ossPerspectiveService);
 		return svc;
 	}
