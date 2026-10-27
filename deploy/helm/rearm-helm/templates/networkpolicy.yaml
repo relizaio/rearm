@@ -21,7 +21,17 @@ Values (networkPolicy.*):
   ingressController             who may reach the UI: namespaceSelector and
                                 podSelector of the ingress controller pods,
                                 plus extraFrom (raw NetworkPolicyPeer list,
-                                e.g. an ipBlock for a hostNetwork controller)
+                                e.g. an ipBlock for a hostNetwork controller).
+                                Unset (none of the three given): the Traefik
+                                pods (app.kubernetes.io/name=traefik, any
+                                namespace) when the chart renders its Traefik
+                                IngressRoutes (useTraefikLe or traefikBehindLb);
+                                with both false the controller is unknown, so
+                                the UI policy is not rendered (the UI stays
+                                open as without policies) unless ui.extraIngress
+                                or ui.allowFromNamespace gives it rules, and
+                                backend/keycloak.fromIngressController fail the
+                                render
   namespaceDefaultDeny          opt-in: one podSelector {} deny-ingress policy
                                 for the whole namespace (covers pods this
                                 chart cannot label, affects every pod there)
@@ -39,12 +49,30 @@ Values (networkPolicy.*):
 {{- if and (hasKey $svc "enabled") (not $svc.enabled) -}}false{{- else -}}true{{- end -}}
 {{- end -}}
 
+{{- /*
+The ingress controller the UI admits, as YAML: networkPolicy.ingressController
+when it sets namespaceSelector, podSelector or extraFrom; else the Traefik pods
+in any namespace when the chart renders its Traefik IngressRoutes; else empty
+(controller unknown). Arguments: np, ctx (root context).
+*/ -}}
+{{- define "rearm.networkPolicy.effectiveIngressController" -}}
+{{- $ic := .np.ingressController | default dict -}}
+{{- if or (hasKey $ic "namespaceSelector") (hasKey $ic "podSelector") $ic.extraFrom -}}
+{{- toYaml $ic -}}
+{{- else if or .ctx.Values.useTraefikLe .ctx.Values.traefikBehindLb -}}
+{{- toYaml (dict "namespaceSelector" (dict) "podSelector" (dict "matchLabels" (dict "app.kubernetes.io/name" "traefik"))) -}}
+{{- end -}}
+{{- end -}}
+
+{{- /* Peers of the effective ingress controller (the dict above). The selector peer renders only when a selector is given, so an extraFrom-only controller never becomes "every pod in every namespace". */ -}}
 {{- define "rearm.networkPolicy.ingressControllerFrom" -}}
-{{- $ic := .ingressController | default dict }}
+{{- $ic := . | default dict }}
+{{- if or (hasKey $ic "namespaceSelector") (hasKey $ic "podSelector") }}
 - namespaceSelector:
     {{- toYaml ($ic.namespaceSelector | default dict) | nindent 4 }}
   podSelector:
     {{- toYaml ($ic.podSelector | default dict) | nindent 4 }}
+{{- end }}
 {{- with $ic.extraFrom }}
 {{ toYaml . }}
 {{- end }}
@@ -77,6 +105,15 @@ Values (networkPolicy.*):
 
 {{- $np := .Values.networkPolicy | default dict }}
 {{- if $np.enabled }}
+{{- $icYaml := include "rearm.networkPolicy.effectiveIngressController" (dict "np" $np "ctx" .) }}
+{{- $ic := ternary (fromYaml $icYaml) dict (ne $icYaml "") }}
+{{- $uiNp := $np.ui | default dict }}
+{{- $uiRules := or (ne $icYaml "") $uiNp.allowFromNamespace $uiNp.extraIngress }}
+{{- range $k := list "backend" "keycloak" }}
+{{- if and (index $np $k | default dict).fromIngressController (eq $icYaml "") }}
+{{- fail (printf "networkPolicy.%s.fromIngressController is true but the ingress controller is unknown: useTraefikLe and traefikBehindLb are both false and networkPolicy.ingressController is unset. Set networkPolicy.ingressController to your controller's pods." $k) }}
+{{- end }}
+{{- end }}
 {{- $on := dict "np" $np }}
 {{- $pg := .Values.postgresql | default dict }}
 {{- $pgOn := or (not (hasKey $pg "enabled")) $pg.enabled }}
@@ -111,7 +148,7 @@ spec:
   policyTypes:
     - Ingress
 {{- end }}
-{{- if eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "ui")) "true" }}
+{{- if and $uiRules (eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "ui")) "true") }}
 ---
 apiVersion: networking.k8s.io/v1
 kind: NetworkPolicy
@@ -128,11 +165,13 @@ spec:
   policyTypes:
     - Ingress
   ingress:
+    {{- if ne $icYaml "" }}
     - from:
-        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $ic | nindent 8 }}
       ports:
         - port: 80
           protocol: TCP
+    {{- end }}
     {{- include "rearm.networkPolicy.extra" (dict "np" $np "key" "ui" "ports" (list 80)) | nindent 4 }}
 {{- end }}
 {{- if eq (include "rearm.networkPolicy.serviceOn" (dict "np" $np "key" "backend")) "true" }}
@@ -155,7 +194,7 @@ spec:
     - from:
         {{- include "rearm.networkPolicy.peer" $ui | nindent 8 }}
         {{- if ($np.backend | default dict).fromIngressController }}
-        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $ic | nindent 8 }}
         {{- end }}
       ports:
         - port: 8086
@@ -183,7 +222,7 @@ spec:
         {{- include "rearm.networkPolicy.peer" $ui | nindent 8 }}
         {{- include "rearm.networkPolicy.peer" $backend | nindent 8 }}
         {{- if ($np.keycloak | default dict).fromIngressController }}
-        {{- include "rearm.networkPolicy.ingressControllerFrom" $np | nindent 8 }}
+        {{- include "rearm.networkPolicy.ingressControllerFrom" $ic | nindent 8 }}
         {{- end }}
       ports:
         - port: 9080

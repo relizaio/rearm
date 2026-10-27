@@ -11,10 +11,22 @@ Get the application secret:
    echo $(kubectl get secret --namespace {{ .Release.Namespace }} system-secret -o jsonpath="{.data.systemSecret}" | base64 --decode)
 {{- if .Values.networkPolicy.enabled }}
 
+{{- $icSet := include "rearm.networkPolicy.effectiveIngressController" (dict "np" .Values.networkPolicy "ctx" .) }}
 NetworkPolicies are ON (networkPolicy.enabled): chart pods accept connections only from the
-pods that need them; the UI accepts the ingress controller selected by
-networkPolicy.ingressController (default: pods labelled app.kubernetes.io/name=traefik in any
-namespace). They are enforced only by a CNI that implements NetworkPolicy; a cluster without
+pods that need them.
+{{- if $icSet }}
+The UI accepts the ingress controller selected by networkPolicy.ingressController
+(unset: pods labelled app.kubernetes.io/name=traefik in any namespace, as the chart renders
+Traefik IngressRoutes).
+{{- else }}
+The UI has no ingress controller rule: useTraefikLe and traefikBehindLb are false and
+networkPolicy.ingressController is unset, so the controller is unknown.
+{{- if not (or (.Values.networkPolicy.ui | default dict).extraIngress (.Values.networkPolicy.ui | default dict).allowFromNamespace) }}
+No UI NetworkPolicy is rendered: any pod may reach the UI.
+{{- end }}
+Set networkPolicy.ingressController to your ingress controller's pods to restrict the UI to it.
+{{- end }}
+They are enforced only by a CNI that implements NetworkPolicy; a cluster without
 one accepts them and ignores them silently. Verify enforcement:
   kubectl -n {{ .Release.Namespace }} run np-probe --rm -i --restart=Never --image=docker.io/library/busybox:1.37 -- nc -z -w 5 {{ .Release.Name }}-postgresql 5432; echo exit=$?
   expected: exit=1 (no connection); exit=0 means the policies are not enforced.
