@@ -28,14 +28,14 @@ import jakarta.annotation.Generated;
  * A specific release of a TEA product
  */
 
-@Schema(name = "productRelease", description = "A specific release of a TEA product")
-@JsonTypeName("productRelease")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Schema(name = "product-release", description = "A specific release of a TEA product")
+@JsonTypeName("product-release")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaProductRelease {
 
   private UUID uuid;
 
-  private @Nullable UUID product;
+  private UUID product;
 
   private @Nullable String productName;
 
@@ -62,8 +62,9 @@ public class TeaProductRelease {
   /**
    * Constructor with only required parameters
    */
-  public TeaProductRelease(UUID uuid, String version, OffsetDateTime createdDate, List<@Valid TeaComponentRef> components) {
+  public TeaProductRelease(UUID uuid, UUID product, String version, OffsetDateTime createdDate, List<@Valid TeaComponentRef> components) {
     this.uuid = uuid;
+    this.product = product;
     this.version = version;
     this.createdDate = createdDate;
     this.components = components;
@@ -75,11 +76,11 @@ public class TeaProductRelease {
   }
 
   /**
-   * A unique identifier for the TEA Product Release
+   * A unique identifier for the TEA Product Release. Within an API base it shall not also identify a Component Release; see `doc/tea-uuid-scope.md`. 
    * @return uuid
    */
   @NotNull @Valid 
-  @Schema(name = "uuid", description = "A unique identifier for the TEA Product Release", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "uuid", description = "A unique identifier for the TEA Product Release. Within an API base it shall not also identify a Component Release; see `doc/tea-uuid-scope.md`. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("uuid")
   public UUID getUuid() {
     return uuid;
@@ -90,7 +91,7 @@ public class TeaProductRelease {
     this.uuid = uuid;
   }
 
-  public TeaProductRelease product(@Nullable UUID product) {
+  public TeaProductRelease product(UUID product) {
     this.product = product;
     return this;
   }
@@ -99,15 +100,15 @@ public class TeaProductRelease {
    * UUID of the TEA Product this release belongs to
    * @return product
    */
-  @Valid 
-  @Schema(name = "product", description = "UUID of the TEA Product this release belongs to", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "product", description = "UUID of the TEA Product this release belongs to", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("product")
-  public @Nullable UUID getProduct() {
+  public UUID getProduct() {
     return product;
   }
 
   @JsonProperty("product")
-  public void setProduct(@Nullable UUID product) {
+  public void setProduct(UUID product) {
     this.product = product;
   }
 
@@ -138,11 +139,11 @@ public class TeaProductRelease {
   }
 
   /**
-   * Version number of the product release
+   * Human-readable version string of the product release
    * @return version
    */
   @NotNull 
-  @Schema(name = "version", example = "2.24.3", description = "Version number of the product release", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "version", example = "2.24.3", description = "Human-readable version string of the product release", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("version")
   public String getVersion() {
     return version;
@@ -162,7 +163,7 @@ public class TeaProductRelease {
    * Timestamp when this Product Release was created in TEA (for sorting purposes)
    * @return createdDate
    */
-  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
+  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
   @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "Timestamp when this Product Release was created in TEA (for sorting purposes)", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("createdDate")
   public OffsetDateTime getCreatedDate() {
@@ -183,7 +184,7 @@ public class TeaProductRelease {
    * Timestamp of the product release
    * @return releaseDate
    */
-  @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
+  @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
   @Schema(name = "releaseDate", example = "2024-03-20T15:30:00Z", description = "Timestamp of the product release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("releaseDate")
   public @Nullable OffsetDateTime getReleaseDate() {
@@ -230,11 +231,11 @@ public class TeaProductRelease {
   }
 
   /**
-   * List of identifiers for the product release
+   * Array of identifiers for the product release (`idType` is `CPE`, `TEI` or `PURL`; `COMPLIANCE_DOCUMENT` is not valid here) 
    * @return identifiers
    */
   @Valid 
-  @Schema(name = "identifiers", description = "List of identifiers for the product release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "identifiers", description = "Array of identifiers for the product release (`idType` is `CPE`, `TEI` or `PURL`; `COMPLIANCE_DOCUMENT` is not valid here) ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("identifiers")
   public List<@Valid TeaIdentifier> getIdentifiers() {
     return identifiers;
@@ -259,11 +260,11 @@ public class TeaProductRelease {
   }
 
   /**
-   * List of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. 
+   * Array of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. 
    * @return components
    */
   @NotNull @Valid 
-  @Schema(name = "components", description = "List of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. ", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "components", description = "Array of component references that compose this product release. A component reference can optionally include the UUID of a specific component release to pin the exact version. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("components")
   public List<@Valid TeaComponentRef> getComponents() {
     return components;

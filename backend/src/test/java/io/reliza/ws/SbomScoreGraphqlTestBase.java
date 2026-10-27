@@ -14,6 +14,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -27,7 +28,9 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.context.ApplicationContext;
 import org.springframework.jdbc.core.JdbcTemplate;
+import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.security.core.context.SecurityContext;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.jwt.Jwt;
@@ -59,7 +62,7 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
@@ -121,6 +124,7 @@ abstract class SbomScoreGraphqlTestBase {
 	@Autowired protected OssReleaseService ossReleaseService;
 	@Autowired protected ArtifactService artifactService;
 	@Autowired protected JdbcTemplate jdbcTemplate;
+	@Autowired private ApplicationContext executorContext;
 	@Autowired private LicenseStatus licenseStatus;
 
 	private boolean wasSealed;
@@ -268,19 +272,36 @@ abstract class SbomScoreGraphqlTestBase {
 	}
 
 	/**
-	 * Row counts once nothing has changed for a second: the application context runs scheduled and
-	 * after-commit work that writes on its own, and a snapshot taken mid-write is not a baseline.
+	 * Row counts once the context's background work has drained and two reads in a row agree: the
+	 * application context runs after-commit work that writes on its own, and a snapshot taken
+	 * mid-write is not a baseline. No @Scheduled tick runs in the test build
+	 * (relizaprops.schedulingEnabled=false) and unqualified @Async runs inline (TestAsyncConfig), so
+	 * what is left writes from the context's ThreadPoolTaskExecutors (the after-commit auto-integrate
+	 * and TEA act hops); see {@link #awaitBackgroundExecutorsIdle}. The two equal reads stay as the
+	 * backstop for anything else. This replaced a fixed one-second quiet window per snapshot.
 	 */
 	protected Map<String, Long> settledRowCounts() throws InterruptedException {
+		long deadline = System.currentTimeMillis() + 30_000;
+		awaitBackgroundExecutorsIdle(deadline);
 		Map<String, Long> previous = rowCounts();
-		for (int i = 0; i < 30; i++) {
-			Thread.sleep(1000);
+		while (true) {
+			awaitBackgroundExecutorsIdle(deadline);
 			Map<String, Long> now = rowCounts();
 			if (now.equals(previous)) return now;
 			previous = now;
+			if (System.currentTimeMillis() > deadline) fail("row counts did not settle within 30 s");
+			Thread.sleep(100);
 		}
-		fail("row counts did not settle within 30 s");
-		return previous;
+	}
+
+	/** Until no ThreadPoolTaskExecutor bean of the context has a task queued or running. */
+	private void awaitBackgroundExecutorsIdle(long deadline) throws InterruptedException {
+		Collection<ThreadPoolTaskExecutor> pools = executorContext.getBeansOfType(ThreadPoolTaskExecutor.class).values();
+		assertFalse(pools.isEmpty(), "no ThreadPoolTaskExecutor beans found; the drain would wait for nothing");
+		while (pools.stream().anyMatch(p -> p.getActiveCount() > 0 || p.getQueueSize() > 0)) {
+			if (System.currentTimeMillis() > deadline) fail("background executors did not drain within 30 s");
+			Thread.sleep(20);
+		}
 	}
 
 	/** Per-table change from {@code before} to {@code after}; tables that did not change are left out. */

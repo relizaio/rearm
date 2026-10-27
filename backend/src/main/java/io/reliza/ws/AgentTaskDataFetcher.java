@@ -89,6 +89,8 @@ import io.reliza.service.AgentSessionUsageService;
 import io.reliza.service.AgentTaskInputService;
 import io.reliza.service.AgentTaskService;
 import io.reliza.service.AgentTaskService.WorkerAssignment;
+import io.reliza.service.BoardAgentsService;
+import io.reliza.service.BoardStalenessService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
@@ -1222,6 +1224,22 @@ public class AgentTaskDataFetcher {
 		// On a board with a ladder the version covers the section (task RD3-6), as a hop records it.
 		AgentBoardData bd = null == rc.getBoard() ? null : agentBoardService.getBoardData(rc.getBoard()).orElse(null);
 		return AgentBoardService.promptVersion(bd, rc.getPrompt());
+	}
+
+	/** AgentTaskRoleConfig.promptByVersion (TPF-97): servedPrompt (roleServedPrompt) by version. */
+	@DgsData(parentType = "AgentTaskRoleConfig", field = "promptByVersion")
+	public AgentBoardService.ServedPrompt rolePromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		return AgentBoardService.ServedPrompt.of(roleServedPrompt(dfe), AgentBoardService.checkHeldVersions(heldVersions));
+	}
+
+	/** AgentTaskAssignment.promptByVersion (TPF-97): the served text the record carries, against what the caller holds. */
+	@DgsData(parentType = "AgentTaskAssignment", field = "promptByVersion")
+	public AgentBoardService.ServedPrompt assignmentPromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		WorkerAssignment wa = dfe.getSource();
+		return null == wa ? null
+				: AgentBoardService.ServedPrompt.of(wa.rolePrompt(), AgentBoardService.checkHeldVersions(heldVersions));
 	}
 
 	@DgsData(parentType = "AgentBoard", field = "groups")
@@ -2445,6 +2463,14 @@ public class AgentTaskDataFetcher {
 		return null == bd ? null : agentBoardService.servedCoordinatorPrompt(bd);
 	}
 
+	/** AgentBoard.coordinatorPromptByVersion (TPF-97): servedCoordinatorPrompt by version. */
+	@DgsData(parentType = "AgentBoard", field = "coordinatorPromptByVersion")
+	public AgentBoardService.ServedPrompt coordinatorPromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		return AgentBoardService.ServedPrompt.of(agentBoardServedCoordinatorPrompt(dfe),
+				AgentBoardService.checkHeldVersions(heldVersions));
+	}
+
 	/** Resolved only when selected: it reads the org's keys (task 5c70990d). */
 	@DgsData(parentType = "AgentBoard", field = "missingCoverage")
 	public List<AgentBoardService.CoverageGap> agentBoardMissingCoverage(DgsDataFetchingEnvironment dfe) {
@@ -3276,6 +3302,65 @@ public class AgentTaskDataFetcher {
 	public List<BoardReviewItemIndex.TestedHead> taskTestedHeads(DgsDataFetchingEnvironment dfe) {
 		AgentTaskData td = dfe.getSource();
 		return agentDeliveryService.testedOf(td).map(AgentDeliveryService.Tested::heads).orElse(List.of());
+	}
+
+	/**
+	 * The staleness rules the task breaches now (task TPF-69), live from the board's staleness block. Only a task
+	 * that can be stale reaches the loader: ASSIGNED, DELIVERING, or an open investigation with a deadline. The
+	 * loader reads, per board of the request, the board and the keyed tasks once and the rules' batched reads at
+	 * most once each, whatever the number of tasks.
+	 */
+	@DgsData(parentType = "AgentTask", field = "stale")
+	public java.util.concurrent.CompletionStage<List<BoardAgentsService.StaleMark>> taskStale(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getSource();
+		if (null == td || null == td.getBoard() || !canBeStale(td)) {
+			return java.util.concurrent.CompletableFuture.completedFuture(List.of());
+		}
+		org.dataloader.DataLoader<TaskStaleKey, List<BoardAgentsService.StaleMark>> loader = dfe.getDataLoader("taskStaleLoader");
+		return loader.load(new TaskStaleKey(td.getBoard(), td.getUuid()));
+	}
+
+	/** Whether a task-keyed staleness rule can name the task: ASSIGNED, DELIVERING, or an open investigation with a deadline. */
+	static boolean canBeStale(AgentTaskData td) {
+		AgentTaskData.TaskStatus s = td.getStatus();
+		if (AgentTaskData.TaskStatus.ASSIGNED == s || AgentTaskData.TaskStatus.DELIVERING == s) return true;
+		return td.isInvestigation() && null != td.getInvestigation().deadline()
+				&& AgentTaskData.TaskStatus.COMPLETED != s && AgentTaskData.TaskStatus.CANCELLED != s;
+	}
+
+	/** A task the request served, and its board. */
+	public record TaskStaleKey(UUID board, UUID task) {}
+
+	/** Its own bean, with its own dependencies: the fetcher it sits in is proxied. */
+	@com.netflix.graphql.dgs.DgsDataLoader(name = "taskStaleLoader")
+	public static class TaskStaleBatchLoader implements org.dataloader.BatchLoader<TaskStaleKey, List<BoardAgentsService.StaleMark>> {
+		@Autowired private AgentTaskService agentTaskService;
+		@Autowired private AgentBoardService agentBoardService;
+		@Autowired private BoardStalenessService boardStalenessService;
+
+		@Override
+		public java.util.concurrent.CompletionStage<List<List<BoardAgentsService.StaleMark>>> load(List<TaskStaleKey> keys) {
+			ZonedDateTime now = ZonedDateTime.now();
+			Map<UUID, java.util.Set<UUID>> byBoard = new LinkedHashMap<>();
+			for (TaskStaleKey k : keys) byBoard.computeIfAbsent(k.board(), b -> new java.util.LinkedHashSet<>()).add(k.task());
+			Map<UUID, Map<UUID, List<BoardStalenessService.Breach>>> found = new java.util.HashMap<>();
+			byBoard.forEach((boardUuid, taskUuids) -> {
+				AgentBoardData board = agentBoardService.getBoardData(boardUuid).orElse(null);
+				if (null == board || null == board.getStaleness() || !board.getStaleness().anyRule()) {
+					found.put(boardUuid, Map.of());
+					return;
+				}
+				List<AgentTaskData> tasks = agentTaskService.listByUuids(taskUuids);
+				found.put(boardUuid, boardStalenessService.taskBreaches(board, tasks, now));
+			});
+			List<List<BoardAgentsService.StaleMark>> out = new ArrayList<>(keys.size());
+			for (TaskStaleKey k : keys) {
+				List<BoardStalenessService.Breach> breaches = found.getOrDefault(k.board(), Map.of()).getOrDefault(k.task(), List.of());
+				out.add(breaches.stream().map(b -> new BoardAgentsService.StaleMark(b.key().split(":")[0], b.since(),
+						b.minutes(), b.message())).toList());
+			}
+			return java.util.concurrent.CompletableFuture.completedFuture(out);
+		}
 	}
 
 	/** A linked PR's match key within its org. */

@@ -178,7 +178,8 @@ public interface NotificationDeliveryRepository extends CrudRepository<Notificat
 	//       * a non-admin user sees only deliveries whose outbox event's
 	//         payload.affectedReleases[*].perspectives intersects with the
 	//         user's perspective membership
-	//       * a non-admin user with no perspectives sees nothing
+	//       * a non-admin user with no perspectives sees nothing (the caller passes
+	//         live perspective grants only, task TEA-8)
 	// Kept separate so neither query's index plan or auth contract drifts
 	// to accommodate the other.
 	//

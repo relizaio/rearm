@@ -312,8 +312,17 @@ public class ReleaseMetricsComputeService {
 			// window, fence of 0s) so the healthy path — DTrack returns within a few
 			// minutes — keeps today's per-minute retry latency. A complete compute
 			// drops the fence so any future wait starts fresh.
+			//
+			// Child nudge (TPF-68): once a product waiting on its children has climbed to the hourly cap,
+			// it re-queues each child that is settled (outside every finder pool), unfenced and still
+			// without firstScanned -- the state in which nothing else would ever recompute the child,
+			// e.g. when the push that should have followed its scan was missed. Read on the same
+			// pre-increment flow_control fenceIncompleteCompute reads.
 			if (scanIncomplete) {
 				fenceIncompleteCompute(r);
+				if (childrenIncomplete && isAtMetricsComputeBackoffCap(r.getFlowControl())) {
+					nudgeSettledUnscannedChildren(rd, scannedChildren);
+				}
 			} else {
 				repository.clearMetricsComputeBackoff(r.getUuid());
 			}
@@ -477,6 +486,8 @@ public class ReleaseMetricsComputeService {
 	private final AtomicInteger stallMaxAttempts = new AtomicInteger();
 	private final Set<UUID> stallSample = ConcurrentHashMap.newKeySet();
 	private final AtomicReference<Instant> lastStallReport = new AtomicReference<>();
+	// Children re-queued by a product at the backoff cap (TPF-68), reported and reset on the stall line.
+	private final AtomicLong childNudges = new AtomicLong();
 
 	/**
 	 * Count one stalled compute and emit the aggregate when the window elapses.
@@ -531,9 +542,9 @@ public class ReleaseMetricsComputeService {
 		if (last.isBefore(now.minus(STALL_GAUGE_INTERVAL)) && lastStallReport.compareAndSet(last, now)) {
 			List<UUID> sample = List.copyOf(stallSample);
 			stallSample.clear();
-			log.error("[METRICS-STALLED] windowSec={} stalledComputes={} maxAttempts={} sample={}",
+			log.error("[METRICS-STALLED] windowSec={} stalledComputes={} maxAttempts={} childNudges={} sample={}",
 					Duration.between(last, now).toSeconds(), stallObservations.getAndSet(0),
-					stallMaxAttempts.getAndSet(0), sample);
+					stallMaxAttempts.getAndSet(0), childNudges.getAndSet(0), sample);
 		}
 	}
 
@@ -1033,6 +1044,46 @@ public class ReleaseMetricsComputeService {
 		int escalation = priorAttempts - METRICS_BACKOFF_GRACE_ATTEMPTS;
 		return Math.min(METRICS_BACKOFF_BASE_SECONDS << Math.min(escalation, 7),
 				METRICS_BACKOFF_MAX_SECONDS);
+	}
+
+	/**
+	 * True once the fence computed for this flow_control is the hourly cap: from the 12th incomplete
+	 * attempt on (a pre-increment failure count of 11 with the current constants). Defined through
+	 * {@link #nextMetricsComputeBackoffSeconds} so the cap test moves with the schedule.
+	 */
+	static boolean isAtMetricsComputeBackoffCap(FlowControl fc) {
+		return nextMetricsComputeBackoffSeconds(fc) >= METRICS_BACKOFF_MAX_SECONDS;
+	}
+
+	/**
+	 * TPF-68: re-queue the children a product at the backoff cap is stuck on. The candidates are the
+	 * product's own {@code scannedChildren} (already resolved in its organization, scannable kind)
+	 * that lack firstScanned, whatever their lifecycle: the child's own compute decides whether it can
+	 * heal. A scanned BOM anchors firstScanned through the artifact merge in any lifecycle, so a DRAFT
+	 * or CANCELLED child whose re-queue was missed heals from the touch alone; a child that cannot heal
+	 * (no BOM or an unscanned BOM below ASSEMBLED) settles again without a metrics write and without
+	 * pushing this product, so the cost is one guarded touch per such child per hour. One query keeps
+	 * the candidates that are settled and unfenced, and each is touched back into the BY_UPDATE pool
+	 * with the statement a manual re-queue uses. The {@link #markContainingProductsStale} idiom in the
+	 * other direction: uuid order, inside the compute transaction, best-effort.
+	 */
+	private void nudgeSettledUnscannedChildren(ReleaseData product, List<ReleaseData> scannedChildren) {
+		try {
+			List<UUID> candidates = scannedChildren.stream()
+					.filter(c -> c.getMetrics() == null || c.getMetrics().getFirstScanned() == null)
+					.map(ReleaseData::getUuid).sorted().toList();
+			if (candidates.isEmpty()) return;
+			List<UUID> eligible = new ArrayList<>(repository.findSettledUnscannedAmong(candidates));
+			Collections.sort(eligible);
+			for (UUID child : eligible) {
+				repository.touchForMetricsRecompute(child);
+				childNudges.incrementAndGet();
+				log.info("[METRICS-NUDGE] product {} at the backoff cap nudged settled unscanned child {} back into the metrics queue",
+						product.getUuid(), child);
+			}
+		} catch (Exception e) {
+			log.error("Failed to nudge the children of product {}", product.getUuid(), e);
+		}
 	}
 
 	/**

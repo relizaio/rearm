@@ -19,8 +19,6 @@ public class RelizaConfigProps {
 	
 	private String installationType;
 
-	private String enableBetaTea;
-
 	/**
 	 * Deployment-wide default for the UI home dashboard: APP (the
 	 * classic metrics/search dashboard) or BOARDS (agent task boards).

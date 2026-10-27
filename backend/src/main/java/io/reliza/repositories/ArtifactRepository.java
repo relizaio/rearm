@@ -6,6 +6,7 @@ package io.reliza.repositories;
 import java.time.ZonedDateTime;
 import java.util.Collection;
 import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Modifying;
@@ -270,6 +271,48 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	@Query(value = "SELECT min(a.created_date) FROM rearm.artifacts a "
 			+ "WHERE a.record_data->>'type' = 'BOM'", nativeQuery = true)
 	java.time.Instant findOldestBomArtifactCreatedDate();
+
+	/**
+	 * The artifact row carrying this TEA artifact id (task TEA-5; the part 5 lookup the partial
+	 * unique index of V97 exists for).
+	 */
+	@Query(value = VariableQueries.FIND_ARTIFACT_BY_TEA_UUID, nativeQuery = true)
+	java.util.Optional<Artifact> findByTeaUuid(@Param("teaUuidAsString") String teaUuidAsString);
+
+	/**
+	 * Transaction-scoped advisory lock around the one-time mint of an artifact's TEA id (task
+	 * TEA-5), the twin of ComponentRepository.lockTeaIdMint: two releases publishing the same
+	 * ride-along row at once must not mint two ids. Two-key form, {@code lockNamespace} =
+	 * {@code AdvisoryLockKey.TEA_ID_MINT}.
+	 */
+	@Query(
+		value = """
+			SELECT 1 FROM (
+			  SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:artifactUuidAsString))
+			) AS locked
+			""",
+		nativeQuery = true)
+	Integer lockTeaIdMint(@Param("lockNamespace") int lockNamespace, @Param("artifactUuidAsString") String artifactUuidAsString);
+
+	/**
+	 * The artifact's TEA id mint (TEA-5 round 4, decision 24): one conditional statement that sets
+	 * the one JSON key where it is null and touches no other column (no revision, no last-updated
+	 * date, no audit row, no @Version and no version). Answers the rows updated, 1 or 0.
+	 */
+	@Modifying
+	@Query(value = "UPDATE rearm.artifacts SET record_data = jsonb_set(record_data, '{teaUuid}', "
+			+ "to_jsonb(CAST(:teaUuid AS text)), true) WHERE uuid = :uuid AND record_data->>'teaUuid' IS NULL",
+			nativeQuery = true)
+	int mintTeaUuid(@Param("uuid") UUID uuid, @Param("teaUuid") String teaUuid);
+
+	/**
+	 * The row's TEA id, or empty, with the row locked FOR UPDATE until the caller's transaction
+	 * ends: the read every whole-record save of the artifact makes before it writes, so that it
+	 * writes the stored id back and never erases or introduces one (TEA-5 round 4, T-10 point 4).
+	 */
+	@Query(value = "SELECT record_data->>'teaUuid' FROM rearm.artifacts WHERE uuid = :uuid FOR UPDATE",
+			nativeQuery = true)
+	Optional<String> currentTeaUuidForUpdate(@Param("uuid") UUID uuid);
 
 	/**
 	 * The BOM artifacts of an organization carrying the serialNumber {@code serialAsString}

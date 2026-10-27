@@ -235,7 +235,8 @@ class SbomScoreReleaseGraphqlIntegrationTest extends SbomScoreGraphqlTestBase {
 		UUID empty = release(f.org(), f.component(), List.of());
 		ExecutionResult score = as(f.downloader(), SCORE_RELEASE, withProfiles(releaseVars(empty), PROFILES));
 		ExecutionResult export = as(f.downloader(), EXPORT_RELEASE, releaseVars(empty));
-		assertEquals("No SBOMs found!", errorMessage(export));
+		// TEA-14: TEA's NO_SBOM_ARTIFACTS refusal names the release; the score still answers the export's error
+		assertTrue(errorMessage(export).startsWith("No SBOMs found"), errorMessage(export));
 		assertEquals(errorMessage(export), errorMessage(score));
 		verify(rebomService, never()).scoreBom(any(), any());
 	}

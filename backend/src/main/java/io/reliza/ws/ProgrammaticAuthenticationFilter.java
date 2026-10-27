@@ -137,7 +137,10 @@ public class ProgrammaticAuthenticationFilter extends OncePerRequestFilter {
 				reason = "key not found";
 			} else {
 				ApiKeyData akd = ApiKeyData.dataFromRecord(oak.get());
-				if (akd.getStatus() != ApiKeyStatus.ACTIVE) {
+				if (oak.get().getObjectType() == io.reliza.model.ApiKey.ApiTypeEnum.EXTERNAL) {
+					// an external key reaches TEA only (task TEA-3); its tokens carry the tea audience, so this is belt and braces
+					reason = "external key";
+				} else if (akd.getStatus() != ApiKeyStatus.ACTIVE) {
 					reason = "key inactive";
 				} else if (claims.get().ruleUuids() != null) {
 					// federated exchange: every admitting rule must still be usable at the version the token was minted with
@@ -152,9 +155,7 @@ public class ProgrammaticAuthenticationFilter extends OncePerRequestFilter {
 					else cliSessionService.touchLastUsed(session.get().getUuid());
 				} else {
 					// the secret the token was exchanged with must still exist, be active and be unchanged
-					boolean live = akd.effectiveSecrets(oak.get().getApiKey()).stream()
-							.anyMatch(sec -> sec.isUsable() && ApiTokenService.fingerprint(sec).equals(claims.get().fingerprint()));
-					if (!live) reason = "secret retired, expired or regenerated";
+					if (!ApiKeyService.isTokenSecretLive(oak.get(), akd, claims.get())) reason = "secret retired, expired or regenerated";
 				}
 			}
 			if (reason != null) {

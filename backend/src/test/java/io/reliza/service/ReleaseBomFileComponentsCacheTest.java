@@ -37,9 +37,9 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ExportMetadataOptions;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.RebomService.BomStructureType;
 
@@ -81,7 +81,7 @@ class ReleaseBomFileComponentsCacheTest {
 	private SupportInjectionService supportInjectionService;
 
 	@BeforeEach
-	void wire() {
+	void wire() throws Exception {
 		svc = new ReleaseService(null);
 		rebomService = mock(RebomService.class);
 		releaseRebomService = mock(ReleaseRebomService.class);
@@ -94,6 +94,12 @@ class ReleaseBomFileComponentsCacheTest {
 		// SCORE-33: the JSON export ends in the signing stamp; here the org has no key
 		ReflectionTestUtils.setField(svc, "sbomExportSigningService", SbomExportSigningFixtures.keylessService());
 		ReflectionTestUtils.setField(svc, "releaseRebomService", releaseRebomService);
+		// The merge path reads through readRows after SCORE-71 ADR-11: it answers whatever each case
+		// stubs on getReleaseBoms for the same release, so every stub keeps its place.
+		when(releaseRebomService.readRows(any(ReleaseData.class))).thenAnswer(inv -> {
+			ReleaseData rd = inv.getArgument(0);
+			return new ReleaseRebomService.RowsRead(rd.getUuid(), 0, null, releaseRebomService.getReleaseBoms(rd));
+		});
 		ReflectionTestUtils.setField(svc, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(svc, "getComponentService", getComponentService);
 		ReflectionTestUtils.setField(svc, "getOrganizationService", getOrganizationService);
@@ -171,7 +177,7 @@ class ReleaseBomFileComponentsCacheTest {
 		assertEquals(Boolean.TRUE, sent.getValue().excludeFileComponents());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(3, stored.getValue().size(), "the rows already there stay");
 		ReleaseBom added = stored.getValue().get(2);
 		assertEquals(MERGED, added.rebomId());
@@ -191,7 +197,7 @@ class ReleaseBomFileComponentsCacheTest {
 				"off is not sent to rebom at all, so a rebom without the option still merges it");
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		ReleaseBom added = stored.getValue().get(stored.getValue().size() - 1);
 		assertNull(added.rebomMergeOptions().excludeFileComponents());
 		assertFalse(Utils.OM.writeValueAsString(added).contains("excludeFileComponents"),
@@ -243,7 +249,7 @@ class ReleaseBomFileComponentsCacheTest {
 		verify(rebomService, times(1)).mergeAndStoreBoms(eq(expectedInputs), sent.capture(), eq(ORG));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(product), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(product), stored.capture(), any(), eq(WU));
 		assertEquals(sent.getValue().excludeFileComponents(),
 				stored.getValue().get(stored.getValue().size() - 1).rebomMergeOptions().excludeFileComponents(),
 				"the product's stored row says what its merge was asked");

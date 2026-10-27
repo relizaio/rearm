@@ -45,6 +45,7 @@ import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.model.UserPermission.Permissions;
 import io.reliza.model.WhoUpdated;
 import io.reliza.service.DeclarativeConfigService.Action;
 import io.reliza.service.DeclarativeConfigService.ApplyResult;
@@ -59,7 +60,8 @@ import lombok.extern.slf4j.Slf4j;
  * it. A file declares a FREEFORM key's identity and settings -- permissions, notes, status, how long a minted
  * secret lives, the device-session bound -- and never a secret: a key a file creates
  * has none, the export carries none, and a secret is minted apart ({@link #mintSecret}), returned once and
- * stored hashed. A caller writes, mints for and archives only keys no stronger than itself.
+ * stored hashed. A caller writes, mints for and archives only keys no stronger than itself; stronger means
+ * the key's effective permissions, its own and its API key groups' (TPF-91).
  */
 @Service
 @Slf4j
@@ -120,6 +122,7 @@ public class ApiKeyDeclarativeService {
 	@Autowired private DeclarativeConfigService declarativeConfigService;
 	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private AuthorizationService authorizationService;
+	@Autowired private ApiKeyGroupService apiKeyGroupService;
 
 	/**
 	 * Who declares, mints or archives (task RD3-11), as a check of what it may give a key: {@link #excess} lists
@@ -260,7 +263,7 @@ public class ApiKeyDeclarativeService {
 		if (akd.getStatus() == ApiKeyStatus.INACTIVE) {
 			return Change.of(DeclarativeKind.API_KEYS, name, Action.UNCHANGED, null, "absent from authoritative spec; already inactive");
 		}
-		List<String> excess = caller.excess(currentPermissions(ak, akd));
+		List<String> excess = caller.excess(effectivePermissions(ak, currentPermissions(ak, akd)));
 		if (!excess.isEmpty()) return error(name, strongerThanCaller("archive", excess));
 		try {
 			if (!dryRun) apiKeyService.setApiKeyStatus(ak.getUuid(), ApiKeyStatus.INACTIVE, false, wu);
@@ -321,7 +324,7 @@ public class ApiKeyDeclarativeService {
 			fields.add("sessionMaxMinutes");
 		}
 		if (fields.isEmpty()) return Change.of(DeclarativeKind.API_KEYS, name, Action.UNCHANGED, null, null);
-		List<String> excess = caller.excess(perms);
+		List<String> excess = caller.excess(effectivePermissions(ak, perms));
 		if (!excess.isEmpty()) return error(name, strongerThanCaller("change", excess));
 		if (dryRun) return Change.of(DeclarativeKind.API_KEYS, name, Action.UPDATE, fields, null);
 		apiKeyService.writeDeclaredSettings(ak.getUuid(), settings(k, prov, perms, caller), wu);
@@ -523,16 +526,50 @@ public class ApiKeyDeclarativeService {
 		return null == as ? new LinkedHashSet<>() : new LinkedHashSet<>(as);
 	}
 
-	/** A key's stored permissions in its organization, as the list a file would declare. */
+	/**
+	 * A key's stored permissions in its organization, as the list a file would declare: what the export, the
+	 * list and the change diff show (a file describes the row, not the groups).
+	 */
 	private static List<PermissionDto> currentPermissions(ApiKey ak, ApiKeyData akd) {
+		return permissionDtos(ak.getOrg(), akd.getPermissions(ak.getOrg()).getOrgPermissionsAsSet(ak.getOrg()));
+	}
+
+	/** Permissions of an organization as a declared list: a NONE entry with no functions and no approvals is left out. */
+	private static List<PermissionDto> permissionDtos(UUID org, Set<UserPermission> permissions) {
 		List<PermissionDto> out = new ArrayList<>();
-		for (UserPermission up : akd.getPermissions(ak.getOrg()).getOrgPermissionsAsSet(ak.getOrg())) {
+		for (UserPermission up : permissions) {
 			if (up.getType() == PermissionType.NONE && (null == up.getFunctions() || up.getFunctions().isEmpty())
 					&& (null == up.getApprovals() || up.getApprovals().isEmpty())) continue;
-			out.add(new PermissionDto(ak.getOrg(), up.getScope(), up.getObject(), up.getType(),
+			out.add(new PermissionDto(org, up.getScope(), up.getObject(), up.getType(),
 					null == up.getFunctions() ? Set.of() : up.getFunctions(), null == up.getApprovals() ? Set.of() : up.getApprovals()));
 		}
 		return out;
+	}
+
+	/**
+	 * A key's effective permissions in its organization (TPF-91): {@code own} union every ACTIVE API key group
+	 * of the organization holding the key, through the helper keyPermissions uses, as the list the
+	 * stronger-than-caller checks demand. {@code own} is the stored grants, or on a declared change the
+	 * permissions the file declares. The export, the list and the change diff keep currentPermissions: a file
+	 * describes the row, not the groups.
+	 *
+	 * <p>Two consequences: a caller whose own file declared a key loses the right to change, archive or mint for
+	 * it the moment an administrator groups the key above the caller, which is the rule (the key IS stronger
+	 * now); and the refusal names the group-held grant in the usual reduction or approval wording (for example
+	 * "organization-wide ADMIN reduced to READ_WRITE"), which tells an administrator the key sits in a group.
+	 * Approval roles a group holds are in the demand too: they cast votes (SaasAuthorizationService).
+	 */
+	private List<PermissionDto> effectivePermissions(ApiKey ak, List<PermissionDto> own) {
+		if (ak.getObjectType() != ApiTypeEnum.FREEFORM) return own;   // groups hold FREEFORM keys only
+		UUID org = ak.getOrg();
+		Permissions p = new Permissions();
+		for (PermissionDto d : own) {
+			p.setPermission(org, d.scope(), d.object(), d.type(),
+					null == d.functions() ? List.of() : d.functions(), null == d.approvals() ? List.of() : d.approvals());
+		}
+		Set<UserPermission> combined = OrganizationService.combinePermissions(p.getOrgPermissionsAsSet(org), org,
+				apiKeyGroupService.permissionSetsForKey(ak.getUuid(), org)).getOrgPermissionsAsSet(org);
+		return permissionDtos(org, combined);
 	}
 
 	/** Permissions compared as values: scope, object, level, and functions and approvals in any order. */
@@ -617,10 +654,15 @@ public class ApiKeyDeclarativeService {
 			Integer secretExpiresDays, Integer sessionMaxMinutes, List<SecretSlot> secretSlots,
 			DeclarativeProvenance declarative) {}
 
-	/** With names, the keys declared under them; without, every live key of the organization, declared or not. */
+	/**
+	 * With names, the keys declared under them; without, every live key of the organization, declared or not.
+	 * EXTERNAL keys are never listed here (task TEA-3, run 3, T-7): they are listed to an org ADMIN in the user
+	 * API only, and programmatic management of them is out of scope.
+	 */
 	public List<KeyView> keys(UUID orgUuid, List<String> names) {
 		List<KeyView> out = new ArrayList<>();
 		for (ApiKey ak : apiKeyService.listApiKeyByOrg(orgUuid)) {
+			if (ak.getObjectType() == ApiTypeEnum.EXTERNAL) continue;
 			ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 			if (akd.getStatus() == ApiKeyStatus.REVOKED) continue;
 			if (null != names && !names.isEmpty() && !names.contains(akd.getDeclaredName())) continue;
@@ -652,7 +694,7 @@ public class ApiKeyDeclarativeService {
 		ApiKey ak = apiKeyService.findByDeclaredName(orgUuid, name)
 				.orElseThrow(() -> new RelizaException("API key declared as " + name + " not found in this organization"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
-		List<String> excess = caller.excess(currentPermissions(ak, akd));
+		List<String> excess = caller.excess(effectivePermissions(ak, currentPermissions(ak, akd)));
 		if (!excess.isEmpty()) throw new RelizaException(strongerThanCaller("archive", excess));
 		if (akd.getStatus() != ApiKeyStatus.INACTIVE) apiKeyService.setApiKeyStatus(ak.getUuid(), ApiKeyStatus.INACTIVE, false, wu);
 		ApiKey saved = apiKeyService.getApiKey(ak.getUuid()).orElseThrow();
@@ -693,7 +735,7 @@ public class ApiKeyDeclarativeService {
 		}
 		// As on the keys page: a held key's secrets are its holder's to mint.
 		if (null != akd.getHolder()) throw new RelizaException("this key is held by a person; only its holder mints its secrets, on the keys page");
-		List<String> excess = caller.excess(currentPermissions(ak, akd));
+		List<String> excess = caller.excess(effectivePermissions(ak, currentPermissions(ak, akd)));
 		if (!excess.isEmpty()) throw new RelizaException("cannot mint a secret for a key stronger than the caller: " + String.join("; ", excess));
 		ZonedDateTime expires = null == akd.getSecretExpiresDays() ? null : ZonedDateTime.now().plusDays(akd.getSecretExpiresDays());
 		Optional<ApiKeySecret> held = akd.effectiveSecrets(ak.getApiKey()).stream().filter(x -> x.getSlot() == slot).findFirst();

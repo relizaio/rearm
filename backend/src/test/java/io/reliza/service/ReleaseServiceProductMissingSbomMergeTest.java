@@ -7,6 +7,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -25,12 +26,13 @@ import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.exceptions.MergedSbomUnavailableException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -63,7 +65,7 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 	}
 
 	/** The options of the one product-level merge request, the one that keeps every input root. */
-	private RebomOptions productMergeRequest() {
+	private RebomOptions productMergeRequest() throws Exception {
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
 		verify(rebomService, times(componentMerges().size() + 1)).mergeAndStoreBoms(anyList(), sent.capture(), eq(ORG));
 		List<RebomOptions> productMerges = sent.getAllValues().stream()
@@ -129,25 +131,38 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 		verify(rebomService).mergeAndStoreBoms(eq(List.of(componentMergeIds().get(0))), any(), eq(ORG));
 	}
 
-	// T-3, ADR-5: unchanged
+	// T-3, ADR-5, as TEA-14 decision 1 changed it: a single input is still merged under the product root
+	// (MERGE_VERSION 11 since SCORE-62, 12 since SCORE-60, 13 since SCORE-66), so the root carries the product release's facts
 	@Test
-	void oneBomAndNothingMissingIsStillServedAsIs() throws Exception {
+	void oneBomAndNothingMissingIsStillMergedUnderTheProductRoot() throws Exception {
 		unwindsTo(withBom(WITH_BOM, "1.0.0", null));
 
 		UUID served = request(null);
 
-		assertEquals(List.of(served), componentMergeIds(), "the component's own merge, with no product merge");
-		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), any(), any());
+		assertEquals(productMerge(), served, "one product merge of the one input");
+		RebomOptions sent = productMergeRequest();
+		assertNull(sent.missingSbomComponents());
+		assertEquals(new ReleaseNodeFacts("Example Org", null, null, null), sent.releaseNode());
+		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.mergeVersion());
+		assertEquals(18, ReleaseService.MERGE_VERSION);
+		verify(rebomService).mergeAndStoreBoms(eq(componentMergeIds()), any(), eq(ORG));
+		@SuppressWarnings("unchecked")
+		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(product), stored.capture(), any(), eq(WU));
+		assertEquals(served, stored.getValue().get(0).rebomId(), "the row is stored");
 	}
 
 	// T-3, scope: a document of unknowns only is not an SBOM of anything
 	@Test
-	void noBomAtAllStillFailsWhateverIsMissing() {
+	void noBomAtAllStillFailsWhateverIsMissing() throws Exception {
 		unwindsTo(componentRelease(BARE, "3.0.0"), withBom(EXCLUDED, "4.0.0", ArtifactCoverageType.DEV));
 
-		RelizaException e = assertThrows(RelizaException.class, () -> request(List.of(ArtifactCoverageType.DEV)));
+		MergedSbomUnavailableException e = assertThrows(MergedSbomUnavailableException.class,
+				() -> request(List.of(ArtifactCoverageType.DEV)));
 
-		assertEquals("No SBOMs found!", e.getMessage());
+		// TEA's exception at the tail (TEA-14): switch on the reason, never on the text
+		assertEquals(MergedSbomUnavailableException.Reason.NO_SBOM_ARTIFACTS, e.reason());
+		assertTrue(e.getMessage().startsWith("No SBOMs found: "), e.getMessage());
 		verify(rebomService, never()).mergeAndStoreBoms(anyList(), any(), any());
 	}
 
@@ -160,7 +175,7 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(product), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(product), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(new ReleaseBom(productMerge(), new RebomOptions(ArtifactBelongsTo.RELEASE, false, false, null,
 				BomStructureType.FLAT).withMergeVersion(ReleaseService.MERGE_VERSION).withReleaseNodeFactsKey(FACTS_KEY))),
 				stored.getValue());

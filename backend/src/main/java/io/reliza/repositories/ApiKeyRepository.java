@@ -133,4 +133,24 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 	@Query(value = "UPDATE rearm.api_keys SET last_access_date = :ts WHERE uuid = :uuid "
 			+ "AND (last_access_date IS NULL OR last_access_date < :ts)", nativeQuery = true)
 	void touchLastAccessDateIfNewer(@Param("uuid") UUID uuid, @Param("ts") ZonedDateTime ts);
+
+	/**
+	 * Refresh a FEDERATED identity's last-seen triple (ApiKeyService.ensureFederatedIdentity, the per-exchange
+	 * path) in place: no revision, no last_updated_date, no who-updated keys, no version bump and no audit row --
+	 * the triple is what the latest CI run presented and the next run supersedes it; the audit copy a whole save
+	 * wrote carried the previous triple and nothing else (TPF-71 / TPF-107). The three keys are replaced as one
+	 * object merge and nulls are stripped, so a null value removes its key exactly as Jackson's NON_NULL omits
+	 * it on a whole save, and the stored shape is the same either way. Every other key of federation, and every
+	 * other key of record_data, is untouched.
+	 *
+	 * @return the rows updated: 1, or 0 when no row has this uuid or its federation is not an object
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.api_keys SET record_data = jsonb_set(record_data, '{federation}', "
+			+ "jsonb_strip_nulls((record_data->'federation') || jsonb_build_object("
+			+ "'lastRef', cast(:ref as text), 'lastRunId', cast(:runId as text), 'lastActor', cast(:actor as text)))) "
+			+ "WHERE uuid = :uuid AND jsonb_typeof(record_data->'federation') = 'object'", nativeQuery = true)
+	int stampFederatedLastSeen(@Param("uuid") UUID uuid, @Param("ref") String ref, @Param("runId") String runId,
+			@Param("actor") String actor);
 }

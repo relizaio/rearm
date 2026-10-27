@@ -162,12 +162,6 @@ describe('ComponentView: confirmTeaPublishWiring after the fresh read (T-1)', ()
         expect(r.notify.mock.calls[0][2]).toContain('nothing was saved')
     })
 
-    it('CE: nothing to confirm, nothing read', async () => {
-        const r = rig({ stored: without, staged: withPublish, fresh: PUBLIC, answer: { isConfirmed: false }, edition: 'OSS' })
-        expect(await r.confirm()).toBe(true)
-        expect(r.queries).toEqual([])
-    })
-
     it('save() sends only when the gate answers true, and answers what it did', async () => {
         for (const ok of [true, false]) {
             const submitComponentSave = vi.fn(async () => {})
@@ -285,9 +279,8 @@ describe('OrgSettings: addGlobalOutputEvent after the fresh read (T-2)', () => {
         expect(retyped.saveGlobalOutputEvents).not.toHaveBeenCalled()
     })
 
-    it('a TEA Hide, and any action on CE, neither reads nor asks', async () => {
-        for (const r of [rig({ draft: { name: 'Hide', type: 'TEA_HIDE' }, read: PUBLIC_ORG, answer: { isConfirmed: false } }),
-            rig({ draft: newPublish, read: PUBLIC_ORG, answer: { isConfirmed: false }, edition: 'OSS' })]) {
+    it('a TEA Hide neither reads nor asks', async () => {
+        for (const r of [rig({ draft: { name: 'Hide', type: 'TEA_HIDE' }, read: PUBLIC_ORG, answer: { isConfirmed: false } })]) {
             await r.add()
             expect(r.loadTeaOrgExposure).not.toHaveBeenCalled()
             expect(r.fire).not.toHaveBeenCalled()
@@ -341,8 +334,8 @@ describe('OrgSettings: loadTeaOrgExposure reads both documents fresh (T-2)', () 
         expect(teaOrgPublicBadgeTitle(r.refs.teaOrgSources.value)).toBe('Publishes to the public: 1 perspective profile(s) are PUBLIC.')
     })
 
-    it('answers null with the badge off when not sent (not a writer, CE) or failed', async () => {
-        for (const o of [{ writable: false }, { edition: 'OSS' }, { fails: true }]) {
+    it('answers null with the badge off when not sent (not a writer) or failed', async () => {
+        for (const o of [{ writable: false }, { fails: true }]) {
             const r = rig(o)
             expect(await r.load()).toBeNull()
             expect(r.refs.teaOrgSources.value).toBeNull()

@@ -32,6 +32,8 @@ class InputConversionCoverageTest {
 	/** Stored or internal data: a failure is the server's own defect and stays a server error. */
 	private static final Map<String, Integer> STORED = Map.ofEntries(
 			Map.entry("ComponentDataFetcher.java", 1),
+			// CE: no oss/OssComponentDataFetcher.java entry. Pro's TEA-7 wiring check deep-copies a stored
+			// ComponentData there; CE does not port that check (SCORE-72 design 3.3.3, ADR-4).
 			Map.entry("NotificationDataFetcher.java", 4));
 
 	/** Client-input sites under ws/oss and ws/saas; TPF-65 emptied it. */

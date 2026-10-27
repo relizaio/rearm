@@ -37,11 +37,11 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.VariantData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.service.RebomService.BomStructureType;
 
@@ -98,7 +98,7 @@ class ReleaseBomMergeVersionCacheTest {
 	private ReleaseData rd;
 
 	@BeforeEach
-	void wire() {
+	void wire() throws Exception {
 		svc = new ReleaseService(null);
 		rebomService = mock(RebomService.class);
 		releaseRebomService = mock(ReleaseRebomService.class);
@@ -108,6 +108,12 @@ class ReleaseBomMergeVersionCacheTest {
 		ArtifactService artifactService = mock(ArtifactService.class);
 		ReflectionTestUtils.setField(svc, "rebomService", rebomService);
 		ReflectionTestUtils.setField(svc, "releaseRebomService", releaseRebomService);
+		// The merge path reads through readRows after SCORE-71 ADR-11: it answers whatever each case
+		// stubs on getReleaseBoms for the same release, so every stub keeps its place.
+		when(releaseRebomService.readRows(any(ReleaseData.class))).thenAnswer(inv -> {
+			ReleaseData rd = inv.getArgument(0);
+			return new ReleaseRebomService.RowsRead(rd.getUuid(), 0, null, releaseRebomService.getReleaseBoms(rd));
+		});
 		ReflectionTestUtils.setField(svc, "sharedReleaseService", sharedReleaseService);
 		ReflectionTestUtils.setField(svc, "getComponentService", getComponentService);
 		ReflectionTestUtils.setField(svc, "getOrganizationService", getOrganizationService);
@@ -168,9 +174,46 @@ class ReleaseBomMergeVersionCacheTest {
 	}
 
 	@Test
-	void theMergeVersionIsEight() {
-		assertEquals(8, ReleaseService.MERGE_VERSION,
-				"8 = a merged node records the listed licence expression a fold dropped as reliza:license:dropped (SCORE-44 ADR-6),"
+	void theMergeVersionIsEighteen() {
+		assertEquals(18, ReleaseService.MERGE_VERSION,
+				"18 = a release's stored merged rows are dropped when its merge finds nothing to merge, and the stored rows"
+				+ " of a release and of every product above it are emptied, in the writer's transaction, when its preferred"
+				+ " PURL identifier, its inventory (artifacts, source code entry, deliverables, a rebuild) or, for a product,"
+				+ " its parent releases change, or when the supplier name of its product component changes, and rebuilt by"
+				+ " the next export or merge (SCORE-71); rows stored under 17 may carry a release under a former identifier"
+				+ " or supplier, or an SBOM the release no longer holds, and are rebuilt or dropped once,"
+				+ " after 17 = in a product merge a node or a service of any input that carries the root key of a nested product's"
+				+ " row, or a key of that product's own listed release- or SCE-attached roots, is re-keyed before the"
+				+ " merge instead of folding into that product's node, except the copies a product row carries of the nested"
+				+ " product rows it merged (SCORE-69); rows stored under 16 may carry another release's listing folded into a"
+				+ " nested product's node, and are rebuilt once,"
+				+ " after 16 = under a component release merge every input root that stays a node of the export (the roots of the"
+				+ " release's SCE- and deliverable-attached uploads, an inbound deliverable's) is a dependency of the merged"
+				+ " root, so structure.no-orphans passes on it (SCORE-64); rows stored under 15 carry those roots as orphans"
+				+ " and are rebuilt once,"
+				+ " after 15 = merge-boms (rearm-cli 26.10.15) folds two input roots of one key into the first instead of keeping"
+				+ " the later one, keeps the survivor's licences whole beside an expression on either side, reads an empty"
+				+ " licences list as absent and keys licence entries by id or name with acknowledgement and bom-ref"
+				+ " (SCORE-65, delivered as SCORE-67 and SCORE-68); rows stored under 14 may carry a replaced root, or an"
+				+ " empty list where a listing was dropped, and are rebuilt once,"
+				+ " after 14 = the roots of the release's own SCE- and deliverable-attached uploads carry the declared licence"
+				+ " where the upload wrote none (SCORE-63); rows stored under 13 carry those roots unlicensed and are"
+				+ " rebuilt once,"
+				+ " after 13 = in a product merge a node of a component row or placeholder that carries the product root's key,"
+				+ " a key of the product's own listed upload, or the key of another input's root, is re-keyed before the"
+				+ " merge instead of folding into the product root or into that node (SCORE-66); rows stored under 12 may"
+				+ " carry a same-named component's facts on the product root, or on a nested product's node, and are"
+				+ " rebuilt once,"
+				+ " after 12 = the merged root carries reliza:export:releaseNode, from which the export marks the organization's"
+				+ " own entries (SCORE-58, built as SCORE-60); rows stored under 11 carry no stamp and are rebuilt once,"
+				+ " after 11 = an uploaded root that describes the release itself (a RELEASE-attached upload, a product's own"
+				+ " included) is folded into the merged root (SCORE-57, ported after TEA as SCORE-62); rows stored under 10"
+				+ " carry the upload as a second node and are rebuilt once,"
+				+ " after 10 = the missing-SBOM mode is part of the stored row and of the matcher (TEA-15); rows stored under 9"
+				+ " carry no mode and are rebuilt once, so a build without the mode never serves a row of this build,"
+				+ " after 9 = a product merge always carries the product root and the product's own SBOM artifacts (TEA-1);"
+				+ " rows stored under 8 (a single child served as-is, own SBOMs missed) are rebuilt once,"
+				+ " after 8 = a merged node records the listed licence expression a fold dropped as reliza:license:dropped (SCORE-44 ADR-6),"
 				+ " after 7 = ReARM-made nodes carry the declared licence and the component supplier (SCORE-39 ADR-4),"
 				+ " after 6 = ReARM's own nodes carry the organization as supplier and the deliverable digests (SCORE-30"
 				+ " ADR-8), 5 = the root purl encodes group and name once (SCORE-29 ADR-3), 4 = product"
@@ -189,7 +232,7 @@ class ReleaseBomMergeVersionCacheTest {
 		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.getValue().mergeVersion());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
 				"the new row under the current rules replaces the previous row of the same request");
 	}
@@ -218,7 +261,7 @@ class ReleaseBomMergeVersionCacheTest {
 		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.getValue().mergeVersion());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
 				"the new row under the current rules replaces both rows of the same request");
 	}
@@ -234,7 +277,7 @@ class ReleaseBomMergeVersionCacheTest {
 		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.getValue().mergeVersion());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue(),
 				"one row for the request: the request's options under the current rules and facts, so the next"
 				+ " request matches it");
@@ -246,7 +289,7 @@ class ReleaseBomMergeVersionCacheTest {
 		request(RELEASE);
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 
 		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(stored.getValue());
 		assertEquals(MERGED, request(RELEASE));
@@ -287,7 +330,7 @@ class ReleaseBomMergeVersionCacheTest {
 		verify(rebomService).mergeAndStoreBoms(eq(List.of(firstMerge, secondMerge)), any(), eq(ORG));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(product), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(product), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(productMerge, ReleaseService.MERGE_VERSION)), stored.getValue());
 	}
 
@@ -295,8 +338,8 @@ class ReleaseBomMergeVersionCacheTest {
 	void aComponentMergeSendsTheFactsOfItsReleaseAndStoresARowWithoutThem() throws Exception {
 		DeliverableData dd = new DeliverableData();
 		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
-				new DigestRecord(TeaChecksumType.SHA_256, SHA_256),
-				new DigestRecord(TeaChecksumType.SHA_512, SHA_512)))).build());
+				new DigestRecord(DigestAlgorithm.SHA_256, SHA_256),
+				new DigestRecord(DigestAlgorithm.SHA_512, SHA_512)))).build());
 		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
 		ships(RELEASE, DELIVERABLE);
 		when(releaseRebomService.getReleaseBoms(rd)).thenReturn(List.of(row(OLD_ROW, PREVIOUS_MERGE_VERSION)));
@@ -310,7 +353,7 @@ class ReleaseBomMergeVersionCacheTest {
 		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.getValue().mergeVersion());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(1, stored.getValue().size());
 		ReleaseBom newRow = stored.getValue().get(0);
 		assertEquals(row(MERGED, ReleaseService.MERGE_VERSION, ReleaseNodeFacts.key(sent.getValue().releaseNode())), newRow,
@@ -329,7 +372,7 @@ class ReleaseBomMergeVersionCacheTest {
 		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), any(), eq(ORG));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION)), stored.getValue());
 	}
 
@@ -379,7 +422,7 @@ class ReleaseBomMergeVersionCacheTest {
 		assertEquals(facts, sent.getValue().releaseNode());
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		assertEquals(List.of(row(MERGED, ReleaseService.MERGE_VERSION, ReleaseNodeFacts.key(facts))), stored.getValue());
 	}
 
@@ -408,7 +451,7 @@ class ReleaseBomMergeVersionCacheTest {
 
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);
-		verify(releaseRebomService).setReboms(eq(rd), stored.capture(), eq(WU));
+		verify(releaseRebomService).storeRowsIfUnchanged(eq(rd), stored.capture(), any(), eq(WU));
 		List<ReleaseBom> after = new ArrayList<>(others);
 		after.add(row(MERGED, ReleaseService.MERGE_VERSION));
 		assertEquals(after, stored.getValue());
@@ -421,7 +464,7 @@ class ReleaseBomMergeVersionCacheTest {
 		when(releaseRebomService.getReleaseBoms(second)).thenReturn(List.of(row(SECOND_OLD_ROW, null)));
 		DeliverableData dd = new DeliverableData();
 		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
-				new DigestRecord(TeaChecksumType.SHA_256, SHA_256)))).build());
+				new DigestRecord(DigestAlgorithm.SHA_256, SHA_256)))).build());
 		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
 		ships(SECOND_RELEASE, DELIVERABLE);
 		ReleaseData product = productRelease();

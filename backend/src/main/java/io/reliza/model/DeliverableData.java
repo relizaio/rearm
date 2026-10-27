@@ -32,8 +32,7 @@ import io.reliza.model.cdx.ExternalRef;
 import io.reliza.model.cdx.Origin;
 import io.reliza.model.cdx.Party;
 import io.reliza.model.dto.DeliverableDto;
-import io.reliza.model.tea.Link;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
 import tools.jackson.databind.annotation.JsonDeserialize;
@@ -236,7 +235,7 @@ public class DeliverableData extends RelizaDataParent implements RelizaObject {
 	public Optional<String> sha256Reference() {
 		if (null == softwareMetadata || null == softwareMetadata.getDigestRecords()) return Optional.empty();
 		return softwareMetadata.getDigestRecords().stream()
-				.filter(dr -> null != dr && dr.algo() == TeaChecksumType.SHA_256 && StringUtils.isNotBlank(dr.digest()))
+				.filter(dr -> null != dr && dr.algo() == DigestAlgorithm.SHA_256 && StringUtils.isNotBlank(dr.digest()))
 				.findFirst()
 				.map(dr -> "sha256:" + dr.digest());
 	}

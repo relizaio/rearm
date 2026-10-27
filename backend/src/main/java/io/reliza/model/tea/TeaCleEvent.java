@@ -2,8 +2,6 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonFormat;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -29,37 +27,22 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A discrete lifecycle event from the CLE specification
+ * A discrete lifecycle event from the CLE specification (ECMA-428).  CLE timestamps in TEA responses use the shared &#x60;date-time&#x60; schema: UTC with the &#x60;Z&#x60; designator, fractional seconds preserved. A &#x60;+00:00&#x60; offset in an upstream CLE document denotes the same instant and is re-expressed as &#x60;Z&#x60;. Any other offset is not UTC and is not valid CLE. 
  */
 
-@Schema(name = "cle-event", description = "A discrete lifecycle event from the CLE specification")
+@Schema(name = "cle-event", description = "A discrete lifecycle event from the CLE specification (ECMA-428).  CLE timestamps in TEA responses use the shared `date-time` schema: UTC with the `Z` designator, fractional seconds preserved. A `+00:00` offset in an upstream CLE document denotes the same instant and is re-expressed as `Z`. Any other offset is not UTC and is not valid CLE. ")
 @JsonTypeName("cle-event")
-// an absent optional field is left out, not written as null: the cle-event schema types
-// them string/integer, not nullable. Re-apply after any TEA bump; TeaCleDocumentSchemaTest
-// is the tripwire.
-@JsonInclude(JsonInclude.Include.NON_NULL)
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaCleEvent {
 
   private Integer id;
 
   private TeaCleEventType type;
 
-  // @DateTimeFormat is a SPRING BINDING annotation; Jackson ignores it. Without
-  // @JsonFormat these serialise through Utils.OM (WRITE_DATES_AS_TIMESTAMPS) as a
-  // nanosecond decimal instead of the ISO-8601 string the CLE spec requires.
-  // WARNING: this file IS regenerated out of repo -- be61124d ("switch to TEA
-  // 0.4.0") bulk-replaced all 34 model/tea files and silently dropped an earlier
-  // hand-edit, restored 7.5h later in 2856f6ab. Re-apply these two annotations
-  // after any TEA bump; TeaTransformerServiceTest.wrapAsCleDocumentEmitsIso8601-
-  // StringTimestamps is the tripwire that catches it. Full reasoning lives on
-  // TeaTransformerService.wrapAsCleDocument.
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  @JsonFormat(shape = JsonFormat.Shape.STRING)
   private OffsetDateTime effective;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  @JsonFormat(shape = JsonFormat.Shape.STRING)
   private OffsetDateTime published;
 
   private @Nullable String version;
@@ -147,11 +130,11 @@ public class TeaCleEvent {
   }
 
   /**
-   * ISO 8601 timestamp (UTC) when the event takes effect
+   * When the event takes effect.
    * @return effective
    */
-  @NotNull @Valid 
-  @Schema(name = "effective", description = "ISO 8601 timestamp (UTC) when the event takes effect", requiredMode = Schema.RequiredMode.REQUIRED)
+  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
+  @Schema(name = "effective", example = "2024-03-20T15:30:00Z", description = "When the event takes effect.", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("effective")
   public OffsetDateTime getEffective() {
     return effective;
@@ -168,11 +151,11 @@ public class TeaCleEvent {
   }
 
   /**
-   * ISO 8601 timestamp (UTC) when the event was first published
+   * When the event was first published.
    * @return published
    */
-  @NotNull @Valid 
-  @Schema(name = "published", description = "ISO 8601 timestamp (UTC) when the event was first published", requiredMode = Schema.RequiredMode.REQUIRED)
+  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
+  @Schema(name = "published", example = "2024-03-20T15:30:00Z", description = "When the event was first published.", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("published")
   public OffsetDateTime getPublished() {
     return published;
@@ -310,11 +293,11 @@ public class TeaCleEvent {
   }
 
   /**
-   * New identifiers for the component (used by componentRenamed event type)
+   * New identifiers for the component (`componentRenamed` only), in the TEA `identifier` shape. Corresponds to CLE `identifiers[]` with `type` / `value`. 
    * @return identifiers
    */
   @Valid 
-  @Schema(name = "identifiers", description = "New identifiers for the component (used by componentRenamed event type)", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "identifiers", description = "New identifiers for the component (`componentRenamed` only), in the TEA `identifier` shape. Corresponds to CLE `identifiers[]` with `type` / `value`. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("identifiers")
   public List<@Valid TeaIdentifier> getIdentifiers() {
     return identifiers;

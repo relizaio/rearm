@@ -43,7 +43,7 @@ import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.service.GetComponentService;
 
 /**

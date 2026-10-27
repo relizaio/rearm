@@ -1,4 +1,4 @@
-<!-- orientation section: taking-a-task · core 2026-10-08 -->
+<!-- orientation section: taking-a-task · core 2026-10-25 -->
 ### 2.5 Taking a task (task boards)
 
 Ask for work with `rearm agent task next --session <session-uuid>`,
@@ -13,7 +13,13 @@ offered only tasks for those roles, and nothing when none match or
 none is open — that is the answer, not an error, so do not retry with
 the roles dropped. `task assign` reuses the roles your last `task
 next` declared, so a board that enforces strict priority ranks you
-only against work you could take.
+only against work you could take. The server also answers each offer's
+served prompt by version (`promptByVersion`, 2.5d): a client that sends
+the version it holds in `heldVersions` is answered `UNCHANGED` without
+the text when nothing changed. With rearm CLI `26.10.17` or later,
+`wait` and `task next` print the text only when you do not pass the
+version you hold with `--prompt-version`; `--full-prompt` prints it
+anyway (2.5d).
 
 **Read the board in bulk.** `rearm agent task list --board <board-uuid>
 --status <status>` returns every task in that status, with its sign-offs,

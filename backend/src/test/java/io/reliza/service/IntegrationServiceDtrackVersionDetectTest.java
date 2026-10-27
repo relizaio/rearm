@@ -8,6 +8,8 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -20,10 +22,10 @@ import java.net.InetSocketAddress;
 import java.net.URI;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -145,6 +147,18 @@ class IntegrationServiceDtrackVersionDetectTest {
 		return i;
 	}
 
+	/**
+	 * The sweep stores in place through IntegrationRepository.stampDtrackVersion (TPF-71 / TPF-107, architecture
+	 * 5.3): the repository is a mock, the two landing stamps answer 1 and every other combination the default 0,
+	 * which is how the row deleted meanwhile is not brought back. What the row then holds is the database's
+	 * (IntegrationDtrackVersionStampTest).
+	 */
+	private static Map<String, Object> withVersion(Integration row, DependencyTrackVersion version) {
+		IntegrationData d = IntegrationData.dataFromRecord(row);
+		d.setDtrackVersion(version);
+		return Utils.dataToRecord(d);
+	}
+
 	@Test
 	void theSweepStoresWhatItCanTellAndLeavesTheRestAlone() throws Exception {
 		URI legacy = URI.create("https://dt4.example");
@@ -152,43 +166,57 @@ class IntegrationServiceDtrackVersionDetectTest {
 		URI upgraded = URI.create("https://dt-upgraded.example");
 		URI quietV4 = URI.create("https://dt4-quiet.example");
 		URI deleted = URI.create("https://deleted.example");
+		URI stillV4Uri = URI.create("https://dt4-same.example");
 		Integration undetectedV4 = dtrack(UUID.randomUUID(), legacy, null);
+		Integration stillV4 = dtrack(UUID.randomUUID(), stillV4Uri, DependencyTrackVersion.V4);
 		Integration undetectedDown = dtrack(UUID.randomUUID(), unreachable, null);
 		Integration storedV4NowV5 = dtrack(UUID.randomUUID(), upgraded, DependencyTrackVersion.V4);
 		Integration storedV4Down = dtrack(UUID.randomUUID(), quietV4, DependencyTrackVersion.V4);
 		Integration deletedMeanwhile = dtrack(UUID.randomUUID(), deleted, null);
 		Integration detectedV5 = dtrack(UUID.randomUUID(), URI.create("https://dt5.example"), DependencyTrackVersion.V5);
 		List<Integration> rows = List.of(undetectedV4, undetectedDown, storedV4NowV5, storedV4Down, deletedMeanwhile,
-				detectedV5);
+				detectedV5, stillV4);
 		IntegrationRepository repository = mock(IntegrationRepository.class);
 		when(repository.listBaseIntegrationsByType(IntegrationType.DEPENDENCYTRACK.name())).thenReturn(rows);
-		for (Integration row : rows) {
-			if (row != deletedMeanwhile) when(repository.findById(row.getUuid())).thenReturn(Optional.of(row));
-		}
-		when(repository.save(any(Integration.class))).thenAnswer(i -> i.getArgument(0));
+		when(repository.stampDtrackVersion(eq(undetectedV4.getUuid()), eq("V4"), isNull(), eq(legacy.toString())))
+				.thenReturn(1);
+		when(repository.stampDtrackVersion(eq(storedV4NowV5.getUuid()), eq("V5"), eq("V4"), eq(upgraded.toString())))
+				.thenReturn(1);
+		// a version 4 that answers 4 again changes nothing: it must not reach the statement, even one that would say 1
+		when(repository.stampDtrackVersion(eq(stillV4.getUuid()), any(), any(), any())).thenReturn(1);
 		ProbingService svc = new ProbingService(repository);
 		inject(svc, "encryptionService", passThroughEncryption());
-		inject(svc, "auditService", mock(AuditService.class));
 		svc.versions.put(legacy, DependencyTrackVersion.V4);
+		svc.versions.put(stillV4Uri, DependencyTrackVersion.V4);
 		svc.versions.put(upgraded, DependencyTrackVersion.V5);
 		svc.versions.put(deleted, DependencyTrackVersion.V5);
 
 		assertEquals(2, svc.redetectDtrackVersions());
+		// The rows as the table now holds them: the two stamps landed (the mock repository writes nothing).
+		undetectedV4.setRecordData(withVersion(undetectedV4, DependencyTrackVersion.V4));
+		storedV4NowV5.setRecordData(withVersion(storedV4NowV5, DependencyTrackVersion.V5));
 		// Again at once: what is still undetected is probed every run (the mock
 		// still lists the deleted row), a version 4 only once a day.
 		svc.probed.clear();
 		assertEquals(0, svc.redetectDtrackVersions());
 		assertEquals(List.of(unreachable, deleted), svc.probed);
 
-		ArgumentCaptor<Integration> saved = ArgumentCaptor.forClass(Integration.class);
-		verify(repository, times(2)).save(saved.capture());
-		assertEquals(List.of(undetectedV4.getUuid(), storedV4NowV5.getUuid()),
-				saved.getAllValues().stream().map(Integration::getUuid).toList());
-		assertEquals(DependencyTrackVersion.V4, IntegrationData.dataFromRecord(undetectedV4).getDtrackVersion());
-		assertEquals(DependencyTrackVersion.V5, IntegrationData.dataFromRecord(storedV4NowV5).getDtrackVersion());
-		assertNull(IntegrationData.dataFromRecord(undetectedDown).getDtrackVersion());
-		assertEquals(DependencyTrackVersion.V4, IntegrationData.dataFromRecord(storedV4Down).getDtrackVersion());
-		verify(repository, never()).save(deletedMeanwhile);
+		ArgumentCaptor<UUID> uuids = ArgumentCaptor.forClass(UUID.class);
+		ArgumentCaptor<String> detected = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<String> known = ArgumentCaptor.forClass(String.class);
+		ArgumentCaptor<String> uris = ArgumentCaptor.forClass(String.class);
+		// The two that landed, then the deleted row's stamp on each run (it answered 0 and was not counted).
+		verify(repository, times(4)).stampDtrackVersion(uuids.capture(), detected.capture(), known.capture(),
+				uris.capture());
+		assertEquals(List.of(undetectedV4.getUuid(), storedV4NowV5.getUuid(), deletedMeanwhile.getUuid(),
+				deletedMeanwhile.getUuid()), uuids.getAllValues());
+		assertEquals(List.of("V4", "V5", "V5", "V5"), detected.getAllValues());
+		assertEquals(Arrays.asList(null, "V4", null, null), known.getAllValues());
+		assertEquals(List.of(legacy.toString(), upgraded.toString(), deleted.toString(), deleted.toString()),
+				uris.getAllValues());
+		verify(repository, never()).stampDtrackVersion(eq(stillV4.getUuid()), any(), any(), any());
+		verify(repository, never()).save(any());
+		verify(repository, never()).findById(any());
 	}
 
 	@Test

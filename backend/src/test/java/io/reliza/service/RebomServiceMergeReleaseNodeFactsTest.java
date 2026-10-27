@@ -24,11 +24,12 @@ import com.sun.net.httpserver.HttpServer;
 
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomMode;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomStructureType;
 import tools.jackson.databind.JsonNode;
 
@@ -36,7 +37,8 @@ import tools.jackson.databind.JsonNode;
  * SCORE-30 (T-13, ADR-7): {@link RebomService#mergeAndStoreBoms} against a stub rebom. The release
  * facts travel in the GraphQL variables as rebom's ReleaseNodeFactsInput shape and a placeholder's
  * hashes as BomHashInput entries; a request without them sends no such keys. SCORE-39 (T-12):
- * the declared licence travels the same way, and a stored row's facts key never.
+ * the declared licence travels the same way, and a stored row's facts key never. SCORE-63 (T-12):
+ * {@code attachedRootIds} travels beside {@code releaseRootIds} and survives every copy.
  */
 class RebomServiceMergeReleaseNodeFactsTest {
 
@@ -98,6 +100,123 @@ class RebomServiceMergeReleaseNodeFactsTest {
 
 		assertEquals(Utils.OM.readTree("{\"supplierName\":\"Example Org\",\"hashes\":[{\"alg\":\"SHA-256\",\"content\":\""
 				+ SHA_256 + "\"},{\"alg\":\"SHA-1\",\"content\":\"" + SHA_1 + "\"}]}"), sentOptions().get("releaseNode"));
+	}
+
+	// SCORE-57 T-20: the release's own RELEASE-attached BOM ids travel beside the facts, as sent
+	@Test
+	void theReleaseRootIdsTravelAsAnArrayOfUuidStringsInOrderBesideTheFacts() throws Exception {
+		UUID second = IDS.get(1);
+		UUID first = IDS.get(0);
+		RebomOptions options = merge().withReleaseNodeFactsKey("0".repeat(64))
+				.withReleaseNode(new ReleaseNodeFacts("Example Org", null, null, null))
+				.withReleaseRootIds(List.of(second, first));
+
+		service.mergeAndStoreBoms(IDS, options, ORG);
+
+		assertEquals(Utils.OM.readTree("[\"" + second + "\",\"" + first + "\"]"), sentOptions().get("releaseRootIds"));
+		assertFalse(sentOptions().has("releaseNodeFactsKey"), sentOptions().toString());
+	}
+
+	// SCORE-57 T-20
+	@Test
+	void aRequestWithoutReleaseRootIdsSendsNoSuchKey() throws Exception {
+		service.mergeAndStoreBoms(IDS, merge(), ORG);
+
+		assertFalse(sentOptions().has("releaseRootIds"), sentOptions().toString());
+	}
+
+	// SCORE-57 T-20: an empty or null list is carried as none
+	@Test
+	void anEmptyOrNullListOfReleaseRootIdsSendsNoSuchKey() throws Exception {
+		service.mergeAndStoreBoms(IDS, merge().withReleaseRootIds(List.of()), ORG);
+		service.mergeAndStoreBoms(IDS, merge().withReleaseRootIds(null), ORG);
+
+		assertEquals(2, requests.size());
+		for (byte[] request : requests) {
+			JsonNode sent = Utils.OM.readTree(request).get("variables").get("rebomOptions");
+			assertFalse(sent.has("releaseRootIds"), sent.toString());
+		}
+	}
+
+	// SCORE-62 T-20b: the send path drops missingSbomMode with withMissingSbomMode(null); the list survives it
+	@Test
+	void theReleaseRootIdsSurviveTheMissingSbomModeAndBelongsToCopies() throws Exception {
+		RebomOptions options = merge().withReleaseRootIds(IDS).withMissingSbomMode(MissingSbomMode.OMIT);
+		assertEquals(IDS, options.withBelongsTo(ArtifactBelongsTo.RELEASE).releaseRootIds());
+		RebomOptions listed = merge().withReleaseRootIds(IDS);
+		for (RebomOptions copy : List.of(listed.withMergeVersion(ReleaseService.MERGE_VERSION),
+				listed.withMissingSbomComponents(List.of()), listed.withReleaseNode(null), listed.withSupplierName("s"),
+				listed.withReleaseNodeFactsKey("k"))) {
+			assertEquals(IDS, copy.releaseRootIds(), copy.toString());
+		}
+
+		service.mergeAndStoreBoms(IDS, options, ORG);
+
+		assertEquals(Utils.OM.readTree("[\"" + IDS.get(0) + "\",\"" + IDS.get(1) + "\"]"),
+				sentOptions().get("releaseRootIds"));
+		assertFalse(sentOptions().has("missingSbomMode"), sentOptions().toString());
+	}
+
+	// SCORE-63 T-12: the attached uploads' ids travel beside releaseRootIds and the facts, as sent
+	@Test
+	void theAttachedRootIdsTravelAsAnArrayOfUuidStringsInOrderBesideTheReleaseRootIdsAndTheFacts() throws Exception {
+		UUID second = IDS.get(1);
+		UUID first = IDS.get(0);
+		RebomOptions options = merge().withReleaseNodeFactsKey("0".repeat(64))
+				.withReleaseNode(new ReleaseNodeFacts("Example Org", null, "MIT", null))
+				.withReleaseRootIds(List.of(first))
+				.withAttachedRootIds(List.of(second, first));
+
+		service.mergeAndStoreBoms(IDS, options, ORG);
+
+		assertEquals(Utils.OM.readTree("[\"" + second + "\",\"" + first + "\"]"), sentOptions().get("attachedRootIds"));
+		assertEquals(Utils.OM.readTree("[\"" + first + "\"]"), sentOptions().get("releaseRootIds"));
+		assertEquals("MIT", sentOptions().get("releaseNode").get("licenseExpression").asText());
+		assertFalse(sentOptions().has("releaseNodeFactsKey"), sentOptions().toString());
+	}
+
+	// SCORE-63 T-12
+	@Test
+	void aRequestWithoutAttachedRootIdsSendsNoSuchKey() throws Exception {
+		service.mergeAndStoreBoms(IDS, merge().withReleaseRootIds(IDS), ORG);
+
+		assertFalse(sentOptions().has("attachedRootIds"), sentOptions().toString());
+	}
+
+	// SCORE-63 T-12: an empty or null list is carried as none
+	@Test
+	void anEmptyOrNullListOfAttachedRootIdsSendsNoSuchKey() throws Exception {
+		service.mergeAndStoreBoms(IDS, merge().withAttachedRootIds(List.of()), ORG);
+		service.mergeAndStoreBoms(IDS, merge().withAttachedRootIds(null), ORG);
+
+		assertEquals(2, requests.size());
+		for (byte[] request : requests) {
+			JsonNode sent = Utils.OM.readTree(request).get("variables").get("rebomOptions");
+			assertFalse(sent.has("attachedRootIds"), sent.toString());
+		}
+	}
+
+	// SCORE-63 T-12 (the SCORE-62 T-20b shape): every copy carries the list, and the send path keeps it
+	@Test
+	void theAttachedRootIdsSurviveEveryCopy() throws Exception {
+		RebomOptions options = merge().withAttachedRootIds(IDS).withMissingSbomMode(MissingSbomMode.OMIT);
+		assertEquals(IDS, options.withBelongsTo(ArtifactBelongsTo.RELEASE).attachedRootIds());
+		RebomOptions listed = merge().withAttachedRootIds(IDS);
+		for (RebomOptions copy : List.of(listed.withMergeVersion(ReleaseService.MERGE_VERSION),
+				listed.withMissingSbomComponents(List.of()), listed.withReleaseNode(null), listed.withSupplierName("s"),
+				listed.withReleaseNodeFactsKey("k"), listed.withReleaseRootIds(List.of(IDS.get(0))),
+				listed.withBelongsTo(ArtifactBelongsTo.SCE), listed.withMissingSbomMode(MissingSbomMode.OMIT))) {
+			assertEquals(IDS, copy.attachedRootIds(), copy.toString());
+		}
+		// and withAttachedRootIds leaves releaseRootIds as it was
+		assertEquals(List.of(IDS.get(1)), merge().withReleaseRootIds(List.of(IDS.get(1))).withAttachedRootIds(IDS).releaseRootIds());
+
+		service.mergeAndStoreBoms(IDS, options.withReleaseNodeFactsKey("0".repeat(64)), ORG);
+
+		assertEquals(Utils.OM.readTree("[\"" + IDS.get(0) + "\",\"" + IDS.get(1) + "\"]"),
+				sentOptions().get("attachedRootIds"));
+		assertFalse(sentOptions().has("missingSbomMode"), sentOptions().toString());
+		assertFalse(sentOptions().has("releaseNodeFactsKey"), sentOptions().toString());
 	}
 
 	@Test

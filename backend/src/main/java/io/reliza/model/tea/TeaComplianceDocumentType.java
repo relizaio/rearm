@@ -17,10 +17,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Well-known compliance document types. When idType is COMPLIANCE_DOCUMENT, the idValue SHOULD be one of these values. 
+ * Well-known compliance document types. When idType is COMPLIANCE_DOCUMENT, the idValue shall be one of these values. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public enum TeaComplianceDocumentType {
   
   SOC_2_TYPE_I("SOC_2_TYPE_I"),
@@ -43,7 +43,7 @@ public enum TeaComplianceDocumentType {
   
   HIPAA("HIPAA"),
   
-  FED_RAMP("FedRAMP"),
+  FEDRAMP("FEDRAMP"),
   
   GDPR("GDPR"),
   
@@ -61,7 +61,9 @@ public enum TeaComplianceDocumentType {
   
   CYBER_ESSENTIALS("CYBER_ESSENTIALS"),
   
-  CYBER_ESSENTIALS_PLUS("CYBER_ESSENTIALS_PLUS");
+  CYBER_ESSENTIALS_PLUS("CYBER_ESSENTIALS_PLUS"),
+  
+  EU_DECLARATION_OF_CONFORMITY("EU_DECLARATION_OF_CONFORMITY");
 
   private final String value;
 

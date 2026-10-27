@@ -33,7 +33,8 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		ORGANIZATION_RW,
 		FREEFORM, // arbitrary-permissioned key for RBAC
 		USER, // personal key owned by a user: its permissions are a ceiling, intersected with the owner's current permissions
-		FEDERATED; // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
+		FEDERATED, // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
+		EXTERNAL; // a key handed to a party outside the organization: authenticates at the TEA token endpoint only, reads what the organization published on TEA, and nothing else
 
 		/**
 		 * Whether an id of this type must carry its key order ({@code __ord__<order>}) to name one key.

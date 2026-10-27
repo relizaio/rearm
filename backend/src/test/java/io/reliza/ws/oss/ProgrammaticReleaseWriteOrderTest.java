@@ -88,7 +88,7 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
-import io.reliza.model.tea.Link.ContentEnum;
+import io.reliza.model.Link.ContentEnum;
 import io.reliza.service.AgentIdentityService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;

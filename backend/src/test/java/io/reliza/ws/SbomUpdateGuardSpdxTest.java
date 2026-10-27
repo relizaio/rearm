@@ -26,7 +26,7 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.UserData;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.service.ArtifactServiceSpies;
 
 /**

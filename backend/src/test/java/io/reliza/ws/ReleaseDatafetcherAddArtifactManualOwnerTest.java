@@ -59,7 +59,7 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Link;
+import io.reliza.model.Link;
 import io.reliza.service.AgentIdentityService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;

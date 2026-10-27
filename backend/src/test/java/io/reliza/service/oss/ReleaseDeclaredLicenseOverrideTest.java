@@ -76,10 +76,11 @@ class ReleaseDeclaredLicenseOverrideTest {
 	void recordTheReconcile() {
 		reconciles.clear();
 		doAnswer(inv -> {
-			ReleaseData rd = inv.getArgument(0);
-			String committed = CompletableFuture.supplyAsync(() -> sharedReleaseService.getReleaseData(rd.getUuid())
+			// the routine takes the release uuid after the commit (TEA-14 decision 2)
+			UUID releaseUuid = inv.getArgument(0);
+			String committed = CompletableFuture.supplyAsync(() -> sharedReleaseService.getReleaseData(releaseUuid)
 					.orElseThrow().getLicenseExpression()).get(10, TimeUnit.SECONDS);
-			reconciles.add(new Reconcile(rd.getUuid(), committed));
+			reconciles.add(new Reconcile(releaseUuid, committed));
 			return null;
 		}).when(releaseService).reconcileMergedSbomRoutine(any(), any());
 	}

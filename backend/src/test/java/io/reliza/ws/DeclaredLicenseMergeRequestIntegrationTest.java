@@ -4,6 +4,7 @@
 package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -35,9 +36,9 @@ import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.OrganizationService;
 import io.reliza.service.RebomService.BomMediaType;
@@ -102,7 +103,7 @@ class DeclaredLicenseMergeRequestIntegrationTest extends SbomScoreGraphqlTestBas
 				org.getUuid(), WU, null);
 	}
 
-	private List<RebomOptions> mergeRequests(Organization org) {
+	private List<RebomOptions> mergeRequests(Organization org) throws Exception {
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
 		verify(rebomService, atLeastOnce()).mergeAndStoreBoms(anyList(), sent.capture(), eq(org.getUuid()));
 		return sent.getAllValues();
@@ -196,17 +197,25 @@ class DeclaredLicenseMergeRequestIntegrationTest extends SbomScoreGraphqlTestBas
 		assertEquals(1, mergeCount(), "the second export is served from the row");
 
 		ossReleaseService.updateRelease(ReleaseDto.builder().uuid(release).licenseExpression("MIT").build(), WU);
+		// TEA-14 decision 2: the reconcile after the commit also merges the changed release itself under the new
+		// facts. Whether the export below is then served from that row or merges once more depends on where the
+		// reconcile ran (on a pool thread it writes its row; this context's synchronous executor runs it inside the
+		// after-commit callback, where its row write does not commit), so the counts here are relative.
+		long beforeExport = mergeCount();
+		assertTrue(beforeExport >= 2, "the reconcile merged the release under the new facts: " + beforeExport);
 		export(release, org);
 
-		assertEquals(2, mergeCount(), "the row of the old facts no longer serves");
-		assertEquals(new ReleaseNodeFacts(orgName(org), null, "MIT", null), mergeRequests(org).get(1).releaseNode());
+		assertTrue(mergeCount() - beforeExport <= 1, "the row of the old facts no longer serves");
+		List<RebomOptions> requests = mergeRequests(org);
+		assertEquals(new ReleaseNodeFacts(orgName(org), null, "MIT", null), requests.get(requests.size() - 1).releaseNode());
+		long served = mergeCount();
 		List<ReleaseBom> rows = storedRows(release);
 		assertEquals(1, rows.size(), "one row for the request: " + rows);
 		assertEquals(ReleaseNodeFacts.key(new ReleaseNodeFacts(orgName(org), null, "MIT", null)),
 				rows.get(0).rebomMergeOptions().releaseNodeFactsKey());
 
 		export(release, org);
-		assertEquals(2, mergeCount(), "served again once the row matches");
+		assertEquals(served, mergeCount(), "served again once the row matches");
 		assertNull(rows.get(0).rebomMergeOptions().releaseNode(), "the facts themselves are never stored");
 	}
 }

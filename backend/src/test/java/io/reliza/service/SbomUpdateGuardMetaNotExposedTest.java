@@ -46,7 +46,7 @@ import io.reliza.model.ArtifactData.ArtifactVersionSnapshot;
 import io.reliza.model.SystemInfo;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.dto.ArtifactWebDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomMeta;
 
 /**

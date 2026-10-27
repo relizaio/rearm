@@ -1,0 +1,74 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://cyclonedx.github.io/transparency-exchange-api/discovery/tea-well-known.schema.json",
+  "title": "TEA .well-known discovery document",
+  "description": "JSON Schema for the TEA .well-known/tea discovery payload that lists available TEA API endpoints and supported versions.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schemaVersion", "endpoints"],
+  "properties": {
+    "schemaVersion": {
+      "type": "integer",
+      "const": 1,
+      "description": "Schema version for the TEA .well-known discovery document. Currently always 1."
+    },
+    "endpoints": {
+      "type": "array",
+      "description": "List of available TEA service endpoints and their supported versions.",
+      "minItems": 1,
+      "items": { "$ref": "#/definitions/endpoint" }
+    }
+  },
+  "definitions": {
+    "endpoint": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["url", "versions"],
+      "properties": {
+        "url": {
+          "type": "string",
+          "format": "uri",
+          "pattern": "^https?://[^/?#@]+(/[^?#\\s]*[^/?#\\s])?$",
+          "description": "Absolute API base URL of the TEA endpoint, without trailing slash. Shall not include userinfo, query, or fragment. The scheme match is lowercase only (normalized form). Conforming deployments use lowercase https; http is allowed only so local-test documents still validate."
+        },
+        "versions": {
+          "type": "array",
+          "description": "Supported TEA API versions for this endpoint. Select the highest mutually supported version and append /v followed by that exact string (no leading v in array values).",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "pattern": "^(0|[1-9]\\d*)\\.(0|[1-9]\\d*)\\.(0|[1-9]\\d*)(?:-((?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*)(?:\\.(?:0|[1-9]\\d*|\\d*[a-zA-Z-][0-9a-zA-Z-]*))*))?(?:\\+([0-9a-zA-Z-]+(?:\\.[0-9a-zA-Z-]+)*))?$",
+            "examples": [
+              "1.0.0"
+            ],
+            "description": "TEA OpenAPI Spec version identifier as full SemVer 2.0.0 (MAJOR.MINOR.PATCH with optional prerelease and build metadata; https://semver.org/)."
+          }
+        },
+        "priority": {
+          "type": "number",
+          "minimum": 0,
+          "maximum": 1,
+          "default": 1,
+          "description": "Optional priority for this endpoint. Higher values indicate higher priority. Range: 0 to 1. If omitted in the JSON response, clients shall treat the effective priority as 1 (JSON Schema default does not populate omitted fields)."
+        }
+      }
+    }
+  },
+  "examples": [
+    {
+      "schemaVersion": 1,
+      "endpoints": [
+        {
+          "url": "https://api.example.com",
+          "versions": ["1.0.0"],
+          "priority": 1
+        },
+        {
+          "url": "https://api2.example.com/mytea",
+          "versions": ["1.0.0"],
+          "priority": 0.5
+        }
+      ]
+    }
+  ]
+}

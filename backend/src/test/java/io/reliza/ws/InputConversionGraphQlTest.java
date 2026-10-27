@@ -136,7 +136,7 @@ public class InputConversionGraphQlTest extends InputConversionGraphQlTestBase {
 
 	/**
 	 * Row 3 case 10: unchanged, pinned -- an enum name the schema does not declare never reaches the
-	 * resolver. The DGS test executor wraps graphql-java's variable-coercion error in a TypedGraphQLError
+	 * resolver (a name no schema declares: TEA_PUBLISH is an EventType since TEA-7). The DGS test executor wraps graphql-java's variable-coercion error in a TypedGraphQLError
 	 * (getErrorType() BAD_REQUEST, extensions errorType BAD_REQUEST), so the ValidationError is read
 	 * from the classification it carries, as SbomScoreReleaseGraphqlIntegrationTest.isValidationError does.
 	 */
@@ -146,11 +146,11 @@ public class InputConversionGraphQlTest extends InputConversionGraphQlTestBase {
 		UUID vcs = vcs();
 		List<ReleaseOutputEvent> before = triggersOf(vcs);
 		ExecutionResult r = dgsQueryExecutor.execute(SET, map("vcs", vcs.toString(), "triggers",
-				List.of(map("name", "n", "type", "TEA_PUBLISH"))));
+				List.of(map("name", "n", "type", "NO_SUCH_EVENT_TYPE"))));
 		assertEquals(1, r.getErrors().size(), "one refusal: " + r.getErrors());
 		GraphQLError err = r.getErrors().get(0);
 		assertEquals("Variable 'triggers' has an invalid value: Invalid input for enum 'EventType'. "
-				+ "No value found for name 'TEA_PUBLISH'", err.getMessage());
+				+ "No value found for name 'NO_SUCH_EVENT_TYPE'", err.getMessage());
 		Map<String, Object> extensions = (Map<String, Object>) err.toSpecification().get("extensions");
 		assertEquals("ValidationError", extensions.get("classification"), String.valueOf(extensions));
 		assertEquals(before, triggersOf(vcs));

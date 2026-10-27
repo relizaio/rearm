@@ -1000,9 +1000,11 @@ public class AgentDocumentService {
 		Optional<UUID> legacy = boardDocumentComponentService.legacyComponentOf(board, spec);
 		if (legacy.isPresent()) {
 			if (boardLocked) {
+				// An adopted component joins the board's real perspectives, as a created one does (section 3.3);
+				// a join that would make it PUBLIC is refused first (task TEA-26). Nothing is logged for a
+				// refusal: the INFO line below is written once the join is, so "adopted" is true when it prints.
+				boardPerspectiveService.adoptDocumentComponent(board, spec, legacy.get(), wu);
 				log.info("Board {} adopted component {} for specification {}", board.getUuid(), legacy.get(), spec);
-				// An adopted component joins the board's real perspectives, as a created one does (§3.3).
-				boardPerspectiveService.joinDocumentComponent(board, legacy.get(), wu);
 				return record(board, spec, legacy.get(), wu);
 			}
 			return legacy.get();

@@ -4250,6 +4250,18 @@ public class AgentTaskService {
 		return asked.stream().map(found::get).filter(Objects::nonNull).toList();
 	}
 
+	/**
+	 * Tasks by uuid in one read, unordered, uncapped (task TPF-69): what a GraphQL batch loader reads for the
+	 * tasks one request already served. Not {@link #getTasksData(List)}, which refuses more than
+	 * {@link #TASKS_BY_UUID_MAX} and must not throw under a loader batch for a busy board.
+	 */
+	public List<AgentTaskData> listByUuids(java.util.Collection<UUID> uuids) {
+		if (null == uuids || uuids.isEmpty()) return List.of();
+		return StreamSupport.stream(repository.findAllById(uuids).spliterator(), false)
+				.map(AgentTaskData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
 	public List<AgentTaskData> listByBoard(UUID boardUuid, String status) {
 		if (boardUuid == null) return List.of();
 		Iterable<AgentTask> rows = StringUtils.isBlank(status)

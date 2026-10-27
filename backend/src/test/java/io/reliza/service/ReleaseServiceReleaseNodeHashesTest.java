@@ -34,10 +34,10 @@ import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.VariantData;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -92,7 +92,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 		when(rd.getOrg()).thenReturn(ORG);
 		when(rd.getComponent()).thenReturn(COMPONENT);
 		// a release consumes a deliverable that is never its own (run 1 item T-1)
-		deliverable(CONSUMED, record(TeaChecksumType.SHA_256, OTHER_256));
+		deliverable(CONSUMED, record(DigestAlgorithm.SHA_256, OTHER_256));
 		when(rd.getInboundDeliverables()).thenReturn(new ArrayList<>(List.of(CONSUMED)));
 		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.of(new VariantData()));
 	}
@@ -116,13 +116,13 @@ class ReleaseServiceReleaseNodeHashesTest {
 		return new ArrayList<>(List.of(new RearmIdentifier(RearmIdentifierType.PURL, value)));
 	}
 
-	private static DigestRecord record(TeaChecksumType algo, String digest) {
+	private static DigestRecord record(DigestAlgorithm algo, String digest) {
 		return new DigestRecord(algo, digest);
 	}
 
 	@Test
 	void oneDeliverableGivesItsRecordsInOrderUnderTheirCycloneDxNames() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -130,8 +130,8 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void theOrderIsTheRecordOrder() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_512, SHA_512), record(TeaChecksumType.SHA_1, SHA_1),
-				record(TeaChecksumType.SHA_256, SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_512, SHA_512), record(DigestAlgorithm.SHA_1, SHA_1),
+				record(DigestAlgorithm.SHA_256, SHA_256));
 		outbound(FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-512", SHA_512), new BomHash("SHA-1", SHA_1), new BomHash("SHA-256", SHA_256)),
@@ -140,7 +140,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void recordsOfAnotherScopeDoNotDescribeTheDeliverable() {
-		deliverable(FIRST, new DigestRecord(TeaChecksumType.SHA_256, SHA_256, DigestScope.REARM));
+		deliverable(FIRST, new DigestRecord(DigestAlgorithm.SHA_256, SHA_256, DigestScope.REARM));
 		outbound(FIRST);
 
 		assertEquals(List.of(), svc.releaseNodeHashes(rd));
@@ -148,10 +148,10 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void onlyOriginalFileRecordsAndRecordsWithoutAScopeCount() {
-		deliverable(FIRST, new DigestRecord(TeaChecksumType.SHA_256, OTHER_256, DigestScope.OCI_STORAGE),
-				new DigestRecord(TeaChecksumType.SHA_256, SHA_256, DigestScope.ORIGINAL_FILE),
-				new DigestRecord(TeaChecksumType.SHA_512, SHA_512, null),
-				new DigestRecord(TeaChecksumType.SHA_1, SHA_1, DigestScope.AS_UPLOADED));
+		deliverable(FIRST, new DigestRecord(DigestAlgorithm.SHA_256, OTHER_256, DigestScope.OCI_STORAGE),
+				new DigestRecord(DigestAlgorithm.SHA_256, SHA_256, DigestScope.ORIGINAL_FILE),
+				new DigestRecord(DigestAlgorithm.SHA_512, SHA_512, null),
+				new DigestRecord(DigestAlgorithm.SHA_1, SHA_1, DigestScope.AS_UPLOADED));
 		outbound(FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -159,8 +159,8 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void twoDeliverablesWithDigestsGiveNone() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
-		deliverable(SECOND, record(TeaChecksumType.SHA_256, OTHER_256), record(TeaChecksumType.SHA_1, SHA_1));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
+		deliverable(SECOND, record(DigestAlgorithm.SHA_256, OTHER_256), record(DigestAlgorithm.SHA_1, SHA_1));
 		outbound(FIRST, SECOND);
 
 		assertEquals(List.of(), svc.releaseNodeHashes(rd));
@@ -169,7 +169,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 	@Test
 	void aDeliverableWithoutRecordsDoesNotCountSoTheOtherOnesAreTaken() {
 		deliverable(FIRST);
-		deliverable(SECOND, record(TeaChecksumType.SHA_256, OTHER_256), record(TeaChecksumType.SHA_1, SHA_1));
+		deliverable(SECOND, record(DigestAlgorithm.SHA_256, OTHER_256), record(DigestAlgorithm.SHA_1, SHA_1));
 		outbound(FIRST, SECOND);
 
 		assertEquals(List.of(new BomHash("SHA-256", OTHER_256), new BomHash("SHA-1", SHA_1)), svc.releaseNodeHashes(rd));
@@ -178,8 +178,8 @@ class ReleaseServiceReleaseNodeHashesTest {
 	@Test
 	void aDeliverableWithoutSoftwareMetadataOrOnlyBlankDigestsDoesNotCount() {
 		when(getDeliverableService.getDeliverableData(FIRST)).thenReturn(Optional.of(new DeliverableData()));
-		deliverable(MISSING, record(TeaChecksumType.SHA_256, " "), record(TeaChecksumType.SHA_512, null));
-		deliverable(SECOND, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(MISSING, record(DigestAlgorithm.SHA_256, " "), record(DigestAlgorithm.SHA_512, null));
+		deliverable(SECOND, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(FIRST, MISSING, SECOND);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -200,7 +200,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aShippedAndAConsumedDeliverableGiveTheShippedOnesDigestsOnly() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -208,7 +208,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aReleaseWithoutABaseVariantGetsNone() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256));
 		when(variantService.findBaseVariantForRelease(RELEASE)).thenReturn(Optional.empty());
 
 		assertEquals(List.of(), svc.releaseNodeHashes(rd));
@@ -218,7 +218,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aJarReleaseWithAnImageDeliverableGetsNone() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
 		outbound(FIRST);
 		when(rd.getIdentifiers()).thenReturn(purl("pkg:maven/g/a@1?type=jar"));
 
@@ -227,7 +227,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void anImageReleaseWithAnImageDeliverableGetsItsDigests() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
 		outbound(FIRST);
 		when(rd.getIdentifiers()).thenReturn(purl("pkg:oci/a?tag=1.0.0"));
 
@@ -236,7 +236,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aReleaseWithoutAPurlTakesTheDeliverablesDigests() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256)).setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
 		outbound(FIRST);
 		when(rd.getIdentifiers()).thenReturn(new ArrayList<>());
 
@@ -245,7 +245,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aDeliverableWithoutAPurlGivesItsDigestsToAReleaseWithOne() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256));
 		outbound(FIRST);
 		when(rd.getIdentifiers()).thenReturn(purl("pkg:maven/g/a@1?type=jar"));
 
@@ -254,7 +254,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void anUnparsablePurlOnEitherSideKeepsTheDigests() {
-		DeliverableData dd = deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256));
+		DeliverableData dd = deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256));
 		dd.setIdentifiers(purl("pkg:oci/a@sha256%3A" + SHA_256));
 		outbound(FIRST);
 		when(rd.getIdentifiers()).thenReturn(purl("not a purl"));
@@ -268,7 +268,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 	@Test
 	void aDeliverableThatDoesNotResolveIsSkipped() {
 		when(getDeliverableService.getDeliverableData(MISSING)).thenReturn(Optional.empty());
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(MISSING, FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -276,7 +276,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void theSameDeliverableListedTwiceIsOneDeliverable() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(FIRST, FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -284,8 +284,8 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void aRepeatedAlgorithmKeepsTheFirstRecord() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512),
-				record(TeaChecksumType.SHA_256, OTHER_256));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512),
+				record(DigestAlgorithm.SHA_256, OTHER_256));
 		outbound(FIRST);
 
 		assertEquals(List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), svc.releaseNodeHashes(rd));
@@ -295,7 +295,7 @@ class ReleaseServiceReleaseNodeHashesTest {
 
 	@Test
 	void theFactsNameTheOrganizationAndCarryTheHashes() {
-		deliverable(FIRST, record(TeaChecksumType.SHA_256, SHA_256), record(TeaChecksumType.SHA_512, SHA_512));
+		deliverable(FIRST, record(DigestAlgorithm.SHA_256, SHA_256), record(DigestAlgorithm.SHA_512, SHA_512));
 		outbound(FIRST);
 
 		assertEquals(new ReleaseNodeFacts("Example Org", List.of(new BomHash("SHA-256", SHA_256), new BomHash("SHA-512", SHA_512)), null, null),

@@ -24,9 +24,10 @@ import com.sun.net.httpserver.HttpServer;
 
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomMode;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomStructureType;
 import tools.jackson.databind.JsonNode;
 
@@ -100,6 +101,17 @@ class RebomServiceMergeMissingSbomTest {
 	void aMergeWithoutTheListSendsNoSuchKey() throws Exception {
 		service.mergeAndStoreBoms(IDS, merge(), ORG);
 
+		assertFalse(sentOptions().has("missingSbomComponents"), sentOptions().toString());
+	}
+
+	// TEA-15 (4.1 case 11): the missing-SBOM mode and the facts key belong to the stored row only
+	@Test
+	void theModeNeverTravelsInTheMergeRequest() throws Exception {
+		service.mergeAndStoreBoms(IDS, merge().withReleaseNodeFactsKey("0".repeat(64))
+				.withMissingSbomMode(MissingSbomMode.OMIT), ORG);
+
+		assertFalse(sentOptions().has("missingSbomMode"), sentOptions().toString());
+		assertFalse(sentOptions().has("releaseNodeFactsKey"), sentOptions().toString());
 		assertFalse(sentOptions().has("missingSbomComponents"), sentOptions().toString());
 	}
 }

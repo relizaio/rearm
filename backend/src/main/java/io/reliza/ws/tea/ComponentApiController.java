@@ -3,95 +3,81 @@
 */
 package io.reliza.ws.tea;
 
+import java.util.List;
+import java.util.Optional;
 import java.util.UUID;
-
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.RequestMapping;
-
-import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.tea.TeaCle;
-import io.reliza.model.tea.TeaComponent;
-import io.reliza.model.tea.TeaRelease;
-import io.reliza.service.GetComponentService;
-import io.reliza.service.SharedReleaseService;
-import io.reliza.service.UserService;
-import io.reliza.service.tea.TeaTransformerService;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
-
 import org.springframework.web.context.request.NativeWebRequest;
 
-import java.util.List;
-import java.util.Optional;
-import jakarta.annotation.Generated;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.tea.TeaCle;
+import io.reliza.model.tea.TeaComponent;
+import io.reliza.model.tea.TeaComponentRelease;
+import io.reliza.model.tea.TeaPaginatedComponentReleaseResponse;
+import io.reliza.service.tea.TeaSurfaceService;
+import io.reliza.service.tea.TeaSurfaceService.Head;
+import io.reliza.service.tea.TeaSurfaceService.TeaObject;
+import io.reliza.service.tea.TeaTransformerService;
+import io.reliza.ws.tea.TeaRequests.Page;
+import io.reliza.ws.tea.TeaRequests.TeaRequestContext;
+import lombok.extern.slf4j.Slf4j;
 
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+/** A TEA component, its releases and its CLE (task TEA-6), from published releases only. */
+@Slf4j
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
+@RequestMapping(TeaPaths.ORG_BASE)
 public class ComponentApiController implements ComponentApi {
 
+	@Autowired private TeaRequests teaRequests;
+	@Autowired private TeaSurfaceService teaSurfaceService;
+	@Autowired private TeaTransformerService teaTransformerService;
+	@Autowired private TeaRendering teaRendering;
+
+	private final NativeWebRequest request;
+
 	@Autowired
-	private GetComponentService getComponentService;
-	
-	@Autowired
-	private TeaTransformerService teaTransformerService;
-	
-	@Autowired
-	private SharedReleaseService sharedReleaseService;
-	
-    private final NativeWebRequest request;
+	public ComponentApiController(NativeWebRequest request) {
+		this.request = request;
+	}
 
-    @Autowired
-    public ComponentApiController(NativeWebRequest request) {
-        this.request = request;
-    }
+	@Override
+	public Optional<NativeWebRequest> getRequest() {
+		return Optional.ofNullable(request);
+	}
 
-    @Override
-    public Optional<NativeWebRequest> getRequest() {
-        return Optional.ofNullable(request);
-    }
-    
-    
-    @Override
-    public ResponseEntity<List<TeaRelease>> getReleasesByComponentId(
-            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-        ) {
-    		var ocd = getComponentService.getComponentData(uuid);
-    		if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
-	        	return ResponseEntity.notFound().build();
-	        } else {
-	    		var releases = sharedReleaseService.listReleaseDatasOfComponent(uuid, 300, 0); // TODO - TEA - pagination
-	    		var teaReleases = releases.stream().map(rd -> teaTransformerService.transformReleaseToTea(rd)).toList();
-	    		return ResponseEntity.ok(teaReleases);
-	        }
+	@Override
+	public ResponseEntity<TeaComponent> getComponent(UUID uuid) {
+		TeaRequestContext ctx = teaRequests.context(request);
+		TeaObject o = TeaRendering.served(teaSurfaceService.component(ctx.caller(), ctx.org(), uuid));
+		log.debug("TEA component of organization {}: caller {}", ctx.org().org(), ctx.caller().state());
+		return ResponseEntity.ok().headers(TeaResponses.headersFor(ctx)).body(teaTransformerService.transformComponentToTea(o.component()));
+	}
 
-        }
-    
-    @Override
-    public ResponseEntity<TeaComponent> getTeaComponentById(
-            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-        ) {
-	        var ocd = getComponentService.getComponentData(uuid);
-	        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
-	        	return ResponseEntity.notFound().build();
-	        } else {
-	        	TeaComponent tc = teaTransformerService.transformComponentToTea(ocd.get());
-	        	return ResponseEntity.ok(tc);
-	        }
-        }
+	@Override
+	public ResponseEntity<TeaPaginatedComponentReleaseResponse> listComponentReleases(UUID uuid, Long pageSize,
+			String pageToken, String sortField, String sortOrder) {
+		TeaRequestContext ctx = teaRequests.context(request);
+		TeaRendering.refuseInvalidToken(ctx);
+		Page page = TeaRequests.page(pageSize, pageToken, sortField, ProductApiController.RELEASE_SORT_FIELDS, sortOrder);
+		TeaObject o = TeaRendering.served(teaSurfaceService.component(ctx.caller(), ctx.org(), uuid));
+		List<Head> heads = TeaRendering.served(teaSurfaceService.visibleHeadsOfComponent(ctx.caller(), ctx.org(), o.component().getUuid()));
+		List<TeaComponentRelease> results = heads.stream().map(teaRendering::componentRelease).toList();
+		TeaSurfaceService.warnIfLarge(ctx.org(), "/component/{uuid}/releases", results.size());
+		log.debug("TEA component releases of organization {}: caller {}, {} results", ctx.org().org(), ctx.caller().state(), results.size());
+		return ResponseEntity.ok().headers(TeaResponses.headersFor(ctx))
+				.body(new TeaPaginatedComponentReleaseResponse(false, ComponentReleasesApiController.sortReleases(results, page)));
+	}
 
-    @Override
-    public ResponseEntity<TeaCle> getCleByComponentId(
-            @Parameter(name = "uuid", description = "UUID of TEA Component in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-        ) {
-        var ocd = getComponentService.getComponentData(uuid);
-        if (ocd.isEmpty() || ocd.get().getType() != ComponentType.COMPONENT || !UserService.USER_ORG.equals(ocd.get().getOrg())) {
-            return ResponseEntity.notFound().build();
-        }
-        return ResponseEntity.ok(teaTransformerService.transformComponentToCle(ocd.get()));
-    }
+	@Override
+	public ResponseEntity<TeaCle> getComponentCle(UUID uuid) {
+		TeaRequestContext ctx = teaRequests.context(request);
+		TeaObject o = TeaRendering.served(teaSurfaceService.component(ctx.caller(), ctx.org(), uuid));
+		List<ReleaseData> releases = o.servedHeads().stream().map(Head::release).toList();
+		return ResponseEntity.ok().headers(TeaResponses.headersFor(ctx))
+				.body(teaTransformerService.transformComponentOrProductToCle(o.component(), releases));
+	}
 }

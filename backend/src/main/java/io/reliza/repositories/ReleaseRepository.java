@@ -147,6 +147,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	List<Release> findReleasesHoldingArtifact(@Param("artUuidAsString") String artUuidAsString);
 
 	@Query(
+			value = VariableQueries.FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG,
+			nativeQuery = true)
+	List<Release> findReleasesBySyntheticArtifact(String artifactUuidAsString, String orgUuidAsString);
+
+	@Query(
 			value = VariableQueries.FIND_PENDING_RELEASES_AFTER_CUTOFF,
 			nativeQuery = true)
 	List<Release> findPendingReleasesAfterCutoff(String lifecycle, String cutOffDate, int limit);
@@ -313,6 +318,22 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Query(value = VariableQueries.IS_RELEASE_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE, nativeQuery = true)
 	boolean isEligibleForMetricsComputeByUpdate(UUID uuid);
 
+	/**
+	 * TPF-68: of the given releases, those a stuck product may nudge: no firstScanned, not fenced,
+	 * and SETTLED (outside the BY_UPDATE pool: last_updated_date at or before metrics.lastScanned).
+	 * The pool and fence conditions are the negation of METRICS_COMPUTE_BY_UPDATE_ELIGIBLE's first
+	 * conjunct and its second conjunct verbatim; keep them spelled as there.
+	 */
+	@Query(value = "SELECT uuid FROM rearm.releases "
+			+ "WHERE uuid IN (:uuids) "
+			+ "AND metrics->>'firstScanned' IS NULL "
+			+ "AND metrics->>'lastScanned' IS NOT NULL "
+			+ "AND last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
+			+ "AND (flow_control->>'metricsComputeSkipUntil' IS NULL "
+			+ "     OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())",
+			nativeQuery = true)
+	List<UUID> findSettledUnscannedAmong(@Param("uuids") Collection<UUID> uuids);
+
 	
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,
@@ -457,6 +478,27 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Modifying
 	@Query(value = "UPDATE rearm.releases SET approval_events = CAST(:approvalEvents AS jsonb) WHERE uuid = :uuid", nativeQuery = true)
 	void updateApprovalEvents(@Param("uuid") UUID uuid, @Param("approvalEvents") String approvalEvents);
+
+	/**
+	 * Append trigger and guard events to update_events in place: no revision, no last_updated_date
+	 * (on releases that column is the BY_UPDATE metrics-queue signal), no who-updated keys and no
+	 * audit row -- the event is the record, and the audit copy of record_data would be identical to
+	 * the previous one (TPF-71 / TPF-106). The column is normalised to an array first (SQL NULL, JSON
+	 * null or any non-array value becomes []), so the append cannot nest a non-array into a new
+	 * array. Appends at the end: the write-order contract of ReleaseData.updateEvents holds.
+	 *
+	 * @param events a JSON array of one or more events in the shape saveRelease stores
+	 *               (ReleaseData.updateEventsJson)
+	 * @return the rows updated: 1, or 0 when no row has this uuid
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.releases SET update_events = "
+			+ "(CASE WHEN jsonb_typeof(update_events) = 'array' THEN update_events ELSE cast('[]' as jsonb) END) "
+			+ "|| cast(:events as jsonb) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int appendUpdateEvents(@Param("uuid") UUID uuid, @Param("events") String events);
+
 	@Query(
 			value = VariableQueries.LIST_RELEASE_UUIDS_BY_COMPONENTS,
 			nativeQuery = true)
@@ -554,10 +596,13 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 
 	/**
 	 * Drop the metrics-compute backoff fence. Called when a compute finishes
-	 * complete (fresh start for any future wait) and eagerly on containing
-	 * product releases when a child's firstScanned lands, so the parent is
-	 * re-derived on the next tick instead of waiting out its backoff. The
-	 * WHERE guard makes the common no-fence case a no-op.
+	 * complete (fresh start for any future wait) and when a release is settled
+	 * as not scannable. Containing products are not cleared here: a child's
+	 * metrics change re-queues them with {@link #touchForMetricsRecompute}
+	 * (ReleaseMetricsComputeService.markContainingProductsStale), which drops
+	 * the fence too, and a product at the backoff cap re-queues its settled
+	 * unscanned children the same way (TPF-68). The WHERE guard makes the
+	 * common no-fence case a no-op.
 	 */
 	@Transactional
 	@Modifying
@@ -856,6 +901,120 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "    true) "
 			+ "WHERE uuid = :uuid", nativeQuery = true)
 	void recordAutoIntegrateFailure(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
+
+	// ---------------------------------------------------------------------
+	// TEA act queue (task TEA-7) -- the auto-integrate shape above, line for
+	// line, for the TEA_PUBLISH and TEA_HIDE output events: the trigger engine
+	// records a request inside its pass, and TeaOutputEventService runs it after
+	// the pass commits on the bounded teaActExecutor, with the per-minute drain
+	// picking up what the hop missed. One pending act per release. The finder
+	// is served by the partial index releases_tea_act_requested (V97).
+	// ---------------------------------------------------------------------
+
+	/**
+	 * Records (or supersedes) the release's pending TEA act; answers the rows written (1, or 0
+	 * when declined). Always re-stamps {@code teaActRequestedAt}, so a request arriving while a
+	 * worker holds the claim is newer than the claim and survives that worker's
+	 * {@link #clearTeaActRequested} (lost-wakeup guard). Overwrites the kind, the trigger, its
+	 * name and the comment of a pending request, claimed or not: the later request reflects the
+	 * later state of the release -- except that a PUBLISH never overwrites a pending HIDE (it
+	 * updates nothing and answers 0), and a HIDE that supersedes a pending request also drops the
+	 * fence and the failure count a fenced publish left, so the hide runs at the next claim
+	 * (task TEA-7, round 2, T-2: on the row, the resolution that does not expose wins). Never
+	 * touches the claim. Runs inside the trigger pass's transaction, so a pass that rolls back
+	 * takes its request with it; a second pass waits on the row lock and re-evaluates the
+	 * predicate on the committed row. The stamp is clock_timestamp(), not now(): now() is the
+	 * pass's transaction start, which can precede a claim taken while the pass was still running,
+	 * and the clear would then take a request written after the claim for one the worker had
+	 * already seen.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = (CASE WHEN CAST(:kind AS text) = 'HIDE' "
+			+ "                         THEN coalesce(flow_control, '{}'::jsonb) - 'teaActSkipUntil' - 'teaActFailureCount' "
+			+ "                         ELSE coalesce(flow_control, '{}'::jsonb) END) "
+			+ "    || jsonb_build_object('teaActRequestedAt', clock_timestamp(), 'teaActKind', CAST(:kind AS text), "
+			+ "                          'teaActTrigger', CAST(:trigger AS text), 'teaActTriggerName', CAST(:name AS text), "
+			+ "                          'teaActComment', CAST(:comment AS text)) "
+			+ "WHERE uuid = :uuid "
+			+ "AND NOT (CAST(:kind AS text) = 'PUBLISH' "
+			+ "         AND (flow_control->>'teaActRequestedAt') IS NOT NULL "
+			+ "         AND coalesce(flow_control->>'teaActKind', '') = 'HIDE')", nativeQuery = true)
+	int requestTeaAct(@Param("uuid") UUID uuid, @Param("kind") String kind, @Param("trigger") String trigger,
+			@Param("name") String name, @Param("comment") String comment);
+
+	/**
+	 * Atomic claim of a queued TEA act: stamps {@code teaActClaimedAt} iff the release is queued,
+	 * not fenced by a retry backoff, and not leased by a live worker; answers 1 when claimed, 0
+	 * otherwise, so the after-commit hop and the drain (on any instance) never run one request
+	 * twice. A worker that dies mid-act leaves a claim that expires after {@code leaseSeconds}.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set(flow_control, '{teaActClaimedAt}', to_jsonb(now()), true) "
+			+ "WHERE uuid = :uuid AND (flow_control->>'teaActRequestedAt') IS NOT NULL "
+			+ "AND ((flow_control->>'teaActSkipUntil') IS NULL "
+			+ "     OR (flow_control->>'teaActSkipUntil')::timestamptz < now()) "
+			+ "AND ((flow_control->>'teaActClaimedAt') IS NULL "
+			+ "     OR (flow_control->>'teaActClaimedAt')::timestamptz "
+			+ "         + (:leaseSeconds || ' seconds')::interval < now())", nativeQuery = true)
+	int claimTeaAct(@Param("uuid") UUID uuid, @Param("leaseSeconds") int leaseSeconds);
+
+	/**
+	 * Releases with a TEA act the claim would take now, oldest request first. UUIDs only (heap
+	 * guard). The claim's predicate, so the drain never hands out work the claim refuses.
+	 */
+	@Query(value = "SELECT uuid FROM rearm.releases r "
+			+ "WHERE r.flow_control->>'teaActRequestedAt' IS NOT NULL "
+			+ "AND (r.flow_control->>'teaActSkipUntil' IS NULL "
+			+ "     OR (r.flow_control->>'teaActSkipUntil')::timestamptz < now()) "
+			+ "AND (r.flow_control->>'teaActClaimedAt' IS NULL "
+			+ "     OR (r.flow_control->>'teaActClaimedAt')::timestamptz "
+			+ "         + (:leaseSeconds || ' seconds')::interval < now()) "
+			+ "ORDER BY (r.flow_control->>'teaActRequestedAt')::timestamptz ASC "
+			+ "LIMIT :batchLimit", nativeQuery = true)
+	List<UUID> findUuidsOfReleasesPendingTeaAct(@Param("batchLimit") int batchLimit,
+			@Param("leaseSeconds") int leaseSeconds);
+
+	/**
+	 * Ends a TEA act: drops every teaAct key -- UNLESS a request arrived after this run's claim
+	 * (requestedAt > claimedAt): then the request, its kind, trigger and comment stay queued and
+	 * only the claim and the fence go, so the drain runs it again (lost-wakeup guard of
+	 * {@link #clearAutoIntegrateRequested}). Answers no row change when nothing is queued.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = NULLIF("
+			+ "    CASE WHEN (flow_control->>'teaActRequestedAt')::timestamptz > (flow_control->>'teaActClaimedAt')::timestamptz "
+			+ "         THEN flow_control - 'teaActSkipUntil' - 'teaActFailureCount' - 'teaActClaimedAt' "
+			+ "         ELSE flow_control - 'teaActRequestedAt' - 'teaActKind' - 'teaActTrigger' - 'teaActTriggerName' "
+			+ "                           - 'teaActComment' - 'teaActSkipUntil' - 'teaActFailureCount' - 'teaActClaimedAt' "
+			+ "    END, "
+			+ "    '{}'::jsonb) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void clearTeaActRequested(@Param("uuid") UUID uuid);
+
+	/**
+	 * A TEA act to be retried: the failure count plus one, the fence {@code skipSeconds} out, the
+	 * claim released; the request stays queued. The curve lives in
+	 * {@link io.reliza.util.BackoffPolicy#teaActRetrySeconds}.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases "
+			+ "SET flow_control = jsonb_set("
+			+ "    jsonb_set(coalesce(flow_control, '{}'::jsonb) - 'teaActClaimedAt', "
+			+ "              '{teaActFailureCount}', "
+			+ "              to_jsonb(coalesce((flow_control->>'teaActFailureCount')::int, 0) + 1), "
+			+ "              true), "
+			+ "    '{teaActSkipUntil}', "
+			+ "    to_jsonb((now() + (:skipSeconds || ' seconds')::interval)::text), "
+			+ "    true) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	void recordTeaActRetry(@Param("uuid") UUID uuid, @Param("skipSeconds") int skipSeconds);
 
 	/**
 	 * Stamp {@code sbom_schema_version} after a successful reconcile so the

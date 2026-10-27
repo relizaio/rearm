@@ -70,7 +70,7 @@ import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.BranchData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaData;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import lombok.extern.slf4j.Slf4j;
 
 
@@ -243,6 +243,22 @@ public class Utils {
 		return recordData;
 	}
 	
+	/**
+	 * The record with the row's stored TEA id in place of whatever the caller's copy carried
+	 * (TEA-5 round 4, T-10 point 4): a whole-record save is never a writer of that key, so it
+	 * cannot erase a mint that committed after the caller's read, nor introduce an id. A row
+	 * without an id leaves the key out. Used by the component, organization and artifact funnels.
+	 */
+	public static Map<String, Object> withStoredTeaUuid(Map<String, Object> recordData, Optional<String> stored) {
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		if (stored.isPresent()) {
+			out.put(CommonVariables.TEA_UUID_FIELD, stored.get());
+		} else {
+			out.remove(CommonVariables.TEA_UUID_FIELD);
+		}
+		return out;
+	}
+
 	public static LocalDateTime convertZonedDateTimeToLocalUtc (ZonedDateTime zdt) {
 		ZonedDateTime zdtUtc = zdt.withZoneSameInstant(UTC_ZONE_ID);
 		return zdtUtc.toLocalDateTime();
@@ -417,7 +433,7 @@ public class Utils {
 				String digestTypeString = digestParts[0];
 				String digestValue = digestParts[1];
 				
-				TeaChecksumType checksumType = parseDigestType(digestTypeString);
+				DigestAlgorithm checksumType = parseDigestType(digestTypeString);
 				if (null != checksumType) {
 					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, scope));
 				}
@@ -478,7 +494,7 @@ public class Utils {
 	   * @param digestTypeString the digest type string to parse
 	   * @return the corresponding TeaArtifactChecksumType, or null if not supported
 	   */
-	  public static TeaChecksumType parseDigestType(String digestTypeString) {
+	  public static DigestAlgorithm parseDigestType(String digestTypeString) {
 	    if (digestTypeString == null || digestTypeString.trim().isEmpty()) {
 	      return null;
 	    }
@@ -487,35 +503,35 @@ public class Utils {
 	    
 	    switch (upperCaseType) {
 	      case "MD5":
-	        return TeaChecksumType.MD5;
+	        return DigestAlgorithm.MD5;
 	      case "SHA1":
-	        return TeaChecksumType.SHA_1;
+	        return DigestAlgorithm.SHA_1;
 	      case "SHA256":
-	        return TeaChecksumType.SHA_256;
+	        return DigestAlgorithm.SHA_256;
 	      case "SHA384":
-	        return TeaChecksumType.SHA_384;
+	        return DigestAlgorithm.SHA_384;
 	      case "SHA512":
-	        return TeaChecksumType.SHA_512;
+	        return DigestAlgorithm.SHA_512;
 	      case "SHA3256":
 	      case "SHA3_256":
-	        return TeaChecksumType.SHA3_256;
+	        return DigestAlgorithm.SHA3_256;
 	      case "SHA3384":
 	      case "SHA3_384":
-	        return TeaChecksumType.SHA3_384;
+	        return DigestAlgorithm.SHA3_384;
 	      case "SHA3512":
 	      case "SHA3_512":
-	        return TeaChecksumType.SHA3_512;
+	        return DigestAlgorithm.SHA3_512;
 	      case "BLAKE2B256":
 	      case "BLAKE2B_256":
-	        return TeaChecksumType.BLAKE2B_256;
+	        return DigestAlgorithm.BLAKE2B_256;
 	      case "BLAKE2B384":
 	      case "BLAKE2B_384":
-	        return TeaChecksumType.BLAKE2B_384;
+	        return DigestAlgorithm.BLAKE2B_384;
 	      case "BLAKE2B512":
 	      case "BLAKE2B_512":
-	        return TeaChecksumType.BLAKE2B_512;
+	        return DigestAlgorithm.BLAKE2B_512;
 	      case "BLAKE3":
-	        return TeaChecksumType.BLAKE3;
+	        return DigestAlgorithm.BLAKE3;
 	      default:
 	        return null; // Unsupported digest type
 	    }
@@ -1173,7 +1189,23 @@ public class Utils {
 		}
 		return diffResults;
 	}
-	
+
+	/**
+	 * Refuses a list of uuids that carries one twice: "{what} uuid {uuid} appears more than once
+	 * on this {where}", naming the first repeat. Nulls are not counted; callers mint them first.
+	 * The rule engine resolves an action or a rule by its uuid, so a repeated uuid would make it
+	 * pick one entry by list order (task TEA-7, round 3, T-5).
+	 */
+	public static void requireDistinctUuids (Collection<UUID> ids, String what, String where) throws RelizaException {
+		if (null == ids) return;
+		Set<UUID> seen = new HashSet<>();
+		for (UUID id : ids) {
+			if (null != id && !seen.add(id)) {
+				throw new RelizaException(what + " uuid " + id + " appears more than once on this " + where);
+			}
+		}
+	}
+
 	public static PackageURL setVersionOnPurl (PackageURL origPurl, String version) throws RelizaException {
 		try {
 			var purlBuilder = PackageURLBuilder.aPackageURL()
@@ -1199,6 +1231,8 @@ public class Utils {
 		RELEASE,
 		SCE,
 		AGENT_SESSION,
+		/** A BOM ReARM generated itself; never a merge source, never inventory. */
+		SYNTHETIC,
 	}
 	public static enum StripBom {
 		TRUE,

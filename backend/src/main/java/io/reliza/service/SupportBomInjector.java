@@ -38,6 +38,7 @@ import io.reliza.model.SupportMilestoneType;
 import io.reliza.model.SupportParty;
 import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
+import lombok.extern.slf4j.Slf4j;
 
 /**
  * Pure, DB-free injector that weaves per-component support disclosure into a CycloneDX BOM
@@ -90,6 +91,7 @@ import io.reliza.model.SupportStatus;
  * carries a reserved property in the first place, is board task
  * {@code t20260905-155742-30573}; until then these sweeps are the only control.
  */
+@Slf4j
 public final class SupportBomInjector {
 
 	private SupportBomInjector() {}
@@ -124,9 +126,27 @@ public final class SupportBomInjector {
 	/**
 	 * How many component nodes of a disclosed document were identified but carry no support
 	 * statement, because nobody assessed them (or the attestation was withdrawn). Same stamping
-	 * rule as {@link #PROP_UNIDENTIFIED}.
+	 * rule as {@link #PROP_UNIDENTIFIED}. A node marked {@link #PROP_SELF} is not counted here
+	 * (SCORE-58 ADR-8).
 	 */
 	static final String PROP_UNASSESSED = "reliza:support:unassessedComponents";
+	/**
+	 * The organization's own entry: written, value {@code true}, on a component node that is the
+	 * organization's own release or artifact rather than a third-party dependency (SCORE-58
+	 * ADR-3, built as SCORE-60). The fda support checks of {@code rearm bomutils score} do not
+	 * judge such a node. In the reserved {@code reliza:support:} namespace, so
+	 * {@link #stripReservedEverywhere} removes every copy an upload carried before the injector
+	 * writes its own, and {@link #DISCLOSURE_PREFIXES} keeps it through the internal strip; it
+	 * rides the support disclosure switch. Not {@link #PROP_PARTY}: that is a stored attestation
+	 * fact, never derived from {@code isRoot}.
+	 */
+	static final String PROP_SELF = "reliza:support:selfComponent";
+	/**
+	 * How many component nodes of a disclosed document carry {@link #PROP_SELF} (SCORE-58
+	 * ADR-8). Same stamping rule as {@link #PROP_UNIDENTIFIED}; a self node is in neither other
+	 * count.
+	 */
+	static final String PROP_SELF_COUNT = "reliza:support:selfComponents";
 	/**
 	 * The marker for a document we swept but did not inject into. A distinct value because
 	 * the two say different things and a reader acts on the difference: CURRENT_STATE means
@@ -196,6 +216,22 @@ public final class SupportBomInjector {
 	 */
 	static final String DROPPED_LICENSE_PROPERTY = "reliza:license:dropped";
 	/**
+	 * rebom's record on the root of a merged release BOM of an uploaded root that described the
+	 * release itself and was folded into it (SCORE-57, design ADR-5): one entry per folded root,
+	 * the value that root's bom-ref.
+	 */
+	static final String FOLDED_ROOT_PROPERTY = "reliza:export:foldedRoot";
+	/**
+	 * rebom's stamp, value {@code true}, on the {@code metadata.component} of every merged
+	 * release BOM it builds; it travels into a product export on each component release's root
+	 * (SCORE-58 ADR-5, built as SCORE-60). The injector reads it to decide {@link #PROP_SELF}
+	 * for a node it holds no row for. Internal, so deliberately NOT in
+	 * {@link #DOCUMENT_RECORD_PROPERTIES}: the internal strip removes it, a reader needs the
+	 * marker, not the stamp. rebom removes it from every document it did not merge (SCORE-60
+	 * ADR-9), so a copy reaching here is rebom's own.
+	 */
+	static final String RELEASE_NODE_PROPERTY = "reliza:export:releaseNode";
+	/**
 	 * rebom's record on a merged product BOM of how many components carry
 	 * {@link #SBOM_MISSING_PROPERTY} (SCORE-15, design ADR-3): written at merge time into
 	 * {@code metadata.properties}, only when there is one.
@@ -248,6 +284,11 @@ public final class SupportBomInjector {
 	 * listed licence expression on that node (SCORE-44 ADR-5): without it a reader cannot tell
 	 * why the node's licence differs from the consumer's SBOM. It sits on components too.
 	 *
+	 * <p>{@link #FOLDED_ROOT_PROPERTY} is here because it is the record that the release node took
+	 * its description, supplier and licence from an uploaded root folded into it (SCORE-57 ADR-5):
+	 * without it a reader cannot tell where those fields came from. It sits on
+	 * {@code metadata.component}, and on that node's copy in a product above it.
+	 *
 	 * <p>{@link #SIGNED_PROPERTY}, {@link #UNSIGNED_REASON_PROPERTY} and
 	 * {@link #SIGNATURE_KEY_ID_PROPERTY} are here because they say whether the served document is
 	 * signed, by which key, or why not (SCORE-33 section 3.5): stripping them would leave a reader
@@ -255,7 +296,8 @@ public final class SupportBomInjector {
 	 */
 	private static final Set<String> DOCUMENT_RECORD_PROPERTIES = Set.of(FILE_COMPONENTS_EXCLUDED_PROPERTY,
 			DANGLING_REFS_DROPPED_PROPERTY, SBOM_MISSING_PROPERTY, COMPONENTS_WITHOUT_SBOM_PROPERTY,
-			DROPPED_LICENSE_PROPERTY, SIGNED_PROPERTY, UNSIGNED_REASON_PROPERTY, SIGNATURE_KEY_ID_PROPERTY);
+			DROPPED_LICENSE_PROPERTY, FOLDED_ROOT_PROPERTY, SIGNED_PROPERTY, UNSIGNED_REASON_PROPERTY,
+			SIGNATURE_KEY_ID_PROPERTY);
 	/**
 	 * The document-level attestation block (CycloneDX 1.6+), server-owned exactly like the
 	 * reliza namespaces above -- and NOT reachable by the property sweep, which walks property
@@ -594,19 +636,24 @@ public final class SupportBomInjector {
 	}
 
 	/**
-	 * The two count properties of a disclosed document (SCORE-12 ADR-7), written once each, also
-	 * when 0. The walk is the one {@link #collectKeys} makes, and it counts component NODES, not
-	 * distinct keys: two nodes with the same purl count twice, as they do in a score's total.
-	 * "Assessed" means {@link #applyToComponent} writes a support statement on the node, so the
-	 * counts explain exactly the nodes that carry none.
+	 * The three count properties of a disclosed document (SCORE-12 ADR-7, SCORE-58 ADR-8),
+	 * written once each, also when 0. The walk is the one {@link #collectKeys} makes, and it
+	 * counts component NODES, not distinct keys: two nodes with the same purl count twice, as
+	 * they do in a score's total. "Assessed" means {@link #applyToComponent} writes a support
+	 * statement on the node. A node carrying {@link #PROP_SELF} (written by this inject call:
+	 * the sweep removed every other copy) is counted self and in neither other count, so
+	 * {@code unidentified + unassessed + self + (keyed non-self nodes with a statement) = nodes}.
 	 */
 	private static void stampComponentCounts(ObjectNode bom, ArrayNode metaProps,
 			Map<String, ComponentSupportFacts> factsByKey) {
 		int unidentified = 0;
 		int unassessed = 0;
+		int self = 0;
 		for (ObjectNode component : collectComponentNodes(bom)) {
 			String key = componentKey(component);
-			if (key == null) {
+			if (carriesProperty(component, PROP_SELF, "true")) {
+				self++;
+			} else if (key == null) {
 				unidentified++;
 			} else if (emittableSupport(factsByKey.get(key)) == null) {
 				unassessed++;
@@ -614,6 +661,7 @@ public final class SupportBomInjector {
 		}
 		addProperty(metaProps, PROP_UNIDENTIFIED, Integer.toString(unidentified));
 		addProperty(metaProps, PROP_UNASSESSED, Integer.toString(unassessed));
+		addProperty(metaProps, PROP_SELF_COUNT, Integer.toString(self));
 	}
 
 	/**
@@ -1174,6 +1222,9 @@ public final class SupportBomInjector {
 	 *       dropped a listed licence expression in favour of the licence kept on that node
 	 *       ({@link #DOCUMENT_RECORD_PROPERTIES}): what explains a licence that differs from the
 	 *       consumer's SBOM.</li>
+	 *   <li><b>{@code reliza:export:foldedRoot}</b> on the release node -- the record of an uploaded
+	 *       root that described the release and was folded into it ({@link #DOCUMENT_RECORD_PROPERTIES}):
+	 *       what explains where the node's description, supplier and licence came from.</li>
 	 *   <li><b>{@code reliza:bomref:*} bom-refs and the {@code reliza:claim:} /
 	 *       {@code reliza:evidence:} / {@code reliza:assessor:} refs inside
 	 *       {@code declarations}</b> -- these are reference IDENTIFIERS, not properties, and they
@@ -1273,12 +1324,60 @@ public final class SupportBomInjector {
 		return hasAnythingToSay ? support : null;
 	}
 
+	/**
+	 * SCORE-58 ADR-4: whether a node is the organization's own entry. (1) a row that is a root
+	 * says yes; (2) a row that is not a root says no, whatever the node carries; (3) no row and
+	 * rebom's {@link #RELEASE_NODE_PROPERTY} stamp with the exact value {@code true} says yes;
+	 * (4) otherwise no. A keyless node is never self. Rule 3 may trust the stamp because rebom
+	 * removes it from every document it did not merge (SCORE-60 ADR-9).
+	 */
+	private static boolean selfComponent(ObjectNode component, String key, ComponentSupportFacts facts) {
+		if (key == null) {
+			return false;
+		}
+		if (facts != null) {
+			boolean root = facts.component().isRoot();
+			if (!root && carriesReleaseNodeStamp(component)) {
+				log.info("release node stamp on a row the organization lists as a dependency; counted: {}", key);
+			}
+			return root;
+		}
+		return carriesReleaseNodeStamp(component);
+	}
+
+	private static boolean carriesReleaseNodeStamp(ObjectNode component) {
+		return carriesProperty(component, RELEASE_NODE_PROPERTY, "true");
+	}
+
+	/** Whether the node's {@code properties} hold an entry with this name and exactly this value. */
+	private static boolean carriesProperty(ObjectNode node, String name, String value) {
+		JsonNode props = node.get("properties");
+		if (props == null || !props.isArray()) {
+			return false;
+		}
+		for (JsonNode p : props) {
+			JsonNode n = p.get("name");
+			JsonNode v = p.get("value");
+			if (n != null && n.isTextual() && name.equals(n.asText())
+					&& v != null && v.isTextual() && value.equals(v.asText())) {
+				return true;
+			}
+		}
+		return false;
+	}
+
 	private static void applyToComponent(ObjectNode component, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
 			DeviceLifecycle device) {
 		// reliza:support:* was already stripped tree-wide by stripReservedEverywhere; here we
 		// only (re)write on a component we actually attest.
 		String key = componentKey(component);
-		SupportData support = emittableSupport(key == null ? null : factsByKey.get(key));
+		ComponentSupportFacts facts = key == null ? null : factsByKey.get(key);
+		// Before the early return: an own entry is marked whether or not anyone attested it
+		// (SCORE-58 ADR-4); an operator's statement on it is still written below (ADR-2).
+		if (selfComponent(component, key, facts)) {
+			addProperty(properties(component), PROP_SELF, "true");
+		}
+		SupportData support = emittableSupport(facts);
 		if (support == null) {
 			return;
 		}

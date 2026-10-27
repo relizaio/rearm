@@ -364,6 +364,15 @@ public class AgentRegisteredPrsIntegrationTest extends AgentDeliveryTestBase {
 		assertEquals(1, b.size(), b.toString());
 		assertEquals(d.label() + " delivery stuck: " + reported + " open for 2 h", b.get(0).message(),
 				"the unregistered PR is not named");
+		// the task's own mark (task TPF-69): the same rule and text, measured from the entry into DELIVERING
+		Map<UUID, List<BoardStalenessService.Breach>> marks = staleness.taskBreaches(board(p.r()),
+				agentTaskService.listByBoard(p.r().board().getUuid(), null), later);
+		assertEquals(1, marks.size(), marks.toString());
+		BoardStalenessService.Breach mark = marks.get(d.getUuid()).get(0);
+		assertEquals(BoardStalenessService.DELIVERY_STUCK + ":" + d.getUuid(), mark.key());
+		assertEquals(BoardStalenessService.inStatusSince(reload(t)).toInstant(), mark.since().toInstant());
+		assertTrue(mark.minutes() >= 120 && mark.minutes() <= 121, "minutes " + mark.minutes());
+		assertEquals(b.get(0).message(), mark.message());
 
 		// the registered PR merges; the task waits on the unregistered one alone, and the rule falls silent
 		ci(p, reported, PullRequestState.MERGED, A);

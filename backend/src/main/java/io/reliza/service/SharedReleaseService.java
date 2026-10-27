@@ -37,6 +37,7 @@ import com.github.packageurl.PackageURL;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
+import io.reliza.common.Utils.ArtifactBelongsTo;
 import org.springframework.transaction.annotation.Transactional;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.EnvironmentType;
@@ -45,9 +46,11 @@ import io.reliza.model.Branch;
 import io.reliza.model.BranchData;
 import io.reliza.model.BranchData.BranchType;
 import io.reliza.model.ComponentData;
+import io.reliza.model.ComponentData.ComponentKind;
 import io.reliza.model.GenericReleaseData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
+import io.reliza.model.ArtifactData;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceCodeEntryData;
@@ -400,6 +403,21 @@ public class SharedReleaseService {
 		return ord;
 	}
 	
+	/**
+	 * Full release records by uuid in one {@code uuid IN (...)} read (task TPF-69), keyed by uuid; an unknown
+	 * uuid is absent. Not the light read: {@link ReleaseData#fromLite} never sets {@code document}, which the
+	 * staleness rule reads.
+	 */
+	public Map<UUID, ReleaseData> getReleaseDataByUuids (Collection<UUID> uuids) {
+		Map<UUID, ReleaseData> out = new HashMap<>();
+		if (null == uuids || uuids.isEmpty()) return out;
+		for (Release r : repository.findAllById(uuids)) {
+			ReleaseData rd = ReleaseData.dataFromRecord(r);
+			out.put(rd.getUuid(), rd);
+		}
+		return out;
+	}
+
 	/**
 	 * Totals-only read: returns ReleaseData built from the light view (no
 	 * per-finding metric detail arrays, no approval/update events). Use on read
@@ -1480,6 +1498,7 @@ public class SharedReleaseService {
 		releases.addAll(allDirectReleases);
 		releases.addAll(allSceReleases);
 		releases.addAll(allDeliverableReleases);
+		releases.addAll(findReleasesBySyntheticArtifact(artifactUuid, orgUuid).stream().map(Release::getUuid).collect(Collectors.toSet()));
 		return releases;
 	}
 
@@ -1534,6 +1553,56 @@ public class SharedReleaseService {
 	
 	public List<Release> findReleasesByReleaseArtifact (UUID artifactUuid, UUID orgUuid) {
 		return repository.findReleasesByReleaseArtifact(artifactUuid.toString(), orgUuid.toString());
+	}
+	
+	/**
+	 * Releases holding the artifact in their {@code syntheticArtifacts} list (a document ReARM
+	 * generated for them). Feeds {@link #gatherReleasesForArtifact} so the download endpoints
+	 * authorize a generated artifact at the component scope of its release.
+	 */
+	public List<Release> findReleasesBySyntheticArtifact (UUID artifactUuid, UUID orgUuid) {
+		return repository.findReleasesBySyntheticArtifact(artifactUuid.toString(), orgUuid.toString());
+	}
+
+	/**
+	 * TEA-4: a generated artifact is owned by the generator that wrote it. No release artifact flow
+	 * attaches it as inventory, replaces it, or uploads a new version of it, whichever release the
+	 * call names. Refused when the artifact is in {@code rd}'s own synthetic list, in the synthetic
+	 * list of any release of {@code rd}'s org, or carries the generator's marks (the
+	 * {@code syntheticArtifact=true} system tag or a SYNTHETIC internal BOM), which also covers a
+	 * generated artifact no release lists any more.
+	 *
+	 * @param ad the artifact's row when the caller has it (null skips the mark check)
+	 */
+	public void assertNotGeneratedArtifact (ReleaseData rd, UUID artifactUuid, ArtifactData ad) throws RelizaException {
+		if (null == artifactUuid) return;
+		if (rd.getSyntheticArtifacts().contains(artifactUuid)) {
+			throw new RelizaException("artifact " + artifactUuid + " is a generated artifact of release "
+					+ rd.getUuid() + "; it cannot be attached as inventory");
+		}
+		assertNotGeneratedArtifact(rd.getOrg(), artifactUuid, ad);
+	}
+
+	/**
+	 * TEA-4 for a release that does not exist yet (createRelease): it has no synthetic list of its own,
+	 * so what is asked is the synthetic list of every release of {@code org} and the generator's marks.
+	 * The refusal text is the three-argument form's second one.
+	 */
+	public void assertNotGeneratedArtifact (UUID org, UUID artifactUuid, ArtifactData ad) throws RelizaException {
+		if (null == artifactUuid) return;
+		boolean listedElsewhere = null != org && !findReleasesBySyntheticArtifact(artifactUuid, org).isEmpty();
+		if (listedElsewhere || (null != ad && isGeneratedArtifact(ad))) {
+			// the holder is not named: the caller may not be allowed to read it
+			throw new RelizaException("artifact " + artifactUuid + " is a generated artifact of another release; "
+					+ "it cannot be attached as inventory, replaced or versioned through a release");
+		}
+	}
+
+	/** The generator's marks: the {@code syntheticArtifact=true} system tag or a SYNTHETIC internal BOM. */
+	public static boolean isGeneratedArtifact (ArtifactData ad) {
+		if (null != ad.getInternalBom() && ad.getInternalBom().belongsTo() == ArtifactBelongsTo.SYNTHETIC) return true;
+		return null != ad.getTags() && ad.getTags().stream().anyMatch(t ->
+				CommonVariables.SYNTHETIC_ARTIFACT_TAG_KEY.equals(t.key()) && "true".equals(t.value()));
 	}
 	
 	/**
@@ -1745,6 +1814,18 @@ public class SharedReleaseService {
 	 */
 	private List<ComponentWithBranches> convertReleasesToComponentWithBranches(
 			List<ReleaseData> releaseDataList, UUID orgUuid, UUID perspectiveUuid) {
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, false);
+	}
+
+	/**
+	 * As the three-argument overload; with excludeDocumentComponents true, the
+	 * releases of BOARD_DOCUMENT components are left out (TPF-75: the
+	 * day-click list of the releases-per-day chart, the Java twin of
+	 * VariableQueries.RELEASE_NOT_OF_DOCUMENT_COMPONENT).
+	 */
+	private List<ComponentWithBranches> convertReleasesToComponentWithBranches(
+			List<ReleaseData> releaseDataList, UUID orgUuid, UUID perspectiveUuid,
+			boolean excludeDocumentComponents) {
 		
 		// Get perspective components if perspectiveUuid is provided
 		Set<UUID> perspectiveComponentUuids = null;
@@ -1772,6 +1853,9 @@ public class SharedReleaseService {
 			}
 
 			ComponentData componentData = getComponentService.getComponentData(componentUuid).get();
+			if (excludeDocumentComponents && ComponentKind.BOARD_DOCUMENT == componentData.getKind()) {
+				continue;
+			}
 			
 			// Group releases by branch
 			Map<UUID, List<ReleaseData>> releasesByBranch = componentReleases.stream()
@@ -1869,7 +1953,7 @@ public class SharedReleaseService {
 				.map(ReleaseData::dataFromRecord)
 				.collect(Collectors.toList());
 		
-		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid);
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, true);
 	}
 	
 	/**

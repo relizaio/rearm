@@ -23,9 +23,9 @@ import io.reliza.common.Utils;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.VexImportSummary;
-import io.reliza.model.tea.Link;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.DigestAlgorithm;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -278,12 +278,12 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	}
 
 	public record DigestRecord(
-		TeaChecksumType algo, 
+		DigestAlgorithm algo, 
 		String digest, 
 		@JsonProperty(defaultValue = "ORIGINAL_FILE")
 		DigestScope scope
 	) {
-		public DigestRecord(TeaChecksumType algo, String digest){
+		public DigestRecord(DigestAlgorithm algo, String digest){
 			this(algo, digest, DigestScope.ORIGINAL_FILE);
 		}
 	}
@@ -434,6 +434,15 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * {@link DigestScope#RAW_OCI_STORAGE} digest record, which addresses the blob itself.
 	 */
 	private String rawOciRepositoryName;
+
+	/**
+	 * The artifact's TEA id (task TEA-5): null until a TEA publication first names this row, then
+	 * never changed. One TEA artifact per row: a replacement that creates a new row is a new TEA
+	 * artifact. Server-minted only (ArtifactService.ensureTeaUuid); no input carries it, and an
+	 * in-place re-upload carries it forward.
+	 */
+	@JsonProperty
+	private UUID teaUuid;
 
 	@Getter(AccessLevel.PUBLIC)
 	@Setter(AccessLevel.PRIVATE)

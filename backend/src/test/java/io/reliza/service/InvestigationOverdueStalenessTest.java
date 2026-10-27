@@ -10,6 +10,7 @@ import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -67,6 +68,32 @@ public class InvestigationOverdueStalenessTest extends InvestigationTestBase {
 
 		investigate(r, r.researcher(), inv);
 		assertTrue(breaches(r, due.plusMinutes(31)).isEmpty(), "a completed investigation is not overdue");
+	}
+
+	@Test
+	public void aHeldInvestigationPastBothThresholdsCarriesTwoMarksInRuleOrder() throws RelizaException {
+		Rig r = rig();
+		Map<String, Object> block = new LinkedHashMap<>();
+		block.put("hopNoProgressMinutes", 60);
+		block.put("investigationOverdueMinutes", 30);
+		Map<String, Object> settings = new LinkedHashMap<>();
+		settings.put("staleness", block);
+		agentBoardService.updateSettingsFromInput(r.board().getUuid(), settings, WU);
+		ZonedDateTime due = ZonedDateTime.now().plusHours(2).truncatedTo(java.time.temporal.ChronoUnit.SECONDS);
+		AgentTaskData inv = agentTaskService.commission(board(r), new AgentTaskService.CommissionRequest("researcher",
+				"measure it", "how slow is it", null, List.of(), null, due, null, null, null, null, null), null, PERSON, WU);
+		agentTaskService.assign(inv.getUuid(), board(r), r.researcher().agentUuid(), r.researcher().sessionUuid(), WU);
+
+		ZonedDateTime at = due.plusMinutes(31);
+		Map<UUID, List<BoardStalenessService.Breach>> marks = staleness.taskBreaches(board(r),
+				agentTaskService.listByBoard(r.board().getUuid(), null), at);
+		List<BoardStalenessService.Breach> both = marks.get(inv.getUuid());
+		assertEquals(2, both.size(), marks.toString());
+		assertEquals(BoardStalenessService.HOP_NO_PROGRESS, both.get(0).key().split(":")[0]);
+		assertEquals(BoardStalenessService.INVESTIGATION_OVERDUE, both.get(1).key().split(":")[0]);
+		assertEquals(reload(inv).getInvestigation().deadline().toInstant(), both.get(1).since().toInstant(),
+				"the overdue span starts at the deadline");
+		assertEquals(31, both.get(1).minutes());
 	}
 
 	@Test

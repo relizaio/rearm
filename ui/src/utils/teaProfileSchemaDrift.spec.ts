@@ -172,11 +172,13 @@ describe('TEA output event types (TEA-13) and the edition filter', () => {
         for (const o of TEA_OUTPUT_EVENT_TYPE_OPTIONS) expect(pro, o.value).toContain(o.value)
     })
 
-    it('row 16: the CE EventType enum has a TEA value exactly when CE serves TEA, and the CE select offers one only then', () => {
+    it('row 16: the CE EventType enum has a TEA value exactly when CE serves TEA, and the CE select never offers one', () => {
         const ce = enumValuesOf(ceSchema, 'EventType')
         for (const o of TEA_OUTPUT_EVENT_TYPE_OPTIONS) expect(ce.includes(o.value), o.value).toBe(ceServesTea())
+        // The values arrive with the shared schema (SCORE-72 sync), but nothing fires them on CE and the
+        // CE backend refuses a component save carrying one (SCORE-72 design 3.3.3): the select offers neither.
         const offered = outputEventTypeOptionsForEdition([], 'OSS').map(o => o.value)
-        expect(TEA_OUTPUT_EVENT_TYPE_OPTIONS.some(o => offered.includes(o.value))).toBe(ceServesTea())
+        expect(TEA_OUTPUT_EVENT_TYPE_OPTIONS.some(o => offered.includes(o.value))).toBe(false)
     })
 })
 
@@ -255,8 +257,11 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
     it('row 24: each gate is shut on CE exactly while its canary is false', () => {
         expect(teaProfilesAvailable('OSS')).toBe(ceServesSbomProfiles())
         expect(teaProfilesAvailable('OSS')).toBe(ceServesTea())
-        expect(regulatoryPackagesAvailable('OSS')).toBe(ceServesPackageSettings())
-        expect(submissionsAvailable('OSS')).toBe(ceServesSubmissions())
+        // The CE schema declares packageKinds and submissionsOfComponent since the SCORE-72 sync, but the
+        // package settings fetcher is Pro's (ws/saas/PackageSettingsDataFetcher) and the shared submission
+        // fetcher answers EDITION_UNSUPPORTED without Pro's hook (SCORE-72 design 3.7): both gates stay shut.
+        expect(regulatoryPackagesAvailable('OSS')).toBe(false)
+        expect(submissionsAvailable('OSS')).toBe(false)
         for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE']) {
             expect(regulatoryPackagesAvailable(t)).toBe(true)
             expect(submissionsAvailable(t)).toBe(true)

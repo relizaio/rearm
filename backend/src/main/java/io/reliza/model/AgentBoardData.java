@@ -40,6 +40,9 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 
 	public enum BoardStatus { ACTIVE, ARCHIVED }
 
+	/** How a served text was answered (task TPF-97): with its text, or as unchanged against what the caller holds. */
+	public enum ServedPromptStatus { SERVED, UNCHANGED }
+
 	/**
 	 * How strictly coordinator-set priority binds worker assignment.
 	 * LAX (default): the poll offers work in priority order but a

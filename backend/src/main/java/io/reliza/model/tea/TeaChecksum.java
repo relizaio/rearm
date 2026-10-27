@@ -19,11 +19,12 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * TeaChecksum
+ * Integrity digest for identified content bytes. &#x60;algValue&#x60; is the lowercase hexadecimal encoding of the digest produced by &#x60;algType&#x60; over those bytes. The hex length shall match the algorithm&#39;s digest size (for example 40 for SHA-1, 64 for SHA-256 / SHA3-256 / BLAKE2b-256 / BLAKE3, 96 for SHA-384 / SHA3-384 / BLAKE2b-384, 128 for SHA-512 / SHA3-512 / BLAKE2b-512). 
  */
 
+@Schema(name = "checksum", description = "Integrity digest for identified content bytes. `algValue` is the lowercase hexadecimal encoding of the digest produced by `algType` over those bytes. The hex length shall match the algorithm's digest size (for example 40 for SHA-1, 64 for SHA-256 / SHA3-256 / BLAKE2b-256 / BLAKE3, 96 for SHA-384 / SHA3-384 / BLAKE2b-384, 128 for SHA-512 / SHA3-512 / BLAKE2b-512). ")
 @JsonTypeName("checksum")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaChecksum {
 
   private TeaChecksumType algType;
@@ -69,11 +70,11 @@ public class TeaChecksum {
   }
 
   /**
-   * Checksum value
+   * Lowercase hexadecimal digest value for `algType`. Do not use Base64 or uppercase hex. 
    * @return algValue
    */
-  @NotNull 
-  @Schema(name = "algValue", description = "Checksum value", requiredMode = Schema.RequiredMode.REQUIRED)
+  @NotNull @Pattern(regexp = "^[0-9a-f]+$") @Size(min = 40, max = 128) 
+  @Schema(name = "algValue", example = "9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1", description = "Lowercase hexadecimal digest value for `algType`. Do not use Base64 or uppercase hex. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("algValue")
   public String getAlgValue() {
     return algValue;

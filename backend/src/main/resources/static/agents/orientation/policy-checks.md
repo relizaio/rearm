@@ -1,4 +1,4 @@
-<!-- orientation section: policy-checks · core 2026-10-08 -->
+<!-- orientation section: policy-checks · core 2026-10-25 -->
 ## 6. CEL surface (what policies can check)
 
 Operator-authored agent policies evaluate against three variables on

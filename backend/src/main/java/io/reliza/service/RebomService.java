@@ -47,9 +47,9 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.WeaknessDto;
-import io.reliza.model.tea.Rebom.ParsedBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.Rebom.ParsedBom;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.Exceptions;
 import reactor.core.publisher.Mono;
@@ -439,7 +439,7 @@ public class RebomService {
      * Fetch parsed HBOM (hardware BOM) components — the device/firmware nodes
      * the SBOM parser drops. Returns an empty list for a software-only BOM.
      */
-    public io.reliza.model.tea.Rebom.ParsedHbom parseHbom(UUID bomSerialNumber, UUID org) {
+    public io.reliza.model.Rebom.ParsedHbom parseHbom(UUID bomSerialNumber, UUID org) {
         String query = """
             query parseHbomById ($id: ID!, $org: ID!) {
                 parseHbomById(id: $id, org: $org) {
@@ -456,8 +456,8 @@ public class RebomService {
         variables.put("org", org.toString());
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();
         Object raw = response.get("parseHbomById");
-        if (raw == null) return new io.reliza.model.tea.Rebom.ParsedHbom(List.of());
-        return Utils.OM.convertValue(raw, io.reliza.model.tea.Rebom.ParsedHbom.class);
+        if (raw == null) return new io.reliza.model.Rebom.ParsedHbom(List.of());
+        return Utils.OM.convertValue(raw, io.reliza.model.Rebom.ParsedHbom.class);
     }
 
     /**
@@ -751,7 +751,28 @@ public class RebomService {
 
     // }
 
-    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
+    /**
+     * Merges the given boms in rebom and stores the result; answers the merged bom's id.
+     *
+     * <p>Every failure arrives as a RelizaException, the way uploadRebomRequest's do: a rebom
+     * refusal (BOM not found, BOM merge failed, ...) as itself, anything else (an HTTP status, a
+     * connection failure, a response that does not deserialize) as "rebom merge call failed".
+     * The merged-SBOM path names each failing component release with this message; a raw
+     * RuntimeException would instead escape to DGS as "Internal server error" and lose it.
+     */
+    public UUID mergeAndStoreBoms(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) throws RelizaException {
+        try {
+            return mergeAndStoreBomsCall(bomIds, rebomOptions, org);
+        } catch (RuntimeException e) {
+            RelizaException refusal = unwrapRebomRefusal(e);
+            if (null != refusal) throw refusal;
+            // RelizaException carries no cause, so the trace is kept here.
+            log.error("rebom mergeAndStoreBoms call failed for boms {}", bomIds, e);
+            throw new RelizaException("rebom merge call failed: " + e.getMessage());
+        }
+    }
+
+    private UUID mergeAndStoreBomsCall(List<UUID> bomIds, RebomOptions rebomOptions, UUID org) {
         String query = """
             mutation mergeAndStoreBoms ($ids: [ID]!, $rebomOptions: RebomOptions!, $org: ID!) {
                 mergeAndStoreBoms(ids: $ids, rebomOptions: $rebomOptions, org: $org){
@@ -762,8 +783,9 @@ public class RebomService {
         
         Map<String, Object> variables = new HashMap<>();
         variables.put("ids", bomIds);
-        // The facts key belongs to the stored row only; rebom declares no such input (SCORE-39 ADR-5).
-        variables.put("rebomOptions", rebomOptions.withReleaseNodeFactsKey(null));
+        // The facts key and the missing-SBOM mode belong to the stored row only; rebom declares
+        // neither input (SCORE-39 ADR-5, TEA-15).
+        variables.put("rebomOptions", rebomOptions.withReleaseNodeFactsKey(null).withMissingSbomMode(null));
         variables.put("org", org);
        
         Map<String, Object> response = executeGraphQLQuery(query, variables).block();

@@ -17,7 +17,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**

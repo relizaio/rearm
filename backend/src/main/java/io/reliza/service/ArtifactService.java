@@ -17,6 +17,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.OptionalInt;
 import java.util.Set;
 import java.util.UUID;
 import java.util.stream.Collectors;
@@ -25,6 +26,9 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.core.io.ByteArrayResource;
 import org.springframework.core.io.Resource;
@@ -45,6 +49,7 @@ import org.springframework.web.reactive.function.client.WebClient;
 
 import tools.jackson.databind.JsonNode;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.HeapPressureGuard;
 import io.reliza.common.CommonVariables.Removable;
@@ -69,10 +74,10 @@ import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.VexImportSummary;
-import io.reliza.model.tea.TeaChecksumType;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.DigestAlgorithm;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import io.reliza.model.BranchData;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.ReleaseData;
@@ -82,6 +87,7 @@ import io.reliza.repositories.ArtifactLiteRepository;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.service.IntegrationService.UploadableBom;
+import io.reliza.service.RebomService.MalformedRebomAnswerException;
 import io.reliza.service.SbomUpdateGuard.UploadKind;
 import lombok.extern.slf4j.Slf4j;
 import reactor.core.publisher.Mono;
@@ -134,6 +140,9 @@ public class ArtifactService {
 	@Autowired
 	private SbomUpdateGuard sbomUpdateGuard;
 	
+	@PersistenceContext
+	private EntityManager entityManager;
+
 	private final ArtifactRepository repository;
 	private final ArtifactLiteRepository liteRepository;
 
@@ -365,6 +374,11 @@ public class ArtifactService {
 		}
 		validateArtifactFields(artifactDto);
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
+		if (oa.isPresent()) {
+			// The dto never carries a TEA id (task TEA-5): a re-upload of this row in place is the same
+			// TEA artifact at a later revision, so the stored id is carried forward.
+			ad.setTeaUuid(ArtifactData.dataFromRecord(oa.get()).getTeaUuid());
+		}
 		// IN-PLACE re-upload: this row already existed, so a fresh artifactDataFactory product would
 		// take its empty metrics straight over the column and wipe the findings. That is the SAME
 		// collapse-to-zero the replacement seam fixes, on the other branch of the same mutation:
@@ -535,6 +549,7 @@ public class ArtifactService {
 		return isValid;
 	}
 
+	@Transactional
 	public Boolean archiveArtifact(UUID artifactId, WhoUpdated wu) {
 		Boolean archived = false;
 		Optional<Artifact> artifact = sharedArtifactService.getArtifact(artifactId);
@@ -701,7 +716,7 @@ public class ArtifactService {
 				digestRecords.add(dr.get());
 			}
 			if(StringUtils.isNotEmpty(artifactUploadResponse.getFileSHA256Digest())){
-				digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
+				digestRecords.add(new DigestRecord(DigestAlgorithm.SHA_256, artifactUploadResponse.getFileSHA256Digest(), DigestScope.ORIGINAL_FILE));
 			}
 			artifactDto.setDigestRecords(digestRecords);
 			
@@ -752,7 +767,7 @@ public class ArtifactService {
 		artifactDto.setVersion(version);
 		DigestRecord sha256Dr = null;
 		if (null != artifactDto.getDigestRecords() && !artifactDto.getDigestRecords().isEmpty()) {
-			sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(TeaChecksumType.SHA_256)).findFirst().orElse(null);
+			sha256Dr = artifactDto.getDigestRecords().stream().filter((DigestRecord dr) -> dr.algo().equals(DigestAlgorithm.SHA_256)).findFirst().orElse(null);
 		}
 		String sha256Digest = (null != sha256Dr) ? sha256Dr.digest() : null;
 		OASResponseDto artifactUploadResponse = uploadFileToConfiguredOci(file, artifactDto.getUuid().toString(), sha256Digest);
@@ -966,7 +981,7 @@ public class ArtifactService {
 		// ORIGINAL_FILE means "someone told us this digest" -- a user declaration, or for a
 		// rebom-stored BOM a value derived from rebom's own copy -- and that meaning, right or
 		// wrong, is what every existing row and reader already assumes.
-		digestRecords.add(new DigestRecord(TeaChecksumType.SHA_256, rawSha256, DigestScope.AS_UPLOADED));
+		digestRecords.add(new DigestRecord(DigestAlgorithm.SHA_256, rawSha256, DigestScope.AS_UPLOADED));
 		// Loudly, not ifPresent: without the pointer the download cannot find these bytes and
 		// would fall back to rebom's re-serialization, which is what AS_UPLOADED promises it is
 		// not. Better to refuse the upload than to record a promise we cannot keep.
@@ -1163,7 +1178,7 @@ public class ArtifactService {
 		
 		if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
 			digestRecords.add(new DigestRecord(
-				TeaChecksumType.SHA_256, 
+				DigestAlgorithm.SHA_256, 
 				rebomResponse.meta().bomDigest(), 
 				DigestScope.REARM
 			));
@@ -1210,7 +1225,7 @@ public class ArtifactService {
 		
 		if(StringUtils.isNotEmpty(rebomResponse.meta().bomDigest())){
 			digestRecords.add(new DigestRecord(
-				TeaChecksumType.SHA_256, 
+				DigestAlgorithm.SHA_256, 
 				rebomResponse.meta().bomDigest(), 
 				DigestScope.REARM
 			));
@@ -1219,7 +1234,7 @@ public class ArtifactService {
 		// For SPDX, originalFileDigest is hash of original SPDX file (not converted CycloneDX)
 		if (StringUtils.isNotEmpty(rebomResponse.meta().originalFileDigest())) {
 			digestRecords.add(new DigestRecord(
-				TeaChecksumType.SHA_256, 
+				DigestAlgorithm.SHA_256, 
 				rebomResponse.meta().originalFileDigest(), 
 				DigestScope.ORIGINAL_FILE
 			));
@@ -1303,7 +1318,68 @@ public class ArtifactService {
 		return artifactUploadResponse;
 	}
 	
+	/**
+	 * The artifact's TEA id, minted on the first call and returned unchanged after that (task
+	 * TEA-5): the first TEA publication that names the row mints it. Under the TEA id mint lock,
+	 * because two releases publishing the same ride-along row at once must not mint two ids; the
+	 * row is refreshed after the lock so the check reads what the lock holder committed. The mint
+	 * is one conditional single-key statement (round 4, decision 24): it bumps neither
+	 * {@code revision} (the {@code @Version}) nor {@code version} (the TEA revision), writes no
+	 * audit row, and the funnels of {@code SharedArtifactService} carry the stored id forward.
+	 */
+	@Transactional
+	public UUID ensureTeaUuid(UUID artifactUuid, WhoUpdated wu) throws RelizaException {
+		repository.lockTeaIdMint(AdvisoryLockKey.TEA_ID_MINT.getQueryVal(), artifactUuid.toString());
+		Artifact a = repository.findById(artifactUuid)
+				.orElseThrow(() -> new RelizaException("Artifact not found: " + artifactUuid));
+		if (null != entityManager) entityManager.refresh(a);
+		UUID existing = ArtifactData.dataFromRecord(a).getTeaUuid();
+		if (null != existing) return existing;
+		UUID teaUuid = UUID.randomUUID();
+		int updated;
+		try {
+			updated = repository.mintTeaUuid(artifactUuid, teaUuid.toString());
+		} catch (DataIntegrityViolationException e) {
+			log.error("The TEA id of artifact {} could not be assigned", artifactUuid, e);
+			throw new RelizaException("the TEA id of artifact " + artifactUuid + " could not be assigned: "
+					+ e.getMostSpecificCause().getMessage());
+		}
+		// the request's or the transaction's managed instance must read the id from here on
+		if (null != entityManager) entityManager.refresh(a);
+		if (1 == updated) {
+			log.info("TEA id minted for artifact {}: {}", artifactUuid, teaUuid);
+			return teaUuid;
+		}
+		UUID stored = ArtifactData.dataFromRecord(a).getTeaUuid();
+		if (null != stored) return stored;
+		throw new RelizaException("Artifact not found: " + artifactUuid);
+	}
+
+	/**
+	 * The version rebom records for the newest row of the BOM {@code id} names: rebom's
+	 * {@code meta.bomVersion}, the number rebom compares an upload against (SCORE-56). For a
+	 * CycloneDX row it equals the stored document's version; for an SPDX-born row it is the SPDX
+	 * lineage's version, while the converted document always says 1.
+	 *
+	 * Falls back to the version written in the stored document when rebom has no row keyed by
+	 * {@code id} as a serialNumber (older artifacts store the row uuid) or the newest row has no
+	 * readable {@code bomVersion}.
+	 */
 	public String getArtifactBomLatestVersion(UUID id, UUID org) throws RelizaException{
+		OptionalInt stored;
+		try {
+			stored = rebomService.latestStoredBomVersion(org, id.toString());
+		} catch (MalformedRebomAnswerException unreadable) {
+			log.warn("Unreadable rebom bomVersion for org={} bom={}, reading the stored document: {}", org, id,
+					unreadable.getMessage());
+			stored = OptionalInt.empty();
+		} catch (Exception e) {
+			throw new RelizaException("Error retrieving BOM for artifact: " + e.getMessage());
+		}
+		if (stored.isPresent()) {
+			return String.valueOf(stored.getAsInt());
+		}
+
 		JsonNode bom;
 		try {
 			bom = rebomService.findBomByIdJson(id, org);

@@ -49,6 +49,7 @@ import io.reliza.model.dto.UpdateUserGroupDto;
 import io.reliza.model.dto.UserGroupPermissionDto;
 import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.AuthorizationService;
+import io.reliza.service.ExternalApiKeyService;
 import io.reliza.service.FederatedTrustRuleService;
 import io.reliza.service.SbomWriteAuthority;
 import io.reliza.service.UserGroupService;
@@ -66,6 +67,7 @@ class SbomWriteAuthorityServiceTest extends SbomUpdateGuardProgrammaticTestBase 
 	@MockitoSpyBean private ApiKeyAccessService apiKeyAccessService;
 	@Autowired private UserGroupService userGroupService;
 	@Autowired private AuthorizationService authorizationService;
+	@Autowired private ExternalApiKeyService externalApiKeyService;
 
 	private SbomWriteAuthority user(World w, UserData u) {
 		return authorities.forUser(u, w.org().getUuid());
@@ -241,5 +243,16 @@ class SbomWriteAuthorityServiceTest extends SbomUpdateGuardProgrammaticTestBase 
 		}
 		assertRights(SbomWriteAuthority.NO_PRINCIPAL, false, false, false, w);
 		assertEquals("NONE", SbomWriteAuthority.NO_PRINCIPAL.describe());
+	}
+
+	// TEA-36 3.5b (F-3): a TEA EXTERNAL key (TEA-3) is on the denying arm of forKey and writes no SBOM.
+	@Test
+	void externalKeysWriteNothing() throws Exception {
+		World w = world();
+		ApiKey ext = externalApiKeyService.create(w.org().getUuid(), "score52 external", null, WU);
+		assertEquals(ApiTypeEnum.EXTERNAL, ext.getObjectType());
+		SbomWriteAuthority a = key(w, ext);
+		assertRights(a, false, false, false, w);
+		assertEquals("KEY:EXTERNAL:" + ext.getUuid(), a.describe());
 	}
 }

@@ -23,6 +23,7 @@ import io.reliza.model.BranchData.ChildComponent;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.repositories.ComponentRepository;
+import io.reliza.service.oss.OssPerspectiveService;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -41,6 +42,11 @@ public class GetComponentService {
 	@Autowired
 	@Lazy
 	private DependencyPatternService dependencyPatternService;
+
+	// Lazy: OssPerspectiveService wires this service (task TEA-8, D10).
+	@Autowired
+	@Lazy
+	private OssPerspectiveService ossPerspectiveService;
 
 	GetComponentService(
 		ComponentRepository repository
@@ -108,13 +114,36 @@ public class GetComponentService {
 						.collect(Collectors.toList());
 	}
 	
+	/**
+	 * The components whose own perspectives contain {@code perspectiveUuid}, archived ones included
+	 * and no product expanded: the components that resolve their TEA profile through it (task TEA-9).
+	 */
+	public List<ComponentData> listDirectComponentsOfPerspective (UUID perspectiveUuid) {
+		if (null == perspectiveUuid) return List.of();
+		return repository.findComponentsByPerspectiveWithArchived(perspectiveUuid.toString()).stream()
+				.map(ComponentData::dataFromRecord).toList();
+	}
+
 	public List<ComponentData> listComponentsByPerspective (UUID perspectiveUuid) {
 		Optional<ComponentData> opd = getComponentData(perspectiveUuid);
 		if (opd.isPresent() && opd.get().getType() == ComponentData.ComponentType.PRODUCT) {
 			return listComponentsByProduct(perspectiveUuid);
 		}
+		// The members of a perspective are components of its own organization (task TEA-8, D10): a
+		// foreign row holding the uuid is a stale membership, ignored, never shown.
+		Optional<UUID> perspectiveOrg = ossPerspectiveService.orgOfPerspective(perspectiveUuid);
+		if (perspectiveOrg.isEmpty()) {
+			log.warn("Perspective {} has no row: it has no members", perspectiveUuid);
+			return List.of();
+		}
 		List<ComponentData> directComponents = repository.findComponentsByPerspective(perspectiveUuid.toString()).stream()
-				.map(ComponentData::dataFromRecord).toList();
+				.map(ComponentData::dataFromRecord)
+				.filter(cd -> {
+					boolean own = perspectiveOrg.get().equals(cd.getOrg());
+					if (!own) log.warn("Component {} of org {} holds perspective {} of org {}: a foreign membership, ignored (task TEA-8)",
+							cd.getUuid(), cd.getOrg(), perspectiveUuid, perspectiveOrg.get());
+					return own;
+				}).toList();
 		
 		Set<UUID> allComponentUuids = new LinkedHashSet<>();
 		for (ComponentData cd : directComponents) {

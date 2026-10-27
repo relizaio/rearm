@@ -66,6 +66,7 @@ import io.reliza.repositories.NotificationSubscriptionRepository;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.util.BackoffPolicy;
 import io.reliza.model.dto.notifications.EvaluationMode;
 import lombok.extern.slf4j.Slf4j;
@@ -185,6 +186,10 @@ public class NotificationFanOutService {
 
     @Autowired
     private GetComponentService getComponentService;
+
+    // The one filter of a component's stored perspective set (task TEA-8, D13).
+    @Autowired
+    private OssPerspectiveService ossPerspectiveService;
 
     @Autowired
     private VulnerabilityRecordService vulnerabilityRecordService;
@@ -1503,6 +1508,18 @@ public class NotificationFanOutService {
                 case RELEASE_CREATED, RELEASE_LIFECYCLE_CHANGED, RELEASE_BOM_DIFF -> {
                     return null;
                 }
+                // TEA publication events (task TEA-5) carry no severity either.
+                case RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN -> {
+                    return null;
+                }
+                // Submission events (task TEA-35) carry a fixed INFO, so a route's minimum-severity
+                // gate at INFO or below passes them.
+                case RELEASE_SUBMISSION_CREATED -> {
+                    return NotificationSeverity.INFO;
+                }
+                case RELEASE_SUBMISSION_WITHDRAWN -> {
+                    return NotificationSeverity.INFO;
+                }
                 // Approval events likewise carry no severity.
                 case APPROVAL_REQUESTED, APPROVAL_RESOLVED -> {
                     return null;
@@ -1828,9 +1845,12 @@ public class NotificationFanOutService {
     private Set<UUID> resolveComponentPerspectives(UUID componentUuid, ComponentData component,
             Map<UUID, Set<UUID>> cache) {
         if (componentUuid == null) return Set.of();
+        // Only the assignable perspectives are stamped (task TEA-8, D13): a deleted or foreign
+        // membership the component still stores is not written into the event.
         return cache.computeIfAbsent(componentUuid, k ->
-                (component != null && component.getPerspectives() != null)
-                        ? Set.copyOf(component.getPerspectives())
+                (component != null && component.getPerspectives() != null && !component.getPerspectives().isEmpty())
+                        ? Set.copyOf(ossPerspectiveService.assignablePerspectiveUuids(
+                                component.getOrg(), component.getPerspectives()))
                         : Set.of());
     }
 

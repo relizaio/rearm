@@ -3,85 +3,65 @@
 */
 package io.reliza.ws.tea;
 
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.http.ResponseEntity;
-import org.springframework.lang.Nullable;
-import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
-import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.multipart.MultipartFile;
+import java.util.EnumSet;
+import java.util.List;
+import java.util.Optional;
+import java.util.Set;
 
-import io.reliza.common.CommonVariables;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.http.ResponseEntity;
+import org.springframework.stereotype.Controller;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.context.request.NativeWebRequest;
+
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaPaginatedProductResponse;
-import io.reliza.service.ComponentService;
-import io.reliza.service.GetComponentService;
-import io.reliza.service.SharedReleaseService;
-import io.reliza.service.UserService;
+import io.reliza.model.tea.TeaProduct;
+import io.reliza.service.tea.TeaSurfaceService;
+import io.reliza.service.tea.TeaSurfaceService.Head;
 import io.reliza.service.tea.TeaTransformerService;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
+import io.reliza.ws.tea.TeaRequests.Page;
+import io.reliza.ws.tea.TeaRequests.TeaRequestContext;
+import io.reliza.ws.tea.TeaRequests.TeaSortField;
+import lombok.extern.slf4j.Slf4j;
 
-import org.springframework.web.context.request.NativeWebRequest;
-
-import jakarta.validation.constraints.*;
-import jakarta.validation.Valid;
-
-import java.time.OffsetDateTime;
-import java.time.ZoneOffset;
-import java.time.temporal.ChronoUnit;
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import jakarta.annotation.Generated;
-
-@Generated(value = "io.reliza.codegen.languages.SpringCodegen", date = "2025-05-08T09:03:56.085827200-04:00[America/Toronto]", comments = "Generator version: 7.13.0")
+/** The products of the organization that have a published release the caller may see (task TEA-6). */
+@Slf4j
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
+@RequestMapping(TeaPaths.ORG_BASE)
 public class ProductsApiController implements ProductsApi {
-	
+
+	static final Set<TeaSortField> SORT_FIELDS = EnumSet.of(TeaSortField.NAME);
+
+	@Autowired private TeaRequests teaRequests;
+	@Autowired private TeaSurfaceService teaSurfaceService;
+	@Autowired private TeaTransformerService teaTransformerService;
+
+	private final NativeWebRequest request;
+
 	@Autowired
-	ComponentService componentService;
-	
-	@Autowired
-	TeaTransformerService teaTransformerService;
+	public ProductsApiController(NativeWebRequest request) {
+		this.request = request;
+	}
 
-    private final NativeWebRequest request;
+	@Override
+	public Optional<NativeWebRequest> getRequest() {
+		return Optional.ofNullable(request);
+	}
 
-    @Autowired
-    public ProductsApiController(NativeWebRequest request) {
-        this.request = request;
-    }
-
-    @Override
-    public Optional<NativeWebRequest> getRequest() {
-        return Optional.ofNullable(request);
-    }
-    
-    @Override
-    public ResponseEntity<TeaPaginatedProductResponse> queryTeaProducts(
-            @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-            @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
-            @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
-            @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue
-        ) {
-    	var products = componentService.listComponentDataByOrganization(UserService.USER_ORG, ComponentType.PRODUCT);
-    	var teaProducts = products.stream().map(p -> teaTransformerService.transformProductToTea(p)).toList();
-    	TeaPaginatedProductResponse tppr = new TeaPaginatedProductResponse();
-    	tppr.setPageSize(pageSize);
-    	tppr.setPageStartIndex(pageOffset);
-    	tppr.setTotalResults(Long.valueOf(teaProducts.size()));
-    	tppr.setResults(teaProducts);
-    	tppr.setTimestamp(OffsetDateTime.now(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS));
-    	return ResponseEntity.ok(tppr);
-    }
-
+	@Override
+	public ResponseEntity<TeaPaginatedProductResponse> queryProducts(TeaIdentifierType idType, String idValue, Long pageSize,
+			String pageToken, String sortField, String sortOrder) {
+		TeaRequestContext ctx = teaRequests.context(request);
+		TeaRendering.refuseInvalidToken(ctx);
+		Page page = TeaRequests.page(pageSize, pageToken, sortField, SORT_FIELDS, sortOrder);
+		List<Head> heads = TeaRendering.served(teaSurfaceService.visibleHeads(ctx.caller(), ctx.org(), ComponentType.PRODUCT));
+		List<TeaProduct> products = TeaSurfaceService.componentsOf(heads).stream().map(teaTransformerService::transformProductToTea).toList();
+		products = TeaSurfaceService.filterByIdentifier(products, TeaProduct::getIdentifiers, idType, idValue);
+		products = TeaSurfaceService.sorted(products, TeaProduct::getName, TeaProduct::getUuid, page.descending());
+		TeaSurfaceService.warnIfLarge(ctx.org(), "/products", products.size());
+		log.debug("TEA products of organization {}: caller {}, {} results", ctx.org().org(), ctx.caller().state(), products.size());
+		return ResponseEntity.ok().headers(TeaResponses.headersFor(ctx)).body(new TeaPaginatedProductResponse(false, products));
+	}
 }

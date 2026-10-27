@@ -81,7 +81,22 @@ public enum NotificationEventType {
 	 * An agent session will be closed by the idle sweep within the warning lead (task 6e7fe6fe):
 	 * any call with its session id, or a touch, keeps it open.
 	 */
-	AGENT_SESSION_IDLE_WARNING;
+	AGENT_SESSION_IDLE_WARNING,
+	/**
+	 * A release was published or re-published on TEA, or a hidden publication was published again
+	 * (task TEA-5). One per act, on the release the act was invoked on; a product cascade's
+	 * component releases get none of their own.
+	 */
+	RELEASE_TEA_PUBLISHED,
+	/** A release's TEA publication was hidden (task TEA-5). */
+	RELEASE_TEA_HIDDEN,
+	/**
+	 * A regulatory submission version was written (task TEA-35): a first version or a resubmission,
+	 * the payload's {@code act} says which.
+	 */
+	RELEASE_SUBMISSION_CREATED,
+	/** A regulatory submission was withdrawn (task TEA-35). */
+	RELEASE_SUBMISSION_WITHDRAWN;
 
 	/**
 	 * Actionable events ask a specific person to do something now, so they

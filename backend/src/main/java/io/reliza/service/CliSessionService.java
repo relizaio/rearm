@@ -164,8 +164,12 @@ public class CliSessionService {
 	/** The same, the approver optionally shortening the session below the key's bound ({@code maxMinutes}). */
 	@Transactional
 	public CliSession approveWithKey(String userCode, UserData user, UUID apiKeyUuid, Integer maxMinutes) throws RelizaException {
-		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.USER && ak.getObjectType() != ApiTypeEnum.FREEFORM) {
+			// explicit type guard (task TEA-3): an external key, or any other type, never backs a device login
+			throw new RelizaException("Only personal and Free Form keys back device-login sessions");
+		}
+		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 		if (!ownsOrHolds(user, ak, akd)) throw new RelizaException("Only a personal key you own or a Free Form key you hold can back a CLI session");
 		if (!isMember(user, ak.getOrg())) throw new RelizaException("Not a member of this organization");

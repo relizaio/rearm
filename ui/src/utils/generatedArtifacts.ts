@@ -8,13 +8,13 @@
 import { isProEdition } from './editionCapabilities'
 
 /**
- * Whether this edition serves generated artifacts. The Pro backend does; the CE backend has no
- * Release.syntheticArtifactDetails yet (the 2026-10 TEA work ships no CE backend sync), so a CE UI
- * does not send the query and shows no section. generatedArtifactsSchemaDrift.spec.ts ties this to
- * the CE schema and fails once that schema gains the field: lift the gate then.
+ * Whether this edition serves generated artifacts. Both do: the CE backend serves
+ * Release.syntheticArtifactDetails since the CE sync of SCORE-72 (Pro main 3befcf24a). The
+ * parameter is kept so the call sites and the specs keep their shape;
+ * generatedArtifactsSchemaDrift.spec.ts ties this to the CE schema.
  */
 export function syntheticArtifactsAvailable (installationType: string | undefined | null): boolean {
-    return isProEdition(installationType)
+    return isProEdition(installationType) || true
 }
 
 const BELONGS_TO_LABELS: Record<string, string> = {

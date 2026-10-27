@@ -37,7 +37,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
@@ -51,7 +51,7 @@ import io.reliza.model.DeliverableData.PackageType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.DeliverableDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.repositories.DeliverableRepository;
@@ -368,7 +368,7 @@ public class DeliverableService {
 								String digestTypeString = digestParts[0];
 								String digestValue = digestParts[1];
 								
-								TeaChecksumType checksumType = Utils.parseDigestType(digestTypeString);
+								DigestAlgorithm checksumType = Utils.parseDigestType(digestTypeString);
 								if (checksumType != null) {
 									digestRecords.add(new DigestRecord(checksumType, digestValue, DigestScope.ORIGINAL_FILE));
 								} else {

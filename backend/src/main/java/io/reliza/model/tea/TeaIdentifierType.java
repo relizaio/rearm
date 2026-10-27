@@ -17,10 +17,10 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonValue;
 
 /**
- * Enumeration of identifiers types
+ * Enumeration of identifier types.  `COMPLIANCE_DOCUMENT` marks a TEA Component or TEA Component Release as carrying a compliance document (for example a SOC 2 report), so that it can be discovered with `idType=COMPLIANCE_DOCUMENT` on `/components` and `/componentReleases`; the document itself is published as a TEA Artifact of the component release. It shall not be used on products, product releases, distributions, or CLE events. 
  */
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public enum TeaIdentifierType {
   
   CPE("CPE"),

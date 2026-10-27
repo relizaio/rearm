@@ -32,6 +32,8 @@ import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
@@ -94,6 +96,9 @@ public class SlackBlockKitFormatter {
             case RELEASE_CREATED -> renderReleaseCreated(event, payload);
             case RELEASE_LIFECYCLE_CHANGED -> renderReleaseLifecycleChanged(event, payload);
             case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event, payload);
+            case RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN -> renderReleaseTeaPublication(event, payload);
+            case RELEASE_SUBMISSION_CREATED -> renderReleaseSubmission(event, payload);
+            case RELEASE_SUBMISSION_WITHDRAWN -> renderReleaseSubmission(event, payload);
             case APPROVAL_REQUESTED -> renderApprovalRequested(event, payload);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event, payload);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event, payload);
@@ -273,6 +278,41 @@ public class SlackBlockKitFormatter {
         if (!facts.isEmpty()) blocks.add(sectionBlock(String.join("\n", facts)));
         addReleaseAction(blocks, r);
 
+        out.put("text", capText(headerText));
+        out.put("blocks", blocks);
+    }
+
+    /**
+     * Task TEA-35: the TEA case's shape (header, the release facts, the release action) and nothing
+     * else. The payload carries no free text (decision E14), so nothing a component writer typed
+     * reaches a mrkdwn block.
+     */
+    private void renderReleaseSubmission(NotificationOutboxEvent event, Map<String, Object> out) {
+        ReleaseSubmissionPayload p = deserialize(event, ReleaseSubmissionPayload.class);
+        if (p == null || p.release() == null) { renderFallback(event, out); return; }
+        ReleaseRef r = p.release();
+        String headerText = ":clipboard: " + p.headline();
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        blocks.add(headerBlock(headerText));
+        List<String> facts = new ArrayList<>(releaseFacts(r));
+        if (!facts.isEmpty()) blocks.add(sectionBlock(String.join("\n", facts)));
+        addReleaseAction(blocks, r);
+        out.put("text", capText(headerText));
+        out.put("blocks", blocks);
+    }
+
+    private void renderReleaseTeaPublication(NotificationOutboxEvent event, Map<String, Object> out) {
+        ReleaseTeaPublicationPayload p = deserialize(event, ReleaseTeaPublicationPayload.class);
+        if (p == null || p.release() == null) { renderFallback(event, out); return; }
+        ReleaseRef r = p.release();
+        String headerText = ":globe_with_meridians: " + p.headline();
+        List<Map<String, Object>> blocks = new ArrayList<>();
+        blocks.add(headerBlock(headerText));
+        List<String> facts = new ArrayList<>();
+        if (StringUtils.isNotBlank(p.publicUrl())) facts.add("*TEA URL:* " + p.publicUrl());
+        facts.addAll(releaseFacts(r));
+        if (!facts.isEmpty()) blocks.add(sectionBlock(String.join("\n", facts)));
+        addReleaseAction(blocks, r);
         out.put("text", capText(headerText));
         out.put("blocks", blocks);
     }

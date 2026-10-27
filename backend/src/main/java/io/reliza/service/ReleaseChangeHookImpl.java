@@ -3,9 +3,12 @@
 */
 package io.reliza.service;
 
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.List;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
@@ -15,11 +18,17 @@ import io.reliza.model.NotificationEventType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseApprovalEvent;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.SubmissionNotice;
+import io.reliza.model.TeaPublicationData;
 import io.reliza.model.dto.notifications.BomComponentChange;
 import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.service.TeaPublicationService.TeaExposureState;
+import io.reliza.service.TeaPublicationService.TeaPublicationState;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -48,6 +57,10 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 
 	@Autowired
 	private ReleaseNotificationSupport support;
+
+	@Autowired
+	@Lazy
+	private TeaPublicationService teaPublicationService;
 
 	// SAAS-only; absent on CE (no approval notifications there).
 	@Autowired(required = false)
@@ -95,6 +108,67 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 		String dedupKey = "release:bomdiff:" + rd.getUuid();
 		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_BOM_DIFF, dedupKey, payload,
 				support.buildAffectedReleases(rd, ref));
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.REQUIRED)
+	public void onReleaseTeaPublished(ReleaseData rd, TeaPublicationData publication, int collectionVersion,
+			TeaExposureState exposure, int childrenPublished) {
+		if (rd == null || publication == null || support.isExternalOrIncomplete(rd)) return;
+		ReleaseRef ref = support.buildReleaseRef(rd);
+		if (ref == null) return;
+		ReleaseTeaPublicationPayload payload = new ReleaseTeaPublicationPayload(ref, publication.getUuid(),
+				TeaPublicationState.PUBLISHED, collectionVersion, exposure, publicUrlOf(publication), childrenPublished);
+		String dedupKey = "tea-published:" + publication.getUuid() + ":" + collectionVersion;
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_TEA_PUBLISHED, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.REQUIRED)
+	public void onReleaseTeaHidden(ReleaseData rd, TeaPublicationData publication) {
+		if (rd == null || publication == null || support.isExternalOrIncomplete(rd)) return;
+		ReleaseRef ref = support.buildReleaseRef(rd);
+		if (ref == null) return;
+		ReleaseTeaPublicationPayload payload = new ReleaseTeaPublicationPayload(ref, publication.getUuid(),
+				TeaPublicationState.HIDDEN, null, null, publicUrlOf(publication), 0);
+		String dedupKey = "tea-hidden:" + publication.getUuid() + ":"
+				+ Instant.now().truncatedTo(ChronoUnit.MINUTES);
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_TEA_HIDDEN, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.REQUIRED)
+	public void onReleaseSubmissionCreated(ReleaseData rd, SubmissionNotice notice) {
+		if (rd == null || notice == null || support.isExternalOrIncomplete(rd)) return;
+		ReleaseRef ref = support.buildReleaseRef(rd);
+		if (ref == null) return;
+		ReleaseSubmissionPayload payload = new ReleaseSubmissionPayload(ref, notice.submission(), notice.kind(),
+				notice.state(), notice.version(), notice.act());
+		// one per version: a resubmission always writes the next version, so the key never repeats
+		String dedupKey = "submission-created:" + notice.submission() + ":" + notice.version();
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_SUBMISSION_CREATED, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
+	}
+
+	@Override
+	@Transactional(propagation = Propagation.REQUIRED)
+	public void onReleaseSubmissionWithdrawn(ReleaseData rd, SubmissionNotice notice) {
+		if (rd == null || notice == null || support.isExternalOrIncomplete(rd)) return;
+		ReleaseRef ref = support.buildReleaseRef(rd);
+		if (ref == null) return;
+		ReleaseSubmissionPayload payload = new ReleaseSubmissionPayload(ref, notice.submission(), notice.kind(),
+				notice.state(), notice.version(), notice.act());
+		// the version the withdrawal tombstones: every withdrawal follows a distinct ACTIVE version (F-7)
+		String dedupKey = "submission-withdrawn:" + notice.submission() + ":" + notice.version();
+		support.writeOutboxEvent(rd.getOrg(), NotificationEventType.RELEASE_SUBMISSION_WITHDRAWN, dedupKey, payload,
+				support.buildAffectedReleases(rd, ref));
+	}
+
+	private String publicUrlOf(TeaPublicationData publication) {
+		if (null == teaPublicationService) return null;
+		return TeaPublicationService.publicUrl(teaPublicationService.apiBaseOf(publication.getOrg()), publication);
 	}
 
 	@Override

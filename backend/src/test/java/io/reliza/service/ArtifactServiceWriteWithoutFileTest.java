@@ -29,10 +29,10 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.tea.Link;
-import io.reliza.model.tea.Link.ContentEnum;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link;
+import io.reliza.model.Link.ContentEnum;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.DigestAlgorithm;
 
 /**
  * createArtifact is addArtifactManual's branch for a mutation that carries no file, and
@@ -64,7 +64,7 @@ public class ArtifactServiceWriteWithoutFileTest {
         ad.setVersion("1");
         ad.setInternalBom(new InternalBom(UUID.randomUUID(), null));
         ad.setDigestRecords(new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "a".repeat(64), DigestScope.AS_UPLOADED))));
+            new DigestRecord(DigestAlgorithm.SHA_256, "a".repeat(64), DigestScope.AS_UPLOADED))));
         return ad;
     }
 

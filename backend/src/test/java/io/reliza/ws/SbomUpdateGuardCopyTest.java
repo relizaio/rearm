@@ -23,7 +23,7 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.Component;
 import io.reliza.model.UserData;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 
 /**
  * SCORE-52 T-30 (ADR-3, F-5, design 3.0 item 11): copies never authorize. A component that copied

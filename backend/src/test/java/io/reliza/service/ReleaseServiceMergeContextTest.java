@@ -34,7 +34,8 @@ import io.reliza.common.CommonVariables.ArtifactCoverageType;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.MissingSbomMode;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -154,7 +155,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P3, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1, p2, p3);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(Map.of(P1_VERSION, 1L, P2_VERSION, 1L, P3_VERSION, 1L), productMergeCounts());
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
@@ -184,7 +185,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P3, UUID.randomUUID(), TOP_LEVEL_ONLY);
 		productsAbove(source, p1, p2, p3);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(8, merges.size(), merges.toString());
 		assertEquals(Map.of(P1_VERSION, 1L, P2_VERSION, 1L, P3_VERSION, 1L,
@@ -210,7 +211,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P3, UUID.randomUUID(), FLAT);
 		productsAbove(source, left, right, top);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(4, merges.size(), merges.toString());
 		assertEquals(Map.of(P1_VERSION, 1L, P2_VERSION, 1L, P3_VERSION, 1L), productMergeCounts());
@@ -230,7 +231,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P2, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1, p2);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(Map.of(P1_VERSION, 1L, P2_VERSION, 1L), productMergeCounts());
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
@@ -247,7 +248,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P1, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(Map.of(P1_VERSION, 1L), productMergeCounts());
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
@@ -262,11 +263,31 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P1, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		assertEquals(Map.of(P1_VERSION, 1L), productMergeCounts());
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
 		assertEquals(List.of(new ReleaseBom(onlyMergeOf(P1_VERSION), FLAT)), rows.get(P1));
+	}
+
+	// TEA-15 (3.3 item 1): rows of a product that differ in the missing-SBOM mode are two merges, one per mode;
+	// the bundled releases carry the OMIT twin row a TEA publish of P1 leaves on them (as in the reconcile
+	// test's F-6 rig), so only the changed release is merged at component level, once per mode
+	@Test
+	void aProductsRowsThatDifferInTheModeAreTwoMerges() {
+		threeLevels(FLAT, FLAT.withMissingSbomMode(MissingSbomMode.OMIT));
+		storeRow(P1, UUID.randomUUID(), FLAT);
+		storeRow(P1, UUID.randomUUID(), FLAT.withMissingSbomMode(MissingSbomMode.OMIT));
+		productsAbove(source, p1);
+
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
+
+		assertEquals(Map.of(P1_VERSION, 2L), productMergeCounts());
+		assertEquals(2, componentMerges().size(), "the changed release once per mode (the twin row of section 5): "
+				+ componentMerges());
+		componentMerges().forEach(m -> assertEquals(SOURCE_VERSION, m.options().version()));
+		assertEquals(List.of(new ReleaseBom(productMerges().get(0).merged(), FLAT),
+				new ReleaseBom(productMerges().get(1).merged(), FLAT.withMissingSbomMode(MissingSbomMode.OMIT))), rows.get(P1));
 	}
 
 	// ADR-12 memo on the unforced path where no row serves (departure D-20): a coverage-filtered export
@@ -301,7 +322,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P2, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1, p2);
 
-		svc.reconcileMergedSbomRoutine(source, WU);
+		svc.reconcileMergedSbomRoutine(source.getUuid(), WU);
 
 		verify(sharedReleaseService, times(1)).unwindReleaseDependencies(q);
 		assertEquals(Map.of(P1_VERSION, 1L, P2_VERSION, 1L), productMergeCounts());
@@ -328,7 +349,7 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		storeRow(P2, UUID.randomUUID(), FLAT);
 		productsAbove(source, p1, p2);
 
-		assertDoesNotThrow(() -> svc.reconcileMergedSbomRoutine(source, WU));
+		assertDoesNotThrow(() -> svc.reconcileMergedSbomRoutine(source.getUuid(), WU));
 
 		productMergeCounts().forEach((product, count) -> assertTrue(count <= 1, productMergeCounts().toString()));
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
@@ -353,10 +374,14 @@ class ReleaseServiceMergeContextTest extends ReleaseServiceMergeTestBase {
 		assertNotNull(exported);
 		assertEquals(onlyMergeOf(P1_VERSION), exported);
 		assertEquals(1, componentMerges().size(), componentMerges().toString());
-		Map<UUID, Long> byInput = productMerges().get(0).bomIds().stream()
+		// TEA-14 decision 1, kept at MERGE_VERSION 10 (TEA-15): a single input is still merged under the product root, so P2 is a
+		// merge of the source release's BOM under P2, and P1 merges that and the source release's BOM once each
+		UUID p2Merge = onlyMergeOf(P2_VERSION);
+		Map<UUID, Long> byInput = productMerges().stream().filter(m -> exported.equals(m.merged())).findFirst()
+				.orElseThrow().bomIds().stream()
 				.collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
-		assertEquals(Map.of(componentMerges().get(0).merged(), 2L), byInput,
-				"P1 merges the source release and P2, which passes the source release's BOM through");
+		assertEquals(Map.of(p2Merge, 1L, componentMerges().get(0).merged(), 1L), byInput,
+				"P1 merges P2, which carries P2's root, and the source release");
 		List<String> cycleErrors = cycleErrors();
 		assertEquals(1, cycleErrors.size(), logged.toString());
 		assertTrue(cycleErrors.get(0).contains(P1.toString()) && cycleErrors.get(0).contains(P2.toString()), cycleErrors.get(0));

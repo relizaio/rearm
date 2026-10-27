@@ -148,7 +148,15 @@ public class RateLimitingFilter extends OncePerRequestFilter {
         response.setHeader("Retry-After", String.valueOf(Math.max(1, seconds)));
         response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value()); // 429
         response.setContentType("application/json");
-        response.getWriter().write("{\"error\":\"Rate limit exceeded\"}");
+        if (isTeaPath(request)) {
+            // task TEA-6, decision 16: on the TEA chain a body with a string error property is a TEA error, which a
+            // 1.0.0 client would stop at instead of honouring Retry-After
+            response.setHeader(HttpHeaders.CACHE_CONTROL, "no-store");
+            // bytes, not the writer, so the container adds no charset parameter to application/json
+            response.getOutputStream().write(TEA_REFUSAL_BODY.getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        } else {
+            response.getWriter().write("{\"error\":\"Rate limit exceeded\"}");
+        }
         log.debug("Rate limit exceeded for key={} path={} wait={}s", key, LogSafe.text(request.getRequestURI()), seconds);
     }
 
@@ -162,9 +170,23 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             }
         }
 
+        // 2) The TEA chain (task TEA-3; its paths are App.isTeaUri: /tea, /tea/** and /.well-known/tea, task TEA-6
+        // round 3): a valid TEA access token keys its bucket by its external key; anonymous
+        // traffic, invalid tokens and the TEA token endpoint share the per-address bucket. A presented key id never
+        // keys a bucket here: spraying an id with wrong secrets must not lock out its legitimate holder.
+        if (isTeaPath(request)) {
+            Object caller = request.getAttribute(io.reliza.ws.tea.TeaAuthenticationFilter.CALLER_ATTRIBUTE);
+            if (caller instanceof io.reliza.service.TeaAuthorizationService.TeaCaller tc
+                    && tc.state() == io.reliza.service.TeaAuthorizationService.TeaAuthState.AUTHENTICATED
+                    && tc.principal() != null && StringUtils.isNotBlank(tc.principal().keyId())) {
+                return "api:" + tc.principal().keyId();
+            }
+            return clientIp(request);
+        }
+
         String authHeader = request.getHeader(HttpHeaders.AUTHORIZATION);
 
-        // 2) A ReARM bearer -> the key id text of the verified key row; only verified claims name a bucket
+        // 3) A ReARM bearer -> the key id text of the verified key row; only verified claims name a bucket
         if (authHeader != null && authHeader.regionMatches(true, 0, "Bearer ", 0, 7)) {
             Optional<TokenClaims> claims = apiTokenService.verify(authHeader.substring(7).trim(), ApiTokenService.AUD_PROGRAMMATIC);
             Optional<String> keyId = claims.flatMap(c -> apiKeyService.getApiKey(c.keyUuid())).map(ApiKeyService::keyIdOf);
@@ -173,7 +195,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             }
         }
 
-        // 3) HTTP Basic in the header -> the canonical parsed identity (no secret check, no lookup)
+        // 4) HTTP Basic in the header -> the canonical parsed identity (no secret check, no lookup)
         if (StringUtils.isNotBlank(authHeader)) {
             HttpHeaders headers = new HttpHeaders();
             headers.add(HttpHeaders.AUTHORIZATION, authHeader);
@@ -184,7 +206,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             }
         }
 
-        // 4) The token endpoint's form carrier, read only when the header is empty, as the controller reads it
+        // 5) The token endpoint's form carrier, read only when the header is empty, as the controller reads it
         if (StringUtils.isEmpty(authHeader) && TOKEN_REQUEST.matches(request)) {
             String clientId = OAuthQueryGuard.single(request.getParameterMap(), "client_id");
             if (StringUtils.isNotEmpty(clientId)) {
@@ -197,11 +219,27 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             }
         }
 
-        // 5) Fallback to client IP, respecting X-Forwarded-For from reverse proxies
+        // 6) The address (the helper the TEA branch shares)
+        return clientIp(request);
+    }
+
+    /** The general refusal on the TEA chain: not a TEA error-response (no error key). */
+    static final String TEA_REFUSAL_BODY = "{\"message\":\"Rate limit exceeded\"}";
+
+    /**
+     * The paths of the TEA chain (/tea, /tea/**, /.well-known/tea, read decoded and without path parameters as the
+     * chain reads them), the same test as its error dispatch.
+     */
+    private static boolean isTeaPath(HttpServletRequest request) {
+        return App.isTeaUri(request);
+    }
+
+    private static String clientIp(HttpServletRequest request) {
+        // Fallback to client IP, respecting X-Forwarded-For from reverse proxies
         String forwarded = request.getHeader("X-Forwarded-For");
         if (StringUtils.isNotBlank(forwarded)) {
             // X-Forwarded-For may be a comma-separated list; first entry is the client IP
-            // rendered so the bucket key, which the two log lines above write, is never client free text
+            // rendered so the bucket key, which the limiter's log lines write, is never client free text
             return "ip:" + LogSafe.text(forwarded.split(",")[0].trim());
         }
         return "ip:" + LogSafe.text(request.getRemoteAddr());

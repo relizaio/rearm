@@ -27,7 +27,7 @@ import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ArtifactData.BomFormat;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import tools.jackson.databind.JsonNode;
 
 /**

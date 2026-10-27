@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
@@ -101,4 +102,30 @@ public interface AgentTaskRepository extends CrudRepository<AgentTask, UUID> {
 			nativeQuery = true)
 	List<AgentTask> findTouchedBySession(@Param("sessionUuidAsString") String sessionUuidAsString,
 			@Param("sessionRef") String sessionRef);
+
+	/**
+	 * Replace the usage snapshots of a task's sign-offs and returns, recomputed from
+	 * agent_session_usage after a late report (HopUsageRefresher), in place: no revision, no
+	 * last_updated_date, no who-updated keys, no audit row -- a rollup of another table is not a
+	 * change of record (TPF-71 / TPF-105). The two arrays are written whole, in the shape
+	 * Utils.OM writes them on a whole-record save; every other key is untouched.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_tasks SET record_data = jsonb_set(jsonb_set(record_data, "
+			+ "'{signOffs}', cast(:signOffs as jsonb)), '{returns}', cast(:returns as jsonb)) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampHopUsage(@Param("uuid") UUID uuid, @Param("signOffs") String signOffs, @Param("returns") String returns);
+
+	/**
+	 * Add a coordinator share to the task's frozen estimate (CoordinatorShareService), in place and
+	 * in SQL, so two apportionings cannot lose each other: no revision, no last_updated_date, no
+	 * who-updated keys, no audit row (TPF-71 / TPF-105). A missing key reads as 0.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_tasks SET record_data = jsonb_set(record_data, '{coordinatorEstimateMicros}', "
+			+ "to_jsonb(coalesce(cast(record_data->>'coordinatorEstimateMicros' as bigint), 0) + cast(:delta as bigint))) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int addCoordinatorEstimate(@Param("uuid") UUID uuid, @Param("delta") long delta);
 }

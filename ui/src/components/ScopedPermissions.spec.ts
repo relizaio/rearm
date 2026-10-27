@@ -96,13 +96,13 @@ describe('ScopedPermissions: Per-Board', () => {
         expect(w.findAllComponents(NCheckbox).map((c: any) => c.props('value'))).not.toContain('TEA_READ')
     })
 
-    it('offers PUBLISH_EXTERNALLY nowhere where the backend serves no TEA (CE)', () => {
+    it('offers PUBLISH_EXTERNALLY on CE too, whose backend serves TEA since the SCORE-72 sync', () => {
         myuser.installationType = 'OSS'
         try {
             const w = mountEditor([grant('PERSPECTIVE', 'p1'), grant('COMPONENT', 'prod1'), grant('COMPONENT', 'c1')])
             const values = w.findAllComponents(NCheckbox).map((c: any) => c.props('value'))
             expect(values).toContain('ARTIFACT_DOWNLOAD')
-            expect(values).not.toContain('PUBLISH_EXTERNALLY')
+            expect(values).toContain('PUBLISH_EXTERNALLY')
         } finally {
             myuser.installationType = 'SAAS'
         }

@@ -15,8 +15,8 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.BomFormat;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import lombok.extern.slf4j.Slf4j;
 
 /**

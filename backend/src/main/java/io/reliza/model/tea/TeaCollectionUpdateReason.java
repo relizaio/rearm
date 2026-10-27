@@ -24,14 +24,25 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "collection-update-reason", description = "Reason for the update to the TEA collection")
 @JsonTypeName("collection-update-reason")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaCollectionUpdateReason {
 
-  private @Nullable TeaCollectionUpdateReasonType type;
+  private TeaCollectionUpdateReasonType type;
 
   private @Nullable String comment;
 
-  public TeaCollectionUpdateReason type(@Nullable TeaCollectionUpdateReasonType type) {
+  public TeaCollectionUpdateReason() {
+    super();
+  }
+
+  /**
+   * Constructor with only required parameters
+   */
+  public TeaCollectionUpdateReason(TeaCollectionUpdateReasonType type) {
+    this.type = type;
+  }
+
+  public TeaCollectionUpdateReason type(TeaCollectionUpdateReasonType type) {
     this.type = type;
     return this;
   }
@@ -40,15 +51,15 @@ public class TeaCollectionUpdateReason {
    * Type of update reason.
    * @return type
    */
-  @Valid 
-  @Schema(name = "type", description = "Type of update reason.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "type", description = "Type of update reason.", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("type")
-  public @Nullable TeaCollectionUpdateReasonType getType() {
+  public TeaCollectionUpdateReasonType getType() {
     return type;
   }
 
   @JsonProperty("type")
-  public void setType(@Nullable TeaCollectionUpdateReasonType type) {
+  public void setType(TeaCollectionUpdateReasonType type) {
     this.type = type;
   }
 

@@ -57,6 +57,8 @@ public class CommonVariables {
 	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 2000;
 	
 	public static final String NAME_FIELD = "name";
+	/** The JSON key of the TEA-facing id in organization, component and artifact records (TEA-2, TEA-5). */
+	public static final String TEA_UUID_FIELD = "teaUuid";
 	/** Stored finding field every DTrack fetch stamps with the fetch time. */
 	public static final String ATTRIBUTED_AT_FIELD = "attributedAt";
 	public static final String DESCRIPTION_FIELD = "description";
@@ -98,6 +100,7 @@ public class CommonVariables {
 	public static final String NOTES_FIELD = "notes";
 	public static final String IDENTIFIER_FIELD = "identifier";
 	public static final String ARTIFACTS_FIELD = "artifacts";
+	public static final String SYNTHETIC_ARTIFACTS_FIELD = "syntheticArtifacts";
 	public static final String ARTIFACT_DETAILS_FIELD = "artifactDetails";
 	public static final String ARTIFACT_FIELD = "artifact";
 	public static final String DELIVERABLE_FIELD = "deliverable";
@@ -347,6 +350,25 @@ public class CommonVariables {
 	public static final String VDR_SNAPSHOT_VALUE_TAG_KEY = "VDR_SNAPSHOT_VALUE";
 	public static final String VDR_SNAPSHOT_TRIGGER_TAG_KEY = "VDR_SNAPSHOT_TRIGGER";
 	public static final String VDR_SNAPSHOT_KEY_TAG_KEY = "VDR_SNAPSHOT_KEY";
+	/** System tag on an artifact ReARM generated itself (value {@code true}); see ReleaseData.syntheticArtifacts. */
+	public static final String SYNTHETIC_ARTIFACT_TAG_KEY = "syntheticArtifact";
+	/** System tag naming the release a synthetic artifact was generated for (value: the release uuid). */
+	public static final String SYNTHETIC_OF_RELEASE_TAG_KEY = "syntheticOfRelease";
+	/** System tag on the generated aggregated SBOM a TEA publication serves (value {@code true}; task TEA-5). */
+	public static final String TEA_AGGREGATE_TAG_KEY = "teaAggregate";
+	/** System tag naming the TEA publication a generated aggregate belongs to (value: the publication uuid). */
+	public static final String TEA_PUBLICATION_TAG_KEY = "teaPublication";
+	/**
+	 * System tag carrying the content digest of a generated TEA aggregate: the sha256 of the merged
+	 * document without serialNumber, version and metadata.timestamp, properties sorted. Equal digests
+	 * mean an unchanged aggregate, so a re-publish uploads nothing.
+	 */
+	public static final String TEA_CONTENT_DIGEST_TAG_KEY = "teaContentDigest";
+	/**
+	 * System tag naming the SBOM profile a generated TEA aggregate is the aggregate of (value: the profile
+	 * name; task TEA-28): with {@link #TEA_AGGREGATE_TAG_KEY} it identifies the release's row of that name.
+	 */
+	public static final String TEA_PROFILE_NAME_TAG_KEY = "teaProfileName";
 
 	/*** K8s Labels
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/
@@ -483,6 +505,14 @@ public class CommonVariables {
 		
 		private UserGroupStatus () {}
 	}
+
+	/** Status of an API key group (TPF-91); its own enum so it never crosses with UserGroupStatus. */
+	public enum ApiKeyGroupStatus {
+		ACTIVE,
+		INACTIVE;
+
+		private ApiKeyGroupStatus () {}
+	}
 	
 	public enum TableName {
 		AGENTS("agents"),
@@ -539,6 +569,8 @@ public class CommonVariables {
 		SOURCE_CODE_ENTRIES("source_code_entries"),
 		USERS("users"),
 		USER_GROUPS("user_groups"),
+		API_KEY_GROUPS("api_key_groups"),
+		PERMISSION_TEMPLATES("permission_templates"),
 		TEAMS("teams"),
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
@@ -548,7 +580,12 @@ public class CommonVariables {
 		ATTESTATION("attestations"),
 		VULNERABILITY_RECORDS("vulnerability_records"),
 		VULN_ANALYSIS("vuln_analysis"),
+		PACKAGE_SETTINGS("package_settings"),
 		PERSPECTIVE("perspectives"),
+		SBOM_PROFILE("sbom_profiles"),
+		SUBMISSION("submissions"),
+		TEA_PROFILE("tea_profiles"),
+		TEA_PUBLICATION("tea_publications"),
 		WEBHOOKS("webhooks"),
 		WEBHOOK_DELIVERIES("webhook_deliveries")
 		;
@@ -751,7 +788,15 @@ public class CommonVariables {
 
 			    // resolve uuids and type
 				String[] typeProj = orderParse[0].split("__", 0);
-			    ahpBuilder.type(ApiTypeEnum.valueOf(typeProj[0]));
+				ApiTypeEnum parsedType = ApiTypeEnum.valueOf(typeProj[0]);
+				if (parsedType == ApiTypeEnum.EXTERNAL) {
+					// The hard boundary of task TEA-3: an external key reaches nothing but TEA, so no Basic
+					// credential path (programmatic GraphQL, the programmatic token endpoint, the download
+					// endpoints, the rate limiter) ever sees one as a principal.
+					log.debug("EXTERNAL keys authenticate at the TEA token endpoint only; refused a Basic credential from {}", ipAddr);
+					return AuthHeaderParse.builder().build();
+				}
+			    ahpBuilder.type(parsedType);
 				ahpBuilder.objUuid(UUID.fromString(typeProj[1]));
 				if(typeProj.length > 2 && typeProj[2].startsWith("ORGANIZATION")){
 					ahpBuilder.orgUuid(UUID.fromString(typeProj[3]));

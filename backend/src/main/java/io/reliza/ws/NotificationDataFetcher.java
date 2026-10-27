@@ -1044,7 +1044,13 @@ public class NotificationDataFetcher {
 		Set<UserPermission> perms = organizationService
 				.obtainCombinedUserOrgPermissions(userData, orgUuid).getOrgPermissionsAsSet(orgUuid);
 		boolean isOrgAdmin = computeIsOrgAdmin(perms);
-		List<UUID> perspectives = computeUserPerspectives(perms);
+		// The perspective arm: the perspectives of the caller's PERSPECTIVE-scope grants that are
+		// live in this organization (task TEA-8, D6), so a grant deletePerspective left behind
+		// opens no inbox and matches no delivery. This maps the design doc's "resource-group
+		// membership" onto PermissionScope.PERSPECTIVE (slice 5 plan section 0 in the memory
+		// notifications-slice5-inbox-plan.md has the reconciliation); perms is the COMBINED set,
+		// so a grant through a UserGroup counts.
+		List<UUID> perspectives = authorizationService.livePerspectivesOfGrants(perms, orgUuid);
 		// Gate membership uses the FIXED >= READ_ONLY component floor (real view
 		// access), independent of the watcher lever below: a read-only viewer/
 		// approver stays a legitimate inbox user (passes the gate, sees their
@@ -1128,33 +1134,6 @@ public class NotificationDataFetcher {
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * The user's perspective membership on this org = the set of
-	 * {@code object} UUIDs on permissions where
-	 * {@code scope == PERSPECTIVE}. Used to intersect against an event's
-	 * {@code affectedReleases[*].perspectives} at SQL time.
-	 *
-	 * <p>Note: this maps the design doc's "resource-group membership"
-	 * concept onto the actual {@code PermissionScope.PERSPECTIVE} the
-	 * codebase ships (the doc's "resource_group" doesn't exist as a
-	 * scope or payload field — see slice 5 plan §0 in the memory
-	 * {@code notifications-slice5-inbox-plan.md} for the reconciliation).
-	 *
-	 * <p>Operates on the caller's COMBINED org permissions (own record +
-	 * UserGroups), so perspective membership granted via a group counts.
-	 */
-	private static List<UUID> computeUserPerspectives(Set<UserPermission> perms) {
-		if (perms == null) return Collections.emptyList();
-		List<UUID> out = new java.util.ArrayList<>();
-		for (UserPermission p : perms) {
-			if (p == null) continue;
-			if (p.getScope() == PermissionScope.PERSPECTIVE && p.getObject() != null) {
-				out.add(p.getObject());
-			}
-		}
-		return out;
 	}
 
 	/**

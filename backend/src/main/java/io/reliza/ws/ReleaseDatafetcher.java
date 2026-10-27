@@ -52,6 +52,7 @@ import java.util.concurrent.CompletionStage;
 import java.time.ZonedDateTime;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TagRecord;
@@ -59,6 +60,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.Utils.UuidDiff;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.TxUtils;
 import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
@@ -108,7 +110,7 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.model.DownloadLogData.DownloadConfig;
 import io.reliza.model.DownloadLogData.DownloadSubjectType;
@@ -1195,9 +1197,17 @@ public class ReleaseDatafetcher {
 		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
 	}
 	
-	@DgsData(parentType = "Query", field = "getReleaseByReleaseVersionProgrammatic")
-	public String getReleaseByReleaseVersion(DgsDataFetchingEnvironment dfe,
-			@InputArgument("version") String version, @InputArgument("componentId") String componentReference) throws RelizaException {
+	/**
+	 * What a programmatic read of a component / product needs before it may look anything up
+	 * (TPF-72 / TPF-98): the verified key, the system state, the component the reference names and
+	 * the caller's authorization for it, in that order. Shared by getReleaseByReleaseVersion,
+	 * getReleaseByCommit and getReleasesByCommit; getReleaseByHash keeps its own prefix (its
+	 * componentId is optional and its texts differ).
+	 */
+	private record ProgrammaticComponentRead(AuthHeaderParse ahp, UUID orgId, UUID componentId, ComponentData component) {}
+
+	private ProgrammaticComponentRead authorizeProgrammaticComponentRead(DgsDataFetchingEnvironment dfe,
+			String componentReference) throws RelizaException {
 		DgsWebMvcRequestData requestData =  (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
 		var servletWebRequest = (ServletWebRequest) requestData.getWebRequest();
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
@@ -1239,10 +1249,58 @@ public class ReleaseDatafetcher {
 			authorizationService.isApiKeyAuthorized(ahp, supportedApiTypes, orgId, CallType.READ, ro);
 		}
 
-		Optional<ReleaseData> ord = releaseService.getReleaseDataByComponentAndVersion(componentId, version);
+		return new ProgrammaticComponentRead(ahp, orgId, componentId, ocd.get());
+	}
+
+	/**
+	 * The releases of the component whose head commit is exactly commit, newest createdDate first:
+	 * the entries of the component's org with that commit (one per repository that recorded it),
+	 * then the releases of the org pointing at any of them as their primary sourceCodeEntry, on
+	 * this component. A release that only lists the commit in its changelog range (commits[]) is
+	 * not a match: the field answers "which release was built from this commit".
+	 */
+	private List<ReleaseData> releasesByHeadCommit(ProgrammaticComponentRead read, String commit) {
+		String wanted = null == commit ? "" : commit.trim();
+		if (wanted.isEmpty()) return List.of();
+		Set<UUID> entries = getSourceCodeEntryService.findSceUuidsByCommitAndOrg(read.orgId(), wanted);
+		if (entries.isEmpty()) return List.of();
+		List<ReleaseData> matches = new ArrayList<>();
+		for (UUID sce : entries) {
+			for (ReleaseData rd : sharedReleaseService.findReleaseDatasBySce(sce, read.orgId())) {
+				if (sce.equals(rd.getSourceCodeEntry()) && read.componentId().equals(rd.getComponent())) matches.add(rd);
+			}
+		}
+		matches.sort(new ReleaseData.ReleaseDateComparator());
+		return matches;
+	}
+
+	@DgsData(parentType = "Query", field = "getReleaseByReleaseVersionProgrammatic")
+	public String getReleaseByReleaseVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("version") String version, @InputArgument("componentId") String componentReference) throws RelizaException {
+		ProgrammaticComponentRead read = authorizeProgrammaticComponentRead(dfe, componentReference);
+		Optional<ReleaseData> ord = releaseService.getReleaseDataByComponentAndVersion(read.componentId(), version);
 		if (ord.isEmpty()) return "{}";
 		return releaseService.exportReleaseAsObom(ord.get().getUuid()).toString();
 	}
+
+	@DgsData(parentType = "Query", field = "getReleaseByCommitProgrammatic")
+	public String getReleaseByCommit(DgsDataFetchingEnvironment dfe,
+			@InputArgument("commit") String commit, @InputArgument("componentId") String componentReference) throws RelizaException {
+		ProgrammaticComponentRead read = authorizeProgrammaticComponentRead(dfe, componentReference);
+		List<ReleaseData> matches = releasesByHeadCommit(read, commit);
+		if (matches.isEmpty()) return "{}";
+		return releaseService.exportReleaseAsObom(matches.get(0).getUuid()).toString();
+	}
+
+	@DgsData(parentType = "Query", field = "getReleasesByCommitProgrammatic")
+	public List<ReleaseByCommitMatch> getReleasesByCommit(DgsDataFetchingEnvironment dfe,
+			@InputArgument("commit") String commit, @InputArgument("componentId") String componentReference) throws RelizaException {
+		ProgrammaticComponentRead read = authorizeProgrammaticComponentRead(dfe, componentReference);
+		return releasesByHeadCommit(read, commit).stream()
+				.map(rd -> new ReleaseByCommitMatch(rd.getUuid(), rd.getVersion(), rd.getCreatedDate())).toList();
+	}
+
+	public record ReleaseByCommitMatch(UUID uuid, String version, ZonedDateTime createdDate) {}
 	
 	public static record GetLatestReleaseInput (String component, UUID product, String branch,
 			TagRecord tags, ReleaseLifecycle lifecycle, InputConditionGroup conditions,
@@ -1779,9 +1837,12 @@ public class ReleaseDatafetcher {
 		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
 		
 		ReleaseData rd = ord.get();
-
+		// TPF-44: the artifact to replace is read after the authorization, and only one the caller may
+		// write; then (TEA) a generated artifact is owned by the generator that wrote it: no new version
+		// of it is uploaded here, in place or as a replacement, whichever release the call names.
+		ArtifactData inputArtifact = null == inputArtifactUuid ? null : resolveReplaceableArtifact(oud.get(), rd, inputArtifactUuid);
 		if (null != inputArtifactUuid) {
-			resolveReplaceableArtifact(oud.get(), rd, inputArtifactUuid);
+			sharedReleaseService.assertNotGeneratedArtifact(rd, inputArtifactUuid, inputArtifact);
 		}
 
 		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).orElseThrow();
@@ -1938,7 +1999,8 @@ public class ReleaseDatafetcher {
 				releases.forEach(r -> acollectionService.resolveReleaseCollection(r.getUuid(), wu));
 			}
 			
-			releaseService.reconcileMergedSbomRoutine(rd, wu);
+			UUID reconcileReleaseUuid = rd.getUuid();
+			TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 
 			if (ArtifactType.VEX.equals(artDto.getType()) && multipartFile != null) {
 				try {
@@ -2037,8 +2099,9 @@ public class ReleaseDatafetcher {
 			throw e;
 		}
 		
-		// Reconcile merged SBOM
-		releaseService.reconcileMergedSbomRoutine(rd, wu);
+		// Reconcile merged SBOM, from the release as stored once the attach is committed
+		UUID reconcileReleaseUuid = rd.getUuid();
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 		
 		// Return updated release
 		return sharedReleaseService.getReleaseData(rd.getUuid()).get();
@@ -2594,7 +2657,21 @@ public class ReleaseDatafetcher {
 	@DgsData(parentType = "Release", field = "artifactDetails")
 	public List<ArtifactData> artifactsOfReleaseWithDep(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
-		List<UUID> artUuids = rd.getArtifacts();
+		return artifactDetailsInOrder(rd.getArtifacts(), dfe, rd.getUuid());
+	}
+
+	/**
+	 * The artifacts ReARM generated for the release (ReleaseData.syntheticArtifacts), read the
+	 * way artifactDetails reads the inventory list. Never part of artifactDetails.
+	 */
+	@DgsData(parentType = "Release", field = "syntheticArtifactDetails")
+	public List<ArtifactData> syntheticArtifactsOfRelease(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		return artifactDetailsInOrder(rd.getSyntheticArtifacts(), dfe, rd.getUuid());
+	}
+
+	private List<ArtifactData> artifactDetailsInOrder(List<UUID> artUuids, DgsDataFetchingEnvironment dfe,
+			UUID releaseUuid) {
 		if (null == artUuids || artUuids.isEmpty()) {
 			return new LinkedList<>();
 		}
@@ -2614,7 +2691,7 @@ public class ReleaseDatafetcher {
 			if (ad != null) {
 				artList.add(ad);
 			} else {
-				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, rd.getUuid());
+				log.warn("Artifact not found for UUID: {}, releaseId: {}", artUuid, releaseUuid);
 				// Skip missing artifacts instead of crashing
 			}
 		}
