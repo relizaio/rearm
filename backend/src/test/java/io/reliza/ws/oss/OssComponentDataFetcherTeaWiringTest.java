@@ -188,6 +188,7 @@ public class OssComponentDataFetcherTeaWiringTest {
 		ExecutionResult r = save(w.reader(), w, List.of(trigger("publish", EventType.TEA_PUBLISH)));
 		assertEquals(1, r.getErrors().size(), String.valueOf(r.getErrors()));
 		assertNotEquals(REFUSAL, r.getErrors().get(0).getMessage());
+		assertEquals("Not authorized", r.getErrors().get(0).getMessage(), String.valueOf(r.getErrors()));
 		assertEquals(List.of(), triggersOf(stored(w)));
 	}
 }
