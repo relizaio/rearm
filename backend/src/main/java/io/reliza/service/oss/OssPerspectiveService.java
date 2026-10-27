@@ -4,6 +4,7 @@
 
 package io.reliza.service.oss;
 
+import java.util.Collection;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
@@ -65,6 +66,53 @@ public class OssPerspectiveService {
 	}
 
 	/**
+	 * A perspective as the TEA profile code sees it (task TEA-2): the shared layer never names
+	 * {@code PerspectiveData}, which exists only in ReARM Pro.
+	 */
+	public record TeaPerspectiveRef(UUID uuid, String name, PerspectiveType type) {}
+
+	/**
+	 * Whether this edition has perspectives at all; TEA PERSPECTIVE-scope profiles need them.
+	 * Part of ReARM Pro only: CE has no perspectives, so this is false and every PERSPECTIVE-scope
+	 * save is refused before any lookup.
+	 */
+	public boolean teaPerspectivesSupported() {
+		return false;
+	}
+
+	/**
+	 * The perspectives a component's TEA profile may resolve through.
+	 * Part of ReARM Pro only: CE has no perspectives, so this is empty.
+	 */
+	public List<TeaPerspectiveRef> teaPerspectivesOfComponent(ComponentData cd) {
+		return List.of();
+	}
+
+	/**
+	 * The refs of the uuids that would be TEA candidates of a component of {@code org} holding them.
+	 * Part of ReARM Pro only: CE has no perspectives, so this is empty.
+	 */
+	public List<TeaPerspectiveRef> teaPerspectiveRefs(UUID org, Collection<UUID> uuids) {
+		return List.of();
+	}
+
+	/**
+	 * An active perspective by uuid. Part of ReARM Pro only: CE has no perspectives, so every uuid
+	 * is empty, the answer Pro gives for a missing one.
+	 */
+	public Optional<TeaPerspectiveRef> teaPerspectiveRef(UUID uuid) {
+		return Optional.empty();
+	}
+
+	/**
+	 * The perspective as an authorization object (its org), for the TEA profile calls.
+	 * Part of ReARM Pro only: CE has no perspectives, so every uuid is empty.
+	 */
+	public Optional<RelizaObject> teaPerspectiveObject(UUID uuid) {
+		return Optional.empty();
+	}
+
+	/**
 	 * Part of ReARM Pro only
 	 * @param uuid
 	 * @return
@@ -105,5 +153,30 @@ public class OssPerspectiveService {
 	 */
 	public PerspectiveSidResolution resolvePerspectiveSidOverrides(ComponentData cd) throws RelizaException {
 		return PerspectiveSidResolution.none();
+	}
+
+	/**
+	 * The rows among {@code uuids} that may hold components of {@code orgUuid} (task TEA-8).
+	 * Part of ReARM Pro only: CE has no perspectives, so none is assignable and this is empty.
+	 */
+	public List<PerspectiveData> assignablePerspectives(UUID orgUuid, Collection<UUID> uuids) {
+		return List.of();
+	}
+
+	/**
+	 * The uuids of {@link #assignablePerspectives}, in the same order. ComponentService.setPerspectives
+	 * keeps only these on every save (task TEA-8). Part of ReARM Pro only: CE has no perspectives, so
+	 * this is empty.
+	 */
+	public List<UUID> assignablePerspectiveUuids(UUID orgUuid, Collection<UUID> uuids) {
+		return List.of();
+	}
+
+	/**
+	 * The organization of the perspective row {@code uuid}; empty when there is no row.
+	 * Part of ReARM Pro only: CE has no perspective rows, so this is empty.
+	 */
+	public Optional<UUID> orgOfPerspective(UUID uuid) {
+		return Optional.empty();
 	}
 }

@@ -983,7 +983,7 @@ public class OssReleaseService {
 	 * facts. Without a transaction, at once.
 	 */
 	private void reconcileMergedSbomsAfterCommit(ReleaseData rd, WhoUpdated wu) {
-		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(rd, wu));
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(rd.getUuid(), wu));
 	}
 
 	/** Collect {@code idValue}s for sid-typed PURL identifiers. Null-safe. */
