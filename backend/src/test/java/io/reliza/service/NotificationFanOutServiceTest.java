@@ -78,6 +78,7 @@ import io.reliza.repositories.NotificationSubscriptionRepository;
 import io.reliza.service.BranchService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.oss.OssPerspectiveService;
 import io.reliza.model.dto.notifications.EvaluationMode;
 
 /**
@@ -102,6 +103,7 @@ class NotificationFanOutServiceTest {
     private TeamService teamService;
     private ComponentOwnershipService componentOwnershipService;
     private VulnerabilityRecordService vulnerabilityRecordService;
+    private OssPerspectiveService ossPerspectiveService;
     private Map<UUID, UUID> channelOrgs;
     private NotificationFanOutService fanOut;
 
@@ -161,6 +163,12 @@ class NotificationFanOutServiceTest {
         inject(fanOut, "teamService", teamService);
         inject(fanOut, "componentOwnershipService", componentOwnershipService);
         inject(fanOut, "vulnerabilityRecordService", vulnerabilityRecordService);
+        // The one filter of a component's stored perspectives (task TEA-8, D13): pass-through, so
+        // the enrichment and perspective-gate cases see the component's set; TEA-8 cases stub it.
+        ossPerspectiveService = mock(OssPerspectiveService.class);
+        when(ossPerspectiveService.assignablePerspectiveUuids(any(), any()))
+                .thenAnswer(inv -> new java.util.ArrayList<UUID>(inv.<Collection<UUID>>getArgument(1)));
+        inject(fanOut, "ossPerspectiveService", ossPerspectiveService);
         // drainBatch reaches the per-event transaction boundary through `self`.
         // Point it at the instance itself: these tests have no Spring proxy, so
         // there is no transaction to enter anyway, and this keeps them
@@ -1619,6 +1627,37 @@ class NotificationFanOutServiceTest {
     }
 
     @Test
+    void enrichmentStampsOnlyAssignablePerspectives() throws Exception {
+        // Task TEA-8 (D13): a deleted or foreign membership the component still stores is not
+        // stamped into the event; only the assignable perspectives are.
+        UUID orgUuid = UUID.randomUUID();
+        UUID componentUuid = UUID.randomUUID();
+        UUID channelUuid = UUID.randomUUID();
+        UUID live = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+
+        NotificationOutboxEvent event = bareVulnEvent(orgUuid, "CVE-2025-TEA8-1");
+        wireEnrichmentChain(orgUuid, "CVE-2025-TEA8-1", UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), componentUuid,
+                buildComponentData("payments-api", orgUuid, Set.of(live, deleted)));
+        stubAssignable(orgUuid, Set.of(live, deleted), List.of(live));
+
+        NotificationSubscription sub = subscriptionWith(orgUuid, null,
+                NotificationSeverity.LOW, channelUuid);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(event));
+        when(subscriptionRepo.findActiveByOrg(orgUuid)).thenReturn(List.of(sub));
+
+        fanOut.drainBatch(50);
+
+        @SuppressWarnings("unchecked")
+        Map<String, Object> ar = (Map<String, Object>) ((List<?>) event.getRecordData()
+                .get("affectedReleases")).get(0);
+        @SuppressWarnings("unchecked")
+        Collection<String> ps = (Collection<String>) ar.get("perspectives");
+        assertEquals(Set.of(live.toString()), Set.copyOf(ps));
+    }
+
+    @Test
     void routeWithPerspectiveGateFiresWhenEventIntersects() throws Exception {
         UUID orgUuid = UUID.randomUUID();
         UUID componentUuid = UUID.randomUUID();
@@ -1667,6 +1706,45 @@ class NotificationFanOutServiceTest {
         // Route gated out — no delivery row written despite the
         // subscription matching the event type + severity.
         verify(deliveryRepo, never()).save(any());
+    }
+
+    @Test
+    void aRouteGatedOnADeletedPerspectiveMatchesNoNewEvent() throws Exception {
+        // Task TEA-8 (D14): the route gate reads the stamp, which carries the assignable
+        // perspectives only, so a route gated on a deleted perspective no longer matches a new
+        // event of a component that still stores it; a route on the live one still does.
+        UUID orgUuid = UUID.randomUUID();
+        UUID componentUuid = UUID.randomUUID();
+        UUID live = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+        ComponentData component = buildComponentData("payments-api", orgUuid, Set.of(live, deleted));
+        stubAssignable(orgUuid, Set.of(live, deleted), List.of(live));
+
+        UUID deadChannel = UUID.randomUUID();
+        NotificationOutboxEvent first = bareVulnEvent(orgUuid, "CVE-2025-TEA8-2");
+        wireEnrichmentChain(orgUuid, "CVE-2025-TEA8-2", UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), componentUuid, component);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(first));
+        when(subscriptionRepo.findActiveByOrg(orgUuid))
+                .thenReturn(List.of(subscriptionWithPerspectives(orgUuid, deadChannel, List.of(deleted))));
+        fanOut.drainBatch(50);
+        verify(deliveryRepo, never()).save(any());
+
+        UUID liveChannel = UUID.randomUUID();
+        NotificationOutboxEvent second = bareVulnEvent(orgUuid, "CVE-2025-TEA8-3");
+        wireEnrichmentChain(orgUuid, "CVE-2025-TEA8-3", UUID.randomUUID(), UUID.randomUUID(),
+                UUID.randomUUID(), componentUuid, component);
+        when(outboxRepo.findPendingBatch(50)).thenReturn(List.of(second));
+        when(subscriptionRepo.findActiveByOrg(orgUuid))
+                .thenReturn(List.of(subscriptionWithPerspectives(orgUuid, liveChannel, List.of(live))));
+        fanOut.drainBatch(50);
+        verify(deliveryRepo, times(1)).save(any());
+    }
+
+    private void stubAssignable(UUID org, Set<UUID> stored, List<UUID> assignable) {
+        // doReturn: when(...) would run the pass-through answer with the matchers' null arguments.
+        doReturn(assignable).when(ossPerspectiveService).assignablePerspectiveUuids(eq(org),
+                argThat(c -> null != c && Set.copyOf(c).equals(stored)));
     }
 
     @Test
@@ -2766,6 +2844,12 @@ class NotificationFanOutServiceTest {
         Map<String, Object> m = new HashMap<>();
         m.put("name", name);
         return Utils.OM.convertValue(m, ComponentData.class);
+    }
+
+    private static ComponentData buildComponentData(String name, UUID org, java.util.Set<UUID> perspectives) {
+        ComponentData cd = buildComponentData(name, perspectives);
+        cd.setOrg(org);
+        return cd;
     }
 
     private static ComponentData buildComponentData(String name, java.util.Set<UUID> perspectives) {

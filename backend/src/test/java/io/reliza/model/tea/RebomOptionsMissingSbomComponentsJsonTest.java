@@ -18,9 +18,9 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomStructureType;
 import tools.jackson.databind.JsonNode;
 

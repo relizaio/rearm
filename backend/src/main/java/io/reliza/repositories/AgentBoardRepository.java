@@ -3,11 +3,13 @@
 */
 package io.reliza.repositories;
 
+import java.math.BigDecimal;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
@@ -96,4 +98,35 @@ public interface AgentBoardRepository extends CrudRepository<AgentBoard, UUID> {
 			+ "WHERE uuid = :uuid",
 			nativeQuery = true)
 	int stampStalenessAlerted(@Param("uuid") UUID uuid, @Param("alerted") String alerted);
+
+	/**
+	 * Advance the board's coordinator-share totals and cursor (CoordinatorShareService) in place:
+	 * the two counters added in SQL, the cursor set to the report time in the numeric epoch form
+	 * Utils.OM writes for a ZonedDateTime (AgentSessionService.epochSecondsOf). No revision, no
+	 * last_updated_date, no who-updated keys, no audit row (TPF-71 / TPF-105). Deltas of 0 advance
+	 * the cursor alone.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_boards SET record_data = jsonb_set(jsonb_set(jsonb_set(record_data, "
+			+ "'{coordinatorSharesMicros}', to_jsonb(coalesce(cast(record_data->>'coordinatorSharesMicros' as bigint), 0) + cast(:shares as bigint))), "
+			+ "'{coordinatorTransitions}', to_jsonb(coalesce(cast(record_data->>'coordinatorTransitions' as bigint), 0) + cast(:transitions as bigint))), "
+			+ "'{coordinatorShareCursor}', to_jsonb(cast(:cursor as numeric))) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampCoordinatorShares(@Param("uuid") UUID uuid, @Param("shares") long shares,
+			@Param("transitions") long transitions, @Param("cursor") BigDecimal cursor);
+
+	/**
+	 * Mark the soft-alert line as posted (AgentBoardService.markSoftAlertPosted), once, in place:
+	 * the Java "already posted" check is the WHERE, no revision, no last_updated_date, no
+	 * who-updated keys, no audit row (TPF-71 / TPF-105). The twin of stampStalenessAlerted.
+	 *
+	 * @return 1 when marked now, 0 when it already was
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{softAlertPosted}', cast('true' as jsonb)) "
+			+ "WHERE uuid = :uuid AND coalesce(record_data->>'softAlertPosted', 'false') <> 'true'",
+			nativeQuery = true)
+	int stampSoftAlertPosted(@Param("uuid") UUID uuid);
 }

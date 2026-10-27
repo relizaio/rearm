@@ -38,8 +38,13 @@ public interface ReleaseTriggerHook {
 	 * only outputs that can fire are those never recorded as fired -- which is exactly the set a
 	 * guard withheld. Without this, every press of Re-evaluate on a release whose rule still
 	 * matches would mint another snapshot artifact.
+	 *
+	 * <p>{@code TEA_HIDES} is the pass the TEA act worker runs after an automatic publish that
+	 * changed the release's head (task TEA-7): only a TEA_HIDE that never fired may fire; every
+	 * other kind is skipped. A hide rule whose own pass ran before there was anything to hide
+	 * then finds the published head and hides it.
 	 */
-	public enum TriggerPass { NORMAL, REEVALUATION }
+	public enum TriggerPass { NORMAL, REEVALUATION, TEA_HIDES }
 
 	/**
 	 * Evaluate this release's triggers and fire whatever they entail.

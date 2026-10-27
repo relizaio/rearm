@@ -259,6 +259,9 @@ public class BoardAgentsIntegrationTest {
 		assertEquals(1, w.stale().size(), w.stale().toString());
 		assertEquals("hopNoProgress", w.stale().get(0).rule());
 		assertTrue(w.stale().get(0).message().contains("stalled"), w.stale().get(0).message());
+		// the span the mark measures (task TPF-69): from the assignment to the read
+		assertEquals(61, w.stale().get(0).minutes());
+		assertNotNull(w.stale().get(0).since());
 		assertTrue(rowOf(later, other).stale().isEmpty(), "the rule names the stalled session only");
 	}
 

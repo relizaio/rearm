@@ -5,8 +5,10 @@
  */
 package io.reliza.ws.tea;
 
+import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaArtifact;
 import io.reliza.model.tea.TeaErrorResponse;
+import java.net.URI;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
@@ -35,7 +37,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "TEA Artifact", description = "the TEA Artifact API")
 public interface ArtifactApi {
@@ -44,32 +46,558 @@ public interface ArtifactApi {
         return Optional.empty();
     }
 
+    String PATH_DOWNLOAD_ARTIFACT_BY_VERSION = "/artifact/{uuid}/{artifactVersion}/download";
+    /**
+     * GET /artifact/{uuid}/{artifactVersion}/download : Download the content of one TEA Artifact revision
+     * Download the content of a specific revision of a specific TEA Artifact.  This endpoint returns the bytes of one &#x60;format&#x60; of the artifact revision. It is how a TEA server hosts artifact content itself: a format that has no external &#x60;url&#x60; is retrieved from here, selected by its &#x60;mediaType&#x60;. A format that has a &#x60;url&#x60; is retrieved from that external location instead, and this endpoint is not required to serve it.  A TEA access token is sent only to the TEA server&#39;s own API base URL. External &#x60;url&#x60; targets are retrieved without it. They are openly accessible or require credentials the client arranges separately. Expiring storage links should not be published in &#x60;url&#x60;; the server answers from this endpoint, including with &#x60;302&#x60;.  When serving the content itself (&#x60;200&#x60;), servers shall return a strong &#x60;ETag&#x60; for the HTTP representation selected after negotiation, including content coding, and shall honor &#x60;If-None-Match&#x60; with &#x60;304&#x60;. &#x60;ETag&#x60; is the only conditional validator for these downloads. Servers that support &#x60;HEAD&#x60; for this operation shall return the same headers as &#x60;GET&#x60; without a response body. &#x60;302&#x60; redirects are outside conditional semantics: &#x60;If-None-Match&#x60; applies only to the TEA-hosted download response, not to following an external &#x60;Location&#x60;.  How long a cache may retain the response depends on whether the content is publicly accessible: see &#x60;artifact-cache-control-immutable&#x60;. Immutability does not imply that shared caches may store access-controlled responses. Successful responses include &#x60;Content-Location&#x60; as an absolute URL of this versioned download including the &#x60;mediaType&#x60; query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated. 
+     *
+     * @param uuid UUID of TEA Artifact in the TEA server (required)
+     * @param artifactVersion Version of TEA Artifact (required)
+     * @param requestedMediaType Selects which of the artifact revision&#39;s &#x60;formats&#x60; to return, by its &#x60;mediaType&#x60;. The parameter value is the media type itself (for example &#x60;application/vnd.cyclonedx+json&#x60;), not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format&#39;s &#x60;mediaType&#x60; is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format using the request&#39;s &#x60;Accept&#x60; header per RFC 9110 section 12, and falls back to a format of its choice when &#x60;Accept&#x60; does not constrain the result. In either case the &#x60;Content-Type&#x60; of the response states which format was returned. An explicit &#x60;mediaType&#x60; can remove variation by &#x60;Accept&#x60; when it completely determines the format. When it does not, the server shall include &#x60;Accept&#x60; in &#x60;Vary&#x60; if changing or removing &#x60;Accept&#x60; could change the selected format, including when &#x60;Accept&#x60; is absent or contains &#x60;*_/_*&#x60;. A &#x60;mediaType&#x60; query parameter does not eliminate variation by &#x60;Accept-Encoding&#x60;; see &#x60;artifact-vary&#x60;.  Example after serialization: &#x60;.../download?mediaType&#x3D;application%2Fvnd.cyclonedx%2Bjson&#x60;  (optional)
+     * @param ifNoneMatch Conditional request validator (RFC 9110). For artifact and signature downloads, &#x60;ETag&#x60; is the only defined validator. Servers evaluate &#x60;If-None-Match&#x60; with the weak comparison function (RFC 9110 section 13.1.2) against the &#x60;ETag&#x60; of the representation selected after negotiation, including content-coding negotiation, and answer &#x60;304&#x60; when it matches. The corresponding &#x60;304&#x60; shall carry that representation&#39;s validator and shall carry &#x60;Vary&#x60; when the &#x60;200&#x60; would. When present, that &#x60;ETag&#x60; is a strong validator. Other validators are not defined for these operations.  (optional)
+     * @return The content of the requested TEA Artifact format.  The wire &#x60;Content-Type&#x60; is the &#x60;mediaType&#x60; of the format returned. The response content key is &#x60;*_/_*&#x60; because that type varies by format. &#x60;Content-Encoding&#x60;, when present, names the HTTP content coding of the selected representation. &#x60;Content-Location&#x60; identifies the revision and format; HTTP content coding can still be negotiated. &#x60;Vary&#x60; follows &#x60;artifact-vary&#x60;.  (status code 200)
+     *         or The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the &#x60;Location&#x60; header.  Changing only this response&#39;s &#x60;Location&#x60;, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external &#x60;url&#x60; or &#x60;signatureUrl&#x60; on the artifact metadata is a separate change and shall follow the &#x60;artifact-format&#x60; rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin.  (status code 302)
+     *         or The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat &#x60;ETag&#x60; and &#x60;Content-Location&#x60; from the would-be successful response for that representation, and shall repeat &#x60;Cache-Control&#x60; and &#x60;Vary&#x60; when the corresponding &#x60;200&#x60; carries them.  (status code 304)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     *         or The artifact revision exists, but has no format matching the requested &#x60;mediaType&#x60; or &#x60;Accept&#x60; header. Body is a TEA &#x60;error-response&#x60; with &#x60;error: NO_ACCEPTABLE_FORMAT&#x60;.  &#x60;NO_ACCEPTABLE_FORMAT&#x60; reveals that the artifact revision exists. A server concealing an artifact from a client shall answer &#x60;404&#x60; with &#x60;error: OBJECT_UNKNOWN&#x60; for every sub-resource of it, formats included, instead of this status.  (status code 406)
+     */
+    @Operation(
+        operationId = "downloadArtifactByVersion",
+        summary = "Download the content of one TEA Artifact revision",
+        description = "Download the content of a specific revision of a specific TEA Artifact.  This endpoint returns the bytes of one `format` of the artifact revision. It is how a TEA server hosts artifact content itself: a format that has no external `url` is retrieved from here, selected by its `mediaType`. A format that has a `url` is retrieved from that external location instead, and this endpoint is not required to serve it.  A TEA access token is sent only to the TEA server's own API base URL. External `url` targets are retrieved without it. They are openly accessible or require credentials the client arranges separately. Expiring storage links should not be published in `url`; the server answers from this endpoint, including with `302`.  When serving the content itself (`200`), servers shall return a strong `ETag` for the HTTP representation selected after negotiation, including content coding, and shall honor `If-None-Match` with `304`. `ETag` is the only conditional validator for these downloads. Servers that support `HEAD` for this operation shall return the same headers as `GET` without a response body. `302` redirects are outside conditional semantics: `If-None-Match` applies only to the TEA-hosted download response, not to following an external `Location`.  How long a cache may retain the response depends on whether the content is publicly accessible: see `artifact-cache-control-immutable`. Immutability does not imply that shared caches may store access-controlled responses. Successful responses include `Content-Location` as an absolute URL of this versioned download including the `mediaType` query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated. ",
+        tags = { "TEA Artifact" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "The content of the requested TEA Artifact format.  The wire `Content-Type` is the `mediaType` of the format returned. The response content key is `*_/_*` because that type varies by format. `Content-Encoding`, when present, names the HTTP content coding of the selected representation. `Content-Location` identifies the revision and format; HTTP content coding can still be negotiated. `Vary` follows `artifact-vary`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = org.springframework.core.io.Resource.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = org.springframework.core.io.Resource.class))
+            }),
+            @ApiResponse(responseCode = "302", description = "The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the `Location` header.  Changing only this response's `Location`, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external `url` or `signatureUrl` on the artifact metadata is a separate change and shall follow the `artifact-format` rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin. "),
+            @ApiResponse(responseCode = "304", description = "The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat `ETag` and `Content-Location` from the would-be successful response for that representation, and shall repeat `Cache-Control` and `Vary` when the corresponding `200` carries them. "),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "406", description = "The artifact revision exists, but has no format matching the requested `mediaType` or `Accept` header. Body is a TEA `error-response` with `error: NO_ACCEPTABLE_FORMAT`.  `NO_ACCEPTABLE_FORMAT` reveals that the artifact revision exists. A server concealing an artifact from a client shall answer `404` with `error: OBJECT_UNKNOWN` for every sub-resource of it, formats included, instead of this status. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ArtifactApi.PATH_DOWNLOAD_ARTIFACT_BY_VERSION,
+        produces = { "*/*", "application/json" }
+    )
+    default ResponseEntity<org.springframework.core.io.Resource> downloadArtifactByVersion(
+        @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "artifactVersion", description = "Version of TEA Artifact", required = true, in = ParameterIn.PATH) @PathVariable("artifactVersion") Integer artifactVersion,
+        @Parameter(name = "mediaType", description = "Selects which of the artifact revision's `formats` to return, by its `mediaType`. The parameter value is the media type itself (for example `application/vnd.cyclonedx+json`), not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format's `mediaType` is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format using the request's `Accept` header per RFC 9110 section 12, and falls back to a format of its choice when `Accept` does not constrain the result. In either case the `Content-Type` of the response states which format was returned. An explicit `mediaType` can remove variation by `Accept` when it completely determines the format. When it does not, the server shall include `Accept` in `Vary` if changing or removing `Accept` could change the selected format, including when `Accept` is absent or contains `*_/_*`. A `mediaType` query parameter does not eliminate variation by `Accept-Encoding`; see `artifact-vary`.  Example after serialization: `.../download?mediaType=application%2Fvnd.cyclonedx%2Bjson` ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "mediaType", required = false) @Nullable String requestedMediaType,
+        @Parameter(name = "If-None-Match", description = "Conditional request validator (RFC 9110). For artifact and signature downloads, `ETag` is the only defined validator. Servers evaluate `If-None-Match` with the weak comparison function (RFC 9110 section 13.1.2) against the `ETag` of the representation selected after negotiation, including content-coding negotiation, and answer `304` when it matches. The corresponding `304` shall carry that representation's validator and shall carry `Vary` when the `200` would. When present, that `ETag` is a strong validator. Other validators are not defined for these operations. ", in = ParameterIn.HEADER) @RequestHeader(value = "If-None-Match", required = false) @Nullable String ifNoneMatch
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_DOWNLOAD_ARTIFACT_SIGNATURE_BY_VERSION = "/artifact/{uuid}/{artifactVersion}/signature/download";
+    /**
+     * GET /artifact/{uuid}/{artifactVersion}/signature/download : Download the signature of one TEA Artifact revision
+     * Download the detached signature for one format of a specific revision of a specific TEA Artifact.  This is the counterpart of the artifact content endpoint, for TEA servers that host signatures themselves: a format that has no external &#x60;signatureUrl&#x60; is retrieved from here, selected by its &#x60;mediaType&#x60;. A format that has a &#x60;signatureUrl&#x60; is retrieved from that external location instead, and this endpoint is not required to serve it.  Signatures are per format: each format of a revision is a distinct sequence of bytes and therefore has its own signature. The &#x60;mediaType&#x60; parameter selects which format&#39;s signature is returned, not the format of the signature itself.  This specification makes no assumption about the signature technology in use, and does not model the signing algorithm, key, or certificate chain; the response is the signature as published. A client that cannot determine how to verify what it receives should treat the signature as unusable rather than as invalid.  &#x60;404&#x60; distinguishes the cases by TEA error body: &#x60;OBJECT_UNKNOWN&#x60; when the artifact revision is unknown (or concealed), and &#x60;SIGNATURE_NOT_FOUND&#x60; when the revision exists but the selected format has no signature published. A server concealing an artifact from a client shall answer &#x60;OBJECT_UNKNOWN&#x60; for every sub-resource of it, including signatures.  When serving the signature itself (&#x60;200&#x60;), servers shall return a strong &#x60;ETag&#x60; for the HTTP representation selected after negotiation, including content coding, and shall honor &#x60;If-None-Match&#x60; with &#x60;304&#x60;. &#x60;ETag&#x60; is the only conditional validator for these downloads. Servers that support &#x60;HEAD&#x60; for this operation shall return the same headers as &#x60;GET&#x60; without a response body. &#x60;302&#x60; redirects are outside conditional semantics: &#x60;If-None-Match&#x60; applies only to the TEA-hosted download response, not to following an external &#x60;Location&#x60;. Successful responses include &#x60;Content-Location&#x60; as an absolute URL of this versioned signature download including the &#x60;mediaType&#x60; query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated. 
+     *
+     * @param uuid UUID of TEA Artifact in the TEA server (required)
+     * @param artifactVersion Version of TEA Artifact (required)
+     * @param requestedMediaType Selects which of the artifact revision&#39;s &#x60;formats&#x60; the returned signature applies to, by that format&#39;s &#x60;mediaType&#x60;. This is the media type of the signed content, not of the signature. The parameter value is the media type itself, not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format&#39;s &#x60;mediaType&#x60; is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format of its choice. Requests that need a specific format&#39;s signature should supply this parameter. Successful responses include &#x60;Content-Location&#x60; with a &#x60;mediaType&#x60; query parameter naming the selected content format. An explicit &#x60;mediaType&#x60; can remove variation by &#x60;Accept&#x60; when it completely determines the signed format. It does not eliminate variation by &#x60;Accept-Encoding&#x60;; see &#x60;artifact-vary&#x60;.  Example after serialization: &#x60;.../signature/download?mediaType&#x3D;application%2Fvnd.cyclonedx%2Bjson&#x60;  (optional)
+     * @param ifNoneMatch Conditional request validator (RFC 9110). For artifact and signature downloads, &#x60;ETag&#x60; is the only defined validator. Servers evaluate &#x60;If-None-Match&#x60; with the weak comparison function (RFC 9110 section 13.1.2) against the &#x60;ETag&#x60; of the representation selected after negotiation, including content-coding negotiation, and answer &#x60;304&#x60; when it matches. The corresponding &#x60;304&#x60; shall carry that representation&#39;s validator and shall carry &#x60;Vary&#x60; when the &#x60;200&#x60; would. When present, that &#x60;ETag&#x60; is a strong validator. Other validators are not defined for these operations.  (optional)
+     * @return The detached signature for the selected format of the TEA Artifact revision.  The wire &#x60;Content-Type&#x60; is &#x60;application/octet-stream&#x60; unless the server knows a more specific media type for the signature it holds, in which case it returns that. The response content key is &#x60;*_/_*&#x60; because that type may vary. This specification does not require servers to identify the signature technology. &#x60;Content-Encoding&#x60;, when present, names the HTTP content coding of the selected representation. &#x60;Content-Location&#x60; identifies the revision and format; HTTP content coding can still be negotiated. &#x60;Vary&#x60; follows &#x60;artifact-vary&#x60;.  (status code 200)
+     *         or The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the &#x60;Location&#x60; header.  Changing only this response&#39;s &#x60;Location&#x60;, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external &#x60;url&#x60; or &#x60;signatureUrl&#x60; on the artifact metadata is a separate change and shall follow the &#x60;artifact-format&#x60; rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin.  (status code 302)
+     *         or The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat &#x60;ETag&#x60; and &#x60;Content-Location&#x60; from the would-be successful response for that representation, and shall repeat &#x60;Cache-Control&#x60; and &#x60;Vary&#x60; when the corresponding &#x60;200&#x60; carries them.  (status code 304)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     *         or The artifact revision exists, but has no format matching the requested &#x60;mediaType&#x60; or &#x60;Accept&#x60; header. Body is a TEA &#x60;error-response&#x60; with &#x60;error: NO_ACCEPTABLE_FORMAT&#x60;.  &#x60;NO_ACCEPTABLE_FORMAT&#x60; reveals that the artifact revision exists. A server concealing an artifact from a client shall answer &#x60;404&#x60; with &#x60;error: OBJECT_UNKNOWN&#x60; for every sub-resource of it, formats included, instead of this status.  (status code 406)
+     */
+    @Operation(
+        operationId = "downloadArtifactSignatureByVersion",
+        summary = "Download the signature of one TEA Artifact revision",
+        description = "Download the detached signature for one format of a specific revision of a specific TEA Artifact.  This is the counterpart of the artifact content endpoint, for TEA servers that host signatures themselves: a format that has no external `signatureUrl` is retrieved from here, selected by its `mediaType`. A format that has a `signatureUrl` is retrieved from that external location instead, and this endpoint is not required to serve it.  Signatures are per format: each format of a revision is a distinct sequence of bytes and therefore has its own signature. The `mediaType` parameter selects which format's signature is returned, not the format of the signature itself.  This specification makes no assumption about the signature technology in use, and does not model the signing algorithm, key, or certificate chain; the response is the signature as published. A client that cannot determine how to verify what it receives should treat the signature as unusable rather than as invalid.  `404` distinguishes the cases by TEA error body: `OBJECT_UNKNOWN` when the artifact revision is unknown (or concealed), and `SIGNATURE_NOT_FOUND` when the revision exists but the selected format has no signature published. A server concealing an artifact from a client shall answer `OBJECT_UNKNOWN` for every sub-resource of it, including signatures.  When serving the signature itself (`200`), servers shall return a strong `ETag` for the HTTP representation selected after negotiation, including content coding, and shall honor `If-None-Match` with `304`. `ETag` is the only conditional validator for these downloads. Servers that support `HEAD` for this operation shall return the same headers as `GET` without a response body. `302` redirects are outside conditional semantics: `If-None-Match` applies only to the TEA-hosted download response, not to following an external `Location`. Successful responses include `Content-Location` as an absolute URL of this versioned signature download including the `mediaType` query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated. ",
+        tags = { "TEA Artifact" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "The detached signature for the selected format of the TEA Artifact revision.  The wire `Content-Type` is `application/octet-stream` unless the server knows a more specific media type for the signature it holds, in which case it returns that. The response content key is `*_/_*` because that type may vary. This specification does not require servers to identify the signature technology. `Content-Encoding`, when present, names the HTTP content coding of the selected representation. `Content-Location` identifies the revision and format; HTTP content coding can still be negotiated. `Vary` follows `artifact-vary`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = org.springframework.core.io.Resource.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = org.springframework.core.io.Resource.class))
+            }),
+            @ApiResponse(responseCode = "302", description = "The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the `Location` header.  Changing only this response's `Location`, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external `url` or `signatureUrl` on the artifact metadata is a separate change and shall follow the `artifact-format` rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin. "),
+            @ApiResponse(responseCode = "304", description = "The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat `ETag` and `Content-Location` from the would-be successful response for that representation, and shall repeat `Cache-Control` and `Vary` when the corresponding `200` carries them. "),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "406", description = "The artifact revision exists, but has no format matching the requested `mediaType` or `Accept` header. Body is a TEA `error-response` with `error: NO_ACCEPTABLE_FORMAT`.  `NO_ACCEPTABLE_FORMAT` reveals that the artifact revision exists. A server concealing an artifact from a client shall answer `404` with `error: OBJECT_UNKNOWN` for every sub-resource of it, formats included, instead of this status. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ArtifactApi.PATH_DOWNLOAD_ARTIFACT_SIGNATURE_BY_VERSION,
+        produces = { "*/*", "application/json" }
+    )
+    default ResponseEntity<org.springframework.core.io.Resource> downloadArtifactSignatureByVersion(
+        @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "artifactVersion", description = "Version of TEA Artifact", required = true, in = ParameterIn.PATH) @PathVariable("artifactVersion") Integer artifactVersion,
+        @Parameter(name = "mediaType", description = "Selects which of the artifact revision's `formats` the returned signature applies to, by that format's `mediaType`. This is the media type of the signed content, not of the signature. The parameter value is the media type itself, not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format's `mediaType` is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format of its choice. Requests that need a specific format's signature should supply this parameter. Successful responses include `Content-Location` with a `mediaType` query parameter naming the selected content format. An explicit `mediaType` can remove variation by `Accept` when it completely determines the signed format. It does not eliminate variation by `Accept-Encoding`; see `artifact-vary`.  Example after serialization: `.../signature/download?mediaType=application%2Fvnd.cyclonedx%2Bjson` ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "mediaType", required = false) @Nullable String requestedMediaType,
+        @Parameter(name = "If-None-Match", description = "Conditional request validator (RFC 9110). For artifact and signature downloads, `ETag` is the only defined validator. Servers evaluate `If-None-Match` with the weak comparison function (RFC 9110 section 13.1.2) against the `ETag` of the representation selected after negotiation, including content-coding negotiation, and answer `304` when it matches. The corresponding `304` shall carry that representation's validator and shall carry `Vary` when the `200` would. When present, that `ETag` is a strong validator. Other validators are not defined for these operations. ", in = ParameterIn.HEADER) @RequestHeader(value = "If-None-Match", required = false) @Nullable String ifNoneMatch
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_DOWNLOAD_LATEST_ARTIFACT = "/artifact/{uuid}/latest/download";
+    /**
+     * GET /artifact/{uuid}/latest/download : Download the content of the latest TEA Artifact revision
+     * Download the content of the latest revision of a specific TEA Artifact.  Equivalent to the versioned download endpoint, resolving to the revision with the greatest published &#x60;version&#x60; — the same revision &#x60;/artifact/{uuid}/latest&#x60; reports. The content this returns changes when a new revision is published, so unlike the versioned endpoint the response is not immutable: caches shall revalidate it via &#x60;ETag&#x60; for the HTTP representation selected after negotiation. The &#x60;Content-Location&#x60; header is an absolute versioned URL including the API base, version path, and &#x60;mediaType&#x60; query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated.  When serving the content itself (&#x60;200&#x60;), servers shall return a strong &#x60;ETag&#x60; for the HTTP representation selected after negotiation, including content coding, and shall honor &#x60;If-None-Match&#x60; with &#x60;304&#x60;. &#x60;ETag&#x60; is the only conditional validator for these downloads. Servers that support &#x60;HEAD&#x60; for this operation shall return the same headers as &#x60;GET&#x60; without a response body. &#x60;302&#x60; redirects are outside conditional semantics: &#x60;If-None-Match&#x60; applies only to the TEA-hosted download response, not to following an external &#x60;Location&#x60;. 
+     *
+     * @param uuid UUID of TEA Artifact in the TEA server (required)
+     * @param requestedMediaType Selects which of the artifact revision&#39;s &#x60;formats&#x60; to return, by its &#x60;mediaType&#x60;. The parameter value is the media type itself (for example &#x60;application/vnd.cyclonedx+json&#x60;), not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format&#39;s &#x60;mediaType&#x60; is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format using the request&#39;s &#x60;Accept&#x60; header per RFC 9110 section 12, and falls back to a format of its choice when &#x60;Accept&#x60; does not constrain the result. In either case the &#x60;Content-Type&#x60; of the response states which format was returned. An explicit &#x60;mediaType&#x60; can remove variation by &#x60;Accept&#x60; when it completely determines the format. When it does not, the server shall include &#x60;Accept&#x60; in &#x60;Vary&#x60; if changing or removing &#x60;Accept&#x60; could change the selected format, including when &#x60;Accept&#x60; is absent or contains &#x60;*_/_*&#x60;. A &#x60;mediaType&#x60; query parameter does not eliminate variation by &#x60;Accept-Encoding&#x60;; see &#x60;artifact-vary&#x60;.  Example after serialization: &#x60;.../download?mediaType&#x3D;application%2Fvnd.cyclonedx%2Bjson&#x60;  (optional)
+     * @param ifNoneMatch Conditional request validator (RFC 9110). For artifact and signature downloads, &#x60;ETag&#x60; is the only defined validator. Servers evaluate &#x60;If-None-Match&#x60; with the weak comparison function (RFC 9110 section 13.1.2) against the &#x60;ETag&#x60; of the representation selected after negotiation, including content-coding negotiation, and answer &#x60;304&#x60; when it matches. The corresponding &#x60;304&#x60; shall carry that representation&#39;s validator and shall carry &#x60;Vary&#x60; when the &#x60;200&#x60; would. When present, that &#x60;ETag&#x60; is a strong validator. Other validators are not defined for these operations.  (optional)
+     * @return The content of the selected format of the latest revision of the TEA Artifact, as resolved at the time of the request.  Identical to &#x60;artifact-content&#x60; except for its cache policy: the latest revision changes when a new revision is published, so the response is not immutable and a cache shall revalidate it before reuse. Servers shall return a strong &#x60;ETag&#x60; for the selected HTTP representation. Revalidation returns &#x60;304 Not Modified&#x60; when &#x60;If-None-Match&#x60; matches that representation&#39;s validator. &#x60;Content-Location&#x60; identifies the revision and format. &#x60;Vary&#x60; follows the same rules as &#x60;artifact-content&#x60;.  (status code 200)
+     *         or The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the &#x60;Location&#x60; header.  Changing only this response&#39;s &#x60;Location&#x60;, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external &#x60;url&#x60; or &#x60;signatureUrl&#x60; on the artifact metadata is a separate change and shall follow the &#x60;artifact-format&#x60; rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin.  (status code 302)
+     *         or The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat &#x60;ETag&#x60; and &#x60;Content-Location&#x60; from the would-be successful response for that representation, and shall repeat &#x60;Cache-Control&#x60; and &#x60;Vary&#x60; when the corresponding &#x60;200&#x60; carries them.  (status code 304)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     *         or The artifact revision exists, but has no format matching the requested &#x60;mediaType&#x60; or &#x60;Accept&#x60; header. Body is a TEA &#x60;error-response&#x60; with &#x60;error: NO_ACCEPTABLE_FORMAT&#x60;.  &#x60;NO_ACCEPTABLE_FORMAT&#x60; reveals that the artifact revision exists. A server concealing an artifact from a client shall answer &#x60;404&#x60; with &#x60;error: OBJECT_UNKNOWN&#x60; for every sub-resource of it, formats included, instead of this status.  (status code 406)
+     */
+    @Operation(
+        operationId = "downloadLatestArtifact",
+        summary = "Download the content of the latest TEA Artifact revision",
+        description = "Download the content of the latest revision of a specific TEA Artifact.  Equivalent to the versioned download endpoint, resolving to the revision with the greatest published `version` — the same revision `/artifact/{uuid}/latest` reports. The content this returns changes when a new revision is published, so unlike the versioned endpoint the response is not immutable: caches shall revalidate it via `ETag` for the HTTP representation selected after negotiation. The `Content-Location` header is an absolute versioned URL including the API base, version path, and `mediaType` query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated.  When serving the content itself (`200`), servers shall return a strong `ETag` for the HTTP representation selected after negotiation, including content coding, and shall honor `If-None-Match` with `304`. `ETag` is the only conditional validator for these downloads. Servers that support `HEAD` for this operation shall return the same headers as `GET` without a response body. `302` redirects are outside conditional semantics: `If-None-Match` applies only to the TEA-hosted download response, not to following an external `Location`. ",
+        tags = { "TEA Artifact" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "The content of the selected format of the latest revision of the TEA Artifact, as resolved at the time of the request.  Identical to `artifact-content` except for its cache policy: the latest revision changes when a new revision is published, so the response is not immutable and a cache shall revalidate it before reuse. Servers shall return a strong `ETag` for the selected HTTP representation. Revalidation returns `304 Not Modified` when `If-None-Match` matches that representation's validator. `Content-Location` identifies the revision and format. `Vary` follows the same rules as `artifact-content`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = org.springframework.core.io.Resource.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = org.springframework.core.io.Resource.class))
+            }),
+            @ApiResponse(responseCode = "302", description = "The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the `Location` header.  Changing only this response's `Location`, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external `url` or `signatureUrl` on the artifact metadata is a separate change and shall follow the `artifact-format` rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin. "),
+            @ApiResponse(responseCode = "304", description = "The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat `ETag` and `Content-Location` from the would-be successful response for that representation, and shall repeat `Cache-Control` and `Vary` when the corresponding `200` carries them. "),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "406", description = "The artifact revision exists, but has no format matching the requested `mediaType` or `Accept` header. Body is a TEA `error-response` with `error: NO_ACCEPTABLE_FORMAT`.  `NO_ACCEPTABLE_FORMAT` reveals that the artifact revision exists. A server concealing an artifact from a client shall answer `404` with `error: OBJECT_UNKNOWN` for every sub-resource of it, formats included, instead of this status. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ArtifactApi.PATH_DOWNLOAD_LATEST_ARTIFACT,
+        produces = { "*/*", "application/json" }
+    )
+    default ResponseEntity<org.springframework.core.io.Resource> downloadLatestArtifact(
+        @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "mediaType", description = "Selects which of the artifact revision's `formats` to return, by its `mediaType`. The parameter value is the media type itself (for example `application/vnd.cyclonedx+json`), not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format's `mediaType` is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format using the request's `Accept` header per RFC 9110 section 12, and falls back to a format of its choice when `Accept` does not constrain the result. In either case the `Content-Type` of the response states which format was returned. An explicit `mediaType` can remove variation by `Accept` when it completely determines the format. When it does not, the server shall include `Accept` in `Vary` if changing or removing `Accept` could change the selected format, including when `Accept` is absent or contains `*_/_*`. A `mediaType` query parameter does not eliminate variation by `Accept-Encoding`; see `artifact-vary`.  Example after serialization: `.../download?mediaType=application%2Fvnd.cyclonedx%2Bjson` ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "mediaType", required = false) @Nullable String requestedMediaType,
+        @Parameter(name = "If-None-Match", description = "Conditional request validator (RFC 9110). For artifact and signature downloads, `ETag` is the only defined validator. Servers evaluate `If-None-Match` with the weak comparison function (RFC 9110 section 13.1.2) against the `ETag` of the representation selected after negotiation, including content-coding negotiation, and answer `304` when it matches. The corresponding `304` shall carry that representation's validator and shall carry `Vary` when the `200` would. When present, that `ETag` is a strong validator. Other validators are not defined for these operations. ", in = ParameterIn.HEADER) @RequestHeader(value = "If-None-Match", required = false) @Nullable String ifNoneMatch
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_DOWNLOAD_LATEST_ARTIFACT_SIGNATURE = "/artifact/{uuid}/latest/signature/download";
+    /**
+     * GET /artifact/{uuid}/latest/signature/download : Download the signature of the latest TEA Artifact revision
+     * Download the detached signature for the latest revision of a specific TEA Artifact.  Equivalent to the versioned signature endpoint, resolving to the revision with the greatest published &#x60;version&#x60; — the same revision &#x60;/artifact/{uuid}/latest&#x60; reports. As with the latest content endpoint, the response is not immutable and caches shall revalidate it via &#x60;ETag&#x60; for the HTTP representation selected after negotiation. &#x60;Content-Location&#x60; is an absolute versioned signature URL including the API base, version path, and &#x60;mediaType&#x60; query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated.  When serving the signature itself (&#x60;200&#x60;), servers shall return a strong &#x60;ETag&#x60; for the HTTP representation selected after negotiation, including content coding, and shall honor &#x60;If-None-Match&#x60; with &#x60;304&#x60;. &#x60;ETag&#x60; is the only conditional validator for these downloads. Servers that support &#x60;HEAD&#x60; for this operation shall return the same headers as &#x60;GET&#x60; without a response body. &#x60;302&#x60; redirects are outside conditional semantics: &#x60;If-None-Match&#x60; applies only to the TEA-hosted download response, not to following an external &#x60;Location&#x60;.  &#x60;404&#x60; distinguishes the cases by TEA error body: &#x60;OBJECT_UNKNOWN&#x60; when the artifact revision is unknown (or concealed), and &#x60;SIGNATURE_NOT_FOUND&#x60; when the revision exists but the selected format has no signature published. A server concealing an artifact from a client shall answer &#x60;OBJECT_UNKNOWN&#x60; for every sub-resource of it, including signatures. 
+     *
+     * @param uuid UUID of TEA Artifact in the TEA server (required)
+     * @param requestedMediaType Selects which of the artifact revision&#39;s &#x60;formats&#x60; the returned signature applies to, by that format&#39;s &#x60;mediaType&#x60;. This is the media type of the signed content, not of the signature. The parameter value is the media type itself, not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format&#39;s &#x60;mediaType&#x60; is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format of its choice. Requests that need a specific format&#39;s signature should supply this parameter. Successful responses include &#x60;Content-Location&#x60; with a &#x60;mediaType&#x60; query parameter naming the selected content format. An explicit &#x60;mediaType&#x60; can remove variation by &#x60;Accept&#x60; when it completely determines the signed format. It does not eliminate variation by &#x60;Accept-Encoding&#x60;; see &#x60;artifact-vary&#x60;.  Example after serialization: &#x60;.../signature/download?mediaType&#x3D;application%2Fvnd.cyclonedx%2Bjson&#x60;  (optional)
+     * @param ifNoneMatch Conditional request validator (RFC 9110). For artifact and signature downloads, &#x60;ETag&#x60; is the only defined validator. Servers evaluate &#x60;If-None-Match&#x60; with the weak comparison function (RFC 9110 section 13.1.2) against the &#x60;ETag&#x60; of the representation selected after negotiation, including content-coding negotiation, and answer &#x60;304&#x60; when it matches. The corresponding &#x60;304&#x60; shall carry that representation&#39;s validator and shall carry &#x60;Vary&#x60; when the &#x60;200&#x60; would. When present, that &#x60;ETag&#x60; is a strong validator. Other validators are not defined for these operations.  (optional)
+     * @return The detached signature for the selected format of the latest revision of the TEA Artifact, as resolved at the time of the request.  Identical to &#x60;artifact-signature-content&#x60; except for its cache policy: the latest revision changes when a new revision is published, so the response is not immutable and a cache shall revalidate it before reuse. Servers shall return a strong &#x60;ETag&#x60; for the selected HTTP representation. Revalidation returns &#x60;304 Not Modified&#x60; when &#x60;If-None-Match&#x60; matches that representation&#39;s validator. &#x60;Content-Location&#x60; identifies the revision and format. &#x60;Vary&#x60; follows the same rules as &#x60;artifact-signature-content&#x60;.  (status code 200)
+     *         or The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the &#x60;Location&#x60; header.  Changing only this response&#39;s &#x60;Location&#x60;, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external &#x60;url&#x60; or &#x60;signatureUrl&#x60; on the artifact metadata is a separate change and shall follow the &#x60;artifact-format&#x60; rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin.  (status code 302)
+     *         or The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat &#x60;ETag&#x60; and &#x60;Content-Location&#x60; from the would-be successful response for that representation, and shall repeat &#x60;Cache-Control&#x60; and &#x60;Vary&#x60; when the corresponding &#x60;200&#x60; carries them.  (status code 304)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     *         or The artifact revision exists, but has no format matching the requested &#x60;mediaType&#x60; or &#x60;Accept&#x60; header. Body is a TEA &#x60;error-response&#x60; with &#x60;error: NO_ACCEPTABLE_FORMAT&#x60;.  &#x60;NO_ACCEPTABLE_FORMAT&#x60; reveals that the artifact revision exists. A server concealing an artifact from a client shall answer &#x60;404&#x60; with &#x60;error: OBJECT_UNKNOWN&#x60; for every sub-resource of it, formats included, instead of this status.  (status code 406)
+     */
+    @Operation(
+        operationId = "downloadLatestArtifactSignature",
+        summary = "Download the signature of the latest TEA Artifact revision",
+        description = "Download the detached signature for the latest revision of a specific TEA Artifact.  Equivalent to the versioned signature endpoint, resolving to the revision with the greatest published `version` — the same revision `/artifact/{uuid}/latest` reports. As with the latest content endpoint, the response is not immutable and caches shall revalidate it via `ETag` for the HTTP representation selected after negotiation. `Content-Location` is an absolute versioned signature URL including the API base, version path, and `mediaType` query parameter. That URL identifies the revision and format; HTTP content coding can still be negotiated.  When serving the signature itself (`200`), servers shall return a strong `ETag` for the HTTP representation selected after negotiation, including content coding, and shall honor `If-None-Match` with `304`. `ETag` is the only conditional validator for these downloads. Servers that support `HEAD` for this operation shall return the same headers as `GET` without a response body. `302` redirects are outside conditional semantics: `If-None-Match` applies only to the TEA-hosted download response, not to following an external `Location`.  `404` distinguishes the cases by TEA error body: `OBJECT_UNKNOWN` when the artifact revision is unknown (or concealed), and `SIGNATURE_NOT_FOUND` when the revision exists but the selected format has no signature published. A server concealing an artifact from a client shall answer `OBJECT_UNKNOWN` for every sub-resource of it, including signatures. ",
+        tags = { "TEA Artifact" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "The detached signature for the selected format of the latest revision of the TEA Artifact, as resolved at the time of the request.  Identical to `artifact-signature-content` except for its cache policy: the latest revision changes when a new revision is published, so the response is not immutable and a cache shall revalidate it before reuse. Servers shall return a strong `ETag` for the selected HTTP representation. Revalidation returns `304 Not Modified` when `If-None-Match` matches that representation's validator. `Content-Location` identifies the revision and format. `Vary` follows the same rules as `artifact-signature-content`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = org.springframework.core.io.Resource.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = org.springframework.core.io.Resource.class))
+            }),
+            @ApiResponse(responseCode = "302", description = "The selected representation is available at another location, for example object storage addressed by a pre-signed URL. The client follows the `Location` header.  Changing only this response's `Location`, while preserving the artifact or signature bytes for the selected UUID, version, and format after HTTP content coding is removed, does not require a new artifact or collection version. Publishing a different external `url` or `signatureUrl` on the artifact metadata is a separate change and shall follow the `artifact-format` rules for those fields.  A client shall not send its TEA access token when following a redirect to a different origin. "),
+            @ApiResponse(responseCode = "304", description = "The representation selected after negotiation has not changed (RFC 9110). The response body is empty. Servers shall repeat `ETag` and `Content-Location` from the would-be successful response for that representation, and shall repeat `Cache-Control` and `Vary` when the corresponding `200` carries them. "),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "406", description = "The artifact revision exists, but has no format matching the requested `mediaType` or `Accept` header. Body is a TEA `error-response` with `error: NO_ACCEPTABLE_FORMAT`.  `NO_ACCEPTABLE_FORMAT` reveals that the artifact revision exists. A server concealing an artifact from a client shall answer `404` with `error: OBJECT_UNKNOWN` for every sub-resource of it, formats included, instead of this status. ", content = {
+                @Content(mediaType = "*/*", schema = @Schema(implementation = TeaErrorResponse.class)),
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ArtifactApi.PATH_DOWNLOAD_LATEST_ARTIFACT_SIGNATURE,
+        produces = { "*/*", "application/json" }
+    )
+    default ResponseEntity<org.springframework.core.io.Resource> downloadLatestArtifactSignature(
+        @Parameter(name = "uuid", description = "UUID of TEA Artifact in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "mediaType", description = "Selects which of the artifact revision's `formats` the returned signature applies to, by that format's `mediaType`. This is the media type of the signed content, not of the signature. The parameter value is the media type itself, not a pre-encoded wire form. Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step.  Matching against a format's `mediaType` is case-insensitive for the type and subtype. Parameter names are compared case-insensitively; parameter values require exact equality. When omitted, the server selects a format of its choice. Requests that need a specific format's signature should supply this parameter. Successful responses include `Content-Location` with a `mediaType` query parameter naming the selected content format. An explicit `mediaType` can remove variation by `Accept` when it completely determines the signed format. It does not eliminate variation by `Accept-Encoding`; see `artifact-vary`.  Example after serialization: `.../signature/download?mediaType=application%2Fvnd.cyclonedx%2Bjson` ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "mediaType", required = false) @Nullable String requestedMediaType,
+        @Parameter(name = "If-None-Match", description = "Conditional request validator (RFC 9110). For artifact and signature downloads, `ETag` is the only defined validator. Servers evaluate `If-None-Match` with the weak comparison function (RFC 9110 section 13.1.2) against the `ETag` of the representation selected after negotiation, including content-coding negotiation, and answer `304` when it matches. The corresponding `304` shall carry that representation's validator and shall carry `Vary` when the `200` would. When present, that `ETag` is a strong validator. Other validators are not defined for these operations. ", in = ParameterIn.HEADER) @RequestHeader(value = "If-None-Match", required = false) @Nullable String ifNoneMatch
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
     String PATH_GET_ARTIFACT_BY_VERSION = "/artifact/{uuid}/{artifactVersion}";
     /**
-     * GET /artifact/{uuid}/{artifactVersion}
+     * GET /artifact/{uuid}/{artifactVersion} : Get the metadata of one TEA Artifact revision
      * Get metadata for a specific revision of a specific TEA Artifact
      *
      * @param uuid UUID of TEA Artifact in the TEA server (required)
      * @param artifactVersion Version of TEA Artifact (required)
      * @return Requested TEA Artifact metadata found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
      */
     @Operation(
         operationId = "getArtifactByVersion",
+        summary = "Get the metadata of one TEA Artifact revision",
         description = "Get metadata for a specific revision of a specific TEA Artifact",
         tags = { "TEA Artifact" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Artifact metadata found and returned", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaArtifact.class))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
             })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
@@ -85,12 +613,27 @@ public interface ArtifactApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }";
+                    String exampleString = "{ \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -103,29 +646,63 @@ public interface ArtifactApi {
 
     String PATH_GET_LATEST_ARTIFACT = "/artifact/{uuid}/latest";
     /**
-     * GET /artifact/{uuid}/latest
-     * Get metadata for latest revision of a specific TEA Artifact
+     * GET /artifact/{uuid}/latest : Get the metadata of the latest TEA Artifact revision
+     * Get metadata for the latest revision of a specific TEA Artifact, that is, the revision with the greatest published &#x60;version&#x60;. 
      *
      * @param uuid UUID of TEA Artifact in the TEA server (required)
      * @return Requested TEA Artifact metadata found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
      */
     @Operation(
         operationId = "getLatestArtifact",
-        description = "Get metadata for latest revision of a specific TEA Artifact",
+        summary = "Get the metadata of the latest TEA Artifact revision",
+        description = "Get metadata for the latest revision of a specific TEA Artifact, that is, the revision with the greatest published `version`. ",
         tags = { "TEA Artifact" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Artifact metadata found and returned", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaArtifact.class))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
             })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
@@ -140,12 +717,27 @@ public interface ArtifactApi {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }";
+                    String exampleString = "{ \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

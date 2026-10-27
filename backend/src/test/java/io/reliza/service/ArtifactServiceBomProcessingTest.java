@@ -29,9 +29,9 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.OASResponseDto;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.service.IntegrationService.DependencyTrackUploadResult;
 import io.reliza.common.Utils.ArtifactBelongsTo;
@@ -290,9 +290,9 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithUrnPrefix_ExtractsCorrectly() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), null, null, null, null, null, null, null
-        , null);
+        , null, null);
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         // Act
@@ -306,9 +306,9 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithoutUrnPrefix_ExtractsCorrectly() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             testBomUuid.toString(), null, null, null, null, null, null, null
-        , null);
+        , null, null);
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         // Act
@@ -322,9 +322,9 @@ public class ArtifactServiceBomProcessingTest {
     void testExtractInternalBomId_WithInvalidUuid_ThrowsException() throws Exception {
         // Arrange
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "invalid-uuid", null, null, null, null, null, null, null
-        , null);
+        , null, null);
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, null, meta, false);
         
         // Act & Assert
@@ -359,9 +359,9 @@ public class ArtifactServiceBomProcessingTest {
         
         String bomDigest = "abc123def456";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), bomDigest, null, null, null, null, null, null
-        , null);
+        , null, null);
         OASResponseDto bomDto = new OASResponseDto();
         // Note: ociRepositoryName removed - rebom manages its own storage
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
@@ -394,9 +394,9 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
-        , null);
+        , null, null);
         OASResponseDto bomDto = new OASResponseDto();
         // Note: ociRepositoryName removed - rebom manages its own storage
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
@@ -425,9 +425,9 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
-        , null);
+        , null, null);
         OASResponseDto bomDto = new OASResponseDto();
         // Note: ociRepositoryName removed - rebom manages its own storage
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
@@ -455,9 +455,9 @@ public class ArtifactServiceBomProcessingTest {
             .build();
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, null
-        , null);
+        , null, null);
         OASResponseDto bomDto = new OASResponseDto();
         // Note: ociRepositoryName removed - rebom manages its own storage
         RebomResponse rebomResponse = new RebomResponse(testBomUuid, bomDto, meta, false);
@@ -489,9 +489,9 @@ public class ArtifactServiceBomProcessingTest {
         
         String bomVersion = "2";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", null, null, null, null, null, bomVersion
-        , null);
+        , null, null);
         
         // Mock OASResponseDto to prevent null bom() exception
         io.reliza.model.dto.OASResponseDto mockOasResponse = mock(io.reliza.model.dto.OASResponseDto.class);
@@ -522,10 +522,10 @@ public class ArtifactServiceBomProcessingTest {
         String bomDigest = "rearm-digest-123";
         String originalFileDigest = "original-digest-456";
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), bomDigest, originalFileDigest, 
             1024L, "application/spdx+json", null, null, "1"
-        , null);
+        , null, null);
         
         // Mock OASResponseDto
         io.reliza.model.dto.OASResponseDto mockOasResponse = mock(io.reliza.model.dto.OASResponseDto.class);
@@ -574,10 +574,10 @@ public class ArtifactServiceBomProcessingTest {
         String originalDigest = "original-digest-789";
         
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + testBomUuid.toString(), "digest123", originalDigest, 
             originalSize, originalMediaType, null, null, "1"
-        , null);
+        , null, null);
         
         // Mock OASResponseDto
         io.reliza.model.dto.OASResponseDto mockOasResponse = mock(io.reliza.model.dto.OASResponseDto.class);

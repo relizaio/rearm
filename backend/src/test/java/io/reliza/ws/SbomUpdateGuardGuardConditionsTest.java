@@ -23,7 +23,7 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.Organization;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.service.ArtifactAttachmentGuard.ArtifactHolders;
 import io.reliza.service.SbomWriteAuthority;
 

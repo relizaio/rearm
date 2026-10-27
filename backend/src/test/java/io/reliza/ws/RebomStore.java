@@ -19,8 +19,8 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
 import io.reliza.model.dto.OASResponseDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import io.reliza.service.RebomService;
 import tools.jackson.databind.JsonNode;
 
@@ -179,9 +179,9 @@ final class RebomStore {
 		bom.setOciResponse(oci);
 		bom.setFileSHA256Digest("rebom-stub-" + serial + "-" + version);
 		RebomOptions meta = new RebomOptions(null, null, null, null == options ? null : options.belongsTo(), null,
-				false, false, null, null, null, null, null, null, null, null, "urn:uuid:" + serial,
+				false, false, null, null, null, null, null, null, null, null, null, null, "urn:uuid:" + serial,
 				"rebom-stub-digest-" + serial + "-" + version, null, null, null, null, null, String.valueOf(version),
-				null);
+				null, null);
 		return new RebomResponse(UUID.randomUUID(), bom, meta, duplicate);
 	}
 }

@@ -172,6 +172,20 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private FederatedIdentity federation;
 
+	/**
+	 * EXTERNAL rows only (task TEA-3): the outside party that holds the key, by name. Not {@link #holder}, which is a
+	 * user of the organization; an outside party has none, and an administrator mints and hands over the secret.
+	 */
+	@JsonProperty
+	private String holderName;
+
+	/**
+	 * EXTERNAL rows only (task TEA-3): the organization's TEA id, copied at creation. It never changes once minted, and
+	 * the printed key id {@code EXTERNAL__<teaOrg>__ord__<keyOrder>} is built from it.
+	 */
+	@JsonProperty
+	private UUID teaOrg;
+
 	public ApiKeyStatus getStatus() { return status == null ? ApiKeyStatus.ACTIVE : status; }
 	public List<ApiKeySecret> getSecrets() { return secrets == null ? new LinkedList<>() : secrets; }
 

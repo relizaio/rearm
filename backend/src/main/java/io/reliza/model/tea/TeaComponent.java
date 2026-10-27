@@ -27,7 +27,7 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "component", description = "A TEA component")
 @JsonTypeName("component")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaComponent {
 
   private UUID uuid;
@@ -77,11 +77,11 @@ public class TeaComponent {
   }
 
   /**
-   * Component name
+   * Component name. Within a TEA server, component names should be unique among components. Uniqueness is an implementation recommendation, not a hard API requirement. Product and component names are separate namespaces; a product and a component may share the same name. 
    * @return name
    */
   @NotNull 
-  @Schema(name = "name", description = "Component name", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "name", description = "Component name. Within a TEA server, component names should be unique among components. Uniqueness is an implementation recommendation, not a hard API requirement. Product and component names are separate namespaces; a product and a component may share the same name. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("name")
   public String getName() {
     return name;

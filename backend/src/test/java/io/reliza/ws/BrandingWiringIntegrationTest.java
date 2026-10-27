@@ -54,8 +54,7 @@ class BrandingWiringIntegrationTest {
 				.filter(AuthorizationFilter.class::isInstance).map(AuthorizationFilter.class::cast)
 				.findFirst().orElseThrow().getAuthorizationManager();
 
-		// The marker that the shipped (beta TEA off) branch was built; BrandingWiringBetaTeaIntegrationTest
-		// covers the other one.
+		// a path this chain does not permit: anyRequest().authenticated()
 		assertFalse(authz.authorize(ANONYMOUS, get("/tea/x")).isGranted());
 
 		assertTrue(authz.authorize(ANONYMOUS, get("/api/branding/v1/settings")).isGranted());

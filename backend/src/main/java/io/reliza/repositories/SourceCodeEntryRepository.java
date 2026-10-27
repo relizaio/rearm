@@ -49,6 +49,11 @@ public interface SourceCodeEntryRepository extends CrudRepository<SourceCodeEntr
 	List<SourceCodeEntry> findByCommitOrTag(String orgUuidAsString, String commit, String tag);
 
 	@Query(
+			value = VariableQueries.FIND_SCE_BY_COMMIT_AND_ORG,
+			nativeQuery = true)
+	List<SourceCodeEntry> findByCommitAndOrg(String orgUuidAsString, String commit);
+
+	@Query(
 			value = VariableQueries.FIND_SCE_BY_COMPONENT,
 			nativeQuery = true)
 	List<SourceCodeEntry> findByComponent(String compUuidAsString);

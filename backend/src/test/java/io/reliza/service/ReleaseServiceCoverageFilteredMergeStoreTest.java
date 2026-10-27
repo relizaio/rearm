@@ -15,8 +15,8 @@ import org.junit.jupiter.api.Test;
 import io.reliza.common.CommonVariables.ArtifactCoverageType;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomReason;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**

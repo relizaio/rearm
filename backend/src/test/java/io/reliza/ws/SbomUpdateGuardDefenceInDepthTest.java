@@ -33,7 +33,7 @@ import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.dto.ArtifactDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.ArtifactServiceSpies;
 import io.reliza.service.RebomService.MalformedRebomAnswerException;
 import io.reliza.service.SbomWriteAuthority;

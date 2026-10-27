@@ -28,10 +28,10 @@ import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.VariantData;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -177,7 +177,7 @@ class ReleaseServiceReleaseNodeFactsTest {
 	void theFactsOfAReleaseCarryItsShippedDigestsBesideTheLicence() {
 		DeliverableData dd = new DeliverableData();
 		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder()
-				.digestRecords(new LinkedHashSet<>(List.of(new DigestRecord(TeaChecksumType.SHA_256, SHA_256)))).build());
+				.digestRecords(new LinkedHashSet<>(List.of(new DigestRecord(DigestAlgorithm.SHA_256, SHA_256)))).build());
 		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
 		VariantData base = new VariantData();
 		base.setOutboundDeliverables(new LinkedHashSet<>(List.of(DELIVERABLE)));

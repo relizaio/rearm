@@ -5,10 +5,12 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 import java.util.ArrayList;
@@ -22,15 +24,21 @@ import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.CommonVariables.PerspectiveType;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoard;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.UserPermission;
+import io.reliza.model.UserPermission.PermissionDto;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
+import io.reliza.model.saas.PerspectiveData;
 import io.reliza.repositories.AgentBoardRepository;
+import io.reliza.service.oss.OssPerspectiveService;
 
 /**
  * Board scope, functions and the resolver (board-permissions.md §2; task ffb564ce), over grants built
@@ -48,6 +56,7 @@ public class AuthorizationServiceBoardTest {
 	private final UUID foreign = UUID.randomUUID();
 	private final UUID perspective = UUID.randomUUID();
 	private final UUID component = UUID.randomUUID();
+	private final OssPerspectiveService ossPerspectiveService = mock(OssPerspectiveService.class);
 
 	private AgentBoard row(UUID uuid, UUID orgUuid, List<UUID> perspectives) {
 		AgentBoardData bd = new AgentBoardData();
@@ -77,6 +86,14 @@ public class AuthorizationServiceBoardTest {
 		when(repo.findByOrg(anyString())).thenAnswer(i -> rows.values().stream()
 				.filter(r -> AgentBoardData.dataFromRecord(r).getOrg().toString().equals(i.getArgument(0))).toList());
 		ReflectionTestUtils.setField(svc, "agentBoardRepository", repo);
+		// A PERSPECTIVE grant clears a call only on a live perspective of its org (task TEA-8, D6).
+		PerspectiveData pd = new PerspectiveData();
+		pd.setUuid(perspective);
+		pd.setOrg(org);
+		pd.setType(PerspectiveType.PERSPECTIVE);
+		pd.setStatus(StatusEnum.ACTIVE);
+		when(ossPerspectiveService.getPerspectiveData(perspective)).thenReturn(Optional.of(pd));
+		ReflectionTestUtils.setField(svc, "ossPerspectiveService", ossPerspectiveService);
 		return svc;
 	}
 
@@ -210,6 +227,38 @@ public class AuthorizationServiceBoardTest {
 		}
 	}
 
+	// ---------- 5. grant objects: PERSPECTIVE (TPF-15) ----------
+
+	@Test
+	void aPerspectiveGrantOnALivePerspectiveIsAccepted() throws Exception {
+		AuthorizationService svc = service();
+		when(ossPerspectiveService.requireLivePerspective(org, perspective)).thenReturn(new PerspectiveData());
+		svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective);
+	}
+
+	@Test
+	void aPerspectiveGrantOnADeadOrForeignPerspectiveIsRefused() throws Exception {
+		AuthorizationService svc = service();
+		when(ossPerspectiveService.requireLivePerspective(org, perspective))
+				.thenThrow(new RelizaException("Perspective not found: " + perspective));
+		RelizaException one = assertThrows(RelizaException.class,
+				() -> svc.assertGrantObjectExists(org, PermissionScope.PERSPECTIVE, perspective));
+		assertEquals("Perspective not found: " + perspective, one.getMessage());
+		PermissionDto dto = new PermissionDto(org, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY,
+				Set.of(PermissionFunction.RESOURCE), null);
+		RelizaException all = assertThrows(RelizaException.class,
+				() -> svc.assertGrantObjectsExist(org, List.of(dto)));
+		assertEquals("Perspective not found: " + perspective, all.getMessage());
+	}
+
+	@Test
+	void otherScopesAreNotAskedAboutPerspectives() throws Exception {
+		AuthorizationService svc = service();
+		svc.assertGrantObjectExists(org, PermissionScope.COMPONENT, component);
+		svc.assertGrantObjectExists(org, PermissionScope.ORGANIZATION, org);
+		verifyNoInteractions(ossPerspectiveService);
+	}
+
 	// ---------- 6. the held set ----------
 
 	@Test
@@ -222,5 +271,42 @@ public class AuthorizationServiceBoardTest {
 				svc.boardFunctions(grants, org, board));
 		assertEquals(Set.of(PermissionFunction.CONFIGURATION_READ, PermissionFunction.CONFIGURATION_WRITE),
 				svc.boardFunctions(grants, org, sibling), "the board grant stops at its board");
+	}
+
+	// ---------- 7. the consent's TEA standing (task TEA-14, compile fix 1) ----------
+
+	@Test
+	void aGlobalAdminsConsentLacksNothingAndIsAnOrgAdmin() {
+		AuthorizationService svc = service();
+		io.reliza.model.UserData admin = mock(io.reliza.model.UserData.class);
+		when(admin.isGlobalAdmin()).thenReturn(true);
+		io.reliza.service.BoardPerspectiveService.PerspectiveConsent consent = svc.perspectiveConsent(admin, org);
+		assertTrue(consent.lacking(perspective).isEmpty());
+		assertTrue(consent.allows(perspective));
+		assertEquals(TeaProfileService.TeaCaller.ORG_ADMIN, consent.teaCaller());
+	}
+
+	@Test
+	void aKeysConsentIsNeverAnOrgAdmin() throws Exception {
+		AuthorizationService svc = service();
+		ApiKeyService keys = mock(ApiKeyService.class);
+		ReflectionTestUtils.setField(svc, "apiKeyService", keys);
+		io.reliza.common.CommonVariables.AuthHeaderParse ahp = mock(io.reliza.common.CommonVariables.AuthHeaderParse.class);
+		when(ahp.isRbacKey()).thenReturn(true);
+		when(ahp.getType()).thenReturn(io.reliza.model.ApiKey.ApiTypeEnum.FREEFORM);
+		UUID keyUuid = UUID.randomUUID();
+		when(keys.isMatchingApiKey(ahp)).thenReturn(keyUuid);
+		// the key is in no API key group (TPF-91): its own grant alone decides the consent
+		ApiKeyGroupService groups = mock(ApiKeyGroupService.class);
+		when(groups.permissionSetsForKey(keyUuid, org)).thenReturn(List.of());
+		ReflectionTestUtils.setField(svc, "apiKeyGroupService", groups);
+		// an org-wide grant of both consent functions: the key consents, and is still a scope admin
+		io.reliza.model.ApiKeyData akd = io.reliza.model.ApiKeyData.apiKeyDataFactory(org);
+		akd.setPermission(org, PermissionScope.ORGANIZATION, org, PermissionType.READ_WRITE,
+				List.of(PermissionFunction.BOARD_WRITE, PermissionFunction.CONFIGURATION_WRITE), List.of());
+		when(keys.getApiKeyData(keyUuid)).thenReturn(Optional.of(akd));
+		io.reliza.service.BoardPerspectiveService.PerspectiveConsent consent = svc.perspectiveConsent(ahp, org);
+		assertTrue(consent.lacking(perspective).isEmpty(), consent.lacking(perspective).toString());
+		assertEquals(TeaProfileService.TeaCaller.SCOPE_ADMIN, consent.teaCaller());
 	}
 }

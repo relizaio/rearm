@@ -9,6 +9,9 @@ import io.reliza.model.AcollectionData.ArtifactChangelog;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseApprovalEvent;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.SubmissionNotice;
+import io.reliza.model.TeaPublicationData;
+import io.reliza.service.TeaPublicationService.TeaExposureState;
 
 /**
  * Shared-edition hook the OSS release path ({@code OssReleaseService},
@@ -75,4 +78,32 @@ public interface ReleaseChangeHook {
 	 * (satisfied or disapproved).
 	 */
 	void onReleaseApprovalEvents(ReleaseData rd, List<ReleaseApprovalEvent> newEvents);
+
+	/**
+	 * Fires once per TEA publish act that published, re-published or turned a hidden publication
+	 * back to published (task TEA-5), on the release the act was invoked on; a product cascade's
+	 * component releases get no event of their own. The SAAS impl emits a
+	 * {@code RELEASE_TEA_PUBLISHED} event. Runs in the caller's transaction when there is one.
+	 */
+	void onReleaseTeaPublished(ReleaseData rd, TeaPublicationData publication, int collectionVersion,
+			TeaExposureState exposure, int childrenPublished);
+
+	/**
+	 * Fires when a TEA publication is hidden (task TEA-5), from the hide's commit step. The SAAS
+	 * impl emits a {@code RELEASE_TEA_HIDDEN} event.
+	 */
+	void onReleaseTeaHidden(ReleaseData rd, TeaPublicationData publication);
+
+	/**
+	 * Fires once per submission act that wrote a version, a first create or a resubmission (task
+	 * TEA-35), after the act's commit returned. The impl emits a {@code RELEASE_SUBMISSION_CREATED}
+	 * event whose payload carries identifiers and enums only.
+	 */
+	void onReleaseSubmissionCreated(ReleaseData rd, SubmissionNotice notice);
+
+	/**
+	 * Fires once per withdrawal of a submission (task TEA-35), after its commit returned. The impl
+	 * emits a {@code RELEASE_SUBMISSION_WITHDRAWN} event.
+	 */
+	void onReleaseSubmissionWithdrawn(ReleaseData rd, SubmissionNotice notice);
 }

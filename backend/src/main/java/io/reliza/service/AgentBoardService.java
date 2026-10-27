@@ -224,7 +224,7 @@ public class AgentBoardService {
 		List<UUID> wanted = null == perspectives ? List.of() : new ArrayList<>(new java.util.LinkedHashSet<>(perspectives));
 		List<String> problems = boardPerspectiveService.problems(bd.getOrg(), bd.getTarget(), wanted, stored, consent);
 		if (!problems.isEmpty()) throw new RelizaException(String.join("; ", problems));
-		boardPerspectiveService.followSetChange(bd, stored, wanted, wu);
+		boardPerspectiveService.followSetChange(bd, stored, wanted, consent.teaCaller(), wu);
 		bd.setPerspectives(wanted);
 		return saveData(bd, wu);
 	}
@@ -837,10 +837,10 @@ public class AgentBoardService {
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentBoardData markSoftAlertPosted(UUID boardUuid, WhoUpdated wu) throws RelizaException {
-		AgentBoardData bd = lockBoard(boardUuid);
-		if (bd.isSoftAlertPosted()) return bd;
-		bd.setSoftAlertPosted(true);
-		return saveData(bd, wu);
+		lockBoard(boardUuid);                       // the board row lock, held to commit, as every board write (TPF-42)
+		// In place (TPF-71 / TPF-105): a once-only system flag, not a revision of the board.
+		if (repository.stampSoftAlertPosted(boardUuid) == 0) log.debug("Soft alert already marked on board {}", boardUuid);
+		return lockBoard(boardUuid);                // the same managed row, refreshed after the stamp
 	}
 
 	/**
@@ -1976,6 +1976,48 @@ public class AgentBoardService {
 		}
 	}
 
+	/**
+	 * The version of a served text (task TPF-97): SHA-256 of the exact string as served, UTF-8, lower-case
+	 * hex, all 64 characters. Covers everything the agent reads -- the prompt, the routing rules, the merge
+	 * procedure line, the ladder section -- so it changes when any of them does and only then. Not the
+	 * sign-off pin: that is promptVersion, the operator's prompt alone. Null for a null text.
+	 */
+	public static String servedTextVersion(String served) {
+		if (null == served) return null;
+		try {
+			MessageDigest md = MessageDigest.getInstance("SHA-256");
+			return HexFormat.of().formatHex(md.digest(served.getBytes(StandardCharsets.UTF_8)));
+		} catch (NoSuchAlgorithmException e) {
+			throw new IllegalStateException("SHA-256 unavailable", e);
+		}
+	}
+
+	/** How a served text is answered to a caller that may already hold it (TPF-97). */
+	public record ServedPrompt(String version, AgentBoardData.ServedPromptStatus status, String text) {
+		/** The answer for a served text against the versions the caller says it holds (null or empty: none). */
+		public static ServedPrompt of(String served, List<String> heldVersions) {
+			if (null == served) return null;
+			String version = servedTextVersion(served);
+			boolean held = null != heldVersions && heldVersions.contains(version);
+			return held ? new ServedPrompt(version, AgentBoardData.ServedPromptStatus.UNCHANGED, null)
+					: new ServedPrompt(version, AgentBoardData.ServedPromptStatus.SERVED, served);
+		}
+	}
+
+	/** heldVersions is opaque input from the caller: bounded so a list cannot be a cost (TPF-97 threat model T3). */
+	public static List<String> checkHeldVersions(List<String> heldVersions) throws RelizaException {
+		if (null == heldVersions) return null;
+		if (heldVersions.size() > HELD_VERSIONS_MAX_ENTRIES
+				|| heldVersions.stream().anyMatch(v -> null == v || v.length() > HELD_VERSIONS_MAX_LENGTH)) {
+			throw new RelizaException(HELD_VERSIONS_REFUSAL);
+		}
+		return heldVersions;
+	}
+
+	public static final int HELD_VERSIONS_MAX_ENTRIES = 50;
+	public static final int HELD_VERSIONS_MAX_LENGTH = 128;
+	public static final String HELD_VERSIONS_REFUSAL = "heldVersions: at most 50 entries of at most 128 characters";
+
 	/** First line of {@link #routingRules}; the role templates point at the block by it. */
 	public static final String ROUTING_RULES_HEADING =
 			"## This board's routing rules (server-composed from the board's settings)";
@@ -2949,7 +2991,7 @@ public class AgentBoardService {
 		try {
 			applyBoardFields(bd, spec, d, target, sources, wu);
 			if (perspectivesDeclared) {
-				boardPerspectiveService.followSetChange(bd, perspectivesBefore, perspectivesAfter, wu);
+				boardPerspectiveService.followSetChange(bd, perspectivesBefore, perspectivesAfter, consent.teaCaller(), wu);
 				bd.setPerspectives(new ArrayList<>(perspectivesAfter));
 			}
 			if (groupsDeclared) bd.setGroups(new ArrayList<>(groupsAfter));

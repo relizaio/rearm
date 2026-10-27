@@ -36,7 +36,6 @@ import io.reliza.repositories.AgentBoardRepository;
 import io.reliza.model.AgentTask;
 import io.reliza.model.AgentTaskRoleConfigData;
 import io.reliza.model.AgentTaskData;
-import io.reliza.model.ModelAssertionState;
 import io.reliza.model.ModelOntologyData;
 import io.reliza.model.SessionUsageAttribution;
 import io.reliza.model.ModelVariants;
@@ -479,10 +478,13 @@ public class AgentSessionUsageService {
 		// open-in-view the fetcher's earlier read already put this row in the persistence context,
 		// and a locking query returns that managed instance rather than the state it just read from
 		// the database. Same rule as the release-approval path.
+		//
+		// The rollup is now a stamp of its three keys in place (TPF-71 / TPF-105), so a stale caller
+		// copy can no longer revert anything; the lock still serialises two concurrent rebuilds so
+		// the second one's scan sees the first one's rows.
 		AgentSession locked = agentSessionRepository.findByIdWriteLocked(session.getUuid())
 				.orElseThrow(() -> new RelizaException("Session not found: " + session.getUuid()));
 		entityManager.refresh(locked);
-		AgentSessionData fresh = AgentSessionData.dataFromRecord(locked);
 		List<AgentSessionUsage> rows = repository.findBySessionOrderByReportedAtAsc(session.getUuid());
 		Map<UUID, long[]> perModel = new LinkedHashMap<>();
 		Map<UUID, Long> perModelCost = new LinkedHashMap<>();
@@ -528,17 +530,18 @@ public class AgentSessionUsageService {
 
 		// null rather than 0 when nothing priced: a zero cost reads as "this work was free",
 		// which is a different claim from "nobody has told us what this model costs".
-		// Applied to the copy read under the lock, never to the caller's.
-		fresh.setUsageTotals(new UsageTotals(in, out, cr, cw, requests, turns, toolCalls,
+		UsageTotals totals = new UsageTotals(in, out, cr, cw, requests, turns, toolCalls,
 				wallSeconds, rows.size(), byModel, anyCost ? cost : null,
-				new ArrayList<>(priceVersions), costComplete));
-		fresh.setModelMismatch(mismatch);
+				new ArrayList<>(priceVersions), costComplete);
+		String totalsJson = Utils.OM.writeValueAsString(totals);
 		// An agent's own claim about which model it ran is the declaration, not evidence about
-		// it; only a transcript, a collector or the provider upgrades the assertion.
-		if (!mismatch && !rows.isEmpty() && rows.stream().anyMatch(r -> isObserved(r.getSource()))) {
-			fresh.setModelAssertion(ModelAssertionState.RUNTIME_OBSERVED);
-		}
-		return agentSessionService.saveData(fresh, wu);
+		// it; only a transcript, a collector or the provider upgrades the assertion, and nothing
+		// here ever writes DECLARED back over RUNTIME_OBSERVED.
+		boolean observed = !mismatch && !rows.isEmpty() && rows.stream().anyMatch(r -> isObserved(r.getSource()));
+		if (observed) agentSessionRepository.stampUsageTotalsObserved(session.getUuid(), totalsJson, mismatch);
+		else agentSessionRepository.stampUsageTotals(session.getUuid(), totalsJson, mismatch);
+		entityManager.refresh(locked);
+		return AgentSessionData.dataFromRecord(locked);
 	}
 
 	/**

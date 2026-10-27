@@ -29,6 +29,8 @@ import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
@@ -100,6 +102,9 @@ public class TeamsAdaptiveCardFormatter {
             case RELEASE_CREATED -> renderReleaseCreated(event);
             case RELEASE_LIFECYCLE_CHANGED -> renderReleaseLifecycleChanged(event);
             case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event);
+            case RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN -> renderReleaseTeaPublication(event);
+            case RELEASE_SUBMISSION_CREATED -> renderReleaseSubmission(event);
+            case RELEASE_SUBMISSION_WITHDRAWN -> renderReleaseSubmission(event);
             case APPROVAL_REQUESTED -> renderApprovalRequested(event);
             case APPROVAL_RESOLVED -> renderApprovalResolved(event);
             case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
@@ -246,6 +251,31 @@ public class TeamsAdaptiveCardFormatter {
         facts.addAll(releaseFacts(r));
         if (!facts.isEmpty()) body.add(factSet(facts));
 
+        return adaptiveCard(body, releaseAction(r));
+    }
+
+    /** Task TEA-35: the headline, the release facts and the release action; the payload has no free text (E14). */
+    private Map<String, Object> renderReleaseSubmission(NotificationOutboxEvent event) {
+        ReleaseSubmissionPayload p = deserialize(event, ReleaseSubmissionPayload.class);
+        if (p == null || p.release() == null) return fallbackCard(event);
+        ReleaseRef r = p.release();
+        List<Map<String, Object>> body = new ArrayList<>();
+        body.add(textBlock(p.headline(), "Large", "Bolder", "Accent"));
+        List<Map<String, String>> facts = new ArrayList<>(releaseFacts(r));
+        if (!facts.isEmpty()) body.add(factSet(facts));
+        return adaptiveCard(body, releaseAction(r));
+    }
+
+    private Map<String, Object> renderReleaseTeaPublication(NotificationOutboxEvent event) {
+        ReleaseTeaPublicationPayload p = deserialize(event, ReleaseTeaPublicationPayload.class);
+        if (p == null || p.release() == null) return fallbackCard(event);
+        ReleaseRef r = p.release();
+        List<Map<String, Object>> body = new ArrayList<>();
+        body.add(textBlock(p.headline(), "Large", "Bolder", "Accent"));
+        List<Map<String, String>> facts = new ArrayList<>();
+        if (StringUtils.isNotBlank(p.publicUrl())) facts.add(fact("TEA URL", p.publicUrl()));
+        facts.addAll(releaseFacts(r));
+        if (!facts.isEmpty()) body.add(factSet(facts));
         return adaptiveCard(body, releaseAction(r));
     }
 

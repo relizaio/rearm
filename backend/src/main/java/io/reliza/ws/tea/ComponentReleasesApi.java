@@ -6,6 +6,7 @@
 package io.reliza.ws.tea;
 
 import org.springframework.lang.Nullable;
+import io.reliza.model.tea.TeaErrorResponse;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaPaginatedComponentReleaseResponse;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
@@ -35,7 +36,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "TEA Component Release", description = "the TEA Component Release API")
 public interface ComponentReleasesApi {
@@ -44,48 +45,87 @@ public interface ComponentReleasesApi {
         return Optional.empty();
     }
 
-    String PATH_QUERY_TEA_COMPONENT_RELEASES = "/componentReleases";
+    String PATH_QUERY_COMPONENT_RELEASES = "/componentReleases";
     /**
-     * GET /componentReleases
+     * GET /componentReleases : Query TEA Component Releases
      * Returns a list of TEA component releases. Note that multiple component releases may match.
      *
-     * @param pageOffset Pagination offset (optional, default to 0)
-     * @param pageSize Pagination offset (optional, default to 100)
      * @param idType Type of identifier specified in the &#x60;idValue&#x60; parameter (optional)
      * @param idValue If present, only the objects with the given identifier value will be returned. (optional)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque continuation token produced by a previous response. This token shall be copied verbatim from the &#x60;nextPageToken&#x60; value returned by the previous response. Clients shall not parse, construct, or modify this token.  The token represents continuation state for the original query, including &#x60;sortField&#x60;, &#x60;sortOrder&#x60;, result-affecting filters such as &#x60;idType&#x60; and &#x60;idValue&#x60;, and path parameters such as parent &#x60;uuid&#x60;. When &#x60;pageToken&#x60; is supplied, clients shall not change those result-affecting query parameters. Servers shall return &#x60;400 Bad Request&#x60; if supplied result-affecting query parameters conflict with the token state. To change any result-affecting parameter, clients shall start a new pagination sequence without &#x60;pageToken&#x60;.  A &#x60;pageToken&#x60; is only valid with the same request path and same path parameter values used to obtain it. Clients shall not reuse a &#x60;pageToken&#x60; across different parent resource paths or different path &#x60;uuid&#x60; values. Servers shall return &#x60;400 Bad Request&#x60; when a &#x60;pageToken&#x60; is used with a different path or different path parameter values.  Servers shall return &#x60;400 Bad Request&#x60; for malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values.  (optional)
+     * @param sortField The field by which to sort the results.  Paginated results shall be ordered first by the selected &#x60;sortField&#x60;, then by &#x60;uuid&#x60; as a deterministic secondary tie-breaker.  When &#x60;version&#x60; is selected, ordering is by the stored version string according to the server&#39;s documented string collation; semantic-version precedence is not implied. Servers shall apply a stable and deterministic string collation for version sorting, and the same collation shall be used consistently across pages for a pagination sequence.  When &#x60;releaseDate&#x60; is selected, releases without a &#x60;releaseDate&#x60; shall be ordered consistently. Missing &#x60;releaseDate&#x60; values sort after populated &#x60;releaseDate&#x60; values for ascending order and before populated &#x60;releaseDate&#x60; values for descending order.  (optional, default to createdDate)
+     * @param sortOrder The direction of the sort.  The default is &#x60;asc&#x60; for all paginated resources. Clients that need newest release or collection versions first can request &#x60;sortOrder&#x3D;desc&#x60;.  The selected sort order applies to both the primary &#x60;sortField&#x60; and the resource-specific deterministic secondary tie-breaker. For products, components, product releases, and component releases, the secondary key is &#x60;uuid&#x60;. For collections, the secondary key is &#x60;version&#x60; if additional tie-breaking is needed.  (optional, default to asc)
      * @return A paginated response containing TEA Component Releases (status code 200)
-     *         or Request was Invalid (status code 400)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
      */
     @Operation(
-        operationId = "queryTeaComponentReleases",
+        operationId = "queryComponentReleases",
+        summary = "Query TEA Component Releases",
         description = "Returns a list of TEA component releases. Note that multiple component releases may match.",
         tags = { "TEA Component Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Component Releases", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedComponentReleaseResponse.class))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid")
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ComponentReleasesApi.PATH_QUERY_TEA_COMPONENT_RELEASES,
+        value = ComponentReleasesApi.PATH_QUERY_COMPONENT_RELEASES,
         produces = { "application/json" }
     )
-    default ResponseEntity<TeaPaginatedComponentReleaseResponse> queryTeaComponentReleases(
-        @Parameter(name = "pageOffset", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageOffset", required = false, defaultValue = "0") Long pageOffset,
-        @Parameter(name = "pageSize", description = "Pagination offset", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "100") Long pageSize,
+    default ResponseEntity<TeaPaginatedComponentReleaseResponse> queryComponentReleases(
         @Parameter(name = "idType", description = "Type of identifier specified in the `idValue` parameter", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idType", required = false) @Nullable TeaIdentifierType idType,
-        @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue
+        @Parameter(name = "idValue", description = "If present, only the objects with the given identifier value will be returned.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "idValue", required = false) @Nullable String idValue,
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque continuation token produced by a previous response. This token shall be copied verbatim from the `nextPageToken` value returned by the previous response. Clients shall not parse, construct, or modify this token.  The token represents continuation state for the original query, including `sortField`, `sortOrder`, result-affecting filters such as `idType` and `idValue`, and path parameters such as parent `uuid`. When `pageToken` is supplied, clients shall not change those result-affecting query parameters. Servers shall return `400 Bad Request` if supplied result-affecting query parameters conflict with the token state. To change any result-affecting parameter, clients shall start a new pagination sequence without `pageToken`.  A `pageToken` is only valid with the same request path and same path parameter values used to obtain it. Clients shall not reuse a `pageToken` across different parent resource paths or different path `uuid` values. Servers shall return `400 Bad Request` when a `pageToken` is used with a different path or different path parameter values.  Servers shall return `400 Bad Request` for malformed, invalid, expired, or conflicting `pageToken` values. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.  Paginated results shall be ordered first by the selected `sortField`, then by `uuid` as a deterministic secondary tie-breaker.  When `version` is selected, ordering is by the stored version string according to the server's documented string collation; semantic-version precedence is not implied. Servers shall apply a stable and deterministic string collation for version sorting, and the same collation shall be used consistently across pages for a pagination sequence.  When `releaseDate` is selected, releases without a `releaseDate` shall be ordered consistently. Missing `releaseDate` values sort after populated `releaseDate` values for ascending order and before populated `releaseDate` values for descending order. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "createdDate") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.  The default is `asc` for all paginated resources. Clients that need newest release or collection versions first can request `sortOrder=desc`.  The selected sort order applies to both the primary `sortField` and the resource-specific deterministic secondary tie-breaker. For products, components, product releases, and component releases, the secondary key is `uuid`. For collections, the secondary key is `version` if additional tie-breaking is needed. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"totalResults\" : 1, \"pageStartIndex\" : 0, \"pageSize\" : 6, \"results\" : [ { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true }, { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"url\" : \"http://example.com/aeiou\" } ], \"preRelease\" : true } ], \"timestamp\" : \"2024-03-20T15:30:00Z\" }";
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" } ], \"preRelease\" : true }, { \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" } ], \"preRelease\" : true } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

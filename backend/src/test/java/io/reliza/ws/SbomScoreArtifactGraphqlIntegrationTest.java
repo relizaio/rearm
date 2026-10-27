@@ -4,15 +4,18 @@
 package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
 
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
@@ -30,6 +33,9 @@ import org.springframework.http.ResponseEntity;
 
 import graphql.ExecutionResult;
 import graphql.GraphQLError;
+import io.reliza.common.CommonVariables;
+import io.reliza.common.CommonVariables.Removable;
+import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.exceptions.SbomScoreException;
@@ -39,8 +45,9 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.ArtifactVersionSnapshot;
 import io.reliza.model.ArtifactData.BomFormat;
+import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ExportMetadataOptions;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.repositories.ArtifactRepository;
 import reactor.core.publisher.Mono;
 
@@ -51,6 +58,14 @@ import reactor.core.publisher.Mono;
 class SbomScoreArtifactGraphqlIntegrationTest extends SbomScoreGraphqlTestBase {
 
 	@Autowired private ArtifactRepository artifactRepository;
+
+	/**
+	 * A TEA aggregate of a product whose child without an SBOM was left out (TEA-15): one component, no
+	 * placeholder, no reliza:sbom:missing property. Non-ASCII on purpose, as DOC is.
+	 */
+	private static final String TEA_AGGREGATE = "{\"bomFormat\":\"CycloneDX\",\"specVersion\":\"1.6\",\"version\":1,"
+			+ "\"metadata\":{\"component\":{\"type\":\"application\",\"name\":\"device-caf\u00e9\"}},"
+			+ "\"components\":[{\"type\":\"library\",\"name\":\"lib-\u00e9\u2192\",\"version\":\"1.0\"}]}";
 
 	private void verifyNoDownloadAndNoScore() throws Exception {
 		verify(sharedArtifactService, never()).downloadArtifact(any(), any(), any());
@@ -205,6 +220,54 @@ class SbomScoreArtifactGraphqlIntegrationTest extends SbomScoreGraphqlTestBase {
 		artifactRepository.save(row);
 		release(f.org(), f.component(), List.of(uuid));
 		return uuid;
+	}
+
+	// TEA-15 (4.6 case 27): scoring takes any stored SBOM artifact, a TEA aggregate without placeholders included
+	@Test
+	void aTeaAggregateWithAnOmittedChildIsScoredLikeAnyStoredSbom() throws Exception {
+		Fixture f = fixture();
+		UUID bomId = UUID.randomUUID();
+		UUID aggregate = artifactService.createArtifact(ArtifactDto.builder().org(f.org().getUuid())
+				.type(ArtifactType.BOM).bomFormat(BomFormat.CYCLONEDX).displayIdentifier("tea-aggregate.cdx.json")
+				.internalBom(new InternalBom(bomId, ArtifactBelongsTo.SYNTHETIC))
+				.tags(new ArrayList<>(List.of(
+						new TagRecord(CommonVariables.SYNTHETIC_ARTIFACT_TAG_KEY, "true", Removable.NO),
+						new TagRecord(CommonVariables.SYNTHETIC_OF_RELEASE_TAG_KEY, f.release().toString(), Removable.NO))))
+				.build(), WU).getUuid();
+		ArtifactData stored = artifactService.getArtifactData(aggregate).orElseThrow();
+		assertEquals(bomId, stored.getInternalBom().id());
+		assertTrue(stored.getTags().stream().anyMatch(t -> CommonVariables.SYNTHETIC_ARTIFACT_TAG_KEY.equals(t.key())),
+				stored.getTags().toString());
+		// The TEA-4 shape: bound in the release's syntheticArtifacts list, beside (not in) its inventory.
+		// SyntheticArtifactService.bind is package-private, so the row is written as bind leaves it.
+		jdbcTemplate.update("UPDATE rearm.releases SET record_data = jsonb_set(record_data, '{syntheticArtifacts}', "
+				+ "jsonb_build_array(CAST(? AS text))) WHERE uuid = CAST(? AS uuid)", aggregate.toString(),
+				f.release().toString());
+		when(rebomService.findRawBomById(eq(bomId), any())).thenAnswer(inv -> Utils.OM.readTree(TEA_AGGREGATE));
+		when(rebomService.findBomByIdJson(eq(bomId), any())).thenAnswer(inv -> Utils.OM.readTree(TEA_AGGREGATE));
+		clearInvocations(rebomService, downloadLogService);
+
+		// raw: the stored document itself; the authorization passes through the synthetic holder, a release of
+		// the component the downloader is scoped to
+		assertEquals(REPORT, data(as(f.componentDownloader(), SCORE_ARTIFACT, artifactVars(aggregate, true, null)),
+				"artifactSbomScore"));
+		ArgumentCaptor<String> scored = ArgumentCaptor.forClass(String.class);
+		verify(rebomService).scoreBom(scored.capture(), eq(PROFILES));
+		assertEquals(Utils.OM.readTree(TEA_AGGREGATE), Utils.OM.readTree(scored.getValue()));
+		assertFalse(scored.getValue().contains("reliza:sbom:missing"), scored.getValue());
+
+		// absent: the augmented download of the same document
+		clearInvocations(rebomService);
+		assertEquals(REPORT, data(as(f.componentDownloader(), SCORE_ARTIFACT, artifactVars(aggregate, null, null)),
+				"artifactSbomScore"));
+		ArgumentCaptor<String> augmented = ArgumentCaptor.forClass(String.class);
+		verify(rebomService).scoreBom(augmented.capture(), eq(PROFILES));
+		assertTrue(augmented.getValue().contains("device-caf\u00e9"), augmented.getValue());
+		assertFalse(augmented.getValue().contains("reliza:sbom:missing"), augmented.getValue());
+
+		// nothing written: no download log and no merge
+		verify(downloadLogService, never()).createDownloadLog(any(), any(), any(), any(), any(), any());
+		verify(rebomService, never()).mergeAndStoreBoms(anyList(), any(), any());
 	}
 
 	// I-9 (R-10, R-16)

@@ -4,6 +4,7 @@
 
 package io.reliza.service;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -16,9 +17,12 @@ import java.sql.ResultSet;
 import java.sql.SQLException;
 import java.time.ZonedDateTime;
 import java.util.Collections;
+import java.util.HashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Collectors;
 import java.util.concurrent.atomic.AtomicReference;
 
 import org.junit.jupiter.api.AfterEach;
@@ -41,6 +45,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.Organization;
+import io.reliza.model.OrganizationData;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseStatus;
@@ -91,6 +96,8 @@ public class SchedulerIsolationTest {
 	@MockitoSpyBean private OssAnalyticsMetricsService ossAnalyticsMetricsService;
 	@MockitoSpyBean private AnalyticsMetricsService analyticsMetricsService;
 	@MockitoSpyBean private ReleaseMetricsComputeService releaseMetricsComputeService;
+	/** Spied to scope the all-orgs analytics pass to this test's own orgs, see oneOrgThrowingAnErrorDoesNotEndTheAnalyticsTick. */
+	@MockitoSpyBean private OrganizationService organizationService;
 
 	private static final WhoUpdated WU = WhoUpdated.getAutoWhoUpdated();
 
@@ -166,8 +173,22 @@ public class SchedulerIsolationTest {
 	@Test
 	public void oneOrgThrowingAnErrorDoesNotEndTheAnalyticsTick() throws RelizaException {
 		// Two orgs with data, so the daily pass has something to do on both sides of the failure.
-		release(testInitializer.obtainOrganization(), "1.0.0");
-		release(testInitializer.obtainOrganization(), "1.0.0");
+		Organization first = testInitializer.obtainOrganization();
+		Organization second = testInitializer.obtainOrganization();
+		release(first, "1.0.0");
+		release(second, "1.0.0");
+
+		// The pass walks every organization in the database, and the test database keeps every org
+		// the run has created so far: computing analytics for all of them made this test take 27-44 s
+		// and grow with the suite. The loop under test is the same for two orgs as for thousands, so
+		// the pass sees the real listing narrowed to this test's two orgs, in the order the real
+		// listing returns them.
+		Set<UUID> ours = Set.of(first.getUuid(), second.getUuid());
+		doAnswer(inv -> {
+			@SuppressWarnings("unchecked")
+			List<OrganizationData> all = (List<OrganizationData>) inv.callRealMethod();
+			return all.stream().filter(od -> ours.contains(od.getUuid())).collect(Collectors.toCollection(LinkedList::new));
+		}).when(organizationService).listAllOrganizationData();
 
 		// Poison the FIRST org the pass reaches, whichever it is: everything computed after it is
 		// then proof of isolation regardless of the order listAllOrganizationData returns.
@@ -186,6 +207,7 @@ public class SchedulerIsolationTest {
 		ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
 
 		assertTrue(null != poisoned.get(), "the pass never reached an organization");
+		assertEquals(ours, new HashSet<>(attempted), "the pass attempts both of this test's orgs, and only them");
 		int after = attempted.size() - attempted.indexOf(poisoned.get()) - 1;
 		assertTrue(after > 0, "the tick stopped at the failing org -- " + attempted.size()
 				+ " org(s) attempted, none after " + poisoned.get());

@@ -40,10 +40,22 @@ public class ReleaseOutputEventDtoCoverageTest {
 	/** Scope is supplied by the caller, not the event, so it is the one field with no counterpart. */
 	private static final Set<String> NOT_ON_THE_EVENT = Set.of("scope");
 
+	/**
+	 * The TEA authorization stamp (task TEA-7, round 5) is the one stored field the read view must
+	 * not carry: it is never served and never on an input. The editor cannot lose it by re-sending
+	 * the event, because the server carries the stored stamp across a save that leaves the action
+	 * unchanged, and writes a new one only for a save that passed the PUBLISH_EXTERNALLY gate.
+	 */
+	private static final Set<String> NOT_ON_THE_VIEW = Set.of("teaAuth");
+
 	@Test
 	public void theDtoCarriesEveryFieldTheStoredEventHas() {
 		List<String> missing = new ArrayList<>();
 		for (Field f : fieldsOf(ReleaseOutputEvent.class)) {
+			if (NOT_ON_THE_VIEW.contains(f.getName())) {
+				assertTrue(!hasField(ReleaseOutputEventDto.class, f.getName()), f.getName() + " must not be served");
+				continue;
+			}
 			if (!hasField(ReleaseOutputEventDto.class, f.getName())) missing.add(f.getName());
 		}
 		assertTrue(missing.isEmpty(), "fields stored on ReleaseOutputEvent and absent from its "
@@ -86,6 +98,7 @@ public class ReleaseOutputEventDtoCoverageTest {
 		ReleaseOutputEventDto dto = ReleaseOutputEventDto.fromData(event, EventScope.LOCAL);
 
 		for (Field f : fieldsOf(ReleaseOutputEvent.class)) {
+			if (NOT_ON_THE_VIEW.contains(f.getName())) continue;
 			Object stored = read(event, f.getName());
 			assertNotNull(stored, "the fixture must set " + f.getName() + " or it proves nothing");
 			assertEquals(stored, read(dto, f.getName()),

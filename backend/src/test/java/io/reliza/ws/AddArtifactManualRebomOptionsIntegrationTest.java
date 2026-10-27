@@ -54,8 +54,8 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetOrganizationService;
@@ -113,8 +113,8 @@ class AddArtifactManualRebomOptionsIntegrationTest extends SbomScoreGraphqlTestB
 	}
 
 	private UUID deliverable(String publisher, boolean withSha256) throws RelizaException {
-		DigestRecord record = withSha256 ? new DigestRecord(TeaChecksumType.SHA_256, DIGEST)
-				: new DigestRecord(TeaChecksumType.SHA_1, COMMIT);
+		DigestRecord record = withSha256 ? new DigestRecord(DigestAlgorithm.SHA_256, DIGEST)
+				: new DigestRecord(DigestAlgorithm.SHA_1, COMMIT);
 		return deliverableService.createDeliverable(DeliverableDto.builder()
 				.displayIdentifier("score30-" + UUID.randomUUID()).branch(branch.getUuid()).type(CdxType.CONTAINER)
 				.publisher(publisher)

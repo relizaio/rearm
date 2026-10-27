@@ -13,7 +13,7 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.Utils;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 
@@ -36,9 +36,10 @@ public class ReleaseRebomData extends RelizaDataParent implements RelizaObject {
 		/**
 		 * Whether rows stored with options {@code a} and {@code b} answer the same merge request
 		 * (SCORE-39 ADR-5): the same {@code belongsTo}, {@code tldOnly}, {@code ignoreDev},
-		 * {@code structure} and file-component switch (null read as off), whatever the merge
-		 * version or release node facts key each was built under. A new row replaces every row of
-		 * its request, so a release keeps one row per request.
+		 * {@code structure}, file-component switch (null read as off) and missing-SBOM mode (null
+		 * read as PLACEHOLDER, TEA-15), whatever the merge version or release node facts key each
+		 * was built under. A new row replaces every row of its request, so a release keeps one row
+		 * per request and mode: a product's TEA publication row sits beside its placeholder row.
 		 */
 		public static boolean sameRequest(RebomOptions a, RebomOptions b) {
 			if (null == a || null == b) return a == b;
@@ -46,7 +47,8 @@ public class ReleaseRebomData extends RelizaDataParent implements RelizaObject {
 					&& Objects.equals(a.tldOnly(), b.tldOnly())
 					&& Objects.equals(a.ignoreDev(), b.ignoreDev())
 					&& Objects.equals(a.structure(), b.structure())
-					&& Boolean.TRUE.equals(a.excludeFileComponents()) == Boolean.TRUE.equals(b.excludeFileComponents());
+					&& Boolean.TRUE.equals(a.excludeFileComponents()) == Boolean.TRUE.equals(b.excludeFileComponents())
+					&& a.effectiveMissingSbomMode() == b.effectiveMissingSbomMode();
 		}
 	}
 	

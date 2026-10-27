@@ -59,6 +59,14 @@ type Query {
 	"""
 	components(orgUuid:ID!, componentType:ComponentType!, perspective:ID, kinds: [ComponentKind]): [Component]
 	"""
+	The organization's components of a type as light rows (TPF-74 / TPF-100). Same arguments, same
+	authorization (the caller's readable components: the cascade of grants, perspectives and
+	read-level products), same kinds and archive rules as components; a projection, so no
+	component document is read and no effectiveLifecycle is computed. Never null; empty when the
+	caller may read nothing.
+	"""
+	componentRefs(orgUuid:ID!, componentType:ComponentType!, perspective:ID, kinds: [ComponentKind]): [ComponentRef!]!
+	"""
 	Durable-ownership report (RFC Phase 4c): every NON-OWNED component in the org
 	with its computed ownership status/suggestion. Org-admin only; read-only
 	governance view -- never blocks releases.
@@ -102,10 +110,14 @@ type Query {
 	apiKeys(orgUuid: ID!): [ApiKey]
 	"Live keys the calling user owns (USER) or holds (FREEFORM requested by them), across organizations"
 	myApiKeys: [ApiKey]
+	"Org admins: the organization's EXTERNAL keys (keys handed to parties outside the organization, for TEA only)"
+	externalApiKeys(orgUuid: ID!): [ApiKey]
 	"CLI browser login: the pending request behind a user code (null when unknown or expired)"
 	cliLoginRequest(userCode: String!): CliSession
 	"The calling user's active CLI sessions"
 	myCliSessions: [CliSession]
+	"The caller's permission templates in the organization (every organization when org is null): named permission sets to start a device-login approval or a key request from"
+	myPermissionTemplates(org: ID): [PermissionTemplate]
 	"Org admins: active CLI sessions riding this key"
 	cliSessionsOfKey(apiKeyUuid: ID!): [CliSession]
 	"Org admins: the organization's federated identity trust rules"
@@ -251,6 +263,8 @@ type Query {
 	
 	# User Groups
 	getUserGroups(org: ID!): [UserGroupWebDto]
+	"Active and inactive API key groups of the organization; organization administrators only"
+	apiKeyGroupsOfOrg(org: ID!): [ApiKeyGroupWebDto]
 	getTeams(org: ID!): [TeamWebDto]
 
 	# Vulnerability Analysis
@@ -272,6 +286,68 @@ type Query {
 	perspectives(org: ID!): [Perspective]
 	"""A perspective's components; kinds narrows them as for components."""
 	componentsOfPerspective(perspectiveUuid: ID!, kinds: [ComponentKind]): [Component]
+
+	# TEA profiles
+	"The TEA profile stored at a scope; object is empty for ORGANIZATION, else the perspective or component."
+	teaProfile(org: ID!, scope: TeaProfileScope!, object: ID): TeaProfile
+	"The TEA profile editor's view of a scope: the stored row, the effective and parent resolutions."
+	teaProfileEditorView(org: ID!, scope: TeaProfileScope!, object: ID): TeaProfileEditorView
+	"Every TEA profile row of the organization."
+	teaProfilesOfOrg(org: ID!): [TeaProfile!]!
+	"The organization's TEA id, API base and .well-known/tea document."
+	teaOrgDiscovery(org: ID!): TeaOrgDiscovery
+	"What a TEA profile save (profile given) or removal (profile null) does to the effective visibility of the scope's object."
+	teaProfileExposureChange(org: ID!, scope: TeaProfileScope!, object: ID, profile: TeaProfileInput): TeaExposureChange
+	"What setting a component's perspectives to exactly these would do to its effective visibility; READ on the component."
+	teaMembershipExposureChange(componentUuid: ID!, perspectiveUuids: [ID!]!): TeaExposureChange
+
+	# SBOM profiles (task TEA-27)
+	"The SBOM profile rows stored at a scope, by name; object is empty for ORGANIZATION, else the perspective or component."
+	sbomProfiles(org: ID!, scope: SettingsScope!, object: ID): [SbomProfile!]!
+	"Every SBOM profile row of the organization."
+	sbomProfilesOfOrg(org: ID!): [SbomProfile!]!
+	"The SBOM profile row stored at a scope under a name, null when none."
+	sbomProfile(org: ID!, scope: SettingsScope!, object: ID, name: String!): SbomProfile
+	"Which row a name resolves to at a scope, with no channel fallback; NOT_FOUND when no scope defines it and it is not default."
+	sbomProfileEffective(org: ID!, scope: SettingsScope!, object: ID, name: String!): SbomProfileResolution!
+	"Every name that resolves at the scope, with its resolution; what a channel editor offers."
+	sbomProfileCatalog(org: ID!, scope: SettingsScope!, object: ID): [SbomProfileCatalogEntry!]!
+	"The SBOM profile editor's view of a name at a scope: the stored row, the effective and parent resolutions."
+	sbomProfileEditorView(org: ID!, scope: SettingsScope!, object: ID, name: String!): SbomProfileEditorView!
+
+	# Regulatory packages: kinds and package settings (task TEA-33)
+	"Every package kind with its parts in document order and whether each has a generator."
+	packageKinds: [PackageKindDescriptor!]!
+	"The package settings row stored at a scope for a kind, null when none."
+	packageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): PackageSettings
+	"The package settings rows stored at a scope, by kind; object is empty for ORGANIZATION, else the perspective or component."
+	packageSettingsOfScope(org: ID!, scope: SettingsScope!, object: ID): [PackageSettings!]!
+	"Every package settings row of the organization."
+	packageSettingsOfOrg(org: ID!): [PackageSettings!]!
+	"Which package settings row applies at a scope for a kind; the built-in default (source DEFAULT) when no row does."
+	packageSettingsEffective(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): PackageSettingsResolution!
+	"The package settings editor's view of a kind at a scope: the stored row, the effective and parent resolutions, the kind."
+	packageSettingsEditorView(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): PackageSettingsEditorView!
+
+	# Regulatory packages and submissions (task TEA-29, submissions by TEA-35)
+	"The regulatory submissions of a release, every kind (READ on the release)."
+	submissionsOfRelease(release: ID!): [Submission!]!
+	"The regulatory submissions across a component's releases, newest act first, optionally of one kind or state (READ on the component)."
+	submissionsOfComponent(component: ID!, kind: PackageKind, state: SubmissionState): [Submission!]!
+	"A regulatory submission by its uuid; null on an edition without submissions (READ on its release)."
+	submission(uuid: ID!): Submission
+	"One version of a regulatory submission; null when it does not exist (READ on its release)."
+	submissionVersion(submission: ID!, version: Int!): SubmissionVersion
+	"What a submission act on the release would do, without generating anything (READ on the release's component)."
+	submissionPreview(release: ID!, kind: PackageKind!): SubmissionPreview!
+
+	# TEA publications (task TEA-5)
+	"What the release page needs to publish the release on TEA: whether it can, why not, and its publication and collections (READ)."
+	releaseTeaPublicationView(release: ID!): TeaPublishPreview!
+	"A TEA publication by its uuid (the TEA release id); null when unknown or not readable."
+	teaPublication(uuid: ID!): TeaPublication
+	"Every collection version of a TEA publication, oldest first."
+	teaPublicationCollections(publication: ID!): [TeaPublishedCollection!]!
 
 	# Download Logs
 	listDownloadLogs(org: ID!, fromDate: DateTime, toDate: DateTime, perspective: ID): [DownloadLog]
@@ -745,6 +821,20 @@ type Mutation {
 	cloneBranch(branchUuid: ID!, name: String!, branchType: BranchType, versionSchema: String): Branch
 	autoIntegrateFeatureSet(branchUuid: ID!): Release
 	archiveBranch(branchUuid: ID!): Boolean
+	# Archive many branches (or feature sets) in one call, reporting PER BRANCH.
+	# Refused whole, exactly as archiveBranch, while the system is sealed or the licence is invalid
+	# (validateSystemOperational, WRITE): that refusal is the mutation's error, not an outcome.
+	# Authorized per branch exactly as archiveBranch (BRANCH-scope RESOURCE WRITE); a branch the
+	# caller may not write is an outcome, never a batch failure. Each archived branch is written
+	# in its own transaction with its own audit row; one failure undoes nothing else. The base
+	# branch is SKIPPED_BASE (archiveBranch refuses it). Archiving deletes nothing: the branch and its
+	# releases stay readable by uuid (branch, releases(branchFilter)) and the branch only leaves the
+	# branchesOfComponent list. There is NO unarchive mutation in this API today, for one branch or
+	# many: an archived branch is reactivated only by a new release arriving on it. Callers should
+	# confirm a large selection with the person before calling.
+	# At most 200 uuids per call (BranchBulkArchiveService.BULK_ARCHIVE_MAX_IDS): a larger call is
+	# refused outright, not truncated. Duplicates are counted toward the bound, then de-duplicated.
+	archiveBranches(branchUuids: [ID!]!): BranchArchiveBulkResponse!
 	archiveComponent(componentUuid: ID!): Boolean
 	setNextVersion(branchUuid: ID!, versionString: String!, versionType: VersionType): Boolean
 	"""
@@ -848,6 +938,12 @@ type Mutation {
 	createUserApiKey(orgUuid: ID!, notes: String): ApiKey
 	"CLI browser login: approve the pending request with an existing key of mine (apiKeyUuid), or with a personal key created for this session in createKeyOrgUuid. maxMinutes: a session shorter than the key's sessionMaxMinutes allows, never longer (1 to 129600)"
 	approveCliLogin(userCode: String!, apiKeyUuid: ID, createKeyOrgUuid: ID, createKeyNotes: String, permissionType: PermissionType, permissions: [PermissionInput], maxMinutes: Int): CliSession
+	"A template grants nothing by itself: what is approved from it is clamped to the approver's own permissions at approval time (approveCliLogin)"
+	createPermissionTemplate(template: CreatePermissionTemplateInput!): PermissionTemplate
+	"Null fields keep their stored value; permissions replaces the set"
+	updatePermissionTemplate(template: UpdatePermissionTemplateInput!): PermissionTemplate
+	"Deletes the template; sessions and keys approved from it are unchanged (applied by value)"
+	deletePermissionTemplate(uuid: ID!): Boolean
 	denyCliLogin(userCode: String!): Boolean
 	"Revoke one of my CLI sessions, or (org admin) any session in my org; a key created for that session is deleted with it"
 	revokeCliSession(uuid: ID!): Boolean
@@ -867,6 +963,10 @@ type Mutation {
 	resolveApiKeyRequest(apiKeyUuid: ID!, approve: Boolean!, reason: String): ApiKey
 	"Admin reassigns or clears (null) the holder of a FREEFORM key; the holder must be a member of the org. A change of holder revokes the key's active CLI sessions."
 	setApiKeyHolder(apiKeyUuid: ID!, holder: ID): ApiKey
+	"Create an EXTERNAL key id with no secret for the named outside party; mints the organization's TEA id when it has none"
+	createExternalApiKey(orgUuid: ID!, holderName: String!, notes: String): ApiKey
+	"Org admins: rename the outside party that holds an EXTERNAL key"
+	setApiKeyHolderName(apiKeyUuid: ID!, holderName: String!): ApiKey
 	updateRelease(release: ReleaseInput!): Release
 	updateReleaseLifecycle(release: ID!, newLifecycle: ReleaseLifecycleEnum!): Release
 
@@ -1018,6 +1118,7 @@ type Mutation {
 
 	# Programmatic
 	setApprovalsOnApiKey(apiKeyUuid: ID!, approvals: [String], notes: String): ApiKey
+	"Replace the permission set of a FREEFORM, USER or EXTERNAL key. An EXTERNAL key takes READ_ONLY grants at ORGANIZATION, PERSPECTIVE or COMPONENT scope only, stored with the TEA_READ function and no approvals; org admins only"
 	setPermissionsOnFreeformApiKey(apiKeyUuid: ID!, permissionType: PermissionType, permissions: [PermissionInput]): ApiKey
 	"""
 	Edit just the notes field on an API key. Admin auth on the owning
@@ -1069,6 +1170,11 @@ type Mutation {
 	# User Groups
 	createUserGroup(userGroup: CreateUserGroupInput!): UserGroupWebDto
 	updateUserGroup(userGroup: UpdateUserGroupInput!): UserGroupWebDto
+	createApiKeyGroup(apiKeyGroup: CreateApiKeyGroupInput!): ApiKeyGroupWebDto
+	"Null fields keep their stored value; apiKeys replaces the member list (FREEFORM keys of this organization only)"
+	updateApiKeyGroup(apiKeyGroup: UpdateApiKeyGroupInput!): ApiKeyGroupWebDto
+	"Deactivates the group (status INACTIVE): its members lose its permissions on their next call; restore with updateApiKeyGroup status ACTIVE"
+	deleteApiKeyGroup(groupUuid: ID!): ApiKeyGroupWebDto
 	createTeam(team: CreateTeamInput!): TeamWebDto
 	updateTeam(team: UpdateTeamInput!): TeamWebDto
 
@@ -1091,13 +1197,47 @@ type Mutation {
 	writes are rejected when the org is not in ENABLED_FLEXIBLE (D3 / G2).
 	"""
 	updatePerspectiveSidPurl(uuid: ID!, sidPurlOverride: SidPurlOverride, sidAuthoritySegments: [String!]): Perspective
+	"Delete a perspective. When its deletion makes a member component resolve to a PUBLIC TEA profile, it needs organization admin."
 	deletePerspective(uuid: ID!): Perspective
+	"Set a component's perspectives to exactly these. A change that makes the component resolve to a PUBLIC TEA profile needs organization admin; an archived component takes no change that would make it resolve ENABLED or PUBLIC."
 	setPerspectivesOnComponent(componentUuid: ID!, perspectiveUuids: [ID!]!): Component
+	"""
+	Save the TEA profile (the TEA publishing settings) of a scope, wholesale; the input names the SBOM
+	profiles to publish. A PUBLIC profile needs organization admin at every scope, and so does a
+	FOLLOW_PERSPECTIVE row that makes the component resolve PUBLIC; an archived component or product
+	accepts only publishing DISABLED and visibility PRIVATE. The ORGANIZATION row is reset by saving
+	the defaults, never deleted.
+	"""
+	saveTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID, profile: TeaProfileInput!): TeaProfile
+	"Remove the TEA profile of a PERSPECTIVE or COMPONENT scope; answers whether one existed. A removal that makes the object resolve PUBLIC needs organization admin."
+	deleteTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID): Boolean
+	"Save the SBOM profile of a name at a scope, wholesale (ADMIN on the scope's object)."
+	saveSbomProfile(org: ID!, scope: SettingsScope!, object: ID, name: String!, profile: SbomProfileInput!): SbomProfile!
+	"Remove the SBOM profile of a name at a scope; answers whether one existed. Refused while TEA publishing settings name it and it would no longer resolve there."
+	deleteSbomProfile(org: ID!, scope: SettingsScope!, object: ID, name: String!): Boolean!
+	"Save the package settings of a kind at a scope, wholesale (ADMIN on the scope's object)."
+	savePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!, settings: PackageSettingsInput!): PackageSettings!
+	"Remove the package settings of a kind at a scope; answers whether one existed (ADMIN on the scope's object)."
+	deletePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): Boolean!
+	"Create the release's regulatory submission of a kind, version 1 (READ_WRITE on the release's component); refused when one exists: use resubmitSubmission."
+	createSubmission(release: ID!, kind: PackageKind!, reason: String): SubmissionActResult!
+	"Write the next version of a submission with a reason; expectedLatestVersion refuses STALE_HEAD when the head moved (READ_WRITE on the component)."
+	resubmitSubmission(submission: ID!, reason: String!, expectedLatestVersion: Int): SubmissionActResult!
+	"Withdraw a submission with a reason; every version and document is kept (READ_WRITE on the component)."
+	withdrawSubmission(submission: ID!, reason: String!): SubmissionActResult!
+	"Publish the release on TEA (PUBLISH_EXTERNALLY); refused when it is already published: use republishReleaseOnTea"
+	publishReleaseOnTea(release: ID!, comment: String): TeaPublishResult!
+	"Regenerate and, when anything changed, append a collection version; a hidden publication becomes published again"
+	republishReleaseOnTea(release: ID!, comment: String): TeaPublishResult!
+	"Stop serving the release on TEA; its collections stay and re-publish continues their numbering"
+	hideReleaseOnTea(release: ID!, comment: String): TeaPublication!
 	"""
 	Adds one perspective to the component's perspectives and keeps the others. Same authorization and
 	refusals as setPerspectivesOnComponent: ADMIN on the component; an unknown, archived or other
 	organization's perspective is "Perspective not found: <uuid>"; a product-based perspective is
-	refused. Adding a perspective the component already has changes nothing.
+	refused. Adding a perspective the component already has changes nothing. A change that makes the
+	component resolve to a PUBLIC TEA profile needs organization admin; an archived component takes no
+	change that would make it resolve ENABLED or PUBLIC.
 	"""
 	addPerspectiveToComponent(componentUuid: ID!, perspectiveUuid: ID!): Component
 	"""
@@ -2072,6 +2212,12 @@ input CreateUserGroupInput {
 	org: ID!
 }
 
+input CreateApiKeyGroupInput {
+	name: String!
+	description: String
+	org: ID!
+}
+
 input CreateVulnAnalysisInput {
 	org: ID!
 	location: String!
@@ -2320,6 +2466,15 @@ type DownloadConfig {
 	upToDate: DateTime
 	targetLifecycle: ReleaseLifecycleEnum
 	targetApproval: String
+	"TEA_DOWNLOAD: the external key id that read, null for an anonymous read"
+	teaKeyId: String
+	teaPublication: ID
+	teaCollectionVersion: Int
+	"TEA_DOWNLOAD: the TEA artifact id"
+	teaArtifactUuid: ID
+	teaArtifactVersion: Int
+	"TEA_DOWNLOAD: what was read"
+	teaObject: String
 }
 
 type DownloadLog {
@@ -2350,6 +2505,8 @@ enum DownloadType {
 	VEX_EXPORT
 	SBOM_EXPORT
 	CLE_EXPORT
+	"A read through the TEA surface"
+	TEA_DOWNLOAD
 }
 
 type DuplicateComponentRepairSummary {
@@ -3439,6 +3596,14 @@ enum NotificationEventTypeEnum {
 	AGENT_TASK_QUEUE_AGE
 	# An agent session is about to be closed by the idle sweep (task 6e7fe6fe).
 	AGENT_SESSION_IDLE_WARNING
+	# A release was published or re-published on TEA (task TEA-5).
+	RELEASE_TEA_PUBLISHED
+	# A release was hidden from TEA (task TEA-5).
+	RELEASE_TEA_HIDDEN
+	# A regulatory submission version was written, a first version or a resubmission (task TEA-35).
+	RELEASE_SUBMISSION_CREATED
+	# A regulatory submission was withdrawn (task TEA-35).
+	RELEASE_SUBMISSION_WITHDRAWN
 }
 
 input NotificationFilterInput {
@@ -4235,6 +4400,41 @@ type SbomComponentSupportBulkResult {
 	message: String
 }
 
+# A bulk branch archive's outcome. The counts are derived server-side from results.
+type BranchArchiveBulkResponse {
+	results: [BranchArchiveResult!]!
+	archivedCount: Int!
+	# SKIPPED_BASE + SKIPPED_ARCHIVED
+	skippedCount: Int!
+	# NOT_FOUND + FORBIDDEN + FAILED
+	failedCount: Int!
+}
+
+# One branch's outcome from a bulk archive.
+type BranchArchiveResult {
+	branchUuid: ID!
+	outcome: BranchArchiveOutcome!
+	# Why, when the outcome is FAILED; null otherwise. Never a database or driver message.
+	message: String
+}
+
+# What a bulk archive did to one branch.
+enum BranchArchiveOutcome {
+	# Status set to ARCHIVED, one audit row written.
+	ARCHIVED
+	# The component's base branch; nothing written.
+	SKIPPED_BASE
+	# Already ARCHIVED; nothing written (idempotent re-run).
+	SKIPPED_ARCHIVED
+	# No branch with this uuid that the caller can see; another organization's branch answers
+	# this too.
+	NOT_FOUND
+	# A branch in one of the caller's organizations without WRITE on it.
+	FORBIDDEN
+	# The write failed; message says why; the batch continued.
+	FAILED
+}
+
 type SbomComponentSupportCoverage {
 	total: Int!
 	attested: Int!
@@ -4981,6 +5181,30 @@ input UpdateUserGroupInput {
 	connectedSsoGroups: [String]
 }
 
+input UpdateApiKeyGroupInput {
+	groupId: ID!
+	name: String
+	description: String
+	apiKeys: [ID]
+	permissions: [UserGroupPermissionInput]
+	approvals: [String]
+	status: ApiKeyGroupStatus
+}
+
+input CreatePermissionTemplateInput {
+	org: ID!
+	name: String!
+	description: String
+	permissions: [UserGroupPermissionInput]
+}
+
+input UpdatePermissionTemplateInput {
+	uuid: ID!
+	name: String
+	description: String
+	permissions: [UserGroupPermissionInput]
+}
+
 input UpdateVulnAnalysisInput {
 	analysisUuid: ID!
 	state: AnalysisState!
@@ -5027,6 +5251,11 @@ enum UserGroupStatus {
 	INACTIVE
 }
 
+enum ApiKeyGroupStatus {
+	ACTIVE
+	INACTIVE
+}
+
 type UserGroupWebDto {
 	uuid: ID
 	name: String
@@ -5039,6 +5268,40 @@ type UserGroupWebDto {
 	permissions: Permissions
 	status: UserGroupStatus
 	connectedSsoGroups: [String]
+	createdDate: DateTime
+	lastUpdatedBy: ID
+}
+
+"A member key by reference: never a secret, never a hash"
+type ApiKeyRef {
+	uuid: ID
+	keyOrder: String
+	type: ApiTypeEnum
+	status: ApiKeyStatus
+	notes: String
+	declaredName: String
+}
+
+type ApiKeyGroupWebDto {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	apiKeys: [ID]
+	apiKeyDetails: [ApiKeyRef]
+	permissions: Permissions
+	status: ApiKeyGroupStatus
+	createdDate: DateTime
+	lastUpdatedBy: ID
+}
+
+type PermissionTemplate {
+	uuid: ID
+	name: String
+	description: String
+	org: ID
+	user: ID
+	permissions: Permissions
 	createdDate: DateTime
 	lastUpdatedBy: ID
 }

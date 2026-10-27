@@ -21,6 +21,7 @@ import org.jsoup.safety.Safelist;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonAlias;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
@@ -108,8 +109,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 
 	/** One component against the same rule as {@link #ofKinds}: no kinds named matches every component. */
 	public static boolean isOfKinds(ComponentData component, Collection<ComponentKind> kinds) {
-		if (null == kinds || kinds.isEmpty()) return true;
-		return kinds.contains(null == component.getKind() ? ComponentKind.GENERIC : component.getKind());
+		return isOfKinds(component.getKind(), kinds);
 	}
 
 	public enum ComponentKind {
@@ -121,6 +121,44 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		 * any other: permissions, releases, lifecycle and the Helm checks, which it falls through.
 		 */
 		BOARD_DOCUMENT;
+	}
+
+	/** TPF-100: a list row. kind is carried for the kinds rule and is not a GraphQL field. */
+	public record ComponentRef(UUID uuid, String name, ComponentType type, StatusEnum status,
+			UUID org, UUID vcs, ComponentKind kind) {
+		/**
+		 * From a FIND_COMPONENT_REFS_* row (seven text columns: uuid, name, type, status, org, vcs, kind);
+		 * defaults as the document's: status ACTIVE, kind GENERIC (also for an unknown kind). A row
+		 * without a type reads type null, as the document does.
+		 */
+		public static ComponentRef fromRow(Object[] r) {
+			return new ComponentRef(UUID.fromString((String) r[0]), (String) r[1],
+					null == r[2] ? null : ComponentType.valueOf((String) r[2]),
+					null == r[3] ? StatusEnum.ACTIVE : StatusEnum.valueOf((String) r[3]),
+					UUID.fromString((String) r[4]),
+					null == r[5] ? null : UUID.fromString((String) r[5]),
+					kindOf((String) r[6]));
+		}
+
+		/** From a document, for the perspective branch. */
+		public static ComponentRef of(ComponentData cd) {
+			return new ComponentRef(cd.getUuid(), cd.getName(), cd.getType(), cd.getStatus(), cd.getOrg(),
+					cd.getVcs(), cd.getKind());
+		}
+
+		private static ComponentKind kindOf(String kind) {
+			if (null == kind) return ComponentKind.GENERIC;
+			for (ComponentKind k : ComponentKind.values()) {
+				if (k.name().equals(kind)) return k;
+			}
+			return ComponentKind.GENERIC;
+		}
+	}
+
+	/** The kinds rule on a kind alone; {@link #isOfKinds(ComponentData, Collection)} delegates to it. */
+	public static boolean isOfKinds(ComponentKind kind, Collection<ComponentKind> kinds) {
+		if (null == kinds || kinds.isEmpty()) return true;
+		return kinds.contains(null == kind ? ComponentKind.GENERIC : kind);
 	}
 
 	/**
@@ -300,13 +338,40 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		//   lockReason                   -> shown verbatim in every refusal
 		// A rule that locks will usually also reject the release; the two are independent
 		// output events on the same input trigger, as everywhere else.
-		LOCK;
+		LOCK,
+		// TEA_PUBLISH publishes the release on TEA through TeaPublicationService (task TEA-7),
+		// re-publishing when it is already published and turning a hidden publication back to
+		// published. It carries no knobs: what is generated and for whom comes from the effective
+		// TEA profile at the time the act runs. Repeatable like VDR_SNAPSHOT_ARTIFACT: it fires on
+		// every NORMAL pass whose rule matches (a re-publish writes a new collection version only
+		// when the content changed) and never on a re-evaluation. The act runs after the pass
+		// commits, on the TEA act queue (TeaOutputEventService), never inside the pass.
+		// Output event fields used: none.
+		TEA_PUBLISH,
+		// TEA_HIDE hides the release's TEA publication. Fires once per release; nothing to hide
+		// (never published, or already hidden) leaves it armed. Same queue as TEA_PUBLISH.
+		// Output event fields used: none.
+		TEA_HIDE;
 	}
 	
 	public enum EventScope {
 		LOCAL,
 		GLOBAL;
 	}
+
+	/**
+	 * On what grant a save that passed the TEA wiring gate wrote a piece of wiring (task TEA-7,
+	 * round 5): an organization admin, or a holder of PUBLISH_EXTERNALLY on the component.
+	 */
+	public enum TeaGrantBasis { ORG_ADMIN, PUBLISH_EXTERNALLY }
+
+	/**
+	 * Written by the server when a save that passed the PUBLISH_EXTERNALLY gate wrote this
+	 * content (task TEA-7, round 5): the content hash of the piece and its owner, who saved it,
+	 * on what grant, and when (an ISO-8601 instant). Never on an input and never served; the
+	 * trigger engine fires a TEA_PUBLISH only from pieces whose stamp matches their content.
+	 */
+	public record TeaWiringStamp(String hash, UUID by, TeaGrantBasis basis, String at) implements java.io.Serializable {}
 	
 	@Data
 	@JsonIgnoreProperties(ignoreUnknown = true)
@@ -320,6 +385,11 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private boolean disabled;
 		private boolean overrideOutputEventsLocally;
 		private Set<UUID> outputEventsOverride;
+		// TEA-7 round 5: server-written authorization stamp; never compared, never on an input
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@EqualsAndHashCode.Exclude
+		@lombok.ToString.Exclude
+		private TeaWiringStamp teaAuth;
 	}
 	
 	/**
@@ -440,6 +510,11 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		// match "no critical vulns" and trigger the else-branch). Empty
 		// preserves single-stage evaluation.
 		private String preconditionCelExpression;
+		// TEA-7 round 5: server-written authorization stamp; never compared, never on an input
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@EqualsAndHashCode.Exclude
+		@lombok.ToString.Exclude
+		private TeaWiringStamp teaAuth;
 	}
 	
 	@Data
@@ -482,6 +557,11 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 		private ComponentLock.UnlockLevel lockUnlockLevel;
 		private ComponentLock.AttestationRequirement lockAttestationRequirement;
 		private String lockReason;
+		// TEA-7 round 5: server-written authorization stamp; never compared, never on an input
+		@JsonInclude(JsonInclude.Include.NON_NULL)
+		@EqualsAndHashCode.Exclude
+		@lombok.ToString.Exclude
+		private TeaWiringStamp teaAuth;
 	}
 	
 	@JsonProperty
@@ -641,6 +721,14 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	 */
 	@JsonProperty
 	private BelongsToOrganization isInternal;
+
+	/**
+	 * The component's TEA-facing id (task TEA-2). Minted once by the server on the component's
+	 * first TEA publication ({@code ComponentService.ensureTeaUuid}), never editable, and never on
+	 * an input; nothing on TEA carries the internal uuid.
+	 */
+	@JsonProperty
+	private UUID teaUuid;
 
 	/**
 	 * The component's declared licence, a canonical SPDX expression (SCORE-39 ADR-1); null when

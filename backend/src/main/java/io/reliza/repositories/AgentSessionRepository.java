@@ -197,6 +197,31 @@ public interface AgentSessionRepository extends CrudRepository<AgentSession, UUI
 			@Param("roles") String roles);
 
 	/**
+	 * Replace the session's usage rollup (AgentSessionUsageService.rebuildSessionTotals) in place:
+	 * the totals and the mismatch flag, no revision, no last_updated_date, no who-updated keys, no
+	 * audit row -- a cache of agent_session_usage, which is the history (TPF-71 / TPF-105). Joins
+	 * the caller's transaction and does not clear the persistence context: the caller refreshes.
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_sessions SET record_data = jsonb_set(jsonb_set(record_data, "
+			+ "'{usageTotals}', cast(:totals as jsonb)), '{modelMismatch}', to_jsonb(cast(:mismatch as boolean))) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampUsageTotals(@Param("uuid") UUID uuid, @Param("totals") String totals, @Param("mismatch") boolean mismatch);
+
+	/**
+	 * As {@link #stampUsageTotals}, also marking the model assertion RUNTIME_OBSERVED: the one-way step a
+	 * transcript, collector or provider row justifies (TPF-71 / TPF-105).
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.agent_sessions SET record_data = jsonb_set(jsonb_set(jsonb_set(record_data, "
+			+ "'{usageTotals}', cast(:totals as jsonb)), '{modelMismatch}', to_jsonb(cast(:mismatch as boolean))), "
+			+ "'{modelAssertion}', to_jsonb(cast('RUNTIME_OBSERVED' as text))) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampUsageTotalsObserved(@Param("uuid") UUID uuid, @Param("totals") String totals, @Param("mismatch") boolean mismatch);
+
+	/**
 	 * The roles each OPEN session declared when it last polled the board at or after {@code since}, one
 	 * JSON array per session; an empty array is a session that takes any role (task RD3-4).
 	 */

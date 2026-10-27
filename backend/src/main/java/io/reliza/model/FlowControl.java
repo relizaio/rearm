@@ -4,6 +4,7 @@
 package io.reliza.model;
 
 import java.io.Serializable;
+import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
 import com.fasterxml.jackson.annotation.JsonInclude;
@@ -80,9 +81,33 @@ public record FlowControl(
         // while it waits — without a fence, permanently-incomplete rows are the
         // oldest rows in every finder's ORDER BY and starve everything behind
         // them. The row stays finder-eligible (no lastScanned is stamped);
-        // the fence only spaces out retries. Cleared on a complete compute and
-        // eagerly on containing products when a child's firstScanned lands, so
-        // parents heal on the next tick instead of waiting out the backoff.
+        // the fence only spaces out retries. Cleared on a complete compute, and
+        // dropped with a re-queue (touchForMetricsRecompute) when a child's
+        // metrics change pushes its containing products
+        // (markContainingProductsStale), so parents heal on the next tick instead
+        // of waiting out the backoff; a product at the hourly cap re-queues its
+        // settled unscanned children the same way (TPF-68).
         String metricsComputeSkipUntil,
-        Integer metricsComputeFailureCount) implements Serializable {
+        Integer metricsComputeFailureCount,
+        // TEA act queue (task TEA-7; mirrors the autoIntegrate* keys). Stamped by
+        // ReleaseRepository.requestTeaAct when a TEA_PUBLISH or TEA_HIDE output event
+        // fires: one pending act per release, a newer request overwriting the kind, the
+        // trigger and the comment of an unclaimed one. Run after the pass commits on the
+        // bounded teaActExecutor and by the per-minute drain (TeaOutputEventService).
+        // teaActClaimedAt is the worker's lease, which expires at claimedAt +
+        // TEA_ACT_LEASE_SECONDS; teaActSkipUntil is the retry fence ONLY (a publish in
+        // progress elsewhere, an unexpected exception) and teaActFailureCount the attempts
+        // that ended in it. The conditional clear keeps a request newer than the claim
+        // (lost-wakeup guard), exactly as for auto-integrate.
+        String teaActRequestedAt,
+        TeaActKind teaActKind,
+        UUID teaActTrigger,
+        String teaActTriggerName,
+        String teaActComment,
+        String teaActClaimedAt,
+        String teaActSkipUntil,
+        Integer teaActFailureCount) implements Serializable {
+
+    /** What a queued TEA act does; Jackson writes the name into the jsonb and the SQL compares the same name. */
+    public enum TeaActKind { PUBLISH, HIDE }
 }

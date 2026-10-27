@@ -45,7 +45,7 @@ import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentSessionData.SessionStatus;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.repositories.AgentSessionRepository;
 import lombok.extern.slf4j.Slf4j;
 
@@ -546,7 +546,7 @@ public class AgentSessionService {
 	}
 
 	/** An instant as the numeric epoch seconds, with nanos, that Jackson writes into the session's JSONB. */
-	static BigDecimal epochSecondsOf(ZonedDateTime at) {
+	public static BigDecimal epochSecondsOf(ZonedDateTime at) {
 		return BigDecimal.valueOf(at.toEpochSecond()).add(BigDecimal.valueOf(at.getNano(), 9));
 	}
 

@@ -18,6 +18,8 @@ import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
@@ -75,6 +77,9 @@ public class NotificationInboxFormatter {
                 case RELEASE_CREATED -> renderReleaseCreated(event);
                 case RELEASE_LIFECYCLE_CHANGED -> renderReleaseLifecycleChanged(event);
                 case RELEASE_BOM_DIFF -> renderReleaseBomDiff(event);
+                case RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN -> renderReleaseTeaPublication(event);
+                case RELEASE_SUBMISSION_CREATED -> renderReleaseSubmission(event);
+                case RELEASE_SUBMISSION_WITHDRAWN -> renderReleaseSubmission(event);
                 case APPROVAL_REQUESTED -> renderApprovalRequested(event);
                 case APPROVAL_RESOLVED -> renderApprovalResolved(event);
                 case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED -> renderInstanceDeployment(event);
@@ -215,6 +220,24 @@ public class NotificationInboxFormatter {
         }
         appendReleaseFacts(desc, r);
         return new InboxRendering(title, desc.length() == 0 ? null : desc.toString());
+    }
+
+    /** Task TEA-35: the headline as title, the release facts as description (E14: no free text). */
+    private InboxRendering renderReleaseSubmission(NotificationOutboxEvent event) {
+        ReleaseSubmissionPayload p = Utils.OM.convertValue(event.getRecordData(), ReleaseSubmissionPayload.class);
+        if (p == null || p.release() == null) return new InboxRendering(event.getEventType().name(), null);
+        StringBuilder desc = new StringBuilder();
+        appendReleaseFacts(desc, p.release());
+        return new InboxRendering(p.headline(), desc.length() == 0 ? null : desc.toString());
+    }
+
+    private InboxRendering renderReleaseTeaPublication(NotificationOutboxEvent event) {
+        ReleaseTeaPublicationPayload p = Utils.OM.convertValue(event.getRecordData(), ReleaseTeaPublicationPayload.class);
+        if (p == null || p.release() == null) return new InboxRendering(event.getEventType().name(), null);
+        StringBuilder desc = new StringBuilder();
+        if (p.publicUrl() != null && !p.publicUrl().isBlank()) appendFact(desc, p.publicUrl());
+        appendReleaseFacts(desc, p.release());
+        return new InboxRendering(p.headline(), desc.length() == 0 ? null : desc.toString());
     }
 
     private InboxRendering renderReleaseBomDiff(NotificationOutboxEvent event) {

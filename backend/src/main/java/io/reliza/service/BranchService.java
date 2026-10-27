@@ -13,6 +13,7 @@ import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -45,6 +46,7 @@ import io.reliza.model.dto.BranchDto;
 import io.reliza.repositories.BranchRepository;
 import io.reliza.versioning.VersionType;
 import lombok.extern.slf4j.Slf4j;
+import tools.jackson.core.JacksonException;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
@@ -447,13 +449,26 @@ public class BranchService {
 		return repository.save(b);
 	}
 
-	/** Record the last declarative apply on a branch (no other field changes). */
+	/**
+	 * Record the last declarative apply on a branch, in place (TPF-71 / TPF-108): no other field changes,
+	 * no revision, no audit row, no who-updated keys. {@code wu} is kept for the callers; the stamp does not
+	 * write it. No lock: no branch writer locks, so one here would order the stamp against nothing.
+	 */
 	@Transactional
 	public void stampDeclarativeProvenance(UUID branchUuid, DeclarativeProvenance provenance, WhoUpdated wu) throws RelizaException {
-		Branch b = getBranch(branchUuid).orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
-		BranchData bd = BranchData.branchDataFromDbRecord(b);
-		bd.setDeclarative(provenance);
-		saveBranch(b, Utils.dataToRecord(bd), wu);
+		Objects.requireNonNull(provenance, "provenance");
+		getBranch(branchUuid).orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
+		String json;
+		try {
+			json = Utils.OM.writeValueAsString(provenance);
+		} catch (JacksonException e) {
+			throw new IllegalStateException("Could not serialize the declarative provenance of branch " + branchUuid, e);
+		}
+		if (repository.stampDeclarativeProvenance(branchUuid, json) == 0) {
+			throw new RelizaException("Branch not found: " + branchUuid);
+		}
+		Branch m = repository.findById(branchUuid).orElseThrow(() -> new RelizaException("Branch not found: " + branchUuid));
+		entityManager.refresh(m); // a fresh read by uuid, then the refresh (TPF-108 4.6)
 	}
 
 	/**
@@ -685,6 +700,12 @@ public class BranchService {
 			archived = true;
 		}
 		return archived;
+	}
+
+	/** archiveBranch in its own transaction, for the bulk loop: REQUIRES_NEW is the point. */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public Boolean archiveBranchIsolated(UUID branchUuid, WhoUpdated wu) throws RelizaException {
+		return archiveBranch(branchUuid, wu);
 	}
 	
 	public Boolean unarchiveBranch(UUID branchUuid, WhoUpdated wu) throws RelizaException {

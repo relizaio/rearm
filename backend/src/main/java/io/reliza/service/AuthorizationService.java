@@ -16,6 +16,7 @@ import java.util.UUID;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
@@ -48,6 +49,7 @@ import io.reliza.model.RelizaObject;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.Permissions;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.common.CommonVariables.ProgrammaticType;
 import java.util.function.Predicate;
@@ -115,6 +117,11 @@ public class AuthorizationService {
 
 	@Autowired
 	private AgentIdentityService agentIdentityService;
+
+	// TPF-91: a FREEFORM key's effective permissions union its ACTIVE API key groups (keyPermissions)
+	@Autowired
+	@Lazy
+	private ApiKeyGroupService apiKeyGroupService;
 	
 	public AuthHeaderParse authenticateProgrammatic (HttpHeaders headers, ServletWebRequest servletWebRequest) {
 		AuthHeaderParse ahp = null;
@@ -310,6 +317,10 @@ public class AuthorizationService {
 	 * {@link #readableInstanceUuids}) gate a permission exactly the way the per-object check does,
 	 * instead of re-deciding it. They enumerate where the check tests membership; that inversion is
 	 * the only part they do on their own.
+	 *
+	 * A PERSPECTIVE-scope grant clears a call only while its perspective is a live (ACTIVE)
+	 * perspective of the grant's organization, so a grant deletePerspective left behind clears
+	 * nothing, the perspective itself included (task TEA-8, D6).
 	 */
 	boolean permissionClearsCall(UserPermission permission, UUID org, @NonNull PermissionFunction function, CallType ct) {
 		if (!permission.getOrg().equals(org)) {
@@ -334,7 +345,57 @@ public class AuthorizationService {
 			return false;
 		}
 
+		if (permission.getScope() == PermissionScope.PERSPECTIVE && !isLivePerspectiveGrant(permission, org)) {
+			return false;
+		}
+
 		return permission.getType().ordinal() >= resolvedPt.ordinal();
+	}
+
+	/**
+	 * The perspective a PERSPECTIVE-scope grant stands on, when it is live: a row exists (a real
+	 * perspective, or a PRODUCT component read as one), it belongs to {@code org} and its status is
+	 * ACTIVE (task TEA-8, D6). The only reader of a grant's perspective in this class;
+	 * {@link #permissionClearsCall} and {@link #componentsInScope} both go through it. It answers a
+	 * boolean rather than the row so that this shared class never names the perspective model,
+	 * which is a saas type here and an OssPerspectiveService member in CE.
+	 */
+	private boolean isLivePerspectiveGrant (UserPermission permission, UUID org) {
+		var opd = ossPerspectiveService.getPerspectiveData(permission.getObject());
+		if (opd.isEmpty() || !org.equals(opd.get().getOrg())) {
+			log.error("Empty or wrong match for user permission with org = {}, requested under org = {} with permission object = {}",
+					permission.getOrg(), org, permission.getObject());
+			return false;
+		}
+		if (StatusEnum.ACTIVE != opd.get().getStatus()) {
+			// A grant left behind by deletePerspective is expected: it clears nothing and reaches no
+			// component, not even one that still holds the stale membership (task TEA-8).
+			log.warn("Permission of org = {} on perspective {} which is {}: it covers no component",
+					permission.getOrg(), permission.getObject(), opd.get().getStatus());
+			return false;
+		}
+		return true;
+	}
+
+	/**
+	 * The perspectives of the PERSPECTIVE-scope grants among {@code perms} that are live in
+	 * {@code org} (task TEA-8, D6: a row exists, it belongs to that organization, its status is
+	 * ACTIVE), in iteration order, without duplicates. A grant deletePerspective left behind
+	 * contributes nothing. The one entry for a reader outside this class that takes a caller's
+	 * perspective grants as a set of keys rather than asking about one object: the notification
+	 * inbox. Null or empty {@code perms} answer an empty list.
+	 */
+	public List<UUID> livePerspectivesOfGrants (Set<UserPermission> perms, UUID org) {
+		if (null == perms || perms.isEmpty() || null == org) return List.of();
+		Set<UUID> live = new LinkedHashSet<>();
+		for (UserPermission p : perms) {
+			if (null == p || p.getScope() != PermissionScope.PERSPECTIVE || null == p.getObject()
+					|| !org.equals(p.getOrg()) || live.contains(p.getObject())) {
+				continue;
+			}
+			if (isLivePerspectiveGrant(p, org)) live.add(p.getObject());
+		}
+		return List.copyOf(live);
 	}
 
 	boolean doesPermissionAuthorize(UserPermission permission, UUID org, @NonNull PermissionFunction function, PermissionScope objectType, UUID objectUuid, CallType ct) {
@@ -641,10 +702,25 @@ public class AuthorizationService {
 	 */
 	public io.reliza.service.BoardPerspectiveService.PerspectiveConsent perspectiveConsent(UserData ud, UUID org) {
 		if (null == ud) return io.reliza.service.BoardPerspectiveService.PerspectiveConsent.NONE;
-		if (ud.isGlobalAdmin()) return p -> true;
+		// a global admin lacks nothing and is an organization admin for the TEA gates
+		if (ud.isGlobalAdmin()) return consentOf((fn, p) -> true, TeaProfileService.TeaCaller.ORG_ADMIN);
 		Set<UserPermission> grants = organizationService.obtainCombinedUserOrgPermissions(ud, org).getOrgPermissionsAsSet(org);
 		return consentOf((fn, p) -> grants.stream().anyMatch(x -> doesPermissionAuthorize(x, org, fn,
-				PermissionScope.PERSPECTIVE, p, CallType.WRITE)));
+				PermissionScope.PERSPECTIVE, p, CallType.WRITE)), teaCaller(ud, org));
+	}
+
+	/**
+	 * The caller's standing for the TEA gates (task TEA-9): ORG_ADMIN for a global admin or a holder
+	 * of organization ADMIN, else SCOPE_ADMIN. The one computation every gate uses.
+	 */
+	public TeaProfileService.TeaCaller teaCaller(UserData ud, UUID org) {
+		if (null == ud || null == org) return TeaProfileService.TeaCaller.SCOPE_ADMIN;
+		if (ud.isGlobalAdmin()) return TeaProfileService.TeaCaller.ORG_ADMIN;
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(org);
+		if (od.isEmpty()) return TeaProfileService.TeaCaller.SCOPE_ADMIN;
+		return isUserAuthorizedForObject(ud, PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, org,
+				List.of(od.get()), CallType.ADMIN) ? TeaProfileService.TeaCaller.ORG_ADMIN
+						: TeaProfileService.TeaCaller.SCOPE_ADMIN;
 	}
 
 	/**
@@ -657,16 +733,22 @@ public class AuthorizationService {
 		RbacKey key = resolveRbacKey(ahp);
 		if (!org.equals(key.orgUuid())) return io.reliza.service.BoardPerspectiveService.PerspectiveConsent.NONE;
 		Optional<Permissions> owner = ownerSide(key);
-		return consentOf((fn, p) -> bothAuthorize(key, owner, org, fn, PermissionScope.PERSPECTIVE, p, CallType.WRITE));
+		// a key is never an organization admin for the TEA gates (TEA-9)
+		return consentOf((fn, p) -> bothAuthorize(key, owner, org, fn, PermissionScope.PERSPECTIVE, p, CallType.WRITE),
+				TeaProfileService.TeaCaller.SCOPE_ADMIN);
 	}
 
 	/**
 	 * Rule 3 over one check per function: every consent function held at WRITE covering the
-	 * perspective, and, for a refusal to name, the ones that are not.
+	 * perspective, and, for a refusal to name, the ones that are not; carrying the caller's
+	 * {@code standing} for the TEA gate on the board's set change (task TEA-9).
 	 */
 	private static io.reliza.service.BoardPerspectiveService.PerspectiveConsent consentOf(
-			java.util.function.BiPredicate<PermissionFunction, UUID> holds) {
+			java.util.function.BiPredicate<PermissionFunction, UUID> holds, TeaProfileService.TeaCaller standing) {
 		return new io.reliza.service.BoardPerspectiveService.PerspectiveConsent() {
+			@Override public TeaProfileService.TeaCaller teaCaller() {
+				return standing;
+			}
 			@Override public boolean allows(UUID perspective) {
 				return lacking(perspective).isEmpty();
 			}
@@ -765,10 +847,9 @@ public class AuthorizationService {
 		// grant reaches no component, branch or release (board-permissions.md D1).
 		List<ComponentData> authorizedComponents = new LinkedList<>();
 		if (permission.getScope() == PermissionScope.PERSPECTIVE) {
-			var opd = ossPerspectiveService.getPerspectiveData(permission.getObject());
-			if (opd.isEmpty() || !org.equals(opd.get().getOrg())) {
-				log.error("Empty or wrong match for user permission with org = {}, requested under org = {} with permission object = {}",
-						permission.getOrg(), org, permission.getObject());
+			// doesPermissionCoverRelease enters here without permissionClearsCall, so the live-grant
+			// rule is applied again (task TEA-8, D6).
+			if (!isLivePerspectiveGrant(permission, org)) {
 				return List.of();
 			}
 			authorizedComponents = getComponentService.listComponentsByPerspective(permission.getObject());
@@ -1283,9 +1364,19 @@ public class AuthorizationService {
 
 	/** The set-only half, so it can be driven from a test without a database. */
 	Set<UUID> readableComponentUuids(Set<UserPermission> set, UUID org) {
+		return coveredComponentUuids(set, org, PermissionFunction.RESOURCE);
+	}
+
+	/**
+	 * The components a set of grants covers for a read call needing {@code function}, expanded the way the
+	 * per-object check expands them: null when an organization-wide grant clears the call (no filter), else the
+	 * union of the component, product and perspective expansions. The TEA listing side (task TEA-3) asks it
+	 * with {@code TEA_READ}.
+	 */
+	Set<UUID> coveredComponentUuids(Set<UserPermission> set, UUID org, PermissionFunction function) {
 		Set<UUID> out = new java.util.HashSet<>();
 		for (UserPermission p : set) {
-			if (!permissionClearsCall(p, org, PermissionFunction.RESOURCE, CallType.READ)) continue;
+			if (!permissionClearsCall(p, org, function, CallType.READ)) continue;
 			if (p.getScope() == PermissionScope.ORGANIZATION) return null;
 			componentsInScope(p, org, PermissionType.READ_ONLY).forEach(c -> out.add(c.getUuid()));
 		}
@@ -1346,13 +1437,30 @@ public class AuthorizationService {
 		return new RbacKey(matchingKeyId, akd, akd.getOrg(), owner, ahp.getType(), ahp.getFederation());
 	}
 
-	/** The key's own permissions in its org: the whole story for FREEFORM, the ceiling for USER. */
+	/**
+	 * The key's permissions in its org. FREEFORM: its own grants union every ACTIVE API key group of
+	 * its organization holding it (TPF-91), the whole story. USER: the stored set, the ceiling the
+	 * callers intersect with the owner. FEDERATED: the trust rules.
+	 *
+	 * <p>Consequences of the FREEFORM union (TPF-91): the stored-key coverage check
+	 * {@code boardPermission(ApiKey, ...)} sees group grants (a key covers a board through its group),
+	 * and {@code declaringCaller} lets a FREEFORM key declare keys up to its effective, group-included
+	 * ceiling, consistent with what it may do itself. The groups are read on every call, no cache, so a
+	 * removal, a deactivated group or a deleted key takes effect on the next call.
+	 */
 	private Set<UserPermission> keyPermissions(RbacKey key) {
 		if (key.type() == ApiTypeEnum.FEDERATED) {
 			// nothing is stored on the identity row: the trust rules and the calling repository decide on every call
 			return federatedTrustRuleService.permissionsFor(key.orgUuid(), key.federation());
 		}
-		return key.akd().getPermissions(key.orgUuid()).getOrgPermissionsAsSet(key.orgUuid());
+		Set<UserPermission> own = key.akd().getPermissions(key.orgUuid()).getOrgPermissionsAsSet(key.orgUuid());
+		if (key.type() == ApiTypeEnum.FREEFORM) {
+			// own grants union every ACTIVE API key group of this org holding the key (TPF-91); read per call, no cache
+			return OrganizationService.combinePermissions(own, key.orgUuid(),
+					apiKeyGroupService.permissionSetsForKey(key.keyUuid(), key.orgUuid()))
+				.getOrgPermissionsAsSet(key.orgUuid());
+		}
+		return own;   // USER: the stored ceiling, intersected with ownerSide by the callers, exactly as today
 	}
 
 	/**
@@ -1661,7 +1769,16 @@ public class AuthorizationService {
 		// "wrong auth method" and may fall back to a RESOURCE-on-release
 		// permission check. Logging at INFO keeps the diagnostic trail
 		// without triggering security alerts on every fallback caller.
-		Optional<UserPermission> orgPerm = akd.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
+		//
+		// TPF-91 (decision 10): a FREEFORM key's org-wide entry is read from its effective set, its own grants
+		// union every ACTIVE API key group of its organization holding it, through keyPermissions (the same
+		// combinePermissions / permissionSetsForKey pair as every other check); read per call, no cache. A
+		// USER key keeps its own row here (the owner check below is its ceiling); a FEDERATED identity row
+		// stores nothing and stays refused, as today.
+		Optional<UserPermission> orgPerm = key.type() == ApiTypeEnum.FREEFORM
+				? keyPermissions(key).stream()
+						.filter(p -> p.getScope() == PermissionScope.ORGANIZATION && orgUuid.equals(p.getObject())).findFirst()
+				: akd.getPermission(orgUuid, PermissionScope.ORGANIZATION, orgUuid);
 		boolean hasAgentOrgPerm = orgPerm.isPresent()
 				&& orgPerm.get().getFunctions() != null
 				&& orgPerm.get().getFunctions().contains(PermissionFunction.AGENT)

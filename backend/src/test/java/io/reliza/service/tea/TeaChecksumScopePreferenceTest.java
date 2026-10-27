@@ -16,7 +16,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.tea.TeaChecksum;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 
 /**
  * Pins which digest TEA publishes, which is the only one consumers ever see.
@@ -42,8 +42,8 @@ class TeaChecksumScopePreferenceTest {
 	@Test
 	void publishesAsUploadedWhenPresent() {
 		List<TeaChecksum> out = publish(records(
-			new DigestRecord(TeaChecksumType.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE),
-			new DigestRecord(TeaChecksumType.SHA_256, "as-uploaded-value", DigestScope.AS_UPLOADED)));
+			new DigestRecord(DigestAlgorithm.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE),
+			new DigestRecord(DigestAlgorithm.SHA_256, "as-uploaded-value", DigestScope.AS_UPLOADED)));
 
 		assertEquals(1, out.size(), "exactly one checksum, never a choice between two");
 		assertEquals("as-uploaded-value", out.get(0).getAlgValue());
@@ -56,8 +56,8 @@ class TeaChecksumScopePreferenceTest {
 	@Test
 	void preferenceDoesNotDependOnRecordOrder() {
 		List<TeaChecksum> out = publish(records(
-			new DigestRecord(TeaChecksumType.SHA_256, "as-uploaded-value", DigestScope.AS_UPLOADED),
-			new DigestRecord(TeaChecksumType.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE)));
+			new DigestRecord(DigestAlgorithm.SHA_256, "as-uploaded-value", DigestScope.AS_UPLOADED),
+			new DigestRecord(DigestAlgorithm.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE)));
 
 		assertEquals(1, out.size());
 		assertEquals("as-uploaded-value", out.get(0).getAlgValue());
@@ -70,8 +70,8 @@ class TeaChecksumScopePreferenceTest {
 	@Test
 	void fallsBackToOriginalFileWhenThereIsNoRetainedUpload() {
 		List<TeaChecksum> out = publish(records(
-			new DigestRecord(TeaChecksumType.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE),
-			new DigestRecord(TeaChecksumType.SHA_256, "oci-value", DigestScope.OCI_STORAGE)));
+			new DigestRecord(DigestAlgorithm.SHA_256, "original-file-value", DigestScope.ORIGINAL_FILE),
+			new DigestRecord(DigestAlgorithm.SHA_256, "oci-value", DigestScope.OCI_STORAGE)));
 
 		assertEquals(1, out.size());
 		assertEquals("original-file-value", out.get(0).getAlgValue());
@@ -80,9 +80,9 @@ class TeaChecksumScopePreferenceTest {
 	@Test
 	void neverPublishesStorageOrSemanticDigests() {
 		List<TeaChecksum> out = publish(records(
-			new DigestRecord(TeaChecksumType.SHA_256, "oci-value", DigestScope.OCI_STORAGE),
-			new DigestRecord(TeaChecksumType.SHA_256, "rearm-value", DigestScope.REARM),
-			new DigestRecord(TeaChecksumType.SHA_256, "raw-oci-value", DigestScope.RAW_OCI_STORAGE)));
+			new DigestRecord(DigestAlgorithm.SHA_256, "oci-value", DigestScope.OCI_STORAGE),
+			new DigestRecord(DigestAlgorithm.SHA_256, "rearm-value", DigestScope.REARM),
+			new DigestRecord(DigestAlgorithm.SHA_256, "raw-oci-value", DigestScope.RAW_OCI_STORAGE)));
 
 		assertTrue(out.isEmpty(),
 			"internal storage pointers and the semantic digest are not file checksums");

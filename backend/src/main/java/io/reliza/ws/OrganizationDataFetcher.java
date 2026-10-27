@@ -31,6 +31,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.InstallationType;
+import io.reliza.common.CommonVariables.UserStatus;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
@@ -54,6 +55,8 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.BrandingService;
 import io.reliza.service.CdxImportService;
+import io.reliza.service.ExternalApiKeyService;
+import io.reliza.service.ExternalApiKeyService.AccessChange;
 import io.reliza.service.CdxImportService.ImportComponentResult;
 import io.reliza.service.CliSessionService;
 import io.reliza.service.FindingChangeEventBackfillService;
@@ -75,6 +78,9 @@ public class OrganizationDataFetcher {
 
 	@Autowired
 	private io.reliza.service.ApiKeyDeclarativeService apiKeyDeclarativeService;
+
+	@Autowired
+	private ExternalApiKeyService externalApiKeyService;
 	
 	@Autowired
 	private AuthorizationService authorizationService;
@@ -211,6 +217,53 @@ public class OrganizationDataFetcher {
 		return apiKeyService.listApiKeyDtoByOrgWithLastAccessDate(od.get().getUuid());
 	}
 	
+	/** The organization's EXTERNAL keys alone (task TEA-3), for the External Keys panel; org admins only. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "externalApiKeys")
+	public List<ApiKeyDto> externalApiKeys(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		OrganizationData od = authorizeOrgAdmin(orgUuid);
+		return apiKeyService.listApiKeyDtoByOrgWithLastAccessDate(od.getUuid()).stream()
+				.filter(k -> k.getType() == ApiTypeEnum.EXTERNAL).toList();
+	}
+
+	/**
+	 * Create an EXTERNAL key id (task TEA-3) for the named outside party, with no secret and no grant; mints the
+	 * organization's TEA id when it has none. Org admins only.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "createExternalApiKey")
+	public ApiKeyDto createExternalApiKey(@InputArgument("orgUuid") String orgUuidStr, @InputArgument("holderName") String holderName,
+			@InputArgument("notes") String notes) throws RelizaException {
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		OrganizationData od = authorizeOrgAdmin(orgUuid);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(userService.getUserDataByAuth(auth).get());
+		// the bound every key creator applies to notes (task TEA-14)
+		notes = ApiKeyService.checkedNotes(notes);
+		ApiKey ak = externalApiKeyService.create(od.getUuid(), holderName, notes, wu);
+		return ApiKeyDto.fromApiKey(apiKeyService.getApiKey(ak.getUuid()).orElse(ak));
+	}
+
+	/** Rename the outside party of an EXTERNAL key (task TEA-3); org admins only. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeyHolderName")
+	public ApiKeyDto setApiKeyHolderName(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("holderName") String holderName)
+			throws RelizaException {
+		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		return externalApiKeyService.setHolderName(apiKeyUuid, holderName, wu);
+	}
+
+	private OrganizationData authorizeOrgAdmin(UUID orgUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<OrganizationData> od = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject ro = od.isPresent() ? od.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.ADMIN);
+		return od.orElseThrow(() -> new RelizaException("Organization not found"));
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "setOrgApiKey")
 	public ApiKeyForUserDto setOrgApiKey(
@@ -324,12 +377,32 @@ public class OrganizationDataFetcher {
 	}
 
 	/**
+	 * Lifecycle changes whose gate depends on their direction (TEA-3 design round 2, the one-way rule). On an EXTERNAL
+	 * key a change that restores or extends the outside party's access needs org ADMIN, as minting does, and one that
+	 * withdraws it keeps org WRITE; every other key type keeps {@link #authorizeKeyAdmin} exactly as before.
+	 */
+	private WhoUpdated authorizeKeyChange(UUID apiKeyUuid, AccessChange change) throws RelizaException {
+		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.EXTERNAL) return authorizeKeyAdmin(apiKeyUuid);
+		return authorizeKeyOwnerOr(apiKeyUuid, change == AccessChange.WIDENS ? CallType.ADMIN : CallType.WRITE, false);
+	}
+
+	/** The expiry a secret slot has now, or null when it never expires or the slot does not exist (the service then refuses). */
+	private ZonedDateTime currentSecretExpiry(UUID apiKeyUuid, Integer slot) throws RelizaException {
+		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (slot == null) return null;
+		return ApiKeyData.dataFromRecord(ak).effectiveSecrets(ak.getApiKey()).stream().filter(x -> x.getSlot() == slot)
+				.findFirst().map(ApiKeyData.ApiKeySecret::getExpiresDate).orElse(null);
+	}
+
+	/**
 	 * Minting returns cleartext: a personal key's owner mints it, a held FREEFORM key's holder mints it, and any
 	 * other key (an unheld FREEFORM key, whose uuid every reader of its agent sees, or an org-level key) needs an org
 	 * admin; admins keep retire / delete / deactivate. Requests and denied keys cannot be minted at all. The org gate
 	 * runs first on the unlocked row, so an outsider is refused before anything is locked; the rest is decided on
 	 * the row locked next, the row the mint then writes, so a holder replaced meanwhile gets nothing. Callers run in
 	 * a transaction.
+	 * An EXTERNAL key is refused first unless the caller is an org admin (task TEA-3).
 	 */
 	private WhoUpdated authorizeKeyMinter(UUID apiKeyUuid) throws RelizaException {
 		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
@@ -340,6 +413,8 @@ public class OrganizationDataFetcher {
 		if (akd.getStatus() != ApiKeyData.ApiKeyStatus.ACTIVE && akd.getStatus() != ApiKeyData.ApiKeyStatus.INACTIVE) {
 			throw new RelizaException("This key is a request; it can be minted once an admin approves it");
 		}
+		// a secret that leaves the organization is an administrator's act (task TEA-3)
+		if (ak.getObjectType() == ApiTypeEnum.EXTERNAL) return authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
 		if (ak.getObjectType() == ApiTypeEnum.USER) {
 			// a personal key acts as its owner and is attributed to them: nobody else, admins included, may hold a secret for it
 			if (!oud.get().getUuid().equals(ak.getObjectUuid())) throw new RelizaException("Only the owner of a personal key may mint its secrets");
@@ -363,8 +438,9 @@ public class OrganizationDataFetcher {
 	public ApiKeyDto setApiKeySecretExpiry(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
 			@InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
-		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
-		return apiKeyService.setApiKeySecretExpiry(apiKeyUuid, slot, futureOrNull(expiresDate), wu);
+		ZonedDateTime requested = futureOrNull(expiresDate);
+		WhoUpdated wu = authorizeKeyChange(apiKeyUuid, ExternalApiKeyService.ofExpiry(currentSecretExpiry(apiKeyUuid, slot), requested));
+		return apiKeyService.setApiKeySecretExpiry(apiKeyUuid, slot, requested, wu);
 	}
 
 	/** Write users ask for a free-form key; admins see it as a pending request. */
@@ -414,6 +490,9 @@ public class OrganizationDataFetcher {
 	public ApiKeyDto setApiKeyHolder(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("holder") String holderStr) throws RelizaException {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
 		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		if (apiKeyService.getApiKey(apiKeyUuid).map(k -> k.getObjectType() == ApiTypeEnum.EXTERNAL).orElse(false)) {
+			throw new RelizaException(ApiKeyService.EXTERNAL_HOLDER_REFUSAL);
+		}
 		UUID holder = StringUtils.isBlank(holderStr) ? null : UUID.fromString(holderStr);
 		if (holder != null) {
 			ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
@@ -482,7 +561,7 @@ public class OrganizationDataFetcher {
 	public ApiKeyDto setApiKeySecretActive(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("slot") Integer slot,
 			@InputArgument("active") Boolean active) throws RelizaException {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
-		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		WhoUpdated wu = authorizeKeyChange(apiKeyUuid, ExternalApiKeyService.ofSecretActive(Boolean.TRUE.equals(active)));
 		return apiKeyService.setApiKeySecretActive(apiKeyUuid, slot, Boolean.TRUE.equals(active), wu);
 	}
 
@@ -498,7 +577,7 @@ public class OrganizationDataFetcher {
 	@DgsData(parentType = "Mutation", field = "setApiKeyStatus")
 	public ApiKeyDto setApiKeyStatus(@InputArgument("apiKeyUuid") String apiKeyUuidStr, @InputArgument("status") ApiKeyData.ApiKeyStatus status) throws RelizaException {
 		UUID apiKeyUuid = UUID.fromString(apiKeyUuidStr);
-		WhoUpdated wu = authorizeKeyAdmin(apiKeyUuid);
+		WhoUpdated wu = authorizeKeyChange(apiKeyUuid, ExternalApiKeyService.ofStatus(status));
 		return apiKeyService.setApiKeyStatus(apiKeyUuid, status, hasOrgAdminOnKey(apiKeyUuid), wu);
 	}
 
@@ -667,6 +746,12 @@ public class OrganizationDataFetcher {
 		RelizaObject roUsers = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roUsers), CallType.ADMIN);
 		
+		if (orgUserData.getStatus() == UserStatus.INACTIVE) {
+			// a deactivated member cannot act (FIND_USER_BY_OAUTH_ID_AND_TYPE excludes INACTIVE), so their
+			// effective permissions are none; the active-member gate below must not fail the list for them
+			return new Permissions();
+		}
+		
 		var targetUser = userService.getUserDataWithOrg(userUuid, orgUuid)
 				.orElseThrow(() -> new AccessDeniedException("User is not in organization"));
 		return organizationService.obtainCombinedUserOrgPermissions(targetUser, orgUuid);
@@ -680,6 +765,10 @@ public class OrganizationDataFetcher {
 			@InputArgument("permissionType") PermissionType permissionType,
 			@InputArgument("permissions") List<LinkedHashMap<String, Object>> permissions
 		) throws RelizaException {
+		Optional<ApiKey> oakFirst = apiKeyService.getApiKey(apiKeyUuid);
+		if (oakFirst.isPresent() && oakFirst.get().getObjectType() == ApiTypeEnum.EXTERNAL) {
+			return setGrantsOnExternalKey(apiKeyUuid, permissionType, permissions);
+		}
 		var oakd = apiKeyService.getApiKeyData(apiKeyUuid);
 		boolean holderMayEdit = oakd.isPresent() && oakd.get().getStatus() == ApiKeyData.ApiKeyStatus.REQUESTED; // the requester shapes the proposal; admins own it once approved
 		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, holderMayEdit);
@@ -701,6 +790,24 @@ public class OrganizationDataFetcher {
 			return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, clamped.orgType(), clamped.permissions(), wu);
 		}
 		return apiKeyService.setPermissionsOnApiKey(apiKeyUuid, permissionType, convertedPermissions, wu);
+	}
+
+	/**
+	 * The grants of an EXTERNAL key (task TEA-3): org admins only; the org-wide level may be absent, NONE or
+	 * READ_ONLY, and the list is authoritative (the editor sends the org-wide grant in it too). The service
+	 * normalizes every grant to READ_ONLY with the TEA_READ function and refuses the other scopes.
+	 */
+	private ApiKeyDto setGrantsOnExternalKey(UUID apiKeyUuid, PermissionType permissionType,
+			List<LinkedHashMap<String, Object>> permissions) throws RelizaException {
+		WhoUpdated wu = authorizeKeyOwnerOr(apiKeyUuid, CallType.ADMIN, false);
+		if (permissionType != null && permissionType != PermissionType.NONE && permissionType != PermissionType.READ_ONLY) {
+			throw new RelizaException("An external key is READ_ONLY only; permissionType " + permissionType + " is refused");
+		}
+		List<PermissionDto> converted = permissions == null ? List.of()
+				: InputConversion.convertEach(permissions, PermissionDto.class, "permissions");
+		UUID org = apiKeyService.getApiKey(apiKeyUuid).map(ApiKey::getOrg).orElseThrow(() -> new RelizaException("API key not found"));
+		authorizationService.assertGrantObjectsExist(org, converted);
+		return externalApiKeyService.setGrants(apiKeyUuid, converted, wu);
 	}
 
 	/**

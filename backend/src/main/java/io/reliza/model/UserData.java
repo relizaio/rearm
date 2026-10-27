@@ -120,6 +120,10 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 		public Permissions getPermissions(){
 			return permissions;
 		}
+
+		public UserStatus getStatus(){
+			return status;
+		}
 	}
 	private UUID uuid;
 	@JsonProperty(CommonVariables.NAME_FIELD)

@@ -195,6 +195,12 @@ public class GetSourceCodeEntryService {
 		return repository.findByCommitOrTag(orgUuid.toString(), commit + "%", commit);
 	}
 	
+	/** Uuids of the org's entries recording exactly this commit, row order (TPF-98). */
+	public Set<UUID> findSceUuidsByCommitAndOrg (UUID orgUuid, String commit) {
+		return repository.findByCommitAndOrg(orgUuid.toString(), commit).stream()
+				.map(SourceCodeEntry::getUuid).collect(Collectors.toCollection(LinkedHashSet::new));
+	}
+	
 	public List<SourceCodeEntry> listSceByComponent (UUID projUuid) {
 		return repository.findByComponent(projUuid.toString());
 	}

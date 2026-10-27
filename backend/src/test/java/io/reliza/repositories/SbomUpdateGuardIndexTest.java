@@ -81,9 +81,45 @@ class SbomUpdateGuardIndexTest {
 		assertTrue(def.contains("WHERE ((record_data ->> 'type'::text) = 'BOM'::text)"), def);
 	}
 
+	/**
+	 * Like {@link #plan}, for the realistic shape of the serial-number lookup: an organization that already
+	 * holds {@value #SEEDED_BOMS} BOM artifacts looks up one serial. Bound to a random organization that holds
+	 * nothing, as {@link #plan} would do, the planner scores V95 and artifacts_org_fanout_pool_idx within 0.01
+	 * of each other, and with a few hundred BOM rows in the table V67's partial index on created_date wins
+	 * outright; which one a run got depended on what the database held when this ran, and since each surefire
+	 * fork has a database of its own CI saw V67 chosen. With this organization's rows V95 costs about half of
+	 * the next best index. The rows and the ANALYZE that makes the planner see them are rolled back.
+	 */
+	private String planForAnOrgWithManyBoms(String query) {
+		String org = UUID.randomUUID().toString();
+		String sql = bound(query.replaceAll(":org\\b", "'" + org + "'"));
+		return jdbc.execute((ConnectionCallback<String>) con -> {
+			boolean autoCommit = con.getAutoCommit();
+			con.setAutoCommit(false);
+			try (Statement st = con.createStatement()) {
+				st.execute("INSERT INTO rearm.artifacts (record_data) SELECT jsonb_build_object('type', 'BOM', 'org', '" + org
+						+ "', 'internalBom', jsonb_build_object('id', gen_random_uuid()::text))"
+						+ " FROM generate_series(1, " + SEEDED_BOMS + ")");
+				st.execute("ANALYZE rearm.artifacts");
+				st.execute("SET LOCAL enable_seqscan = off");
+				try (ResultSet rs = st.executeQuery("EXPLAIN (FORMAT JSON) " + sql)) {
+					rs.next();
+					return rs.getString(1);
+				}
+			} finally {
+				con.rollback();
+				con.setAutoCommit(autoCommit);
+			}
+		});
+	}
+
+	private static final int SEEDED_BOMS = 2000;
+
 	@Test
 	void theSerialNumberLookupUsesTheV95Index() {
-		String plan = plan(VariableQueries.FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM);
+		String query = VariableQueries.FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM;
+		assertTrue(query.contains(":org"), query);
+		String plan = planForAnOrgWithManyBoms(query);
 		assertTrue(plan.contains(V95_INDEX), plan);
 	}
 

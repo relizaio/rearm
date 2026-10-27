@@ -53,8 +53,11 @@ public class BoardAgentsService {
 	 */
 	public record AgentState(StateKind kind, UUID taskUuid, String taskKey, ZonedDateTime since, AgentActor closedBy) {}
 
-	/** A staleness rule that names the session or its task, with the ALERT it posts. */
-	public record StaleMark(String rule, String message) {}
+	/**
+	 * A staleness rule that names the session or its task, with the ALERT it posts, when its span began and how
+	 * many minutes it had run at the read (task TPF-69). Backs both BoardAgentRow.stale and AgentTask.stale.
+	 */
+	public record StaleMark(String rule, ZonedDateTime since, long minutes, String message) {}
 
 	/** One row of the Agents tab. */
 	public record AgentRow(UUID session, UUID agent, String agentName, List<String> roles, AgentState state,
@@ -195,7 +198,7 @@ public class BoardAgentsService {
 			} catch (IllegalArgumentException e) {
 				session = null;
 			}
-			if (null != session) out.computeIfAbsent(session, k -> new ArrayList<>()).add(new StaleMark(rule, b.message()));
+			if (null != session) out.computeIfAbsent(session, k -> new ArrayList<>()).add(new StaleMark(rule, b.since(), b.minutes(), b.message()));
 		}
 		return out;
 	}

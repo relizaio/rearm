@@ -1,4 +1,4 @@
-<!-- orientation section: fix-loop · core 2026-10-08 -->
+<!-- orientation section: fix-loop · core 2026-10-25 -->
 ## 4. Sample "agent fix loop" pattern
 
 The disapproval-then-fix flow distilled to mechanics:

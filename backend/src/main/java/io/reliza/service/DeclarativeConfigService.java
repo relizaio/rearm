@@ -270,7 +270,9 @@ public class DeclarativeConfigService {
 					"exists as " + cur.getType() + ", spec says " + c.getType() + "; type cannot change");
 		}
 		List<String> fields = new LinkedList<>();
-		ComponentDto.ComponentDtoBuilder b = ComponentDto.builder().uuid(cur.getUuid()).name(cur.getName());
+		// No name (task TEA-7, round 5, T-13): the catalog matched the component by the name it read,
+		// and the funnel writes what the dto carries, so a stale read would rename it back.
+		ComponentDto.ComponentDtoBuilder b = ComponentDto.builder().uuid(cur.getUuid());
 		if (differs(c.getKind(), cur.getKind())) { b.kind(c.getKind()); fields.add("kind"); }
 		if (differs(c.getVersionSchema(), cur.getVersionSchema())) { b.versionSchema(c.getVersionSchema()); fields.add("versionSchema"); }
 		if (differs(c.getMarketingVersionSchema(), cur.getMarketingVersionSchema())) { b.marketingVersionSchema(c.getMarketingVersionSchema()); fields.add("marketingVersionSchema"); }
@@ -298,6 +300,10 @@ public class DeclarativeConfigService {
 			return Change.of(DeclarativeKind.CATALOG, c.getName(), Action.UNCHANGED, null, null);
 		}
 		if (!dryRun) {
+			// No TEA wiring check (task TEA-7, round 2, T-1): this dto carries no action, rule, ref
+			// or approval policy, so the declarative apply cannot change what publishes or hides a
+			// release on TEA. A field added here that can carry one needs the check of
+			// OssComponentDataFetcher.authorizeAndStampTeaWiring.
 			componentService.updateComponent(b.build(), wu);
 			componentService.stampDeclarativeProvenance(cur.getUuid(), prov, wu);
 		}

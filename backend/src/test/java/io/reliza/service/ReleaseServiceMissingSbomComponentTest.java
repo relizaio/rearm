@@ -38,11 +38,11 @@ import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.VariantData;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.DigestAlgorithm;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -244,7 +244,7 @@ class ReleaseServiceMissingSbomComponentTest {
 	private void oneDeliverableWithDigests() {
 		DeliverableData dd = new DeliverableData();
 		dd.setSoftwareMetadata(SoftwareDeliverableMetadata.builder().digestRecords(new LinkedHashSet<>(List.of(
-				new DigestRecord(TeaChecksumType.SHA_256, SHA_256), new DigestRecord(TeaChecksumType.SHA_1, SHA_1)))).build());
+				new DigestRecord(DigestAlgorithm.SHA_256, SHA_256), new DigestRecord(DigestAlgorithm.SHA_1, SHA_1)))).build());
 		when(getDeliverableService.getDeliverableData(DELIVERABLE)).thenReturn(Optional.of(dd));
 		VariantData base = new VariantData();
 		base.setOutboundDeliverables(new LinkedHashSet<>(List.of(DELIVERABLE)));

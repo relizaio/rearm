@@ -65,6 +65,26 @@ public interface AgentSessionUsageRepository extends CrudRepository<AgentSession
 	List<AgentSessionUsage> findForHop(@Param("task") UUID task, @Param("session") UUID session,
 			@Param("from") ZonedDateTime from, @Param("to") ZonedDateTime to);
 
+	/** The newest usage report per (task, session); {@code last} is an Instant, how Hibernate maps a bare native timestamptz aggregate. */
+	interface TaskSessionLastReport {
+		UUID getTask();
+		UUID getSession();
+		java.time.Instant getLast();
+	}
+
+	/**
+	 * The newest report of each (task, session) pair among these tasks at or after {@code from}, in one
+	 * statement (task TPF-69): what the staleness rule reads for every stalled candidate of a board at once,
+	 * the predicate of {@link #findForHop} with its open upper bound, at most one row per pair instead of
+	 * every usage row of each hop.
+	 */
+	@Query(value = "SELECT u.task AS task, u.session AS session, max(u.reported_at) AS last "
+			+ "FROM rearm.agent_session_usages u "
+			+ "WHERE u.task IN (:tasks) AND u.reported_at >= :from GROUP BY u.task, u.session",
+			nativeQuery = true)
+	List<TaskSessionLastReport> lastReportsForTasks(@Param("tasks") java.util.Collection<UUID> tasks,
+			@Param("from") ZonedDateTime from);
+
 	@Query(value = "SELECT * FROM rearm.agent_session_usages u "
 			+ "WHERE u.board = :board AND u.reported_at >= :from AND u.reported_at < :to",
 			nativeQuery = true)

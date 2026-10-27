@@ -32,9 +32,9 @@ import io.reliza.model.ParentRelease;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.MissingSbomReason;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.MissingSbomReason;
+import io.reliza.model.Rebom.RebomOptions;
 import tools.jackson.databind.JsonNode;
 
 /**
@@ -118,7 +118,7 @@ class ProductMissingSbomExportIntegrationTest extends SbomScoreGraphqlTestBase {
 		return out;
 	}
 
-	private RebomOptions productMergeRequest() {
+	private RebomOptions productMergeRequest() throws Exception {
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
 		verify(rebomService, atLeastOnce()).mergeAndStoreBoms(anyList(), sent.capture(), any());
 		List<RebomOptions> product = sent.getAllValues().stream()

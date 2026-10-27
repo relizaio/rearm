@@ -7,7 +7,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
@@ -35,9 +34,9 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.RebomService.BomStructureType;
 
 /**
@@ -78,7 +77,7 @@ abstract class ReleaseServiceMergeTestBase {
 	protected final Map<UUID, Integer> rowWrites = new HashMap<>();
 
 	@BeforeEach
-	void wireReleaseService() {
+	void wireReleaseService() throws Exception {
 		svc = new ReleaseService(null);
 		rebomService = mock(RebomService.class);
 		releaseRebomService = mock(ReleaseRebomService.class);
@@ -130,13 +129,22 @@ abstract class ReleaseServiceMergeTestBase {
 			ReleaseData rd = inv.getArgument(0);
 			return new ArrayList<>(rows.getOrDefault(rd.getUuid(), List.of()));
 		});
-		doAnswer(inv -> {
+		// The merge path's read (SCORE-71 ADR-11): the same rows, under a fixed record per release
+		// and the write count so far as its revision. The reconcile keeps reading getReleaseBoms.
+		when(releaseRebomService.readRows(any())).thenAnswer(inv -> {
+			ReleaseData rd = inv.getArgument(0);
+			return new ReleaseRebomService.RowsRead(rd.getUuid(), rowWrites.getOrDefault(rd.getUuid(), 0), null,
+					new ArrayList<>(rows.getOrDefault(rd.getUuid(), List.of())));
+		});
+		// The merge path's only write after ADR-11.
+		when(releaseRebomService.storeRowsIfUnchanged(any(ReleaseData.class), anyList(), any(), any())).thenAnswer(inv -> {
 			ReleaseData rd = inv.getArgument(0);
 			List<ReleaseBom> stored = inv.getArgument(1);
+			ReleaseRebomService.RowsRead seen = inv.getArgument(2);
 			rows.put(rd.getUuid(), new ArrayList<>(stored));
 			rowWrites.merge(rd.getUuid(), 1, Integer::sum);
-			return null;
-		}).when(releaseRebomService).setReboms(any(ReleaseData.class), anyList(), any());
+			return Optional.of(new ReleaseRebomService.RowsRead(seen.record(), seen.revision() + 1, seen.created(), stored));
+		});
 		when(rebomService.mergeAndStoreBoms(anyList(), any(), any())).thenAnswer(inv -> {
 			UUID merged = UUID.randomUUID();
 			merges.add(new Merge(List.copyOf(inv.<List<UUID>>getArgument(0)), inv.getArgument(1), merged));

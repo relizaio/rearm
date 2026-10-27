@@ -61,7 +61,7 @@ import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.VersionAssignment;
 import io.reliza.model.dto.notifications.EvaluationMode;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.tea.TeaCollectionUpdateReasonType;
 import io.reliza.service.AgentDeliveryService;
 import io.reliza.service.BoardAgentsService;
@@ -197,7 +197,7 @@ class GraphQlSchemaEnumSyncTest {
 			// Ambiguous: CliSession / ComponentLock / FederatedTrustRule each have a Status.
 			entry("Status", CommonVariables.StatusEnum.class),
 			entry("SyntheticEventTemplateEnum", SyntheticEventTemplates.Template.class),
-			entry("TeaArtifactChecksumType", TeaChecksumType.class),
+			entry("TeaArtifactChecksumType", DigestAlgorithm.class),
 			// Name collides with io.reliza.versioning.VersionType (version schemes, unrelated).
 			entry("VersionType", VersionAssignment.VersionTypeEnum.class));
 
@@ -247,7 +247,9 @@ class GraphQlSchemaEnumSyncTest {
 			// schema enum is input-only (CreateArtifactInput, the SBOM export inputs);
 			// DownloadConfig.belongsTo only echoes the export input. Exposing the value would let
 			// clients send one no input handler supports.
-			entry("ArtifactBelongsToEnum", Set.of("AGENT_SESSION")),
+			// SYNTHETIC marks a BOM ReARM generated itself (ReleaseData.syntheticArtifacts), written
+			// only by SyntheticArtifactService; no client may upload one or select it as a merge source.
+			entry("ArtifactBelongsToEnum", Set.of("AGENT_SESSION", "SYNTHETIC")),
 			// A "match any status" filter value used inside MarketingReleaseService; no field
 			// returns it and no input should accept it.
 			entry("Status", Set.of("ANY")));

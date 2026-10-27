@@ -29,9 +29,10 @@ import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.ReleaseRebomRepository;
+import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.ArtifactAttachmentGuard.ArtifactHolders;
 import io.reliza.service.RebomService.MalformedRebomAnswerException;
-import io.reliza.service.oss.OssReleaseService;
+import jakarta.persistence.EntityManager;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -63,17 +64,19 @@ public class SbomUpdateGuard {
 	private final ArtifactAttachmentGuard artifactAttachmentGuard;
 	private final ReleaseRebomRepository releaseRebomRepository;
 	private final SharedReleaseService sharedReleaseService;
-	private final OssReleaseService ossReleaseService;
+	private final ReleaseRepository releaseRepository;
+	private final EntityManager entityManager;
 	private final RebomService rebomService;
 
 	public SbomUpdateGuard(ArtifactRepository artifactRepository, ArtifactAttachmentGuard artifactAttachmentGuard,
 			ReleaseRebomRepository releaseRebomRepository, @Lazy SharedReleaseService sharedReleaseService,
-			@Lazy OssReleaseService ossReleaseService, RebomService rebomService) {
+			ReleaseRepository releaseRepository, EntityManager entityManager, RebomService rebomService) {
 		this.artifactRepository = artifactRepository;
 		this.artifactAttachmentGuard = artifactAttachmentGuard;
 		this.releaseRebomRepository = releaseRebomRepository;
 		this.sharedReleaseService = sharedReleaseService;
-		this.ossReleaseService = ossReleaseService;
+		this.releaseRepository = releaseRepository;
+		this.entityManager = entityManager;
 		this.rebomService = rebomService;
 	}
 
@@ -325,7 +328,8 @@ public class SbomUpdateGuard {
 	 * Records a refused upload on the target release, in its own transaction so that it survives
 	 * the rollback of the request: a GUARD CHANGED event whose objectId is the uploading
 	 * component, newValue the serialNumber as sent and message the refusal; no holder is in any of
-	 * them. Called only by resolvers whose release row is committed before the request and not
+	 * them. Appended in place (TPF-71 / TPF-106): no revision and no audit row; the UPDATE takes the same
+	 * row lock for the same short transaction as the save it replaced. Called only by resolvers whose release row is committed before the request and not
 	 * written by their own transaction before the upload, or the write would wait on their lock.
 	 */
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
@@ -341,10 +345,15 @@ public class SbomUpdateGuard {
 			return;
 		}
 		Release r = or.get();
-		ReleaseData fresh = ReleaseData.dataFromRecord(r);
-		fresh.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.GUARD, ReleaseUpdateAction.CHANGED, null,
-				ex.getSerialNumber(), componentUuid, ex.getMessage(), ZonedDateTime.now(), wu));
-		// considerTriggers=false, as recordWithheldTrigger: a record must not set the trigger engine going.
-		ossReleaseService.saveRelease(r, fresh, wu, false);
+		ReleaseUpdateEvent note = new ReleaseUpdateEvent(ReleaseUpdateScope.GUARD, ReleaseUpdateAction.CHANGED, null,
+				ex.getSerialNumber(), componentUuid, ex.getMessage(), ZonedDateTime.now(), wu);
+		// In place (TPF-71 / TPF-106), and still never starting the trigger engine (the former
+		// considerTriggers=false): a refusal note is not a change of the release.
+		if (releaseRepository.appendUpdateEvents(r.getUuid(), ReleaseData.updateEventsJson(List.of(note))) == 0) {
+			log.warn("Release {} vanished before its SBOM refusal note was appended", r.getUuid());
+		}
+		// The uniform form of TPF-106 4.4: re-read by uuid, refresh what the read returns.
+		Release m = sharedReleaseService.getRelease(r.getUuid()).orElseThrow();
+		entityManager.refresh(m);
 	}
 }

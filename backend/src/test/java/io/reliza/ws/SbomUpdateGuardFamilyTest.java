@@ -21,7 +21,7 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.DeliverableDto;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.VariantService;
 

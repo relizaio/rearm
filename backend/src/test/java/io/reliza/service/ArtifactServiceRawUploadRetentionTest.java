@@ -35,9 +35,9 @@ import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ArtifactUploadResponseDto;
 import io.reliza.model.dto.OASResponseDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
+import io.reliza.model.DigestAlgorithm;
 
 /**
  * Pins what the raw download promises: the bytes the publisher uploaded, and a checksum over
@@ -187,7 +187,7 @@ public class ArtifactServiceRawUploadRetentionTest {
             .findFirst()
             .orElseThrow(() -> new AssertionError("expected a RAW_OCI_STORAGE digest record"));
         assertEquals("cccc3333", rawBlob.digest());
-        assertEquals(TeaChecksumType.SHA_256, rawBlob.algo());
+        assertEquals(DigestAlgorithm.SHA_256, rawBlob.algo());
     }
 
     @Test
@@ -247,7 +247,7 @@ public class ArtifactServiceRawUploadRetentionTest {
     @Test
     void callerSuppliedAsUploadedIsRefused() {
         Set<DigestRecord> declared = new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "forged-by-the-caller", DigestScope.AS_UPLOADED)));
+            new DigestRecord(DigestAlgorithm.SHA_256, "forged-by-the-caller", DigestScope.AS_UPLOADED)));
 
         RelizaException e = assertThrows(RelizaException.class,
             () -> Utils.rejectServerDerivedDigestScopes(declared));
@@ -257,7 +257,7 @@ public class ArtifactServiceRawUploadRetentionTest {
     @Test
     void callerSuppliedRawOciStorageIsRefused() {
         Set<DigestRecord> declared = new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE)));
+            new DigestRecord(DigestAlgorithm.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE)));
 
         RelizaException e = assertThrows(RelizaException.class,
             () -> Utils.rejectServerDerivedDigestScopes(declared));
@@ -279,7 +279,7 @@ public class ArtifactServiceRawUploadRetentionTest {
     void theNoFileArtifactPathCannotDeclareServerDerivedScopesEither() {
         ArtifactDto dto = bomDto(UUID.randomUUID(), BomFormat.CYCLONEDX);
         dto.setDigestRecords(new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "forged-by-the-caller", DigestScope.AS_UPLOADED))));
+            new DigestRecord(DigestAlgorithm.SHA_256, "forged-by-the-caller", DigestScope.AS_UPLOADED))));
 
         RelizaException e = assertThrows(RelizaException.class,
             () -> artifactService.createArtifact(dto, null));
@@ -290,7 +290,7 @@ public class ArtifactServiceRawUploadRetentionTest {
     void theNoFileArtifactPathCannotDeclareABlobPointerEither() {
         ArtifactDto dto = bomDto(UUID.randomUUID(), BomFormat.CYCLONEDX);
         dto.setDigestRecords(new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE))));
+            new DigestRecord(DigestAlgorithm.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE))));
 
         RelizaException e = assertThrows(RelizaException.class,
             () -> artifactService.createArtifact(dto, null));
@@ -341,7 +341,7 @@ public class ArtifactServiceRawUploadRetentionTest {
         stubRebomAccepting();
         ArtifactDto dto = uploadDto();
         dto.setDigestRecords(new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE))));
+            new DigestRecord(DigestAlgorithm.SHA_256, "someone-elses-blob", DigestScope.RAW_OCI_STORAGE))));
 
         RelizaException e = assertThrows(RelizaException.class,
             () -> artifactService.uploadArtifact(dto, upload(PRETTY_CDX), new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL, null));
@@ -381,10 +381,10 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setOriginalSize(709L);
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", 709L, "application/json",
-            null, null, "1", null);
+            null, null, "1", null, null);
         RebomResponse rebomResponse = new RebomResponse(UUID.randomUUID(), rebomsCopy, meta, false);
         BomLifecycleService bomLifecycleService = mock(BomLifecycleService.class);
         when(bomLifecycleService.processBomArtifact(any(), any(), any(), any(), any(), any(), any()))
@@ -400,8 +400,8 @@ public class ArtifactServiceRawUploadRetentionTest {
     @Test
     void callerSuppliedOriginalFileIsStillAccepted() throws Exception {
         Set<DigestRecord> declared = new LinkedHashSet<>(List.of(
-            new DigestRecord(TeaChecksumType.SHA_256, "declared-by-the-publisher", DigestScope.ORIGINAL_FILE),
-            new DigestRecord(TeaChecksumType.SHA_256, "an-oci-manifest", DigestScope.OCI_STORAGE)));
+            new DigestRecord(DigestAlgorithm.SHA_256, "declared-by-the-publisher", DigestScope.ORIGINAL_FILE),
+            new DigestRecord(DigestAlgorithm.SHA_256, "an-oci-manifest", DigestScope.OCI_STORAGE)));
 
         Utils.rejectServerDerivedDigestScopes(declared);
     }
@@ -506,10 +506,10 @@ public class ArtifactServiceRawUploadRetentionTest {
         rebomsCopy.setFileSHA256Digest("digest-of-reboms-processed-copy");
 
         RebomOptions meta = new RebomOptions(
-            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null,
+            null, null, null, null, null, false, false, null, null, null, null, null, null, null, null, null, null,
             "urn:uuid:" + UUID.randomUUID(), "rebom-semantic-digest",
             "digest-of-reboms-processed-copy", rebomReportedSize, "application/json",
-            null, null, "1", null);
+            null, null, "1", null, null);
         RebomResponse rebomResponse = new RebomResponse(UUID.randomUUID(), rebomsCopy, meta, false);
 
         BomLifecycleService bomLifecycleService = mock(BomLifecycleService.class);

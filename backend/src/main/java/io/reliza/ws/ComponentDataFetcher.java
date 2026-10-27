@@ -5,8 +5,10 @@ package io.reliza.ws;
 
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
+import java.util.LinkedHashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -42,6 +44,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.common.VcsType;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
+import io.reliza.model.BranchArchiveResult;
 import io.reliza.model.BranchData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -71,6 +74,7 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
 import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
+import io.reliza.service.BranchBulkArchiveService;
 import io.reliza.service.BranchService;
 import io.reliza.service.ComponentService;
 import io.reliza.service.ComponentOwnershipService;
@@ -109,6 +113,9 @@ public class ComponentDataFetcher {
 
 	@Autowired
 	private BranchService branchService;
+
+	@Autowired
+	private BranchBulkArchiveService branchBulkArchiveService;
 
 	@Autowired
 	private io.reliza.service.AgentBoardService agentBoardService;
@@ -170,7 +177,7 @@ public class ComponentDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "components")
-	public Collection<ComponentData> getComponentsOfType(
+	public Collection<ComponentData> getComponentsOfType(DgsDataFetchingEnvironment dfe,
 			@InputArgument("orgUuid") String orgUuidStr,
 			@InputArgument("componentType") ComponentType componentType,
 			@InputArgument("perspective") UUID perspectiveUuid,
@@ -186,7 +193,7 @@ public class ComponentDataFetcher {
 			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
 			Collection<ComponentData> perspectiveComponents = ComponentData.ofKinds(
 					componentService.listComponentDataByOrganizationAndPerspective(orgUuid, perspectiveUuid, componentType), kinds);
-			componentService.populateEffectiveLifecycle(perspectiveComponents);
+			if (dfe.getSelectionSet().contains("effectiveLifecycle")) componentService.populateEffectiveLifecycle(perspectiveComponents);
 			return perspectiveComponents;
 		}
 
@@ -201,9 +208,47 @@ public class ComponentDataFetcher {
 		}
 		// Batched pre-compute of the synthetic Component.effectiveLifecycle sub-field —
 		// one SQL roundtrip across all components instead of N per-component release fetches.
-		// Field resolver below reads from the cache when present.
-		componentService.populateEffectiveLifecycle(resolvedComponents);
+		// Field resolver below reads from the cache when present. Only when the caller selects the
+		// field (TPF-100): the statement scans releases and dominates the list's cost.
+		if (dfe.getSelectionSet().contains("effectiveLifecycle")) componentService.populateEffectiveLifecycle(resolvedComponents);
 		return resolvedComponents;
+	}
+
+	/**
+	 * TPF-100 (TPF-74 child 1): the rows of {@link #getComponentsOfType} as light refs. The same parse,
+	 * reads, perspective gate and readable-component cascade as components, line for line; the org
+	 * branch enumerates candidates through a projection (no component document, no effectiveLifecycle).
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "componentRefs")
+	public List<ComponentData.ComponentRef> getComponentRefsOfType(
+			@InputArgument("orgUuid") String orgUuidStr,
+			@InputArgument("componentType") ComponentType componentType,
+			@InputArgument("perspective") UUID perspectiveUuid,
+			@InputArgument("kinds") List<ComponentData.ComponentKind> kinds) throws RelizaException {
+		UUID orgUuid = UUID.fromString(orgUuidStr);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		var odComps = getOrganizationService.getOrganizationData(orgUuid);
+		RelizaObject roOrg = odComps.isPresent() ? odComps.get() : null;
+
+		if (null != perspectiveUuid) {
+			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
+			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(roOrg, pd), CallType.READ);
+			return ComponentData.ofKinds(componentService.listComponentDataByOrganizationAndPerspective(
+					orgUuid, perspectiveUuid, componentType), kinds)
+					.stream().map(ComponentData.ComponentRef::of).toList();
+		}
+
+		List<ComponentData.ComponentRef> refs = componentService.listComponentRefsByOrganization(orgUuid, componentType)
+				.stream().filter(r -> ComponentData.isOfKinds(r.kind(), kinds)).toList();
+		// the same cascade as components: component grants, granted perspectives, read-level products
+		Set<UUID> readable = authorizationService.readableComponentUuids(oud.get(), orgUuid);
+		if (readable != null) {
+			if (readable.isEmpty()) return List.of();
+			refs = refs.stream().filter(r -> readable.contains(r.uuid())).toList();
+		}
+		return refs;
 	}
 	
 	@PreAuthorize("isAuthenticated()")
@@ -600,6 +645,60 @@ public class ComponentDataFetcher {
 			throw new RuntimeException(re.getMessage());
 		}
 		return archived;
+	}
+
+	/**
+	 * Archive many branches (or feature sets), reporting per branch. No {@code @Transactional}:
+	 * each write runs in its own REQUIRES_NEW transaction, and an outer one would be suspended
+	 * and resumed per item while holding its connection for the whole loop.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "archiveBranches")
+	public Map<String, Object> archiveBranches(@InputArgument("branchUuids") List<UUID> branchUuids)
+			throws RelizaException {
+		// An empty call writes nothing, so there is nothing to authorize or gate.
+		if (null == branchUuids || branchUuids.isEmpty()) {
+			return archiveBulkDto(List.of());
+		}
+		// Bounded before the user, the gate or any repository is touched, and counted as sent:
+		// 201 copies of one uuid are still 201 ids on the wire.
+		if (branchUuids.size() > BranchBulkArchiveService.BULK_ARCHIVE_MAX_IDS) {
+			throw new RelizaException("archiveBranches is limited to "
+					+ BranchBulkArchiveService.BULK_ARCHIVE_MAX_IDS + " branches per call; "
+					+ branchUuids.size() + " were supplied; split the selection");
+		}
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		WhoUpdated wu = WhoUpdated.getWhoUpdated(oud.get());
+		// Not rewrapped: the sealed-system or licence refusal is the mutation's error, served by
+		// GraphQLExceptionHandlers as the single mutation's refusal is.
+		return archiveBulkDto(branchBulkArchiveService.archiveBranches(branchUuids, oud.get(), wu));
+	}
+
+	/** The per-branch list plus counts derived FROM that list, so the two cannot disagree. */
+	private static Map<String, Object> archiveBulkDto(List<BranchArchiveResult> results) {
+		List<Map<String, Object>> items = new ArrayList<>(results.size());
+		int archived = 0;
+		int skipped = 0;
+		int failed = 0;
+		for (BranchArchiveResult r : results) {
+			Map<String, Object> dto = new LinkedHashMap<>();
+			dto.put("branchUuid", r.branchUuid());
+			dto.put("outcome", r.outcome().name());
+			dto.put("message", r.message());
+			items.add(dto);
+			switch (r.outcome()) {
+				case ARCHIVED -> archived++;
+				case SKIPPED_BASE, SKIPPED_ARCHIVED -> skipped++;
+				case NOT_FOUND, FORBIDDEN, FAILED -> failed++;
+			}
+		}
+		Map<String, Object> out = new LinkedHashMap<>();
+		out.put("results", items);
+		out.put("archivedCount", archived);
+		out.put("skippedCount", skipped);
+		out.put("failedCount", failed);
+		return out;
 	}
 	
 	@PreAuthorize("isAuthenticated()")

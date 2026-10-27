@@ -16,7 +16,7 @@ import org.junit.jupiter.api.Test;
 import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import tools.jackson.core.type.TypeReference;
 
 /**
@@ -29,7 +29,7 @@ class DeliverableDataDigestRecordOrderTest {
 	@Test
 	void digestRecordsReadBackInTheOrderRecorded() {
 		List<DigestRecord> recorded = new ArrayList<>();
-		TeaChecksumType[] algos = TeaChecksumType.values();
+		DigestAlgorithm[] algos = DigestAlgorithm.values();
 		for (int i = algos.length - 1; i >= 0; i--) {
 			recorded.add(new DigestRecord(algos[i], UUID.randomUUID().toString().replace("-", "")));
 		}

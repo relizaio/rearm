@@ -32,6 +32,20 @@ extend type Query {
 	exportBoardPerspectivesProgrammatic(board: String!): [BoardPerspectiveRef!]
 	"""Export the key's organization's role presets as a presets file (CONFIGURATION_READ)."""
 	agentRolePresetsSpecProgrammatic: RolePresetsSpec
+	"""What publishing the release on TEA would do, and its publication and collections (a FREEFORM or USER key with READ on the release)."""
+	releaseTeaPublicationViewProgrammatic(release: ID!): TeaPublishPreview!
+	"""The SBOM profile rows stored at a scope of the key's organization, by name (a FREEFORM or USER key with READ on the scope's object)."""
+	sbomProfilesProgrammatic(scope: SettingsScope!, object: ID): [SbomProfile!]!
+	"""Which SBOM profile row a name resolves to at a scope of the key's organization, with no channel fallback (READ on the scope's object)."""
+	sbomProfileEffectiveProgrammatic(scope: SettingsScope!, object: ID, name: String!): SbomProfileResolution!
+	"""The regulatory submissions of a release of the key's organization, every kind (a FREEFORM or USER key with READ on the release)."""
+	submissionsOfReleaseProgrammatic(release: ID!): [Submission!]!
+	"""The regulatory submissions across a component's releases, newest act first (READ on the component)."""
+	submissionsOfComponentProgrammatic(component: ID!, kind: PackageKind, state: SubmissionState): [Submission!]!
+	"""A regulatory submission of the key's organization by its uuid (READ on its release)."""
+	submissionProgrammatic(uuid: ID!): Submission
+	"""One version of a regulatory submission of the key's organization (READ on its release)."""
+	submissionVersionProgrammatic(submission: ID!, version: Int!): SubmissionVersion
 	"""
 	Export the organization's declared API keys as an API_KEYS file (CONFIGURATION_WRITE); with keys, only
 	those names, and the file is not authoritative. No secret and no secret metadata is in it.
@@ -58,6 +72,23 @@ extend type Query {
 	and products, exactly one hit required (unknown or ambiguous names error).
 	"""
 	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
+	"""
+	Exact head-commit lookup, the by-commit twin of getReleaseByReleaseVersionProgrammatic (task TPF-72).
+	commit is compared as stored, whole and case-sensitively (no prefix, no tag, no branch); the entry
+	is looked up in the component's organization and the match restricted to the component / product.
+	Returns the OBOM (CycloneDX 1.6, as the by-version field) of the newest release by creation date
+	whose head commit it is, or "{}" when no release of this component has that head commit, whether the
+	commit is unknown, only in a release's changelog range, or recorded by another organization.
+	componentId is resolved as for getReleaseByReleaseVersionProgrammatic. Lifecycle and approvals are
+	not consulted. Several releases on one head commit (rebuilds): getReleasesByCommitProgrammatic lists them.
+	"""
+	getReleaseByCommitProgrammatic(commit: String!, componentId: ID!): String
+	"""
+	Every release of the component / product whose head commit is exactly commit, newest by creation
+	date first; the same resolution and checks as getReleaseByCommitProgrammatic. Empty when that field
+	would answer "{}".
+	"""
+	getReleasesByCommitProgrammatic(commit: String!, componentId: ID!): [ReleaseByCommitMatch!]!
 	"""
 	Readiness score of the merged release BOM, as releaseSbomScore scores it for a signed-in user (task
 	SCORE-24). The release is named as for releaseSbomExportProgrammatic, behind the same checks; the
@@ -215,6 +246,12 @@ extend type Query {
 }
 
 extend type Mutation {
+	"""Publish the release on TEA: PUBLISH_EXTERNALLY on the release's component, on a FREEFORM or USER key. Refused when already published."""
+	publishReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublishResult!
+	"""Re-publish the release on TEA (PUBLISH_EXTERNALLY on a FREEFORM or USER key): a new collection version only when anything changed; a hidden publication becomes published again."""
+	republishReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublishResult!
+	"""Hide the release from TEA (PUBLISH_EXTERNALLY on a FREEFORM or USER key); its collections stay."""
+	hideReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublication!
 	"""
 	Declarative apply of the Catalog slice (API key, write access on the org). Idempotent, keyed by
 	component name. dryRun computes the change set without writing.
@@ -1379,6 +1416,13 @@ input ReleaseApprovalProgrammaticInput {
 	release: ID
 	component: ID
 	version: String
+}
+
+"""One release found by its head commit (TPF-72): enough to name it and to see why it sorted where it did."""
+type ReleaseByCommitMatch {
+	uuid: ID!
+	version: String!
+	createdDate: DateTime!
 }
 
 input ReleaseInputProg {

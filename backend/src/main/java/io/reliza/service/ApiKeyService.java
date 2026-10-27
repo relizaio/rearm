@@ -23,6 +23,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.lang.NonNull;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 
 import com.github.benmanes.caffeine.cache.Cache;
 import com.github.benmanes.caffeine.cache.Caffeine;
@@ -75,6 +76,16 @@ public class ApiKeyService {
 	
 	@Autowired
 	private GetComponentService getComponentService;;
+
+	/** TPF-91: a deleted key leaves its API key groups; @Lazy on both sides breaks the cycle. */
+	@Autowired
+	@Lazy
+	private ApiKeyGroupService apiKeyGroupService;
+
+	/** Lazy: ExternalApiKeyService depends on this service; only the EXTERNAL key id lookup goes back to it (task TEA-3). */
+	@Autowired
+	@org.springframework.context.annotation.Lazy
+	private ExternalApiKeyService externalApiKeyService;
 
 	private final ApiKeyRepository repository;
 
@@ -264,6 +275,8 @@ public class ApiKeyService {
 			// and gets its audit row
 			ak.setApiKey(null);
 			repository.save(ak);
+			// TPF-91: the deleted key leaves every API key group of its org, active or not, one audited save per group
+			apiKeyGroupService.removeKeyFromAllGroups(uuid, ak.getOrg(), wu);
 		}
 		invalidateVerificationCacheForKey(uuid);
 		if (revoked > 0) log.info("API key {} deleted: revoked {} active CLI session(s)", uuid, revoked);
@@ -283,6 +296,8 @@ public class ApiKeyService {
 		} catch (IllegalArgumentException notAUuid) {
 			// fall through to the key id form
 		}
+		// An EXTERNAL id carries the organization's TEA id, not the row's object uuid (task TEA-3).
+		if (trimmed.startsWith(ApiTypeEnum.EXTERNAL + "__")) return externalApiKeyService.findByPrintedId(trimmed);
 		// Split off the key order first, as auth header parsing does: an order may itself contain
 		// "__" (a federated key's order is provider:owner/repo).
 		String[] orderSplit = trimmed.split("__ord__", 2);
@@ -529,6 +544,7 @@ public class ApiKeyService {
 				case ORGANIZATION_RW:
 				case FREEFORM:
 				case USER:
+				case EXTERNAL:
 					orgUuid = suppliedOrgUuid;
 					break;
 				case COMPONENT:
@@ -708,6 +724,9 @@ public class ApiKeyService {
 		return ApiKeyDto.fromApiKey(ak);
 	}
 
+	/** Refusal of a user holder on an EXTERNAL key (task TEA-3). */
+	public static final String EXTERNAL_HOLDER_REFUSAL = "an external key is held by an outside party; set its name";
+
 	/**
 	 * Reassign (or clear with null) the holder of a FREEFORM key, e.g. after the previous holder left the org.
 	 * Only a holder can approve a CLI session on the key, so a change revokes the key's active sessions: they
@@ -716,6 +735,7 @@ public class ApiKeyService {
 	@Transactional
 	public ApiKeyDto setApiKeyHolder(UUID keyUuid, UUID holder, WhoUpdated wu) throws RelizaException {
 		ApiKey seen = getApiKey(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (seen.getObjectType() == ApiTypeEnum.EXTERNAL) throw new RelizaException(EXTERNAL_HOLDER_REFUSAL);
 		if (seen.getObjectType() != ApiTypeEnum.FREEFORM) throw new RelizaException("Only FREEFORM keys have a holder");
 		// sessions first, then the key, the lock order of deleteApiKey: a change revokes the sessions of earlier holders
 		UUID seenHolder = ApiKeyData.dataFromRecord(seen).getHolder();
@@ -790,11 +810,79 @@ public class ApiKeyService {
 		return keys.size();
 	}
 
-	/** Key id string clients present as the Basic user name; stable across secret rotation. */
+	/**
+	 * Key id string clients present as the Basic user name; stable across secret rotation. The one place that
+	 * prints a key id: {@code TYPE__objectUuid[__ord__keyOrder]}, and for an EXTERNAL key
+	 * {@code EXTERNAL__<org TEA id>__ord__<keyOrder>} (task TEA-3), which is what the outside party sees.
+	 */
 	public static String keyIdOf(ApiKey ak) {
-		String id = ak.getObjectType() + "__" + ak.getObjectUuid();
+		return keyIdOf(ak, ak.getObjectType() == ApiTypeEnum.EXTERNAL ? ApiKeyData.dataFromRecord(ak) : null);
+	}
+
+	/** As {@link #keyIdOf(ApiKey)}, with the record already read. */
+	public static String keyIdOf(ApiKey ak, ApiKeyData akd) {
+		UUID object = ak.getObjectUuid();
+		if (ak.getObjectType() == ApiTypeEnum.EXTERNAL && akd != null && akd.getTeaOrg() != null) object = akd.getTeaOrg();
+		String id = ak.getObjectType() + "__" + object;
 		if (StringUtils.isNotEmpty(ak.getKeyOrder())) id = id + "__ord__" + ak.getKeyOrder();
 		return id;
+	}
+
+	/**
+	 * Whether the secret an access token was exchanged with is still live on the key: present, usable (active and
+	 * not expired) and unchanged (its fingerprint is the token's). Shared by the programmatic and the TEA filters.
+	 */
+	public static boolean isTokenSecretLive(ApiKey ak, ApiKeyData akd, ApiTokenService.TokenClaims claims) {
+		if (claims == null || claims.fingerprint() == null) return false;
+		return akd.effectiveSecrets(ak.getApiKey()).stream()
+				.anyMatch(sec -> sec.isUsable() && ApiTokenService.fingerprint(sec).equals(claims.fingerprint()));
+	}
+
+	/**
+	 * The row of a new EXTERNAL key (task TEA-3): object and org the organization, a fresh uuid order, the outside
+	 * party's name, the organization's TEA id, no secret and no permission. The caller has validated the name and
+	 * minted the TEA id.
+	 */
+	public ApiKey createExternalKeyRow(UUID org, UUID teaOrg, String holderName, String notes, WhoUpdated wu) {
+		KeyRow row = ensureObjectApiKeyRow(org, ApiTypeEnum.EXTERNAL, org, UUID.randomUUID().toString(), wu);
+		ApiKeyData akd = row.akd();
+		akd.setHolderName(holderName);
+		akd.setTeaOrg(teaOrg);
+		akd.setNotes(notes);
+		akd.setPermissions(new io.reliza.model.UserPermission.Permissions());
+		ApiKey saved = saveApiKey(row.ak(), Utils.dataToRecord(akd), wu);
+		invalidateVerificationCacheForKey(saved.getUuid());
+		return saved;
+	}
+
+	/**
+	 * Rename the outside party of an EXTERNAL key; the name is validated by the caller. On the row locked
+	 * for write, which saveApiKey expects (TPF-48 shape; task TEA-14).
+	 */
+	@Transactional
+	public ApiKeyDto writeExternalHolderName(UUID keyUuid, String holderName, WhoUpdated wu) throws RelizaException {
+		ApiKey ak = getApiKeyWriteLocked(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.EXTERNAL) throw new RelizaException("Only external keys have a holder name");
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.setHolderName(holderName);
+		return ApiKeyDto.fromApiKey(saveApiKey(ak, Utils.dataToRecord(akd), wu));
+	}
+
+	/**
+	 * Replace the grants of an EXTERNAL key wholesale with grants already normalized and validated by
+	 * {@code ExternalApiKeyService.setGrants} (task TEA-3).
+	 */
+	@Transactional
+	public ApiKeyDto writeExternalGrants(UUID keyUuid, List<PermissionDto> grants, WhoUpdated wu) throws RelizaException {
+		ApiKey ak = getApiKeyWriteLocked(keyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.EXTERNAL) throw new RelizaException("Only external keys take TEA grants");
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		akd.revokeAllOrgPermissions(ak.getOrg());
+		for (PermissionDto p : grants) {
+			akd.setPermission(ak.getOrg(), p.scope(), p.object(), p.type(),
+					p.functions() != null ? p.functions() : List.of(), p.approvals() != null ? p.approvals() : List.of());
+		}
+		return ApiKeyDto.fromApiKey(saveApiKey(ak, Utils.dataToRecord(akd), wu));
 	}
 
 	private static String newSecretString() {
@@ -951,12 +1039,19 @@ public class ApiKeyService {
 		return ApiKeyDto.fromApiKey(ak);
 	}
 
+	/**
+	 * Refusal of approvals on an EXTERNAL key (task TEA-3, T-6): its grants are READ_ONLY TEA reads with no approvals,
+	 * and only the grant normalization of ExternalApiKeyService writes them.
+	 */
+	public static final String EXTERNAL_APPROVALS_REFUSAL = "an external key takes no approvals; set its TEA grants instead";
+
 	@Transactional
-	public ApiKeyDto setApprovalTypes(UUID keyUuid, Collection<String> approvals, WhoUpdated wu) {
+	public ApiKeyDto setApprovalTypes(UUID keyUuid, Collection<String> approvals, WhoUpdated wu) throws RelizaException {
 		ApiKeyDto retAkd = null;
 		Optional<ApiKey> oak = getApiKeyWriteLocked(keyUuid);
 		if (oak.isPresent()) {
 			ApiKey ak = oak.get();
+			if (ak.getObjectType() == ApiTypeEnum.EXTERNAL) throw new RelizaException(EXTERNAL_APPROVALS_REFUSAL);
 			ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
 			akd.setPermission(ak.getOrg(), PermissionScope.ORGANIZATION, ak.getOrg(), PermissionType.NONE, approvals);
 			Map<String,Object> recordData = Utils.dataToRecord(akd);
@@ -1156,6 +1251,8 @@ public class ApiKeyService {
 	 * The FEDERATED row for this repository in the org, created on first use. Ids are pinned when
 	 * first seen; the caller compares later ones. A revoked row comes back active (nothing to clear,
 	 * these rows never hold secrets). The last ref, run and actor are refreshed on every exchange.
+	 * The last ref, run and actor are refreshed in place on a routine exchange (TPF-71 / TPF-107); a revived,
+	 * re-pointed or newly pinned identity is a save.
 	 */
 	@Transactional
 	public ApiKey ensureFederatedIdentity(UUID orgUuid, io.reliza.model.FederatedIdentity fi, WhoUpdated wu) {
@@ -1167,6 +1264,27 @@ public class ApiKeyService {
 		if (present.isPresent()) {
 			ak = present.get();
 			akd = ApiKeyData.dataFromRecord(ak);
+			io.reliza.model.FederatedIdentity was = akd.getFederation();
+			// Anything but the last-seen triple is content and a save (TPF-71 / TPF-107): a tombstone coming back,
+			// a provider field changed, the pin set now. Compared on the locked, refreshed row.
+			boolean content = akd.getStatus() == ApiKeyStatus.REVOKED
+					|| was == null
+					|| was.getProvider() != fi.getProvider()
+					|| !Objects.equals(was.getIssuer(), fi.getIssuer())
+					|| !Objects.equals(was.getOwner(), fi.getOwner())
+					|| !Objects.equals(was.getRepository(), fi.getRepository())
+					|| !Objects.equals(was.getRepositoryUri(), fi.getRepositoryUri())
+					|| (was.getRepositoryId() == null && fi.getRepositoryId() != null);
+			if (!content) {
+				// The routine exchange (TPF-71 / TPF-107): only the last-seen triple moves. In place, no version bump,
+				// no revision, no audit row; the row lock from lockAndRefresh is held to commit, and the refresh keeps
+				// the entity the caller re-checks (FederatedTrustRuleService.checkIdentity) honest.
+				if (repository.stampFederatedLastSeen(ak.getUuid(), fi.getLastRef(), fi.getLastRunId(), fi.getLastActor()) == 1) {
+					entityManager.refresh(ak);
+					return ak;
+				}
+				log.warn("Federated identity {} could not be stamped in place; saving the record instead", ak.getUuid());
+			}
 			// a deleted row is a tombstone: the rules still trust the repository, so it comes back; the admin kill switch (INACTIVE) is refused by the exchange before this
 			if (akd.getStatus() == ApiKeyStatus.REVOKED) akd.setStatus(ApiKeyStatus.ACTIVE);
 			io.reliza.model.FederatedIdentity stored = akd.getFederation() == null ? new io.reliza.model.FederatedIdentity() : akd.getFederation();

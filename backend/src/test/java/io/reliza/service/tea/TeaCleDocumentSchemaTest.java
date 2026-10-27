@@ -10,7 +10,6 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.when;
 
-import java.io.InputStream;
 import java.net.URI;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -23,14 +22,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.test.util.ReflectionTestUtils;
 
-import com.networknt.schema.InputFormat;
-import com.networknt.schema.JsonSchema;
-import com.networknt.schema.JsonSchemaFactory;
-import com.networknt.schema.SchemaValidatorsConfig;
-import com.networknt.schema.SpecVersion;
 import com.networknt.schema.ValidationMessage;
 
-import io.reliza.common.Utils;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -45,39 +38,26 @@ import io.reliza.model.tea.TeaCleEventType;
 import io.reliza.model.tea.TeaCleSupportDefinition;
 import io.reliza.model.tea.TeaCleVersionSpecifier;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.ws.tea.TeaJson;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Every CLE document {@link TeaTransformerService#wrapAsCleDocument} emits validates
- * against the TEA 0.4.0 {@code cle} schema at
- * {@code src/test/resources/schema/tea-0.4.0-cle.schema.json}, with date-time formats
+ * against the TEA 1.0.0 {@code cle} schema of {@code src/test/resources/schema/tea-1.0.0-openapi.yaml}
+ * (through {@link TeaOpenApiSchemas}; the five cle schemas are unchanged from 0.4.0), with date-time formats
  * asserted. Until the CLE models dropped absent fields, every export failed it: an
  * optional field written as {@code null} where the schema says string or integer.
  */
 class TeaCleDocumentSchemaTest {
 
-	private static final String SCHEMA_PATH = "/schema/tea-0.4.0-cle.schema.json";
-	private static final JsonSchema SCHEMA = loadSchema();
-
-	private static JsonSchema loadSchema() {
-		JsonSchemaFactory factory = JsonSchemaFactory.getInstance(SpecVersion.VersionFlag.V202012);
-		SchemaValidatorsConfig config = SchemaValidatorsConfig.builder().formatAssertionsEnabled(true).build();
-		try (InputStream in = TeaCleDocumentSchemaTest.class.getResourceAsStream(SCHEMA_PATH)) {
-			if (in == null) throw new IllegalStateException("CLE schema fixture not found at " + SCHEMA_PATH);
-			return factory.getSchema(in, config);
-		} catch (Exception e) {
-			throw new IllegalStateException("Failed to load the CLE schema fixture", e);
-		}
-	}
-
 	private static Set<ValidationMessage> errorsOf(JsonNode doc) {
-		return SCHEMA.validate(doc.toString(), InputFormat.JSON);
+		return TeaOpenApiSchemas.errors(doc.toString(), "cle");
 	}
 
 	private static void assertSchemaValid(JsonNode doc) {
 		Set<ValidationMessage> errors = errorsOf(doc);
-		assertTrue(errors.isEmpty(), () -> "TEA 0.4.0 cle schema validation failed:\n" + errors + "\n---\n" + doc);
+		assertTrue(errors.isEmpty(), () -> "TEA 1.0.0 cle schema validation failed:\n" + errors + "\n---\n" + doc);
 	}
 
 	private TeaTransformerService service;
@@ -167,7 +147,7 @@ class TeaCleDocumentSchemaTest {
 		// the TEA API returns the TeaCle itself, not wrapAsCleDocument's tree: no "definitions": null
 		TeaCleEvent ev = new TeaCleEvent(0, TeaCleEventType.END_OF_SUPPORT,
 				OffsetDateTime.parse("2027-06-30T00:00:00Z"), OffsetDateTime.parse("2026-09-02T10:15:00Z"));
-		JsonNode cle = Utils.OM.valueToTree(new TeaCle(List.of(ev)));
+		JsonNode cle = TeaJson.MAPPER.valueToTree(new TeaCle(List.of(ev)));
 		assertFalse(cle.has("definitions"), () -> "no definitions key when there are none: " + cle);
 		assertSchemaValid(cle);
 	}

@@ -46,7 +46,7 @@ import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.VariantData;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.service.oss.OssReleaseService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -347,7 +347,7 @@ public class CdxImportService {
 			Set<DigestRecord> digestRecords = new LinkedHashSet<>();
 			if (cdxComponent.getHashes() != null) {
 				for (Hash hash : cdxComponent.getHashes()) {
-					TeaChecksumType algo = mapHashAlgorithm(hash.getAlgorithm());
+					DigestAlgorithm algo = mapHashAlgorithm(hash.getAlgorithm());
 					if (algo != null) {
 						digestRecords.add(new DigestRecord(algo, hash.getValue(), DigestScope.ORIGINAL_FILE));
 					}
@@ -392,7 +392,7 @@ public class CdxImportService {
 		return commits.get(0).getUrl();
 	}
 
-	private TeaChecksumType mapHashAlgorithm(String algorithmStr) {
+	private DigestAlgorithm mapHashAlgorithm(String algorithmStr) {
 		if (algorithmStr == null) return null;
 		try {
 			return mapHashAlgorithm(Hash.Algorithm.fromSpec(algorithmStr));
@@ -401,21 +401,21 @@ public class CdxImportService {
 		}
 	}
 
-	private TeaChecksumType mapHashAlgorithm(Hash.Algorithm algorithm) {
+	private DigestAlgorithm mapHashAlgorithm(Hash.Algorithm algorithm) {
 		if (algorithm == null) return null;
 		return switch (algorithm) {
-			case MD5 -> TeaChecksumType.MD5;
-			case SHA1 -> TeaChecksumType.SHA_1;
-			case SHA_256 -> TeaChecksumType.SHA_256;
-			case SHA_384 -> TeaChecksumType.SHA_384;
-			case SHA_512 -> TeaChecksumType.SHA_512;
-			case SHA3_256 -> TeaChecksumType.SHA3_256;
-			case SHA3_384 -> TeaChecksumType.SHA3_384;
-			case SHA3_512 -> TeaChecksumType.SHA3_512;
-			case BLAKE2b_256 -> TeaChecksumType.BLAKE2B_256;
-			case BLAKE2b_384 -> TeaChecksumType.BLAKE2B_384;
-			case BLAKE2b_512 -> TeaChecksumType.BLAKE2B_512;
-			case BLAKE3 -> TeaChecksumType.BLAKE3;
+			case MD5 -> DigestAlgorithm.MD5;
+			case SHA1 -> DigestAlgorithm.SHA_1;
+			case SHA_256 -> DigestAlgorithm.SHA_256;
+			case SHA_384 -> DigestAlgorithm.SHA_384;
+			case SHA_512 -> DigestAlgorithm.SHA_512;
+			case SHA3_256 -> DigestAlgorithm.SHA3_256;
+			case SHA3_384 -> DigestAlgorithm.SHA3_384;
+			case SHA3_512 -> DigestAlgorithm.SHA3_512;
+			case BLAKE2b_256 -> DigestAlgorithm.BLAKE2B_256;
+			case BLAKE2b_384 -> DigestAlgorithm.BLAKE2B_384;
+			case BLAKE2b_512 -> DigestAlgorithm.BLAKE2B_512;
+			case BLAKE3 -> DigestAlgorithm.BLAKE3;
 			default -> null;
 		};
 	}

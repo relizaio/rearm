@@ -1,4 +1,4 @@
-<!-- orientation section: artifacts · core 2026-10-08 -->
+<!-- orientation section: artifacts · core 2026-10-25 -->
 ### 2.5 Artifacts on the session (when policies require them)
 
 Artifacts attached to the session are evaluated by the org's agent

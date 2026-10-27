@@ -31,7 +31,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData.BomFormat;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomStructureType;
 import io.reliza.service.RebomService.MalformedRebomAnswerException;
 import tools.jackson.databind.JsonNode;

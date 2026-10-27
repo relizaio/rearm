@@ -51,6 +51,11 @@ public class ApiKeyDto {
 	private String declaredName;
 	private io.reliza.model.DeclarativeProvenance declarative;
 	private Integer secretExpiresDays;
+	/** The id a client presents (task TEA-3): printed by the server, never derived by a client. */
+	private String keyId;
+	/** EXTERNAL keys: the outside party that holds the key, and the organization's TEA id the key id carries. */
+	private String holderName;
+	private UUID teaOrg;
 	private ZonedDateTime accessDate;
 	@JsonProperty(CommonVariables.LAST_UPDATED_BY_FIELD)
 	private UUID lastUpdatedBy;
@@ -83,6 +88,9 @@ public class ApiKeyDto {
 							.declaredName(akData.getDeclaredName())
 							.declarative(akData.getDeclarative())
 							.secretExpiresDays(akData.getSecretExpiresDays())
+							.keyId(io.reliza.service.ApiKeyService.keyIdOf(ak, akData))
+							.holderName(akData.getHolderName())
+							.teaOrg(akData.getTeaOrg())
 							.accessDate(ak.getLastAccessDate())
 							.secrets(akData.effectiveSecrets(ak.getApiKey()).stream()
 									.map(x -> new io.reliza.model.ApiKeyData.ApiKeySecret(x.getSlot(), null, x.isActive(), x.getCreatedDate(), x.getLastUsedDate(), x.getExpiresDate()))

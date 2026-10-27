@@ -97,7 +97,8 @@ class AgentSchemaFieldsAreBackedTest {
 			"AgentTaskSignOff.overAllowanceMicros", "AgentTaskDataFetcher.signOffOverAllowance, computed from usage",
 			"AgentTaskReturn.overAllowanceMicros", "AgentTaskDataFetcher.returnOverAllowance, computed from usage",
 			"AgentTaskSignOff.reviewedInputs", "AgentTaskDataFetcher.signOffReviewedInputs, the stored uuids resolved per read",
-			"AgentTaskSignOff.refusedPromotions", "AgentTaskDataFetcher.signOffRefusedPromotions, from the sign-off's promotions");
+			"AgentTaskSignOff.refusedPromotions", "AgentTaskDataFetcher.signOffRefusedPromotions, from the sign-off's promotions",
+			"AgentTaskAssignment.promptByVersion", "AgentTaskDataFetcher.assignmentPromptByVersion, computed from rolePrompt and the heldVersions argument");
 
 	@Test
 	void everyDeclaredFieldHasAnAccessor() {
@@ -276,6 +277,7 @@ class AgentSchemaFieldsAreBackedTest {
 		m.put("AgentBoardPriorityType", AgentBoardData.PriorityType.class);
 		m.put("AgentBoardPauseLevel", AgentBoardData.BoardPauseLevel.class);
 		m.put("AgentBoardEventKind", AgentBoardData.BoardEventKind.class);
+		m.put("ServedPromptStatus", AgentBoardData.ServedPromptStatus.class);
 		m.put("AgentCapability", io.reliza.model.AgentTaskRoleConfigData.AgentCapability.class);
 		m.put("AgentRoleKind", io.reliza.model.AgentTaskRoleConfigData.RoleKind.class);
 		m.put("AgentRoleNecessity", io.reliza.model.AgentTaskRoleConfigData.RoleNecessity.class);

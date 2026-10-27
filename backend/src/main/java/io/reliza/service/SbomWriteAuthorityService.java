@@ -90,7 +90,7 @@ public class SbomWriteAuthorityService {
 					cd -> authorizationService.rbacKeyWrites(verifiedPrincipal, org, PermissionScope.COMPONENT,
 							cd.getUuid()),
 					describe);
-			case ORGANIZATION, INSTANCE, CLUSTER, APPROVAL -> new BoundAuthority(org, () -> false, c -> false, describe);
+			case ORGANIZATION, INSTANCE, CLUSTER, APPROVAL, EXTERNAL -> new BoundAuthority(org, () -> false, c -> false, describe);
 		};
 	}
 

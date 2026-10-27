@@ -62,6 +62,38 @@ public class ProgrammaticAuthenticationFilterTest {
 		assertEquals(null, chain.getRequest(), "the request must not reach the resolvers");
 	}
 
+	/** Task TEA-3, design 4.7 case 33: neither a tea token nor an EXTERNAL key's token passes the programmatic filter. */
+	@Test
+	void teaTokensAndExternalKeysAreRefused() throws Exception {
+		io.reliza.service.ApiTokenService tokens = io.reliza.service.ApiTokenServiceTestSupport.create();
+		io.reliza.service.ApiKeyService keys = org.mockito.Mockito.mock(io.reliza.service.ApiKeyService.class);
+		java.util.UUID orgUuid = java.util.UUID.randomUUID();
+		io.reliza.model.ApiKeyData.ApiKeySecret sec = new io.reliza.model.ApiKeyData.ApiKeySecret(1, "hash-1", true, java.time.ZonedDateTime.now(), null);
+		io.reliza.model.ApiKey ak = new io.reliza.model.ApiKey();
+		ak.setObjectType(io.reliza.model.ApiKey.ApiTypeEnum.EXTERNAL);
+		ak.setObjectUuid(orgUuid);
+		ak.setOrg(orgUuid);
+		ak.setKeyOrder(java.util.UUID.randomUUID().toString());
+		io.reliza.model.ApiKeyData akd = io.reliza.model.ApiKeyData.apiKeyDataFactory(orgUuid);
+		akd.setSecrets(new java.util.LinkedList<>(java.util.List.of(sec)));
+		ak.setRecordData(io.reliza.common.Utils.dataToRecord(akd));
+		org.mockito.Mockito.when(keys.getApiKey(ak.getUuid())).thenReturn(java.util.Optional.of(ak));
+		ProgrammaticAuthenticationFilter f = new ProgrammaticAuthenticationFilter(tokens, keys, null, null, null);
+		for (String token : java.util.List.of(tokens.issue(ak, sec, io.reliza.service.ApiTokenService.AUD_TEA),
+				tokens.issue(ak, sec, io.reliza.service.ApiTokenService.AUD_PROGRAMMATIC))) {
+			MockHttpServletRequest req = new MockHttpServletRequest("POST", ProgrammaticGraphQlConfig.PATH);
+			req.setRequestURI(ProgrammaticGraphQlConfig.PATH);
+			req.addHeader("Authorization", "Bearer " + token);
+			MockHttpServletResponse resp = new MockHttpServletResponse();
+			MockFilterChain chain = new MockFilterChain();
+			f.doFilter(req, resp, chain);
+			assertEquals(401, resp.getStatus());
+			assertTrue(resp.getHeader("WWW-Authenticate").contains("error=\"invalid_token\""));
+			assertEquals(null, chain.getRequest(), "the request must not reach the resolvers");
+			assertEquals(null, req.getAttribute(ProgrammaticAuthenticationFilter.PRINCIPAL_ATTRIBUTE));
+		}
+	}
+
 	@Test
 	void otherPathsAreNotFiltered() throws Exception {
 		ProgrammaticAuthenticationFilter f = new ProgrammaticAuthenticationFilter(null, null, null, null, null);

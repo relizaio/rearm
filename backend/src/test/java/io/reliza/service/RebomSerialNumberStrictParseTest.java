@@ -20,8 +20,8 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData.BomFormat;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.RebomResponse;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomResponse;
 import tools.jackson.databind.JsonNode;
 
 /**

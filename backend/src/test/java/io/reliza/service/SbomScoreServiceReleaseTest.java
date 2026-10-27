@@ -31,7 +31,7 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 
 /**
  * What a score gets when the document it scores was too large to read back from rebom (task

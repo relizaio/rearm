@@ -34,7 +34,8 @@ import java.util.regex.Pattern;
  *
  * <p>The token endpoint also refuses a request that carries an {@code Authorization} header together with a
  * {@code client_id} or {@code client_secret} form parameter ({@link #usesTwoClientAuthenticationMethods}, task
- * TPF-50), with the TEA endpoint's text ({@link #ONE_METHOD_DESCRIPTION}).
+ * TPF-50), with the text both token endpoints answer with ({@link #ONE_METHOD_DESCRIPTION}; the TEA endpoint calls the
+ * same helper, task TEA-24).
  */
 public final class OAuthQueryGuard {
 	private OAuthQueryGuard() {}

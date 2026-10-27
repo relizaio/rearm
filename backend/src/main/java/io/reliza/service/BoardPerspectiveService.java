@@ -23,6 +23,7 @@ import io.reliza.model.AgentBoard;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.WhoUpdated;
 import io.reliza.repositories.AgentBoardRepository;
@@ -59,6 +60,14 @@ public class BoardPerspectiveService {
 		boolean allows(UUID perspective);
 
 		/**
+		 * The caller's standing for the TEA gate on the set change (task TEA-9): a key, or a caller
+		 * nobody asked, is never an organization admin.
+		 */
+		default TeaProfileService.TeaCaller teaCaller() {
+			return TeaProfileService.TeaCaller.SCOPE_ADMIN;
+		}
+
+		/**
 		 * The functions of the rule the caller lacks covering the perspective, for the refusal to
 		 * name. A consent that cannot tell which names both.
 		 */
@@ -75,6 +84,7 @@ public class BoardPerspectiveService {
 	@Autowired @Lazy private ComponentService componentService;
 	@Autowired private AgentBoardRepository boardRepository;
 	@Autowired @Lazy private AgentBoardService agentBoardService;
+	@Autowired @Lazy private TeaProfileService teaProfileService;
 
 	/** A perspective of the organization as a board may hold it: real, or a PRODUCT component. */
 	public record BoardPerspective(UUID uuid, String name, boolean product) {
@@ -220,24 +230,98 @@ public class BoardPerspectiveService {
 
 	/** Add the board's real perspectives to a document component it created or adopted (§3.3). */
 	public void joinDocumentComponent(AgentBoardData board, UUID component, WhoUpdated wu) throws RelizaException {
-		changeMembership(component, realPerspectives(board), List.of(), wu);
+		// No principal to ask: a board's document publish only reproduces the board's own perspective set,
+		// judged under the board gate at every change of it (followSetChange). The archived rule still
+		// applies; a join that widens to PUBLIC is logged (task TEA-14, architecture 3.4.3).
+		changeMembership(component, realPerspectives(board), List.of(), TeaProfileService.TeaCaller.SYSTEM, wu);
+	}
+
+	/**
+	 * Adopt a legacy document component into a board from before the map (task TEA-26): refused first,
+	 * on an unlocked read, when the join would make the component resolve to a PUBLIC TEA profile,
+	 * with the board's own text; then the join under the component row lock with the SCOPE_ADMIN
+	 * standing, so that the gate refuses, race-free, whatever changed in between. The board's set was
+	 * judged under TEA-9 over its recorded document components only, so an unrecorded legacy candidate
+	 * has never been judged; an organization admin adds it to the perspective through the gated set
+	 * path, after which the join widens nothing.
+	 */
+	public void adoptDocumentComponent(AgentBoardData board, RearmSpecificationType spec, UUID component,
+			WhoUpdated wu) throws RelizaException {
+		List<UUID> real = realPerspectives(board);
+		Optional<ComponentData> ocd = getComponentService.getComponentData(component);
+		if (ocd.isPresent() && !real.isEmpty()) {
+			ComponentData cd = ocd.get();
+			TeaProfileService.TeaExposureChange x = teaProfileService.assessMembership(cd,
+					nextMembership(cd, real, List.of()));
+			if (TeaProfileService.TeaPublicPath.NONE != x.path()) {
+				List<UUID> missing = minus(real, new ArrayList<>(nextMembership(cd, List.of(), List.of())));
+				throw new RelizaException("adopting component " + cd.getName() + " (" + cd.getUuid() + ") for the "
+						+ spec + " documents of board " + board.getName() + " would make it resolve to the PUBLIC TEA"
+						+ " profile of " + teaProfileService.sourceLabelOf(x) + "; only an organization admin can make"
+						+ " that change: have one add the component to " + labels(board.getOrg(), missing)
+						+ " first, then publish again");
+			}
+		}
+		joinAdoptedDocumentComponent(board, component, wu);
+	}
+
+	/**
+	 * The adopt path's join (task TEA-26): the board's real perspectives added under the component row
+	 * lock with the SCOPE_ADMIN standing, the standing of a caller nobody asked (PerspectiveConsent),
+	 * which the gate does not waive. Package-private for the gate test.
+	 */
+	void joinAdoptedDocumentComponent(AgentBoardData board, UUID component, WhoUpdated wu) throws RelizaException {
+		changeMembership(component, realPerspectives(board), List.of(), TeaProfileService.TeaCaller.SCOPE_ADMIN, wu);
 	}
 
 	/**
 	 * Follow a change of the board's set in its document components: real perspectives added join
-	 * each of them, removed ones leave. Products take no members.
+	 * each of them, removed ones leave. Products take no members. Every document component's move
+	 * is assessed first (task TEA-9): one that would make it resolve PUBLIC needs an organization
+	 * admin, and an archived one never gains ENABLED or PUBLIC; nothing changes on a refusal.
 	 */
-	public void followSetChange(AgentBoardData board, List<UUID> before, List<UUID> after, WhoUpdated wu)
-			throws RelizaException {
+	public void followSetChange(AgentBoardData board, List<UUID> before, List<UUID> after,
+			TeaProfileService.TeaCaller caller, WhoUpdated wu) throws RelizaException {
 		List<UUID> added = realOnly(board.getOrg(), minus(after, before));
 		List<UUID> removed = minus(before, after).stream()
 				.filter(p -> perspective(board.getOrg(), p).map(bp -> !bp.product()).orElse(true))
 				.toList();
 		if (added.isEmpty() && removed.isEmpty()) return;
 		if (null == board.getDocumentComponents()) return;
-		for (UUID component : new LinkedHashSet<>(board.getDocumentComponents().values())) {
-			changeMembership(component, added, removed, wu);
+		Set<UUID> components = new LinkedHashSet<>(board.getDocumentComponents().values());
+		for (UUID component : components) {
+			Optional<ComponentData> ocd = getComponentService.getComponentData(component);
+			if (ocd.isEmpty()) continue;
+			TeaProfileService.TeaExposureChange x = teaProfileService.assessMembership(ocd.get(),
+					nextMembership(ocd.get(), added, removed));
+			if (TeaProfileService.TeaPublicPath.NONE != x.path() && TeaProfileService.TeaCaller.ORG_ADMIN != caller) {
+				throw new RelizaException("changing the board's perspectives (" + changeLabel(board.getOrg(), added, removed)
+						+ ") makes document component " + ocd.get().getName() + " resolve to the PUBLIC TEA profile of "
+						+ teaProfileService.sourceLabelOf(x) + "; only an organization admin can do that");
+			}
 		}
+		for (UUID component : components) {
+			changeMembership(component, added, removed, caller, wu);
+		}
+	}
+
+	private String changeLabel(UUID orgUuid, List<UUID> added, List<UUID> removed) {
+		List<String> parts = new ArrayList<>();
+		if (!added.isEmpty()) parts.add("adding " + labels(orgUuid, added));
+		if (!removed.isEmpty()) parts.add("removing " + labels(orgUuid, removed));
+		return String.join("; ", parts);
+	}
+
+	private String labels(UUID orgUuid, List<UUID> ps) {
+		return String.join(", ", ps.stream()
+				.map(p -> perspective(orgUuid, p).map(BoardPerspective::entry).orElse(String.valueOf(p))).toList());
+	}
+
+	private static Set<UUID> nextMembership(ComponentData cd, List<UUID> add, List<UUID> remove) {
+		Set<UUID> next = new LinkedHashSet<>(null == cd.getPerspectives() ? Set.of() : cd.getPerspectives());
+		next.addAll(add);
+		next.removeAll(remove);
+		return next;
 	}
 
 	private List<UUID> realOnly(UUID orgUuid, List<UUID> ps) {
@@ -250,11 +334,15 @@ public class BoardPerspectiveService {
 		return out;
 	}
 
-	private void changeMembership(UUID component, List<UUID> add, List<UUID> remove, WhoUpdated wu)
-			throws RelizaException {
-		// the delta is applied to the stored set under the component row lock: a set computed from a
-		// read taken before the lock would put back a removal another writer committed first
-		componentService.changePerspectives(component, add, remove, wu);
+	/**
+	 * One document component's move: the delta applied to the stored set under the component row lock
+	 * (a set computed from a read taken before the lock would put back a removal another writer
+	 * committed first), judged there by the TEA gate with {@code caller}'s standing (task TEA-14).
+	 * Package-private for the gate tests.
+	 */
+	void changeMembership(UUID component, List<UUID> add, List<UUID> remove, TeaProfileService.TeaCaller caller,
+			WhoUpdated wu) throws RelizaException {
+		componentService.changePerspectives(component, add, remove, caller, wu);
 	}
 
 	/**
@@ -262,7 +350,8 @@ public class BoardPerspectiveService {
 	 * from organization scope only. Its document components leave it too.
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
-	public void dropPerspective(UUID orgUuid, UUID perspective, WhoUpdated wu) throws RelizaException {
+	public void dropPerspective(UUID orgUuid, UUID perspective, TeaProfileService.TeaCaller caller, WhoUpdated wu)
+			throws RelizaException {
 		for (AgentBoard row : boardRepository.findByOrg(orgUuid.toString())) {
 			AgentBoardData bd = AgentBoardData.dataFromRecord(row);
 			if (null == bd.getPerspectives() || !bd.getPerspectives().contains(perspective)) continue;
@@ -272,7 +361,7 @@ public class BoardPerspectiveService {
 			after.remove(perspective);
 			if (null != fresh.getDocumentComponents()) {
 				for (UUID component : new LinkedHashSet<>(fresh.getDocumentComponents().values())) {
-					changeMembership(component, List.of(), List.of(perspective), wu);
+					changeMembership(component, List.of(), List.of(perspective), caller, wu);
 				}
 			}
 			fresh.setPerspectives(after);

@@ -4,6 +4,7 @@
 package io.reliza.service.tea;
 
 import java.net.URI;
+import java.nio.charset.StandardCharsets;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.time.OffsetDateTime;
@@ -14,99 +15,90 @@ import java.util.ArrayList;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.LinkedHashMap;
-import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
-import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
+import java.util.regex.Pattern;
 
 import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
-import io.reliza.common.CommonVariables;
 import io.reliza.common.VersRanges;
 import io.reliza.common.VersRanges.ReleaseOrder;
 import io.reliza.common.VersRanges.ReleaseScheme;
-import io.reliza.model.AcollectionData;
-import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
-import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ComponentData;
-import io.reliza.model.DeliverableData;
 import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.DeliverableData;
+import io.reliza.model.Link;
 import io.reliza.model.ParentRelease;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
-import io.reliza.model.tea.TeaArtifact;
-import io.reliza.model.tea.TeaArtifactFormat;
+import io.reliza.model.TeaPublicationData;
+import io.reliza.model.VariantData;
 import io.reliza.model.tea.TeaArtifactType;
 import io.reliza.model.tea.TeaChecksum;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCleEvent;
 import io.reliza.model.tea.TeaCleEventType;
 import io.reliza.model.tea.TeaCleVersionSpecifier;
-import io.reliza.model.tea.TeaCollection;
-import io.reliza.model.tea.TeaCollectionBelongsToType;
-import io.reliza.model.tea.TeaCollectionUpdateReason;
 import io.reliza.model.tea.TeaComponent;
 import io.reliza.model.tea.TeaComponentRef;
-import io.reliza.model.tea.TeaComponentReleaseWithCollection;
-import io.reliza.model.tea.TeaDiscoveryInfo;
-import io.reliza.model.RearmIdentifier;
-import io.reliza.model.RearmIdentifierType;
+import io.reliza.model.tea.TeaComponentRelease;
 import io.reliza.model.tea.TeaIdentifier;
 import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaProductRelease;
-import io.reliza.model.tea.TeaRelease;
 import io.reliza.model.tea.TeaReleaseDistribution;
-import io.reliza.model.tea.TeaTeaServerInfo;
-import io.reliza.service.AcollectionService;
-import io.reliza.service.ArtifactService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetDeliverableService;
 import io.reliza.service.SharedReleaseService;
-import io.reliza.service.UserService;
+import io.reliza.service.TeaPublicationService;
+import io.reliza.service.TeaPublicationService.TeaPublicationState;
 import io.reliza.service.VariantService;
-import io.reliza.ws.RelizaConfigProps;
+import io.reliza.ws.tea.TeaJson;
 import lombok.extern.slf4j.Slf4j;
 
+/**
+ * Renders TEA 1.0.0 objects (task TEA-6): products and components from live naming, product and
+ * component releases from a publication head plus live naming, distributions from outbound
+ * deliverables, and CLE documents. Collections are never rendered here: they are served as TEA-5
+ * stored them.
+ */
 @Slf4j
 @Service
 public class TeaTransformerService {
-	
+
+	/** The namespace of the name-based distribution ids: stable, and never an internal uuid on the wire. */
+	static final String DISTRIBUTION_ID_NAMESPACE = "rearm-tea-distribution:";
+	private static final Pattern HEX_DIGEST = Pattern.compile("^[0-9a-f]{40,128}$");
+
 	@Autowired
 	private SharedReleaseService sharedReleaseService;
-	
-	@Autowired
-	private ArtifactService artifactService;
-	
+
 	@Autowired
 	private GetComponentService getComponentService;
-	
-	@Autowired
-	private AcollectionService acollectionService;
-	
+
 	@Autowired
 	private VariantService variantService;
-	
+
 	@Autowired
 	private GetDeliverableService getDeliverableService;
 
-	private RelizaConfigProps relizaConfigProps;
-	
 	@Autowired
-    public void setProps(RelizaConfigProps relizaConfigProps) {
-        this.relizaConfigProps = relizaConfigProps;
-    }
-    
+	private TeaPublicationService teaPublicationService;
+
 	/**
 	 * TEA-boundary filter: keep only identifiers whose type name exists in the
 	 * code-generated {@link TeaIdentifierType} (CPE/TEI/PURL/COMPLIANCE_DOCUMENT);
@@ -131,167 +123,164 @@ public class TeaTransformerService {
 		return out;
 	}
 
-	public TeaProduct transformProductToTea(ComponentData rearmCD) {
-		if (rearmCD.getType() != ComponentType.PRODUCT) {
-			throw new RuntimeException("Wrong component type");
+	/** {@link #toTeaIdentifiers} without COMPLIANCE_DOCUMENT, which is valid on components and component releases only. */
+	static List<TeaIdentifier> withoutComplianceDocuments(List<TeaIdentifier> ids) {
+		return new ArrayList<>(ids.stream().filter(i -> TeaIdentifierType.COMPLIANCE_DOCUMENT != i.getIdType()).toList());
+	}
+
+	public TeaProduct transformProductToTea(ComponentData cd) {
+		if (cd.getType() != ComponentType.PRODUCT) {
+			throw new IllegalArgumentException("Wrong component type");
 		}
 		TeaProduct tp = new TeaProduct();
-		tp.setUuid(rearmCD.getUuid());
-		tp.setName(rearmCD.getName());
-		tp.setIdentifiers(toTeaIdentifiers(rearmCD.getIdentifiers()));
+		tp.setUuid(cd.getTeaUuid());
+		tp.setName(cd.getName());
+		tp.setIdentifiers(withoutComplianceDocuments(toTeaIdentifiers(cd.getIdentifiers())));
 		return tp;
 	}
-	
-	public TeaProductRelease transformProductReleaseToTea (ReleaseData rd) {
-		UUID productUuid = rd.getComponent();
-		ComponentData cd = getComponentService.getComponentData(productUuid).get();
-		TeaProductRelease tpr = new TeaProductRelease();
-		if (cd.getType() == ComponentType.COMPONENT) {
-			TeaComponentRef tcr = new TeaComponentRef();
-			tcr.setUuid(cd.getUuid());
-			tcr.setRelease(rd.getUuid());
-			tpr.setComponents(List.of(tcr));
-		} else if (cd.getType() == ComponentType.PRODUCT) {
-			tpr.setComponents(rd.getParentReleases().stream().map(pr -> transformParentReleaseToComponentRef(pr)).toList());	
-		} else {
-			throw new RuntimeException("Wrong component type");
-		}
-		tpr.setUuid(rd.getUuid());
-		OffsetDateTime releaseDate = rd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
-		tpr.setCreatedDate(releaseDate);
-		tpr.setReleaseDate(releaseDate); // TODO (consider using date when release set to shipped or assembled - potentially make configurable)
-		tpr.setIdentifiers(toTeaIdentifiers(rd.getIdentifiers()));
-		tpr.setPreRelease(false);
-		tpr.setProduct(productUuid);
-		tpr.setProductName(cd.getName());
-		tpr.setVersion(rd.getVersion());
-		return tpr;
-	}
-	
-	private TeaComponentRef transformParentReleaseToComponentRef(ParentRelease pr) {
-		TeaComponentRef tcr = new TeaComponentRef();
-		ReleaseData rearmRd = sharedReleaseService.getReleaseData(pr.getRelease()).get();
-		tcr.setUuid(rearmRd.getComponent());
-		tcr.setRelease(pr.getRelease());
-		return tcr;
-	}
-	
-	public TeaComponent transformComponentToTea(ComponentData rearmCD) {
-		if (rearmCD.getType() != ComponentType.COMPONENT) {
-			throw new RuntimeException("Wrong component type");
+
+	public TeaComponent transformComponentToTea(ComponentData cd) {
+		if (cd.getType() != ComponentType.COMPONENT) {
+			throw new IllegalArgumentException("Wrong component type");
 		}
 		TeaComponent tc = new TeaComponent();
-		tc.setUuid(rearmCD.getUuid());
-		tc.setName(rearmCD.getName());
-		tc.setIdentifiers(toTeaIdentifiers(rearmCD.getIdentifiers()));
+		tc.setUuid(cd.getTeaUuid());
+		tc.setName(cd.getName());
+		tc.setIdentifiers(new ArrayList<>(toTeaIdentifiers(cd.getIdentifiers())));
 		return tc;
 	}
-	
-	public TeaRelease transformReleaseToTea(ReleaseData rearmRD) {
-		TeaRelease tr = new TeaRelease();
-		tr.setUuid(rearmRD.getUuid());
-		tr.setVersion(rearmRD.getVersion());
-		tr.setPreRelease(false);
-		OffsetDateTime releaseDate = rearmRD.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
-		tr.setReleaseDate(releaseDate); // TODO consider separate release date
-		tr.setCreatedDate(releaseDate);
-		tr.setIdentifiers(toTeaIdentifiers(rearmRD.getIdentifiers()));
-		ComponentData cd = getComponentService.getComponentData(rearmRD.getComponent()).get();
-		tr.setComponent(rearmRD.getComponent());
-		tr.setComponentName(cd.getName());
-		var distributions = gatherDistributionsPerRelease(rearmRD);
-		tr.setDistributions(distributions);
-		return tr;
+
+	/** A UTC instant truncated to seconds. */
+	static OffsetDateTime utcSeconds(ZonedDateTime z) {
+		return null == z ? null : z.toOffsetDateTime().withOffsetSameInstant(ZoneOffset.UTC).truncatedTo(ChronoUnit.SECONDS);
 	}
-	
-	private List<TeaReleaseDistribution> gatherDistributionsPerRelease(ReleaseData rearmRD) {
-		List<TeaReleaseDistribution> distributions = new LinkedList<>();
-		var vd = variantService.getBaseVariantForRelease(rearmRD);
-		if (null != vd.getOutboundDeliverables() && !vd.getOutboundDeliverables().isEmpty()) {
-			for (UUID delUuid : vd.getOutboundDeliverables()) {
-				var deliverableData = getDeliverableService
-											.getDeliverableData(delUuid)
-											.get();
-				var trd = transformDeliverableToTeaDistribution(deliverableData);
-				distributions.add(trd);
-			}
-		}
-		return distributions;
+
+	/** When the release was created in TEA: its first publish; the release's creation for a head that lacks one. */
+	static OffsetDateTime createdInTea(TeaPublicationData head, ReleaseData rd) {
+		return utcSeconds(null != head.getFirstPublishedDate() ? head.getFirstPublishedDate() : rd.getCreatedDate());
 	}
-	
-	private TeaReleaseDistribution transformDeliverableToTeaDistribution (DeliverableData dd) {
-		TeaReleaseDistribution trd = new TeaReleaseDistribution();
-		trd.setDescription(dd.getNotes());
-		trd.setIdentifiers(toTeaIdentifiers(dd.getIdentifiers()));
-		if (null != dd.getSoftwareMetadata()) {
-			var tcList = transformDigestRecordToTeaChecksum(dd.getSoftwareMetadata().getDigestRecords());
-			trd.setChecksums(tcList);
-			var downloadLinks = dd.getSoftwareMetadata().getDownloadLinks();
-			if (null != downloadLinks && !downloadLinks.isEmpty()) {
-				trd.setUrl(downloadLinks.iterator().next().getUri());
-			}
-		}
-		// trd.setDistributionType(dd.getSoftwareMetadata().getPackageType()); TODO + refer to https://github.com/CycloneDX/transparency-exchange-api/issues/198
-		// trd.setSignatureUrl(); // TODO
-		return trd;
+
+	public TeaProductRelease transformProductReleaseToTea(TeaPublicationData head, ReleaseData rd, ComponentData cd,
+			List<TeaComponentRef> components) {
+		TeaProductRelease tpr = new TeaProductRelease();
+		tpr.setUuid(head.getUuid());
+		tpr.setProduct(cd.getTeaUuid());
+		tpr.setProductName(cd.getName());
+		tpr.setVersion(rd.getVersion());
+		tpr.setCreatedDate(createdInTea(head, rd));
+		tpr.setReleaseDate(utcSeconds(rd.getCreatedDate()));
+		tpr.setPreRelease(null);
+		tpr.setIdentifiers(releaseIdentifiers(head, rd, false));
+		tpr.setComponents(null == components ? new ArrayList<>() : new ArrayList<>(components));
+		return tpr;
 	}
-	
-	public TeaComponentReleaseWithCollection transformComponentReleaseWithCollectionToTea(ReleaseData rearmRD) {
-		TeaComponentReleaseWithCollection tcr = new TeaComponentReleaseWithCollection();
-		TeaRelease tr = transformReleaseToTea(rearmRD);
-		tcr.setRelease(tr);
-		var acd = acollectionService.getLatestCollectionDataOfRelease(rearmRD.getUuid());
-		var teaAcd = transformAcollectionToTea(acd);
-		tcr.setLatestCollection(teaAcd);
+
+	public TeaComponentRelease transformComponentReleaseToTea(TeaPublicationData head, ReleaseData rd, ComponentData cd) {
+		TeaComponentRelease tcr = new TeaComponentRelease();
+		tcr.setUuid(head.getUuid());
+		tcr.setComponent(cd.getTeaUuid());
+		tcr.setComponentName(cd.getName());
+		tcr.setVersion(rd.getVersion());
+		tcr.setCreatedDate(createdInTea(head, rd));
+		tcr.setReleaseDate(utcSeconds(rd.getCreatedDate()));
+		tcr.setPreRelease(null);
+		tcr.setIdentifiers(releaseIdentifiers(head, rd, true));
+		tcr.setDistributions(distributionsOf(rd));
 		return tcr;
 	}
-	
-	public List<TeaDiscoveryInfo> performTeiDiscovery (String decodedTei) {
-		Set<UUID> foundReleases = new LinkedHashSet<>();
-		var releasesByTei = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, RearmIdentifierType.TEI, decodedTei); // TODO handle other orgs
-		if (!releasesByTei.isEmpty()) foundReleases.addAll(releasesByTei.stream().map(x -> x.getUuid()).toList());
-		if (foundReleases.isEmpty()) {
-			String[] teiEls = decodedTei.split(":");
-			if ("uuid".equals(teiEls[2])) {
-				String uuidStr = teiEls[teiEls.length - 1];
-				UUID releaseUuid = UUID.fromString(uuidStr);
-				var optRelease = sharedReleaseService.getRelease(releaseUuid, UserService.USER_ORG); // TODO handle other orgs
-				if (optRelease.isPresent()) foundReleases.add(releaseUuid);
-			} else if ("purl".equals(teiEls[2])) {
-				StringBuilder purlBuilder = new StringBuilder();
-				boolean foundPurlStart = false;
-				for (int i = 4; i < teiEls.length; i++) {
-					if (!foundPurlStart && "pkg".equals(teiEls[i])) foundPurlStart = true;
-					if (foundPurlStart) {
-						purlBuilder.append(teiEls[i]);
-						if (i < teiEls.length - 1) purlBuilder.append(":");
-					}
-				}
-				String purl = purlBuilder.toString();
-				var releasesByPurl = sharedReleaseService.findReleasesByOrgAndIdentifier(UserService.USER_ORG, RearmIdentifierType.PURL, purl); // TODO handle other orgs
-				if (!releasesByPurl.isEmpty()) foundReleases.addAll(releasesByPurl.stream().map(x -> x.getUuid()).toList());
-			}
-		}
 
-		List<TeaDiscoveryInfo> teaDiscoveryList = new LinkedList<>();
-		if (!foundReleases.isEmpty()) {
-			teaDiscoveryList = foundReleases.stream().map(x -> convertReleaseUuidToTdi(x)).toList();
+	/**
+	 * The stamped TEI first (TEA-5), then the release's TEA identifiers: COMPLIANCE_DOCUMENT only
+	 * where allowed, and never a second copy of the stamped TEI.
+	 */
+	public List<TeaIdentifier> releaseIdentifiers(TeaPublicationData head, ReleaseData rd, boolean complianceDocumentsAllowed) {
+		List<TeaIdentifier> out = new ArrayList<>();
+		String stamped = null == head ? null : head.getTei();
+		if (StringUtils.isNotEmpty(stamped)) out.add(new TeaIdentifier(TeaIdentifierType.TEI, stamped));
+		List<TeaIdentifier> own = toTeaIdentifiers(rd.getIdentifiers());
+		if (!complianceDocumentsAllowed) own = withoutComplianceDocuments(own);
+		for (TeaIdentifier i : own) {
+			if (TeaIdentifierType.TEI == i.getIdType() && null != stamped && stamped.equals(i.getIdValue())) continue;
+			out.add(i);
 		}
-		return teaDiscoveryList;
+		return out;
 	}
-	
-	private TeaDiscoveryInfo convertReleaseUuidToTdi (UUID releaseUuid) {
-		TeaDiscoveryInfo tdi = new TeaDiscoveryInfo();
-		tdi.setProductReleaseUuid(releaseUuid);
-		TeaTeaServerInfo ttsi = new TeaTeaServerInfo();
-		ttsi.setRootUrl(URI.create(getServerBaseUri()));
-		ttsi.setVersions(List.of("0.4.0"));
-		ttsi.setPriority((float) 1.0);
-		tdi.setServers(List.of(ttsi));
-		return tdi;
+
+	/**
+	 * The components of a product release: one ref per parent release of the product's own
+	 * organization whose component has a TEA id, pinned to the child's release only when that
+	 * child's head is PUBLISHED and {@code served} answers true for it. A product never points a
+	 * reader at a release the reader is refused.
+	 */
+	public List<TeaComponentRef> componentRefs(ReleaseData rd, ComponentData product, Predicate<TeaPublicationData> served) {
+		List<TeaComponentRef> out = new ArrayList<>();
+		if (null == rd.getParentReleases()) return out;
+		for (ParentRelease pr : rd.getParentReleases()) {
+			if (null == pr || null == pr.getRelease()) continue;
+			Optional<ReleaseData> child = sharedReleaseService.getReleaseData(pr.getRelease());
+			if (child.isEmpty()) continue;
+			Optional<ComponentData> childCd = getComponentService.getComponentData(child.get().getComponent());
+			if (childCd.isEmpty() || !product.getOrg().equals(childCd.get().getOrg())) continue;
+			if (null == childCd.get().getTeaUuid()) {
+				log.debug("TEA product release {}: child release {} has no TEA component id yet; skipped", rd.getUuid(),
+						child.get().getUuid());
+				continue;
+			}
+			TeaComponentRef ref = new TeaComponentRef(childCd.get().getTeaUuid());
+			teaPublicationService.getPublicationOfRelease(child.get().getUuid())
+					.filter(h -> TeaPublicationState.PUBLISHED == h.getState() && served.test(h))
+					.ifPresent(h -> ref.setRelease(h.getUuid()));
+			out.add(ref);
+		}
+		return out;
 	}
-	
-	private TeaArtifactType transformArtifactTypeToTea (ArtifactType rearmAT) {
+
+	/** The distributions of a release, from its base variant's outbound deliverables; null when there are none. */
+	public List<TeaReleaseDistribution> distributionsOf(ReleaseData rd) {
+		VariantData vd = variantService.getBaseVariantForRelease(rd);
+		if (null == vd || null == vd.getOutboundDeliverables() || vd.getOutboundDeliverables().isEmpty()) return null;
+		List<TeaReleaseDistribution> out = new ArrayList<>();
+		for (UUID del : vd.getOutboundDeliverables()) {
+			getDeliverableService.getDeliverableData(del).ifPresent(dd -> out.add(distributionOf(dd)));
+		}
+		return out.isEmpty() ? null : out;
+	}
+
+	static UUID distributionIdOf(UUID deliverable) {
+		return UUID.nameUUIDFromBytes((DISTRIBUTION_ID_NAMESPACE + deliverable).getBytes(StandardCharsets.UTF_8));
+	}
+
+	private TeaReleaseDistribution distributionOf(DeliverableData dd) {
+		TeaReleaseDistribution trd = new TeaReleaseDistribution(distributionIdOf(dd.getUuid()));
+		trd.setDescription(StringUtils.isEmpty(dd.getNotes()) ? null : dd.getNotes());
+		List<TeaIdentifier> ids = toTeaIdentifiers(dd.getIdentifiers());
+		trd.setIdentifiers(ids.isEmpty() ? null : new ArrayList<>(ids));
+		trd.setChecksums(null);
+		trd.setSignatureUrl(null);
+		if (null != dd.getSoftwareMetadata()) {
+			List<TeaChecksum> checksums = new ArrayList<>();
+			for (TeaChecksum c : transformDigestRecordToTeaChecksum(dd.getSoftwareMetadata().getDigestRecords())) {
+				String v = null == c.getAlgValue() ? "" : c.getAlgValue().toLowerCase(Locale.ROOT);
+				if (!HEX_DIGEST.matcher(v).matches()) continue;
+				checksums.add(new TeaChecksum(c.getAlgType(), v));
+			}
+			trd.setChecksums(checksums.isEmpty() ? null : checksums);
+			List<Link> links = dd.getSoftwareMetadata().getDownloadLinks();
+			if (null != links && !links.isEmpty() && null != links.get(0)) trd.setUrl(admittedUri(links.get(0).getUri()));
+		}
+		return trd;
+	}
+
+	/**
+	 * The link as a URI when TeaExternalUrl admits it (an absolute http(s) RFC 3986 URI, no user information, at
+	 * most 4096 octets), else null; no trim (task TEA-19). Nothing is logged: this is a served read.
+	 */
+	static URI admittedUri(String link) {
+		return null == link || TeaExternalUrl.problemOf(link).isPresent() ? null : URI.create(link);
+	}
+
+	/** The TEA artifact type of a ReARM artifact type; public for the publication engine (task TEA-5). */
+	public static TeaArtifactType transformArtifactTypeToTea (ArtifactType rearmAT) {
 		TeaArtifactType tat = null;
 		
 		switch (rearmAT) {
@@ -348,7 +337,8 @@ public class TeaTransformerService {
 		return tat;
 	}
 	
-	private String resolveMediaType(BomFormat bomFormat, String initialType) {
+	/** The media type TEA announces for an artifact's stored media type tag; public for the publication engine (task TEA-5). */
+	public static String resolveMediaType(BomFormat bomFormat, String initialType) {
 		String resolvedType;
 		if ("application/json".equals(initialType) && bomFormat == BomFormat.CYCLONEDX) {
 			resolvedType = "vnd.cyclonedx+json";
@@ -359,7 +349,7 @@ public class TeaTransformerService {
 		}
 		return resolvedType;
 	}
-	
+
 	/**
 	 * The checksums TEA publishes for one artifact format.
 	 *
@@ -371,77 +361,25 @@ public class TeaTransformerService {
 	 * sha256 values for one file and no way to choose. So the stronger claim wins outright.
 	 *
 	 * <p>Artifacts uploaded before retention, externally-stored artifacts and deliverables have
-	 * no AS_UPLOADED record and are published exactly as they were.
+	 * no AS_UPLOADED record and are published exactly as they were. A digest TEA 1.0.0 cannot
+	 * express (MD5) is dropped.
 	 */
 	private List<TeaChecksum> transformDigestRecordToTeaChecksum (Collection<DigestRecord> digestRecords) {
 		List<TeaChecksum> tcList = new LinkedList<>();
 		if (null != digestRecords && !digestRecords.isEmpty()) {
 			boolean hasAsUploaded = digestRecords.stream().anyMatch(d -> d.scope() == DigestScope.AS_UPLOADED);
 			DigestScope publishScope = hasAsUploaded ? DigestScope.AS_UPLOADED : DigestScope.ORIGINAL_FILE;
-			digestRecords.stream().filter(d -> d.scope() == publishScope).forEach(d -> {
-				TeaChecksum tc = new TeaChecksum();
-				tc.setAlgType(d.algo());
-				tc.setAlgValue(d.digest());
-				tcList.add(tc);
-			});
+			digestRecords.stream().filter(d -> d.scope() == publishScope && null != d.algo()).forEach(d ->
+				d.algo().toTea().ifPresent(t -> {
+					TeaChecksum tc = new TeaChecksum();
+					tc.setAlgType(t);
+					tc.setAlgValue(d.digest());
+					tcList.add(tc);
+				}));
 		}
 		return tcList;
 	}
-	
-	public TeaArtifact transformArtifactToTea(ArtifactData rearmAD) {
-		TeaArtifact ta = new TeaArtifact();
-		ta.setUuid(rearmAD.getUuid());
-		TeaArtifactType tat = transformArtifactTypeToTea(rearmAD.getType());
-		ta.setType(tat);
-		String name = StringUtils.isNotEmpty(rearmAD.getDisplayIdentifier()) ? rearmAD.getDisplayIdentifier() : rearmAD.getUuid().toString();  
-		ta.setName(name);
 
-		List<TeaArtifactFormat> tafList = new LinkedList<>();
-		if (rearmAD.getStoredIn() == StoredIn.REARM) {
-			TeaArtifactFormat taf = new TeaArtifactFormat();
-			String bomFormatDisplay = (rearmAD.getBomFormat() != null) ? rearmAD.getBomFormat().toString() + " " : "";
-			taf.setDescription(String.format("%s%s Raw Artifact as Uploaded", bomFormatDisplay, rearmAD.getType()));
-			var mediaTypeTag = rearmAD.getTags().stream().filter(t -> CommonVariables.MEDIA_TYPE_FIELD.equals(t.key())).findAny();
-			if (mediaTypeTag.isPresent()) taf.setMediaType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
-			taf.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + rearmAD.getUuid());
-			Optional<ArtifactData> optSignatureAD = artifactService.getArtifactSignature(rearmAD);
-			if (optSignatureAD.isPresent()) {
-				taf.setSignatureUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/raw/" + optSignatureAD.get().getUuid());
-			} else taf.setSignatureUrl(null);
-			var tcList = transformDigestRecordToTeaChecksum(rearmAD.getDigestRecords());
-			taf.setChecksums(tcList);
-			tafList.add(taf);
-			
-			if (rearmAD.getType() == ArtifactType.BOM && rearmAD.getBomFormat() == BomFormat.CYCLONEDX) {
-				TeaArtifactFormat tafAugmented = new TeaArtifactFormat();
-				tafAugmented.setDescription("CycloneDX BOM Artifact Augmented by Rebom");
-				if (mediaTypeTag.isPresent()) tafAugmented.setMediaType(resolveMediaType(rearmAD.getBomFormat(), mediaTypeTag.get().value()));
-				tafAugmented.setUrl(relizaConfigProps.getBaseuri() + "/downloadArtifact/augmented/" + rearmAD.getUuid());
-				tafAugmented.setSignatureUrl(null); // TODO
-				tafList.add(tafAugmented);
-			}
-		} else {
-			for (var dlink : rearmAD.getDownloadLinks()) {
-				TeaArtifactFormat taf = new TeaArtifactFormat();
-				taf.setDescription("External Artifact");
-				taf.setMediaType(resolveMediaType(rearmAD.getBomFormat(), dlink.getContent().getContentString()));
-				List<TeaChecksum> tcList = new LinkedList<>();
-				rearmAD.getDigestRecords().stream().filter(d -> d.scope() == DigestScope.ORIGINAL_FILE).forEach(d -> {
-					TeaChecksum tc = new TeaChecksum();
-					tc.setAlgType(d.algo());
-					tc.setAlgValue(d.digest());
-					tcList.add(tc);	
-				});
-				taf.setChecksums(tcList);
-				taf.setUrl(dlink.getUri());
-				taf.setSignatureUrl(null); // TODO
-				tafList.add(taf);
-			}
-		}
-		ta.setFormats(tafList);
-		return ta;
-	}
-	
 	/**
 	 * Single-release CLE: events derived from this release's own LIFECYCLE
 	 * updateEvents, plus a synthetic {@code released} when the release was
@@ -457,7 +395,7 @@ public class TeaTransformerService {
 		// Single release scope — no minute-merging across releases. Just
 		// renumber + sort newest-first by effective.
 		renumberAndSortNewestFirst(events);
-		return new TeaCle(events);
+		return withoutEmptyOptionalLists(new TeaCle(events));
 	}
 
 	/**
@@ -476,8 +414,12 @@ public class TeaTransformerService {
 		return transformComponentOrProductToCle(cd);
 	}
 
+	/**
+	 * The internal export's derivation: every release of the component (the GraphQL
+	 * {@code exportComponentCleManual}). The TEA endpoints use the overload over the releases
+	 * served to the caller instead.
+	 */
 	private TeaCle transformComponentOrProductToCle(ComponentData cd) {
-		List<TeaCleEvent> all = new ArrayList<>();
 		// Was 300, which silently dropped the OLDEST releases -- exactly the ones
 		// carrying end-of-support/end-of-life history -- while presenting the result as
 		// a complete document.
@@ -495,6 +437,16 @@ public class TeaTransformerService {
 		// the quadratic versions[] dedupe in mergeNonReleasedByMinute, which this cap was
 		// previously masking.
 		List<ReleaseData> releases = sharedReleaseService.listReleaseDatasOfComponent(cd.getUuid(), 100000, 0);
+		return transformComponentOrProductToCle(cd, releases);
+	}
+
+	/**
+	 * Component- or product-level CLE over the given releases only (task TEA-6): the TEA
+	 * {@code /product/{uuid}/cle} and {@code /component/{uuid}/cle} pass the releases of the heads
+	 * served to the caller, so a release the caller may not see contributes no event.
+	 */
+	public TeaCle transformComponentOrProductToCle(ComponentData cd, List<ReleaseData> releases) {
+		List<TeaCleEvent> all = new ArrayList<>();
 		ReleaseScheme scheme = ReleaseScheme.ofVersionSchema(cd.getVersionSchema());
 		for (ReleaseData rd : releases) {
 			List<TeaCleEvent> candidates = buildReleaseCleCandidates(rd, scheme);
@@ -505,7 +457,7 @@ public class TeaTransformerService {
 		rangeContiguousVersions(merged, VersRanges.releaseOrder(scheme,
 				releases.stream().map(ReleaseData::getVersion).toList()));
 		renumberAndSortNewestFirst(merged);
-		return new TeaCle(merged);
+		return withoutEmptyOptionalLists(new TeaCle(merged));
 	}
 
 	/**
@@ -850,6 +802,9 @@ public class TeaTransformerService {
 	 * document. Used by the {@code exportComponentCleManual} /
 	 * {@code exportReleaseCleManual} GraphQL queries.
 	 *
+	 * <p>The events are written with {@link TeaJson#MAPPER}: nulls left out and every instant a
+	 * UTC date-time with the Z designator, which the generated models no longer carry as annotations.
+	 *
 	 * @param cle the events container produced by {@code transform*ToCle}
 	 * @param identifiers PURL identifiers for the component this document
 	 *                    describes; may be null/empty (then the field is
@@ -874,9 +829,9 @@ public class TeaTransformerService {
 		// "2026-09-02T10:15Z" -- valid ISO-8601 but NOT RFC-3339, failing date-time
 		// schema validation intermittently.
 		root.put("updatedAt", Instant.now().truncatedTo(ChronoUnit.SECONDS).toString());
-		root.set("events", io.reliza.common.Utils.OM.valueToTree(cle.getEvents()));
+		root.set("events", TeaJson.MAPPER.valueToTree(cle.getEvents()));
 		if (cle.getDefinitions() != null) {
-			root.set("definitions", io.reliza.common.Utils.OM.valueToTree(cle.getDefinitions()));
+			root.set("definitions", TeaJson.MAPPER.valueToTree(cle.getDefinitions()));
 		}
 		return root;
 	}
@@ -895,34 +850,16 @@ public class TeaTransformerService {
 		for (TeaCleEvent ev : events) ev.setId(id++);
 	}
 
-	public TeaCollection transformAcollectionToTea(AcollectionData acd) {
-		TeaCollection tc = new TeaCollection();
-		tc.setUuid(acd.getRelease());
-		Integer cVersion = acd.getVersion().intValue();
-		tc.setVersion(cVersion);
-		TeaCollectionUpdateReason tcur = new TeaCollectionUpdateReason();
-		tcur.setType(acd.getUpdateReason());
-		tc.setUpdateReason(tcur);
-		OffsetDateTime collectionDate = acd.getCreatedDate().toOffsetDateTime().truncatedTo(ChronoUnit.SECONDS);
-		tc.setDate(collectionDate);
-		List<TeaArtifact> teaArtifacts = acd.getArtifacts().stream().map(x -> {
-			Optional<ArtifactData> oad = artifactService.getArtifactData(x.artifactUuid());
-			if (oad.isEmpty() || !acd.getOrg().equals(oad.get().getOrg())) {
-				log.error("Mismatching org: ace uuid = " + acd.getUuid() + ", art UUID = " + x.artifactUuid());
-				throw new IllegalStateException("Incorrect Artifact Data, Please contact administrator");
-			}
-			return transformArtifactToTea(oad.get());
-		}).toList();
-		tc.setArtifacts(teaArtifacts);
-		ReleaseData rd = sharedReleaseService.getReleaseData(acd.getRelease()).get();
-		ComponentData cd = getComponentService.getComponentData(rd.getComponent()).get();
-		TeaCollectionBelongsToType belongsToType = (cd.getType() == ComponentType.COMPONENT) ? TeaCollectionBelongsToType.COMPONENT_RELEASE : TeaCollectionBelongsToType.PRODUCT_RELEASE;
-		tc.setBelongsTo(belongsToType);
-		return tc;
+	/**
+	 * CLE says to omit fields that do not belong to an event's type, and the generated model starts
+	 * every list empty: an empty {@code versions}, {@code identifiers} or {@code references} is left out.
+	 */
+	static TeaCle withoutEmptyOptionalLists(TeaCle cle) {
+		for (TeaCleEvent ev : cle.getEvents()) {
+			if (null != ev.getVersions() && ev.getVersions().isEmpty()) ev.setVersions(null);
+			if (null != ev.getIdentifiers() && ev.getIdentifiers().isEmpty()) ev.setIdentifiers(null);
+			if (null != ev.getReferences() && ev.getReferences().isEmpty()) ev.setReferences(null);
+		}
+		return cle;
 	}
-	
-	public String getServerBaseUri() {
-		return relizaConfigProps.getBaseuri() + "/tea";
-	}
-    
 }

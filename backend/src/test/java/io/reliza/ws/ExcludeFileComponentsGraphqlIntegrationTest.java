@@ -30,7 +30,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import io.reliza.common.Utils;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.RebomService.BomMediaType;
 import io.reliza.service.ReleaseRebomService;
 import io.reliza.service.SharedReleaseService;
@@ -115,7 +115,7 @@ class ExcludeFileComponentsGraphqlIntegrationTest extends SbomScoreGraphqlTestBa
 		return values;
 	}
 
-	private RebomOptions lastMergeRequest() {
+	private RebomOptions lastMergeRequest() throws Exception {
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
 		verify(rebomService, times(1)).mergeAndStoreBoms(anyList(), sent.capture(), any());
 		return sent.getValue();

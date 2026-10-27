@@ -14,16 +14,13 @@ import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
-import java.util.concurrent.atomic.AtomicInteger;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.exceptions.RelizaException;
-import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentData;
 import io.reliza.model.AgentSessionData;
@@ -32,24 +29,14 @@ import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.StatusChange;
 import io.reliza.model.AgentTaskData.StatusTrigger;
 import io.reliza.model.AgentTaskData.TaskStatus;
-import io.reliza.model.AgentTaskInput.InputScope;
-import io.reliza.model.AgentTaskRoleConfigData.ProducedOutput;
-import io.reliza.model.AgentTaskRoleConfigData.RoleNecessity;
-import io.reliza.model.Component;
-import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.Organization;
 import io.reliza.model.RearmSpecificationType;
 import io.reliza.model.SessionUsageSource;
-import io.reliza.model.WhoUpdated;
-import io.reliza.repositories.AgentBoardRepository;
-import io.reliza.repositories.AgentSessionRepository;
 import io.reliza.service.AgentDocumentService.PublishRequest;
 import io.reliza.service.AgentSessionUsageService.UsageLine;
 import io.reliza.service.AgentSessionUsageService.UsageReport;
 import io.reliza.service.DeclarativeConfigService.Action;
 import io.reliza.service.DeclarativeConfigService.ApplyResult;
 import io.reliza.ws.App;
-import io.reliza.ws.oss.TestInitializer;
 
 /**
  * Stale work on a board (task RD3-4): each rule from fixtures, on and off by its threshold; the
@@ -59,109 +46,7 @@ import io.reliza.ws.oss.TestInitializer;
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
-public class AgentBoardStalenessTest {
-
-	@Autowired private TestInitializer testInitializer;
-	@Autowired private AgentBoardService agentBoardService;
-	@Autowired private AgentTaskService agentTaskService;
-	@Autowired private AgentDocumentService agentDocumentService;
-	@Autowired private AgentService agentService;
-	@Autowired private AgentSessionService agentSessionService;
-	@Autowired private AgentSessionUsageService usageService;
-	@Autowired private ComponentService componentService;
-	@Autowired private BoardStalenessService staleness;
-	@Autowired private AgentBoardRepository boardRepository;
-	@Autowired private AgentSessionRepository sessionRepository;
-
-	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
-	private static final String DOCS = "https://github.com/acme/stale-docs";
-	private static final AgentActor COORD = AgentActor.ofSession(UUID.randomUUID());
-	private static final AgentActor PERSON = AgentActor.ofUser(UUID.randomUUID(), "ops@acme.example");
-	private static final AtomicInteger SEQ = new AtomicInteger(1);
-
-	private record Rig(Organization org, String target, AgentBoardData board, AgentData a, AgentSessionData sa,
-			AgentData b, AgentSessionData sb) {}
-
-	/** A reviewer that publishes review items, and a required coder; two agents with a session each. */
-	private Rig rig() throws RelizaException {
-		return rig(true);
-	}
-
-	private Rig rig(boolean withReviewer) throws RelizaException {
-		Organization org = testInitializer.obtainOrganization();
-		String targetName = "node_" + UUID.randomUUID();
-		Component target = componentService.createComponent(targetName, org.getUuid(),
-				ComponentType.PRODUCT, "semver", "Branch.Micro", null, WU);
-		AgentBoardData board = agentBoardService.createBoard(org.getUuid(), "stale-" + UUID.randomUUID(),
-				"staleness", List.of(), "coordinate", 4, null, target.getUuid(), null, WU);
-		if (withReviewer) {
-			agentBoardService.upsertRoleConfig(board, new AgentBoardService.RoleConfigSpec("reviewer", "review it", 10,
-					null, false, true, null, null, RoleNecessity.OPTIONAL, null, List.of(),
-					List.of(new ProducedOutput(RearmSpecificationType.BOARD_REVIEW_ITEMS, InputScope.TASK, false))), true, WU);
-		}
-		agentBoardService.upsertRoleConfig(board, new AgentBoardService.RoleConfigSpec("coder", "build it", 20,
-				null, false, true, null, null, RoleNecessity.REQUIRED, null, List.of(), List.of(), null, null), true, WU);
-		board = agentBoardService.setDocumentsConfig(board.getUuid(), DOCS, null, WU);
-		AgentData a = agentService.findOrRegisterRootAgent(org.getUuid(), UUID.randomUUID(), "sa-" + UUID.randomUUID(),
-				null, null, null, WU);
-		AgentData b = agentService.findOrRegisterRootAgent(org.getUuid(), UUID.randomUUID(), "sb-" + UUID.randomUUID(),
-				null, null, null, WU);
-		return new Rig(org, targetName, board, a, session(org, a), b, session(org, b));
-	}
-
-	private AgentSessionData session(Organization org, AgentData agent) throws RelizaException {
-		return agentSessionService.initialize(org.getUuid(), agent.getUuid(), null, "s-" + UUID.randomUUID(),
-				"session", null, null, WU);
-	}
-
-	private AgentBoardData board(Rig r) {
-		return agentBoardService.getBoardData(r.board().getUuid()).orElseThrow();
-	}
-
-	private AgentTaskData reload(AgentTaskData t) {
-		return agentTaskService.getTaskData(t.getUuid()).orElseThrow();
-	}
-
-	private AgentTaskData queued(Rig r, String role) throws RelizaException {
-		AgentTaskData t = agentTaskService.register(board(r), null, "stale " + UUID.randomUUID(), null, null, null,
-				null, null, null, PERSON, true, WU);
-		return agentTaskService.authorize(t.getUuid(), board(r), role, 10, null, null, null, null, COORD, WU);
-	}
-
-	private void setStaleness(Rig r, Map<String, Object> block) throws RelizaException {
-		Map<String, Object> settings = new LinkedHashMap<>();
-		settings.put("staleness", block);
-		agentBoardService.updateSettingsFromInput(r.board().getUuid(), settings, WU);
-	}
-
-	private static Map<String, Object> block(Object... kv) {
-		Map<String, Object> m = new LinkedHashMap<>();
-		for (int i = 0; i < kv.length; i += 2) m.put((String) kv[i], kv[i + 1]);
-		return m;
-	}
-
-	private List<BoardStalenessService.Breach> breaches(Rig r, ZonedDateTime at) {
-		AgentBoardData bd = board(r);
-		return staleness.breaches(bd, bd.getStaleness(), at);
-	}
-
-	private List<String> alerts(Rig r, String containing) {
-		return agentBoardService.recentEvents(r.board().getUuid()).stream()
-				.filter(e -> e.kind() == AgentBoardData.BoardEventKind.ALERT)
-				.map(AgentBoardData.BoardEvent::message).filter(m -> m.contains(containing)).toList();
-	}
-
-	private int boardRevision(Rig r) {
-		return boardRepository.findById(r.board().getUuid()).orElseThrow().getRevision();
-	}
-
-	private int sessionRevision(AgentSessionData s) {
-		return sessionRepository.findById(s.getUuid()).orElseThrow().getRevision();
-	}
-
-	private static ZonedDateTime in(int minutes) {
-		return ZonedDateTime.now().plusMinutes(minutes);
-	}
+public class AgentBoardStalenessTest extends AgentBoardStalenessTestBase {
 
 	// ---------- the hop rule ----------
 
@@ -238,6 +123,9 @@ public class AgentBoardStalenessTest {
 		// stays silent however long it waits. A registered PR's case is in AgentRegisteredPrsIntegrationTest.
 		assertTrue(breaches(r, in(60)).isEmpty());
 		assertTrue(breaches(r, in(121)).isEmpty(), "an unregistered PR is not in play");
+		AgentBoardData bd = board(r);
+		assertTrue(staleness.taskBreaches(bd, agentTaskService.listByBoard(bd.getUuid(), null), in(121)).isEmpty(),
+				"nor on the task's own marks (task TPF-69)");
 	}
 
 	// ---------- the seat rule ----------

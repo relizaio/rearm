@@ -62,7 +62,7 @@ import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.DeliverableService;

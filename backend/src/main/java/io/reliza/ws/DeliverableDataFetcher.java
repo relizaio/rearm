@@ -28,6 +28,7 @@ import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.common.TxUtils;
 import io.reliza.common.InputConversion;
 import io.reliza.exceptions.SbomUpdateNotPermittedException;
 import io.reliza.common.Utils;
@@ -245,7 +246,8 @@ public class DeliverableDataFetcher {
 			}
 		}
 
-		releaseService.reconcileMergedSbomRoutine(ord.get(), wu);
+		UUID reconcileReleaseUuid = ord.get().getUuid();
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(reconcileReleaseUuid, wu));
 
 		variantService.addOutboundDeliverables(deliverables, ovd.get().getUuid(), wu);
 

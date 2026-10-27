@@ -103,8 +103,9 @@ public class ArtifactAttachmentGuard {
 	 * artifact that contains it, transitively (breadth-first, each artifact visited once). The
 	 * direct holders of an artifact are the components of the releases listing it, in any
 	 * organization, so that a listing of another organization fails closed (a product release gives
-	 * the product), the branch component of each deliverable listing it (for a
-	 * deliverable without a branch, the component of every release reaching it through a variant),
+	 * the product), or in their synthetic list (TEA-4), the branch component of each deliverable
+	 * listing it (for a deliverable without a branch, the component of every release reaching it
+	 * through a variant),
 	 * and for each source code entry element naming it its componentUuid tag, or, when untagged, the
 	 * components of the organization's releases on that commit. An agent session gives no holder.
 	 *
@@ -159,6 +160,11 @@ public class ArtifactAttachmentGuard {
 	private boolean addDirectHolders(UUID org, UUID artifact, Set<UUID> holders) {
 		String artifactText = artifact.toString();
 		releaseRepository.findReleasesHoldingArtifact(artifactText)
+				.forEach(r -> addIfPresent(holders, ReleaseData.dataFromRecord(r).getComponent()));
+		// A generated row (TEA-4) is listed in a release's synthetic list only: its holder is the
+		// component of the release it was generated for, which is also the one component the engine's
+		// own authority writes (SyntheticArtifactService.SyntheticWriteAuthority).
+		releaseRepository.findReleasesBySyntheticArtifact(artifactText, org.toString())
 				.forEach(r -> addIfPresent(holders, ReleaseData.dataFromRecord(r).getComponent()));
 		boolean external = false;
 		for (var d : deliverableRepository.findDeliverablesByArtifact(artifactText)) {

@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anySet;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
@@ -1010,6 +1011,8 @@ class NotificationDataFetcherReadTest {
         UUID perspective = UUID.randomUUID();
         UserData ud = stubUser(orgUuid,
                 perm(orgUuid, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY));
+        // The perspective is live (task TEA-8: the arm is the live grants only).
+        when(authorizationService.livePerspectivesOfGrants(anySet(), eq(orgUuid))).thenReturn(List.of(perspective));
         // Gate passes on the non-empty perspective arm regardless of the
         // org-wide-read verdict; stub FORBIDDEN to prove that arm isn't
         // what's carrying this case.
@@ -1027,6 +1030,54 @@ class NotificationDataFetcherReadTest {
         verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), eq(false),
                 eq("{" + perspective + "}"), eq("{}"),
                 anyBoolean(), any(), any(), anyInt(), anyInt());
+    }
+
+    // Task TEA-8 (design round 3, T-4): the perspective arm is the caller's live perspective
+    // grants, AuthorizationService.livePerspectivesOfGrants; a grant on a deleted perspective
+    // neither reaches the visibility SQL nor opens the inbox.
+
+    @Test
+    void inboxPerspectiveArmUsesOnlyLivePerspectiveGrants() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID live = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+        stubUser(orgUuid,
+                perm(orgUuid, PermissionScope.PERSPECTIVE, live, PermissionType.READ_ONLY),
+                perm(orgUuid, PermissionScope.PERSPECTIVE, deleted, PermissionType.READ_ONLY));
+        when(authorizationService.livePerspectivesOfGrants(anySet(), eq(orgUuid))).thenReturn(List.of(live));
+        when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt())).thenReturn(List.of());
+        when(deliveryRepo.countInbox(eq(orgUuid), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any())).thenReturn(0L);
+
+        fetcher.getNotificationInbox(orgUuid, false, null, null, null, null, null);
+
+        ArgumentCaptor<String> userPerspectives = ArgumentCaptor.forClass(String.class);
+        verify(deliveryRepo).findInboxPage(eq(orgUuid), any(), anyBoolean(),
+                userPerspectives.capture(), any(), anyBoolean(), any(), any(), anyInt(), anyInt());
+        assertEquals(NotificationReadService.toPgUuidArrayLiteral(List.of(live)), userPerspectives.getValue());
+    }
+
+    @Test
+    void aDeadPerspectiveGrantAloneOpensNoInbox() throws Exception {
+        UUID orgUuid = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+        stubUser(orgUuid, perm(orgUuid, PermissionScope.PERSPECTIVE, deleted, PermissionType.READ_ONLY));
+        when(authorizationService.livePerspectivesOfGrants(anySet(), eq(orgUuid))).thenReturn(List.of());
+        // isUserAuthorizedOrgWide stays at the mock's default (null, not AUTHORIZED).
+
+        RelizaException inbox = assertThrows(RelizaException.class, () ->
+                fetcher.getNotificationInbox(orgUuid, false, null, null, null, null, null));
+        assertEquals("Not authorized", inbox.getMessage());
+        RelizaException unread = assertThrows(RelizaException.class, () ->
+                fetcher.getNotificationUnreadCount(orgUuid, null));
+        assertEquals("Not authorized", unread.getMessage());
+
+        verify(deliveryRepo, never()).findInboxPage(any(), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any(), anyInt(), anyInt());
+        verify(deliveryRepo, never()).countInbox(any(), any(), anyBoolean(), any(), any(),
+                anyBoolean(), any(), any());
+        verify(readService, never()).countUnread(any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
@@ -1203,6 +1254,7 @@ class NotificationDataFetcherReadTest {
         UserData ud = stubUser(orgUuid,
                 perm(orgUuid, PermissionScope.PERSPECTIVE, perspective, PermissionType.READ_ONLY));
         when(ud.getOrgPermissions(orgUuid)).thenReturn(Set.of());
+        when(authorizationService.livePerspectivesOfGrants(anySet(), eq(orgUuid))).thenReturn(List.of(perspective));
         when(authorizationService.isUserAuthorizedOrgWide(ud, orgUuid, CallType.READ))
                 .thenReturn(AuthorizationStatus.FORBIDDEN);
         when(deliveryRepo.findInboxPage(eq(orgUuid), any(), anyBoolean(), any(), any(),

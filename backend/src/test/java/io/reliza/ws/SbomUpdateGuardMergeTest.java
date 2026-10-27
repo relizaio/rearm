@@ -55,7 +55,7 @@ class SbomUpdateGuardMergeTest extends SbomUpdateGuardProgrammaticTestBase {
 	}
 
 	/** rebom merges into {@code merged}, stored at version 1 and recorded by no artifact. */
-	private void rebomMergesInto(UUID merged) {
+	private void rebomMergesInto(UUID merged) throws Exception {
 		rebom.storeWithoutArtifact(merged, 1, cdx(urn(merged), 1));
 		when(rebomService.mergeAndStoreBoms(anyList(), any(), any())).thenReturn(merged);
 	}

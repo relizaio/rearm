@@ -26,10 +26,10 @@ class OrientationInstallCliContractTest {
 
 	/**
 	 * The CLI floor of the whole orientation: rearm_cli_min, rearm_cli_recommended and the board verbs' minimum are all
-	 * this version (operator decision on the 26.10.2 bump). Change it here, in core.md's front-matter and in
-	 * install-cli.md together.
+	 * this version (operator decision on the 26.10.17 bump (TPF-111; 26.10.2 before it)). Change it here, in core.md's
+	 * front-matter and in install-cli.md together.
 	 */
-	static final String RD5_CLI_MIN = "26.10.2";
+	static final String RD5_CLI_MIN = "26.10.17";
 
 	/**
 	 * Task RD5-9: the board sections name the RD5 verbs, so install-cli names the CLI they need, and how to tell an
@@ -48,7 +48,7 @@ class OrientationInstallCliContractTest {
 	}
 
 	/**
-	 * The CLI bump to 26.10.2: the front-matter's {@code rearm_cli_min} and {@code rearm_cli_recommended} are the same
+	 * The CLI bump to 26.10.17: the front-matter's {@code rearm_cli_min} and {@code rearm_cli_recommended} are the same
 	 * version, the board verbs' floor; install-cli installs exactly it in every place it names one (heading, asset table,
 	 * snippet, release link, hashes, container); and no section names any other CLI version, as a floor or otherwise. A
 	 * bump that misses one place leaves an agent downloading one version and checking it against another's hashes, or

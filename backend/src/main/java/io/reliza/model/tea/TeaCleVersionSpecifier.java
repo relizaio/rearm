@@ -2,7 +2,6 @@ package io.reliza.model.tea;
 
 import java.net.URI;
 import java.util.Objects;
-import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
@@ -18,14 +17,12 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A version specifier that can be either a single version or a version range
+ * Which versions an event affects. Exactly one of &#x60;version&#x60; or &#x60;range&#x60;. &#x60;range&#x60; is an ECMA-428 version specification (&#x60;vers&#x60;). &#x60;version&#x60; names a single version without a &#x60;vers&#x60; scheme and is a TEA extension: it maps to &#x60;vers:&lt;scheme&gt;/&lt;version&gt;&#x60; when the ecosystem is known. 
  */
 
-@Schema(name = "cle-version-specifier", description = "A version specifier that can be either a single version or a version range")
+@Schema(name = "cle-version-specifier", description = "Which versions an event affects. Exactly one of `version` or `range`. `range` is an ECMA-428 version specification (`vers`). `version` names a single version without a `vers` scheme and is a TEA extension: it maps to `vers:<scheme>/<version>` when the ecosystem is known. ")
 @JsonTypeName("cle-version-specifier")
-// a range-only specifier (a run of releases) has no single version: leave the key out, not null
-@JsonInclude(JsonInclude.Include.NON_NULL)
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaCleVersionSpecifier {
 
   private @Nullable String version;

@@ -71,7 +71,7 @@ import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Link;
+import io.reliza.model.Link;
 import io.reliza.repositories.VersionAssignmentRepository;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.AuditService;
@@ -361,7 +361,12 @@ public class ReleaseArtifactAppendConcurrencyTest {
 						tx.execute(s -> {
 							// The fetcher's unlocked pre-read, sharing this persistence context.
 							sharedReleaseService.getReleaseData(o.release());
-							return releaseService.addArtifact(art, o.release(), WU);
+							try {
+								return releaseService.addArtifact(art, o.release(), WU);
+							} catch (io.reliza.exceptions.RelizaException e) {
+								// addArtifact refuses a generated artifact (TEA); none is appended here
+								throw new IllegalStateException(e);
+							}
 						});
 					} catch (RuntimeException | InterruptedException e) {
 						// Kept, not counted: a swallowed cause would read as a lost append.

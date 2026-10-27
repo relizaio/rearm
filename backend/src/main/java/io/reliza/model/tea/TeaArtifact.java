@@ -31,19 +31,19 @@ import jakarta.annotation.Generated;
 
 @Schema(name = "artifact", description = "A security-related document")
 @JsonTypeName("artifact")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaArtifact {
 
   private UUID uuid;
 
-  private Integer version = 1;
+  private Integer version;
 
   private @Nullable String name;
 
   private TeaArtifactType type;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  private @Nullable OffsetDateTime createdDate;
+  private OffsetDateTime createdDate;
 
   @Valid
   private List<UUID> distributionIds = new ArrayList<>();
@@ -58,9 +58,11 @@ public class TeaArtifact {
   /**
    * Constructor with only required parameters
    */
-  public TeaArtifact(UUID uuid, TeaArtifactType type, List<@Valid TeaArtifactFormat> formats) {
+  public TeaArtifact(UUID uuid, Integer version, TeaArtifactType type, OffsetDateTime createdDate, List<@Valid TeaArtifactFormat> formats) {
     this.uuid = uuid;
+    this.version = version;
     this.type = type;
+    this.createdDate = createdDate;
     this.formats = formats;
   }
 
@@ -91,11 +93,11 @@ public class TeaArtifact {
   }
 
   /**
-   * An integer with default value 1. Together with *uuid* uniquely identifies the TEA Artifact. This field can be used to designate successive, immutable revisions of an artefact content (e.g. an updated VEX file). 
+   * Revision number, starting at 1 and incremented by 1 for each new revision of the same artifact UUID. Together with `uuid` uniquely identifies the TEA Artifact. Successive revisions cover content changes and changes to any published field, including external `url` or `signatureUrl` values. Each published revision is immutable. For a fixed artifact UUID, version, and format, the server shall ensure that successful content retrieval through its download endpoint, including retrieval after following redirects, yields unchanged artifact bytes after HTTP transfer coding and content coding are removed, and that successful signature retrieval through its signature download endpoint yields unchanged signature bytes on the same terms. Changing only a download response's `Location`, or only its HTTP content coding, while preserving those bytes, does not require a new artifact or collection version. 
    * @return version
    */
-  
-  @Schema(name = "version", description = "An integer with default value 1. Together with *uuid* uniquely identifies the TEA Artifact. This field can be used to designate successive, immutable revisions of an artefact content (e.g. an updated VEX file). ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull 
+  @Schema(name = "version", description = "Revision number, starting at 1 and incremented by 1 for each new revision of the same artifact UUID. Together with `uuid` uniquely identifies the TEA Artifact. Successive revisions cover content changes and changes to any published field, including external `url` or `signatureUrl` values. Each published revision is immutable. For a fixed artifact UUID, version, and format, the server shall ensure that successful content retrieval through its download endpoint, including retrieval after following redirects, yields unchanged artifact bytes after HTTP transfer coding and content coding are removed, and that successful signature retrieval through its signature download endpoint yields unchanged signature bytes on the same terms. Changing only a download response's `Location`, or only its HTTP content coding, while preserving those bytes, does not require a new artifact or collection version. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("version")
   public Integer getVersion() {
     return version;
@@ -112,11 +114,11 @@ public class TeaArtifact {
   }
 
   /**
-   * Name of TEA Artifact
+   * A human-readable name for the artefact
    * @return name
    */
   
-  @Schema(name = "name", description = "Name of TEA Artifact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "name", description = "A human-readable name for the artefact", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("name")
   public @Nullable String getName() {
     return name;
@@ -148,24 +150,24 @@ public class TeaArtifact {
     this.type = type;
   }
 
-  public TeaArtifact createdDate(@Nullable OffsetDateTime createdDate) {
+  public TeaArtifact createdDate(OffsetDateTime createdDate) {
     this.createdDate = createdDate;
     return this;
   }
 
   /**
-   * The date when the TEA Artifact revision was created.
+   * The date and time the TEA Artifact revision was created.
    * @return createdDate
    */
-  @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
-  @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "The date when the TEA Artifact revision was created.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
+  @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "The date and time the TEA Artifact revision was created.", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("createdDate")
-  public @Nullable OffsetDateTime getCreatedDate() {
+  public OffsetDateTime getCreatedDate() {
     return createdDate;
   }
 
   @JsonProperty("createdDate")
-  public void setCreatedDate(@Nullable OffsetDateTime createdDate) {
+  public void setCreatedDate(OffsetDateTime createdDate) {
     this.createdDate = createdDate;
   }
 
@@ -183,11 +185,11 @@ public class TeaArtifact {
   }
 
   /**
-   * List of TEA Component Release distributions that this TEA Artifact applies to. If absent or empty, the TEA Artifact applies to all distributions. 
+   * Array of TEA Component Release distributions that this TEA Artifact applies to. If absent or empty, the TEA Artifact applies to all distributions. 
    * @return distributionIds
    */
   @Valid 
-  @Schema(name = "distributionIds", description = "List of TEA Component Release distributions that this TEA Artifact applies to. If absent or empty, the TEA Artifact applies to all distributions. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "distributionIds", description = "Array of TEA Component Release distributions that this TEA Artifact applies to. If absent or empty, the TEA Artifact applies to all distributions. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("distributionIds")
   public List<UUID> getDistributionIds() {
     return distributionIds;
@@ -215,7 +217,7 @@ public class TeaArtifact {
    * List of objects with the same content, but in different formats. The order of the list has no significance. 
    * @return formats
    */
-  @NotNull @Valid 
+  @NotNull @Valid @Size(min = 1) 
   @Schema(name = "formats", description = "List of objects with the same content, but in different formats. The order of the list has no significance. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("formats")
   public List<@Valid TeaArtifactFormat> getFormats() {

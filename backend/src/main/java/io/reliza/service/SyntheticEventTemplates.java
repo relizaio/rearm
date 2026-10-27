@@ -28,6 +28,8 @@ import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload.ChangeType;
@@ -257,6 +259,19 @@ public final class SyntheticEventTemplates {
             case RELEASE_CREATED -> new ReleaseCreatedPayload(sampleRelease(), false);
             case RELEASE_LIFECYCLE_CHANGED -> new ReleaseLifecycleChangedPayload(
                     sampleRelease(), ReleaseLifecycle.DRAFT, ReleaseLifecycle.ASSEMBLED);
+            case RELEASE_TEA_PUBLISHED -> new ReleaseTeaPublicationPayload(sampleRelease(), UUID.randomUUID(),
+                    io.reliza.service.TeaPublicationService.TeaPublicationState.PUBLISHED, 1,
+                    io.reliza.service.TeaPublicationService.TeaExposureState.PRIVATE,
+                    "https://demo.example.com/tea/00000000-0000-0000-0000-000000000000/v1.0.0/componentRelease/"
+                            + UUID.randomUUID(), 0);
+            case RELEASE_TEA_HIDDEN -> new ReleaseTeaPublicationPayload(sampleRelease(), UUID.randomUUID(),
+                    io.reliza.service.TeaPublicationService.TeaPublicationState.HIDDEN, null, null, null, 0);
+            case RELEASE_SUBMISSION_CREATED -> new ReleaseSubmissionPayload(sampleRelease(), UUID.randomUUID(),
+                    io.reliza.model.PackageKind.FDA_PREMARKET, io.reliza.model.SubmissionState.ACTIVE, 1,
+                    io.reliza.model.SubmissionActOutcome.CREATED);
+            case RELEASE_SUBMISSION_WITHDRAWN -> new ReleaseSubmissionPayload(sampleRelease(), UUID.randomUUID(),
+                    io.reliza.model.PackageKind.FDA_PREMARKET, io.reliza.model.SubmissionState.WITHDRAWN, 1,
+                    io.reliza.model.SubmissionActOutcome.WITHDRAWN);
             case RELEASE_BOM_DIFF -> new ReleaseBomDiffPayload(
                     sampleRelease(),
                     List.of(new BomComponentChange("pkg:npm/left-pad@1.3.0", "1.3.0")),

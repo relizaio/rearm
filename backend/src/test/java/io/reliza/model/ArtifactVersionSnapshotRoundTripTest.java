@@ -30,9 +30,9 @@ import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.InventoryType;
 import io.reliza.model.ArtifactData.StoredIn;
-import io.reliza.model.tea.Link;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.util.OciRepositoryUtil;
 
 /**
@@ -79,9 +79,9 @@ class ArtifactVersionSnapshotRoundTripTest {
 		ad.setStoredIn(StoredIn.REARM);
 		ad.setInternalBom(new InternalBom(INTERNAL_BOM_UUID, ArtifactBelongsTo.RELEASE));
 		Set<DigestRecord> digests = new LinkedHashSet<>(List.of(
-			new DigestRecord(TeaChecksumType.SHA_256, "declared-or-rebom-derived", DigestScope.ORIGINAL_FILE),
-			new DigestRecord(TeaChecksumType.SHA_256, "hashed-by-us-over-the-upload", DigestScope.AS_UPLOADED),
-			new DigestRecord(TeaChecksumType.SHA_256, "manifest-of-the-retained-upload", DigestScope.RAW_OCI_STORAGE)));
+			new DigestRecord(DigestAlgorithm.SHA_256, "declared-or-rebom-derived", DigestScope.ORIGINAL_FILE),
+			new DigestRecord(DigestAlgorithm.SHA_256, "hashed-by-us-over-the-upload", DigestScope.AS_UPLOADED),
+			new DigestRecord(DigestAlgorithm.SHA_256, "manifest-of-the-retained-upload", DigestScope.RAW_OCI_STORAGE)));
 		ad.setDigestRecords(digests);
 		ad.setTags(List.of(new TagRecord(CommonVariables.MEDIA_TYPE_FIELD, "application/spdx+json", Removable.NO)));
 		ad.setStatus(StatusEnum.ACTIVE);

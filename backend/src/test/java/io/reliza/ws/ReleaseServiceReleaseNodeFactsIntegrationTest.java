@@ -42,11 +42,11 @@ import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.BomHash;
-import io.reliza.model.tea.Rebom.MissingSbomComponent;
-import io.reliza.model.tea.Rebom.RebomOptions;
-import io.reliza.model.tea.Rebom.ReleaseNodeFacts;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.BomHash;
+import io.reliza.model.Rebom.MissingSbomComponent;
+import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.model.Rebom.ReleaseNodeFacts;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.service.BranchService;
 import io.reliza.service.DeliverableService;
 import io.reliza.service.GetOrganizationService;
@@ -128,7 +128,7 @@ class ReleaseServiceReleaseNodeFactsIntegrationTest extends SbomScoreGraphqlTest
 				org.getUuid(), WU, null);
 	}
 
-	private List<RebomOptions> mergeRequests(Organization org) {
+	private List<RebomOptions> mergeRequests(Organization org) throws Exception {
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
 		verify(rebomService, atLeastOnce()).mergeAndStoreBoms(anyList(), sent.capture(), eq(org.getUuid()));
 		return sent.getAllValues();
@@ -143,7 +143,7 @@ class ReleaseServiceReleaseNodeFactsIntegrationTest extends SbomScoreGraphqlTest
 	void theMergeRequestOfAReleaseShippingOneHashedDeliverableCarriesTheOrganizationAndItsDigest() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		Component c = component(org, ComponentType.COMPONENT);
-		UUID d = deliverable(c, new DigestRecord(TeaChecksumType.SHA_256, DIGEST), new DigestRecord(TeaChecksumType.SHA_1, SHA_1));
+		UUID d = deliverable(c, new DigestRecord(DigestAlgorithm.SHA_256, DIGEST), new DigestRecord(DigestAlgorithm.SHA_1, SHA_1));
 		UUID bom = artifact(org.getUuid(), ArtifactType.BOM, BomFormat.CYCLONEDX, true);
 		UUID release = release(org, c, List.of(bom), List.of(), List.of());
 		ships(release, d);
@@ -164,7 +164,7 @@ class ReleaseServiceReleaseNodeFactsIntegrationTest extends SbomScoreGraphqlTest
 	void aReleaseThatOnlyConsumesAHashedDeliverableGetsNoHash() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		Component supplier = component(org, ComponentType.COMPONENT);
-		UUID consumed = deliverable(supplier, new DigestRecord(TeaChecksumType.SHA_256, BARE_DIGEST));
+		UUID consumed = deliverable(supplier, new DigestRecord(DigestAlgorithm.SHA_256, BARE_DIGEST));
 		Component c = component(org, ComponentType.COMPONENT);
 		UUID bom = artifact(org.getUuid(), ArtifactType.BOM, BomFormat.CYCLONEDX, true);
 		UUID release = release(org, c, List.of(bom), List.of(consumed), List.of());
@@ -181,12 +181,12 @@ class ReleaseServiceReleaseNodeFactsIntegrationTest extends SbomScoreGraphqlTest
 	void aProductListsAnSbomLessReleaseWithItsDeliverablesDigestAndSendsItsOwnFacts() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		Component withBom = component(org, ComponentType.COMPONENT);
-		UUID hashed = deliverable(withBom, new DigestRecord(TeaChecksumType.SHA_256, DIGEST));
+		UUID hashed = deliverable(withBom, new DigestRecord(DigestAlgorithm.SHA_256, DIGEST));
 		UUID bom = artifact(org.getUuid(), ArtifactType.BOM, BomFormat.CYCLONEDX, true);
 		UUID first = release(org, withBom, List.of(bom), List.of(), List.of());
 		ships(first, hashed);
 		Component bareComponent = component(org, ComponentType.COMPONENT);
-		UUID bareDeliverable = deliverable(bareComponent, new DigestRecord(TeaChecksumType.SHA_256, BARE_DIGEST));
+		UUID bareDeliverable = deliverable(bareComponent, new DigestRecord(DigestAlgorithm.SHA_256, BARE_DIGEST));
 		UUID bare = release(org, bareComponent, List.of(), List.of(), List.of());
 		ships(bare, bareDeliverable);
 		Component productComponent = component(org, ComponentType.PRODUCT);
@@ -219,7 +219,7 @@ class ReleaseServiceReleaseNodeFactsIntegrationTest extends SbomScoreGraphqlTest
 		UUID bom = artifact(org.getUuid(), ArtifactType.BOM, BomFormat.CYCLONEDX, true);
 		UUID first = release(org, withBom, List.of(bom), List.of(), List.of());
 		Component bareComponent = externalComponent(org);
-		UUID bareDeliverable = deliverable(bareComponent, new DigestRecord(TeaChecksumType.SHA_256, BARE_DIGEST));
+		UUID bareDeliverable = deliverable(bareComponent, new DigestRecord(DigestAlgorithm.SHA_256, BARE_DIGEST));
 		UUID bare = release(org, bareComponent, List.of(), List.of(), List.of());
 		ships(bare, bareDeliverable);
 		Component productComponent = component(org, ComponentType.PRODUCT);
