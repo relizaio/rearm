@@ -33,21 +33,28 @@
         </div>
 
         <div class="tea-block">
-            <h6>Other TEA profiles of the organization</h6>
+            <h6 data-testid="tea-overrides-heading">Overrides below the organization</h6>
+            <p data-testid="tea-overrides-help" class="text-muted">TEA profiles saved on a perspective or a component. Edit or
+                remove them there; components and perspectives without one inherit the organization profile.</p>
             <n-data-table data-testid="tea-profile-rows" :columns="columns" :data="otherRows" :row-class-name="rowClass"
-                :pagination="false" :bordered="false" size="small" />
+                :pagination="false" :bordered="false" size="small">
+                <template #empty>
+                    <span data-testid="tea-overrides-empty" class="text-muted">{{ TEA_OVERRIDES_EMPTY }}</span>
+                </template>
+            </n-data-table>
         </div>
     </div>
 </template>
 
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue'
+import { RouterLink } from 'vue-router'
 import { NButton, NDataTable, NInput, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import commonFunctions from '@/utils/commonFunctions'
 import { brandingState } from '@/utils/branding'
-import { TeaNamedObject, teaRowObject } from '@/utils/teaProfile'
+import { TeaNamedObject, teaRowLink, teaRowObject } from '@/utils/teaProfile'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 
 const props = withDefaults(defineProps<{
@@ -72,19 +79,29 @@ const readObjects = ref<Record<string, TeaNamedObject>>({})
 
 const objects = computed((): Record<string, TeaNamedObject> => {
     const out: Record<string, TeaNamedObject> = { ...readObjects.value }
-    for (const c of props.components) out[c.uuid] = { name: c.name, status: c.status }
+    for (const c of props.components) out[c.uuid] = { name: c.name, status: c.status, type: c.type }
     for (const p of props.perspectives) out[p.uuid] = { name: p.name }
     return out
 })
 
+const TEA_OVERRIDES_EMPTY = 'No component or perspective overrides the organization profile.'
+
 const otherRows = computed(() => rows.value.filter((r: any) => r.scope !== 'ORGANIZATION')
-    .map((r: any) => ({ ...r, ...teaRowObject(r, objects.value) })))
+    .map((r: any) => ({ ...r, ...teaRowObject(r, objects.value),
+        link: teaRowLink(r, props.orgUuid, r.object ? objects.value[r.object]?.type : null) })))
+
+/** The object's name, linked to where its TEA profile is edited. */
+function objectName (r: any) {
+    return r.link
+        ? h(RouterLink, { to: r.link, 'data-testid': 'tea-object-link' }, { default: () => r.name })
+        : r.name
+}
 
 const columns = [
     { key: 'scope', title: 'Scope' },
     { key: 'name', title: 'Object', render: (r: any) => r.archived
-        ? [r.name, ' ', h(NTag, { size: 'small', type: 'warning', 'data-testid': 'tea-archived-tag' }, () => 'archived')]
-        : r.name },
+        ? [objectName(r), ' ', h(NTag, { size: 'small', type: 'warning', 'data-testid': 'tea-archived-tag' }, () => 'archived')]
+        : objectName(r) },
     { key: 'mode', title: 'Mode', render: (r: any) => r.mode ?? '' },
     { key: 'publishing', title: 'Publishing', render: (r: any) => r.publishing ?? 'follows its perspective' },
     { key: 'visibility', title: 'Visibility', render: (r: any) => r.visibility ?? '' },
@@ -123,7 +140,7 @@ async function readUnlistedComponents () {
             const resp: any = await graphqlClient.query({ query: graphqlQueries.TeaComponentNameGql,
                 variables: { componentUuid: uuid }, fetchPolicy: 'no-cache' })
             const c = resp.data.component
-            return c ? [uuid, { name: c.name, status: c.status }] as const : null
+            return c ? [uuid, { name: c.name, status: c.status, type: c.type }] as const : null
         } catch (err: any) {
             console.error(err)
             return null

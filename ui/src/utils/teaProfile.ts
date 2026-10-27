@@ -37,10 +37,43 @@ export interface Option { label: string, value: string }
 
 const opt = (value: string, label: string): Option => ({ label, value })
 
+/**
+ * The editor-only mode of a scope with no stored row: it resolves through its parents. Never sent:
+ * going back to it removes the row (teaProfileInput refuses it).
+ */
+export const TEA_INHERIT = 'INHERIT'
+
+/** The component modes, Inherit first: no row, an own profile, or one followed perspective. */
 export const TEA_MODE_OPTIONS: Option[] = [
+    opt(TEA_INHERIT, 'Inherit: use the perspective or organization profile'),
     opt('OVERRIDE', 'Override: this component carries its own profile'),
     opt('FOLLOW_PERSPECTIVE', 'Follow one of its perspectives'),
 ]
+
+/** The perspective modes: a perspective inherits from the organization or carries its own; it follows nothing. */
+export const TEA_PERSPECTIVE_MODE_OPTIONS: Option[] = [
+    opt(TEA_INHERIT, 'Inherit: use the organization profile'),
+    opt('OVERRIDE', 'Override: this perspective carries its own profile'),
+]
+
+/**
+ * The mode radio of a scope: none at the organization (its only parent is the built-in defaults,
+ * its Reset to defaults stays); a perspective's two; a component's three, where CE (no Follow, no
+ * perspectives) keeps Inherit from the organization and Override.
+ */
+export function teaModeOptions (scope: TeaScope, installationType?: string | null): Option[] {
+    if (scope === 'ORGANIZATION') return []
+    if (scope === 'PERSPECTIVE') return TEA_PERSPECTIVE_MODE_OPTIONS
+    if (installationType === 'OSS') return [TEA_PERSPECTIVE_MODE_OPTIONS[0], TEA_MODE_OPTIONS[1]]
+    return TEA_MODE_OPTIONS
+}
+
+/** The mode a form opens in: INHERIT with no stored row, the stored mode otherwise; none at the organization. */
+export function teaInitialMode (stored: any, scope: TeaScope): string | null {
+    if (scope === 'ORGANIZATION') return null
+    if (!stored) return TEA_INHERIT
+    return scope === 'COMPONENT' ? (stored.mode ?? 'OVERRIDE') : 'OVERRIDE'
+}
 
 export const TEA_PUBLISHING_OPTIONS: Option[] = [
     opt('ENABLED', 'Enabled'),
@@ -143,10 +176,15 @@ export function teaFormFromView (view: any, scope: TeaScope): TeaProfileForm {
     const storedHasProfile = stored && stored.mode !== 'FOLLOW_PERSPECTIVE'
     const base = storedHasProfile ? stored : view?.parent?.profile
     return {
-        mode: scope === 'COMPONENT' ? (stored?.mode ?? 'OVERRIDE') : null,
+        mode: teaInitialMode(stored, scope),
         followedPerspective: scope === 'COMPONENT' ? (stored?.followedPerspective ?? null) : null,
         ...fieldsOf(base),
     }
+}
+
+/** What an INHERIT form shows, read-only: the parent's effective profile, else the built-in defaults. */
+export function teaInheritedForm (view: any): TeaProfileForm {
+    return { mode: TEA_INHERIT, followedPerspective: null, ...fieldsOf(view?.parent?.profile) }
 }
 
 /**
@@ -154,6 +192,7 @@ export function teaFormFromView (view: any, scope: TeaScope): TeaProfileForm {
  * sent as a copy in the picker's order; on CE (OSS) the first name only, the CE rule of exactly one.
  */
 export function teaProfileInput (form: TeaProfileForm, scope: TeaScope, installationType?: string | null): Record<string, any> {
+    if (form.mode === TEA_INHERIT) throw new Error('INHERIT is not stored: inheriting again removes the row')
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
         return { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: form.followedPerspective }
     }
@@ -181,8 +220,17 @@ export function teaSourceLabel (source: string | null | undefined, sourceObject:
     }
 }
 
-/** The editor's source line. */
-export function teaSourceLine (view: any, names: Record<string, string> = {}): string {
+/** Where an INHERIT form's values come from: the parent, or nothing under a perspective conflict. */
+export function teaInheritedLine (view: any, names: Record<string, string> = {}): string {
+    const parent = view?.parent
+    if (parent?.status === 'CONFLICT') return 'Cannot inherit: its perspectives each carry a TEA profile'
+    const from = (!parent || !parent.profile) ? 'built-in defaults' : teaSourceLabel(parent.source, parent.sourceObject, names)
+    return 'Inherited from ' + from + (view?.stored ? ': Save removes the stored override' : '')
+}
+
+/** The editor's source line; in INHERIT, where the inherited values come from. */
+export function teaSourceLine (view: any, names: Record<string, string> = {}, mode: string | null = null): string {
+    if (mode === TEA_INHERIT) return teaInheritedLine(view, names)
     if (view?.stored) return 'Stored override'
     const parent = view?.parent
     if (!parent || parent.status === 'CONFLICT' || !parent.profile) return 'No override: pre-filled from built-in defaults'
@@ -307,6 +355,13 @@ export function teaConfirmBeforeRemoval (exposure: TeaExposureChange | null | un
         confirmButtonText: objectWidens ? 'Remove and make it public' : 'Remove and make them public' }
 }
 
+/** The confirmation before a stored row goes back to INHERIT; the editor then removes the row. */
+export function teaInheritConfirm (scope: TeaScope, scopeWord: string): { title: string, content: string } {
+    const parent = scope === 'PERSPECTIVE' ? 'organization' : 'perspective or organization'
+    return { title: 'Inherit again?',
+        content: 'Remove this ' + scopeWord + "'s override and inherit the " + parent + ' profile again?' }
+}
+
 /** A perspective as the membership helpers read it: the org list and a component's perspectiveDetails. */
 export interface TeaPerspectiveRef { uuid: string, name?: string | null }
 
@@ -353,8 +408,8 @@ export function teaConfirmBeforeMembership (exposure: TeaExposureChange | null |
         confirmButtonText: 'Make it public' }
 }
 
-/** What the org TEA table knows of an object: its name and, for a component or product, its status. */
-export interface TeaNamedObject { name: string, status?: string | null }
+/** What the org TEA table knows of an object: its name and, for a component or product, its status and type. */
+export interface TeaNamedObject { name: string, status?: string | null, type?: string | null }
 
 /**
  * How the org TEA table names the object of a row: by name, tagged archived when it is. The uuid
@@ -365,4 +420,20 @@ export function teaRowObject (row: { object?: string | null }, objects: Record<s
     const o = row.object ? objects[row.object] : undefined
     if (!o) return { name: row.object ?? '', archived: false }
     return { name: o.name || row.object || '', archived: o.status === 'ARCHIVED' }
+}
+
+/**
+ * Where the org TEA table links a row's object: a component (or product) opens its settings on the
+ * TEA tab, a perspective the organization's Perspectives tab, where its TEA profile is edited. A row
+ * on no object (the organization) links nowhere.
+ */
+export function teaRowLink (row: { scope?: string | null, object?: string | null }, orgUuid: string,
+    objectType?: string | null): string | null {
+    if (!row.object) return null
+    if (row.scope === 'COMPONENT') {
+        const base = objectType === 'PRODUCT' ? '/productsOfOrg/' : '/componentsOfOrg/'
+        return base + orgUuid + '/' + row.object + '?componentSettingsView=true&componentSettingsTab=tea'
+    }
+    if (row.scope === 'PERSPECTIVE') return '/orgSettings/' + orgUuid + '?tab=perspectives'
+    return null
 }

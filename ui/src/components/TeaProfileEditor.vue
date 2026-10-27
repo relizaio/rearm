@@ -22,22 +22,25 @@
                 <n-form label-placement="left" label-width="210" :disabled="!isWritable" size="small">
                     <n-form-item v-if="showMode" label="Mode">
                         <n-radio-group data-testid="tea-mode" v-model:value="form.mode">
-                            <n-radio v-for="o in TEA_MODE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+                            <n-radio v-for="o in modeOptions" :key="o.value" :value="o.value" :label="o.label" />
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item v-if="follows" label="Followed perspective">
                         <n-select data-testid="tea-follow-perspective" v-model:value="form.followedPerspective"
                             :options="perspectiveOptions" placeholder="Choose one of this component's perspectives" />
                     </n-form-item>
+                </n-form>
 
-                    <div v-if="!follows" data-testid="tea-fields">
+                <!-- INHERIT shows the parent's values read-only: its own form, so the mode radio stays enabled. -->
+                <n-form v-if="!follows" label-placement="left" label-width="210" :disabled="readOnly" size="small">
+                    <div data-testid="tea-fields" :data-inherited="inherits ? 'true' : undefined">
                         <n-form-item label="Publishing">
-                            <n-select data-testid="tea-publishing" v-model:value="form.publishing" :options="TEA_PUBLISHING_OPTIONS" />
+                            <n-select data-testid="tea-publishing" v-model:value="shown.publishing" :options="TEA_PUBLISHING_OPTIONS" />
                             <template #feedback>{{ TEA_FIELD_HELP.publishing }}</template>
                         </n-form-item>
                         <n-form-item label="Visibility">
-                            <n-select data-testid="tea-visibility" v-model:value="form.visibility"
-                                :options="TEA_VISIBILITY_OPTIONS" :disabled="!isOrgAdmin" />
+                            <n-select data-testid="tea-visibility" v-model:value="shown.visibility"
+                                :options="TEA_VISIBILITY_OPTIONS" :disabled="!isOrgAdmin || readOnly" />
                             <template #feedback>
                                 <span v-if="!isOrgAdmin" data-testid="tea-visibility-reason">Only an organization admin can make a profile public.</span>
                                 <span v-else>{{ TEA_FIELD_HELP.visibility }}</span>
@@ -48,39 +51,37 @@
                             <span data-testid="tea-profiles-ce">SBOM profile: {{ CE_SBOM_PROFILE }}</span>
                         </n-form-item>
                         <n-form-item v-else label="SBOM profiles">
-                            <SbomProfilePicker data-testid="tea-profiles" v-model="form.profiles" :entries="catalog"
-                                :installation-type="installationType" :names="perspectiveNames" :disabled="!isWritable" />
+                            <SbomProfilePicker data-testid="tea-profiles" v-model="shown.profiles" :entries="catalog"
+                                :installation-type="installationType" :names="perspectiveNames" :disabled="readOnly" />
                             <template #feedback>
                                 <span v-if="catalogError" data-testid="tea-profiles-error" class="text-danger">{{ catalogError }}</span>
                                 <span v-else>{{ TEA_FIELD_HELP.profiles }}</span>
                             </template>
                         </n-form-item>
                         <n-form-item label="Raw artifacts">
-                            <n-select data-testid="tea-raw-artifacts" v-model:value="form.rawArtifacts" :options="TEA_RAW_ARTIFACTS_OPTIONS" />
+                            <n-select data-testid="tea-raw-artifacts" v-model:value="shown.rawArtifacts" :options="TEA_RAW_ARTIFACTS_OPTIONS" />
                             <template #feedback>{{ TEA_FIELD_HELP.rawArtifacts }}</template>
                         </n-form-item>
                         <n-form-item v-if="showProductComponents" label="Product components">
-                            <n-select data-testid="tea-product-components" v-model:value="form.productComponents" :options="TEA_PRODUCT_COMPONENTS_OPTIONS" />
+                            <n-select data-testid="tea-product-components" v-model:value="shown.productComponents" :options="TEA_PRODUCT_COMPONENTS_OPTIONS" />
                             <template #feedback>{{ TEA_FIELD_HELP.productComponents }}</template>
                         </n-form-item>
                         <n-form-item label="Minimum lifecycle">
-                            <n-select data-testid="tea-minimum-lifecycle" v-model:value="form.minimumLifecycle" :options="TEA_MINIMUM_LIFECYCLE_OPTIONS" />
+                            <n-select data-testid="tea-minimum-lifecycle" v-model:value="shown.minimumLifecycle" :options="TEA_MINIMUM_LIFECYCLE_OPTIONS" />
                             <template #feedback>{{ TEA_FIELD_HELP.minimumLifecycle }}</template>
                         </n-form-item>
                         <n-form-item label="TEI">
-                            <n-select data-testid="tea-tei" v-model:value="form.tei" :options="TEA_TEI_OPTIONS" />
+                            <n-select data-testid="tea-tei" v-model:value="shown.tei" :options="TEA_TEI_OPTIONS" />
                         </n-form-item>
-                        <n-form-item v-if="form.tei === 'UUID'" label="TEI domain">
-                            <n-input data-testid="tea-tei-domain" v-model:value="form.teiDomain" placeholder="products.example.com" />
+                        <n-form-item v-if="shown.tei === 'UUID'" label="TEI domain">
+                            <n-input data-testid="tea-tei-domain" v-model:value="shown.teiDomain" placeholder="products.example.com" />
                         </n-form-item>
                     </div>
                 </n-form>
 
-                <n-space v-if="isWritable">
-                    <n-button data-testid="tea-save" type="primary" :loading="saving" @click="save">Save</n-button>
-                    <n-button v-if="scope !== 'ORGANIZATION' && view.stored" data-testid="tea-remove" type="error" @click="remove">
-                        Remove override
-                    </n-button>
+                <!-- INHERIT with no row stores nothing: no Save. With a row, Save asks and removes it. -->
+                <n-space v-if="isWritable && !(inherits && !view.stored)">
+                    <n-button data-testid="tea-save" type="primary" :loading="saving" @click="inherits ? inheritAgain() : save()">Save</n-button>
                     <n-button v-if="scope === 'ORGANIZATION'" data-testid="tea-reset" @click="resetToDefaults">Reset to defaults</n-button>
                 </n-space>
             </template>
@@ -90,17 +91,18 @@
 
 <script setup lang="ts">
 import { computed, onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin } from 'naive-ui'
+import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, useDialog } from 'naive-ui'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import profilesQueries from '@/utils/profilesQueries'
 import {
-    CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS, TEA_MODE_OPTIONS,
+    CE_SBOM_PROFILE, Option, TeaProfileForm, TeaScope, TEA_FIELD_HELP, TEA_INHERIT, TEA_MINIMUM_LIFECYCLE_OPTIONS,
     TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS, TEA_TEI_OPTIONS,
     TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaConfirmBeforeRemoval, teaConfirmBeforeSave, teaFormFromView,
-    teaProfileInput, teaPublicBanner, teaSourceLine, TeaConfirm, TeaExposureChange,
+    teaInheritConfirm, teaInheritedForm, teaModeOptions, teaNeedsPublicConfirm, teaProfileInput, teaPublicBanner,
+    teaSourceLine, TeaConfirm, TeaExposureChange,
 } from '@/utils/teaProfile'
 import { sbomProfileNamesAvailable } from '@/utils/sbomProfile'
 import SbomProfilePicker from './SbomProfilePicker.vue'
@@ -129,6 +131,8 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ (e: 'saved', profile: any): void, (e: 'removed'): void }>()
 
+const dialog = useDialog()
+
 const view = ref<any>(null)
 const form = ref<TeaProfileForm>(teaBuiltInDefaults())
 const loading = ref(false)
@@ -145,10 +149,16 @@ const perspectiveNames = computed((): Record<string, string> => {
     for (const p of view.value?.effective?.conflictingPerspectives ?? []) names[p.uuid] = p.name
     return names
 })
-const showMode = computed(() => props.scope === 'COMPONENT' && props.installationType !== 'OSS')
+const modeOptions = computed(() => teaModeOptions(props.scope, props.installationType))
+const showMode = computed(() => modeOptions.value.length > 0)
 const follows = computed(() => props.scope === 'COMPONENT' && form.value.mode === 'FOLLOW_PERSPECTIVE')
+// INHERIT (UI only, never sent): the fields show the parent's values read-only; the form keeps the
+// edit, so switching back to Override shows it again.
+const inherits = computed(() => form.value.mode === TEA_INHERIT)
+const readOnly = computed(() => !props.isWritable || inherits.value)
+const shown = computed((): TeaProfileForm => inherits.value ? teaInheritedForm(view.value) : form.value)
 const showProductComponents = computed(() => props.scope !== 'COMPONENT' || props.objectIsProduct)
-const sourceLine = computed(() => teaSourceLine(view.value, perspectiveNames.value))
+const sourceLine = computed(() => teaSourceLine(view.value, perspectiveNames.value, form.value.mode))
 const banner = computed(() => teaPublicBanner(view.value, perspectiveNames.value))
 const conflictNames = computed(() => (view.value?.parent?.conflictingPerspectives ?? []).map((p: any) => p.name).join(', '))
 const scopeWord = computed(() => props.objectIsProduct ? 'product' : props.scope.toLowerCase())
@@ -167,7 +177,8 @@ async function load () {
         ])
         view.value = resp.data.teaProfileEditorView
         form.value = teaFormFromView(view.value, props.scope)
-        if (props.scope === 'COMPONENT' && props.installationType === 'OSS') form.value.mode = 'OVERRIDE'
+        // CE follows no perspective: a FOLLOW row (none is stored there) edits as an override.
+        if (props.installationType === 'OSS' && form.value.mode === 'FOLLOW_PERSPECTIVE') form.value.mode = 'OVERRIDE'
     } catch (err: any) {
         console.error(err)
         loadError.value = graphqlRefusalText(err)
@@ -224,6 +235,7 @@ async function confirmed (c: TeaConfirm | null): Promise<boolean> {
 }
 
 async function save () {
+    if (inherits.value) return
     const profile = teaProfileInput(form.value, props.scope, props.installationType)
     const exposure = await exposureOf(profile)
     if (!exposure) return
@@ -245,10 +257,15 @@ async function save () {
     }
 }
 
-async function remove () {
+/**
+ * Removes the stored row after the server's dry-run. `askedToInherit`: the user already confirmed
+ * going back to INHERIT, so only the PUBLIC confirmation is still asked.
+ */
+async function remove (askedToInherit = false) {
     const exposure = await exposureOf(null)
     if (!exposure) return
-    if (!await confirmed(teaConfirmBeforeRemoval(exposure, scopeWord.value, perspectiveNames.value))) return
+    if (!(askedToInherit && !teaNeedsPublicConfirm(exposure))
+        && !await confirmed(teaConfirmBeforeRemoval(exposure, scopeWord.value, perspectiveNames.value))) return
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.DeleteTeaProfileGql,
@@ -260,6 +277,16 @@ async function remove () {
         console.error(err)
         Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     }
+}
+
+/** Save in INHERIT over a stored row: confirm, then remove the row; the reload shows INHERIT with no row. */
+function inheritAgain () {
+    dialog.warning({
+        ...teaInheritConfirm(props.scope, scopeWord.value),
+        positiveText: 'Inherit',
+        negativeText: 'Cancel',
+        onPositiveClick: () => { remove(true) },
+    })
 }
 
 function resetToDefaults () {

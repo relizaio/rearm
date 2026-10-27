@@ -197,6 +197,7 @@
                                     animated
                                     style="margin: 0 -4px"
                                     pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
+                                    v-model:value="componentSettingsTab"
                                     @update:value="handleTabSwitch"
                                 >
                                     <n-tab-pane name="Core Settings">
@@ -1479,7 +1480,7 @@ import {
 } from '@/utils/declaredLicense'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
-import { resolveComponentPageTab } from '@/utils/componentPageTab'
+import { resolveComponentPageTab, resolveComponentSettingsTab, SETTINGS_DEFAULT_TAB } from '@/utils/componentPageTab'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
@@ -2089,6 +2090,19 @@ async function exportComponentCle () {
 }
 
 // componentSettingsView route param is handled in onMounted after data is loaded
+// The settings modal's pane; ?componentSettingsTab= picks it on open (resolveComponentSettingsTab).
+const componentSettingsTab = ref<string>(SETTINGS_DEFAULT_TAB)
+/** The settings panes this page shows, by name: the v-if of each n-tab-pane of the settings modal. */
+function visibleSettingsTabs (): string[] {
+    const pro = myUser.installationType !== 'OSS'
+    return [SETTINGS_DEFAULT_TAB, 'licenseSupplier',
+        ...(deviceWindowSupported.value ? ['device'] : []),
+        ...(teaProfilesAvailable(myUser.installationType) ? ['tea', 'sbomProfiles'] : []),
+        ...(regulatoryPackagesAvailable(myUser.installationType) ? ['regulatory'] : []),
+        ...(pro && !isDocument.value ? ['outputTriggers', 'Input Events'] : []),
+        ...(pro ? ['locks', 'actionGuards'] : []),
+        ...(isAdmin && pro ? ['Admin Settings'] : [])]
+}
 const showCreateOutputTriggerModal: Ref<boolean> = ref(false)
 const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
@@ -2194,7 +2208,10 @@ const openComponentSettings = async function() {
     await Promise.all([loadUserGroups(), loadUsers().catch(() => {})])
     await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    componentSettingsTab.value = resolveComponentSettingsTab(route.query.componentSettingsTab, visibleSettingsTabs())
     showComponentSettingsModal.value = true
+    // A deep-linked pane loads what a switch to it would.
+    if (componentSettingsTab.value !== SETTINGS_DEFAULT_TAB) await handleTabSwitch(componentSettingsTab.value)
     
     // Update URL without triggering Vue Router navigation
     const newQuery = new URLSearchParams(window.location.search)
@@ -2231,6 +2248,7 @@ const handleComponentSettingsClose = async function(show: boolean) {
         // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
         const newQuery = new URLSearchParams(window.location.search)
         newQuery.delete('componentSettingsView')
+        newQuery.delete('componentSettingsTab')
         const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
         window.history.replaceState({}, '', newUrl)
     }
@@ -2506,6 +2524,7 @@ function selectBranch (uuid: string) {
         delete cleanQuery.release
         delete cleanQuery.branchSettingsView
         delete cleanQuery.componentSettingsView
+        delete cleanQuery.componentSettingsTab
         delete cleanQuery.branchReleasePage
         delete cleanQuery.branchReleasePerPage
         

@@ -4,12 +4,13 @@ import { describe, expect, it } from 'vitest'
 import * as teaProfileModule from './teaProfile'
 import {
     TEA_FIELD_HELP, TEA_MINIMUM_LIFECYCLE_OPTIONS,
-    TEA_MODE_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
+    TEA_INHERIT, TEA_MODE_OPTIONS, TEA_PERSPECTIVE_MODE_OPTIONS, TEA_PRODUCT_COMPONENTS_OPTIONS, TEA_PROFILE_FIELDS,
     TEA_PUBLISHING_OPTIONS, TEA_RAW_ARTIFACTS_OPTIONS,
     TEA_TEI_OPTIONS, TEA_VISIBILITY_OPTIONS, teaBuiltInDefaults, teaFormFromView,
     teaConfirmBeforeMembership, teaConfirmBeforeRemoval, teaConfirmBeforeSave, TeaExposureChange, teaMembershipDelta,
     teaNeedsPublicConfirm, teaProfileInput,
     teaPublicBanner, teaPublicConfirmText, teaRowObject, teaSourceLine,
+    teaInheritConfirm, teaInheritedForm, teaInitialMode, teaModeOptions, teaRowLink,
 } from './teaProfile'
 
 const values = (opts: { label: string, value: string }[]) => opts.map(o => o.value)
@@ -17,7 +18,8 @@ const values = (opts: { label: string, value: string }[]) => opts.map(o => o.val
 describe('TEA profile option lists', () => {
     it('every list is {label, value} pairs carrying exactly the schema enum values', () => {
         const lists: [any[], string[]][] = [
-            [TEA_MODE_OPTIONS, ['OVERRIDE', 'FOLLOW_PERSPECTIVE']],
+            [TEA_MODE_OPTIONS, ['INHERIT', 'OVERRIDE', 'FOLLOW_PERSPECTIVE']],
+            [TEA_PERSPECTIVE_MODE_OPTIONS, ['INHERIT', 'OVERRIDE']],
             [TEA_PUBLISHING_OPTIONS, ['ENABLED', 'DISABLED']],
             [TEA_VISIBILITY_OPTIONS, ['PRIVATE', 'PUBLIC']],
             [TEA_RAW_ARTIFACTS_OPTIONS, ['NONE', 'NON_BOM', 'ALL']],
@@ -32,6 +34,18 @@ describe('TEA profile option lists', () => {
                 expect(o.label.length).toBeGreaterThan(0)
             }
         }
+    })
+
+    it('the mode radio per scope: Inherit first; none at the organization, no Follow at a perspective or on CE', () => {
+        expect(TEA_INHERIT).toBe('INHERIT')
+        expect(teaModeOptions('ORGANIZATION', 'SAAS')).toEqual([])
+        expect(values(teaModeOptions('PERSPECTIVE', 'SAAS'))).toEqual(['INHERIT', 'OVERRIDE'])
+        expect(values(teaModeOptions('COMPONENT', 'SAAS'))).toEqual(['INHERIT', 'OVERRIDE', 'FOLLOW_PERSPECTIVE'])
+        expect(values(teaModeOptions('COMPONENT', 'OSS'))).toEqual(['INHERIT', 'OVERRIDE'])
+        expect(teaModeOptions('COMPONENT', 'SAAS')[0].label).toBe('Inherit: use the perspective or organization profile')
+        expect(teaModeOptions('PERSPECTIVE', 'SAAS')[0].label).toBe('Inherit: use the organization profile')
+        expect(teaModeOptions('PERSPECTIVE', 'SAAS')[1].label).toBe('Override: this perspective carries its own profile')
+        expect(teaModeOptions('COMPONENT', 'OSS')[0].label).toBe('Inherit: use the organization profile')
     })
 
     it('offers only the minimum lifecycles the server accepts', () => {
@@ -96,10 +110,38 @@ describe('the form and the save', () => {
         expect(teaFormFromView({ stored, parent: { profile: PARENT } }, 'COMPONENT').visibility).toBe('PUBLIC')
         const fromParent = teaFormFromView({ stored: null, parent: { status: 'RESOLVED', profile: PARENT } }, 'COMPONENT')
         expect(fromParent.minimumLifecycle).toBe('READY_TO_SHIP')
-        expect(fromParent.mode).toBe('OVERRIDE')
+        expect(fromParent.mode).toBe('INHERIT')
         const conflict = teaFormFromView({ stored: null, parent: { status: 'CONFLICT', profile: null } }, 'COMPONENT')
         expect(conflict.publishing).toBe('DISABLED')
         expect(teaFormFromView({ stored: null, parent: { profile: PARENT } }, 'ORGANIZATION').mode).toBeNull()
+    })
+
+    it('opens in INHERIT with no stored row, in the stored mode otherwise, with no mode at the organization', () => {
+        expect(teaInitialMode(null, 'COMPONENT')).toBe('INHERIT')
+        expect(teaInitialMode(null, 'PERSPECTIVE')).toBe('INHERIT')
+        expect(teaInitialMode(null, 'ORGANIZATION')).toBeNull()
+        expect(teaInitialMode({ uuid: 'r', mode: 'OVERRIDE' }, 'COMPONENT')).toBe('OVERRIDE')
+        expect(teaInitialMode({ uuid: 'r', mode: 'FOLLOW_PERSPECTIVE' }, 'COMPONENT')).toBe('FOLLOW_PERSPECTIVE')
+        expect(teaInitialMode({ uuid: 'r', mode: null }, 'PERSPECTIVE')).toBe('OVERRIDE')
+        expect(teaInitialMode({ uuid: 'r' }, 'ORGANIZATION')).toBeNull()
+        expect(teaFormFromView({ stored: null, parent: { profile: PARENT } }, 'PERSPECTIVE').mode).toBe('INHERIT')
+        expect(teaFormFromView({ stored: { ...PARENT }, parent: { profile: PARENT } }, 'PERSPECTIVE').mode).toBe('OVERRIDE')
+    })
+
+    it('an INHERIT form shows the parent values, else the built-in defaults, whatever is stored', () => {
+        const stored = { ...teaBuiltInDefaults(), mode: 'OVERRIDE', minimumLifecycle: 'GENERAL_AVAILABILITY' }
+        const f = teaInheritedForm({ stored, parent: { status: 'RESOLVED', profile: PARENT } })
+        expect(f.mode).toBe('INHERIT')
+        expect(f.minimumLifecycle).toBe('READY_TO_SHIP')
+        expect(f.publishing).toBe('ENABLED')
+        expect(teaInheritedForm({ stored: null, parent: { status: 'CONFLICT', profile: null } }).publishing).toBe('DISABLED')
+    })
+
+    it('never builds a save from INHERIT: inheriting again removes the row instead', () => {
+        const form = { ...teaBuiltInDefaults(), mode: 'INHERIT' }
+        for (const scope of ['COMPONENT', 'PERSPECTIVE', 'ORGANIZATION'] as const) {
+            expect(() => teaProfileInput(form, scope), scope).toThrow('INHERIT is not stored')
+        }
     })
 
     it('a FOLLOW row keeps its perspective and pre-fills the fields from the parent', () => {
@@ -133,6 +175,31 @@ describe('the copy', () => {
             { p1: 'Payments' })).toBe('No override: pre-filled from perspective Payments')
         expect(teaSourceLine({ stored: null, parent: { status: 'RESOLVED', source: 'DEFAULT', profile: PARENT } }))
             .toBe('No override: pre-filled from built-in defaults')
+    })
+
+    it('in INHERIT, says where the inherited values come from, and that Save removes a stored row', () => {
+        const org = { status: 'RESOLVED', source: 'ORGANIZATION', profile: PARENT }
+        expect(teaSourceLine({ stored: null, parent: org }, {}, 'INHERIT')).toBe('Inherited from organization')
+        expect(teaSourceLine({ stored: null, parent: { ...org, source: 'PERSPECTIVE', sourceObject: 'p1' } }, { p1: 'Payments' }, 'INHERIT'))
+            .toBe('Inherited from perspective Payments')
+        expect(teaSourceLine({ stored: null, parent: { status: 'RESOLVED', source: 'DEFAULT', profile: PARENT } }, {}, 'INHERIT'))
+            .toBe('Inherited from built-in defaults')
+        expect(teaSourceLine({ stored: null, parent: null }, {}, 'INHERIT')).toBe('Inherited from built-in defaults')
+        expect(teaSourceLine({ stored: { uuid: 'x' }, parent: org }, {}, 'INHERIT'))
+            .toBe('Inherited from organization: Save removes the stored override')
+        expect(teaSourceLine({ stored: null, parent: { status: 'CONFLICT', profile: null } }, {}, 'INHERIT'))
+            .toBe('Cannot inherit: its perspectives each carry a TEA profile')
+        // Override over no row keeps the pre-fill wording.
+        expect(teaSourceLine({ stored: null, parent: org }, {}, 'OVERRIDE')).toBe('No override: pre-filled from organization')
+    })
+
+    it('the "Inherit again?" confirmation names the scope and its parents', () => {
+        expect(teaInheritConfirm('COMPONENT', 'component')).toEqual({ title: 'Inherit again?',
+            content: "Remove this component's override and inherit the perspective or organization profile again?" })
+        expect(teaInheritConfirm('COMPONENT', 'product').content)
+            .toBe("Remove this product's override and inherit the perspective or organization profile again?")
+        expect(teaInheritConfirm('PERSPECTIVE', 'perspective').content)
+            .toBe("Remove this perspective's override and inherit the organization profile again?")
     })
 
     it('banners a stored PUBLIC row and an inherited PUBLIC profile, nothing else', () => {
@@ -298,5 +365,19 @@ describe('the membership and member confirmations (TEA-9 round 2)', () => {
         expect(teaMembershipDelta(['px'], [{ uuid: 'old', name: 'Legacy' }], null)).toEqual({ added: ['px'], removed: ['Legacy'],
             names: { old: 'Legacy' } })
         expect(teaMembershipDelta(['p1'], [{ uuid: 'p1', name: 'Payments' }], org)).toMatchObject({ added: [], removed: [] })
+    })
+})
+
+describe('the org table links each override to where it is edited', () => {
+    it('a component or product to its settings TEA tab, a perspective to the Perspectives tab, nothing else', () => {
+        expect(teaRowLink({ scope: 'COMPONENT', object: 'c1' }, 'o1'))
+            .toBe('/componentsOfOrg/o1/c1?componentSettingsView=true&componentSettingsTab=tea')
+        expect(teaRowLink({ scope: 'COMPONENT', object: 'c1' }, 'o1', 'COMPONENT'))
+            .toBe('/componentsOfOrg/o1/c1?componentSettingsView=true&componentSettingsTab=tea')
+        expect(teaRowLink({ scope: 'COMPONENT', object: 'pr1' }, 'o1', 'PRODUCT'))
+            .toBe('/productsOfOrg/o1/pr1?componentSettingsView=true&componentSettingsTab=tea')
+        expect(teaRowLink({ scope: 'PERSPECTIVE', object: 'p1' }, 'o1')).toBe('/orgSettings/o1?tab=perspectives')
+        expect(teaRowLink({ scope: 'ORGANIZATION', object: null }, 'o1')).toBeNull()
+        expect(teaRowLink({ scope: 'COMPONENT', object: null }, 'o1')).toBeNull()
     })
 })
