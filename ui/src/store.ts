@@ -201,6 +201,44 @@ const AGENT_TASK_SELECTION = `
     completedAt
 `
 
+// What the board's views read of every task without opening one: the kanban cards and their tooltips, the
+// filters and lanes, the PERT, Timeline and Table views, the WIP chips and the review banner. Documents,
+// review items, questions, usage and the other detail stay with AGENT_TASK_SELECTION, which a task's drawer
+// and page read for that one task: on a 115-task board the full read is ~2.6 MB, this one ~0.1 MB.
+const AGENT_TASK_CARD_SELECTION = `
+    uuid
+    key
+    number
+    externalRef
+    title
+    sourceUrl
+    status
+    role
+    orderIndex
+    dependsOn
+    parentTask
+    childTasks
+    hold { level kind gateRole reason heldBy { kind } returnTo }
+    requireHumanReview
+    assignment { session agent role assignedAt }
+    stale { rule since minutes message }
+    signOffs { role agent session assignedAt signedOffAt outcome note reviewedBy { kind uuid name } }
+    returns { role agent session reason description returnedAt }
+    statusHistory { from to trigger actor { kind } }
+    prUrls
+    pullRequests { url state targetBranch mergedDate registered baseMovedBy head
+        declaration { outcome commit note supersededBy by { kind uuid name } } }
+    testedHeads { pr head }
+    workLevel
+    effectiveWorkLevel
+    workLevelSetBy { kind uuid name }
+    group { uuid key name }
+    tags { key value }
+    waitingOnGroups
+    createdDate
+    completedAt
+`
+
 // TPF-101 (TPF-74 child 2): the organization's component and product lists read the componentRefs
 // projection (six scalars, no component document, no effectiveLifecycle). A backend without the field
 // refuses the document as schema drift (a validation verdict or an HTTP 400, isSchemaDriftError); the
@@ -2930,14 +2968,21 @@ const storeObject : any = {
             })
             return response.data.agentSessionForceClose
         },
-        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string }) {
+        /**
+         * A board's tasks: the card-level fields the board's views read (AGENT_TASK_CARD_SELECTION), or with
+         * full every task's whole read, for a page that shows the tasks beyond their cards.
+         */
+        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string, full?: boolean }) {
+            const selection = payload.full
+                ? `${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }`
+                : AGENT_TASK_CARD_SELECTION
             const response = await graphqlClient.query({
                 query: gql`
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
-                            ${AGENT_TASK_SELECTION}
-                            testedHeads { pr head }
-                            pullRequests { url head }
+                            ${selection}
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },

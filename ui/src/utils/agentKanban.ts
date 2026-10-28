@@ -63,3 +63,31 @@ export function stripMeasure (after: (fn: () => void) => void, pastEdge: { value
     }
     return { boardEl, measure, pastEdge }
 }
+
+/** How many cards a column shows before its "Show N more". */
+export const LANE_CARDS = 5
+
+/** A column's cards as shown: the first LANE_CARDS until the person expands it, then every one. */
+export function shownCards<T> (cards: T[], expanded: boolean, limit = LANE_CARDS): T[] {
+    return expanded || cards.length <= limit ? cards : cards.slice(0, limit)
+}
+
+/** The column's toggle: "Show 3 more" while it is cut, "Show fewer" once expanded, null when every card fits. */
+export function moreCardsLabel (count: number, expanded: boolean, limit = LANE_CARDS): string | null {
+    if (count <= limit) return null
+    return expanded ? 'Show fewer' : `Show ${count - limit} more`
+}
+
+/** The key a column's expansion is kept under: one per column of each lane, so lanes expand apart. */
+export function columnKey (lane: string, column: string): string {
+    return `${lane}|${column}`
+}
+
+/**
+ * A card tooltip's bounds: never wider than the screen, the width other wide tooltips take (InstanceView). The
+ * text inside wraps a long word or URL, keeps the line breaks it was written with, and scrolls past 60% of the
+ * screen's height rather than running off it.
+ */
+export const CARD_TOOLTIP_STYLE = { maxWidth: 'min(560px, calc(100vw - 32px))' }
+export const CARD_TOOLTIP_TEXT_STYLE = 'white-space: pre-wrap; overflow-wrap: anywhere; word-break: break-word; '
+    + 'max-height: 60vh; overflow-y: auto; display: block'

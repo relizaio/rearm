@@ -218,7 +218,10 @@ describe('the sources: render sites and converted fields', () => {
         expect(source('../AiAgentSessionView.vue')).toContain('.close-attribution { white-space: pre-wrap')
         const panel = source('../AiAgentBoardsPanel.vue')
         const passages = panel.slice(panel.indexOf('p.t.signOffs.map('), panel.indexOf('p.t.signOffs.map(') + 600)
-        expect(passages).toContain("default: () => h('span', { style: 'white-space: pre-wrap' },")
+        // tipText: the card's tooltip text, which keeps its line breaks and stays within the screen.
+        expect(passages).toContain('default: () => tipText(')
+        expect(panel).toContain("return h('span', { style: CARD_TOOLTIP_TEXT_STYLE }, text ?? '')")
+        expect(source('../../utils/agentKanban.ts')).toMatch(/CARD_TOOLTIP_TEXT_STYLE = 'white-space: pre-wrap; /)
     })
 
     it('every converted field is a growing-text-input and none is a one-line n-input (row 19)', () => {

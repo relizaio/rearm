@@ -313,7 +313,7 @@ describe('the kanban: stale marks', () => {
         const chipCode = card.slice(card.lastIndexOf('staleChip(p.t) ? h(NTooltip', chip), hold)
         expect(chipCode).toContain("type: 'error'")
         expect(chipCode).toContain('{ default: () => staleChip(p.t)?.label }')
-        expect(chipCode).toContain('default: () => staleChip(p.t)?.tooltip')
+        expect(chipCode).toContain('default: () => tipText(staleChip(p.t)?.tooltip)')
     })
 
     it('offers "stale only" in the kanban bar only on a board with a staleness block', () => {
@@ -343,15 +343,18 @@ describe('the kanban: stale marks', () => {
 // link to a board the list does not hold says the person cannot open it instead of showing another.
 describe('the boards tab for a person who cannot read a board', () => {
     it('words the empty list by whether the person reads every board', () => {
-        expect(template).toContain('<div v-if="!boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>')
+        // Said once the list is in, never while it loads.
+        expect(template).toContain('<div v-if="boardsListed && !boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>')
         expect(source).toContain('const isAdmin = computed<boolean>(() => isOrgAdmin(store.getters.myuser?.permissions?.permissions, props.orgUuid))')
     })
 
     it('says a linked board is not readable, and does not open another in its place', () => {
         expect(template).toContain('{{ hiddenBoardText(hiddenBoard) }}')
         const refresh = source.slice(source.indexOf('async function refreshBoards'), source.indexOf('async function refreshBoardContent'))
-        expect(refresh).toContain('hiddenBoard.value = fromUrl && !known ? fromUrl : null')
-        expect(refresh).toContain('selectedBoard.value = known ? (fromUrl as string) : hiddenBoard.value ? null : (boards.value[0]?.uuid ?? null)')
+        // initialBoard (agentLastBoard.spec) reports the URL's unlisted board as hidden and picks none in its place.
+        expect(refresh).toContain('const pick = initialBoard(boards.value, fromUrl && fromUrl !== opts.ignoreUrlBoard ? fromUrl : null,')
+        expect(refresh).toContain('hiddenBoard.value = pick.hidden')
+        expect(refresh).toContain('selectedBoard.value = pick.board')
         expect(source).toContain('if (selectedBoard.value) hiddenBoard.value = null')
     })
 })
@@ -511,9 +514,10 @@ describe('the kanban: cards and columns', () => {
 
     it('reads the PR heads the moved chip needs with the board\'s tasks', () => {
         const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
-        const q = store.slice(store.indexOf('query agentTasksOfBoard('), store.indexOf('query agentTasksOfBoard(') + 400)
-        expect(q).toContain('testedHeads { pr head }')
-        expect(q).toContain('pullRequests { url head }')
+        const start = store.indexOf('const AGENT_TASK_CARD_SELECTION = `')
+        const card = store.slice(start, store.indexOf('\n`', start))
+        expect(card).toContain('testedHeads { pr head }')
+        expect(card).toMatch(/pullRequests \{ url [^}]*\bhead\b/)
     })
 })
 
@@ -529,3 +533,161 @@ describe('the kanban: more-lanes hint', () => {
     })
 })
 
+
+// The board's load (a 115-task board read 2.6 MB in 1.3 s): its views read AGENT_TASK_CARD_SELECTION, every field a
+// card, its tooltips, the filters and lanes, the PERT, Timeline and Table views, the WIP chips and the review banner
+// read, and none of the detail only the drawer and the page show; the drawer reads its task whole on open.
+describe('the board load: card-level tasks', () => {
+    const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
+    const start = store.indexOf('const AGENT_TASK_CARD_SELECTION = `')
+    const card = store.slice(start, store.indexOf('\n`', start) + 1)
+    const fetchBoard = store.slice(store.indexOf('async fetchAgentTasksOfBoard'), store.indexOf('async fetchElementCheckCatalogue'))
+
+    it('reads none of the detail', () => {
+        expect(start).toBeGreaterThan(-1)
+        for (const heavy of ['documents', 'document {', 'elements', 'elementChecks', 'reviewItems', 'openReviewItems', 'openQuestions',
+            'usage', 'reviewedInputs', 'refusedPromotions', 'deliveries', 'questionStack', 'investigation', 'reportsReturned', 'reopens',
+            '\n    description\n', 'unlinkedPrs', 'budgetMicros', 'spentMicros', 'note linked', 'outputs']) {
+            expect(card, heavy).not.toContain(heavy)
+        }
+    })
+
+    it('reads every field the board\'s views read of a task', () => {
+        const fields = [
+            // the card, its ref line and its order in a column (byPriority, byStatus)
+            '\n    uuid\n', '\n    key\n', '\n    title\n', '\n    externalRef\n', '\n    sourceUrl\n', '\n    status\n', '\n    role\n',
+            '\n    orderIndex\n', '\n    createdDate\n', '\n    completedAt\n', '\n    requireHumanReview\n',
+            // waits on / blocks / subtask chips, the PERT edges, missingRequired
+            '\n    dependsOn\n', '\n    parentTask\n', '\n    childTasks\n',
+            // holdChip (and parkedHop's last ON_HOLD row), the review banner's gate role, the PERT node's title
+            'hold { level kind gateRole reason heldBy { kind } returnTo }', 'statusHistory { from to trigger actor { kind } }',
+            // the stale chip and filter (TPF-69)
+            '\n    stale { rule since minutes message }\n',
+            // sign-off chips and their tooltip, the Timeline's bars, missingRequired
+            'signOffs { role agent session assignedAt signedOffAt outcome note reviewedBy { kind uuid name } }',
+            // the returns chip and the Timeline's diamonds
+            'returns { role agent session reason description returnedAt }',
+            // the WIP chips, the role tag, the Timeline's active bar, the Table's Agent column
+            'assignment { session agent role assignedAt }',
+            // PR chips, the moved chip, the Table's PRs column
+            '\n    prUrls\n', 'pullRequests { url state targetBranch mergedDate registered baseMovedBy head',
+            'declaration { outcome commit note supersededBy by { kind uuid name } }', 'testedHeads { pr head }',
+            // the level chip, filter and lanes; the group chip, filter and lanes; the tag filter; the gated chip
+            '\n    workLevel\n', '\n    effectiveWorkLevel\n', 'workLevelSetBy { kind uuid name }', 'group { uuid key name }', 'tags { key value }',
+            '\n    waitingOnGroups\n',
+            // the Table's key sort
+            '\n    number\n',
+        ]
+        for (const f of fields) expect(card.includes(f), f).toBe(true)
+    })
+
+    it('serves the card selection to the board and the whole one on request', () => {
+        expect(fetchBoard).toContain('payload: { boardUuid: string, status?: string, full?: boolean }')
+        expect(fetchBoard).toMatch(/const selection = payload\.full\s+\? `\$\{AGENT_TASK_SELECTION\}/)
+        expect(fetchBoard).toContain(': AGENT_TASK_CARD_SELECTION')
+        expect(fetchBoard).toContain('${selection}')
+        expect(source).toContain("store.dispatch('fetchAgentTasksOfBoard', { boardUuid: board })")
+    })
+
+    it('reads the drawer\'s task whole when it opens, and merges it over the card', () => {
+        const open = source.slice(source.indexOf('async function loadTaskDetail'), source.indexOf('function closeTask'))
+        expect(open).toContain("await store.dispatch('fetchAgentTask', uuid)")
+        expect(open).toContain('selectedTask.value = { ...selectedTask.value, ...full }')
+        expect(open).toContain('void loadTaskDetail(card.uuid)')
+        expect(template).toContain(':loading="taskDetailLoading" :load-error="taskDetailError"')
+        expect(template).toContain('@close="closeTask" @open="openTask"')
+    })
+})
+
+// At most five cards a column (agentKanban.LANE_CARDS), every column of every lane, after the filters; the views
+// other than the kanban take the whole list.
+describe('the kanban: five cards a column', () => {
+    it('renders every column through LaneCards, keyed per lane, and counts the whole column in its head', () => {
+        expect(template).not.toContain('<TaskCard v-for')
+        for (const col of ["byStatus('PENDING_INTAKE', lane.tasks)\" :at=\"columnKey(lane.key, 'intake')\"",
+            "atRole(r.name, lane.tasks)\" :at=\"columnKey(lane.key, 'role:' + r.name)\"",
+            "byStatus('AWAITING_COORDINATOR', lane.tasks)\" :at=\"columnKey(lane.key, 'awaiting')\"",
+            "byStatus('ON_HOLD', lane.tasks)\" :at=\"columnKey(lane.key, 'hold')\"",
+            "byStatus('DELIVERING', lane.tasks)\" :at=\"columnKey(lane.key, 'delivering')\"",
+            "byStatus('COMPLETED', lane.tasks)\" :at=\"columnKey(lane.key, 'done')\""]) {
+            expect(template).toContain('<LaneCards :cards="' + col)
+        }
+        expect(template).toContain('<span class="col__count" data-testid="col-count">{{ byStatus(\'COMPLETED\', lane.tasks).length }}</span>')
+        expect(template).toContain('<AiAgentTaskPertView :tasks="tasks"')
+        expect(template).toContain('<AiAgentTaskTimelineView :tasks="tasks"')
+        expect(template).toContain('<AiAgentTaskTableView :tasks="tasks"')
+    })
+
+    it('cuts and toggles through agentKanban, and folds every column back on another board', () => {
+        const lane = source.slice(source.indexOf('const LaneCards = defineComponent'), source.indexOf('// Header label carrying'))
+        expect(lane).toContain('const more = moreCardsLabel(p.cards.length, expanded)')
+        expect(lane).toContain('...shownCards(p.cards, expanded).map((t: any) => h(TaskCard, { key: t.uuid, t }))')
+        expect(lane).toContain('onClick: () => toggleColumn(p.at)')
+        const watchBoard = source.slice(source.indexOf('watch(selectedBoard, async () => {'), source.indexOf('watch(() => props.orgUuid'))
+        expect(watchBoard).toContain('expandedColumns.value = new Set()')
+    })
+})
+
+// The card's tooltips stay on the screen (agentKanban.CARD_TOOLTIP_STYLE), free text wrapping and scrolling inside.
+describe('the kanban: card tooltips', () => {
+    const card = source.slice(source.indexOf('const CARD_TIP = '), source.indexOf('// Header label carrying'))
+
+    it('bounds every tooltip on the card', () => {
+        expect(card).toContain("const CARD_TIP = { trigger: 'hover' as const, style: CARD_TOOLTIP_STYLE }")
+        expect(card).not.toContain("h(NTooltip, { trigger: 'hover'")
+        const tips = card.match(/h\(NTooltip, /g)?.length ?? 0
+        const bounded = card.match(/h\(NTooltip, (CARD_TIP|\{ \.\.\.CARD_TIP, )/g)?.length ?? 0
+        expect(tips).toBeGreaterThan(10)
+        expect(bounded).toBe(tips)
+    })
+
+    it('puts free text in the wrapping span: notes, reasons, titles, the stale and level text', () => {
+        for (const t of ['tipText(levelTooltip(p.t, currentBoard.value, actorLabel))', 'tipText(staleChip(p.t)?.tooltip)',
+            'tipText(holdChip(p.t)?.tooltip)', "tipText(p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}",
+            'tipText(`${c.label}: ${c.title}`)', 'tipText(`${d.title} — ${d.status}`)',
+            'default: () => tipText(\n                        `${s.role}: ${s.outcome}']) {
+            expect(card, t).toContain(t)
+        }
+    })
+})
+
+// A spinner in place of the views while the board loads (boardLoading), and no "empty board" or "no boards" before
+// the read that would say so has finished.
+describe('the board load: spinner', () => {
+    it('shows the spinner in place of the views, the empty-board hint only under them', () => {
+        const spin = template.indexOf('<div v-if="boardLoading" class="board__loading" data-testid="board-loading">')
+        expect(spin).toBeGreaterThan(-1)
+        expect(template.slice(spin, template.indexOf('</div>', spin))).toContain('<n-spin size="small"/><span>Loading board…</span>')
+        const tabs = template.indexOf('<n-tabs v-else type="segment"')
+        expect(tabs).toBeGreaterThan(spin)
+        const hint = template.indexOf('data-testid="empty-board"')
+        expect(hint).toBeGreaterThan(tabs)
+        expect(hint).toBeLessThan(template.indexOf('</n-tabs>'))
+        expect(template).toContain('<div v-if="boardLoading && !currentBoard" class="board__loading" data-testid="board-loading">')
+    })
+
+    it('loads for a board not yet shown, keeps a reloaded board\'s cards, and stops on an error too', () => {
+        const content = source.slice(source.indexOf('async function refreshBoardContent'), source.indexOf('// A save refusal about one'))
+        expect(content).toMatch(/if \(board !== tasksShownOf\) \{\s+tasks\.value = \[\]\s+boardLoading\.value = true/)
+        expect(content).toMatch(/\} finally \{\s+if \(seq === contentSeq\) boardLoading\.value = false/)
+        expect(content).toContain('boardLoading.value = !boardsListed.value')
+        expect(source).toContain('const boardLoading = ref(true)')
+    })
+})
+
+// The board last opened, per organization, in this browser (agentLastBoard): the URL's board first, then the
+// remembered one when listed, then the first; written when a board is picked; another org lists its own boards.
+describe('the board load: the last board', () => {
+    it('picks through initialBoard with the organization\'s remembered board', () => {
+        const refresh = source.slice(source.indexOf('async function refreshBoards'), source.indexOf('async function refreshBoardContent'))
+        expect(refresh).toContain('readLastBoard(props.orgUuid))')
+        expect(refresh).toContain('if (selectedBoard.value === before) await refreshBoardContent()')
+    })
+
+    it('remembers the board picked, and lists another organization\'s boards when the org changes', () => {
+        const watchBoard = source.slice(source.indexOf('watch(selectedBoard, async () => {'), source.indexOf('watch(() => props.orgUuid'))
+        expect(watchBoard).toContain('writeLastBoard(props.orgUuid, selectedBoard.value)')
+        const watchOrg = source.slice(source.indexOf('watch(() => props.orgUuid'), source.indexOf('// ---------- declarative boards'))
+        expect(watchOrg).toContain('await refreshBoards({ ignoreUrlBoard: previous })')
+    })
+})

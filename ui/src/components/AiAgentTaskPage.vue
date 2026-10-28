@@ -124,7 +124,7 @@ async function load () {
         // still the page, so one of them failing leaves that part empty rather than the page.
         const [b, ts, rs, agents] = await Promise.all([
             store.dispatch('fetchAgentBoard', t.board).catch(() => null),
-            store.dispatch('fetchAgentTasksOfBoard', { boardUuid: t.board }).catch(() => []),
+            store.dispatch('fetchAgentTasksOfBoard', { boardUuid: t.board, full: true }).catch(() => []),
             store.dispatch('fetchAgentTaskRoleConfigsOfBoard', t.board).catch(() => []),
             store.dispatch('fetchAgentsOfOrg', t.org).catch(() => []),
         ])
