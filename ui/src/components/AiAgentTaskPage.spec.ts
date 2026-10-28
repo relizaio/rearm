@@ -36,7 +36,8 @@ describe('AiAgentTaskPage', () => {
         const rest = dispatch.mock.calls.slice(1).map(c => c[0]).sort()
         expect(rest).toEqual(['fetchAgentBoard', 'fetchAgentTaskRoleConfigsOfBoard', 'fetchAgentTasksOfBoard', 'fetchAgentsOfOrg'])
         expect(dispatch).toHaveBeenCalledWith('fetchAgentBoard', 'b1')
-        expect(dispatch).toHaveBeenCalledWith('fetchAgentTasksOfBoard', { boardUuid: 'b1' })
+        // The page reads its board's tasks whole; only the board's views read them card-level.
+        expect(dispatch).toHaveBeenCalledWith('fetchAgentTasksOfBoard', { boardUuid: 'b1', full: true })
         expect(dispatch).toHaveBeenCalledWith('fetchAgentsOfOrg', 'o1')
     })
 

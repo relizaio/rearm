@@ -11,26 +11,33 @@
                  task actions. Review item rounds, questions, documents and history are on the page. -->
             <div class="tsecs">
                 <router-link :to="taskPagePath(task.uuid)" class="openpage">Open task page →</router-link>
-                <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
-                             :can-operate="canOperate(board)" :board="board"
-                             @human-review="p => emit('human-review', p)"
-                             @human-signoff="p => emit('human-signoff', p)"
-                             @lift-hold="p => emit('lift-hold', p)"
-                             @require-review="p => emit('require-review', p)"/>
-                <!-- What the task waits on, for every reader (RD2-7). -->
-                <task-open-questions :task="task" :roles="roles"/>
-                <task-actions v-if="canOperate(board)" ref="actions" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
-                              @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
-                              @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
-                              @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
-                              @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
-                              @unassign="p => emit('unassign', p)"
-                              @set-work-level="p => emit('set-work-level', p)"
-                              @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
-                              @declare-delivery="p => emit('declare-delivery', p)"
-                              @set-budget="p => emit('set-budget', p)"/>
-                <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames" :board="board"
-                              @open="t => emit('open', t)" @focus-unassign="actions?.focusUnassign()"/>
+                <!-- The board holds its tasks card-level: the sections wait for the task's whole read. -->
+                <div v-if="loading" class="tsecs__loading" data-testid="drawer-loading">
+                    <n-spin size="small"/><span>Loading the task…</span>
+                </div>
+                <n-alert v-else-if="loadError" type="warning" :bordered="false" data-testid="drawer-load-error">{{ loadError }}</n-alert>
+                <template v-else>
+                    <task-header :task="task" :tasks="tasks" :roles="roles" :priority-levels="priorityLevels" questions-on-page
+                                 :can-operate="canOperate(board)" :board="board"
+                                 @human-review="p => emit('human-review', p)"
+                                 @human-signoff="p => emit('human-signoff', p)"
+                                 @lift-hold="p => emit('lift-hold', p)"
+                                 @require-review="p => emit('require-review', p)"/>
+                    <!-- What the task waits on, for every reader (RD2-7). -->
+                    <task-open-questions :task="task" :roles="roles"/>
+                    <task-actions v-if="canOperate(board)" ref="actions" :task="task" :roles="roles" :board="board" :can-reopen="canReopen" :admin="canReopen"
+                                  @authorize="p => emit('authorize', p)" @order="p => emit('order', p)"
+                                  @complete="p => emit('complete', p)" @cancel="p => emit('cancel', p)"
+                                  @reopen="p => emit('reopen', p)" @decide="p => emit('decide', p)"
+                                  @set-strength="p => emit('set-strength', p)" @operator-hold="p => emit('operator-hold', p)"
+                                  @unassign="p => emit('unassign', p)"
+                                  @set-work-level="p => emit('set-work-level', p)"
+                                  @set-group="p => emit('set-group', p)" @set-tags="p => emit('set-tags', p)"
+                                  @declare-delivery="p => emit('declare-delivery', p)"
+                                  @set-budget="p => emit('set-budget', p)"/>
+                    <task-summary :task="task" :tasks="tasks" :roles="roles" :agent-names="agentNames" :board="board"
+                                  @open="t => emit('open', t)" @focus-unassign="actions?.focusUnassign()"/>
+                </template>
             </div>
         </n-drawer-content>
     </n-drawer>
@@ -39,7 +46,7 @@
 <script lang="ts" setup>
 import { ref } from 'vue'
 import { RouterLink } from 'vue-router'
-import { NDrawer, NDrawerContent } from 'naive-ui'
+import { NAlert, NDrawer, NDrawerContent, NSpin } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskHeader from './task/TaskHeader.vue'
 import TaskOpenQuestions from './task/TaskOpenQuestions.vue'
@@ -61,6 +68,10 @@ defineProps<{
     priorityLevels?: number
     /** Org admin: may reopen a completed task (the server's rule for agentTaskReopen). */
     canReopen?: boolean
+    /** The task's whole read is on its way: the card's fields only so far, so a spinner in place of the sections. */
+    loading?: boolean
+    /** The whole read failed: said in place of the sections. */
+    loadError?: string | null
 }>()
 const emit = defineEmits<{
     (e: 'close'): void
@@ -91,4 +102,5 @@ const emit = defineEmits<{
 <style scoped lang="scss">
 .tsecs { display: flex; flex-direction: column; gap: 16px; }
 .openpage { align-self: flex-start; font-weight: 600; font-size: 13px; }
+.tsecs__loading { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; }
 </style>

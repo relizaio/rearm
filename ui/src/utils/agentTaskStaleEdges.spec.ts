@@ -30,7 +30,10 @@ describe('agentTaskStale edges', () => {
         const selection = store.slice(start, store.indexOf('\n`', start))
         expect(start).toBeGreaterThan(-1)
         expect(selection).toContain('\n    stale { rule since minutes message }\n')
-        // both reads that serve the board's cards and the task page splice this selection
+        // the single task's read and the board's whole read (the task page) splice this selection
         expect(store.split('${AGENT_TASK_SELECTION}').length - 1).toBeGreaterThanOrEqual(2)
+        // and the board's card-level read, which its cards and the "stale only" filter read, carries the marks too
+        const cardStart = store.indexOf('const AGENT_TASK_CARD_SELECTION = `')
+        expect(store.slice(cardStart, store.indexOf('\n`', cardStart) + 1)).toContain('\n    stale { rule since minutes message }\n')
     })
 })

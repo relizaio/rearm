@@ -13,9 +13,10 @@ const stubs = {
     RouterLink: { props: ['to'], template: '<a class="rl" :href="to"><slot/></a>' },
 }
 
-function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE'], attachTo?: HTMLElement) {
+function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE'], attachTo?: HTMLElement, more: Record<string, any> = {}) {
     return mount(Drawer, {
-        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: { myPermissions }, priorityLevels: 3, canReopen: true },
+        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: { myPermissions }, priorityLevels: 3, canReopen: true,
+            ...more },
         global: { stubs },
         attachTo,
     })
@@ -140,5 +141,28 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(desc.classes()).toContain('dhead__desc--clamped')
         expect(desc.attributes('title')).toBe(long)
         expect(mountDrawer(richTask()).find('.dhead__desc').exists()).toBe(false)
+    })
+})
+
+// The board reads its tasks card-level: the drawer opens on the card and shows the sections once the task's whole
+// read is in, a spinner until then and the refusal if it fails.
+describe('AiAgentTaskDetailDrawer: the task\'s whole read', () => {
+    it('shows the title and a spinner, no section, while the task loads', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loading: true })
+        expect(w.find('[data-testid="drawer-loading"]').text()).toContain('Loading the task…')
+        expect(w.findAll('.dsec__h')).toHaveLength(0)
+        expect(w.find('.openpage').exists()).toBe(true)
+    })
+
+    it('says a failed read in place of the sections', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loadError: 'Could not load the task: boom' })
+        expect(w.find('[data-testid="drawer-load-error"]').text()).toBe('Could not load the task: boom')
+        expect(w.findAll('.dsec__h')).toHaveLength(0)
+    })
+
+    it('shows the sections once loaded', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loading: false, loadError: null })
+        expect(w.find('[data-testid="drawer-loading"]').exists()).toBe(false)
+        expect(w.findAll('.dsec__h').map(h => h.text())).toContain('Summary')
     })
 })

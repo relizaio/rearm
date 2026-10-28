@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { COL_MIN_WIDTH, columnFolded, columnHead, columnsPastEdge, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from './agentKanban'
+import { CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, COL_MIN_WIDTH, columnFolded, columnHead, columnKey, columnsPastEdge, EMPTY_BOARD_HINT,
+    LANE_CARDS, moreCardsLabel, moreLanesHint, shownCards, stripMeasure } from './agentKanban'
 
 // RD2-13 (sweep UI-21, UI-36): the kanban's columns at a laptop's width.
 describe('the kanban columns', () => {
@@ -61,3 +62,36 @@ describe('measuring a lane\'s strip', () => {
     })
 })
 
+
+// Five cards a column until "Show N more" (the board load), and the card tooltips' bounds.
+describe('the kanban columns: five cards each', () => {
+    const cards = [1, 2, 3, 4, 5, 6, 7]
+
+    it('cut a column to five until it is expanded', () => {
+        expect(LANE_CARDS).toBe(5)
+        expect(shownCards(cards, false)).toEqual([1, 2, 3, 4, 5])
+        expect(shownCards(cards, true)).toEqual(cards)
+        expect(shownCards([1, 2], false)).toEqual([1, 2])
+    })
+
+    it('offer Show N more, then Show fewer, and nothing on a column that fits', () => {
+        expect(moreCardsLabel(7, false)).toBe('Show 2 more')
+        expect(moreCardsLabel(7, true)).toBe('Show fewer')
+        expect(moreCardsLabel(5, false)).toBeNull()
+        expect(moreCardsLabel(5, true)).toBeNull()
+        expect(moreCardsLabel(0, false)).toBeNull()
+    })
+
+    it('keep each column of each lane apart', () => {
+        expect(columnKey('none', 'intake')).toBe('none|intake')
+        expect(columnKey('g1', 'role:coder')).not.toBe(columnKey('g2', 'role:coder'))
+    })
+
+    it('bound a card tooltip to the screen, its text wrapping, keeping its breaks and scrolling', () => {
+        expect(CARD_TOOLTIP_STYLE).toEqual({ maxWidth: 'min(560px, calc(100vw - 32px))' })
+        for (const rule of ['white-space: pre-wrap', 'overflow-wrap: anywhere', 'word-break: break-word', 'max-height: 60vh',
+            'overflow-y: auto', 'display: block']) {
+            expect(CARD_TOOLTIP_TEXT_STYLE).toContain(rule)
+        }
+    })
+})
