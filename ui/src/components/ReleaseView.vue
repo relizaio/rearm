@@ -2363,7 +2363,7 @@ import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
 import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
-import { isDriftRejected, isSchemaDriftError, loadWithSchemaDriftFallback, markDriftRejected } from '@/utils/graphqlDriftFallback'
+import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
 import submissionQueries from '@/utils/submissionQueries'
@@ -4323,21 +4323,15 @@ async function loadTeaPublication () {
         teaViewRelease.value = forRelease
     }
     if (!teaProfilesAvailable(myUser?.installationType)) return
-    // A CE mirror before its sync lacks TeaPublishPreview.publishing: the CORE document still serves
-    // the header and the banner, and the TEA tab stays hidden (publishing undefined).
-    const fullQuery = graphqlQueries.ReleaseTeaPublicationViewGql
     try {
-        const { data, degraded } = await loadWithSchemaDriftFallback(graphqlClient as any, {
-            fullQuery,
-            coreQuery: graphqlQueries.ReleaseTeaPublicationViewCoreGql,
+        const resp = await graphqlClient.query({
+            query: graphqlQueries.ReleaseTeaPublicationViewGql,
             variables: { release: forRelease },
-            extractPath: (d: any) => d?.releaseTeaPublicationView ?? null,
-            skipFull: isDriftRejected(fullQuery)
+            fetchPolicy: 'network-only'
         })
-        if (degraded) markDriftRejected(fullQuery)
         // Drop out-of-order responses (prev/next navigation mid-flight).
         if (seq !== teaViewLoadSeq) return
-        teaView.value = data ?? null
+        teaView.value = resp.data?.releaseTeaPublicationView ?? null
     } catch (e) {
         console.warn('Failed to load the TEA publication of release', e)
     }

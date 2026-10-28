@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -30,6 +31,7 @@ import org.junit.jupiter.params.provider.MethodSource;
 import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.SbomProfile;
 import io.reliza.model.SbomProfileData;
@@ -43,6 +45,9 @@ import io.reliza.service.oss.OssPerspectiveService.TeaPerspectiveRef;
 
 /** Task TEA-27, design 4.5: storing SBOM profiles, the delete guard and the F-6 audit record. */
 class SbomProfileServiceTest extends SbomProfileServiceTestBase {
+
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
+	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
 
 	private RelizaException refused(SettingsScope scope, UUID object, String name, SbomProfileInputDto in) {
 		return assertThrows(RelizaException.class, () -> service.saveProfile(org, scope, object, name, in, WU));
@@ -59,6 +64,7 @@ class SbomProfileServiceTest extends SbomProfileServiceTestBase {
 
 	@Test
 	void theNameIsValidatedAndNeverEchoedWhenRefused() {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		for (String bad : new String[] { null, "", " default", ".x", "a".repeat(65), "two words", "d\u00e9faut" }) {
 			String m = refused(SettingsScope.ORGANIZATION, null, bad, recipe()).getMessage();
 			assertTrue(m.contains("SBOM profile name"), m);
@@ -189,6 +195,7 @@ class SbomProfileServiceTest extends SbomProfileServiceTestBase {
 
 	@Test
 	void anUpdateBumpsTheRevisionAndWritesAnAuditRecordACreateDoesNot() throws RelizaException {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		SbomProfileData created = save(SettingsScope.COMPONENT, cd.getUuid(), "premarket", override());
 		assertEquals(0, created.getRevision());
 		verify(auditService, never()).createAndSaveAuditRecord(any(), any());
@@ -292,6 +299,7 @@ class SbomProfileServiceTest extends SbomProfileServiceTestBase {
 
 	@Test
 	void theListsReadByScopeAndByOrganization() throws RelizaException {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		save(SettingsScope.ORGANIZATION, null, "zeta", recipe());
 		save(SettingsScope.ORGANIZATION, null, "alpha", recipe());
 		save(SettingsScope.PERSPECTIVE, alpha.uuid(), "alpha", recipe());

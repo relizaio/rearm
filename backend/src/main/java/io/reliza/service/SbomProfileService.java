@@ -20,6 +20,7 @@ import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.SbomProfile;
@@ -141,6 +142,14 @@ public class SbomProfileService {
 		}
 	}
 
+	/**
+	 * ReARM CE has one SBOM profile, {@code default}: a save under any other name stores {@code default}
+	 * (overridable per component like any profile). ReARM Pro keeps the name as sent.
+	 */
+	static String editionName(String name, boolean ossEdition) {
+		return ossEdition ? SbomProfileData.DEFAULT_NAME : name;
+	}
+
 	/** ASCII, no whitespace, at most 64 characters; the refusal never echoes the refused name. */
 	public static void validateName(String name) throws RelizaException {
 		if (null == name || name.isEmpty()) throw new RelizaException("An SBOM profile name is required");
@@ -191,6 +200,7 @@ public class SbomProfileService {
 	@Transactional
 	public SbomProfileData saveProfile(UUID org, SettingsScope scope, UUID object, String name,
 			SbomProfileInputDto incoming, WhoUpdated wu) throws RelizaException {
+		name = editionName(name, LicensingConstants.isOssEdition());
 		validateName(name);
 		if (null == incoming) throw new RelizaException("profile is required");
 		if (null != org) {

@@ -927,6 +927,19 @@ class TeaPublicationServiceTest extends TeaPublicationServiceTestBase {
 		assertNotNull(d.refusalMessage());
 	}
 
+	// the effective publishing switch is served on its own: an earlier refusal (ALREADY_PUBLISHED) hides
+	// PUBLISHING_DISABLED, so the release page reads the switch from here
+	@Test
+	void thePreviewServesThePublishingSwitchWhateverTheRefusal() throws Exception {
+		assertEquals(TeaPublishing.ENABLED, service.preview(release.getUuid()).publishing());
+		publish(TeaPublishMode.PUBLISH);
+		profile.setPublishing(TeaPublishing.DISABLED);
+		TeaPublishPreview off = service.preview(release.getUuid());
+		assertEquals(TeaPublishRefusal.ALREADY_PUBLISHED, off.refusal());
+		assertEquals(TeaPublishing.DISABLED, off.publishing());
+		assertNull(service.preview(UUID.randomUUID()).publishing(), "an unknown release resolves no profile");
+	}
+
 	// ---------------------------------------------------------------- the cascade (3.7)
 
 	@Test

@@ -86,6 +86,16 @@ public class SubmissionDataFetcher {
 		return null == hook ? List.of() : hook.listOfRelease(rd.getOrg(), rd.getUuid());
 	}
 
+	/**
+	 * The package kinds a release offers (the release page shows one regulatory row per kind); the
+	 * field that answered the release authorized it, as for the other child resolvers. CE: none.
+	 */
+	@DgsData(parentType = "Release", field = "regulatoryPackageKinds")
+	public List<PackageKind> regulatoryPackageKinds(DgsDataFetchingEnvironment dfe) {
+		ReleaseData rd = dfe.getSource();
+		return null == hook || null == rd ? List.of() : hook.regulatoryKindsOfRelease(rd);
+	}
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "submissionsOfComponent")
 	public List<SubmissionData> submissionsOfComponent(@InputArgument("component") UUID component,

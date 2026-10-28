@@ -7,7 +7,9 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Base64;
 import java.util.HashMap;
+import java.util.ArrayList;
 import java.util.HexFormat;
+import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Optional;
@@ -25,8 +27,9 @@ import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
 
 /**
- * The rules of the TEA artifact downloads (task TEA-10): {@code mediaType} is the one selector of a
- * format, and a served download carries a strong ETag of its bytes, their Repr-Digest, the absolute
+ * The rules of the TEA artifact downloads (task TEA-10): {@code mediaType} selects a format; without it a
+ * content download negotiates on {@code Accept} (RFC 9110 section 12) and falls back to the revision's
+ * first format, a signature download takes the first format. A served download carries a strong ETag of its bytes, their Repr-Digest, the absolute
  * versioned Content-Location, and a Cache-Control that is immutable only for a PUBLIC versioned read.
  */
 @Slf4j
@@ -34,7 +37,10 @@ public final class TeaArtifactResponses {
 
 	private TeaArtifactResponses() {}
 
-	static final String NO_FORMAT_MESSAGE = "mediaType is required and must name one of the formats of this artifact revision";
+	static final String NO_FORMAT_MESSAGE = "mediaType must name one of the formats of this artifact revision";
+	static final String NOT_ACCEPTABLE_MESSAGE = "Accept admits none of the formats of this artifact revision";
+	static final String NO_FORMATS_MESSAGE = "this artifact revision has no format";
+	static final String VARY_AUTHORIZATION_ACCEPT = HttpHeaders.AUTHORIZATION + ", " + HttpHeaders.ACCEPT;
 	static final String NOT_A_MEDIA_TYPE_MESSAGE = "mediaType is not a media type";
 	/**
 	 * A versioned download a PUBLIC publication serves (content and signature, the 200 and its 304): shared
@@ -59,6 +65,101 @@ public final class TeaArtifactResponses {
 	public static final int MAX_MEDIA_TYPE_CHARS = 1024;
 	public static final String LOCATION_TOO_LONG_MESSAGE = "the published location is longer than this server sends as a redirect Location (at most "
 			+ MAX_LOCATION_OCTETS + " octets as a URI)";
+
+	/**
+	 * The format a download serves, and whether {@code Accept} chose it (then a response varies on it).
+	 * An explicit {@code mediaType} decides alone ({@link #selectFormat}); {@code Accept} is not read.
+	 * Without one (absent or blank), TEA 1.0.0's {@code artifact-media-type} rule: a content download
+	 * negotiates on {@code Accept} and takes the revision's first format when {@code Accept} is absent,
+	 * malformed or admits several formats equally; a signature download takes the first format (the
+	 * spec's "a format of its choice"; {@code Accept} there names the signature's type, not the content's).
+	 * 406 NO_ACCEPTABLE_FORMAT when {@code Accept} admits no format, or the revision has none.
+	 */
+	public static FormatChoice chooseFormat(ArtifactRevision r, String requestedMediaType, String accept, TeaDownloadObject kind) {
+		if (null != requestedMediaType && !requestedMediaType.isBlank()) return new FormatChoice(selectFormat(r, requestedMediaType), false);
+		List<Format> formats = formatsOf(r);
+		if (formats.isEmpty()) throw TeaRefusal.noAcceptableFormat(NO_FORMATS_MESSAGE);
+		if (TeaDownloadObject.SIGNATURE == kind) return new FormatChoice(formats.get(0).stored(), false);
+		List<MediaType> ranges = acceptRanges(accept);
+		if (ranges.isEmpty()) return new FormatChoice(formats.get(0).stored(), true);
+		Format best = null;
+		double bestQuality = 0;
+		for (Format f : formats) {
+			double q = quality(f.parsed(), ranges);
+			if (q > bestQuality) {
+				best = f;
+				bestQuality = q;
+			}
+		}
+		if (null == best) throw TeaRefusal.noAcceptableFormat(NOT_ACCEPTABLE_MESSAGE);
+		return new FormatChoice(best.stored(), true);
+	}
+
+	/** The stored media type a download serves, and whether the request's Accept chose it. */
+	public record FormatChoice(String mediaType, boolean byAccept) {}
+
+	private record Format(String stored, MediaType parsed) {}
+
+	/** The revision's formats in their published order, those whose stored media type parses (the rest logged once, as before). */
+	private static List<Format> formatsOf(ArtifactRevision r) {
+		List<Format> out = new ArrayList<>();
+		JsonNode formats = r.artifactObject().get("formats");
+		if (null == formats || !formats.isArray()) return out;
+		for (JsonNode f : formats) {
+			JsonNode mt = f.get("mediaType");
+			String stored = null == mt ? null : mt.asString();
+			if (null == stored) continue;
+			MediaType parsed = mediaTypeOf(stored).orElse(null);
+			if (null == parsed) {
+				log.error("TEA artifact {} revision {}: the stored format media type is not a media type", r.teaUuid(), r.revision());
+				continue;
+			}
+			out.add(new Format(stored, parsed));
+		}
+		return out;
+	}
+
+	/** The media ranges of an Accept header; none when it is absent, blank, too long or malformed (then it does not constrain the choice). */
+	static List<MediaType> acceptRanges(String accept) {
+		if (null == accept || accept.isBlank() || accept.length() > MAX_ACCEPT_CHARS) return List.of();
+		try {
+			return MediaType.parseMediaTypes(accept);
+		} catch (IllegalArgumentException malformed) { // InvalidMediaTypeException included
+			return List.of();
+		}
+	}
+
+	static final int MAX_ACCEPT_CHARS = 4096;
+
+	/**
+	 * RFC 9110 section 12.5.1: the quality the most specific range matching {@code format} gives it, 0 when
+	 * none matches. Specificity: type/subtype with parameters (all equal to the format's, compared as
+	 * {@link #sameFormat}), type/subtype, type/*, then *&#47;*. A range with parameters the format lacks does
+	 * not match it.
+	 */
+	static double quality(MediaType format, List<MediaType> ranges) {
+		int bestRank = -1;
+		double q = 0;
+		for (MediaType range : ranges) {
+			int rank = rank(range, format);
+			if (rank > bestRank) {
+				bestRank = rank;
+				q = range.getQualityValue();
+			}
+		}
+		return q;
+	}
+
+	private static int rank(MediaType range, MediaType format) {
+		if (range.isWildcardType()) return 0;
+		if (!range.getType().equalsIgnoreCase(format.getType())) return -1;
+		if (range.isWildcardSubtype()) return 1;
+		if (!range.getSubtype().equalsIgnoreCase(format.getSubtype())) return -1;
+		Map<String, String> params = new HashMap<>(range.getParameters());
+		params.keySet().removeIf(k -> "q".equalsIgnoreCase(k));
+		if (params.isEmpty()) return 2;
+		return sameFormat(new MediaType(range.getType(), range.getSubtype(), params), format) ? 3 : -1;
+	}
 
 	/**
 	 * The stored media type of the format {@code requestedMediaType} selects: absent, blank, a wildcard
@@ -139,19 +240,31 @@ public final class TeaArtifactResponses {
 	 */
 	public static HttpHeaders validatorHeaders(TeaRequestContext ctx, ArtifactRevision r, String mediaType, String sha256,
 			TeaDownloadObject kind, boolean latest) {
+		return validatorHeaders(ctx, r, mediaType, sha256, kind, latest, false);
+	}
+
+	/** As above; {@code byAccept}: the request's Accept chose the format, so Vary names it too. */
+	public static HttpHeaders validatorHeaders(TeaRequestContext ctx, ArtifactRevision r, String mediaType, String sha256,
+			TeaDownloadObject kind, boolean latest, boolean byAccept) {
 		HttpHeaders h = new HttpHeaders();
 		h.setETag(TeaResponses.etagOf(sha256));
 		h.set(REPR_DIGEST, reprDigest(sha256));
 		h.set(HttpHeaders.CONTENT_LOCATION, contentLocation(ctx.org().apiBase(), r, mediaType, kind));
 		h.setCacheControl(cacheControl(r.publiclyAccessible(), latest));
-		h.set(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION);
+		h.set(HttpHeaders.VARY, byAccept ? VARY_AUTHORIZATION_ACCEPT : HttpHeaders.AUTHORIZATION);
 		return h;
 	}
 
 	/** The headers of a served download: the validator headers plus Content-Type, Content-Length and Content-Disposition. */
 	public static HttpHeaders downloadHeaders(TeaRequestContext ctx, ArtifactRevision r, String mediaType, String sha256,
 			TeaDownloadObject kind, boolean latest, String contentType, String fileName, long length) {
-		HttpHeaders h = validatorHeaders(ctx, r, mediaType, sha256, kind, latest);
+		return downloadHeaders(ctx, r, mediaType, sha256, kind, latest, false, contentType, fileName, length);
+	}
+
+	/** As above; {@code byAccept}: the request's Accept chose the format, so Vary names it too. */
+	public static HttpHeaders downloadHeaders(TeaRequestContext ctx, ArtifactRevision r, String mediaType, String sha256,
+			TeaDownloadObject kind, boolean latest, boolean byAccept, String contentType, String fileName, long length) {
+		HttpHeaders h = validatorHeaders(ctx, r, mediaType, sha256, kind, latest, byAccept);
 		h.set(HttpHeaders.CONTENT_TYPE, contentType);
 		h.setContentLength(length);
 		h.set(HttpHeaders.CONTENT_DISPOSITION, contentDisposition(fileName));
@@ -167,6 +280,12 @@ public final class TeaArtifactResponses {
 	 * caller sets any status (round 4 decision 16a); nothing above DEBUG.
 	 */
 	public static HttpHeaders redirectHeaders(TeaRequestContext ctx, ArtifactRevision r, boolean latest, String location) {
+		return redirectHeaders(ctx, r, latest, location, false);
+	}
+
+	/** As above; {@code byAccept}: the request's Accept chose the format, so Vary names it too. */
+	public static HttpHeaders redirectHeaders(TeaRequestContext ctx, ArtifactRevision r, boolean latest, String location,
+			boolean byAccept) {
 		String mapped = locationOf(location);
 		if (null != mapped && mapped.length() > MAX_LOCATION_OCTETS) {
 			// the mapped form is printable US-ASCII, so its characters are its octets
@@ -177,7 +296,7 @@ public final class TeaArtifactResponses {
 		HttpHeaders h = new HttpHeaders();
 		h.set(HttpHeaders.LOCATION, mapped);
 		h.setCacheControl(r.publiclyAccessible() ? LATEST_PUBLIC : NOT_SHARED);
-		h.set(HttpHeaders.VARY, HttpHeaders.AUTHORIZATION);
+		h.set(HttpHeaders.VARY, byAccept ? VARY_AUTHORIZATION_ACCEPT : HttpHeaders.AUTHORIZATION);
 		return h;
 	}
 

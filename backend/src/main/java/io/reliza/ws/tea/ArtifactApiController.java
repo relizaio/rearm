@@ -124,31 +124,34 @@ public class ArtifactApiController implements ArtifactApi {
 		TeaRequestContext ctx = teaRequests.context(request);
 		boolean latest = null == version;
 		ArtifactRevision r = resolve(ctx, uuid, version);
-		String mediaType = TeaArtifactResponses.selectFormat(r, requestedMediaType);
+		TeaArtifactResponses.FormatChoice choice = TeaArtifactResponses.chooseFormat(r, requestedMediaType,
+				request.getHeader(HttpHeaders.ACCEPT), kind);
+		String mediaType = choice.mediaType();
+		boolean byAccept = choice.byAccept();
 		ArtifactData signature = null;
 		Optional<String> stored;
 		if (TeaDownloadObject.SIGNATURE == kind) {
 			// a signature published by url: the frozen signatureUrl (TEA-20), never the row (round 5 decision 19)
 			Optional<String> sigUrl = teaArtifactSurfaceService.externalSignatureUrl(r, mediaType);
-			if (sigUrl.isPresent()) return redirect(ctx, r, kind, latest, sigUrl.get());
+			if (sigUrl.isPresent()) return redirect(ctx, r, kind, latest, byAccept, sigUrl.get());
 			signature = teaArtifactSurfaceService.signatureRow(r).orElseThrow(TeaRefusal::signatureNotFound);
 			// an entry frozen before TEA-20: the row's live link, only when the url rule admits it (decision 20)
 			Optional<String> location = TeaArtifactSurfaceService.admittedExternalLocation(signature);
-			if (location.isPresent()) return redirect(ctx, r, kind, latest, location.get());
+			if (location.isPresent()) return redirect(ctx, r, kind, latest, byAccept, location.get());
 			if (teaArtifactSurfaceService.isLinklessExternalSignature(r, signature)) throw TeaRefusal.signatureNotFound();
 			stored = TeaArtifactSurfaceService.storedSignatureSha256(r, signature);
 		} else {
 			Optional<String> url = teaArtifactSurfaceService.externalUrl(r, mediaType);
-			if (url.isPresent()) return redirect(ctx, r, kind, latest, url.get());
+			if (url.isPresent()) return redirect(ctx, r, kind, latest, byAccept, url.get());
 			stored = teaArtifactSurfaceService.storedContentSha256(r, mediaType);
 		}
 		// with a stored digest the validator is known before the bytes are read
-		if (stored.isPresent() && notModified(ctx, r, mediaType, stored.get(), kind, latest, ifNoneMatch)) return null;
+		if (stored.isPresent() && notModified(ctx, r, mediaType, stored.get(), kind, latest, byAccept, ifNoneMatch)) return null;
 		RawBytes bytes = TeaDownloadObject.SIGNATURE == kind ? teaArtifactSurfaceService.signature(r, signature)
 				: teaArtifactSurfaceService.content(r, mediaType);
 		String sha256 = stored.orElse(bytes.sha256());
-		if (stored.isEmpty() && notModified(ctx, r, mediaType, sha256, kind, latest, ifNoneMatch)) return null;
-		HttpHeaders headers = TeaArtifactResponses.downloadHeaders(ctx, r, mediaType, sha256, kind, latest,
+		if (stored.isEmpty() && notModified(ctx, r, mediaType, sha256, kind, latest, byAccept, ifNoneMatch)) return null;
+		HttpHeaders headers = TeaArtifactResponses.downloadHeaders(ctx, r, mediaType, sha256, kind, latest, byAccept,
 				bytes.contentType(), bytes.fileName(), bytes.bytes().length);
 		TeaRawBytes.write(request, headers, bytes.bytes());
 		boolean head = null != ctx.raw() && "HEAD".equals(ctx.raw().getMethod());
@@ -164,16 +167,16 @@ public class ArtifactApiController implements ArtifactApi {
 	 * and the format; no validator, If-None-Match not evaluated, no log row (decision 12), no ERROR.
 	 */
 	private ResponseEntity<Resource> redirect(TeaRequestContext ctx, ArtifactRevision r, TeaDownloadObject kind, boolean latest,
-			String location) {
-		TeaRawBytes.redirect(request, TeaArtifactResponses.redirectHeaders(ctx, r, latest, location));
+			boolean byAccept, String location) {
+		TeaRawBytes.redirect(request, TeaArtifactResponses.redirectHeaders(ctx, r, latest, location, byAccept));
 		log.debug("TEA artifact {} of organization {}: artifact {} revision {}, caller {}, publication {}, redirected",
 				kind, ctx.org().org(), r.teaUuid(), r.revision(), ctx.caller().state(), r.publication().getUuid());
 		return null;
 	}
 
 	private boolean notModified(TeaRequestContext ctx, ArtifactRevision r, String mediaType, String sha256, TeaDownloadObject kind,
-			boolean latest, String ifNoneMatch) {
-		HttpHeaders validators = TeaArtifactResponses.validatorHeaders(ctx, r, mediaType, sha256, kind, latest);
+			boolean latest, boolean byAccept, String ifNoneMatch) {
+		HttpHeaders validators = TeaArtifactResponses.validatorHeaders(ctx, r, mediaType, sha256, kind, latest, byAccept);
 		if (!TeaResponses.ifNoneMatchMatches(ifNoneMatch, validators.getETag())) return false;
 		TeaRawJson.notModified(request, validators);
 		return true;

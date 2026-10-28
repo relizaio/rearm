@@ -56,7 +56,7 @@ describe('ReleaseView TEA publication', () => {
         expect(components.length).toBeGreaterThan(0)
         expect(components).not.toContain('tea-section')
         expect(components).not.toContain('Transparency Exchange')
-        // The view selects the switch the tab reads; the CORE document of the drift fallback does not.
+        // The view selects the switch the tab reads.
         const queries = strip(read('../utils/graphqlQueries.ts'))
         const doc = (name: string) => {
             const at = queries.indexOf('query ' + name + '(')
@@ -64,7 +64,7 @@ describe('ReleaseView TEA publication', () => {
             return queries.slice(at, queries.indexOf('}`', at)).split('\n').map(l => l.trim())
         }
         expect(doc('ReleaseTeaPublicationView')).toContain('publishing')
-        expect(doc('ReleaseTeaPublicationViewCore')).not.toContain('publishing')
+        expect(queries).not.toContain('query ReleaseTeaPublicationViewCore(')
     })
 
     it('says the release is not published, with the refusal or the publish hint, when there is no publication', () => {
@@ -160,13 +160,12 @@ describe('the TEA view rides its own gated query, never the shared release fragm
         expect(load.slice(0, load.indexOf('\n}\n'))).toContain('if (seq !== teaViewLoadSeq) return')
     })
 
-    it('falls back to the CORE view (no publishing, so no TEA tab) where the backend rejects the full one', () => {
+    it('queries the full view directly: every edition serves TeaPublishPreview.publishing, so no CORE fallback', () => {
         const load = code.slice(code.indexOf('async function loadTeaPublication'))
         const body = load.slice(0, load.indexOf('\n}\n'))
-        expect(body).toContain('await loadWithSchemaDriftFallback(graphqlClient as any, {')
-        expect(body).toContain('coreQuery: graphqlQueries.ReleaseTeaPublicationViewCoreGql')
-        expect(body).toContain('skipFull: isDriftRejected(fullQuery)')
-        expect(body).toContain('if (degraded) markDriftRejected(fullQuery)')
+        expect(body).toContain('query: graphqlQueries.ReleaseTeaPublicationViewGql')
+        expect(body).not.toContain('loadWithSchemaDriftFallback')
+        expect(body).not.toContain('ReleaseTeaPublicationViewCoreGql')
     })
 
     it('starts the load from fetchRelease and reloads after each mutation', () => {

@@ -1,0 +1,11 @@
+-- A marketing version and a development version are separate namespaces:
+-- a release known to developers as 1.0.10 may ship to customers as 1.0.0
+-- while an unrelated development release 1.0.0 exists on the same branch.
+--
+-- V1 declared an inline unique (branch, version) on version_assignments,
+-- which ignores version_type and so refused the marketing 1.0.0 above.
+-- Uniqueness per type is already enforced by
+-- version_assignments_component_version_and_type_key
+-- (component, version, version_type), which is stricter than the branch
+-- rule within a type, so the branch rule is dropped rather than replaced.
+ALTER TABLE rearm.version_assignments DROP CONSTRAINT IF EXISTS version_assignments_branch_version_key;

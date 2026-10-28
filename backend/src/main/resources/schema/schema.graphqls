@@ -1275,6 +1275,8 @@ type Release {
 	no commits carry agent attribution.
 	"""
 	sessions: [Session]
+	"The regulatory package kinds this release offers: those switched on for its component, plus any it holds a submission of; empty on ReARM CE"
+	regulatoryPackageKinds: [PackageKind!]!
 }
 
 type IntermediateFailedRelease {
@@ -2074,6 +2076,8 @@ enum SubmissionRefusal {
 	GENERATION_FAILED
 	REASON_INVALID
 	EDITION_UNSUPPORTED
+	"The kind is not switched on in the component's effective package settings"
+	KIND_DISABLED
 }
 
 """The options of one package part; a null field takes the part's default."""
@@ -2110,6 +2114,8 @@ type PackageSettings {
 	kind: PackageKind!
 	mode: ScopedSettingsMode
 	followedPerspective: ID
+	"Whether the kind is switched on at this scope (off in the built-in default); null on a FOLLOW_PERSPECTIVE row"
+	enabled: Boolean
 	sbomProfile: String
 	parts: [PackagePartSettings!]
 	description: String
@@ -2118,10 +2124,12 @@ type PackageSettings {
 	lastUpdatedBy: ID
 }
 
-"""A package settings save; the kind and the key come as arguments. A FOLLOW_PERSPECTIVE row sends none of sbomProfile, parts and description."""
+"""A package settings save; the kind and the key come as arguments. A FOLLOW_PERSPECTIVE row sends none of enabled, sbomProfile, parts and description."""
 input PackageSettingsInput {
 	mode: ScopedSettingsMode
 	followedPerspective: ID
+	"Switch the kind on at this scope; absent means off. Must be absent on a FOLLOW_PERSPECTIVE row"
+	enabled: Boolean
 	sbomProfile: String
 	parts: [PackagePartOptionsInput!]
 	description: String
@@ -2553,6 +2561,8 @@ type TeaPublishPreview {
 	collections: [TeaPublishedCollection!]!
 	"The SBOM profile names a publish would generate an aggregate for, in order"
 	profiles: [String!]!
+	"The effective publishing switch of the profile the release resolves to; null when the release is unknown"
+	publishing: TeaPublishing
 }
 
 type ApprovalRequirement {

@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doReturn;
 
@@ -220,6 +221,8 @@ public class TeaProfileGraphqlIntegrationTest extends TeaProfileGraphqlIntegrati
 
 	@Test
 	public void anEnabledRowNamingAProfileThatDoesNotResolveIsRefused() throws RelizaException {
+		// ReARM CE (rearm-saas#955) stores every SBOM profile name as default, so no name fails to resolve there.
+		assumeFalse(LicensingConstants.isOssEdition(), "ReARM CE stores every SBOM profile as default");
 		Organization org = testInitializer.obtainOrganization();
 		UserData admin = admin(org);
 		Component c = component(org);
@@ -249,8 +252,21 @@ public class TeaProfileGraphqlIntegrationTest extends TeaProfileGraphqlIntegrati
 				c.getUuid().toString(), "n", "premarket"), "deleteSbomProfile"));
 	}
 
-	// CE (SCORE-72 3.6): aFollowRowSendsNoProfiles is not here. It creates a perspective through createPerspective,
-	// a ReARM Pro mutation with no CE fetcher; Pro's copy of this test keeps it.
+	@Test
+	public void aFollowRowSendsNoProfiles() throws RelizaException {
+		// The perspective comes from createPerspective, a ReARM Pro mutation with no CE fetcher.
+		assumeFalse(LicensingConstants.isOssEdition(), "createPerspective is ReARM Pro only");
+		Organization org = testInitializer.obtainOrganization();
+		UserData admin = admin(org);
+		Component c = component(org);
+		UUID p = perspective(admin, org, "names");
+		perspectivesOf(admin, c, p);
+		Map<String, Object> follow = profile("mode", "FOLLOW_PERSPECTIVE", "followedPerspective", p.toString());
+		failsWith(save(admin, org, "COMPONENT", c.getUuid(), follow), "profiles must be empty when mode is FOLLOW_PERSPECTIVE");
+		follow.remove("profiles");
+		Map<String, Object> saved = ok(save(admin, org, "COMPONENT", c.getUuid(), follow), "saveTeaProfile");
+		assertNull(saved.get("profiles"));
+	}
 
 	@Test
 	public void discoveryAppearsWithTheMint() throws RelizaException {

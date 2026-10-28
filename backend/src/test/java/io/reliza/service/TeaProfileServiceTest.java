@@ -9,6 +9,7 @@ import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -36,6 +37,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
@@ -64,6 +66,9 @@ import io.reliza.ws.RelizaConfigProps;
  * TeaProfileArchivedComponentTest).
  */
 class TeaProfileServiceTest extends TeaProfileServiceTestBase {
+
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
+	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
 
 	@Test
 	void theOrganizationScopeTakesNoObjectAndNoMode() {
@@ -150,6 +155,7 @@ class TeaProfileServiceTest extends TeaProfileServiceTestBase {
 	@ParameterizedTest
 	@MethodSource("requiredFields")
 	void everyProfileFieldIsRequiredOnAnOverride(String field) {
+		assumeFalse(LicensingConstants.isOssEdition() && "profiles".equals(field), CE_NAMES);
 		@SuppressWarnings("unchecked")
 		Map<String, Object> m = Utils.OM.convertValue(override(), Map.class);
 		m.remove(field);

@@ -34,6 +34,7 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.SbomProfileData;
 import io.reliza.model.ScopedResolutionStatus;
 import io.reliza.model.ScopedSettingsMode;
 import io.reliza.model.SettingsScope;
@@ -543,6 +544,7 @@ public class TeaProfileService implements SbomProfileConsumer {
 			}
 		} else {
 			copyProfileFields(incoming, d);
+			d.setProfiles(editionProfileNames(d.getProfiles(), LicensingConstants.isOssEdition()));
 			validateProfileFields(d);
 		}
 		if (null != cd) refuseArchivedSave(cd, d);
@@ -744,6 +746,14 @@ public class TeaProfileService implements SbomProfileConsumer {
 		} else {
 			d.setTeiDomain(null);
 		}
+	}
+
+	/**
+	 * ReARM CE publishes the {@code default} SBOM profile only: whatever names a save sends are replaced
+	 * by it, so a CE caller never has to know the name. ReARM Pro keeps the names as sent.
+	 */
+	static List<String> editionProfileNames(List<String> names, boolean ossEdition) {
+		return ossEdition ? List.of(SbomProfileData.DEFAULT_NAME) : names;
 	}
 
 	/**

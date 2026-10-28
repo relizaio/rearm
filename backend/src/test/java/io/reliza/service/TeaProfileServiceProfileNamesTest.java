@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -22,6 +23,7 @@ import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.SettingsScope;
 import io.reliza.model.TeaProfile;
@@ -41,6 +43,9 @@ import io.reliza.service.TeaProfileService.TeaCaller;
  */
 class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
+	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
+
 	private TeaProfileInputDto names(TeaProfileInputDto in, String... names) {
 		return in.toBuilder().profiles(null == names ? null : List.of(names)).build();
 	}
@@ -51,6 +56,7 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void profilesAreRequiredAndNonEmptyOnEveryNonFollowSaveEnabledOrDisabled() {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		for (TeaPublishing publishing : TeaPublishing.values()) {
 			TeaProfileInputDto org = full().toBuilder().publishing(publishing).build();
 			assertEquals("profiles is required",
@@ -79,6 +85,7 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void duplicateAndInvalidNamesAreRefused() {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		assertEquals("profiles names SBOM profile default twice",
 				refused(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda", "default")).getMessage());
 		assertTrue(refused(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "bad name")).getMessage()
@@ -87,6 +94,16 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 		withNull.add(null);
 		assertTrue(refused(TeaProfileScope.ORGANIZATION, null, full().toBuilder().profiles(withNull).build())
 				.getMessage().contains("SBOM profile name is required"));
+	}
+
+	// ReARM CE has the one SBOM profile `default`: whatever names a save sends, CE stores `default`
+	@Test
+	void ceReplacesTheNamesWithDefaultAndProKeepsThem() {
+		assertEquals(List.of("default"), TeaProfileService.editionProfileNames(List.of("fda", "top"), true));
+		assertEquals(List.of("default"), TeaProfileService.editionProfileNames(null, true));
+		assertEquals(List.of("fda", "top"), TeaProfileService.editionProfileNames(List.of("fda", "top"), false));
+		assertEquals("default", SbomProfileService.editionName("fda", true));
+		assertEquals("fda", SbomProfileService.editionName("fda", false));
 	}
 
 	@Test
@@ -108,18 +125,26 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void theSaveGoesThroughTheEditionSeam() throws RelizaException {
-		// CE (SCORE-72 3.6): this JVM is CE, so the save takes the validateProfileNames(names, true) branch
-		// above: two names are refused, one name saves. Pro's copy of this test saves two names.
-		assertEquals("ReARM CE publishes one SBOM profile per TEA publishing settings; several profiles "
-				+ "are a ReARM Pro feature",
-				refused(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda")).getMessage());
-		TeaProfileData saved = save(TeaProfileScope.ORGANIZATION, null, names(full(), "default"),
-				TeaCaller.ORG_ADMIN);
-		assertEquals(List.of("default"), saved.getProfiles());
+		// The edition seam (LicensingConstants.isOssEdition(), editionProfileNames): ReARM Pro keeps the names
+		// in the order given; ReARM CE (rearm-saas#955) replaces whatever names a save sends with default --
+		// two names, another name and none at all all store [default]. One file for both editions, so the
+		// Pro-to-CE sync copies it unchanged.
+		List<String> two = save(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda"), TeaCaller.ORG_ADMIN)
+				.getProfiles();
+		if (!LicensingConstants.isOssEdition()) {
+			assertEquals(List.of("default", "fda"), two, "the order given is kept");
+			return;
+		}
+		assertEquals(List.of("default"), two);
+		assertEquals(List.of("default"), save(TeaProfileScope.ORGANIZATION, null, names(full(), "fda"),
+				TeaCaller.ORG_ADMIN).getProfiles());
+		assertEquals(List.of("default"), save(TeaProfileScope.ORGANIZATION, null, full().toBuilder().profiles(null).build(),
+				TeaCaller.ORG_ADMIN).getProfiles());
 	}
 
 	@Test
 	void anEnabledRowNamingANotFoundNameIsRefusedAndTheSameRowDisabledIsAccepted() throws RelizaException {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		names.put("nope", notFound());
 		assertEquals("SBOM profile nope does not resolve at the organization: define it there or at a higher scope",
 				refused(TeaProfileScope.ORGANIZATION, null, enabled(names(full(), "nope"))).getMessage());
@@ -152,6 +177,7 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void aScopeLocalNameDefinedAtTheComponentIsAcceptedOnItsRow() throws RelizaException {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		// The mocked catalog answers "premarket" RESOLVED at the component, as a component-scope row would.
 		TeaProfileData saved = save(TeaProfileScope.COMPONENT, cd.getUuid(), enabled(names(override(), "premarket")),
 				TeaCaller.ORG_ADMIN);
@@ -207,6 +233,7 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void assessSaveAppliesTheSameRules() {
+		assumeFalse(LicensingConstants.isOssEdition(), CE_NAMES);
 		names.put("nope", notFound());
 		assertEquals("SBOM profile nope does not resolve at the organization: define it there or at a higher scope",
 				assertThrows(RelizaException.class, () -> service.assessSave(org, TeaProfileScope.ORGANIZATION, null,

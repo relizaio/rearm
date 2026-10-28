@@ -142,34 +142,23 @@ describe('EXTERNAL key documents, the TEA functions and the edition gate', () =>
 
 // The view's `publishing` switch (the release page's TEA tab) arrives on CE with the next sync of the
 // mirror; until then ReleaseView.loadTeaPublication falls back to the CORE view, which leaves it out.
-const ceHasTeaPublishing = () => {
-    const t: any = ceSchema.getType('TeaPublishPreview')
-    return Boolean(t?.getFields?.().publishing)
-}
-
 describe('TEA publication documents (TEA-5) and the edition gate', () => {
     it('none of the four validates against the CE schema while CE serves no TEA, so the gate must hold them back', () => {
         expect(Object.keys(PUBLICATION_DOCS)).toHaveLength(4)
         for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
-            const served = name === 'ReleaseTeaPublicationViewGql' ? ceServesTea() && ceHasTeaPublishing() : ceServesTea()
-            expect(validate(ceSchema, doc).length === 0, name).toBe(served)
+            expect(validate(ceSchema, doc).length === 0, name).toBe(ceServesTea())
         }
     })
 
-    it('the CORE publication view, without publishing, validates on CE exactly when CE serves TEA', () => {
-        expect(validate(ceSchema, graphqlQueries.ReleaseTeaPublicationViewCoreGql).length === 0).toBe(ceServesTea())
-        const full = graphqlQueries.ReleaseTeaPublicationViewGql.loc!.source.body
-        const core = graphqlQueries.ReleaseTeaPublicationViewCoreGql.loc!.source.body
-        expect(full).toMatch(/\bpublishing\b/)
-        expect(core).not.toMatch(/\bpublishing\b/)
-        // The same selection otherwise.
-        expect(full.replace('ReleaseTeaPublicationView(', 'ReleaseTeaPublicationViewCore(').replace(/\s*publishing\n/, '\n')
-            .replace(/\s+/g, ' ')).toBe(core.replace(/\s+/g, ' '))
+    it('CE serves TeaPublishPreview.publishing wherever it serves TEA, so the publication view has no CORE fallback', () => {
+        const t: any = ceSchema.getType('TeaPublishPreview')
+        expect(Boolean(t?.getFields?.().publishing)).toBe(ceServesTea())
+        expect(graphqlQueries.ReleaseTeaPublicationViewGql.loc!.source.body).toMatch(/\bpublishing\b/)
+        expect((graphqlQueries as any).ReleaseTeaPublicationViewCoreGql).toBeUndefined()
     })
 
     it.runIf(proSchema)('every TEA publication document validates against the Pro schema', () => {
-        for (const [name, doc] of Object.entries({ ...PUBLICATION_DOCS,
-            ReleaseTeaPublicationViewCoreGql: graphqlQueries.ReleaseTeaPublicationViewCoreGql })) {
+        for (const [name, doc] of Object.entries(PUBLICATION_DOCS)) {
             expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
         }
     })

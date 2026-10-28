@@ -3,7 +3,10 @@
 */
 package io.reliza.service;
 
+import static org.junit.jupiter.api.Assertions.assertArrayEquals;
+
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
@@ -85,23 +88,41 @@ public class TeaSurfaceArtifactCachingIntegrationTest extends TeaSurfaceArtifact
 		assertNotModified(purl, w.cover(), header(pok, "ETag"), pok, "priv");
 	}
 
-	// 14
+	// 14 (amended: TEA 1.0.0 makes mediaType optional)
 	@Test
-	void mediaTypeAbsentWildcardOrUnmatchedIsNotAcceptable() throws Exception {
+	void mediaTypeWildcardOrUnmatchedIsNotAcceptable() throws Exception {
 		ArtWorld w = artifactWorld();
 		Art agg = w.pub().agg();
 		Art lic = w.pub().lic();
 		for (String suffix : List.of("/download", "/signature/download")) {
 			Art a = "/download".equals(suffix) ? agg : lic;
 			String base = w.base() + "/artifact/" + a.tea() + "/" + a.revision() + suffix;
-			for (String q : List.of("", "?mediaType=", "?mediaType=" + enc("application/json"), "?mediaType=" + enc("*/*"),
+			for (String q : List.of("?mediaType=" + enc("application/json"), "?mediaType=" + enc("*/*"),
 					"?mediaType=" + enc("application/*"))) {
 				HttpResponse<String> r = get(base + q, null);
 				assertTeaError(r, 406, "NO_ACCEPTABLE_FORMAT", suffix + q);
 				assertTrue(json(r).get("message") instanceof String, suffix + q);
 			}
 			assertTeaError(get(base + "?mediaType=foo", null), 400, "INVALID_REQUEST", suffix + " foo");
+			// absent or empty: the server's choice, named by Content-Location; content varies on Accept
+			for (String q : List.of("", "?mediaType=")) {
+				HttpResponse<byte[]> r = getBytes(base + q, null, null);
+				assertEquals(200, r.statusCode(), suffix + q + ": " + new String(r.body(), java.nio.charset.StandardCharsets.UTF_8));
+				assertTrue(header(r, "Content-Location").endsWith("?mediaType=" + enc(a.mediaType())), suffix + q);
+				assertEquals("/download".equals(suffix) ? "Authorization, Accept" : "Authorization", header(r, "Vary"), suffix + q);
+			}
 		}
+		// without mediaType a content download negotiates on Accept
+		String content = w.base() + "/artifact/" + agg.tea() + "/" + agg.revision() + "/download";
+		HttpResponse<byte[]> accepted = getBytes(content, null, Map.of("Accept", "text/html;q=0.5, " + agg.mediaType()));
+		assertEquals(200, accepted.statusCode());
+		assertArrayEquals(agg.bytes(), accepted.body());
+		assertEquals(agg.mediaType(), header(accepted, "Content-Type"));
+		assertEquals(200, getBytes(content, null, Map.of("Accept", "*/*")).statusCode());
+		HttpResponse<String> refused = get(content, null, Map.of("Accept", "text/html"));
+		assertTeaError(refused, 406, "NO_ACCEPTABLE_FORMAT", "Accept text/html");
+		// an explicit mediaType decides alone
+		assertEquals(200, getBytes(content + "?mediaType=" + enc(agg.mediaType()), null, Map.of("Accept", "text/html")).statusCode());
 		// round 3 (T-7), round 4 (T-9): a mediaType that is not a media type is a 400 the client earned, so
 		// nothing above DEBUG and no throwable at any level, read from captures open at DEBUG
 		try (TeaLogCapture responses = TeaLogCapture.of(TeaArtifactResponses.class, Level.DEBUG);
@@ -142,8 +163,11 @@ public class TeaSurfaceArtifactCachingIntegrationTest extends TeaSurfaceArtifact
 					assertObjectUnknown(get(w.base() + "/artifact/" + w.foreignAgg().tea() + tail, null), "the foreign id " + label);
 					if (q.endsWith("foo")) {
 						assertTeaError(get(privLic, w.cover()), 400, "INVALID_REQUEST", "priv for cover " + label);
+					} else if ("/download".equals(suffix)) {
+						// TEA 1.0.0: without mediaType the covering caller is served the server's choice
+						assertEquals(200, getBytes(privLic, w.cover(), null).statusCode(), "priv for cover " + label);
 					} else {
-						assertTeaError(get(privLic, w.cover()), 406, "NO_ACCEPTABLE_FORMAT", "priv for cover " + label);
+						assertNotEquals(406, get(privLic, w.cover()).statusCode(), "priv for cover " + label);
 					}
 				}
 			}

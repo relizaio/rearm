@@ -220,7 +220,8 @@ public class TeaPublicationService {
 			TeaPublishRefusal refusal, String refusalMessage, TeaVisibility effectiveVisibility,
 			TeaProfileSource profileSource, UUID profileSourceObject, String apiBase, String publicUrl,
 			boolean cascades, int cascadeChildren, Integer profileRevision,
-			TeaPublicationData publication, List<TeaPublishedCollectionData> collections, List<String> profiles) {}
+			TeaPublicationData publication, List<TeaPublishedCollectionData> collections, List<String> profiles,
+			TeaPublishing publishing) {}
 
 	/** One SBOM profile name of a publish and the recipe it resolved to (task TEA-28). */
 	record TeaNamedRecipe(String name, SbomProfileData recipe) {}
@@ -1974,7 +1975,10 @@ public class TeaPublicationService {
 		return new TeaPublishPreview(release, kind, null == refusal, refusal, message, visibility,
 				null == resolved ? null : resolved.source(), null == resolved ? null : resolved.sourceObject(), apiBase,
 				publicUrl, cascades, cascadeChildren, revision, head.orElse(null), collections,
-				null == resolved ? List.of() : profileNamesOf(resolved.profile()));
+				null == resolved ? List.of() : profileNamesOf(resolved.profile()),
+				// the effective switch on its own: the refusal names one reason, and an earlier one (archived,
+				// already published) hides PUBLISHING_DISABLED, so the page cannot read it from there
+				null == resolved || null == resolved.profile() ? null : resolved.profile().getPublishing());
 	}
 
 	/** The organization's TEA API base, null while it has no TEA id. */
