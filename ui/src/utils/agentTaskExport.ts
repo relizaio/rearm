@@ -12,8 +12,19 @@ export function taskExportDocument (task: any, exportedAt: Date = new Date()): R
         format: TASK_EXPORT_FORMAT,
         formatVersion: TASK_EXPORT_FORMAT_VERSION,
         exportedAt: exportedAt.toISOString(),
-        task
+        task: withoutTypenames(task)
     }
+}
+
+/** A copy without the __typename the GraphQL client adds to every object: client noise, not the task's shape. */
+export function withoutTypenames (value: any): any {
+    if (Array.isArray(value)) return value.map(withoutTypenames)
+    if (value && typeof value === 'object') {
+        const out: Record<string, any> = {}
+        for (const [k, v] of Object.entries(value)) if (k !== '__typename') out[k] = withoutTypenames(v)
+        return out
+    }
+    return value
 }
 
 /** `<key or uuid>-task.json`, with anything but letters, digits, dot, dash and underscore made a dash. */

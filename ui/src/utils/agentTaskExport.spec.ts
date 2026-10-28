@@ -10,7 +10,14 @@ describe('the task JSON export', () => {
         const task = { uuid: 'u1', key: 'TPF-7', statusHistory: [{ from: 'QUEUED', to: 'ASSIGNED' }] }
         const doc = taskExportDocument(task, new Date('2026-10-28T12:00:00Z'))
         expect(doc).toEqual({ format: TASK_EXPORT_FORMAT, formatVersion: 1, exportedAt: '2026-10-28T12:00:00.000Z', task })
-        expect(doc.task).toBe(task)
+    })
+
+    it('drops the GraphQL client\'s __typename at every depth and keeps everything else', () => {
+        const task = { __typename: 'AgentTask', uuid: 'u1', cycles: null, tags: [],
+            signOffs: [{ __typename: 'AgentTaskSignOff', role: 'coder', reviewedBy: { __typename: 'Actor', kind: 'USER' } }] }
+        expect(taskExportDocument(task).task).toEqual({ uuid: 'u1', cycles: null, tags: [],
+            signOffs: [{ role: 'coder', reviewedBy: { kind: 'USER' } }] })
+        expect(task.__typename).toBe('AgentTask')
     })
 
     it('names the file by the task key, else its uuid, safe for a file system', () => {
