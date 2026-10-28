@@ -1,8 +1,7 @@
-# Node stays on 26.7.0 here (TPF-80 risk 1 fallback): the 26.12.1 binary needs libatomic.so.1,
-# which the plain alpine deliverable below does not carry (Error loading shared library
-# libatomic.so.1, needed by /usr/local/bin/node). The interim NODE_OPTIONS/SSL_CERT_FILE closes
-# the trust window on its own; the 26.12.1 bump is the follow-up.
-FROM node:26.7.0-alpine3.24@sha256:aadf416b2cdce311a8811ba3f0608a61b77dbf997500e2eafe781b51f6a0b019 AS builder
+# Node 26.12.1, the release the UI, landing and documentation images build on. Its binary needs
+# libatomic.so.1, so the plain alpine deliverable below installs libatomic (the TPF-80 risk 1
+# follow-up: node stayed on 26.7.0 until then).
+FROM node:26.12.1-alpine3.24@sha256:40cd011b55415bc894e45b02fdd5a5dfde056921b7d23a64c74f80497af48797 AS builder
 
 ARG TARGETARCH
 ARG TARGETOS
@@ -112,10 +111,11 @@ RUN mkdir /prod && cp package.json package-lock.json /prod/ && \
 # every npm-ecosystem CVE in this image's scans has come from. With no npm in
 # any layer, that finding class is gone structurally, not just until the next
 # npm release. Runtime deps stay installable via apk (gpg / ssh-keygen for
-# signature verification, ICU for cyclonedx-cli); libstdc++ is for node itself.
+# signature verification, ICU for cyclonedx-cli); libstdc++ and libatomic are for node itself
+# (node 26.12.1 links libatomic.so.1).
 # On arm64 only, gcompat lets the glibc-linked cyclonedx-cli start on musl (no musl
 # arm64 build exists; SCORE-7 design round 3, ADR-8).
-FROM alpine:3.24.3@sha256:b3413572228e34bd1c9245f5565e6cd127005655e8a7899aef33d8e83255c9e6 AS deliverable
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS deliverable
 
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
@@ -138,6 +138,7 @@ ENV \
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle && \
     apk add --no-cache \
     libstdc++ \
+    libatomic \
     icu-data-full \
     icu-libs \
     openssh-keygen \
