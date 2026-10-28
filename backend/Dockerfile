@@ -1,4 +1,4 @@
-FROM eclipse-temurin:25-jdk-alpine@sha256:09349d79941fd53bb3d487b393ca118d8853c08c09193f416fe6a8718df9e732 AS jre-build
+FROM eclipse-temurin:25-jdk-alpine@sha256:1e20ead9eec7234db293f1913438090d533ed47c0b9e12dc8c7627a802a44ed6 AS jre-build
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
@@ -16,7 +16,7 @@ RUN $JAVA_HOME/bin/jlink \
          --compress=zip-9 \
          --output /javaruntime
 
-FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:72e2d64836e659d053a573ac9ebab05b78ae78fa7bb69b7452a7cb877b465fc7 AS build-cache-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:781f1da87cd3d142e66e47cc149c4582a652fb7f574648206d1e956170c0dc90 AS build-cache-stage
 # October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
 # Services from this JDK's cacerts by SHA-256 fingerprint (ci/trust-gate/jdk-distrust.sh).
 COPY ci/trust-gate/jdk-distrust.sh /gate/
@@ -27,7 +27,7 @@ WORKDIR /workdir
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:72e2d64836e659d053a573ac9ebab05b78ae78fa7bb69b7452a7cb877b465fc7 AS build-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:781f1da87cd3d142e66e47cc149c4582a652fb7f574648206d1e956170c0dc90 AS build-stage
 # October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
 # Services from this JDK's cacerts by SHA-256 fingerprint (ci/trust-gate/jdk-distrust.sh).
 COPY ci/trust-gate/jdk-distrust.sh /gate/
@@ -64,7 +64,7 @@ RUN SKIP="$SKIP_TESTS" && if [ "$SKIP" = "auto" ]; then case "$GIT_BRANCH" in ma
     echo "SKIP_TESTS=$SKIP_TESTS GIT_BRANCH=$GIT_BRANCH -> skipTests=$SKIP" && \
     su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage -DskipTests=$SKIP && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
-FROM alpine:3.24.3@sha256:b3413572228e34bd1c9245f5565e6cd127005655e8a7899aef33d8e83255c9e6 AS artifact-stage
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
 RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
