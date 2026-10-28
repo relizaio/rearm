@@ -39,7 +39,7 @@ describe('ReleaseView TEA publication', () => {
         for (const id of ['tea-publish', 'tea-republish', 'tea-hide', 'tea-badge']) {
             expect(header, id).toContain(`data-testid="${id}"`)
         }
-        expect(header).toContain('<template v-if="teaView && !isDocumentRound">')
+        expect(header).toContain('<template v-if="teaView && !isDocumentRound && !teaActing">')
         expect(header).toMatch(/:title="teaView\.canPublish \? 'Publish on TEA' : \(teaView\.refusalMessage/)
     })
 
@@ -123,14 +123,17 @@ describe('ReleaseView TEA publication', () => {
         expect(block).toContain('cascadeOfLabel')
     })
 
-    it('the publish and hide catch blocks say what teaActErrorText says, then reload the section (round 4, 95)', () => {
+    it('the publish and hide acts go through withTeaProgress, whose catch says what teaActErrorText says, then reloads the section (round 4, 95)', () => {
         for (const fn of ['async function runTeaPublish', 'async function hideOnTea']) {
             const start = code.indexOf(fn)
             expect(start, fn).toBeGreaterThan(0)
             const body = code.slice(start, code.indexOf('\n}\n', start))
-            expect(body, fn).toMatch(/catch \(err: any\) \{\s*Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\}\s*await loadTeaPublication\(\)/)
+            expect(body, fn).toContain('await withTeaProgress(')
             expect(body, fn).not.toContain('parseGraphQLError')
         }
+        const start = code.indexOf('async function withTeaProgress')
+        const body = code.slice(start, code.indexOf('\n}\n', start))
+        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\} finally \{\s*teaActing\.value = null\s*\}\s*await loadTeaPublication\(\)/)
     })
 
     it('has a TEA_PUBLICATION branch in the History renderer', () => {
@@ -171,7 +174,11 @@ describe('the TEA view rides its own gated query, never the shared release fragm
         expect(fetch.slice(0, fetch.indexOf('\n}\n'))).toContain('loadTeaPublication()')
         for (const fn of ['async function runTeaPublish', 'async function hideOnTea']) {
             const body = code.slice(code.indexOf(fn))
-            expect(body.slice(0, body.indexOf('\n}\n')), fn).toContain('await loadTeaPublication()')
+            expect(body.slice(0, body.indexOf('\n}\n')), fn).toContain('await withTeaProgress(')
+        }
+        {
+            const body = code.slice(code.indexOf('async function withTeaProgress'))
+            expect(body.slice(0, body.indexOf('\n}\n'))).toContain('await loadTeaPublication()')
         }
     })
 
@@ -183,5 +190,29 @@ describe('the TEA view rides its own gated query, never the shared release fragm
         expect(queries).toContain('publishReleaseOnTea(release: $release, comment: $comment)')
         expect(queries).toContain('republishReleaseOnTea(release: $release, comment: $comment)')
         expect(queries).toContain('hideReleaseOnTea(release: $release, comment: $comment)')
+    })
+})
+
+describe('ReleaseView waits for a TEA act with a spinner', () => {
+    const rv = read('./ReleaseView.vue')
+    it('runs publish, re-publish and hide through withTeaProgress, one at a time', () => {
+        expect(rv).toContain("await withTeaProgress(act, view, async () => {")
+        expect(rv).toContain("await withTeaProgress('hide', view, async () => {")
+        expect(rv).toContain('if (teaActing.value) return')
+        expect(rv).toContain('Swal.fire({ ...teaActProgress(act, view), didOpen: () => Swal.showLoading() })')
+    })
+    it('shows the header spinner instead of the TEA buttons while an act runs', () => {
+        expect(rv).toContain('<span v-if="teaActing" data-testid="tea-acting"')
+        expect(rv).toContain('<template v-if="teaView && !isDocumentRound && !teaActing">')
+    })
+})
+
+describe('ReleaseView reads the narrative default of the release\'s own organization', () => {
+    const rv = read('./ReleaseView.vue')
+    it('uses the selected org only when it is the release\'s org, else reads that org', () => {
+        expect(rv).toContain('if (org && org === store.getters.myorg?.uuid) return store.getters.myorg?.settings?.fdaAssessmentNarrative')
+        expect(rv).toContain("return releaseOrgNarrative.value.org === org ? releaseOrgNarrative.value.text : ''")
+        expect(rv).toContain('organizations { uuid settings { fdaAssessmentNarrative } }')
+        expect(rv).toContain('    loadReleaseOrgNarrative()')
     })
 })

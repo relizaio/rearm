@@ -1220,7 +1220,10 @@
                         ><Copy /></n-icon>
                         <Icon @click="openExportModal" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                         <!-- TEA-5: publish, re-publish and hide on TEA; only where the backend serves TEA. -->
-                        <template v-if="teaView && !isDocumentRound">
+                        <span v-if="teaActing" data-testid="tea-acting" style="margin-left:10px; display: inline-flex; align-items: center; gap: 6px; vertical-align: middle;">
+                            <n-spin size="small" /><span class="text-muted">{{ teaActLabel(teaActing) }}</span>
+                        </span>
+                        <template v-if="teaView && !isDocumentRound && !teaActing">
                             <Icon v-if="!teaView.publication && (teaView.canPublish || teaView.refusal)"
                                 data-testid="tea-publish"
                                 :class="teaView.canPublish ? 'clickable' : ''"
@@ -2357,7 +2360,7 @@ import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
-import { teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
+import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
 import { isDriftRejected, isSchemaDriftError, loadWithSchemaDriftFallback, markDriftRejected } from '@/utils/graphqlDriftFallback'
@@ -2572,9 +2575,35 @@ const releaseNarrativeDirty: ComputedRef<boolean> = computed((): boolean =>
 const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean =>
     !!(releaseNarrativeBaseline.value || '').trim())
 
-/** The org-level default, shown read-only so the author sees what an override replaces. */
-const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
-    (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+/**
+ * The org-level default of the RELEASE's organization, shown read-only so the author sees what an
+ * override replaces, and offered by the submission narrative prompt. It is the release's org, not
+ * the one selected in the UI: the server resolves the narrative with the release's org, so a default
+ * of another org would be offered and then not used. The selected org's settings are already in the
+ * store; another org's are read from the organizations list the org-settings surfaces use (the
+ * single-org query answers null there). Empty when that org's settings are not readable.
+ */
+const releaseOrgNarrative: Ref<{ org: string, text: string }> = ref({ org: '', text: '' })
+const orgNarrativeDefault: ComputedRef<string> = computed((): string => {
+    const org = updatedRelease.value?.org || updatedRelease.value?.orgDetails?.uuid || ''
+    if (org && org === store.getters.myorg?.uuid) return store.getters.myorg?.settings?.fdaAssessmentNarrative || ''
+    return releaseOrgNarrative.value.org === org ? releaseOrgNarrative.value.text : ''
+})
+async function loadReleaseOrgNarrative () {
+    const org = updatedRelease.value?.org || updatedRelease.value?.orgDetails?.uuid || ''
+    if (!org || org === store.getters.myorg?.uuid || releaseOrgNarrative.value.org === org) return
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query releaseOrgNarrative { organizations { uuid settings { fdaAssessmentNarrative } } }`,
+            fetchPolicy: 'no-cache'
+        })
+        const found = (resp.data?.organizations || []).find((o: any) => o.uuid === org)
+        releaseOrgNarrative.value = { org, text: found?.settings?.fdaAssessmentNarrative || '' }
+    } catch (err: any) {
+        console.warn('Failed to read the organization narrative default of the release', err)
+        releaseOrgNarrative.value = { org, text: '' }
+    }
+}
 
 /**
  * The declared licence for this release (SCORE-42, design ADR-4 and ADR-8). Its state is the
@@ -3464,6 +3493,7 @@ async function fetchRelease () {
     loadSyntheticArtifacts()
     loadTeaPublication()
     loadRegulatoryPackageKinds()
+    loadReleaseOrgNarrative()
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     // Backend-computed designation (true for hardware components AND product
@@ -4409,15 +4439,32 @@ async function runTeaPublish (mutation: any, field: string) {
     })
     const answer = await Swal.fire(confirm)
     if (!answer.isConfirmed) return
-    try {
+    const act: TeaAct = field === 'republishReleaseOnTea' ? 'republish' : 'publish'
+    await withTeaProgress(act, view, async () => {
         const resp: any = await graphqlClient.mutate({
             mutation,
             variables: { release: view.release },
             fetchPolicy: 'no-cache'
         })
         await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
+    })
+}
+
+/**
+ * Runs a TEA act the server completes within the request: one at a time, with the header spinner
+ * and a modal that cannot be dismissed until the answer arrives, then the publication is reloaded.
+ */
+const teaActing: Ref<TeaAct | null> = ref(null)
+async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>) {
+    if (teaActing.value) return
+    teaActing.value = act
+    Swal.fire({ ...teaActProgress(act, view), didOpen: () => Swal.showLoading() })
+    try {
+        await run()
     } catch (err: any) {
-        Swal.fire('Error!', teaActErrorText(err), 'error')
+        await Swal.fire('Error!', teaActErrorText(err), 'error')
+    } finally {
+        teaActing.value = null
     }
     await loadTeaPublication()
 }
@@ -4430,17 +4477,14 @@ async function hideOnTea () {
     if (!view) return
     const answer = await Swal.fire(teaHideConfirm(view))
     if (!answer.isConfirmed) return
-    try {
+    await withTeaProgress('hide', view, async () => {
         await graphqlClient.mutate({
             mutation: graphqlQueries.HideReleaseOnTeaGql,
             variables: { release: view.release },
             fetchPolicy: 'no-cache'
         })
         await Swal.fire({ title: 'TEA', text: 'Hidden from TEA.', icon: 'success' })
-    } catch (err: any) {
-        Swal.fire('Error!', teaActErrorText(err), 'error')
-    }
-    await loadTeaPublication()
+    })
 }
 
 const teaRowKey = (row: any) => row.key
