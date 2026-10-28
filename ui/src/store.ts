@@ -67,6 +67,26 @@ const AGENT_BOARD_SELECTION = `
         progress { total done open complete } spentMicros }
 `
 
+// What a task export adds to AGENT_TASK_SELECTION: every AgentTask field the page itself does not
+// read, so the exported JSON is the whole task in the page's shape. Left out on purpose: the element
+// graph lookups that take an element as input (dependentsOf, elementHistory), the stored revisions
+// (agentTaskHistory) and the documents' file text.
+const AGENT_TASK_EXPORT_EXTRA = `
+    updatedAt
+    unassignments { role roleUuid agent session assignedAt unassignedAt unassignedBy { kind uuid name } reason usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros priceVersions costComplete allowanceMicros refreshedAt } }
+    unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
+    testedHeads { pr head }
+    requiredInputs { kind specification scope component minLifecycle resolution release }
+    regressedInputs
+    releases
+    cycles
+    roleUuid
+    producesComponent
+    producesComponentDetails { uuid name }
+    elements { id family title parent level traces { verb target } assumes speculative contentDigest line release specification terms }
+    elementChecks { catalogueVersion grammarVersion scope { task checked releases { release specification elementsDigest lifecycle } } results { check result blocking reason offences { elementId release message } } digest }
+`
+
 const AGENT_TASK_SELECTION = `
     uuid
     key
@@ -3052,6 +3072,22 @@ const storeObject : any = {
                             testedHeads { pr head }
                             pullRequests { url head unit }
                             unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask
+        },
+        /** The whole task for its JSON export: the page's read plus every field the page does not show. */
+        async exportAgentTask (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskExport($uuid: ID!) {
+                        agentTask(uuid: $uuid) {
+                            ${AGENT_TASK_SELECTION}
+                            pullRequests { url head unit }
+                            ${AGENT_TASK_EXPORT_EXTRA}
                         }
                     }`,
                 variables: { uuid },

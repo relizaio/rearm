@@ -10,7 +10,11 @@
         <n-alert v-else-if="loadError" type="error" :title="loadError"/>
 
         <template v-if="task">
-            <task-title :task="task" :board="board" :roles="roles"/>
+            <task-title :task="task" :board="board" :roles="roles">
+                <!-- The whole task as JSON, timeline included (statusHistory, rounds, returns, reopens). -->
+                <n-button size="tiny" secondary data-testid="task-export" :loading="exporting" @click="exportTask">Export JSON</n-button>
+            </task-title>
+            <n-alert v-if="exportError" type="error" :title="exportError" closable @close="exportError = null"/>
 
             <!-- Two columns above 1200px: the record on the left (what was found, asked, produced
                  and done), the person's controls and the task's place on the board on the right.
@@ -60,7 +64,7 @@
 import { computed, provide, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NBreadcrumb, NBreadcrumbItem, NSpin } from 'naive-ui'
+import { NAlert, NBreadcrumb, NBreadcrumbItem, NButton, NSpin } from 'naive-ui'
 import TaskActions from './task/TaskActions.vue'
 import TaskAssignment from './task/TaskAssignment.vue'
 import TaskCommission from './task/TaskCommission.vue'
@@ -85,6 +89,7 @@ import { AGENT_DIR, AgentName, COORDINATOR_SEAT, agentDirectory, agentNamesOf } 
 import { taskLoadErrorText } from '@/utils/agentAccessMessages'
 import { useAgentTaskActions } from '@/utils/agentTaskActions'
 import { taskLabel, taskPagePath } from '@/utils/agentTaskFormat'
+import { downloadJson, taskExportDocument, taskExportFileName } from '@/utils/agentTaskExport'
 
 const store = useStore()
 const route = useRoute()
@@ -109,6 +114,25 @@ const priorityLevels = computed<number>(() =>
 const canReopen = computed<boolean>(() => canOperate(board.value))
 // The revisions read (agentTaskHistory) reads with the board.
 const canReadHistory = computed<boolean>(() => boardCan(board.value, 'BOARD_READ'))
+
+// The JSON export reads the task afresh with every field (exportAgentTask), not the page's copy, so
+// the file is the whole task as it is now.
+const exporting = ref(false)
+const exportError = ref<string | null>(null)
+async function exportTask () {
+    if (!task.value?.uuid || exporting.value) return
+    exporting.value = true
+    exportError.value = null
+    try {
+        const full = await store.dispatch('exportAgentTask', task.value.uuid)
+        if (!full) throw new Error('Task not found')
+        downloadJson(taskExportFileName(full), taskExportDocument(full))
+    } catch (e: any) {
+        exportError.value = 'Export failed: ' + (e?.message ?? String(e))
+    } finally {
+        exporting.value = false
+    }
+}
 
 async function load () {
     loading.value = true
