@@ -69,14 +69,16 @@ describe('OrgSettings: the SBOM export signing section', () => {
     const block = byTestId('sbom-signing-block')
     const unsupported = byTestId('sbom-signing-unsupported')
 
-    it('is one block inside the Admin Settings tab, gated on the drift flag', () => {
+    it('is one block inside the General sub-tab of the Admin Settings tab, gated on the drift flag', () => {
         expect(block).toHaveLength(1)
         const path = block[0]
         const node = path[path.length - 1]
         expect(directive(node, 'if')).toBe('sbomSigningSupported')
-        const pane = path.find((n: any) => n.tag === 'n-tab-pane')
-        expect(attribute(pane, 'name')).toBe('adminSettings')
-        expect(directive(pane, 'if')).toBe('isOrgAdmin')
+        const panes = path.filter((n: any) => n.tag === 'n-tab-pane')
+        expect(panes).toHaveLength(2)
+        expect(attribute(panes[0], 'name')).toBe('adminSettings')
+        expect(directive(panes[0], 'if')).toBe('isOrgAdmin')
+        expect(attribute(panes[1], 'name')).toBe('general')
     })
 
     it('follows the Support disclosure export block and the declared licence default after the settings form', () => {

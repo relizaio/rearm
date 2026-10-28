@@ -93,6 +93,37 @@ export function teaPublishConfirm (view: any, names: TeaPublishNames): TeaConfir
     return confirm
 }
 
+/** A TEA act the release page waits for: the server does it in the request, start to finish. */
+export type TeaAct = 'publish' | 'republish' | 'hide'
+
+/**
+ * The modal shown while a TEA act runs (SweetAlert2 options): it cannot be dismissed, shows the
+ * loader, and says why it takes time; the act's own result dialog replaces it when the server answers.
+ * A publish generates every aggregated SBOM of the profile before it answers, which takes a while for
+ * a large inventory.
+ */
+export function teaActProgress (act: TeaAct, view: any): Record<string, any> {
+    const title = act === 'hide' ? 'Hiding from TEA…' : act === 'republish' ? 'Re-publishing on TEA…' : 'Publishing on TEA…'
+    let text = act === 'hide'
+        ? 'Concealing the release on TEA.'
+        : 'Generating the aggregated SBOM and the collection. A large release can take a minute or more.'
+    if (act !== 'hide' && view?.kind === 'PRODUCT_RELEASE' && view?.cascades) {
+        text += ' Its component releases are published with it.'
+    }
+    return {
+        title,
+        text: text + ' Keep this page open until it finishes.',
+        allowOutsideClick: false,
+        allowEscapeKey: false,
+        showConfirmButton: false,
+    }
+}
+
+/** The label beside the header spinner while a TEA act runs. */
+export function teaActLabel (act: TeaAct): string {
+    return act === 'hide' ? 'Hiding from TEA…' : act === 'republish' ? 'Re-publishing on TEA…' : 'Publishing on TEA…'
+}
+
 /** The confirmation before Hide. A product's cascade children are concealed with it at request time. */
 export function teaHideConfirm (view: any): TeaConfirm {
     let text = 'The release stops being served on TEA; its published collections are kept and re-publish '

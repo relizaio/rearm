@@ -61,6 +61,13 @@ function onUpdate (value: string | string[] | null) {
 </script>
 
 <style scoped>
+/* The root takes the form item's width: inside Naive's flex form item a widthless div shrinks to its
+   content, so an empty multiple select collapsed and its menu (as wide as the trigger) showed blank. */
+.sbom-profile-picker-root {
+    flex: 1;
+    min-width: 0;
+    width: 100%;
+}
 .sbom-picker-line {
     font-size: 0.85em;
     margin-top: 2px;

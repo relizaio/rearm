@@ -1220,7 +1220,10 @@
                         ><Copy /></n-icon>
                         <Icon @click="openExportModal" class="clickable" style="margin-left:10px;" size="16" title="Export Release xBOM" ><Download/></Icon>
                         <!-- TEA-5: publish, re-publish and hide on TEA; only where the backend serves TEA. -->
-                        <template v-if="teaView && !isDocumentRound">
+                        <span v-if="teaActing" data-testid="tea-acting" style="margin-left:10px; display: inline-flex; align-items: center; gap: 6px; vertical-align: middle;">
+                            <n-spin size="small" /><span class="text-muted">{{ teaActLabel(teaActing) }}</span>
+                        </span>
+                        <template v-if="teaView && !isDocumentRound && !teaActing">
                             <Icon v-if="!teaView.publication && (teaView.canPublish || teaView.refusal)"
                                 data-testid="tea-publish"
                                 :class="teaView.canPublish ? 'clickable' : ''"
@@ -1233,8 +1236,8 @@
                                     class="clickable"
                                     :title="teaView.publication.state === 'PUBLISHED' ? 'Published on TEA (' + teaView.publication.exposure + ')' : 'Hidden from TEA'"
                                     :style="{ display: 'inline-block', marginLeft: '10px', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', verticalAlign: 'middle', cursor: 'pointer', background: teaView.publication.state === 'PUBLISHED' && teaView.publication.exposure === 'PUBLIC' ? '#d03050' : teaView.publication.state === 'PUBLISHED' ? '#537985' : '#999' }"
-                                    @click="scrollToTeaSection">{{ teaView.publication.state === 'PUBLISHED' ? 'TEA v' + teaView.publication.latestVersion : 'TEA hidden' }}</span>
-                                <Icon data-testid="tea-republish" class="clickable" style="margin-left:10px;" size="16" title="Re-publish on TEA" @click="republishOnTea"><Refresh/></Icon>
+                                    @click="openTeaTab">{{ teaView.publication.state === 'PUBLISHED' ? 'TEA v' + teaView.publication.latestVersion : 'TEA hidden' }}</span>
+                                <Icon data-testid="tea-republish" class="clickable" style="margin-left:10px;" size="16" title="Re-publish on TEA (a new version only if anything changed)" @click="republishOnTea"><WorldUpload/></Icon>
                                 <Icon v-if="teaView.publication.state === 'PUBLISHED'" data-testid="tea-hide" class="clickable" style="margin-left:10px;" size="16" title="Hide from TEA" @click="hideOnTea"><EyeOff/></Icon>
                             </template>
                         </template>
@@ -1384,41 +1387,6 @@
                     <div class="container" v-if="generatedArtifacts.length && !isDocumentRound">
                         <h3>Generated artifacts</h3>
                         <n-data-table :data="generatedArtifacts" :columns="generatedArtifactsTableFields" :row-key="artifactsRowKey" />
-                    </div>
-                    <!-- TEA-5: the release's publication on TEA. Read-only: the actions sit in the header. -->
-                    <div class="container" v-if="teaView?.publication && !isDocumentRound" data-testid="tea-section">
-                        <h3>Transparency Exchange (TEA)</h3>
-                        <div style="margin-bottom: 8px;">
-                            <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})</div>
-                            <div v-if="teaConcealedLine" data-testid="tea-concealed">{{ teaConcealedLine }}</div>
-                            <div><strong>TEA release id: </strong>{{ teaView.publication.uuid }}
-                                <Icon class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.uuid)"><Copy20Regular/></Icon>
-                            </div>
-                            <div><strong>TEA URL: </strong>{{ teaPublicUrlText(teaView) }}
-                                <Icon v-if="teaView.publication.publicUrl" class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.publicUrl)"><Copy20Regular/></Icon>
-                            </div>
-                            <div v-if="teaView.publication.cascadeOf" data-testid="tea-published-with">{{ teaPublishedWithText(teaView.publication) }}</div>
-                            <div v-else><strong>Profile: </strong>{{ teaProfileSourceText }}</div>
-                            <div v-if="teaView.publication.tei"><strong>TEI: </strong>{{ teaView.publication.tei }}</div>
-                            <div v-if="teaView.publication.lastPublishedDate"><strong>Last published: </strong>{{ new Date(teaView.publication.lastPublishedDate).toLocaleString('en-CA') }}<span v-if="teaView.publication.lastPublishedBy"> by {{ resolveUserById(teaView.publication.lastPublishedBy) }}</span></div>
-                            <div v-if="teaView.publication.state === 'HIDDEN' && teaView.publication.lastHiddenDate"><strong>Hidden: </strong>{{ new Date(teaView.publication.lastHiddenDate).toLocaleString('en-CA') }}</div>
-                        </div>
-                        <n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />
-                    </div>
-                    <!-- TEA-30: the release's regulatory submissions (Pro), per kind with every version. -->
-                    <div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound" data-testid="submissions-section">
-                        <h3>Regulatory submissions</h3>
-                        <ReleaseSubmissionsPanel
-                            :org-uuid="updatedRelease?.org"
-                            :release-uuid="updatedRelease?.uuid"
-                            :release-version="updatedRelease?.version"
-                            :lifecycle="updatedRelease?.lifecycle"
-                            :component-uuid="updatedRelease?.componentDetails?.uuid"
-                            :component-name="updatedRelease?.componentDetails?.name"
-                            :is-writable="isWritable"
-                            :installation-type="myUser?.installationType"
-                            :names="teaPerspectiveNames()"
-                            :user-label="resolveUserById" />
                     </div>
                     <div class="container" v-if="updatedRelease.componentDetails.type === 'COMPONENT' && !isDocumentRound">
                         <h3>
@@ -1807,9 +1775,11 @@
                      what this release IS; this tab is what we CLAIM about it, and the two
                      were only ever adjacent by accident.
 
-                     PRODUCT-gated as a whole. A component release has no assessment narrative
-                     -- the org prose is a device-level statement -- and its disclosure gauge
-                     already sits above the SBOM list where the attesting happens, so a tab
+                     PRODUCT-gated as a whole. The assessment narrative of any release, a
+                     component's included, is set at submission time: Create and Resubmit in the
+                     Regulatory tab ask for it (the organization default or one for this release)
+                     and write the same override this tab edits. A component release's disclosure
+                     gauge already sits above the SBOM list where the attesting happens, so a tab
                      here would carry one number and nothing to do with it.
 
                      ATTESTATION EDITING IS DELIBERATELY NOT HERE. "Attest all shown", the
@@ -1894,6 +1864,61 @@
                         <n-button size="small" type="primary" ghost @click="goToSbomComponents">
                             Attest components in BOM Components
                         </n-button>
+                    </div>
+                </n-tab-pane>
+                <!-- TEA-5: the release's publication on TEA, its own tab where the release's profile has
+                     publishing switched on. Read-only: the actions sit in the header. -->
+                <n-tab-pane v-if="teaTabShown" name="tea" tab="TEA" data-testid="release-tea-tab">
+                    <div class="container" v-if="teaView.publication" data-testid="tea-section">
+                        <h3>Transparency Exchange (TEA)</h3>
+                        <div style="margin-bottom: 8px;">
+                            <div><strong>State: </strong>{{ teaView.publication.state }} ({{ teaView.publication.exposure }})</div>
+                            <div v-if="teaView.publication.state === 'HIDDEN'" data-testid="tea-hidden"><strong>Hidden from TEA:</strong> TEA readers no longer see this release.</div>
+                            <div v-if="teaConcealedLine" data-testid="tea-concealed">{{ teaConcealedLine }}</div>
+                            <div><strong>TEA release id: </strong>{{ teaView.publication.uuid }}
+                                <Icon class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.uuid)"><Copy20Regular/></Icon>
+                            </div>
+                            <div><strong>TEA URL: </strong>{{ teaPublicUrlText(teaView) }}
+                                <Icon v-if="teaView.publication.publicUrl" class="clickable" style="margin-left: 5px;" size="14" title="Copy" @click="copyToClipboard(teaView.publication.publicUrl)"><Copy20Regular/></Icon>
+                            </div>
+                            <div v-if="teaView.publication.cascadeOf" data-testid="tea-published-with">{{ teaPublishedWithText(teaView.publication) }}</div>
+                            <div v-else><strong>Profile: </strong>{{ teaProfileSourceText }}</div>
+                            <div v-if="teaView.publication.tei"><strong>TEI: </strong>{{ teaView.publication.tei }}</div>
+                            <div v-if="teaView.publication.lastPublishedDate"><strong>Last published: </strong>{{ new Date(teaView.publication.lastPublishedDate).toLocaleString('en-CA') }}<span v-if="teaView.publication.lastPublishedBy"> by {{ resolveUserById(teaView.publication.lastPublishedBy) }}</span></div>
+                            <div v-if="teaView.publication.state === 'HIDDEN' && teaView.publication.lastHiddenDate"><strong>Hidden: </strong>{{ new Date(teaView.publication.lastHiddenDate).toLocaleString('en-CA') }}</div>
+                        </div>
+                        <n-data-table :data="teaCollections" :columns="teaCollectionsTableFields" :row-key="teaRowKey" />
+                    </div>
+                    <div class="container" v-else data-testid="tea-not-published">
+                        <h3>Transparency Exchange (TEA)</h3>
+                        <p>This release is not published on TEA.</p>
+                        <p v-if="!teaView.canPublish && teaView.refusalMessage" data-testid="tea-not-published-reason" class="text-muted">{{ teaView.refusalMessage }}</p>
+                        <p v-else-if="teaView.canPublish" data-testid="tea-not-published-hint" class="text-muted">Publish it with the publish button beside the release title.</p>
+                    </div>
+                </n-tab-pane>
+                <!-- TEA-30: the release's regulatory submissions (Pro), per kind with every version, its own
+                     tab right after TEA: one row per kind the release offers (switched on for its
+                     component, or already submitted, so the history keeps the tab). Create and
+                     Resubmit of a kind carrying the assessment narrative ask for it first, on any
+                     release: the organization default or one written for this release. -->
+                <n-tab-pane v-if="regulatoryTabShown" name="regulatory" tab="Regulatory" data-testid="release-regulatory-tab">
+                    <div class="container" data-testid="submissions-section">
+                        <h3>Regulatory submissions</h3>
+                        <ReleaseSubmissionsPanel
+                            :org-uuid="updatedRelease?.org"
+                            :release-uuid="updatedRelease?.uuid"
+                            :release-version="updatedRelease?.version"
+                            :lifecycle="updatedRelease?.lifecycle"
+                            :component-uuid="updatedRelease?.componentDetails?.uuid"
+                            :component-name="updatedRelease?.componentDetails?.name"
+                            :kinds="regulatoryPackageKinds"
+                            :is-writable="isWritable"
+                            :installation-type="myUser?.installationType"
+                            :names="teaPerspectiveNames()"
+                            :user-label="resolveUserById"
+                            :narrative-override="releaseNarrativeBaseline"
+                            :org-narrative="orgNarrativeDefault"
+                            @narrative-saved="onSubmissionNarrativeSaved" />
                     </div>
                 </n-tab-pane>
                 <n-tab-pane name="meta" tab="Meta">
@@ -2325,6 +2350,7 @@ import { renderAddendumCsv, addendumFileName } from '@/utils/addendumCsv'
 import { renderAddendumPdfBlob, addendumPdfFileName, findUnrenderableText } from '@/utils/addendumPdf'
 import { generateDeviceSupportStatement } from '@/utils/deviceSupportStatementExport'
 import { releaseNarrativeVariables, releaseNarrativeDiffers } from '@/utils/releaseNarrativeInput'
+import { UPDATE_RELEASE_NARRATIVE_GQL } from '@/utils/submissionNarrative'
 import { supportExportFormats as supportExportFormatsFor, mediaTypeForBomType } from '@/utils/exportFormatSelection'
 import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSelection'
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
@@ -2334,12 +2360,13 @@ import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
 import { teaProfilesAvailable, teaSourceLabel } from '@/utils/teaProfile'
-import { teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
+import { teaActLabel, teaActProgress, type TeaAct, teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText, teaActErrorText } from '@/utils/teaPublication'
 import { formatSupportWindow } from '@/utils/supportWindowDisplay'
-import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
+import { isDriftRejected, isSchemaDriftError, loadWithSchemaDriftFallback, markDriftRejected } from '@/utils/graphqlDriftFallback'
 import { deviceWindowVariables } from '@/utils/deviceSupportWindowInput'
 import graphqlQueries from '@/utils/graphqlQueries'
+import submissionQueries from '@/utils/submissionQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
@@ -2368,7 +2395,7 @@ import { DEVICE_RISK_DETAIL, DEVICE_RISK_LABEL, isDeviceRiskFlagged, isWithdrawn
     WITHDRAWN_TAG } from '@/utils/supportStatusTag'
 import { NAlert, NBadge, NProgress, NCheckbox, NButton, NCard, NCheckboxGroup, NDataTable, NDropdown, NForm, NFormItem, NRadio, NRadioGroup, NRadioButton, NSelect, NSpin, NSpace, NTabPane, NTabs, NTag, NText, NTooltip, NUpload, NIcon, NGrid, NGridItem as NGi, NInputGroup, NInput, NSwitch, NDatePicker, useNotification, useLoadingBar, NotificationType, DataTableColumns, NModal, NDynamicInput, NDescriptions, NDescriptionsItem, NCollapse, NCollapseItem } from 'naive-ui'
 import Swal from 'sweetalert2'
-import { ComputedRef, Ref, computed, h, nextTick, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
+import { ComputedRef, Ref, computed, h, onMounted, onUnmounted, reactive, ref, watch } from 'vue'
 import type { Component } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
@@ -2548,9 +2575,35 @@ const releaseNarrativeDirty: ComputedRef<boolean> = computed((): boolean =>
 const releaseNarrativeIsOverridden: ComputedRef<boolean> = computed((): boolean =>
     !!(releaseNarrativeBaseline.value || '').trim())
 
-/** The org-level default, shown read-only so the author sees what an override replaces. */
-const orgNarrativeDefault: ComputedRef<string> = computed((): string =>
-    (store.getters.myorg?.settings?.fdaAssessmentNarrative) || '')
+/**
+ * The org-level default of the RELEASE's organization, shown read-only so the author sees what an
+ * override replaces, and offered by the submission narrative prompt. It is the release's org, not
+ * the one selected in the UI: the server resolves the narrative with the release's org, so a default
+ * of another org would be offered and then not used. The selected org's settings are already in the
+ * store; another org's are read from the organizations list the org-settings surfaces use (the
+ * single-org query answers null there). Empty when that org's settings are not readable.
+ */
+const releaseOrgNarrative: Ref<{ org: string, text: string }> = ref({ org: '', text: '' })
+const orgNarrativeDefault: ComputedRef<string> = computed((): string => {
+    const org = updatedRelease.value?.org || updatedRelease.value?.orgDetails?.uuid || ''
+    if (org && org === store.getters.myorg?.uuid) return store.getters.myorg?.settings?.fdaAssessmentNarrative || ''
+    return releaseOrgNarrative.value.org === org ? releaseOrgNarrative.value.text : ''
+})
+async function loadReleaseOrgNarrative () {
+    const org = updatedRelease.value?.org || updatedRelease.value?.orgDetails?.uuid || ''
+    if (!org || org === store.getters.myorg?.uuid || releaseOrgNarrative.value.org === org) return
+    try {
+        const resp: any = await graphqlClient.query({
+            query: gql`query releaseOrgNarrative { organizations { uuid settings { fdaAssessmentNarrative } } }`,
+            fetchPolicy: 'no-cache'
+        })
+        const found = (resp.data?.organizations || []).find((o: any) => o.uuid === org)
+        releaseOrgNarrative.value = { org, text: found?.settings?.fdaAssessmentNarrative || '' }
+    } catch (err: any) {
+        console.warn('Failed to read the organization narrative default of the release', err)
+        releaseOrgNarrative.value = { org, text: '' }
+    }
+}
 
 /**
  * The declared licence for this release (SCORE-42, design ADR-4 and ADR-8). Its state is the
@@ -2603,10 +2656,7 @@ async function saveReleaseNarrative () {
         // something happened.
         if (!vars) return
         const resp = await graphqlClient.mutate({
-            mutation: gql`
-                mutation updateReleaseNarrative($release: ReleaseInput!) {
-                    updateRelease(release: $release) { uuid fdaAssessmentNarrative }
-                }`,
+            mutation: UPDATE_RELEASE_NARRATIVE_GQL,
             variables: { release: vars }
         })
         // From the mutation's OWN response, before anything that can throw. The write has
@@ -3442,6 +3492,8 @@ async function fetchRelease () {
 
     loadSyntheticArtifacts()
     loadTeaPublication()
+    loadRegulatoryPackageKinds()
+    loadReleaseOrgNarrative()
 
     isComponent.value = (updatedRelease.value.componentDetails.type === 'COMPONENT')
     // Backend-computed designation (true for hardware components AND product
@@ -4256,10 +4308,10 @@ async function loadSyntheticArtifacts () {
     }
 }
 
-// The release's publication on TEA (TEA-5): Pro-only like the generated artifacts above (the CE
-// backend serves no TEA), so it rides its own query, gated on teaProfilesAvailable, fire-and-forget
-// from fetchRelease with a sequence counter, and reloaded after every publish, re-publish and hide.
-// Release.teaPublication is never selected by the shared release fragments.
+// The release's publication on TEA (TEA-5): it rides its own query, gated on teaProfilesAvailable
+// (every edition since the SCORE-72 CE sync), fire-and-forget from fetchRelease with a sequence
+// counter, and reloaded after every publish, re-publish and hide. Release.teaPublication is never
+// selected by the shared release fragments.
 const teaView: Ref<any | null> = ref(null)
 const teaViewRelease: Ref<string> = ref('')
 let teaViewLoadSeq = 0
@@ -4271,17 +4323,50 @@ async function loadTeaPublication () {
         teaViewRelease.value = forRelease
     }
     if (!teaProfilesAvailable(myUser?.installationType)) return
+    // A CE mirror before its sync lacks TeaPublishPreview.publishing: the CORE document still serves
+    // the header and the banner, and the TEA tab stays hidden (publishing undefined).
+    const fullQuery = graphqlQueries.ReleaseTeaPublicationViewGql
     try {
-        const response = await graphqlClient.query({
-            query: graphqlQueries.ReleaseTeaPublicationViewGql,
+        const { data, degraded } = await loadWithSchemaDriftFallback(graphqlClient as any, {
+            fullQuery,
+            coreQuery: graphqlQueries.ReleaseTeaPublicationViewCoreGql,
             variables: { release: forRelease },
-            fetchPolicy: 'no-cache'
+            extractPath: (d: any) => d?.releaseTeaPublicationView ?? null,
+            skipFull: isDriftRejected(fullQuery)
         })
+        if (degraded) markDriftRejected(fullQuery)
         // Drop out-of-order responses (prev/next navigation mid-flight).
         if (seq !== teaViewLoadSeq) return
-        teaView.value = response.data?.releaseTeaPublicationView ?? null
+        teaView.value = data ?? null
     } catch (e) {
         console.warn('Failed to load the TEA publication of release', e)
+    }
+}
+
+// The regulatory package kinds the release offers (TEA-30): Pro-only like the submissions, so its
+// own read behind submissionsAvailable, never the shared release fragments; the same fire-and-forget
+// shape and sequence counter as loadTeaPublication. Empty hides the Regulatory submissions block.
+const regulatoryPackageKinds: Ref<string[]> = ref([])
+const regulatoryKindsRelease: Ref<string> = ref('')
+let regulatoryKindsLoadSeq = 0
+async function loadRegulatoryPackageKinds () {
+    const seq = ++regulatoryKindsLoadSeq
+    const forRelease = releaseUuid.value
+    if (regulatoryKindsRelease.value !== forRelease) {
+        regulatoryPackageKinds.value = []
+        regulatoryKindsRelease.value = forRelease
+    }
+    if (!submissionsAvailable(myUser?.installationType)) return
+    try {
+        const response = await graphqlClient.query({
+            query: submissionQueries.ReleaseRegulatoryPackageKindsGql,
+            variables: { releaseID: forRelease, orgID: props.orgprop },
+            fetchPolicy: 'no-cache'
+        })
+        if (seq !== regulatoryKindsLoadSeq) return
+        regulatoryPackageKinds.value = response.data?.release?.regulatoryPackageKinds ?? []
+    } catch (e) {
+        console.warn('Failed to load the regulatory package kinds of release', e)
     }
 }
 
@@ -4305,9 +4390,43 @@ const teaProfileSourceText: ComputedRef<string> = computed(() => {
     return source + (p.profileRevision != null ? ', revision ' + p.profileRevision : '')
 })
 
-function scrollToTeaSection () {
-    activeTab.value = 'components'
-    nextTick(() => document.querySelector('[data-testid="tea-section"]')?.scrollIntoView({ behavior: 'smooth' }))
+/** The TEA tab shows where the release's effective profile has publishing switched on. */
+const teaTabShown: ComputedRef<boolean> = computed(() => teaView.value?.publishing === 'ENABLED' && !isDocumentRound.value)
+
+/** The header badge opens the TEA tab. */
+function openTeaTab () {
+    if (teaTabShown.value) activeTab.value = 'tea'
+}
+
+// A TEA tab that goes away while open (a reload of a release whose publishing is now DISABLED, or
+// another release) falls back to Components, as the Support tab does: a value with no pane renders
+// a blank tab strip.
+watch(teaTabShown, (shown) => {
+    if (!shown && activeTab.value === 'tea') activeTab.value = 'components'
+})
+
+/**
+ * The Regulatory tab: Pro, not a document round, and a kind the release offers (switched on for its
+ * component, or one it already holds a submission of).
+ */
+const regulatoryTabShown: ComputedRef<boolean> = computed(() => submissionsAvailable(myUser?.installationType)
+    && !isDocumentRound.value && regulatoryPackageKinds.value.length > 0)
+
+// As the TEA tab: a Regulatory tab that goes away while open falls back to Components.
+watch(regulatoryTabShown, (shown) => {
+    if (!shown && activeTab.value === 'regulatory') activeTab.value = 'components'
+})
+
+/**
+ * The submission prompt wrote the release's narrative override: refetch, which re-seeds the Support
+ * tab's editor from the stored value. A failed refetch leaves the page as it was; the write stands.
+ */
+async function onSubmissionNarrativeSaved () {
+    try {
+        await fetchRelease()
+    } catch (e) {
+        console.warn('Failed to refresh the release after its narrative was saved', e)
+    }
 }
 
 async function runTeaPublish (mutation: any, field: string) {
@@ -4320,15 +4439,32 @@ async function runTeaPublish (mutation: any, field: string) {
     })
     const answer = await Swal.fire(confirm)
     if (!answer.isConfirmed) return
-    try {
+    const act: TeaAct = field === 'republishReleaseOnTea' ? 'republish' : 'publish'
+    await withTeaProgress(act, view, async () => {
         const resp: any = await graphqlClient.mutate({
             mutation,
             variables: { release: view.release },
             fetchPolicy: 'no-cache'
         })
         await Swal.fire({ title: 'TEA', text: teaPublishSummary(resp.data[field]), icon: 'success' })
+    })
+}
+
+/**
+ * Runs a TEA act the server completes within the request: one at a time, with the header spinner
+ * and a modal that cannot be dismissed until the answer arrives, then the publication is reloaded.
+ */
+const teaActing: Ref<TeaAct | null> = ref(null)
+async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>) {
+    if (teaActing.value) return
+    teaActing.value = act
+    Swal.fire({ ...teaActProgress(act, view), didOpen: () => Swal.showLoading() })
+    try {
+        await run()
     } catch (err: any) {
-        Swal.fire('Error!', teaActErrorText(err), 'error')
+        await Swal.fire('Error!', teaActErrorText(err), 'error')
+    } finally {
+        teaActing.value = null
     }
     await loadTeaPublication()
 }
@@ -4341,17 +4477,14 @@ async function hideOnTea () {
     if (!view) return
     const answer = await Swal.fire(teaHideConfirm(view))
     if (!answer.isConfirmed) return
-    try {
+    await withTeaProgress('hide', view, async () => {
         await graphqlClient.mutate({
             mutation: graphqlQueries.HideReleaseOnTeaGql,
             variables: { release: view.release },
             fetchPolicy: 'no-cache'
         })
         await Swal.fire({ title: 'TEA', text: 'Hidden from TEA.', icon: 'success' })
-    } catch (err: any) {
-        Swal.fire('Error!', teaActErrorText(err), 'error')
-    }
-    await loadTeaPublication()
+    })
 }
 
 const teaRowKey = (row: any) => row.key

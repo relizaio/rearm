@@ -25,13 +25,18 @@
 
                 <n-form-item v-if="showMode" label-for="sbom-mode">
                     <template #label><FieldLabel label="Mode" :tip="SBOM_FIELD_HELP.mode" /></template>
-                    <n-radio-group data-testid="sbom-mode" v-model:value="form.mode">
-                        <n-radio v-for="o in SBOM_MODE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
-                    </n-radio-group>
+                    <div class="sbom-field">
+                        <n-radio-group data-testid="sbom-mode" v-model:value="form.mode">
+                            <n-radio v-for="o in modeOptions" :key="o.value" :value="o.value" :label="o.label" />
+                        </n-radio-group>
+                        <div v-if="createMode && !definingPerspectives.length" data-testid="sbom-follow-unavailable" class="text-muted">
+                            {{ SBOM_FOLLOW_UNAVAILABLE }}
+                        </div>
+                    </div>
                 </n-form-item>
                 <n-form-item v-if="follows" label="Followed perspective" label-for="sbom-follow-perspective">
                     <n-select data-testid="sbom-follow-perspective" v-model:value="form.followedPerspective"
-                        :options="perspectiveOptions" :filterable="false" placeholder="Choose one of this component's perspectives" />
+                        :options="followOptions" :filterable="false" placeholder="Choose one of this component's perspectives" />
                 </n-form-item>
 
                 <div v-if="!follows" data-testid="sbom-fields">
@@ -80,8 +85,8 @@ import {
     Option, SbomProfileForm, SbomScope, SBOM_DEFAULT_NAME, SBOM_DEPENDENCY_DEPTH_OPTIONS, SBOM_DESCRIPTION_MAX,
     SBOM_EXCLUDED_COVERAGE_OPTIONS, SBOM_FIELD_HELP, SBOM_INTERNAL_METADATA_OPTIONS, SBOM_MODE_OPTIONS,
     SBOM_OPTIONAL_DEPENDENCIES_OPTIONS, SBOM_SOURCES_OPTIONS, SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS,
-    SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults, sbomEffectiveLine, sbomFormFromView, sbomNameError,
-    sbomProfileInput, sbomScopeWord, sbomSourceLine,
+    SBOM_FOLLOW_UNAVAILABLE, SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults, sbomEffectiveLine,
+    sbomFormFromView, sbomNameError, sbomPerspectivesDefiningName, sbomProfileInput, sbomScopeWord, sbomSourceLine,
 } from '@/utils/sbomProfile'
 import { deleteSbomProfileConfirmed } from '@/utils/sbomProfileDelete'
 
@@ -110,7 +115,8 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ (e: 'saved', profile: any): void, (e: 'removed', name: string): void, (e: 'cancel'): void }>()
 
 const view = ref<any>(null)
-const form = ref<SbomProfileForm>(sbomBuiltInDefaults())
+// A new name at COMPONENT scope starts as an Override: the mode radio never opens with nothing chosen.
+const form = ref<SbomProfileForm>({ ...sbomBuiltInDefaults(), mode: props.scope === 'COMPONENT' ? 'OVERRIDE' : null })
 const typedName = ref('')
 const loading = ref(false)
 const saving = ref(false)
@@ -128,6 +134,13 @@ const allNames = computed((): Record<string, string> => {
 })
 const showMode = computed(() => props.scope === 'COMPONENT' && props.installationType !== 'OSS')
 const follows = computed(() => props.scope === 'COMPONENT' && form.value.mode === 'FOLLOW_PERSPECTIVE')
+// Create mode offers Follow only where one of the component's perspectives defines the typed name,
+// and lists only those; the edit of a stored name keeps every mode and every perspective.
+const definingPerspectives = computed(() => sbomPerspectivesDefiningName(view.value))
+const modeOptions = computed(() => !createMode.value || definingPerspectives.value.length
+    ? SBOM_MODE_OPTIONS : SBOM_MODE_OPTIONS.filter(o => o.value !== 'FOLLOW_PERSPECTIVE'))
+const followOptions = computed((): Option[] => !createMode.value ? props.perspectiveOptions
+    : definingPerspectives.value.map(p => ({ value: p.uuid, label: allNames.value[p.uuid] || p.name || p.uuid })))
 const injectionOff = computed(() => view.value?.supportInjection === 'DISABLED')
 const sourceLine = computed(() => sbomSourceLine(view.value, allNames.value, effectiveName.value || SBOM_DEFAULT_NAME))
 const effectiveLine = computed(() => sbomEffectiveLine(view.value?.effective, allNames.value))
@@ -146,6 +159,18 @@ const selectFields = computed(() => [
 ])
 
 watch(injectionOff, (off) => { if (off) form.value.supportMetadata = 'EXCLUDE' })
+
+// A Follow chosen in create mode falls back to Override once the typed name is one no perspective
+// defines, and drops a followed perspective that no longer defines it.
+watch(definingPerspectives, (defining) => {
+    if (!createMode.value || props.scope !== 'COMPONENT' || form.value.mode !== 'FOLLOW_PERSPECTIVE') return
+    if (!defining.length) {
+        form.value.mode = 'OVERRIDE'
+        form.value.followedPerspective = null
+    } else if (form.value.followedPerspective && !defining.some(p => p.uuid === form.value.followedPerspective)) {
+        form.value.followedPerspective = null
+    }
+})
 
 async function load () {
     const name = effectiveName.value
@@ -182,7 +207,8 @@ function scheduleTypedLoad () {
 function loadTyped () {
     if (typedTimer) clearTimeout(typedTimer)
     typedTimer = null
-    if (createMode.value && !nameError.value) load()
+    // An invalid name clears the view (load answers null for it), so nothing follows a stale name.
+    if (createMode.value) load()
 }
 
 async function save () {

@@ -1,12 +1,12 @@
 <template>
     <div class="sbom-profiles-panel mt-4">
-        <h5>Profiles</h5>
+        <h5>SBOM Profiles</h5>
         <div class="sbom-block">
             <h6>SBOM profiles of the organization</h6>
             <div v-if="loadFailed">
                 <n-button size="small" data-testid="sbom-retry" @click="reload">Retry</n-button>
             </div>
-            <n-button v-else-if="isOrgAdmin" size="small" class="mb-2" data-testid="sbom-create" @click="openEditor(null)">
+            <n-button v-else-if="isOrgAdmin && namesAvailable" size="small" class="mb-2" data-testid="sbom-create" @click="openEditor(null)">
                 Create profile
             </n-button>
             <n-data-table data-testid="sbom-profile-rows" :columns="catalogColumns" :data="catalogRows" :row-key="rowKey"
@@ -18,17 +18,6 @@
             <p class="text-muted">Overrides are edited on the component's TEA settings tab or in the perspective's TEA dialog.</p>
             <n-data-table data-testid="sbom-other-rows" :columns="otherColumns" :data="otherRows" :row-key="otherRowKey"
                 :pagination="false" :bordered="false" size="small" />
-        </div>
-
-        <div v-if="regulatoryPackagesAvailable(installationType)" class="sbom-block">
-            <h6>Regulatory package settings</h6>
-            <PackageSettingsEditor
-                ref="orgPackageEditor"
-                :org-uuid="orgUuid"
-                scope="ORGANIZATION"
-                :is-writable="isOrgAdmin"
-                :installation-type="installationType"
-                :names="names" />
         </div>
 
         <n-modal v-model:show="showEditor" preset="dialog" :show-icon="false" style="width: 900px;">
@@ -51,10 +40,12 @@
 </template>
 
 <script setup lang="ts">
-// The organization Profiles tab (task TEA-30, design 3.3.3): the organization's SBOM profile
-// catalog with create, edit and delete; the profiles stored at perspectives and components, read
-// only here; and the organization's regulatory package settings (Pro). Every change of the catalog
-// runs afterCatalogChange(), which reads the catalog again and reloads the package editor's picker.
+// The organization SBOM Profiles sub-tab of Admin Settings (task TEA-30, design 3.3.3): the
+// organization's SBOM profile catalog with create, edit and delete, and the profiles stored at
+// perspectives and components, read only here. The organization's regulatory package settings (Pro)
+// are their own Regulatory sub-tab beside this one, mounted afresh on every visit, so they read the
+// catalog themselves. On CE both lists hold the `default` profile only and Create is hidden
+// (sbomProfileNamesAvailable). Every change of the catalog runs afterCatalogChange().
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { NButton, NCard, NDataTable, NModal, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
@@ -62,11 +53,9 @@ import graphqlQueries from '@/utils/graphqlQueries'
 import profilesQueries from '@/utils/profilesQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { TeaNamedObject, teaRowObject } from '@/utils/teaProfile'
-import { sbomCatalogRows, sbomValueText } from '@/utils/sbomProfile'
-import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
+import { sbomCatalogRows, sbomProfileNamesAvailable, sbomRowsForEdition, sbomValueText } from '@/utils/sbomProfile'
 import { deleteSbomProfileConfirmed } from '@/utils/sbomProfileDelete'
 import SbomProfileEditor from './SbomProfileEditor.vue'
-import PackageSettingsEditor from './PackageSettingsEditor.vue'
 
 const props = withDefaults(defineProps<{
     orgUuid: string
@@ -88,7 +77,6 @@ const ofOrg = ref<any[]>([])
 const loadFailed = ref(false)
 const showEditor = ref(false)
 const editingName = ref<string | null>(null)
-const orgPackageEditor = ref<any>(null)
 
 // Components and products the lists leave out (archived ones), read one by one after the rows arrive.
 const readObjects = ref<Record<string, TeaNamedObject>>({})
@@ -106,9 +94,11 @@ const names = computed((): Record<string, string> => {
     return out
 })
 
-const catalogRows = computed(() => sbomCatalogRows(catalog.value, stored.value, names.value))
-const otherRows = computed(() => ofOrg.value.filter((r: any) => r.scope !== 'ORGANIZATION')
-    .map((r: any) => ({ ...r, objectLabel: teaRowObject(r, objects.value) })))
+const namesAvailable = computed(() => sbomProfileNamesAvailable(props.installationType))
+const catalogRows = computed(() => sbomRowsForEdition(sbomCatalogRows(catalog.value, stored.value, names.value),
+    props.installationType))
+const otherRows = computed(() => sbomRowsForEdition(ofOrg.value.filter((r: any) => r.scope !== 'ORGANIZATION'),
+    props.installationType).map((r: any) => ({ ...r, objectLabel: teaRowObject(r, objects.value) })))
 
 const rowKey = (r: any) => r.name
 const otherRowKey = (r: any) => r.uuid ?? (r.scope + ':' + r.object + ':' + r.name)
@@ -178,10 +168,9 @@ async function reload (): Promise<boolean> {
     return true
 }
 
-/** After every successful write of the catalog: the reads again, then the package editor's picker. */
+/** After every successful write of the catalog: the reads again. */
 async function afterCatalogChange () {
     await reload()
-    orgPackageEditor.value?.reloadCatalog()
 }
 
 /** Names every COMPONENT-scope row whose object is in no list (archived) with one read each. */

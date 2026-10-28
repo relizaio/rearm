@@ -17,6 +17,7 @@
 
                 <template v-if="view">
                     <p data-testid="package-source" class="text-muted">{{ sourceLine }}</p>
+                    <p v-if="inheritHint" data-testid="package-inherit-hint" class="text-muted">{{ inheritHint }}</p>
                     <p data-testid="package-effective" class="text-muted">{{ effectiveLine }}</p>
                     <n-alert v-if="view.parent?.status === 'CONFLICT'" data-testid="package-conflict" type="warning" class="package-alert">
                         {{ sourceLine }}
@@ -25,7 +26,7 @@
                     <n-form-item v-if="showMode" label-for="package-mode">
                         <template #label><FieldLabel label="Mode" :tip="PACKAGE_FIELD_HELP.mode" /></template>
                         <n-radio-group data-testid="package-mode" v-model:value="form.mode">
-                            <n-radio v-for="o in PACKAGE_MODE_OPTIONS" :key="o.value" :value="o.value" :label="o.label" />
+                            <n-radio v-for="o in modeOptions" :key="o.value" :value="o.value" :label="o.label" />
                         </n-radio-group>
                     </n-form-item>
                     <n-form-item v-if="follows" label="Followed perspective" label-for="package-follow-perspective">
@@ -33,62 +34,75 @@
                             :options="perspectiveOptions" :filterable="false" placeholder="Choose one of this component's perspectives" />
                     </n-form-item>
 
-                    <div v-if="!follows" data-testid="package-fields">
-                        <n-form-item label-for="package-sbom-profile">
-                            <template #label><FieldLabel label="SBOM profile" :tip="PACKAGE_FIELD_HELP.sbomProfile" /></template>
-                            <SbomProfilePicker data-testid="package-sbom-profile" :model-value="profileValue" single
-                                :entries="catalog" :installation-type="installationType" :names="allNames"
-                                :disabled="!isWritable" @update:model-value="setProfile" />
-                        </n-form-item>
-                        <div v-if="catalogError" data-testid="package-profiles-error" class="text-danger">{{ catalogError }}</div>
-
-                        <table data-testid="package-parts" class="package-parts">
-                            <thead>
-                                <tr><th>Part</th><th>Requirement</th><th>Selection</th><th>Options</th></tr>
-                            </thead>
-                            <tbody>
-                                <tr v-for="p in form.parts" :key="p.part" :data-testid="'package-part-' + p.part">
-                                    <td>
-                                        <FieldLabel :label="packagePartLabel(p.part)" :tip="PACKAGE_FIELD_HELP.selection" />
-                                        <n-tag v-if="!p.generatorPresent" size="small" type="warning" data-testid="package-no-generator"
-                                            title="No generator is registered for this part on this server; a submission including it is refused">
-                                            no generator
-                                        </n-tag>
-                                    </td>
-                                    <td>
-                                        <n-tag size="small" :type="p.requirement === 'REQUIRED' ? 'error' : 'default'">{{ p.requirement }}</n-tag>
-                                    </td>
-                                    <td :title="PACKAGE_FIELD_HELP.selection">
-                                        <n-select :data-testid="'package-selection-' + p.part" v-model:value="p.selection"
-                                            :options="PACKAGE_SELECTION_OPTIONS" :filterable="false" :disabled="p.requirement === 'REQUIRED'" />
-                                        <div v-if="p.requirement === 'REQUIRED'" :data-testid="'package-selection-reason-' + p.part" class="text-muted">
-                                            REQUIRED by the kind
-                                        </div>
-                                    </td>
-                                    <td>
-                                        <div v-for="f in optionFields(p.part)" :key="f.field" class="package-option" :title="PACKAGE_FIELD_HELP[f.field]">
-                                            <FieldLabel :label="f.label" :tip="PACKAGE_FIELD_HELP[f.field]" />
-                                            <n-select :data-testid="f.testid + p.part" v-model:value="(p as any)[f.field]" :options="f.options"
-                                                :multiple="f.multiple" :filterable="false" :disabled="p.selection !== 'INCLUDE'" />
-                                        </div>
-                                    </td>
-                                </tr>
-                            </tbody>
-                        </table>
-
-                        <n-form-item label-for="package-description">
-                            <template #label><FieldLabel label="Description" :tip="PACKAGE_FIELD_HELP.description" /></template>
-                            <n-input data-testid="package-description" :input-props="{ id: 'package-description' }" v-model:value="form.description"
-                                type="textarea" :maxlength="1024" show-count :autosize="{ minRows: 1, maxRows: 4 }" />
-                        </n-form-item>
-                    </div>
+                    <p v-if="follows" data-testid="package-effective-enabled" class="text-muted">{{ effectiveEnabledLine }}</p>
                 </template>
             </n-form>
 
+            <!-- INHERIT shows the parent's settings read-only: its own form, so the mode radio stays enabled. -->
+            <n-form v-if="view && !follows" label-placement="left" label-width="210" :disabled="readOnly" size="small">
+                <div data-testid="package-fields" :data-inherited="inherits ? 'true' : undefined">
+                    <n-form-item label-for="package-enabled">
+                        <template #label><FieldLabel label="Enabled" :tip="enabledHelp" /></template>
+                        <n-switch data-testid="package-enabled" v-model:value="shown.enabled" :disabled="readOnly" />
+                        <span class="text-muted package-enabled-help">{{ enabledHelp }}</span>
+                    </n-form-item>
+                    <n-form-item label-for="package-sbom-profile">
+                        <template #label><FieldLabel label="SBOM profile" :tip="PACKAGE_FIELD_HELP.sbomProfile" /></template>
+                        <SbomProfilePicker data-testid="package-sbom-profile" :model-value="profileValue" single
+                            :entries="catalog" :installation-type="installationType" :names="allNames"
+                            :disabled="readOnly" @update:model-value="setProfile" />
+                    </n-form-item>
+                    <div v-if="catalogError" data-testid="package-profiles-error" class="text-danger">{{ catalogError }}</div>
+
+                    <table data-testid="package-parts" class="package-parts">
+                        <thead>
+                            <tr><th>Part</th><th>Requirement</th><th>Selection</th><th>Options</th></tr>
+                        </thead>
+                        <tbody>
+                            <tr v-for="p in shown.parts" :key="p.part" :data-testid="'package-part-' + p.part">
+                                <td>
+                                    <FieldLabel :label="packagePartLabel(p.part)" :tip="PACKAGE_FIELD_HELP.selection" />
+                                    <n-tag v-if="!p.generatorPresent" size="small" type="warning" data-testid="package-no-generator"
+                                        title="No generator is registered for this part on this server; a submission including it is refused">
+                                        no generator
+                                    </n-tag>
+                                </td>
+                                <td>
+                                    <n-tag size="small" :type="p.requirement === 'REQUIRED' ? 'error' : 'default'">{{ p.requirement }}</n-tag>
+                                </td>
+                                <td :title="PACKAGE_FIELD_HELP.selection">
+                                    <n-select :data-testid="'package-selection-' + p.part" v-model:value="p.selection"
+                                        :options="PACKAGE_SELECTION_OPTIONS" :filterable="false" :disabled="p.requirement === 'REQUIRED' || readOnly" />
+                                    <div v-if="p.requirement === 'REQUIRED'" :data-testid="'package-selection-reason-' + p.part" class="text-muted">
+                                        REQUIRED by the kind
+                                    </div>
+                                </td>
+                                <td>
+                                    <div v-for="f in optionFields(p.part)" :key="f.field" class="package-option" :title="PACKAGE_FIELD_HELP[f.field]">
+                                        <FieldLabel :label="f.label" :tip="PACKAGE_FIELD_HELP[f.field]" />
+                                        <n-select :data-testid="f.testid + p.part" v-model:value="(p as any)[f.field]" :options="f.options"
+                                            :multiple="f.multiple" :filterable="false" :disabled="p.selection !== 'INCLUDE' || readOnly" />
+                                    </div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+
+                    <n-form-item label-for="package-description">
+                        <template #label><FieldLabel label="Description" :tip="PACKAGE_FIELD_HELP.description" /></template>
+                        <n-input data-testid="package-description" :input-props="{ id: 'package-description' }" v-model:value="shown.description"
+                            type="textarea" :maxlength="1024" show-count :autosize="{ minRows: 1, maxRows: 4 }" />
+                    </n-form-item>
+                </div>
+            </n-form>
+
             <div v-if="view && formError" data-testid="package-form-error" class="text-danger">{{ formError }}</div>
-            <n-space v-if="view && isWritable">
-                <n-button data-testid="package-save" type="primary" :loading="saving" :disabled="Boolean(formError)" @click="save">Save</n-button>
-                <n-button v-if="view.stored" data-testid="package-remove" type="error" @click="remove">Remove</n-button>
+            <!-- INHERIT with no row stores nothing: no Save. With a row, Save asks and removes it. The
+                 organization has no parent but the defaults: it keeps its Remove. -->
+            <n-space v-if="view && isWritable && !(inherits && !view.stored)">
+                <n-button data-testid="package-save" type="primary" :loading="saving" :disabled="Boolean(formError)"
+                    @click="inherits ? inheritAgain() : save()">Save</n-button>
+                <n-button v-if="scope === 'ORGANIZATION' && view.stored" data-testid="package-remove" type="error" @click="remove()">Remove</n-button>
             </n-space>
         </n-spin>
     </div>
@@ -96,12 +110,13 @@
 
 <script setup lang="ts">
 // The regulatory package settings editor (task TEA-30, design 3.4.2), Pro only: one kind at one
-// scope, generic over the kinds packageKinds answers -- nothing here names a kind. The parts, their
+// scope, generic over the kinds packageKinds answers -- nothing here names a kind. Each kind is off
+// until the Enabled switch turns it on at a scope; a FOLLOW row shows the followed state. The parts, their
 // requirement, their defaults and whether a generator is registered come from the server's
 // descriptor; the SBOM profile is the picker in single mode. Errors show through the SweetAlert2
 // object form with the server's text in `text` (design 3.8, D18).
 import { computed, onMounted, ref, watch } from 'vue'
-import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTag } from 'naive-ui'
+import { NAlert, NButton, NForm, NFormItem, NInput, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NSwitch, NTag, useDialog } from 'naive-ui'
 import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
@@ -110,8 +125,9 @@ import FieldLabel from './FieldLabel.vue'
 import SbomProfilePicker from './SbomProfilePicker.vue'
 import {
     Option, PackageScope, PackageSettingsForm, PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_FIELD_HELP,
-    PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_MODE_OPTIONS, PACKAGE_SELECTION_OPTIONS,
-    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageFormError,
+    PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_INHERIT, PACKAGE_SELECTION_OPTIONS,
+    PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine, packageEnabledHelp,
+    packageEnabledLine, packageFormError, packageInheritConfirm, packageInheritConflictHint, packageInheritedForm, packageModeOptions,
     packageFormFromView, packageKindLabel, packagePartFields, packagePartLabel, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine,
 } from '@/utils/packageSettings'
@@ -139,10 +155,12 @@ const props = withDefaults(defineProps<{
 
 const emit = defineEmits<{ (e: 'saved', settings: any): void, (e: 'removed'): void }>()
 
+const dialog = useDialog()
+
 const kinds = ref<any[]>([])
 const kind = ref<string | null>(null)
 const view = ref<any>(null)
-const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, sbomProfile: 'default', description: '', parts: [] })
+const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, enabled: false, sbomProfile: 'default', description: '', parts: [] })
 const catalog = ref<any[]>([])
 const catalogError = ref<string | null>(null)
 const loading = ref(false)
@@ -168,15 +186,28 @@ const allNames = computed((): Record<string, string> => {
     for (const p of view.value?.effective?.conflictingPerspectives ?? []) out[p.uuid] = p.name
     return out
 })
-const showMode = computed(() => props.scope === 'COMPONENT' && props.installationType !== 'OSS')
+const modeOptions = computed(() => packageModeOptions(props.scope, props.installationType))
+const showMode = computed(() => modeOptions.value.length > 0)
 const follows = computed(() => props.scope === 'COMPONENT' && form.value.mode === 'FOLLOW_PERSPECTIVE')
-const sourceLine = computed(() => packageSourceLine(view.value, allNames.value))
+// INHERIT (UI only, never sent): the fields, the Enabled switch included, show the parent's settings
+// read-only; the form keeps the edit, so switching back to Override shows it again.
+const inherits = computed(() => form.value.mode === PACKAGE_INHERIT)
+const readOnly = computed(() => !props.isWritable || inherits.value)
+const inheritedForm = computed((): PackageSettingsForm => packageInheritedForm(view.value, props.scope))
+const shown = computed((): PackageSettingsForm => inherits.value ? inheritedForm.value : form.value)
+const sourceLine = computed(() => packageSourceLine(view.value, allNames.value, form.value.mode))
 const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value))
+const effectiveEnabledLine = computed(() => packageEnabledLine(view.value?.effective))
+// Follows the value the switch shows, the read-only INHERIT display included.
+const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.enabled))
+const inheritHint = computed(() => packageInheritConflictHint(props.scope, form.value.mode, props.perspectiveOptions.length,
+    view.value, kind.value))
 const formError = computed(() => view.value ? packageFormError(form.value) : null)
-const profileValue = computed(() => form.value.sbomProfile ? [form.value.sbomProfile] : [])
+const profileValue = computed(() => shown.value.sbomProfile ? [shown.value.sbomProfile] : [])
 const scopeWord = computed(() => sbomScopeWord(props.scope, props.objectIsProduct))
 
 function setProfile (v: string[]) {
+    if (inherits.value) return
     form.value.sbomProfile = v?.[0] ?? ''
 }
 
@@ -222,7 +253,8 @@ async function load () {
         ])
         view.value = resp.data.packageSettingsEditorView
         form.value = packageFormFromView(view.value, props.scope)
-        if (props.scope === 'COMPONENT' && props.installationType === 'OSS') form.value.mode = 'OVERRIDE'
+        // CE follows no perspective: a FOLLOW row (none is stored there) edits as an override.
+        if (props.installationType === 'OSS' && form.value.mode === 'FOLLOW_PERSPECTIVE') form.value.mode = 'OVERRIDE'
     } catch (err: any) {
         console.error(err)
         view.value = null
@@ -250,7 +282,7 @@ async function reloadCatalog () {
 }
 
 async function save () {
-    if (!kind.value || formError.value) return
+    if (!kind.value || formError.value || inherits.value) return
     saving.value = true
     try {
         const resp: any = await graphqlClient.mutate({
@@ -268,11 +300,14 @@ async function save () {
     }
 }
 
-async function remove () {
+/** Removes the stored row; `askedToInherit`: the Inherit again dialog already confirmed it. */
+async function remove (askedToInherit = false) {
     if (!kind.value) return
-    const answer: any = await Swal.fire({ ...packageRemoveConfirm(kind.value, scopeWord.value), icon: 'warning',
-        showCancelButton: true, cancelButtonText: 'Cancel' })
-    if (!answer?.isConfirmed) return
+    if (!askedToInherit) {
+        const answer: any = await Swal.fire({ ...packageRemoveConfirm(kind.value, scopeWord.value), icon: 'warning',
+            showCancelButton: true, cancelButtonText: 'Cancel' })
+        if (!answer?.isConfirmed) return
+    }
     try {
         await graphqlClient.mutate({
             mutation: profilesQueries.DeletePackageSettingsGql,
@@ -284,6 +319,16 @@ async function remove () {
         console.error(err)
         Swal.fire({ title: 'Error!', text: graphqlRefusalText(err), icon: 'error' })
     }
+}
+
+/** Save in INHERIT over a stored row: confirm, then remove the row; the reload shows INHERIT with no row. */
+function inheritAgain () {
+    dialog.warning({
+        ...packageInheritConfirm(props.scope, scopeWord.value),
+        positiveText: 'Inherit',
+        negativeText: 'Cancel',
+        onPositiveClick: () => { remove(true) },
+    })
 }
 
 onMounted(init)
@@ -306,5 +351,9 @@ defineExpose({ load, reloadCatalog })
 }
 .package-option {
     margin-bottom: 4px;
+}
+.package-enabled-help {
+    margin-left: 12px;
+    font-size: 0.85em;
 }
 </style>

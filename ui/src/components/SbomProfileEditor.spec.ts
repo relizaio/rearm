@@ -2,7 +2,8 @@
 //
 // The SBOM profile editor (task TEA-30, design 4.3 rows 12 to 15): the pre-fill and the source and
 // effective lines, the tooltips, the support-injection rule, the conflict alert and the mode radio,
-// a FOLLOW row, the save and the create mode, and the delete with the server's refusal shown as
+// a FOLLOW row, the save and the create mode (Override pre-selected; Follow offered only where a
+// perspective of the component defines the typed name, listing only those), and the delete with the server's refusal shown as
 // text in the object form of SweetAlert2. The GraphQL client and Swal are mocked.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
@@ -150,6 +151,100 @@ describe('SbomProfileEditor', () => {
         await w.find('[data-testid="sbom-save"]').trigger('click')
         await flushPromises()
         expect(mutate.mock.calls[0][0].variables.name).toBe('top')
+    })
+
+    describe('create mode at COMPONENT scope', () => {
+        const radios = (w: any) => w.findAll('[data-testid="sbom-mode"] input[type="radio"]')
+        const modeValues = (w: any) => radios(w).map((i: any) => (i.element as HTMLInputElement).value)
+        const checkedMode = (w: any) => (radios(w).find((i: any) => (i.element as HTMLInputElement).checked)?.element as HTMLInputElement)?.value
+        async function typeName (w: any, name: string) {
+            const input = w.find('[data-testid="sbom-name"] input')
+            await input.setValue(name)
+            await input.trigger('blur')
+            await flushPromises()
+        }
+        const byName = (views: Record<string, any>) => query.mockImplementation(async (opts: any) =>
+            ({ data: { sbomProfileEditorView: views[opts.variables.name] ?? view() } }))
+
+        it('pre-selects Override before and after a name is typed, and Save is enabled for a good name', async () => {
+            const w = await mountWith(view(), { name: null })
+            expect(checkedMode(w)).toBe('OVERRIDE')
+            await typeName(w, 'fresh')
+            expect(checkedMode(w)).toBe('OVERRIDE')
+            expect(w.find('[data-testid="sbom-save"]').attributes('disabled')).toBeUndefined()
+            await w.find('[data-testid="sbom-save"]').trigger('click')
+            await flushPromises()
+            expect(mutate.mock.calls[0][0].variables.profile.mode).toBe('OVERRIDE')
+        })
+
+        it('hides Follow, with the reason, while no perspective defines the name', async () => {
+            const w = await mountWith(view(), { name: null })
+            expect(modeValues(w)).toEqual(['OVERRIDE'])
+            expect(w.find('[data-testid="sbom-follow-unavailable"]').text())
+                .toBe("Follow is available once one of this component's perspectives defines this name")
+            await typeName(w, 'fresh')
+            expect(modeValues(w)).toEqual(['OVERRIDE'])
+            expect(w.find('[data-testid="sbom-follow-unavailable"]').exists()).toBe(true)
+        })
+
+        it('offers Follow where one perspective defines the name, listing only that one', async () => {
+            byName({ top: view({ parent: resolved('PERSPECTIVE', profile(), 'p2') }) })
+            const w = mount(Editor, { props: { orgUuid: 'o1', scope: 'COMPONENT', objectUuid: 'c1', name: null, isWritable: true,
+                installationType: 'SAAS', perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' }] } })
+            await flushPromises()
+            await typeName(w, 'top')
+            expect(modeValues(w)).toEqual(['OVERRIDE', 'FOLLOW_PERSPECTIVE'])
+            expect(w.find('[data-testid="sbom-follow-unavailable"]').exists()).toBe(false)
+            expect(checkedMode(w)).toBe('OVERRIDE')
+            await radios(w).find((i: any) => (i.element as HTMLInputElement).value === 'FOLLOW_PERSPECTIVE')!.setValue(true)
+            await flushPromises()
+            expect(select(w, 'sbom-follow-perspective').props('options')).toEqual([{ value: 'p2', label: 'Retail' }])
+        })
+
+        it('a CONFLICT of the name lists every perspective defining it', async () => {
+            const P3 = { uuid: 'p3', name: 'Wholesale', type: 'PERSPECTIVE' }
+            byName({ top: view({ parent: { status: 'CONFLICT', source: 'PERSPECTIVE', sourceObject: null, profile: null,
+                conflictingPerspectives: [P1, P3] } }) })
+            const w = mount(Editor, { props: { orgUuid: 'o1', scope: 'COMPONENT', objectUuid: 'c1', name: null, isWritable: true,
+                installationType: 'SAAS', perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' },
+                    { label: 'Wholesale', value: 'p3' }] } })
+            await flushPromises()
+            await typeName(w, 'top')
+            await radios(w).find((i: any) => (i.element as HTMLInputElement).value === 'FOLLOW_PERSPECTIVE')!.setValue(true)
+            await flushPromises()
+            expect(select(w, 'sbom-follow-perspective').props('options').map((o: any) => o.value)).toEqual(['p1', 'p3'])
+        })
+
+        it('a chosen Follow falls back to Override when the name changes to one no perspective defines', async () => {
+            byName({ top: view({ parent: resolved('PERSPECTIVE', profile(), 'p2') }) })
+            const w = mount(Editor, { props: { orgUuid: 'o1', scope: 'COMPONENT', objectUuid: 'c1', name: null, isWritable: true,
+                installationType: 'SAAS', perspectiveOptions: [{ label: 'Payments', value: 'p1' }, { label: 'Retail', value: 'p2' }] } })
+            await flushPromises()
+            await typeName(w, 'top')
+            await radios(w).find((i: any) => (i.element as HTMLInputElement).value === 'FOLLOW_PERSPECTIVE')!.setValue(true)
+            await flushPromises()
+            await select(w, 'sbom-follow-perspective').vm.$emit('update:value', 'p2')
+            expect(checkedMode(w)).toBe('FOLLOW_PERSPECTIVE')
+            // An invalid name clears the view, and with it the perspectives defining the name.
+            await typeName(w, 'bad name')
+            expect(checkedMode(w)).toBe('OVERRIDE')
+            expect(modeValues(w)).toEqual(['OVERRIDE'])
+            await typeName(w, 'top')
+            await radios(w).find((i: any) => (i.element as HTMLInputElement).value === 'FOLLOW_PERSPECTIVE')!.setValue(true)
+            await flushPromises()
+            expect(checkedMode(w)).toBe('FOLLOW_PERSPECTIVE')
+            await typeName(w, 'other')
+            expect(checkedMode(w)).toBe('OVERRIDE')
+            expect(modeValues(w)).toEqual(['OVERRIDE'])
+            expect(w.find('[data-testid="sbom-fields"]').exists()).toBe(true)
+        })
+
+        it('edit mode keeps every mode and every perspective', async () => {
+            const w = await mountWith(view({ stored: { name: 'top', mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p2' } }))
+            expect(modeValues(w)).toEqual(['OVERRIDE', 'FOLLOW_PERSPECTIVE'])
+            expect(w.find('[data-testid="sbom-follow-unavailable"]').exists()).toBe(false)
+            expect(select(w, 'sbom-follow-perspective').props('options').map((o: any) => o.value)).toEqual(['p1', 'p2'])
+        })
     })
 
     it('row 15: Delete confirms with the default text; cancel sends nothing; confirm deletes and emits removed', async () => {

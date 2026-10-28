@@ -77,13 +77,24 @@ describe('ComponentView: the declared licence and supplier block', () => {
         }
     })
 
-    it('is a sibling of coreSettingsActions, not a child', () => {
+    it('is the content of its own License & Supplier tab, right after Core Settings, never under coreSettingsActions', () => {
         const actions = find((n) => attribute(n, 'class') === 'coreSettingsActions' && directive(n, 'if') === 'hasCoreSettingsChanges && isWritable')
         expect(actions).toHaveLength(1)
         expect(block[0]).not.toContain(last(actions[0]))
-        const parent = actions[0][actions[0].length - 2]
-        const siblings = elementChildren(parent)
-        expect(siblings[siblings.indexOf(last(actions[0])) + 1]).toBe(blockNode())
+        // Its tab: the nearest pane above it, with the block and the unsupported note as its only elements.
+        const pane = [...block[0]].reverse().find((n: any) => n.tag === 'n-tab-pane')
+        expect(attribute(pane, 'name')).toBe('licenseSupplier')
+        expect(attribute(pane, 'tab')).toBe('License & Supplier')
+        expect(directive(pane, 'if')).toBeUndefined()
+        const note = last(byTestId('component-license-unsupported')[0])
+        expect(elementChildren(pane)).toEqual([blockNode(), note])
+        // The next pane after Core Settings, which keeps coreSettingsActions and no longer holds the block.
+        const corePane = [...actions[0]].reverse().find((n: any) => n.tag === 'n-tab-pane')
+        expect(attribute(corePane, 'name')).toBe('Core Settings')
+        const tabs = actions[0][actions[0].indexOf(corePane) - 1]
+        expect(tabs.tag).toBe('n-tabs')
+        const panes = elementChildren(tabs)
+        expect(panes[panes.indexOf(corePane) + 1]).toBe(pane)
     })
 
     it('is gated on the drift flag and on a successful read', () => {

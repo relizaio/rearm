@@ -5,7 +5,7 @@
 // server's packageKinds answer, never from this file.
 
 import { isProEdition } from './editionCapabilities'
-import { teaSourceLabel } from './teaProfile'
+import { TEA_INHERIT, teaInheritConflictHint, teaSourceLabel } from './teaProfile'
 
 /**
  * Whether this edition serves regulatory package settings and submissions. The Pro backend does;
@@ -74,6 +74,18 @@ export function packagePartLabel (part: string | null | undefined): string {
     return (part && PACKAGE_PART_LABELS[part]) || part || ''
 }
 
+/** The help text of the Enabled switch, naming the kind and describing the value the switch shows. */
+export function packageEnabledHelp (kind: string | null | undefined, enabled: boolean | null | undefined): string {
+    if (enabled === true) return 'On: releases of this scope offer ' + packageKindLabel(kind) + ' and can be submitted.'
+    return 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
+        + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
+}
+
+/** The effective on/off of a kind at a scope, from the resolver's settings; off when nothing resolves. */
+export function packageEnabledLine (resolution: any): string {
+    return 'Enabled here: ' + (resolution?.settings?.enabled === true ? 'on' : 'off')
+}
+
 export const PACKAGE_FIELD_HELP: Record<string, string> = {
     kind: 'The regulatory package kind these settings tailor; each kind has its own parts.',
     sbomProfile: 'The SBOM profile the aggregate SBOM part is generated under; one name, resolved at this scope',
@@ -83,13 +95,32 @@ export const PACKAGE_FIELD_HELP: Record<string, string> = {
     vexFormat: 'The format the VEX part is written in.',
     artifactTypes: 'Attached release artifacts of these types ride along as RAW_ARTIFACTS; at least one type when included',
     description: 'Shown beside the settings only; at most 1024 characters.',
-    mode: 'Override defines the settings at this component; Follow takes one perspective\'s settings.',
+    mode: 'Inherit stores nothing here; Override defines the settings at this scope; Follow takes one perspective\'s settings.',
 }
 
+/** The editor-only mode of a scope with no stored row (as TEA_INHERIT): never sent, going back removes the row. */
+export const PACKAGE_INHERIT = TEA_INHERIT
+
+/** The component modes, Inherit first. */
 export const PACKAGE_MODE_OPTIONS: Option[] = [
+    opt(PACKAGE_INHERIT, 'Inherit: use the perspective or organization settings'),
     opt('OVERRIDE', 'Override: this component defines its own package settings'),
     opt('FOLLOW_PERSPECTIVE', 'Follow one of its perspectives'),
 ]
+
+/** The perspective modes: inherit from the organization or define its own; a perspective follows nothing. */
+export const PACKAGE_PERSPECTIVE_MODE_OPTIONS: Option[] = [
+    opt(PACKAGE_INHERIT, 'Inherit: use the organization settings'),
+    opt('OVERRIDE', 'Override: this perspective defines its own package settings'),
+]
+
+/** The mode radio of a scope, as teaModeOptions: none at the organization, two at a perspective, three at a component. */
+export function packageModeOptions (scope: PackageScope, installationType?: string | null): Option[] {
+    if (scope === 'ORGANIZATION') return []
+    if (scope === 'PERSPECTIVE') return PACKAGE_PERSPECTIVE_MODE_OPTIONS
+    if (installationType === 'OSS') return [PACKAGE_PERSPECTIVE_MODE_OPTIONS[0], PACKAGE_MODE_OPTIONS[1]]
+    return PACKAGE_MODE_OPTIONS
+}
 
 /** Which option beyond `selection` applies to which part (PackagePartOptions.applicableTo, TEA-33 3.5.1). */
 export const PACKAGE_PART_FIELDS: Record<string, string[]> = {
@@ -120,6 +151,7 @@ export interface PackagePartForm {
 export interface PackageSettingsForm {
     mode: string | null
     followedPerspective: string | null
+    enabled: boolean
     sbomProfile: string
     description: string
     parts: PackagePartForm[]
@@ -133,6 +165,7 @@ function partOptions (settings: any, part: string): any {
  * What the form starts from. The parts come from the kind's descriptor in its order; each part's
  * options from the stored row when it carries fields (not FOLLOW), else the parent's settings, else
  * nothing, with nulls filled as the server fills them. A REQUIRED part is INCLUDE whatever a row says.
+ * `enabled` comes the same way and is off by default (the built-in default).
  */
 export function packageFormFromView (view: any, scope: PackageScope): PackageSettingsForm {
     const stored = view?.stored
@@ -153,22 +186,33 @@ export function packageFormFromView (view: any, scope: PackageScope): PackageSet
             artifactTypes: Array.isArray(o.artifactTypes) ? [...o.artifactTypes] : [],
         }
     })
+    const mode = scope === 'ORGANIZATION' ? null
+        : !stored ? PACKAGE_INHERIT
+            : scope === 'COMPONENT' ? (stored.mode ?? 'OVERRIDE') : 'OVERRIDE'
     return {
-        mode: scope === 'COMPONENT' ? (stored?.mode ?? 'OVERRIDE') : null,
+        mode,
         followedPerspective: scope === 'COMPONENT' ? (stored?.followedPerspective ?? null) : null,
+        enabled: base?.enabled === true,
         sbomProfile: (storedHasFields ? stored?.sbomProfile : null) ?? view?.parent?.settings?.sbomProfile ?? 'default',
         description: stored?.description ?? '',
         parts,
     }
 }
 
-/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only. */
+/** What an INHERIT form shows, read-only: the parent's settings (the form with no row stored). */
+export function packageInheritedForm (view: any, scope: PackageScope): PackageSettingsForm {
+    return packageFormFromView({ kind: view?.kind, parent: view?.parent, stored: null }, scope)
+}
+
+/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only (no `enabled`). */
 export function packageSettingsInput (form: PackageSettingsForm, scope: PackageScope): Record<string, any> {
+    if (form.mode === PACKAGE_INHERIT) throw new Error('INHERIT is not stored: inheriting again removes the row')
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
         return { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: form.followedPerspective }
     }
     const out: Record<string, any> = {}
     if (scope === 'COMPONENT') out.mode = 'OVERRIDE'
+    out.enabled = form.enabled === true
     out.sbomProfile = form.sbomProfile
     const description = (form.description ?? '').trim()
     out.description = description || null
@@ -186,7 +230,7 @@ export function packageSettingsInput (form: PackageSettingsForm, scope: PackageS
 
 /** The client copy of the server's SETTINGS_INVALID rules; null when the form may be sent. */
 export function packageFormError (form: PackageSettingsForm): string | null {
-    if (form.mode === 'FOLLOW_PERSPECTIVE') return null
+    if (form.mode === 'FOLLOW_PERSPECTIVE' || form.mode === PACKAGE_INHERIT) return null
     const raw = form.parts.find(p => p.part === 'RAW_ARTIFACTS')
     if (raw && raw.selection === 'INCLUDE' && !(raw.artifactTypes ?? []).length) {
         return 'RAW_ARTIFACTS needs at least one artifact type while included'
@@ -206,10 +250,20 @@ function sourceWithRevision (r: any, map: Record<string, string>): string {
     return label + ', revision ' + rev
 }
 
-/** The editor's source line, the SBOM editor's text with "package settings" for the name. */
-export function packageSourceLine (view: any, map: Record<string, string> = {}): string {
-    if (view?.stored) return 'Stored at this scope'
+/** The INHERIT hint of the TEA editor, worded for a kind's package settings. */
+export function packageInheritConflictHint (scope: PackageScope, mode: string | null | undefined, perspectiveCount: number,
+    view: any, kind: string | null | undefined): string | null {
+    return teaInheritConflictHint(scope, mode, perspectiveCount, view, packageKindLabel(kind) + ' settings')
+}
+
+/** The editor's source line, the SBOM editor's text with "package settings" for the name; in INHERIT, where they come from. */
+export function packageSourceLine (view: any, map: Record<string, string> = {}, mode: string | null = null): string {
     const parent = view?.parent
+    if (mode === PACKAGE_INHERIT && parent?.status !== 'CONFLICT') {
+        const from = (!parent || parent.status === 'NOT_FOUND') ? 'built-in defaults' : sourceWithRevision(parent, map)
+        return 'Inherited from ' + from + (view?.stored ? ': Save removes the stored settings' : '')
+    }
+    if (view?.stored) return 'Stored at this scope'
     if (!parent || parent.status === 'NOT_FOUND') {
         return 'No package settings above this scope: pre-filled from the built-in defaults'
     }
@@ -227,6 +281,13 @@ export function packageEffectiveLine (resolution: any, map: Record<string, strin
     }
     if (resolution.status === 'NOT_FOUND') return 'Effective here: not found; a submission is refused'
     return 'Effective here: ' + sourceWithRevision(resolution, map)
+}
+
+/** The confirmation before a stored row goes back to INHERIT; the editor then removes the row. */
+export function packageInheritConfirm (scope: PackageScope, scopeWord: string): { title: string, content: string } {
+    const parent = scope === 'PERSPECTIVE' ? 'organization' : 'perspective or organization'
+    return { title: 'Inherit again?',
+        content: 'Remove this ' + scopeWord + "'s override and inherit the " + parent + ' settings again?' }
 }
 
 /** The confirmation before a package settings removal; the kind label and scope word go into text only. */

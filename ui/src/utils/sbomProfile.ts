@@ -6,7 +6,7 @@
 
 import { isProEdition } from './editionCapabilities'
 import { regulatoryPackagesAvailable } from './packageSettings'
-import { teaSourceLabel } from './teaProfile'
+import { CE_SBOM_PROFILE, teaSourceLabel } from './teaProfile'
 
 export type SbomScope = 'ORGANIZATION' | 'PERSPECTIVE' | 'COMPONENT'
 
@@ -173,6 +173,23 @@ export function sbomFormFromView (view: SbomEditorView | null | undefined, scope
         ...recipeOf(base),
     }
 }
+
+/**
+ * The component's perspectives that define the view's name, read off its parent resolution: at
+ * COMPONENT scope the parent is the perspective step and below with no fallback, so one defining
+ * perspective resolves with source PERSPECTIVE and that perspective as its object, more than one is a
+ * CONFLICT listing every one of them, and none falls through to the organization or the defaults.
+ */
+export function sbomPerspectivesDefiningName (view: SbomEditorView | null | undefined): { uuid: string, name?: string | null }[] {
+    const parent = view?.parent
+    if (!parent) return []
+    if (parent.status === 'CONFLICT') return (parent.conflictingPerspectives ?? []).filter(p => p?.uuid)
+    if (parent.source === 'PERSPECTIVE' && parent.sourceObject) return [{ uuid: parent.sourceObject }]
+    return []
+}
+
+/** The line create mode shows in place of Follow while no perspective of the component defines the name. */
+export const SBOM_FOLLOW_UNAVAILABLE = "Follow is available once one of this component's perspectives defines this name"
 
 /** The SbomProfileInput a save sends: a FOLLOW row sends its mode and perspective only. */
 export function sbomProfileInput (form: SbomProfileForm, scope: SbomScope): Record<string, any> {
@@ -350,6 +367,21 @@ export function sbomPickerLines (entries: any[] | null | undefined, selected: st
 /** Whether the picker takes several names: Pro, unless the host forces one (the package editor). */
 export function sbomPickerMultiple (installationType: string | null | undefined, single = false): boolean {
     return !single && isProEdition(installationType)
+}
+
+/**
+ * Whether this edition names SBOM profiles. CE serves the one `default` profile and stores every
+ * save under it, so its surfaces list and edit `default` only and offer no new name.
+ */
+export function sbomProfileNamesAvailable (installationType: string | null | undefined): boolean {
+    return installationType !== 'OSS'
+}
+
+/** The rows a surface lists on this edition: every row on Pro, the `default` rows only on CE. */
+export function sbomRowsForEdition<T extends { name?: string | null }> (rows: T[] | null | undefined,
+    installationType: string | null | undefined): T[] {
+    const all = rows ?? []
+    return sbomProfileNamesAvailable(installationType) ? all : all.filter(r => r?.name === CE_SBOM_PROFILE)
 }
 
 /** A Swal confirmation: a constant title, the names in the text only. */

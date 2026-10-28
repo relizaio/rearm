@@ -3,6 +3,7 @@ import {
     teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
     teaActErrorText, TEA_ACT_GATEWAY_TEXT,
+    teaActLabel, teaActProgress,
 } from './teaPublication'
 
 // TEA publications (task TEA-5, design 4.10 tests 54 to 57): the release page's pure helpers.
@@ -340,5 +341,28 @@ describe('the aggregate list and the profile column (TEA-30)', () => {
             { teaUuid: 't-2', revision: 1, origin: 'SYNTHETIC', name: 'shop-api-1.4.0-tea-aggregate.cdx.json' },
         ] }, API)
         expect(rows.map(r => r.profile)).toEqual(['top', ''])
+    })
+})
+
+describe('the TEA act progress (the server publishes within the request)', () => {
+    it('cannot be dismissed, names the act and says to keep the page open', () => {
+        for (const [act, title] of [['publish', 'Publishing on TEA…'], ['republish', 'Re-publishing on TEA…'], ['hide', 'Hiding from TEA…']] as const) {
+            const p = teaActProgress(act, { kind: 'COMPONENT_RELEASE' })
+            expect(p.title).toBe(title)
+            expect(teaActLabel(act)).toBe(title)
+            expect(p.allowOutsideClick).toBe(false)
+            expect(p.allowEscapeKey).toBe(false)
+            expect(p.showConfirmButton).toBe(false)
+            expect(p.text).toContain('Keep this page open until it finishes.')
+        }
+        expect(teaActProgress('publish', {}).text).toContain('Generating the aggregated SBOM')
+        expect(teaActProgress('hide', {}).text).not.toContain('Generating')
+    })
+
+    it('says a cascading product publishes its component releases with it', () => {
+        expect(teaActProgress('publish', { kind: 'PRODUCT_RELEASE', cascades: true }).text)
+            .toContain('Its component releases are published with it.')
+        expect(teaActProgress('hide', { kind: 'PRODUCT_RELEASE', cascades: true }).text)
+            .not.toContain('component releases are published')
     })
 })

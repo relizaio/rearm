@@ -67,13 +67,16 @@ describe('OrgSettings: the default declared licence block', () => {
     const block = byTestId('org-default-license-block')
     const unsupported = byTestId('org-default-license-unsupported')
 
-    it('is one block inside the Admin Settings tab, gated on the drift flag', () => {
+    it('is one block inside the General sub-tab of the Admin Settings tab, gated on the drift flag', () => {
         expect(block).toHaveLength(1)
         const node = last(block[0])
         expect(directive(node, 'if')).toBe('declaredLicenseSupported')
-        const pane = block[0].find((n: any) => n.tag === 'n-tab-pane')
-        expect(attribute(pane, 'name')).toBe('adminSettings')
-        expect(directive(pane, 'if')).toBe('isOrgAdmin')
+        const panes = block[0].filter((n: any) => n.tag === 'n-tab-pane')
+        expect(panes).toHaveLength(2)
+        expect(attribute(panes[0], 'name')).toBe('adminSettings')
+        expect(directive(panes[0], 'if')).toBe('isOrgAdmin')
+        expect(attribute(panes[1], 'name')).toBe('general')
+        expect(directive(panes[1], 'if')).toBeUndefined()
     })
 
     it('is the next sibling after the settings form block, before SBOM export signing, and not inside the form', () => {

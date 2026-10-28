@@ -7,12 +7,14 @@ import { resolve } from 'node:path'
 const src = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
 
 describe('TEA surfaces contract', () => {
-    it('ComponentView carries the TEA tab after the Guards tab where TEA profiles are served, and the page banner under the title', () => {
+    it('ComponentView carries the TEA tab after the Device tab and before Actions and Guards, and the page banner under the title', () => {
         const cv = src('ComponentView.vue')
-        const guards = cv.indexOf('tab="Guards"')
+        const device = cv.indexOf('<n-tab-pane name="device" tab="Device"')
         const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">')
-        expect(guards).toBeGreaterThan(0)
-        expect(tea).toBeGreaterThan(guards)
+        expect(device).toBeGreaterThan(0)
+        expect(tea).toBeGreaterThan(device)
+        expect(tea).toBeLessThan(cv.indexOf('tab="Actions"'))
+        expect(tea).toBeLessThan(cv.indexOf('tab="Guards"'))
         expect(cv.slice(tea, cv.indexOf('</n-tab-pane>', tea))).toContain('<TeaProfileEditor')
         const title = cv.indexOf('<h5 v-if="componentData">')
         const banner = cv.indexOf('data-testid="tea-public-banner"')
@@ -21,26 +23,85 @@ describe('TEA surfaces contract', () => {
         expect(cv).toMatch(/<n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false"/)
     })
 
-    it('OrgSettings carries the Transparency Exchange tab for org admins and the TEA action of every perspective', () => {
+    it('OrgSettings carries the Transparency Exchange API sub-tab of Admin Settings and the TEA action of every perspective', () => {
         const os = src('OrgSettings.vue')
-        expect(os).toContain('<n-tab-pane name="tea" tab="Transparency Exchange" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">')
-        const pane = os.indexOf('tab="Transparency Exchange"')
+        const admin = os.indexOf('<n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">')
+        const line = '<n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">'
+        const pane = os.indexOf(line)
+        expect(admin).toBeGreaterThan(0)
+        expect(pane).toBeGreaterThan(admin)
+        expect(pane).toBeLessThan(os.indexOf('<n-tab-pane name="audit"'))
         expect(os.slice(pane, os.indexOf('</n-tab-pane>', pane))).toContain('<TeaOrgPanel')
+        // No top-level TEA pane any more.
+        expect(os).not.toContain('tab="Transparency Exchange"')
         expect(os).toContain("title: 'TEA profile'")
         expect(os).toContain("'data-testid': 'perspective-tea-action'")
         expect(os).toContain(":scope=\"selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'\"")
         expect(os).toMatch(/:title="'TEA profile of perspective: ' \+ selectedPerspectiveName"/)
     })
 
-    it('OrgSettings loads the perspectives (Pro) and products for the Transparency Exchange tab itself', () => {
+    it('OrgSettings loads the perspectives (Pro) and products for the SBOM Profiles, Regulatory and TEA sub-tabs itself', () => {
         const os = src('OrgSettings.vue')
-        const start = os.indexOf('async function loadTabSpecificData')
+        const start = os.indexOf('async function loadAdminSubTabData')
+        expect(start).toBeGreaterThan(0)
         const body = os.slice(start, os.indexOf('\n}\n', start))
-        const branch = body.indexOf('} else if (tabName === "tea") {')
-        expect(branch).toBeGreaterThan(0)
-        const tea = body.slice(branch, body.indexOf('} else if', branch + 1))
-        expect(tea).toContain("...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : [])")
-        expect(tea).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+        expect(body).toContain('if (subTab === "sbomProfiles" || subTab === "regulatory" || subTab === "tea") {')
+        expect(body).toContain("...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : [])")
+        expect(body).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+        // Run when Admin Settings loads (its current sub-tab), on a sub-tab switch and on a ?adminTab= push.
+        const tabs = os.slice(os.indexOf('async function loadTabSpecificData'))
+        const admin = tabs.slice(tabs.indexOf('} else if (tabName === "adminSettings") {'))
+        expect(admin.slice(0, admin.indexOf('\n}\n'))).toContain('loadAdminSubTabData(adminSubTab.value)')
+        const sw = os.slice(os.indexOf('async function handleAdminSubTabSwitch'))
+        expect(sw.slice(0, sw.indexOf('\n}\n'))).toContain('query: { ...route.query, adminTab: tabName }')
+        expect(sw.slice(0, sw.indexOf('\n}\n'))).toContain('loadAdminSubTabData(tabName)')
+        const watcher = os.slice(os.indexOf('watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab, route.query.adminTab]'))
+        expect(watcher.slice(0, watcher.indexOf('\n})\n'))).toContain('loadAdminSubTabData(adt)')
+        // The top-level TEA and Profiles branches are gone with their panes.
+        expect(os).not.toContain('tabName === "tea"')
+        expect(os).not.toContain('tabName === "profiles"')
+    })
+
+    it('OrgSettings nests General, Terminology, SBOM Profiles, Regulatory and Transparency Exchange API under Admin Settings, in order', () => {
+        const os = src('OrgSettings.vue')
+        const admin = os.indexOf('<n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">')
+        const audit = os.indexOf('<n-tab-pane name="audit"')
+        const group = os.slice(admin, audit)
+        expect(group).toContain('<n-tabs type="segment" :value="adminSubTab" @update:value="handleAdminSubTabSwitch"')
+        const lines = [
+            '<n-tab-pane name="general" tab="General">',
+            '<n-tab-pane name="terminology" tab="Terminology">',
+            '<n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">',
+            '<n-tab-pane name="regulatory" tab="Regulatory" v-if="regulatoryPackagesAvailable(myUser.installationType)">',
+            '<n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">',
+        ]
+        const at = lines.map(l => group.indexOf(l))
+        for (const [i, l] of lines.entries()) expect(at[i], l).toBeGreaterThan(0)
+        expect([...at].sort((a, b) => a - b)).toEqual(at)
+        const pane = (l: string) => group.slice(group.indexOf(l), group.indexOf('</n-tab-pane>', group.indexOf(l)))
+        expect(pane(lines[0])).toContain('<h5>Violation Ignore Regexes</h5>')
+        expect(pane(lines[1])).toContain('<h5>Custom Terminology</h5>')
+        expect(pane(lines[2])).toContain('<SbomProfilesPanel')
+        const regulatory = pane(lines[3])
+        expect(regulatory).toContain('<PackageSettingsEditor')
+        expect(regulatory).toContain('scope="ORGANIZATION"')
+        expect(regulatory).toContain(':is-writable="isOrgAdmin"')
+        expect(regulatory).toContain(':names="perspectiveNamesMap"')
+        // The top-level Terminology and Profiles panes are gone.
+        expect(os.slice(0, admin)).not.toContain('name="terminology"')
+        expect(os).not.toContain('name="profiles"')
+    })
+
+    it('OrgSettings falls back to General for an unknown or hidden admin sub-tab', () => {
+        const os = src('OrgSettings.vue')
+        expect(os).toContain("const DEFAULT_ADMIN_SUBTAB = 'general'")
+        expect(os).toContain("const ADMIN_SUBTABS = ['general', 'terminology', 'sbomProfiles', 'regulatory', 'tea']")
+        const fn = os.slice(os.indexOf('function isAdminSubTabAccessible'), os.indexOf('\n}\n', os.indexOf('function isAdminSubTabAccessible')))
+        expect(fn).toContain('if (!ADMIN_SUBTABS.includes(t)) return false')
+        expect(fn).toContain("if (t === 'regulatory') return regulatoryPackagesAvailable(myUser.value?.installationType)")
+        expect(fn).toContain("if (t === 'sbomProfiles' || t === 'tea') return teaProfilesAvailable(myUser.value?.installationType)")
+        expect(os).toContain('return t && isAdminSubTabAccessible(t) ? t : DEFAULT_ADMIN_SUBTAB')
+        expect(os).toContain('const adminSubTab = ref(resolveAdminSubTab(route.query.adminTab as string))')
     })
 
     it('neither host reads a TEA profile where the backend serves none (no CE backend sync, 2026-10-03)', () => {
@@ -50,10 +111,11 @@ describe('TEA surfaces contract', () => {
         expect(body.indexOf('if (!teaProfilesAvailable(myUser.installationType)) {')).toBeGreaterThan(0)
         expect(body.indexOf('if (!teaProfilesAvailable(myUser.installationType)) {'))
             .toBeLessThan(body.indexOf('graphqlQueries.TeaProfileEditorViewGql'))
-        // A direct ?tab=tea falls back to the default tab instead of a blank body.
+        // TEA is a sub-tab of the admin-only Admin Settings now, and no longer a top-level tab of its own.
         const os = src('OrgSettings.vue')
-        expect(os).toMatch(/const proOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
-        expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
+        expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'adminSettings'[^\]]*\]/)
+        expect(os).not.toMatch(/const proOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
+        expect(os).not.toMatch(/const adminOnlyTabs = \[[^\]]*'tea'[^\]]*\]/)
     })
 
     it('graphqlQueries holds the nine TEA documents', () => {
@@ -213,22 +275,17 @@ describe('TEA surfaces contract', () => {
     })
 
     // TEA-30 row 26: the Profiles tab, the overrides and package settings hosts, the Submissions tab and section.
-    it('OrgSettings carries the Profiles tab before Transparency Exchange, admin and Pro only, loading its names', () => {
+    it('OrgSettings carries the SBOM Profiles sub-tab before Regulatory and Transparency Exchange API, and no other Profiles tab', () => {
         const os = src('OrgSettings.vue')
-        const line = '<n-tab-pane name="profiles" tab="Profiles" v-if="isOrgAdmin && teaProfilesAvailable(myUser.installationType)">'
+        const line = '<n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">'
         const profiles = os.indexOf(line)
-        expect(profiles).toBeGreaterThan(0)
-        expect(profiles).toBeLessThan(os.indexOf('<n-tab-pane name="tea" tab="Transparency Exchange"'))
+        expect(profiles).toBeGreaterThan(os.indexOf('<n-tab-pane name="adminSettings"'))
+        expect(profiles).toBeLessThan(os.indexOf('<n-tab-pane name="regulatory" tab="Regulatory"'))
+        expect(profiles).toBeLessThan(os.indexOf('<n-tab-pane name="tea" tab="Transparency Exchange API"'))
         expect(os.slice(profiles, os.indexOf('</n-tab-pane>', profiles))).toContain('<SbomProfilesPanel')
-        expect(os).toMatch(/const proOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
-        expect(os).toMatch(/const adminOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
-        const start = os.indexOf('async function loadTabSpecificData')
-        const body = os.slice(start, os.indexOf('\n}\n', start))
-        const branch = body.indexOf('} else if (tabName === "profiles") {')
-        expect(branch).toBeGreaterThan(0)
-        const prof = body.slice(branch, body.indexOf('} else if', branch + 1))
-        expect(prof).toContain("...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : [])")
-        expect(prof).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+        expect(os.slice(profiles, os.indexOf('</n-tab-pane>', profiles))).not.toContain('<PackageSettingsEditor')
+        expect(os).not.toMatch(/const proOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
+        expect(os).not.toMatch(/const adminOnlyTabs = \[[^\]]*'profiles'[^\]]*\]/)
     })
 
     it('the perspective TEA dialog hosts the overrides and the package settings, wired to reload both catalogs', () => {
@@ -248,24 +305,60 @@ describe('TEA surfaces contract', () => {
         expect(fn).toContain('perspectivePackageEditor.value?.reloadCatalog()')
     })
 
-    it('ComponentView keeps its TEA pane line and hosts the editor, the overrides and the package settings in order', () => {
+    it('ComponentView hosts the TEA editor, the SBOM profile overrides and the package settings in their own tabs, in order', () => {
         const cv = src('ComponentView.vue')
-        const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">')
-        expect(tea).toBeGreaterThan(0)
-        const pane = cv.slice(tea, cv.indexOf('</n-tab-pane>', tea))
-        const editor = pane.indexOf('<TeaProfileEditor')
-        const overrides = pane.indexOf('<SbomProfileOverrides')
-        const pkg = pane.indexOf('<PackageSettingsEditor')
-        expect(editor).toBeGreaterThan(0)
-        expect(overrides).toBeGreaterThan(editor)
-        expect(pkg).toBeGreaterThan(overrides)
-        expect(pane.slice(editor, overrides)).toContain('ref="teaEditor"')
-        expect(pane.slice(overrides, pkg)).toContain('@changed="reloadSbomConsumers"')
-        expect(pane.slice(overrides, pkg)).toContain('v-if="regulatoryPackagesAvailable(myUser.installationType)"')
-        expect(pane.slice(pkg)).toContain('ref="packageEditor"')
+        const paneOf = (line: string) => {
+            const at = cv.indexOf(line)
+            expect(at, line).toBeGreaterThan(0)
+            return { at, body: cv.slice(at, cv.indexOf('</n-tab-pane>', at)) }
+        }
+        const tea = paneOf('<n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">')
+        const sbom = paneOf('<n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">')
+        const reg = paneOf('<n-tab-pane name="regulatory" tab="Regulatory" v-if="regulatoryPackagesAvailable(myUser.installationType)">')
+        expect(sbom.at).toBeGreaterThan(tea.at)
+        expect(reg.at).toBeGreaterThan(sbom.at)
+        expect(reg.at).toBeLessThan(cv.indexOf('tab="Actions"'))
+        // The TEA tab holds the editor alone.
+        expect(tea.body).toContain('<TeaProfileEditor')
+        expect(tea.body).toContain('ref="teaEditor"')
+        expect(tea.body).not.toContain('<SbomProfileOverrides')
+        expect(tea.body).not.toContain('<PackageSettingsEditor')
+        expect(sbom.body).toContain('<h6>SBOM profiles at this {{ words.component }}</h6>')
+        expect(sbom.body).toContain('<SbomProfileOverrides')
+        expect(sbom.body).toContain('@changed="reloadSbomConsumers"')
+        expect(sbom.body).not.toContain('<PackageSettingsEditor')
+        expect(reg.body).toContain('<h6>Regulatory package settings</h6>')
+        expect(reg.body).toContain('<PackageSettingsEditor')
+        expect(reg.body).toContain('ref="packageEditor"')
+        expect(reg.body).toContain('scope="COMPONENT"')
+        // One of each in the page.
+        for (const tag of ['<TeaProfileEditor', '<SbomProfileOverrides']) expect(cv.split(tag), tag).toHaveLength(2)
         const fn = cv.slice(cv.indexOf('function reloadSbomConsumers'), cv.indexOf('\n}\n', cv.indexOf('function reloadSbomConsumers')))
         expect(fn).toContain('teaEditor.value?.reloadCatalog()')
         expect(fn).toContain('packageEditor.value?.reloadCatalog()')
+    })
+
+    it('ComponentView settings: one tab per Save, in order: Core Settings, License & Supplier, Device, TEA, SBOM Profiles, Regulatory, then Actions', () => {
+        const cv = src('ComponentView.vue')
+        const lines = [
+            '<n-tab-pane name="Core Settings">',
+            '<n-tab-pane name="licenseSupplier" tab="License & Supplier">',
+            '<n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">',
+            '<n-tab-pane name="tea" tab="TEA"',
+            '<n-tab-pane name="sbomProfiles" tab="SBOM Profiles"',
+            '<n-tab-pane name="regulatory" tab="Regulatory"',
+            '<n-tab-pane name="outputTriggers" tab="Actions"',
+            '<n-tab-pane name="Input Events" tab="Rules"',
+            '<n-tab-pane name="locks" tab="Locks"',
+            '<n-tab-pane name="actionGuards" tab="Guards"',
+            'name="Admin Settings">',
+        ]
+        const at = lines.map(l => cv.indexOf(l))
+        for (const [i, l] of lines.entries()) expect(at[i], l).toBeGreaterThan(0)
+        expect([...at].sort((a, b) => a - b)).toEqual(at)
+        const core = cv.slice(at[0], cv.indexOf('</n-tab-pane>', at[0]))
+        expect(core).toContain('class="coreSettingsActions"')
+        for (const gone of ['component-license-block', 'Device class', 'Device support window']) expect(core, gone).not.toContain(gone)
     })
 
     it('ComponentView carries the Submissions tab after the branches tab, bound to the page branches and refresh token', () => {
@@ -284,14 +377,54 @@ describe('TEA surfaces contract', () => {
         expect(src('../utils/componentPageTab.ts')).toContain("export const SUBMISSIONS_TAB: ComponentPageTab = 'submissions'")
     })
 
-    it('ReleaseView carries the Regulatory submissions section after the TEA section and before Produced Deliverables', () => {
+    it('ReleaseView carries the Regulatory submissions in their own Regulatory tab right after TEA, for the offered kinds, and no longer in Components', () => {
         const rv = src('ReleaseView.vue')
-        const line = '<div class="container" v-if="submissionsAvailable(myUser?.installationType) && !isDocumentRound" data-testid="submissions-section">'
+        const line = '<n-tab-pane v-if="regulatoryTabShown" name="regulatory" tab="Regulatory" data-testid="release-regulatory-tab">'
         const at = rv.indexOf(line)
-        expect(at).toBeGreaterThan(rv.indexOf('data-testid="tea-section"'))
-        expect(at).toBeLessThan(rv.indexOf('Produced Deliverables'))
-        expect(rv.slice(at + line.length).trimStart().startsWith('<h3>Regulatory submissions</h3>')).toBe(true)
-        expect(rv.slice(at, rv.indexOf('</div>', at))).toContain('<ReleaseSubmissionsPanel')
+        const tea = rv.indexOf('<n-tab-pane v-if="teaTabShown" name="tea" tab="TEA" data-testid="release-tea-tab">')
+        expect(tea).toBeGreaterThan(0)
+        expect(at).toBeGreaterThan(tea)
+        // Right after the TEA pane: nothing but the comment between them.
+        const between = rv.slice(rv.indexOf('</n-tab-pane>', tea) + '</n-tab-pane>'.length, at)
+        expect(between.replace(/<!--[\s\S]*?-->/g, '').trim()).toBe('')
+        expect(at).toBeLessThan(rv.indexOf('<n-tab-pane name="meta" tab="Meta">'))
+        const pane = rv.slice(at, rv.indexOf('</n-tab-pane>', at))
+        expect(pane).toContain('<div class="container" data-testid="submissions-section">')
+        expect(pane).toContain('<h3>Regulatory submissions</h3>')
+        expect(pane).toContain('<ReleaseSubmissionsPanel')
+        expect(pane).toContain(':kinds="regulatoryPackageKinds"')
+        expect(pane).toContain(':narrative-override="releaseNarrativeBaseline"')
+        expect(pane).toContain(':org-narrative="orgNarrativeDefault"')
+        expect(pane).toContain('@narrative-saved="onSubmissionNarrativeSaved"')
+        // The gate: Pro, not a document round, and a kind the release offers or holds a submission of.
+        expect(rv).toMatch(/const regulatoryTabShown: ComputedRef<boolean> = computed\(\(\) => submissionsAvailable\(myUser\?\.installationType\)\s*&& !isDocumentRound\.value && regulatoryPackageKinds\.value\.length > 0\)/)
+        // An open Regulatory tab that goes away falls back to Components, as the TEA tab does.
+        expect(rv).toMatch(/watch\(regulatoryTabShown, \(shown\) => \{\s*if \(!shown && activeTab\.value === 'regulatory'\) activeTab\.value = 'components'\s*\}\)/)
+        const components = rv.indexOf('<n-tab-pane name="components" tab="Components">')
+        const componentsPane = rv.slice(components, rv.indexOf('</n-tab-pane>', components))
+        expect(componentsPane).not.toContain('ReleaseSubmissionsPanel')
+        expect(componentsPane).not.toContain('Regulatory submissions')
+        expect(rv.match(/<ReleaseSubmissionsPanel/g)).toHaveLength(1)
+    })
+
+    it('ReleaseView reads the offered kinds through their own Pro-gated query, never the shared release fragments', () => {
+        const rv = src('ReleaseView.vue')
+        const start = rv.indexOf('async function loadRegulatoryPackageKinds')
+        expect(start).toBeGreaterThan(0)
+        const load = rv.slice(start, rv.indexOf('\n}\n', start))
+        const gate = load.indexOf('if (!submissionsAvailable(myUser?.installationType)) return')
+        const query = load.indexOf('submissionQueries.ReleaseRegulatoryPackageKindsGql')
+        expect(gate).toBeGreaterThan(0)
+        expect(query).toBeGreaterThan(gate)
+        expect(load).toContain('if (seq !== regulatoryKindsLoadSeq) return')
+        expect(load).toContain("regulatoryPackageKinds.value = response.data?.release?.regulatoryPackageKinds ?? []")
+        // Reset to [] on another release, so its block never shows the previous release's kinds.
+        expect(load.indexOf('regulatoryPackageKinds.value = []')).toBeLessThan(gate)
+        const fetch = rv.slice(rv.indexOf('async function fetchRelease ()'))
+        expect(fetch.slice(0, fetch.indexOf('\n}\n'))).toContain('loadRegulatoryPackageKinds()')
+        const q = src('../utils/graphqlQueries.ts')
+        expect(q).not.toContain('regulatoryPackageKinds')
+        expect(src('../utils/submissionQueries.ts')).toContain('release(releaseUuid: $releaseID, orgUuid: $orgID) { uuid regulatoryPackageKinds }')
     })
 
     it('ReleaseView shows the SBOM profile of each TEA entry in a Profile column after Name (design 3.3.7)', () => {

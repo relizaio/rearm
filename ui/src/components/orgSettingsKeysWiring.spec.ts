@@ -187,7 +187,7 @@ describe('TPF-88 OrgSettings: script wiring', () => {
         const federation = under.slice(under.indexOf('federation {'))
         expect(under).toContain('federation {')
         expect(federation.slice(0, federation.indexOf('}'))).toMatch(/\brepository\b/)
-        expect(org.code).toContain('watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab]')
+        expect(org.code).toContain('watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab, route.query.adminTab]')
         expect(org.code).not.toContain('query.keysSearch')
         let at = org.code.indexOf('router.push(')
         let pushes = 0

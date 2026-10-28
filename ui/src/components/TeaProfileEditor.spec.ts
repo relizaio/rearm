@@ -4,10 +4,15 @@
 // conflict alert and the mode radio, the PUBLIC banner, the confirmation before a PUBLIC save, the
 // fields an editor may not change, and a FOLLOW row. Task TEA-9 (design 4.5 cases 25-29): every
 // save and removal first asks the server's exposure dry-run and confirms on its answer, and an
-// archived object shows its notice. The GraphQL client and Swal are mocked; the query mock answers
-// by document.
+// archived object shows its notice. The Inherit mode (UI only): with no stored row the editor opens
+// in INHERIT, read-only and without Save; INHERIT over a stored row asks "Inherit again?" (naive's
+// dialog) and removes the row; at COMPONENT scope with perspectives a muted hint under its source line
+// says inheriting can stop with a conflict. The GraphQL client, Swal and naive's dialog are mocked; the query mock
+// answers by document.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'fs'
+import { resolve } from 'path'
 import { NAlert, NSelect } from 'naive-ui'
 
 const query = vi.fn()
@@ -15,6 +20,11 @@ const mutate = vi.fn()
 const fire = vi.fn()
 vi.mock('@/utils/graphql', () => ({ default: { query: (...a: any[]) => query(...a), mutate: (...a: any[]) => mutate(...a) } }))
 vi.mock('sweetalert2', () => ({ default: { fire: (...a: any[]) => fire(...a) } }))
+const dialogWarning = vi.fn()
+vi.mock('naive-ui', async (importOriginal) => {
+    const actual: any = await importOriginal()
+    return { ...actual, useDialog: () => ({ warning: dialogWarning }) }
+})
 
 const { default: Editor } = await import('./TeaProfileEditor.vue')
 const { teaBuiltInDefaults, TEA_PROFILE_FIELDS } = await import('@/utils/teaProfile')
@@ -76,26 +86,97 @@ async function mountWith (v: any, props: Record<string, any> = {}, x: any = NONE
 
 const select = (w: any, testid: string) =>
     w.findAllComponents(NSelect).find((s: any) => s.attributes('data-testid') === testid)
+const radios = (w: any) => w.findAll('[data-testid="tea-mode"] input[type="radio"]')
+const modeValues = (w: any) => radios(w).map((i: any) => (i.element as HTMLInputElement).value)
+const checkedMode = (w: any) => (radios(w).find((i: any) => (i.element as HTMLInputElement).checked)?.element as HTMLInputElement)?.value
+async function pickMode (w: any, mode: string) {
+    await radios(w).find((i: any) => (i.element as HTMLInputElement).value === mode)!.setValue(true)
+    await flushPromises()
+}
+const FIELD_SELECTS = ['tea-publishing', 'tea-visibility', 'tea-raw-artifacts', 'tea-minimum-lifecycle', 'tea-tei']
+const disabled = (w: any, testid: string) => Boolean((select(w, testid)!.vm as any).mergedDisabled)
+/** Confirms the "Inherit again?" dialog the last Save opened. */
+async function confirmInherit () {
+    await dialogWarning.mock.calls.at(-1)![0].onPositiveClick()
+    await flushPromises()
+}
 
 describe('TeaProfileEditor', () => {
     beforeEach(() => {
         query.mockReset()
         mutate.mockReset()
         fire.mockReset()
+        dialogWarning.mockReset()
         mutate.mockResolvedValue({ data: { saveTeaProfile: { uuid: 'saved' } } })
         catalogAnswer = [entry('default'), entry('top')]
     })
 
-    it('pre-fills from the organization when nothing is stored, and offers no remove', async () => {
+    it('opens in INHERIT when nothing is stored: the parent values read-only, the source line, no Save, no remove', async () => {
         const w = await mountWith(view())
         expect(query.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1' })
-        expect(w.find('[data-testid="tea-source"]').text()).toContain('pre-filled from organization')
+        expect(modeValues(w)).toEqual(['INHERIT', 'OVERRIDE', 'FOLLOW_PERSPECTIVE'])
+        expect(w.find('[data-testid="tea-mode"]').text()).toContain('Inherit: use the perspective or organization profile')
+        expect(checkedMode(w)).toBe('INHERIT')
+        expect(w.find('[data-testid="tea-source"]').text()).toBe('Inherited from organization')
+        expect(w.find('[data-testid="tea-fields"]').attributes('data-inherited')).toBe('true')
         expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
         expect(select(w, 'tea-publishing').props('value')).toBe('ENABLED')
+        for (const id of FIELD_SELECTS) expect(disabled(w, id), id).toBe(true)
+        expect(select(w, 'sbom-profile-picker')!.props('disabled')).toBe(true)
+        expect(w.find('[data-testid="tea-save"]').exists()).toBe(false)
         expect(w.find('[data-testid="tea-remove"]').exists()).toBe(false)
+        expect(w.find('[data-testid="tea-reset"]').exists()).toBe(false)
     })
 
-    it('names both perspectives of a conflicted parent; the mode radio is Pro only', async () => {
+    it('names the perspective or the built-in defaults an INHERIT form comes from', async () => {
+        const fromPerspective = await mountWith(view({ parent: resolved('PERSPECTIVE', profile(), 'p1') }))
+        expect(fromPerspective.find('[data-testid="tea-source"]').text()).toBe('Inherited from perspective Payments')
+        const fromDefaults = await mountWith(view({ parent: resolved('DEFAULT', profile()) }))
+        expect(fromDefaults.find('[data-testid="tea-source"]').text()).toBe('Inherited from built-in defaults')
+    })
+
+    it('switching INHERIT to Override enables the pre-filled fields and Save, and the save sends OVERRIDE, never INHERIT', async () => {
+        const w = await mountWith(view())
+        await pickMode(w, 'OVERRIDE')
+        expect(w.find('[data-testid="tea-fields"]').attributes('data-inherited')).toBeUndefined()
+        for (const id of FIELD_SELECTS) expect(disabled(w, id), id).toBe(false)
+        expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
+        expect(w.find('[data-testid="tea-source"]').text()).toBe('No override: pre-filled from organization')
+        await w.find('[data-testid="tea-save"]').trigger('click')
+        await flushPromises()
+        expect(dialogWarning).not.toHaveBeenCalled()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(operation({ query: mutate.mock.calls[0][0].mutation })).toBe('SaveTeaProfile')
+        expect(mutate.mock.calls[0][0].variables.profile.mode).toBe('OVERRIDE')
+        expect(JSON.stringify(mutate.mock.calls[0][0].variables)).not.toContain('INHERIT')
+        expect(JSON.stringify(exposureCalls().map(c => c[0].variables))).not.toContain('INHERIT')
+    })
+
+    it('a perspective offers Inherit and Override only; nothing stored opens in INHERIT, a stored row in OVERRIDE', async () => {
+        const none = await mountWith(view(), { scope: 'PERSPECTIVE', objectUuid: 'p2' })
+        expect(modeValues(none)).toEqual(['INHERIT', 'OVERRIDE'])
+        expect(none.find('[data-testid="tea-mode"]').text()).toContain('Inherit: use the organization profile')
+        expect(none.find('[data-testid="tea-mode"]').text()).not.toContain('Follow')
+        expect(checkedMode(none)).toBe('INHERIT')
+        expect(none.find('[data-testid="tea-save"]').exists()).toBe(false)
+
+        const stored = await mountWith(view({ stored: profile({ scope: 'PERSPECTIVE' }) }), { scope: 'PERSPECTIVE', objectUuid: 'p2' })
+        expect(checkedMode(stored)).toBe('OVERRIDE')
+        expect(stored.find('[data-testid="tea-save"]').exists()).toBe(true)
+        await stored.find('[data-testid="tea-save"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls[0][0].variables.profile).not.toHaveProperty('mode')
+    })
+
+    it('the organization keeps no mode radio, its Save and its Reset to defaults', async () => {
+        const org = await mountWith(view({ parent: resolved('DEFAULT', profile()) }), { scope: 'ORGANIZATION', objectUuid: null })
+        expect(org.find('[data-testid="tea-mode"]').exists()).toBe(false)
+        expect(org.find('[data-testid="tea-save"]').exists()).toBe(true)
+        expect(org.find('[data-testid="tea-reset"]').exists()).toBe(true)
+        for (const id of FIELD_SELECTS) expect(disabled(org, id), id).toBe(false)
+    })
+
+    it('names both perspectives of a conflicted parent; CE offers Inherit and Override, Pro Follow as well', async () => {
         const conflicted = view({ parent: { status: 'CONFLICT', source: 'PERSPECTIVE', sourceObject: null, profile: null,
             conflictingPerspectives: [P1, P2] } })
         const pro = await mountWith(conflicted)
@@ -103,9 +184,11 @@ describe('TeaProfileEditor', () => {
         expect(alert.text()).toContain('Payments')
         expect(alert.text()).toContain('Retail')
         expect(pro.find('[data-testid="tea-mode"]').exists()).toBe(true)
+        expect(pro.find('[data-testid="tea-source"]').text()).toBe('Cannot inherit: its perspectives each carry a TEA profile')
 
         const ce = await mountWith(conflicted, { installationType: 'OSS' })
-        expect(ce.find('[data-testid="tea-mode"]').exists()).toBe(false)
+        expect(modeValues(ce)).toEqual(['INHERIT', 'OVERRIDE'])
+        expect(ce.find('[data-testid="tea-mode"]').text()).toContain('Inherit: use the organization profile')
     })
 
     it('shows the persistent red banner for a stored PUBLIC row and an inherited PUBLIC profile', async () => {
@@ -139,6 +222,7 @@ describe('TeaProfileEditor', () => {
     it('asks before a PUBLIC save, says how many releases it exposes, and sends nothing on cancel', async () => {
         const w = await mountWith(view({ publishedReleases: 3 }), {},
             exposure('PRIVATE', 'PUBLIC', 'ROW_PUBLIC', { afterSource: 'COMPONENT', afterSourceObject: 'c1', publishedReleases: 3 }))
+        await pickMode(w, 'OVERRIDE')
         await select(w, 'tea-visibility').vm.$emit('update:value', 'PUBLIC')
         fire.mockResolvedValueOnce({ isConfirmed: false })
         await w.find('[data-testid="tea-save"]').trigger('click')
@@ -164,6 +248,7 @@ describe('TeaProfileEditor', () => {
 
     it('says no release is published yet when the count is zero', async () => {
         const w = await mountWith(view({ publishedReleases: 0 }), {}, exposure('PRIVATE', 'PUBLIC', 'ROW_PUBLIC'))
+        await pickMode(w, 'OVERRIDE')
         await select(w, 'tea-visibility').vm.$emit('update:value', 'PUBLIC')
         fire.mockResolvedValueOnce({ isConfirmed: false })
         await w.find('[data-testid="tea-save"]').trigger('click')
@@ -173,7 +258,9 @@ describe('TeaProfileEditor', () => {
 
     it('disables what this editor may not change, and shows product components only where they apply', async () => {
         const nonAdmin = await mountWith(view({ supportInjection: 'DISABLED' }), { isOrgAdmin: false })
+        await pickMode(nonAdmin, 'OVERRIDE')
         expect(select(nonAdmin, 'tea-visibility').props('disabled')).toBe(true)
+        expect(disabled(nonAdmin, 'tea-publishing')).toBe(false)
         expect(nonAdmin.find('[data-testid="tea-visibility-reason"]').text()).toContain('organization admin')
 
         expect(select(nonAdmin, 'tea-product-components')).toBeUndefined()
@@ -190,9 +277,7 @@ describe('TeaProfileEditor', () => {
         expect(select(w, 'tea-follow-perspective').props('value')).toBe('p2')
         expect(w.find('[data-testid="tea-fields"]').exists()).toBe(false)
 
-        await w.findAll('[data-testid="tea-mode"] input[type="radio"]')
-            .find((i: any) => (i.element as HTMLInputElement).value === 'OVERRIDE')!.setValue(true)
-        await flushPromises()
+        await pickMode(w, 'OVERRIDE')
         expect(w.find('[data-testid="tea-fields"]').exists()).toBe(true)
         expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
     })
@@ -200,9 +285,7 @@ describe('TeaProfileEditor', () => {
     it('confirms a FOLLOW that makes the component PUBLIC, naming the perspective; cancel sends nothing', async () => {
         const w = await mountWith(view(), {}, exposure('PRIVATE', 'PUBLIC', 'FOLLOW_RESOLVES_PUBLIC',
             { afterSource: 'FOLLOWED_PERSPECTIVE', afterSourceObject: 'p1', publishedReleases: 2 }))
-        await w.findAll('[data-testid="tea-mode"] input[type="radio"]')
-            .find((i: any) => (i.element as HTMLInputElement).value === 'FOLLOW_PERSPECTIVE')!.setValue(true)
-        await flushPromises()
+        await pickMode(w, 'FOLLOW_PERSPECTIVE')
         await select(w, 'tea-follow-perspective').vm.$emit('update:value', 'p1')
         fire.mockResolvedValueOnce({ isConfirmed: false })
         await w.find('[data-testid="tea-save"]').trigger('click')
@@ -232,34 +315,73 @@ describe('TeaProfileEditor', () => {
         expect(mutate).toHaveBeenCalledTimes(1)
     })
 
-    it('asks the PUBLIC dialog before a removal that makes the component PUBLIC, the plain one otherwise', async () => {
-        const stored = view({ stored: profile({ mode: 'OVERRIDE', visibility: 'PRIVATE' }) })
-        const widening = await mountWith(stored, {}, exposure('PRIVATE', 'PUBLIC', 'REMOVAL_RESOLVES_PUBLIC',
-            { afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' }))
-        fire.mockResolvedValueOnce({ isConfirmed: false })
-        await widening.find('[data-testid="tea-remove"]').trigger('click')
+    it('INHERIT over a stored row shows the parent values read-only, keeps Save, and asks "Inherit again?"; cancel removes nothing', async () => {
+        const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', minimumLifecycle: 'GENERAL_AVAILABILITY' }) }))
+        expect(checkedMode(w)).toBe('OVERRIDE')
+        expect(w.find('[data-testid="tea-remove"]').exists()).toBe(false)
+        expect(w.find('[data-testid="tea-source"]').text()).toBe('Stored override')
+        await pickMode(w, 'INHERIT')
+        expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('READY_TO_SHIP')
+        for (const id of FIELD_SELECTS) expect(disabled(w, id), id).toBe(true)
+        expect(w.find('[data-testid="tea-source"]').text()).toBe('Inherited from organization: Save removes the stored override')
+        expect(w.find('[data-testid="tea-save"]').exists()).toBe(true)
+        await w.find('[data-testid="tea-save"]').trigger('click')
         await flushPromises()
+        expect(dialogWarning).toHaveBeenCalledTimes(1)
+        const d = dialogWarning.mock.calls[0][0]
+        expect(d.title).toBe('Inherit again?')
+        expect(d.content).toBe("Remove this component's override and inherit the perspective or organization profile again?")
+        // Nothing is asked of the server, nor sent, before the dialog is confirmed.
+        expect(exposureCalls()).toHaveLength(0)
+        expect(mutate).not.toHaveBeenCalled()
+        expect(fire).not.toHaveBeenCalled()
+
+        // Back to Override: the stored values return, editable.
+        await pickMode(w, 'OVERRIDE')
+        expect(select(w, 'tea-minimum-lifecycle').props('value')).toBe('GENERAL_AVAILABILITY')
+        expect(disabled(w, 'tea-minimum-lifecycle')).toBe(false)
+    })
+
+    it('confirming "Inherit again?" removes the row and reloads into INHERIT with no row and no Save', async () => {
+        const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', visibility: 'PRIVATE' }) }), {}, NONE)
+        await pickMode(w, 'INHERIT')
+        await w.find('[data-testid="tea-save"]').trigger('click')
+        await flushPromises()
+        mutate.mockResolvedValueOnce({ data: { deleteTeaProfile: true } })
+        answers(view(), NONE)
+        await confirmInherit()
         expect(exposureCalls()[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1', profile: null })
+        // The dialog was the confirmation: no plain Swal on top of it when nothing becomes PUBLIC.
+        expect(fire).not.toHaveBeenCalled()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(operation({ query: mutate.mock.calls[0][0].mutation })).toBe('DeleteTeaProfile')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'COMPONENT', object: 'c1' })
+        expect(w.emitted('removed')).toHaveLength(1)
+        expect(w.emitted('saved')).toBeUndefined()
+        expect(checkedMode(w)).toBe('INHERIT')
+        expect(w.find('[data-testid="tea-source"]').text()).toBe('Inherited from organization')
+        expect(w.find('[data-testid="tea-save"]').exists()).toBe(false)
+    })
+
+    it('after "Inherit again?" still asks the PUBLIC dialog when the removal makes the component PUBLIC', async () => {
+        const stored = view({ stored: profile({ mode: 'OVERRIDE', visibility: 'PRIVATE' }) })
+        const w = await mountWith(stored, {}, exposure('PRIVATE', 'PUBLIC', 'REMOVAL_RESOLVES_PUBLIC',
+            { afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' }))
+        await pickMode(w, 'INHERIT')
+        await w.find('[data-testid="tea-save"]').trigger('click')
+        await flushPromises()
+        fire.mockResolvedValueOnce({ isConfirmed: false })
+        await confirmInherit()
         expect(fire.mock.calls[0][0].title).toBe('Make this TEA profile public?')
         expect(fire.mock.calls[0][0].confirmButtonText).toBe('Remove and make it public')
         expect(fire.mock.calls[0][0].text).toContain('perspective Payments')
         expect(mutate).not.toHaveBeenCalled()
 
-        fire.mockReset()
-        const plain = await mountWith(stored, {}, NONE)
-        fire.mockResolvedValueOnce({ isConfirmed: false })
-        await plain.find('[data-testid="tea-remove"]').trigger('click')
-        await flushPromises()
-        expect(fire.mock.calls[0][0].title).toBe('Remove this TEA profile override?')
-        expect(fire.mock.calls[0][0].confirmButtonText).toBe('Remove')
-        expect(mutate).not.toHaveBeenCalled()
-
         fire.mockResolvedValueOnce({ isConfirmed: true })
         mutate.mockResolvedValueOnce({ data: { deleteTeaProfile: true } })
-        await plain.find('[data-testid="tea-remove"]').trigger('click')
-        await flushPromises()
+        await confirmInherit()
         expect(mutate).toHaveBeenCalledTimes(1)
-        expect(plain.emitted('removed')).toHaveLength(1)
+        expect(w.emitted('removed')).toHaveLength(1)
     })
 
     // TEA-9 round 2, design 4.5 case 54.
@@ -268,9 +390,13 @@ describe('TeaProfileEditor', () => {
         const w = await mountWith(stored, { scope: 'PERSPECTIVE', objectUuid: 'p2' },
             exposure('PRIVATE', 'PRIVATE', 'REMOVAL_RESOLVES_PUBLIC', { widened: [{ component: 'c16', name: 'checkout-api',
                 afterSource: 'PERSPECTIVE', afterSourceObject: 'p1' }] }))
-        fire.mockResolvedValueOnce({ isConfirmed: false })
-        await w.find('[data-testid="tea-remove"]').trigger('click')
+        await pickMode(w, 'INHERIT')
+        await w.find('[data-testid="tea-save"]').trigger('click')
         await flushPromises()
+        expect(dialogWarning.mock.calls[0][0].content)
+            .toBe("Remove this perspective's override and inherit the organization profile again?")
+        fire.mockResolvedValueOnce({ isConfirmed: false })
+        await confirmInherit()
         expect(exposureCalls()[0][0].variables).toEqual({ org: 'o1', scope: 'PERSPECTIVE', object: 'p2', profile: null })
         expect(fire.mock.calls[0][0].title).toBe('Make this TEA profile public?')
         expect(fire.mock.calls[0][0].icon).toBe('warning')
@@ -280,16 +406,26 @@ describe('TeaProfileEditor', () => {
 
         fire.mockResolvedValueOnce({ isConfirmed: true })
         mutate.mockResolvedValueOnce({ data: { deleteTeaProfile: true } })
-        await w.find('[data-testid="tea-remove"]').trigger('click')
-        await flushPromises()
+        await confirmInherit()
         expect(mutate).toHaveBeenCalledTimes(1)
         expect(operation({ query: mutate.mock.calls[0][0].mutation })).toBe('DeleteTeaProfile')
         expect(mutate.mock.calls[0][0].variables).toEqual({ org: 'o1', scope: 'PERSPECTIVE', object: 'p2' })
         expect(w.emitted('removed')).toHaveLength(1)
     })
 
+    it('the source holds no separate Remove override button any more, and no save sends INHERIT', () => {
+        const src = readFileSync(resolve(__dirname, 'TeaProfileEditor.vue'), 'utf8')
+        expect(src).not.toContain('data-testid="tea-remove"')
+        expect(src).not.toContain('Remove override')
+        expect(src).toContain('async function remove (')
+        const save = src.slice(src.indexOf('async function save ('), src.indexOf('async function remove ('))
+        expect(save.indexOf('if (inherits.value) return')).toBeGreaterThan(-1)
+        expect(save.indexOf('if (inherits.value) return')).toBeLessThan(save.indexOf('teaProfileInput('))
+    })
+
     it('shows a failed dry-run as an error and neither asks nor sends', async () => {
         const w = await mountWith(view(), {}, new Error('minimumLifecycle DRAFT is too low'))
+        await pickMode(w, 'OVERRIDE')
         await w.find('[data-testid="tea-save"]').trigger('click')
         await flushPromises()
         expect(fire).toHaveBeenCalledTimes(1)
@@ -298,6 +434,34 @@ describe('TeaProfileEditor', () => {
         expect(fire.mock.calls[0][0]).toEqual({ title: 'Error!', text: 'minimumLifecycle DRAFT is too low', icon: 'error' })
         expect(fire.mock.calls[0][0]).not.toHaveProperty('html')
         expect(mutate).not.toHaveBeenCalled()
+    })
+
+    it('INHERIT at COMPONENT scope with perspectives shows the conflict hint under the source line; Override and Follow do not', async () => {
+        const w = await mountWith(view())
+        expect(checkedMode(w)).toBe('INHERIT')
+        const hint = w.find('[data-testid="tea-inherit-hint"]')
+        expect(hint.text()).toBe("Inheriting resolves through this component's perspectives: if more than one of them carries its own "
+            + 'TEA profile, inheriting stops with a conflict \u2014 use Follow one of its perspectives to pin one.')
+        expect(hint.classes()).toContain('text-muted')
+        const html = w.html()
+        expect(html.indexOf('data-testid="tea-source"')).toBeLessThan(html.indexOf('data-testid="tea-inherit-hint"'))
+        await pickMode(w, 'OVERRIDE')
+        expect(w.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        await pickMode(w, 'FOLLOW_PERSPECTIVE')
+        expect(w.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+    })
+
+    it('no conflict hint for a component without perspectives, at a perspective, or under a CONFLICT (its line stays)', async () => {
+        const none = await mountWith(view(), { perspectiveOptions: [] })
+        expect(checkedMode(none)).toBe('INHERIT')
+        expect(none.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        const perspective = await mountWith(view(), { scope: 'PERSPECTIVE', objectUuid: 'p1' })
+        expect(checkedMode(perspective)).toBe('INHERIT')
+        expect(perspective.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        const conflicted = await mountWith(view({ parent: { status: 'CONFLICT', source: null, sourceObject: null, profile: null,
+            conflictingPerspectives: [P1, P2] } }))
+        expect(conflicted.find('[data-testid="tea-inherit-hint"]').exists()).toBe(false)
+        expect(conflicted.find('[data-testid="tea-source"]').text()).toBe('Cannot inherit: its perspectives each carry a TEA profile')
     })
 
     it('shows the archived notice on an archived object only', async () => {
@@ -363,7 +527,7 @@ describe('TeaProfileEditor', () => {
             expect(line.text()).toContain('Payments, Retail')
         })
 
-        it('saves exactly the channel fields with mode, profiles in the picker order, one name on CE', async () => {
+        it('saves exactly the channel fields with mode, profiles in the picker order; CE sends default', async () => {
             const w = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }))
             await select(w, 'sbom-profile-picker').vm.$emit('update:value', ['top', 'default'])
             await w.find('[data-testid="tea-save"]').trigger('click')
@@ -373,13 +537,30 @@ describe('TeaProfileEditor', () => {
             expect(sent.profiles).toEqual(['top', 'default'])
 
             mutate.mockClear()
-            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['default'] }) }),
+            // A CE row stored before the CE rule may still name another profile: CE sends default regardless.
+            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }),
                 { installationType: 'OSS' })
-            expect(select(ce, 'sbom-profile-picker').props('multiple')).toBe(false)
-            await select(ce, 'sbom-profile-picker').vm.$emit('update:value', 'top')
             await ce.find('[data-testid="tea-save"]').trigger('click')
             await flushPromises()
-            expect(mutate.mock.calls[0][0].variables.profile.profiles).toEqual(['top'])
+            expect(mutate.mock.calls[0][0].variables.profile.profiles).toEqual(['default'])
+        })
+
+        it('CE: no picker, a read-only "SBOM profile: default" line in its place', async () => {
+            const ce = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }),
+                { installationType: 'OSS' })
+            expect(ce.find('[data-testid="tea-profiles"]').exists()).toBe(false)
+            expect(select(ce, 'sbom-profile-picker')).toBeUndefined()
+            const line = ce.find('[data-testid="tea-profiles-ce"]')
+            expect(line.exists()).toBe(true)
+            expect(line.text()).toBe('SBOM profile: default')
+            const html = ce.html()
+            const at = (id: string) => html.indexOf(`data-testid="${id}"`)
+            expect(at('tea-profiles-ce')).toBeGreaterThan(at('tea-visibility'))
+            expect(at('tea-profiles-ce')).toBeLessThan(at('tea-raw-artifacts'))
+
+            const pro = await mountWith(view({ stored: profile({ mode: 'OVERRIDE', profiles: ['top'] }) }))
+            expect(pro.find('[data-testid="tea-profiles-ce"]').exists()).toBe(false)
+            expect(pro.find('[data-testid="tea-profiles"]').exists()).toBe(true)
         })
 
         it('shows a refused save naming a perspective as text in the object form, with one argument', async () => {

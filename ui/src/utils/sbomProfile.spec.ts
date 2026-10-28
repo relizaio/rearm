@@ -7,7 +7,8 @@ import {
     SBOM_MODE_OPTIONS, SBOM_OPTIONAL_DEPENDENCIES_OPTIONS, SBOM_PROFILE_FIELDS, SBOM_SOURCES_OPTIONS,
     SBOM_STRUCTURE_OPTIONS, SBOM_SUPPORT_METADATA_OPTIONS, SBOM_VULNERABILITY_DOCUMENTS_OPTIONS, sbomBuiltInDefaults,
     sbomCatalogRows, sbomDeleteConfirm, sbomEffectiveLine, sbomFormFromView, sbomNameError, sbomPickerLines,
-    sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomSourceLine, sbomValueText,
+    sbomPickerMultiple, sbomPickerOptions, sbomProfileInput, sbomProfileNamesAvailable, sbomRowsForEdition, sbomSourceLine,
+    sbomValueText, sbomPerspectivesDefiningName,
 } from './sbomProfile'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 
@@ -214,6 +215,15 @@ describe('the picker options (row 7)', () => {
         expect(sbomPickerMultiple('SAAS', true)).toBe(false)
         expect(sbomPickerMultiple('OSS')).toBe(false)
     })
+
+    it('CE names no SBOM profile but default: the rows filter to it, Pro keeps every row', () => {
+        const rows = [{ name: 'default' }, { name: 'top' }, { name: null }, { name: 'default' }]
+        expect(sbomProfileNamesAvailable('OSS')).toBe(false)
+        for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE']) expect(sbomProfileNamesAvailable(t)).toBe(true)
+        expect(sbomRowsForEdition(rows, 'OSS')).toEqual([{ name: 'default' }, { name: 'default' }])
+        expect(sbomRowsForEdition(rows, 'SAAS')).toBe(rows)
+        expect(sbomRowsForEdition(null, 'OSS')).toEqual([])
+    })
 })
 
 describe('the delete confirmation (row 8, functional F-10)', () => {
@@ -243,5 +253,19 @@ describe('the delete confirmation (row 8, functional F-10)', () => {
         expect(marked.confirmButtonText).toBe('Delete')
         expect(marked.text).toContain('Remove the definition of <b>x</b> at this product. ')
         expect(marked.text).toContain('naming <b>x</b> at or below')
+    })
+})
+
+describe('the perspectives defining a name', () => {
+    it('reads one defining perspective off a PERSPECTIVE parent, every one off a CONFLICT, none otherwise', () => {
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'RESOLVED', source: 'PERSPECTIVE', sourceObject: 'p1' } }))
+            .toEqual([{ uuid: 'p1' }])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'CONFLICT', source: 'PERSPECTIVE', sourceObject: null,
+            conflictingPerspectives: [{ uuid: 'p1', name: 'Payments' }, { uuid: 'p2', name: 'Retail' }] } }).map(p => p.uuid))
+            .toEqual(['p1', 'p2'])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'RESOLVED', source: 'ORGANIZATION', sourceObject: null } })).toEqual([])
+        expect(sbomPerspectivesDefiningName({ parent: { status: 'NOT_FOUND', source: null } })).toEqual([])
+        expect(sbomPerspectivesDefiningName({ parent: null })).toEqual([])
+        expect(sbomPerspectivesDefiningName(null)).toEqual([])
     })
 })

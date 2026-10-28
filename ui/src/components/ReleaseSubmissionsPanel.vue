@@ -26,9 +26,9 @@
                 <n-space v-if="isWritable" class="submission-actions">
                     <n-button v-if="!headOf(k)" size="tiny" data-testid="submission-create" :loading="acts.busy.value"
                         :disabled="acts.busy.value || !canCreate" :title="canCreate ? '' : CREATE_LIFECYCLE_REASON"
-                        @click="acts.create(releaseUuid, k, actNames)">Create</n-button>
+                        @click="startCreate(k)">Create</n-button>
                     <n-button v-if="headOf(k)" size="tiny" data-testid="submission-resubmit" :loading="acts.busy.value"
-                        :disabled="acts.busy.value" @click="acts.resubmit(headOf(k), actNames)">Resubmit</n-button>
+                        :disabled="acts.busy.value" @click="startResubmit(headOf(k))">Resubmit</n-button>
                     <n-button v-if="headOf(k)?.state === 'ACTIVE'" size="tiny" type="error" data-testid="submission-withdraw"
                         :disabled="acts.busy.value" @click="acts.withdraw(headOf(k), actNames)">Withdraw</n-button>
                 </n-space>
@@ -37,16 +37,61 @@
                 :data="versionRows(k)" :row-key="versionKey" :expanded-row-keys="expanded[k] ?? []"
                 :pagination="false" :bordered="false" size="small" @update:expanded-row-keys="(keys: any) => expanded[k] = keys" />
         </div>
+
+        <!-- The assessment narrative a submission of a NARRATIVE kind carries, chosen before Create or
+             Resubmit; the act's own preview and reason dialog follow the write. -->
+        <n-modal :show="pending !== null" preset="card" title="Assessment narrative" style="max-width: 720px"
+            data-testid="narrative-prompt" :mask-closable="!narrativeSaving" @update:show="(v: boolean) => { if (!v) closePrompt() }">
+            <div v-if="pending" data-testid="narrative-form">
+                <p class="text-muted">
+                    The {{ packageKindLabel(pending.kind) }} package carries the release's assessment narrative.
+                    Choose the one this {{ pending.act === 'resubmit' ? 'resubmission' : 'submission' }} uses.
+                </p>
+                <n-radio-group data-testid="narrative-choice" v-model:value="narrativeChoice" :disabled="narrativeSaving">
+                    <n-space vertical>
+                        <n-radio :value="NARRATIVE_CHOICE_ORGANIZATION" :disabled="!hasOrgNarrative"
+                            data-testid="narrative-choice-organization" label="Use the organization default" />
+                        <div class="narrative-block">
+                            <n-input v-if="hasOrgNarrative" data-testid="narrative-org-default" type="textarea" :rows="3"
+                                readonly :value="orgNarrative ?? ''" />
+                            <span v-else data-testid="narrative-no-org-default" class="text-muted">{{ NO_ORG_NARRATIVE }}</span>
+                        </div>
+                        <n-radio :value="NARRATIVE_CHOICE_RELEASE" data-testid="narrative-choice-release" label="Write one for this release" />
+                        <div v-if="narrativeChoice === NARRATIVE_CHOICE_RELEASE" class="narrative-block">
+                            <n-input data-testid="narrative-text" v-model:value="narrativeText" type="textarea" :rows="5"
+                                :maxlength="FDA_PROSE_MAX_LENGTH" show-count :disabled="narrativeSaving"
+                                @update:value="narrativeSaveError = null" />
+                        </div>
+                    </n-space>
+                </n-radio-group>
+                <div v-if="narrativeProblem" data-testid="narrative-problem" class="text-muted narrative-line">{{ narrativeProblem }}</div>
+                <n-alert v-if="narrativeSaveError" data-testid="narrative-save-error" type="error" :show-icon="true" class="narrative-line">
+                    {{ narrativeSaveError }}
+                </n-alert>
+            </div>
+            <template #footer>
+                <n-space justify="end">
+                    <n-button data-testid="narrative-cancel" :disabled="narrativeSaving" @click="closePrompt">Cancel</n-button>
+                    <n-button data-testid="narrative-confirm" type="primary" :loading="narrativeSaving"
+                        :disabled="Boolean(narrativeProblem) || narrativeSaving" @click="confirmPrompt">Continue</n-button>
+                </n-space>
+            </template>
+        </n-modal>
     </div>
 </template>
 
 <script setup lang="ts">
 // The release page's Regulatory submissions section (task TEA-30, design 3.5.4), Pro only: per
-// kind the head, the acts, and the version history with each version's parts and manifest. Reasons,
+// kind the head, the acts, and the version history with each version's parts and manifest. The
+// kinds are the host's (Release.regulatoryPackageKinds: switched on for the component, plus any the
+// release holds a submission of), in that order; without them, the whole packageKinds catalog, which
+// is read either way for its parts: a kind with a REQUIRED NARRATIVE part asks for the release's
+// assessment narrative (the organization default or one for this release) before Create and
+// Resubmit, and writes it first. Reasons,
 // file names and the manifest are text bindings; downloads go through the one URL builder with the
 // record's uuid and integer version (design 3.5.2).
 import { computed, h, onMounted, reactive, ref, watch } from 'vue'
-import { NButton, NDataTable, NSpace, NTag, useNotification } from 'naive-ui'
+import { NAlert, NButton, NDataTable, NInput, NModal, NRadio, NRadioGroup, NSpace, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
@@ -58,6 +103,11 @@ import {
 } from '@/utils/submissions'
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import { useSubmissionActs } from '@/utils/submissionActs'
+import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
+import {
+    NARRATIVE_CHOICE_ORGANIZATION, NARRATIVE_CHOICE_RELEASE, NO_ORG_NARRATIVE, NarrativeChoice, UPDATE_RELEASE_NARRATIVE_GQL,
+    kindNeedsNarrative, narrativeChoiceError, narrativeChoiceVariables, narrativeInitialChoice, narrativeInitialText,
+} from '@/utils/submissionNarrative'
 
 const props = withDefaults(defineProps<{
     orgUuid?: string | null
@@ -66,10 +116,13 @@ const props = withDefaults(defineProps<{
     lifecycle?: string | null
     componentUuid?: string | null
     componentName?: string | null
+    kinds?: string[] | null
     isWritable?: boolean
     installationType?: string
     names?: Record<string, string>
     userLabel?: (id: string) => string
+    narrativeOverride?: string | null
+    orgNarrative?: string | null
 }>(), {
     orgUuid: null,
     releaseUuid: null,
@@ -77,16 +130,21 @@ const props = withDefaults(defineProps<{
     lifecycle: null,
     componentUuid: null,
     componentName: null,
+    kinds: null,
     isWritable: false,
     installationType: 'OSS',
     names: () => ({}),
     userLabel: (id: string) => id ?? '',
+    narrativeOverride: null,
+    orgNarrative: null,
 })
+
+const emit = defineEmits<{ (e: 'narrative-saved', narrative: string): void }>()
 
 const NOT_DOWNLOADABLE = 'not downloadable: no artifact version recorded'
 
 const notification = useNotification()
-const kinds = ref<any[]>([])
+const catalogKinds = ref<any[]>([])
 const heads = ref<any[]>([])
 const loaded = ref(false)
 const loadError = ref<string | null>(null)
@@ -96,13 +154,83 @@ const shownManifests = reactive<Record<string, boolean>>({})
 const acts = useSubmissionActs({ client: graphqlClient, reload: () => read(), names: () => props.names })
 
 const kindList = computed((): string[] => {
-    const list = kinds.value.map((k: any) => k.kind)
+    const list = props.kinds ? [...props.kinds] : catalogKinds.value.map((k: any) => k.kind)
     for (const hd of heads.value) if (hd?.kind && !list.includes(hd.kind)) list.push(hd.kind)
     return list
 })
 const canCreate = computed(() => canCreateSubmission(props.lifecycle))
 const actNames = computed(() => ({ componentName: props.componentName, releaseVersion: props.releaseVersion }))
 const versionKey = (r: any) => r.version
+
+// The assessment-narrative prompt (any release): open for a kind whose catalog entry has a REQUIRED
+// NARRATIVE part; the release's stored override is held here too, so a second act right after a
+// write starts from it before the host's refresh lands.
+const pending = ref<{ act: 'create' | 'resubmit', kind: string, head: any } | null>(null)
+const narrativeChoice = ref<NarrativeChoice | null>(null)
+const narrativeText = ref('')
+const narrativeSaving = ref(false)
+const narrativeSaveError = ref<string | null>(null)
+const storedOverride = ref<string | null>(props.narrativeOverride)
+watch(() => props.narrativeOverride, (v) => { storedOverride.value = v })
+const hasOrgNarrative = computed(() => Boolean((props.orgNarrative || '').trim()))
+const narrativeProblem = computed(() => pending.value
+    ? narrativeChoiceError(narrativeChoice.value, narrativeText.value, props.orgNarrative) : null)
+
+function needsNarrative (kind: string): boolean {
+    return kindNeedsNarrative(catalogKinds.value.find((k: any) => k?.kind === kind))
+}
+
+function openPrompt (act: 'create' | 'resubmit', kind: string, head: any) {
+    narrativeChoice.value = narrativeInitialChoice(storedOverride.value, props.orgNarrative)
+    narrativeText.value = narrativeInitialText(storedOverride.value, props.orgNarrative)
+    narrativeSaveError.value = null
+    pending.value = { act, kind, head }
+}
+
+function closePrompt () {
+    if (narrativeSaving.value) return
+    pending.value = null
+}
+
+function startCreate (kind: string) {
+    if (needsNarrative(kind)) openPrompt('create', kind, null)
+    else acts.create(props.releaseUuid as string, kind, actNames.value)
+}
+
+function startResubmit (head: any) {
+    if (needsNarrative(head.kind)) openPrompt('resubmit', head.kind, head)
+    else acts.resubmit(head, actNames.value)
+}
+
+/** Writes the chosen narrative when it changes the release; false (the error shown) when the write fails. */
+async function saveNarrativeChoice (): Promise<boolean> {
+    const vars = narrativeChoiceVariables(props.releaseUuid as string, props.orgUuid as string,
+        narrativeChoice.value as NarrativeChoice, narrativeText.value, storedOverride.value)
+    if (!vars) return true
+    narrativeSaving.value = true
+    try {
+        const resp: any = await graphqlClient.mutate({ mutation: UPDATE_RELEASE_NARRATIVE_GQL, variables: { release: vars } })
+        const saved = resp?.data?.updateRelease?.fdaAssessmentNarrative ?? (vars.fdaAssessmentNarrative as string)
+        storedOverride.value = saved || null
+        emit('narrative-saved', saved || '')
+        return true
+    } catch (err: any) {
+        console.error(err)
+        narrativeSaveError.value = graphqlRefusalText(err)
+        return false
+    } finally {
+        narrativeSaving.value = false
+    }
+}
+
+async function confirmPrompt () {
+    const p = pending.value
+    if (!p || narrativeProblem.value || narrativeSaving.value) return
+    if (!await saveNarrativeChoice()) return
+    pending.value = null
+    if (p.act === 'create') await acts.create(props.releaseUuid as string, p.kind, actNames.value)
+    else await acts.resubmit(p.head, actNames.value)
+}
 
 function headOf (kind: string): any {
     return heads.value.find((hd: any) => hd?.kind === kind) ?? null
@@ -205,12 +333,15 @@ async function read () {
     if (!props.releaseUuid) return
     loadError.value = null
     try {
+        // The catalog always: its parts tell which kinds carry the assessment narrative. With the
+        // host's kinds the rows are those, and a failed catalog read only loses the narrative prompt.
+        const kindsRead = graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' })
         const [k, s]: any[] = await Promise.all([
-            graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' }),
+            props.kinds ? kindsRead.catch((err: any) => { console.error(err); return null }) : kindsRead,
             graphqlClient.query({ query: submissionQueries.SubmissionsOfReleaseGql, variables: { release: props.releaseUuid },
                 fetchPolicy: 'no-cache' }),
         ])
-        kinds.value = k.data.packageKinds ?? []
+        if (k) catalogKinds.value = k.data.packageKinds ?? []
         heads.value = s.data.submissionsOfRelease ?? []
         for (const hd of heads.value) {
             const newest = Math.max(0, ...(hd.versions ?? []).map((v: any) => v.version ?? 0))
@@ -242,5 +373,11 @@ defineExpose({ read })
 }
 .submission-manifest-block {
     margin-top: 6px;
+}
+.narrative-block {
+    margin-left: 24px;
+}
+.narrative-line {
+    margin-top: 8px;
 }
 </style>

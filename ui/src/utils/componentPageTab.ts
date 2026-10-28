@@ -47,3 +47,15 @@ export function resolveComponentPageTab (input: ComponentPageTabInput): string {
     if (input.branchType === 'TAG' && input.isComponent !== false) return TAGS_TAB
     return BRANCHES_TAB
 }
+
+/** The settings modal's first pane, where it opens unless a link names another. */
+export const SETTINGS_DEFAULT_TAB = 'Core Settings'
+
+/**
+ * The pane the component / product settings modal opens on: ?componentSettingsTab= when it names a
+ * pane this page shows (e.g. 'tea', from the organization's TEA overrides table), else Core Settings.
+ */
+export function resolveComponentSettingsTab (queryTab: unknown, visibleTabs: string[]): string {
+    const requested = nonEmptyString(queryTab)
+    return requested && visibleTabs.includes(requested) ? requested : SETTINGS_DEFAULT_TAB
+}
