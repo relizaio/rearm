@@ -5,10 +5,10 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -43,9 +43,8 @@ import io.reliza.service.TeaProfileService.TeaCaller;
  */
 class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
-	/** CE (rearm-saas#955): every SBOM profile name is stored as default, so Pro's naming cases do not apply. */
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
 	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
-
 
 	private TeaProfileInputDto names(TeaProfileInputDto in, String... names) {
 		return in.toBuilder().profiles(null == names ? null : List.of(names)).build();
@@ -126,11 +125,17 @@ class TeaProfileServiceProfileNamesTest extends TeaProfileServiceTestBase {
 
 	@Test
 	void theSaveGoesThroughTheEditionSeam() throws RelizaException {
-		// CE (SCORE-72 3.6, rearm-saas#955): this JVM is CE, so the save replaces whatever names it is sent with
-		// default (editionProfileNames(names, true)): two names, another name and none at all all store
-		// [default]. Pro's copy of this test saves two names.
-		assertEquals(List.of("default"), save(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda"),
-				TeaCaller.ORG_ADMIN).getProfiles());
+		// The edition seam (LicensingConstants.isOssEdition(), editionProfileNames): ReARM Pro keeps the names
+		// in the order given; ReARM CE (rearm-saas#955) replaces whatever names a save sends with default --
+		// two names, another name and none at all all store [default]. One file for both editions, so the
+		// Pro-to-CE sync copies it unchanged.
+		List<String> two = save(TeaProfileScope.ORGANIZATION, null, names(full(), "default", "fda"), TeaCaller.ORG_ADMIN)
+				.getProfiles();
+		if (!LicensingConstants.isOssEdition()) {
+			assertEquals(List.of("default", "fda"), two, "the order given is kept");
+			return;
+		}
+		assertEquals(List.of("default"), two);
 		assertEquals(List.of("default"), save(TeaProfileScope.ORGANIZATION, null, names(full(), "fda"),
 				TeaCaller.ORG_ADMIN).getProfiles());
 		assertEquals(List.of("default"), save(TeaProfileScope.ORGANIZATION, null, full().toBuilder().profiles(null).build(),

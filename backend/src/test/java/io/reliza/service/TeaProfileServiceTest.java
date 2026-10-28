@@ -4,12 +4,12 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -67,9 +67,8 @@ import io.reliza.ws.RelizaConfigProps;
  */
 class TeaProfileServiceTest extends TeaProfileServiceTestBase {
 
-	/** CE (rearm-saas#955): every SBOM profile name is stored as default, so Pro's naming cases do not apply. */
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
 	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
-
 
 	@Test
 	void theOrganizationScopeTakesNoObjectAndNoMode() {

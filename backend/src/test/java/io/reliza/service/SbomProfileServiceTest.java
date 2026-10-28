@@ -4,11 +4,11 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -46,9 +46,8 @@ import io.reliza.service.oss.OssPerspectiveService.TeaPerspectiveRef;
 /** Task TEA-27, design 4.5: storing SBOM profiles, the delete guard and the F-6 audit record. */
 class SbomProfileServiceTest extends SbomProfileServiceTestBase {
 
-	/** CE (rearm-saas#955): every SBOM profile name is stored as default, so Pro's naming cases do not apply. */
+	/** ReARM CE (rearm-saas#955) stores every SBOM profile name as default: Pro's naming cases skip there (LicensingConstants.isOssEdition()), so one file serves both editions. */
 	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
-
 
 	private RelizaException refused(SettingsScope scope, UUID object, String name, SbomProfileInputDto in) {
 		return assertThrows(RelizaException.class, () -> service.saveProfile(org, scope, object, name, in, WU));
