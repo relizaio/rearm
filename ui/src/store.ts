@@ -228,7 +228,6 @@ const AGENT_TASK_CARD_SELECTION = `
     prUrls
     pullRequests { url state targetBranch mergedDate registered baseMovedBy head
         declaration { outcome commit note supersededBy by { kind uuid name } } }
-    testedHeads { pr head }
     workLevel
     effectiveWorkLevel
     workLevelSetBy { kind uuid name }
@@ -2989,6 +2988,27 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTasksOfBoard
+        },
+        /**
+         * The tested heads of the tasks that link PRs, read after the board's cards: the server resolves
+         * testedHeads per task from its newest passing review or test round, which on a 115-task board
+         * was most of the card read's time (430 of 510 ms) for one line on the PR chips. Only PR-linked
+         * tasks need it, in chunks of the server's 100-task limit; answers { uuid, testedHeads }.
+         */
+        async fetchAgentTaskTestedHeads (context: any, taskUuids: string[]) {
+            const out: any[] = []
+            for (let i = 0; i < taskUuids.length; i += 100) {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query agentTaskTestedHeads($ts: [ID!]!) {
+                            agentTasksByUuid(taskUuids: $ts) { uuid testedHeads { pr head } }
+                        }`,
+                    variables: { ts: taskUuids.slice(i, i + 100) },
+                    fetchPolicy: 'no-cache'
+                })
+                out.push(...(response.data.agentTasksByUuid ?? []))
+            }
+            return out
         },
         /** The element check catalogue (elements.md §7): what each check means, for the report view. */
         async fetchElementCheckCatalogue () {

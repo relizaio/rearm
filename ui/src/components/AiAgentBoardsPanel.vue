@@ -1895,6 +1895,7 @@ async function refreshBoardContent () {
     tasks.value = t ?? []
     roles.value = r ?? []
     tasksShownOf = board
+    void loadTestedHeads(board, seq)
     await loadLifetimeSpend()
     await loadDocumentSeries()
     await loadCoverage()
@@ -1904,6 +1905,24 @@ async function refreshBoardContent () {
     const agents = await store.dispatch('fetchAgentsOfOrg', props.orgUuid) ?? []
     agentDir.value = agentDirectory(agents)
     agentNames.value = agentNamesOf(agents)
+}
+
+/**
+ * The PR chips' heads line, merged in after the cards render: only tasks that link PRs carry tested
+ * heads, and resolving them is the expensive part of a board read, so it neither blocks the board nor
+ * runs for tasks without PRs. A newer board load discards a late answer.
+ */
+async function loadTestedHeads (board: string, seq: number) {
+    const withPrs = tasks.value.filter((t: any) => (t.prUrls?.length || t.pullRequests?.length)).map((t: any) => t.uuid)
+    if (!withPrs.length) return
+    try {
+        const heads = await store.dispatch('fetchAgentTaskTestedHeads', withPrs)
+        if (seq !== contentSeq || board !== tasksShownOf) return
+        const byUuid = new Map(heads.map((h: any) => [h.uuid, h.testedHeads ?? []]))
+        tasks.value = tasks.value.map((t: any) => byUuid.has(t.uuid) ? { ...t, testedHeads: byUuid.get(t.uuid) } : t)
+    } catch (err) {
+        console.warn('Failed to read the tested heads of the board\'s PR tasks', err)
+    }
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).

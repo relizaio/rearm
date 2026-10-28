@@ -512,12 +512,20 @@ describe('the kanban: cards and columns', () => {
         expect(card).toContain('prChips(p.t).some((c: any) => c.moved)')
     })
 
-    it('reads the PR heads the moved chip needs with the board\'s tasks', () => {
+    it('reads the PR heads with the cards and the tested heads after them, for PR-linked tasks only', () => {
         const store = readFileSync(fileURLToPath(new URL('../store.ts', import.meta.url)), 'utf8')
         const start = store.indexOf('const AGENT_TASK_CARD_SELECTION = `')
         const card = store.slice(start, store.indexOf('\n`', start))
-        expect(card).toContain('testedHeads { pr head }')
         expect(card).toMatch(/pullRequests \{ url [^}]*\bhead\b/)
+        // resolving tested heads was most of a board read's time: not with the cards
+        expect(card).not.toContain('testedHeads')
+        expect(store).toContain('agentTasksByUuid(taskUuids: $ts) { uuid testedHeads { pr head } }')
+        expect(store).toContain('for (let i = 0; i < taskUuids.length; i += 100) {')
+        const panel = readFileSync(fileURLToPath(new URL('./AiAgentBoardsPanel.vue', import.meta.url)), 'utf8')
+        expect(panel).toContain('    void loadTestedHeads(board, seq)\n    await loadLifetimeSpend()')
+        expect(panel).toContain("const withPrs = tasks.value.filter((t: any) => (t.prUrls?.length || t.pullRequests?.length)).map((t: any) => t.uuid)")
+        expect(panel).toContain('if (!withPrs.length) return')
+        expect(panel).toContain('if (seq !== contentSeq || board !== tasksShownOf) return')
     })
 })
 
@@ -571,7 +579,7 @@ describe('the board load: card-level tasks', () => {
             'assignment { session agent role assignedAt }',
             // PR chips, the moved chip, the Table's PRs column
             '\n    prUrls\n', 'pullRequests { url state targetBranch mergedDate registered baseMovedBy head',
-            'declaration { outcome commit note supersededBy by { kind uuid name } }', 'testedHeads { pr head }',
+            'declaration { outcome commit note supersededBy by { kind uuid name } }',
             // the level chip, filter and lanes; the group chip, filter and lanes; the tag filter; the gated chip
             '\n    workLevel\n', '\n    effectiveWorkLevel\n', 'workLevelSetBy { kind uuid name }', 'group { uuid key name }', 'tags { key value }',
             '\n    waitingOnGroups\n',
