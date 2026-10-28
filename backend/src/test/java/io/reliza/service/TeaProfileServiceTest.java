@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertNull;
@@ -36,6 +37,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import io.reliza.common.CommonVariables.PerspectiveType;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
+import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
@@ -64,6 +66,10 @@ import io.reliza.ws.RelizaConfigProps;
  * TeaProfileArchivedComponentTest).
  */
 class TeaProfileServiceTest extends TeaProfileServiceTestBase {
+
+	/** CE (rearm-saas#955): every SBOM profile name is stored as default, so Pro's naming cases do not apply. */
+	private static final String CE_NAMES = "ReARM CE stores every SBOM profile as default";
+
 
 	@Test
 	void theOrganizationScopeTakesNoObjectAndNoMode() {
@@ -150,6 +156,7 @@ class TeaProfileServiceTest extends TeaProfileServiceTestBase {
 	@ParameterizedTest
 	@MethodSource("requiredFields")
 	void everyProfileFieldIsRequiredOnAnOverride(String field) {
+		assumeFalse(LicensingConstants.isOssEdition() && "profiles".equals(field), CE_NAMES);
 		@SuppressWarnings("unchecked")
 		Map<String, Object> m = Utils.OM.convertValue(override(), Map.class);
 		m.remove(field);
