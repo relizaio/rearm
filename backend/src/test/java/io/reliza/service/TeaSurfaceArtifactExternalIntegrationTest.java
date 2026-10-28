@@ -130,10 +130,12 @@ public class TeaSurfaceArtifactExternalIntegrationTest extends TeaSurfaceArtifac
 			// round 3 (T-5): the format check comes before the 302 of an externally stored signature
 			for (String rev : List.of("1", "latest")) {
 				String sig = w.base() + "/artifact/" + ext.tea() + "/" + rev + "/signature/download";
-				for (String q : List.of("?mediaType=" + enc("text/plain"), "", "?mediaType=")) {
-					HttpResponse<String> r = get(sig + q, null);
-					assertTeaError(r, 406, "NO_ACCEPTABLE_FORMAT", "ext signature " + rev + " " + q);
-					assertNull(header(r, "Location"), "ext signature " + rev + " " + q + ": no Location");
+				HttpResponse<String> r = get(sig + "?mediaType=" + enc("text/plain"), null);
+				assertTeaError(r, 406, "NO_ACCEPTABLE_FORMAT", "ext signature " + rev + " text/plain");
+				assertNull(header(r, "Location"), "ext signature " + rev + " text/plain: no Location");
+				// without mediaType the server takes the first format, so the 302 follows
+				for (String q : List.of("", "?mediaType=")) {
+					assertRedirect(getBytes(sig + q, null, null), w.pub().extSigUrl(), "no-cache", "ext signature " + rev + " " + q);
 				}
 			}
 

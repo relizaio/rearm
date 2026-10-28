@@ -37,8 +37,9 @@ import tools.jackson.databind.node.ObjectNode;
 
 /**
  * Task TEA-10, design 4.2 cases 6 and 7, round 2 case 22 and round 3 case 25 (6 and 22 amended): format
- * selection by mediaType only and silent on a client's malformed value, the download and redirect
- * headers, and the Location in URI form.
+ * selection by an explicit mediaType, silent on a client's malformed value, the download and redirect
+ * headers, and the Location in URI form. TEA 1.0.0 artifact-media-type: without mediaType a content
+ * download negotiates on Accept and a signature download takes the first format.
  */
 class TeaArtifactResponsesTest {
 
@@ -181,6 +182,92 @@ class TeaArtifactResponsesTest {
 		String line = logs.aboveDebug().get(0);
 		assertTrue(line.startsWith("ERROR: ") && line.contains(tea.toString()) && line.contains("revision 4"), line);
 		assertEquals(0, logs.withThrowable(), "no stack trace");
+	}
+
+	private static ArtifactRevision revision(UUID uuid, String... mediaTypes) {
+		ObjectNode o = TeaJson.MAPPER.createObjectNode();
+		o.put("uuid", uuid.toString());
+		o.put("version", 1);
+		var formats = o.putArray("formats");
+		for (String mt : mediaTypes) formats.addObject().put("mediaType", mt);
+		return new ArtifactRevision(uuid, 1, null, 1, null, o, true);
+	}
+
+	private static final String SPDX = "application/spdx+json";
+
+	private static TeaArtifactResponses.FormatChoice choose(ArtifactRevision r, String mediaType, String accept) {
+		return TeaArtifactResponses.chooseFormat(r, mediaType, accept, TeaDownloadObject.CONTENT);
+	}
+
+	// TEA 1.0.0: mediaType is optional; without it the server negotiates on Accept, else picks a format
+	@Test
+	void withoutMediaTypeTheContentFormatIsNegotiated() {
+		ArtifactRevision two = revision(UUID.randomUUID(), SPDX, CDX);
+		for (String absent : new String[] { null, "", "  " }) {
+			assertEquals(new TeaArtifactResponses.FormatChoice(SPDX, true), choose(two, absent, null), "no Accept: the first format");
+			assertEquals(new TeaArtifactResponses.FormatChoice(SPDX, true), choose(two, absent, "*/*"));
+		}
+		assertEquals(CDX, choose(two, null, CDX).mediaType());
+		assertEquals(CDX, choose(two, null, "application/json;q=0.5, " + CDX).mediaType());
+		assertEquals(CDX, choose(two, null, SPDX + ";q=0.4, " + CDX + ";q=0.8").mediaType());
+		assertEquals(SPDX, choose(two, null, SPDX + ", " + CDX).mediaType(), "equal quality: the published order");
+		assertEquals(SPDX, choose(two, null, "application/*").mediaType());
+		// the most specific range decides: q=0 on CDX excludes it even under */*
+		assertEquals(SPDX, choose(revision(UUID.randomUUID(), CDX, SPDX), null, CDX + ";q=0, */*").mediaType());
+		// a malformed or oversized Accept does not constrain the choice
+		assertEquals(SPDX, choose(two, null, "not a media type, ,").mediaType());
+		assertEquals(SPDX, choose(two, null, "a/b;" + "x".repeat(TeaArtifactResponses.MAX_ACCEPT_CHARS)).mediaType());
+		// Accept admitting nothing is 406
+		for (String accept : new String[] { "text/html", CDX + ";q=0, " + SPDX + ";q=0", "image/*" }) {
+			TeaRefusal e = assertThrows(TeaRefusal.class, () -> choose(two, null, accept), accept);
+			assertEquals(406, e.response().getStatusCode().value(), accept);
+			assertEquals(TeaUnknownErrorType.NO_ACCEPTABLE_FORMAT, e.response().getBody().getError(), accept);
+			assertEquals(TeaArtifactResponses.NOT_ACCEPTABLE_MESSAGE, e.response().getBody().getMessage(), accept);
+		}
+		// range parameters must all match the format's
+		ArtifactRevision versioned = revision(UUID.randomUUID(), CDX + "; version=1.6");
+		assertEquals(CDX + "; version=1.6", choose(versioned, null, CDX + "; version=1.6").mediaType());
+		assertEquals(CDX + "; version=1.6", choose(versioned, null, CDX).mediaType(), "no parameters: any version");
+		assertThrows(TeaRefusal.class, () -> choose(versioned, null, CDX + "; version=1.5"));
+		// a revision with no format is 406 either way
+		TeaRefusal none = assertThrows(TeaRefusal.class, () -> choose(revision(UUID.randomUUID()), null, null));
+		assertEquals(406, none.response().getStatusCode().value());
+	}
+
+	@Test
+	void anExplicitMediaTypeDecidesAlone() {
+		ArtifactRevision two = revision(UUID.randomUUID(), SPDX, CDX);
+		assertEquals(new TeaArtifactResponses.FormatChoice(CDX, false), choose(two, CDX, "text/html"), "Accept is not read");
+		assertEquals(new TeaArtifactResponses.FormatChoice(CDX, false), choose(two, CDX, SPDX));
+		TeaRefusal e = assertThrows(TeaRefusal.class, () -> choose(two, "text/plain", "*/*"));
+		assertEquals(TeaArtifactResponses.NO_FORMAT_MESSAGE, e.response().getBody().getMessage());
+		assertEquals(400, assertThrows(TeaRefusal.class, () -> choose(two, "foo", null)).response().getStatusCode().value());
+	}
+
+	@Test
+	void aSignatureWithoutMediaTypeTakesTheFirstFormat() {
+		ArtifactRevision two = revision(UUID.randomUUID(), SPDX, CDX);
+		for (String accept : new String[] { null, CDX, "application/pgp-signature", "text/html" }) {
+			assertEquals(new TeaArtifactResponses.FormatChoice(SPDX, false),
+					TeaArtifactResponses.chooseFormat(two, null, accept, TeaDownloadObject.SIGNATURE), String.valueOf(accept));
+		}
+		assertEquals(CDX, TeaArtifactResponses.chooseFormat(two, CDX, null, TeaDownloadObject.SIGNATURE).mediaType());
+	}
+
+	@Test
+	void aFormatAcceptChoseVariesOnAccept() {
+		UUID u = UUID.randomUUID();
+		String sha = "cd".repeat(32);
+		ArtifactRevision r = revision(u, 3, CDX, true);
+		HttpHeaders h = TeaArtifactResponses.downloadHeaders(CTX, r, CDX, sha, TeaDownloadObject.CONTENT, true, true, CDX, "a", 1);
+		assertEquals("Authorization, Accept", h.getFirst(HttpHeaders.VARY));
+		assertTrue(h.getFirst(HttpHeaders.CONTENT_LOCATION).endsWith("/3/download?mediaType=application%2Fvnd.cyclonedx%2Bjson"));
+		HttpHeaders validators = TeaArtifactResponses.validatorHeaders(CTX, r, CDX, sha, TeaDownloadObject.CONTENT, true, true);
+		assertEquals(h.get(HttpHeaders.VARY), validators.get(HttpHeaders.VARY), "the 304 repeats Vary");
+		assertEquals("Authorization, Accept",
+				TeaArtifactResponses.redirectHeaders(CTX, r, true, "https://files.example/a", true).getFirst(HttpHeaders.VARY));
+		assertEquals("Authorization",
+				TeaArtifactResponses.redirectHeaders(CTX, r, true, "https://files.example/a", false).getFirst(HttpHeaders.VARY));
 	}
 
 	// 7

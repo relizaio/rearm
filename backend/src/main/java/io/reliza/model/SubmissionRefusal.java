@@ -12,5 +12,7 @@ public enum SubmissionRefusal {
 	/** The text is longer than 2048 characters or holds a control character other than TAB, LF and CR. */
 	REASON_INVALID,
 	/** The edition has no submissions (CE): the shared fetcher's answer when no hook is present. */
-	EDITION_UNSUPPORTED
+	EDITION_UNSUPPORTED,
+	/** The kind is not switched on in the component's effective package settings. */
+	KIND_DISABLED
 }

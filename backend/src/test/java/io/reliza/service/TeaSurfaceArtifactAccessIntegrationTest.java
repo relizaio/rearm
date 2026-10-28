@@ -200,7 +200,7 @@ public class TeaSurfaceArtifactAccessIntegrationTest extends TeaSurfaceArtifactI
 		ZonedDateTime since = ZonedDateTime.now();
 		assertEquals(304, getBytes(ok, w.cover(), Map.of("If-None-Match", tag)).statusCode());
 		assertEquals(200, head(ok, w.cover(), null).statusCode());
-		assertEquals(406, get(w.base() + "/artifact/" + priv.tea() + "/1/download", w.cover()).statusCode());
+		assertEquals(406, get(w.base() + "/artifact/" + priv.tea() + "/1/download?mediaType=" + enc("application/x-no-such-format"), w.cover()).statusCode());
 		assertEquals(404, get(ok, w.other()).statusCode());
 		assertEquals(200, get(url(w, priv, "1", ""), w.cover()).statusCode());
 		assertEquals(200, get(url(w, priv, "latest", ""), w.cover()).statusCode());
