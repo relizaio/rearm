@@ -1113,6 +1113,21 @@
                     file-kind="artifact"
                     :file-id="sbomScoreArtifact.uuid" />
             </n-modal>
+            <n-modal
+                v-model:show="showScanStatusModal"
+                :title="`Scan status: ${scanStatusArtifact?.displayIdentifier || scanStatusArtifact?.uuid || ''}`"
+                preset="dialog"
+                style="width: 90%; max-width: 1100px"
+                :show-icon="false" >
+                <div data-testid="artifact-scan-status-modal">
+                    <artifact-scan-status-panel
+                        v-if="showScanStatusModal && scanStatusArtifact"
+                        :key="scanStatusRun"
+                        :artifact-uuid="scanStatusArtifact.uuid"
+                        :load="loadScanStatusOf"
+                        :notify="notify" />
+                </div>
+            </n-modal>
             <div v-if="release && release.componentDetails">
                 <n-grid :cols="7">
                     <n-gi span="4">
@@ -2335,6 +2350,7 @@ import CreateDeliverable from '@/components/CreateDeliverable.vue'
 import CreateRelease from '@/components/CreateRelease.vue'
 import CreateSourceCodeEntry from '@/components/CreateSourceCodeEntry.vue'
 import SbomScorePanel from '@/components/SbomScorePanel.vue'
+import ArtifactScanStatusPanel from '@/components/ArtifactScanStatusPanel.vue'
 import ReleaseSubmissionsPanel from '@/components/ReleaseSubmissionsPanel.vue'
 import { submissionHistoryText, submissionsAvailable } from '@/utils/submissions'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -2356,6 +2372,7 @@ import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSel
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
 import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
+import { loadArtifactScanStatus, scanStatusSupported } from '@/utils/artifactScanStatus'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
@@ -2386,7 +2403,7 @@ import { exportSigningLine as signingLineFor, signatureStatus } from '@/utils/sb
 import type { ExportMediaType, SignedStatus } from '@/utils/sbomSigning'
 import type { SupportAttestationFilter } from '@/utils/sbomComponentsQuery'
 import { GlobeAdd24Regular, Info24Regular, Edit24Regular } from '@vicons/fluent'
-import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, EyeOff, GitCompare, Link, ReportAnalytics, Tag, Trash, Refresh, WorldUpload, X } from '@vicons/tabler'
+import { Bell, Check, CirclePlus, ClipboardCheck, Copy, Download, Edit, Eye, EyeOff, GitCompare, Link, ReportAnalytics, Stethoscope, Tag, Trash, Refresh, WorldUpload, X } from '@vicons/tabler'
 import { Icon } from '@vicons/utils'
 import { BoxArrowUp20Regular, Info20Regular, Copy20Regular, QuestionCircle20Regular, ChevronLeft20Regular, ChevronRight20Regular } from '@vicons/fluent'
 import { UpCircleOutlined } from '@vicons/antd'
@@ -6578,6 +6595,21 @@ async function loadArtifactSbomScore (signal: AbortSignal): Promise<string> {
     return resp.data?.artifactSbomScore
 }
 
+/** The scan status of one BOM artifact (TPF-115 child 2): why it is or is not scanned. Loads on open and on Refresh. */
+const showScanStatusModal: Ref<boolean> = ref(false)
+const scanStatusArtifact: Ref<any> = ref(null)
+const scanStatusRun: Ref<number> = ref(0)
+
+function openScanStatusModal (artifact: any) {
+    scanStatusArtifact.value = artifact
+    scanStatusRun.value++
+    showScanStatusModal.value = true
+}
+
+function loadScanStatusOf (artifactUuid: string) {
+    return loadArtifactScanStatus(graphqlClient, artifactUuid)
+}
+
 function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {
     return graphqlClient.mutate({ mutation, variables, fetchPolicy: 'no-cache' })
 }
@@ -8171,6 +8203,7 @@ function renderDtrackPill (row: any): any {
  * The Download icon and, for a downloadable BOM, the Score SBOM icon beside it (SCORE-6). One
  * helper for both artifact tables so their rows cannot drift; the score follows exactly the
  * download's condition plus type BOM, and the backend enforces the download permission.
+ * And, while the server answers the scan-status query, the Explain scan status icon.
  */
 function renderArtifactActionIcons (row: any): any[] {
     const els: any[] = []
@@ -8179,6 +8212,9 @@ function renderArtifactActionIcons (row: any): any[] {
     els.push(h(NIcon, { title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download)))
     if (row.type === 'BOM') {
         els.push(h(NIcon, { title: 'Score SBOM', class: 'icons clickable', size: 25, 'data-testid': 'artifact-sbom-score', onClick: () => openSbomScoreModal(row) }, () => h(ReportAnalytics)))
+        if (scanStatusSupported.value !== false) {
+            els.push(h(NIcon, { title: 'Explain scan status', class: 'icons clickable', size: 25, 'data-testid': 'artifact-scan-status', onClick: () => openScanStatusModal(row) }, () => h(Stethoscope)))
+        }
     }
     return els
 }
