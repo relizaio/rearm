@@ -133,3 +133,88 @@ describe('OrgSettings: the API Key Groups tab (TPF-92 row 16)', () => {
         expect(definition(org.code, 'async function loadApiKeyGroupsOfOrg')).toContain('extractError(')
     })
 })
+
+describe('OrgSettings: key-side group operations (TPF-124)', () => {
+    /** The source of an async function, from its opening to its closing brace at column 0. */
+    const functionBody = (code: string, opening: string): string => {
+        const at = code.indexOf(opening)
+        if (at < 0) return ''
+        const end = code.indexOf('\n}', at)
+        return code.slice(at, end < 0 ? undefined : end + 2)
+    }
+
+    it('(a) puts both icons in the Free Form Keys Manage column, for admins on a server with the operations', () => {
+        const fields = columnsSlice(org.code, 'const freeFormKeyFields')
+        const admin = fields.indexOf('if (isOrgAdmin.value)')
+        const guard = fields.indexOf('keyGroupOpsSupported.value === true && apiKeyGroupsSupported.value')
+        const edit = fields.indexOf("'data-testid': 'key-groups-edit'")
+        const eye = fields.indexOf("'data-testid': 'key-permissions-eye'")
+        expect(admin).toBeGreaterThan(-1)
+        expect(guard).toBeGreaterThan(admin)
+        expect(edit).toBeGreaterThan(guard)
+        expect(eye).toBeGreaterThan(guard)
+        expect(fields).toContain('openKeyGroups(row)')
+        expect(fields).toContain('keyCombinedTooltipText(row)')
+    })
+
+    it('(b) probes at the end of every keys load and never from the tab branches', () => {
+        const loader = functionBody(org.code, 'async function loadProgrammaticAccessKeys')
+        const assigned = loader.indexOf('programmaticAccessKeys.value =')
+        expect(assigned).toBeGreaterThan(-1)
+        expect(loader.indexOf('probeKeyGroupOps()')).toBeGreaterThan(assigned)
+        expect(tabBranch(org.code, 'programmaticAccess')).not.toContain('probeKeyGroupOps')
+        expect(tabBranch(org.code, 'freeFormKeys')).not.toContain('probeKeyGroupOps')
+    })
+
+    it('(c) mounts one membership modal in the Programmatic Access pane', () => {
+        const mounts = find(onePane('programmaticAccess'), (n) => n.tag === 'ApiKeyGroupMembershipModal')
+        expect(mounts).toHaveLength(1)
+        const m = last(mounts[0])
+        expect(directive(m, 'bind', 'groups')).toBe('apiKeyGroups')
+        expect(directive(m, 'bind', 'api-key')).toBe('keyGroupsKey')
+        expect(directive(m, 'bind', 'sibling-keys')).toBe('programmaticAccessKeys')
+        expect(directive(m, 'bind', 'org-uuid')).toBe('orgResolved')
+        expect(directive(m, 'bind', 'notify')).toBe('notify')
+        expect(directive(m, 'model', 'show')).toBe('showKeyGroupsModal')
+        expect(directive(m, 'on', 'saved')).toBe('onKeyGroupsSaved')
+    })
+
+    it('(d) builds the users tooltip through the shared line builder only', () => {
+        const at = org.code.indexOf("key: 'permission'")
+        const users = org.code.slice(at, org.code.indexOf("'No combined permissions'", at))
+        expect(users).toContain('combinedPermissionLines(combinedPerms, permissionNames())')
+        expect(org.source.split("p.scope === 'PERSPECTIVE' && p.object")).toHaveLength(1)
+    })
+
+    it('(e) clears the per-key combined rows before both loaders read', () => {
+        for (const opening of ['async function loadApiKeyGroupsOfOrg', 'async function loadProgrammaticAccessKeys']) {
+            const body = definition(org.code, opening)
+            const clear = body.indexOf('keyCombinedPermissions.value = {}')
+            expect(clear, opening).toBeGreaterThan(-1)
+            expect(clear, opening).toBeLessThan(body.indexOf('await'))
+        }
+    })
+
+    it('(f) probes only for an admin, on a FREEFORM key, and releases the in-flight probe', () => {
+        const probe = definition(org.code, 'function probeKeyGroupOps')
+        expect(probe).toContain('!isOrgAdmin.value')
+        expect(probe).toContain("x.type === 'FREEFORM'")
+        expect(probe).toContain('keyGroupOpsProbe = null')
+    })
+
+    it('(g) leaves adminOnlyTabs as TPF-92 set it', () => {
+        expect(line(org.code, 'const adminOnlyTabs = [')).toBe(
+            "const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'adminSettings']")
+    })
+
+    it('(h) loads the name lists the eye resolves against on both keys tabs', () => {
+        for (const tab of ['programmaticAccess', 'freeFormKeys']) {
+            const branch = tabBranch(org.code, tab)
+            expect(branch, tab).toContain('loadPerspectives()')
+            expect(branch, tab).toContain('loadBoardNames()')
+            expect(branch, tab).toContain("store.dispatch('fetchProducts', orgResolved.value)")
+            expect(branch, tab).toContain('loadProgrammaticAccessKeys(true)')
+        }
+    })
+})
+

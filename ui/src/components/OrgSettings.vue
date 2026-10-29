@@ -799,6 +799,7 @@
                     </n-tab-pane>
                 </n-tabs>
                 <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" :api-key-groups="apiKeyGroupsOfKey(apiKeyGroups, selectedEditKey?.uuid)" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyGroupMembershipModal v-model:show="showKeyGroupsModal" :api-key="keyGroupsKey" :groups="apiKeyGroups" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" @saved="onKeyGroupsSaved" />
                 <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :sibling-keys="programmaticAccessKeys" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
                     <template #header>CLI sessions on key {{ keySessionsKey ? keyLabelOf(keySessionsKey) : '' }}</template>
@@ -1505,7 +1506,7 @@ import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from '
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon, Users as UsersIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
 import commonFunctions from '@/utils/commonFunctions'
@@ -1560,6 +1561,7 @@ import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
 import ApiKeyGroupsOfOrg from './ApiKeyGroupsOfOrg.vue'
+import ApiKeyGroupMembershipModal from './ApiKeyGroupMembershipModal.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
@@ -1569,6 +1571,8 @@ import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
 import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
 import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
+import { loadCombinedApiKeyOrgPermissions } from '@/utils/apiKeyGroupMembership'
+import { combinedPermissionLines, sourcedPermissionLines, type PermissionNameResolvers } from '@/utils/combinedPermissionLines'
 import { extractError } from '@/utils/notificationsCommon'
 
 const route = useRoute()
@@ -1620,6 +1624,11 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
         loadApiKeyGroupsOfOrg()
+        await Promise.all([
+            loadPerspectives(),
+            loadBoardNames(),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "apiKeyGroups") {
         // the editor's pickers (ScopedPermissions) and the member picker (FREEFORM keys)
         await loadUsers()
@@ -1643,6 +1652,11 @@ async function loadTabSpecificData (tabName: string) {
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
         loadApiKeyGroupsOfOrg()
+        await Promise.all([
+            loadPerspectives(),
+            loadBoardNames(),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     } else if (tabName === "policies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
@@ -2320,6 +2334,13 @@ const freeFormKeyFields: Ref<any> = ref([
                         }, { default: () => h(EditIcon) }
                     )
                 )
+                if (keyGroupOpsSupported.value === true && apiKeyGroupsSupported.value) {
+                    els.push(h(NIcon, { title: 'API key groups of this key', class: 'icons clickable', size: 25, 'data-testid': 'key-groups-edit', onClick: () => openKeyGroups(row) }, { default: () => h(UsersIcon) }))
+                    els.push(h(NTooltip, { trigger: 'hover', onUpdateShow: (shown: boolean) => { if (shown && !keyCombinedPermissions.value[row.uuid]) loadKeyCombinedPermissions(row) } }, {
+                        trigger: () => h(NIcon, { title: 'View combined key permissions', class: 'icons clickable', size: 20, 'data-testid': 'key-permissions-eye' }, { default: () => h(Eye) }),
+                        default: () => h('pre', { style: 'margin: 0; white-space: pre-wrap;' }, keyCombinedTooltipText(row))
+                    }))
+                }
                 els.push(h(NIcon, { title: 'Holder (who mints the secrets)', class: 'icons clickable', size: 25, onClick: () => reassignHolder(row) }, { default: () => h(UserIcon) }))
                 els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
                 els.push(h(
@@ -2405,6 +2426,7 @@ const userGroups: Ref<any[]> = ref([])
 const apiKeyGroups: Ref<any[]> = ref([])
 const apiKeyGroupsSupported = ref(true)
 async function loadApiKeyGroupsOfOrg () {
+    keyCombinedPermissions.value = {}
     try {
         const r = await loadApiKeyGroups(graphqlClient, orgResolved.value)
         apiKeyGroups.value = r.groups
@@ -2413,6 +2435,79 @@ async function loadApiKeyGroupsOfOrg () {
         console.error('Error loading API key groups:', error)
         notify('error', 'Error', 'Failed to load API key groups: ' + extractError(error))
     }
+}
+
+// Key-side group operations (TPF-124): one probe per load decides whether the server has the key-side
+// group operations (the combined-permissions query and the membership mutation); null = not probed yet, false = absent (both
+// icons hidden), true = present. The per-key combined rows feed the eye tooltip and are cleared whenever
+// the keys or the groups reload (either changes the rows).
+const keyGroupOpsSupported = ref<boolean | null>(null)
+let keyGroupOpsProbe: Promise<void> | null = null
+const keyCombinedPermissions = ref<Record<string, { loading: boolean, rows: any[] | null, error?: string }>>({})
+const showKeyGroupsModal = ref(false)
+const keyGroupsKey = ref<any>(null)
+
+function permissionNames (): PermissionNameResolvers {
+    return {
+        orgUuid: orgResolved.value,
+        orgName: () => myorg.value?.name,
+        perspectiveName: (uuid: string) => perspectives.value.find((persp: any) => persp.uuid === uuid)?.name,
+        boardName: (uuid: string) => boardNameOf(orgBoards.value, uuid),
+        component: (uuid: string) => store.getters.componentById(uuid)
+    }
+}
+
+function probeKeyGroupOps (): Promise<void> {
+    if (keyGroupOpsProbe) return keyGroupOpsProbe
+    keyGroupOpsProbe = (async () => {
+        if (keyGroupOpsSupported.value !== null || !isOrgAdmin.value) return
+        const k = programmaticAccessKeys.value.find((x: any) => x.type === 'FREEFORM')
+        if (!k) return
+        try {
+            const r = await loadCombinedApiKeyOrgPermissions(graphqlClient, orgResolved.value, k.uuid)
+            keyGroupOpsSupported.value = r.supported
+            if (r.supported) keyCombinedPermissions.value[k.uuid] = { loading: false, rows: r.rows }
+        } catch (error: any) {
+            console.error('Error probing key group operations:', error)
+            notify('error', 'Error', 'Failed to read key permissions: ' + extractError(error))
+        }
+    })().finally(() => { keyGroupOpsProbe = null })
+    return keyGroupOpsProbe
+}
+
+async function loadKeyCombinedPermissions (row: any) {
+    keyCombinedPermissions.value[row.uuid] = { loading: true, rows: null }
+    try {
+        const r = await loadCombinedApiKeyOrgPermissions(graphqlClient, orgResolved.value, row.uuid)
+        if (!r.supported) {
+            keyGroupOpsSupported.value = false
+            delete keyCombinedPermissions.value[row.uuid]
+            return
+        }
+        keyCombinedPermissions.value[row.uuid] = { loading: false, rows: r.rows }
+    } catch (error: any) {
+        const message = extractError(error)
+        keyCombinedPermissions.value[row.uuid] = { loading: false, rows: null, error: message }
+        notify('error', 'Error', 'Failed to read key permissions: ' + message)
+    }
+}
+
+function keyCombinedTooltipText (row: any): string {
+    const st = keyCombinedPermissions.value[row.uuid]
+    const header = `Combined Permissions for key ${keyLabelOf(row)}:\n\n`
+    if (!st || st.loading) return header + 'loading...'
+    if (st.error) return header + st.error
+    if (st.rows && st.rows.length > 0) return header + sourcedPermissionLines(st.rows, permissionNames()).join('\n')
+    return header + 'No permissions'
+}
+
+function openKeyGroups (row: any) {
+    keyGroupsKey.value = row
+    showKeyGroupsModal.value = true
+}
+
+function onKeyGroupsSaved () {
+    loadApiKeyGroupsOfOrg()
 }
 
 const filteredUserGroups = computed(() => {
@@ -3239,26 +3334,8 @@ const userFields = [
             const orgPermission = combinedPerms.find((p: any) => p.scope === 'ORGANIZATION' && p.object === orgResolved.value)
             const permissionText = orgPermission ? commonFunctions.translatePermissionName(orgPermission.type) : extractOrgWidePermission(row)
             
-            const permissionLines = combinedPerms.length > 0 
-                ? combinedPerms.map((p: any) => {
-                    let objectName = p.object
-                    let scopeDisplay = p.scope
-                    if (p.scope === 'ORGANIZATION' && p.object === orgResolved.value) {
-                        objectName = myorg.value?.name || p.object
-                    } else if (p.scope === 'PERSPECTIVE' && p.object) {
-                        const persp = perspectives.value.find((persp: any) => persp.uuid === p.object)
-                        objectName = persp?.name || p.object
-                    } else if (p.scope === 'BOARD' && p.object) {
-                        objectName = boardNameOf(orgBoards.value, p.object) ?? p.object
-                    } else if (p.scope === 'COMPONENT' && p.object) {
-                        const comp = store.getters.componentById(p.object)
-                        objectName = comp?.name || p.object
-                        if (comp?.type === 'PRODUCT') {
-                            scopeDisplay = 'PRODUCT'
-                        }
-                    }
-                    return `${scopeDisplay}: ${objectName} - ${commonFunctions.translatePermissionName(p.type)}`
-                }).join('\n')
+            const permissionLines = combinedPerms.length > 0
+                ? combinedPermissionLines(combinedPerms, permissionNames()).join('\n')
                 : 'No combined permissions'
             
             const tooltipContent = `Combined Permissions for the User ${row.email}:\n\n${permissionLines}`
@@ -4915,6 +4992,7 @@ async function loadCiIntegrations(useCache: boolean) {
 }
 
 async function loadProgrammaticAccessKeys(useCache: boolean) {
+    keyCombinedPermissions.value = {}
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
     const resp = await graphqlClient.query({
@@ -4971,6 +5049,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
     // formatValuesForApiKeys.
     programmaticAccessKeys.value = (resp.data.apiKeys || [])
         .map((key: any) => formatValuesForApiKeys(key))
+    probeKeyGroupOps()
 }
 
 async function handleTabSwitch(tabName: string) {
