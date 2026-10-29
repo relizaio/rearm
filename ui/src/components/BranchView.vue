@@ -247,6 +247,17 @@
                                   cursor: autoIntegrateInFlight ? 'not-allowed' : undefined }">
                         <TrendingUp />
                     </n-icon>
+                    <n-icon v-if="isWritable && branchData.autoIntegrate === 'ENABLED' && modifiedBranch.autoIntegrate === 'ENABLED' && autoIntegrateSupported === true"
+                        :class="autoIntegratePreviewInFlight ? '' : 'clickable'"
+                        @click="previewAutoIntegrate"
+                        :title="autoIntegratePreviewInFlight ? 'Preview in progress...' : 'Preview Auto Integrate (dry run: nothing is created)'"
+                        size="20"
+                        data-testid="auto-integrate-preview-trigger"
+                        :style="{ 'margin-left': '4px', 'vertical-align': 'middle',
+                                  opacity: autoIntegratePreviewInFlight ? 0.5 : 1,
+                                  cursor: autoIntegratePreviewInFlight ? 'not-allowed' : undefined }">
+                        <ListSearch />
+                    </n-icon>
                 </p>
                 <div v-if="modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
                     <n-data-table :data="dependencyGroups.software" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
@@ -275,6 +286,10 @@
                         </span>
                     </p>
                 </div>
+                <AutoIntegratePreviewPanel v-if="autoIntegratePanelVisible && autoIntegrateEvaluation"
+                    :evaluation="autoIntegrateEvaluation" :words="words"
+                    :component-href="autoIntegrateComponentHref" :release-href="autoIntegrateReleaseHref"
+                    @close="autoIntegratePreview.closePanel()" />
             </div>
             <n-modal
                 v-model:show="showAddComponentModal"
@@ -441,11 +456,12 @@ import ReleaseView from './ReleaseView.vue'
 import SideBySide from './SideBySide.vue'
 import LinkVcs from './LinkVcs.vue'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
+import AutoIntegratePreviewPanel from './AutoIntegratePreviewPanel.vue'
 import commonFunctions from '../utils/commonFunctions'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import graphqlQueries from '../utils/graphqlQueries'
-import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh, Lock, LockOpen } from '@vicons/tabler'
+import { Edit, Eye, X, QuestionMark, CirclePlus, Tool, ArrowForward, LayoutColumns, Filter, Copy, Trash, Check, TrendingUp, Package, Refresh, Lock, LockOpen, ListSearch } from '@vicons/tabler'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import VulnerabilityModal from '@/components/VulnerabilityModal.vue'
@@ -454,6 +470,7 @@ import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseS
 import Swal from 'sweetalert2'
 import { splitDocumentDependencies } from '@/utils/agentDocumentsView'
 import { SwalData } from '@/utils/commonFunctions'
+import { useAutoIntegratePreview, triggerNotice } from '@/utils/autoIntegratePreview'
 
 async function loadEnvironmentTypes (org: string) {
     let etypesResponse = await graphqlClient.query({
@@ -517,6 +534,8 @@ const selectNewVcsRepo = ref(false)
 
 const compareMode = ref(false)
 const autoIntegrateInFlight = ref(false)
+const autoIntegratePreview = useAutoIntegratePreview(branchUuid)
+const { supported: autoIntegrateSupported, inFlight: autoIntegratePreviewInFlight, evaluation: autoIntegrateEvaluation, panelVisible: autoIntegratePanelVisible } = autoIntegratePreview
 const comparisonCheckboxes: Ref<any> = ref({})
 const showReleaseComparisonModal = ref(false)
 
@@ -704,19 +723,9 @@ async function triggerAutoIntegrate () {
     if (autoIntegrateInFlight.value) return
     autoIntegrateInFlight.value = true
     try {
-        let resp: any
+        let result: { release: any, evaluation: any }
         try {
-            resp = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation autoIntegrateFeatureSet($branchUuid: ID!) {
-                        autoIntegrateFeatureSet(branchUuid: $branchUuid) {
-                            uuid
-                            version
-                        }
-                    }`,
-                variables: { branchUuid: branchUuid.value },
-                fetchPolicy: 'no-cache'
-            })
+            result = await autoIntegratePreview.runTrigger(graphqlClient)
         } catch (e: any) {
             notify('error', 'Auto Integrate Failed', commonFunctions.extractGraphQLErrorMessage(e))
             // A failure does not mean nothing happened: the mutation is not idempotent, and a
@@ -739,7 +748,7 @@ async function triggerAutoIntegrate () {
         // auto-integrate failure: telling an operator it failed when the release exists is exactly
         // what makes them click again and create a second one. So the refresh below is best-effort
         // and the outcome is reported either way.
-        const release = (resp.data as any)?.autoIntegrateFeatureSet
+        const release = result.release
         if (release && release.version) {
             // A release was created and this modal is about to close, so the full
             // refresh is free: nothing the operator is still looking at gets reset.
@@ -760,7 +769,8 @@ async function triggerAutoIntegrate () {
             // else created that release moments ago -- so refresh the RELEASES and
             // leave the form alone, the same split the error path above makes.
             await store.dispatch('fetchReleases', { branch: branchUuid.value }).catch(() => {})
-            notify('info', 'Auto Integrate Completed', 'Auto-integrate was attempted, but no new release was created.')
+            autoIntegratePreview.showEvaluation(result.evaluation)
+            notify('info', 'Auto Integrate Completed', triggerNotice(result, result.evaluation, words.value).notice)
         }
     } finally {
         // finally, not after the notify: a failed mutation must not leave the button dead.
@@ -768,9 +778,24 @@ async function triggerAutoIntegrate () {
     }
 }
 
+async function previewAutoIntegrate () {
+    try {
+        await autoIntegratePreview.preview(graphqlClient)
+        if (autoIntegrateSupported.value === false) notify('info', 'Preview unavailable', 'This server does not support the auto-integrate preview.')
+    } catch (e: any) {
+        notify('error', 'Preview Failed', commonFunctions.extractGraphQLErrorMessage(e))
+    }
+}
+
 const openBranchSettings = function() {
     originalBranch.value = commonFunctions.deepCopy(modifiedBranch.value)
+    // Clear the previous open's preview before the modal shows: the trigger's success branch closes
+    // the modal programmatically, which emits no update:show, so the close handler alone misses it.
+    autoIntegratePreview.reset()
     showBranchSettingsModal.value = true
+    if (branchData.value?.componentDetails?.type === 'PRODUCT' && isWritable.value && branchData.value?.autoIntegrate === 'ENABLED') {
+        autoIntegratePreview.probeOnOpen(graphqlClient).catch((e: any) => console.warn('auto-integrate preview probe failed', e))
+    }
     
     // Update URL without triggering Vue Router navigation
     const newQuery = new URLSearchParams(window.location.search)
@@ -805,6 +830,7 @@ const handleBranchSettingsClose = async function(show: boolean) {
     }
     
     if (!show) {
+        autoIntegratePreview.reset()
         // Remove branchSettingsView parameter from URL without triggering Vue Router navigation
         const newQuery = new URLSearchParams(window.location.search)
         newQuery.delete('branchSettingsView')
@@ -1428,6 +1454,15 @@ function renderDependencyBranchLink (component: any, branch: any, label: string)
     const href = resolveComponentHref(component, branch)
     if (!href) return label
     return h('a', { href, target: '_blank', rel: 'noopener noreferrer' }, label)
+}
+
+function autoIntegrateComponentHref (row: any): string | null {
+    const known = (modifiedBranch.value?.effectiveDependencies || []).find((d: any) => d.component?.uuid === row.component?.uuid)?.component
+    return resolveComponentHref({ uuid: row.component?.uuid, type: known?.type || 'COMPONENT' }, row.branch)
+}
+
+function autoIntegrateReleaseHref (uuid: string): string | null {
+    return uuid ? router.resolve({ name: 'ReleaseView', params: { uuid } }).href : null
 }
 
 const effectiveDepTableFields: DataTableColumns<any> = [
