@@ -1,5 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress, subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
+import { checkpointPhase, checkpointTag, checkpointTooltip, compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress,
+    subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
 import { prChips } from './agentDelivery'
 
 const tasks = [
@@ -125,3 +126,133 @@ describe('a linked PR moved past the tested head', () => {
     })
 })
 
+// The design checkpoint's phase, chip and tooltip (task SPLIT-8, T-18 b): the record read beside the task's status,
+// its current role and its hops, from the task alone.
+const reachedAt = '2026-09-23T10:00:00Z'
+function pending (over: Record<string, any> = {}) {
+    return { reachedAt, afterRole: 'reviewer', beforeRole: 'coder', design: ['a1', 'r3'], state: 'PENDING',
+        settledBy: null, settledAt: null, note: null, ...over }
+}
+function cpTask (over: Record<string, any> = {}, rec: any = pending()) {
+    return { status: 'ASSIGNED', role: 'architect', assignment: { role: 'architect' }, signOffs: [], returns: [],
+        childTasks: [], designCheckpoint: rec, ...over }
+}
+
+describe('checkpointPhase', () => {
+    it('is null without a record', () => {
+        expect(checkpointPhase(cpTask({}, null))).toBeNull()
+        expect(checkpointPhase(null)).toBeNull()
+    })
+
+    it('is waiting only while a PENDING task is AWAITING_COORDINATOR', () => {
+        expect(checkpointPhase(cpTask({ status: 'AWAITING_COORDINATOR', role: 'reviewer', assignment: null }))).toBe('waiting')
+    })
+
+    it('is ahead for a PENDING record on an open task still with a design role', () => {
+        for (const status of ['ASSIGNED', 'QUEUED', 'ON_HOLD', 'DELIVERING', 'PENDING_INTAKE']) {
+            expect(checkpointPhase(cpTask({ status }))).toBe('ahead')
+        }
+        expect(checkpointPhase(cpTask({ status: 'QUEUED', assignment: null, role: 'architect' }))).toBe('ahead')
+    })
+
+    it('is closed for a PENDING record on a COMPLETED or CANCELLED task', () => {
+        expect(checkpointPhase(cpTask({ status: 'COMPLETED' }))).toBe('closed')
+        expect(checkpointPhase(cpTask({ status: 'CANCELLED' }))).toBe('closed')
+    })
+
+    it('is lapsed once the task is with the role the checkpoint precedes', () => {
+        expect(checkpointPhase(cpTask({ assignment: { role: 'coder' }, role: 'coder' }))).toBe('lapsed')
+        // No assignment: the task's own role decides.
+        expect(checkpointPhase(cpTask({ status: 'ON_HOLD', assignment: null, role: 'coder' }))).toBe('lapsed')
+        // Role names compare lower-cased.
+        expect(checkpointPhase(cpTask({ assignment: { role: 'Coder' } }))).toBe('lapsed')
+        expect(checkpointPhase(cpTask({ assignment: null, role: 'architect' }, pending({ beforeRole: 'CODER' })))).toBe('ahead')
+    })
+
+    it('is lapsed once that role signed off or returned the task after the checkpoint was reached', () => {
+        const later = '2026-09-24T10:00:00Z'
+        expect(checkpointPhase(cpTask({ status: 'QUEUED', role: 'tester', assignment: null,
+            signOffs: [{ role: 'coder', signedOffAt: later, outcome: 'PASSED' }] }))).toBe('lapsed')
+        expect(checkpointPhase(cpTask({ status: 'QUEUED', role: 'tester', assignment: null,
+            returns: [{ role: 'coder', returnedAt: later }] }))).toBe('lapsed')
+        expect(checkpointPhase(cpTask({ status: 'QUEUED', role: 'tester', assignment: null,
+            signOffs: [{ role: 'Coder', signedOffAt: later, outcome: 'PASSED' }] }))).toBe('lapsed')
+    })
+
+    it('does not count a hop by that role from before the checkpoint was reached', () => {
+        // A coder question answered by a design round, then the checkpoint reached on the way back to the coder.
+        expect(checkpointPhase(cpTask({ returns: [{ role: 'coder', returnedAt: '2026-09-22T10:00:00Z' }] }))).toBe('ahead')
+        expect(checkpointPhase(cpTask({ signOffs: [{ role: 'coder', signedOffAt: '2026-09-22T10:00:00Z' }] }))).toBe('ahead')
+        // Nor one at the same instant.
+        expect(checkpointPhase(cpTask({ returns: [{ role: 'coder', returnedAt: reachedAt }] }))).toBe('ahead')
+        // Nor another role's later hop.
+        expect(checkpointPhase(cpTask({ signOffs: [{ role: 'architect', signedOffAt: '2026-09-24T10:00:00Z' }] }))).toBe('ahead')
+    })
+
+    it('is sent_on or split for a settled record, whatever the status', () => {
+        for (const status of ['AWAITING_COORDINATOR', 'ASSIGNED', 'COMPLETED']) {
+            expect(checkpointPhase(cpTask({ status, assignment: { role: 'coder' } }, pending({ state: 'SENT_ON' })))).toBe('sent_on')
+            expect(checkpointPhase(cpTask({ status, assignment: { role: 'coder' } }, pending({ state: 'SPLIT' })))).toBe('split')
+        }
+    })
+})
+
+describe('checkpointTag and checkpointTooltip', () => {
+    it('says at the design checkpoint, in warning, only while the task waits there', () => {
+        const t = cpTask({ status: 'AWAITING_COORDINATOR', role: 'reviewer', assignment: null })
+        expect(checkpointTag(t)).toEqual({ text: 'at the design checkpoint', type: 'warning' })
+        expect(checkpointTooltip(t)).toBe(`design checkpoint before coder, reached after reviewer ${reachedAt}; waiting for the coordinator`)
+    })
+
+    it('says design checkpoint ahead for a task sent back to a design role', () => {
+        for (const status of ['ASSIGNED', 'ON_HOLD', 'QUEUED']) {
+            const t = cpTask({ status })
+            expect(checkpointTag(t)).toEqual({ text: 'design checkpoint ahead', type: 'default' })
+            expect(checkpointTooltip(t)).toContain('now with architect')
+            expect(checkpointTooltip(t)).toContain('before coder')
+            expect(checkpointTooltip(t).endsWith('the task stops at the checkpoint again before coder')).toBe(true)
+        }
+    })
+
+    it('shows no chip for a closed record', () => {
+        const t = cpTask({ status: 'COMPLETED' })
+        expect(checkpointTag(t)).toBeNull()
+        expect(checkpointTooltip(t).endsWith('; closed from the checkpoint, not settled')).toBe(true)
+    })
+
+    it('shows no chip for a lapsed record, and does not say it is ahead', () => {
+        const t = cpTask({ assignment: { role: 'coder' }, role: 'coder' })
+        expect(checkpointTag(t)).toBeNull()
+        expect(checkpointTooltip(t).endsWith('not settled; the task went on to coder')).toBe(true)
+        expect(checkpointTooltip(t)).not.toContain('design checkpoint ahead')
+    })
+
+    it('names who sent the task on, or just "sent on" without an actor', () => {
+        const by = { kind: 'USER', uuid: 'u1', name: 'rhythm@example.org' }
+        for (const status of ['ASSIGNED', 'COMPLETED']) {
+            const t = cpTask({ status, assignment: { role: 'coder' } },
+                pending({ state: 'SENT_ON', settledBy: by, settledAt: '2026-09-23T11:00:00Z', note: 'authorized for coder' }))
+            expect(checkpointTag(t)).toEqual({ text: 'sent on by rhythm@example.org', type: 'default' })
+            expect(checkpointTooltip(t).endsWith('; sent on by rhythm@example.org 2026-09-23T11:00:00Z: authorized for coder')).toBe(true)
+        }
+        const anon = cpTask({}, pending({ state: 'SENT_ON' }))
+        expect(checkpointTag(anon)).toEqual({ text: 'sent on', type: 'default' })
+        expect(checkpointTooltip(anon).endsWith('; sent on')).toBe(true)
+    })
+
+    it('counts the children of a split from the task, not the note', () => {
+        const t = cpTask({ status: 'QUEUED', childTasks: ['a', 'b'] },
+            pending({ state: 'SPLIT', settledBy: { kind: 'SESSION', uuid: 'abcdef0123', name: null }, settledAt: '2026-09-23T11:00:00Z',
+                note: '3 children: X-1, X-2, X-3' }))
+        expect(checkpointTag(t)).toEqual({ text: 'split into 2', type: 'default' })
+        expect(checkpointTooltip(t)).toContain('; split by session abcdef01 2026-09-23T11:00:00Z: 3 children')
+        expect(checkpointTag(cpTask({ childTasks: undefined }, pending({ state: 'SPLIT' })))?.text).toBe('split into 0')
+    })
+
+    it('says nothing without a record, and the design when afterRole is missing', () => {
+        expect(checkpointTag(cpTask({}, null))).toBeNull()
+        expect(checkpointTooltip(cpTask({}, null))).toBe('')
+        expect(checkpointTooltip(cpTask({ status: 'AWAITING_COORDINATOR' }, pending({ afterRole: null }))))
+            .toContain('reached after the design ')
+    })
+})

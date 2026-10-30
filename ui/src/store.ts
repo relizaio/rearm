@@ -111,6 +111,7 @@ const AGENT_TASK_SELECTION = `
     stale { rule since minutes message }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    designCheckpoint { reachedAt afterRole beforeRole design state settledBy { kind uuid name } settledAt note }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
     documents {
         uuid
@@ -2913,6 +2914,7 @@ const storeObject : any = {
                                 wipLimit
                                 requireDistinctAgent
                                 blindReview
+                                coordinatorCheckpoint
                                 active
                                 kind
                                 necessity
@@ -3240,6 +3242,7 @@ const storeObject : any = {
                             wipLimit
                             requireDistinctAgent
                             blindReview
+                            coordinatorCheckpoint
                             active
                             requiredCapabilities
                             kind
@@ -3340,6 +3343,7 @@ const storeObject : any = {
                                 wipLimit
                                 requireDistinctAgent
                                 blindReview
+                                coordinatorCheckpoint
                                 active
                                 requiredCapabilities
                                 kind
