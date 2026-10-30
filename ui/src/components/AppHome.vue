@@ -394,6 +394,8 @@
                                         />
                                     </n-gi>
                                     <n-gi span="2">
+                                        <n-checkbox :checked="includeArchivedBranchesSbom" data-testid="include-archived-branches-sbom"
+                                                    style="margin-bottom: 12px;" @update:checked="setIncludeArchivedSbom">Include archived branches</n-checkbox>
                                         <component-branches-table
                                             :data="dtrackSearchReleases"
                                             :org-uuid="myorg?.uuid"
@@ -571,12 +573,13 @@ export default {
 }
 </script>
 <script lang="ts" setup>
-import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, NSpace, NAutoComplete, useNotification, NotificationType } from 'naive-ui'
+import { NTabs, NTabPane, NInputGroup, NInput, NInputNumber, NButton, NDropdown, NForm, NModal, NDataTable, NSelect, NFormItem, NDatePicker, NTooltip, DataTableColumns, NIcon, NGrid, NGi, NDivider, NRadioButton, NRadioGroup, NProgress, NSpin, NTag, NSpace, NAutoComplete, NCheckbox, useNotification, NotificationType } from 'naive-ui'
 import { useStore } from 'vuex'
 import { ComputedRef, h, computed, ref, Ref, onMounted, watch, toRaw } from 'vue'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import GqlQueries from '../utils/graphqlQueries'
+import { branchScopeOf } from '../utils/releaseBranchScope'
 import InstanceHistory from './InstanceHistory.vue'
 import { RouterLink } from 'vue-router'
 import { Commit } from '@vicons/carbon'
@@ -705,6 +708,9 @@ const searchProgress = ref(0)
 const showSearchProgress = ref(false)
 const searchFailed = ref(false)
 const selectedPurl = ref('')
+// TPF-135: the purl click is the only writer of the selection, a new search the only reset point
+const includeArchivedBranchesSbom = ref(false)
+const selectedSbomComponentUuids: Ref<string[]> = ref([])
 
 onMounted(() => {
     if (myorg.value) {
@@ -1005,6 +1011,9 @@ async function searchSbomComponent (e: Event) {
     showDtrackSearchResultsModal.value = true
     dtrackSearchResults.value = []
     dtrackSearchReleases.value = []
+    selectedPurl.value = ''
+    selectedSbomComponentUuids.value = []
+    includeArchivedBranchesSbom.value = false
     showSearchProgress.value = true
     searchProgress.value = 0
     searchFailed.value = false
@@ -1051,15 +1060,16 @@ async function searchReleasesBySbomComponents (sbomComponentUuids: string[]) {
     try {
         const variables: any = {
             orgUuid: myorg.value.uuid,
-            sbomComponentUuids
+            sbomComponentUuids,
+            branchScope: branchScopeOf(includeArchivedBranchesSbom.value)
         }
         if (currentPerspectiveUuid.value && currentPerspectiveUuid.value !== 'default') {
             variables.perspectiveUuid = currentPerspectiveUuid.value
         }
         const response = await graphqlClient.query({
             query: gql`
-                query releasesBySbomComponents($orgUuid: ID!, $sbomComponentUuids: [ID]!, $perspectiveUuid: ID) {
-                    releasesBySbomComponents(orgUuid: $orgUuid, sbomComponentUuids: $sbomComponentUuids, perspectiveUuid: $perspectiveUuid) {
+                query releasesBySbomComponents($orgUuid: ID!, $sbomComponentUuids: [ID]!, $perspectiveUuid: ID, $branchScope: ReleaseBranchScope) {
+                    releasesBySbomComponents(orgUuid: $orgUuid, sbomComponentUuids: $sbomComponentUuids, perspectiveUuid: $perspectiveUuid, branchScope: $branchScope) {
                         uuid
                         name
                         type
@@ -1255,7 +1265,15 @@ async function handlePurlSearchClick (row: any) {
     // sbomComponents is the canonical sbom_components.uuid array (typically length 1
     // since canonical purls are deduplicated globally; the array shape is preserved
     // for parity with the legacy projects field).
-    searchReleasesBySbomComponents(row.sbomComponents || [])
+    selectedSbomComponentUuids.value = row.sbomComponents || []
+    searchReleasesBySbomComponents(selectedSbomComponentUuids.value)
+}
+
+function setIncludeArchivedSbom (checked: boolean) {
+    includeArchivedBranchesSbom.value = checked
+    if (selectedSbomComponentUuids.value.length > 0) {
+        searchReleasesBySbomComponents(selectedSbomComponentUuids.value)
+    }
 }
 
 // Removed dtrackSearchReleaseRows - now using ComponentBranchesTable component

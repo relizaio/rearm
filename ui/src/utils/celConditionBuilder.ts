@@ -6,10 +6,12 @@
 // an unapproved release. The backend refuses a trivially-true condition as well
 // (CelEvaluatorService.validateRuleCondition); isTriviallyTrueCel is its client-side twin.
 
-export type ConditionType = 'LIFECYCLE' | 'BRANCH_TYPE' | 'APPROVAL_ENTRY' | 'ANY_APPROVAL' | 'METRICS' | 'FIRST_SCANNED'
+export type ConditionType = 'LIFECYCLE' | 'BRANCH_TYPE' | 'APPROVAL_ENTRY' | 'ANY_APPROVAL' | 'METRICS' | 'FIRST_SCANNED' | 'BOM_SCAN_STATE'
 export type MetricField = 'criticalVulns' | 'highVulns' | 'mediumVulns' | 'lowVulns' | 'unassignedVulns'
     | 'securityViolations' | 'operationalViolations' | 'licenseViolations'
 export type CompOp = '==' | '!=' | '>' | '>=' | '<' | '<='
+export type BomScanState = 'NO_BOMS' | 'ALL_SCANNABLE' | 'SOME_NOT_SCANNABLE' | 'ALL_NOT_SCANNABLE'
+export const BOM_SCAN_STATES: readonly BomScanState[] = ['NO_BOMS', 'ALL_SCANNABLE', 'SOME_NOT_SCANNABLE', 'ALL_NOT_SCANNABLE'] as const
 
 export interface LifecycleCondition   { type: 'LIFECYCLE';      lifecycles: string[] }
 export interface BranchTypeCondition  { type: 'BRANCH_TYPE';    branchTypes: string[] }
@@ -17,7 +19,9 @@ export interface ApprovalEntryCondition { type: 'APPROVAL_ENTRY'; approvalEntry:
 export interface AnyApprovalCondition { type: 'ANY_APPROVAL'; approvalState: 'APPROVED' | 'DISAPPROVED' }
 export interface MetricsCondition     { type: 'METRICS';        metricField: MetricField; operator: CompOp; value: number }
 export interface FirstScannedCondition { type: 'FIRST_SCANNED'; present: boolean }
+export interface BomScanStateCondition { type: 'BOM_SCAN_STATE'; operator: '==' | '!='; state: BomScanState }
 export type Condition = LifecycleCondition | BranchTypeCondition | ApprovalEntryCondition | AnyApprovalCondition | MetricsCondition | FirstScannedCondition
+    | BomScanStateCondition
 
 export interface ConditionGroup { operator: 'AND' | 'OR'; conditions: Condition[] }
 export interface BuilderState   { topOperator: 'AND' | 'OR'; groups: ConditionGroup[] }
@@ -33,7 +37,8 @@ export function incompleteReason(c: Condition): string | null {
     case 'METRICS':        return (c.value === null || c.value === undefined || Number.isNaN(c.value))
         ? 'Metrics has no value' : null
     case 'ANY_APPROVAL':
-    case 'FIRST_SCANNED':  return null
+    case 'FIRST_SCANNED':
+    case 'BOM_SCAN_STATE': return null
     }
 }
 
@@ -79,6 +84,8 @@ export function conditionToCel(c: Condition): string | null {
         return `release.${c.metricField} ${c.operator} ${c.value}`
     case 'FIRST_SCANNED':
         return `release.firstScanned == ${c.present}`
+    case 'BOM_SCAN_STATE':
+        return `release.bomScanState ${c.operator} "${c.state}"`
     }
 }
 
@@ -177,6 +184,10 @@ export function parseCondition(expr: string): Condition | null {
     // FIRST_SCANNED
     m = s.match(/^release\.firstScanned\s*==\s*(true|false)$/)
     if (m) return { type: 'FIRST_SCANNED', present: m[1] === 'true' }
+
+    // BOM_SCAN_STATE: release.bomScanState ==|!= "STATE", one of BOM_SCAN_STATES
+    m = s.match(new RegExp(`^release\\.bomScanState\\s*(==|!=)\\s*"(${BOM_SCAN_STATES.join('|')})"$`))
+    if (m) return { type: 'BOM_SCAN_STATE', operator: m[1] as '==' | '!=', state: m[2] as BomScanState }
 
     // METRICS: release.FIELD OP NUMBER
     const metricFields = 'criticalVulns|highVulns|mediumVulns|lowVulns|unassignedVulns|securityViolations|operationalViolations|licenseViolations'

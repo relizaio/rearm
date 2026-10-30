@@ -17,7 +17,29 @@
 // stop asking for a rejected one for a while, uses `loadRichestServed`
 // instead (the findings modal, the vulnerability details panel).
 
+import gql from 'graphql-tag'
 import type { DocumentNode } from 'graphql'
+
+// A selection the UI needs only where the backend has it is declared on one line tagged with this
+// GraphQL comment; the document without those lines is the one every backend serves.
+export const ADDITIVE_FIELD_MARKER = '#additive-field'
+
+// TPF-133: a second tier for a field a later backend commit introduced (DependencyTrackMetrics.bomScan).
+// A tier's marker STARTS WITH the base marker, so the core strip (the default marker) removes every
+// tier, and a strip by a tier's own marker removes that tier alone.
+export const BOM_SCAN_FIELD_MARKER = '#additive-field:bomScan'
+
+/** The text without the lines that carry the marker (by default every #additive-field line, of any tier). */
+export function stripAdditiveFields (queryText: string, marker: string = ADDITIVE_FIELD_MARKER): string {
+    return queryText.split('\n').filter((line) => !line.includes(marker)).join('\n')
+}
+
+/** The document without the lines that carry the marker: parsed once from the full document's own source. */
+export function withoutAdditiveFields (doc: DocumentNode, marker: string = ADDITIVE_FIELD_MARKER): DocumentNode {
+    const body = doc.loc?.source?.body
+    if (!body) throw new Error('withoutAdditiveFields needs a document parsed from source')
+    return gql(stripAdditiveFields(body, marker))
+}
 
 export type GraphqlErrorKind = 'validation' | 'network' | 'other'
 
@@ -165,6 +187,104 @@ export async function loadWithSchemaDriftFallback (
         // The narrower query failed too. If we had a FULL error, surface THAT
         // (it reflects the real first failure); otherwise surface this one.
         throw fullError ?? err
+    }
+}
+
+/** A session verdict on whether the backend serves a preferred document (store.ts flags). */
+export interface LatchedFallbackLatch {
+    /** true until the session proved the preferred document unsupported */
+    supported: () => boolean
+    /** called once, after the fallback was SERVED following a drift refusal of the preferred document */
+    markUnsupported: (driftError: any) => void
+}
+
+export interface LatchedFallbackOptions<T> {
+    preferred: DocumentNode
+    fallback: DocumentNode
+    /** sends one document: graphqlClient.query({ query: doc, ... }) or graphqlClient.mutate({ mutation: doc, ... }) */
+    send: (doc: DocumentNode) => Promise<T>
+    latch: LatchedFallbackLatch
+}
+
+export interface LatchedFallbackResult<T> { data: T, served: 'preferred' | 'fallback' }
+
+/** One richer document and the session verdict that gates it (TPF-133). */
+export interface LatchedTier { doc: DocumentNode, latch: LatchedFallbackLatch }
+
+export interface LatchedTiersOptions<T> {
+    /** richest first; a tier's document is sent only while its latch AND every later tier's latch hold */
+    tiers: LatchedTier[]
+    /** the document every backend serves */
+    core: DocumentNode
+    send: (doc: DocumentNode) => Promise<T>
+}
+
+/** served: the index of the tier that answered, or tiers.length for the core */
+export interface LatchedTiersResult<T> { data: T, served: number }
+
+// The TPF-101 state machine over several tiers (TPF-127's sendWithLatchedFallback is the one-tier case).
+// Tiers are tried richest first. A tier is skipped while its own latch or a later tier's latch is
+// down (a document is sent only while every field it carries is believed supported). A schema-drift
+// refusal (isSchemaDriftError) of a tier moves on to the next; when a later document is SERVED, every
+// tier refused in this call is marked unsupported, in order, and only then (nothing served, nothing
+// remembered). Any other error of any document is rethrown unchanged, nothing else is sent and no
+// latch moves; an error of the core is rethrown unchanged and no latch moves.
+export async function sendWithLatchedTiers<T> (opts: LatchedTiersOptions<T>): Promise<LatchedTiersResult<T>> {
+    const { tiers, core, send } = opts
+    const refused: Array<{ latch: LatchedFallbackLatch, err: any }> = []
+    for (let i = 0; i < tiers.length; i++) {
+        if (!tiers.slice(i).every((t) => t.latch.supported())) continue
+        try {
+            const data = await send(tiers[i].doc)
+            for (const r of refused) r.latch.markUnsupported(r.err)
+            return { data, served: i }
+        } catch (err: any) {
+            if (!isSchemaDriftError(err)) throw err
+            refused.push({ latch: tiers[i].latch, err })
+        }
+    }
+    const data = await send(core)
+    for (const r of refused) r.latch.markUnsupported(r.err)
+    return { data, served: tiers.length }
+}
+
+// The preferred document goes out while the latch holds. A schema-drift refusal (isSchemaDriftError)
+// sends the fallback with the same variables and policy, and only when THAT was served is the latch set,
+// so the refused document is not sent again until a reload (the loadRichestServed rule: nothing served,
+// nothing remembered). Any other error of the preferred document is rethrown unchanged and nothing else
+// is sent; an error of the fallback is rethrown unchanged and the latch is untouched. (TPF-101's
+// loadComponentRows, generalised for TPF-127; the one-tier case of sendWithLatchedTiers since TPF-133.)
+export async function sendWithLatchedFallback<T> (opts: LatchedFallbackOptions<T>): Promise<LatchedFallbackResult<T>> {
+    const { preferred, fallback, send, latch } = opts
+    const r = await sendWithLatchedTiers<T>({ tiers: [{ doc: preferred, latch }], core: fallback, send })
+    return { data: r.data, served: r.served === 0 ? 'preferred' : 'fallback' }
+}
+
+/**
+ * The session latch of the artifact scan state (TPF-127): the two sides sendWithLatchedFallback needs,
+ * defined once for a store action's context and for a component's useStore() instance. The flag and the
+ * mutation it names are declared in store.ts (state artifactScanStateSupported, mutation
+ * SET_ARTIFACT_SCAN_STATE_SUPPORTED); defined here, in a module that imports no store, so a component
+ * shares the definition without importing the store module (component specs mock vuex as { useStore }).
+ */
+export function artifactScanStateLatch (store: { state: any, commit: (type: string, payload?: any) => void }): LatchedFallbackLatch {
+    return {
+        supported: () => store.state.artifactScanStateSupported,
+        markUnsupported: (err: any) => {
+            console.error('Artifact.metrics.notScannable not available on this backend; release documents are sent without it', err)
+            store.commit('SET_ARTIFACT_SCAN_STATE_SUPPORTED', false)
+        }
+    }
+}
+
+/** The session latch of the release BOM scan tally (TPF-133), the second tier; store.ts declares the flag and the mutation. */
+export function releaseBomScanLatch (store: { state: any, commit: (type: string, payload?: any) => void }): LatchedFallbackLatch {
+    return {
+        supported: () => store.state.releaseBomScanSupported,
+        markUnsupported: (err: any) => {
+            console.error('DependencyTrackMetrics.bomScan not available on this backend; the list documents are sent without it', err)
+            store.commit('SET_RELEASE_BOM_SCAN_SUPPORTED', false)
+        }
     }
 }
 
