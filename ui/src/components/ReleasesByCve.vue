@@ -8,6 +8,8 @@
         :auto-focus="false"
     >
         <n-spin :show="loading">
+            <n-checkbox :checked="includeArchivedBranches" data-testid="include-archived-branches"
+                        style="margin-bottom: 12px;" @update:checked="setIncludeArchived">Include archived branches</n-checkbox>
             <n-alert
                 v-if="truncated"
                 type="warning"
@@ -42,7 +44,7 @@ export default {
 
 <script lang="ts" setup>
 import { ref, computed, watch, h } from 'vue'
-import { NModal, NSpin, NAlert, useNotification } from 'naive-ui'
+import { NModal, NSpin, NAlert, NCheckbox, useNotification } from 'naive-ui'
 import gql from 'graphql-tag'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
@@ -50,6 +52,7 @@ import ComponentBranchesTable from './ComponentBranchesTable.vue'
 import VulnerabilityDetailsModal from './VulnerabilityDetailsModal.vue'
 import { useVulnerabilityDetail } from '@/utils/useVulnerabilityDetail'
 import { findingTypeOfSearchedId, renderFindingId } from '@/utils/findingUtils'
+import { branchScopeOf } from '@/utils/releaseBranchScope'
 
 const notification = useNotification()
 
@@ -70,6 +73,8 @@ const componentData = ref<any[]>([])
 const totalReleases = ref(0)
 const shownReleases = ref(0)
 const truncated = ref(false)
+// TPF-135: unchecked per search; checked re-runs the search over every branch
+const includeArchivedBranches = ref(false)
 
 const { vulnDetail, openVulnDetail } = useVulnerabilityDetail(() => props.orgUuid)
 
@@ -90,6 +95,9 @@ const show = computed({
 })
 
 watch(() => props.show, async (newVal) => {
+    if (newVal) {
+        includeArchivedBranches.value = false
+    }
     if (newVal && props.cveId && props.orgUuid) {
         await fetchReleases()
     }
@@ -102,13 +110,18 @@ watch(() => props.cveId, async (newVal) => {
     }
 })
 
+async function setIncludeArchived (checked: boolean) {
+    includeArchivedBranches.value = checked
+    await fetchReleases()
+}
+
 const fetchReleases = async () => {
     loading.value = true
     try {
         const response = await graphqlClient.query({
             query: gql`
-                query searchReleasesByCveId($org: ID!, $cveId: String!, $perspectiveUuid: ID) {
-                    searchReleasesByCveId(org: $org, cveId: $cveId, perspectiveUuid: $perspectiveUuid) {
+                query searchReleasesByCveId($org: ID!, $cveId: String!, $perspectiveUuid: ID, $branchScope: ReleaseBranchScope) {
+                    searchReleasesByCveId(org: $org, cveId: $cveId, perspectiveUuid: $perspectiveUuid, branchScope: $branchScope) {
                         totalReleases
                         shownReleases
                         truncated
@@ -147,7 +160,8 @@ const fetchReleases = async () => {
             variables: {
                 org: props.orgUuid,
                 cveId: props.cveId,
-                perspectiveUuid: props.perspectiveUuid || null
+                perspectiveUuid: props.perspectiveUuid || null,
+                branchScope: branchScopeOf(includeArchivedBranches.value)
             },
             fetchPolicy: 'no-cache'
         })
