@@ -100,12 +100,18 @@ describe('AutoIntegratePreviewPanel (row 21)', () => {
         expect(i.text()).toContain('ignored')
     })
 
-    it('(f) a matching release links the existing release', () => {
+    it('(f) a matching release names the existing release once, as the link in the outcome line', () => {
         const w = open(ev({ outcome: 'MATCHING_PRODUCT_RELEASE_EXISTS', existingRelease: relA, dependencies: [c1] }))
         const a = w.get('[data-testid="auto-integrate-preview-existing-release"]')
         expect(a.element.tagName).toBe('A')
         expect(a.attributes('href')).toBe('/release/show/r1')
         expect(a.text().startsWith('1.0.0 (Assembled')).toBe(true)
+        const line = a.element.parentElement as HTMLElement
+        expect(line.textContent).toBe(`Not created: a matching product release already exists: ${a.text()}.`)
+        const alert = w.get('[data-testid="auto-integrate-preview-outcome"]')
+        expect(alert.text()).not.toContain('Existing release:')
+        expect(alert.text().split('1.0.0 (Assembled')).toHaveLength(2, 'the release is named once')
+        expect(w.findAll('[data-testid="auto-integrate-preview-existing-release"]')).toHaveLength(1)
         expect(alertType(w)).toBe('info')
         expect(w.find('[data-testid="auto-integrate-preview-projected-version"]').exists()).toBe(false)
     })
@@ -134,7 +140,24 @@ describe('AutoIntegratePreviewPanel (row 21)', () => {
         expect(w.get('[data-testid="auto-integrate-preview-table"]').findAll('a')).toHaveLength(0)
         expect(row(w, 'c1').text()).toContain('api')
         expect(row(w, 'c1').text()).toContain('1.0.0 (Assembled')
-        expect(w.get('[data-testid="auto-integrate-preview-existing-release"]').element.tagName).not.toBe('A')
+        const plain = w.get('[data-testid="auto-integrate-preview-existing-release"]')
+        expect(plain.element.tagName).not.toBe('A')
+        // still the one line, the release as plain text inside it
+        expect((plain.element.parentElement as HTMLElement).textContent)
+            .toBe(`Not created: a matching product release already exists: ${plain.text()}.`)
+        expect(w.get('[data-testid="auto-integrate-preview-outcome"]').text()).not.toContain('Existing release:')
+    })
+
+    it('(i2) a refused create that carries the existing release keeps its own Existing release line', () => {
+        const w = open(ev({ outcome: 'CREATE_FAILED', existingRelease: relA, note: 'the create step was declined' }))
+        const alert = w.get('[data-testid="auto-integrate-preview-outcome"]')
+        expect(alert.text()).toContain('Not created: the create step was declined')
+        const a = w.get('[data-testid="auto-integrate-preview-existing-release"]')
+        expect(a.element.tagName).toBe('A')
+        expect(a.attributes('href')).toBe('/release/show/r1')
+        const line = a.element.parentElement as HTMLElement
+        expect(line.textContent?.trim().startsWith('Existing release:')).toBe(true)
+        expect(w.findAll('[data-testid="auto-integrate-preview-existing-release"]')).toHaveLength(1)
     })
 
     it('(j) Close emits close once', async () => {

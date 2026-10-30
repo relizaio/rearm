@@ -1,8 +1,12 @@
 <template>
     <div class="autoIntegratePreviewPanel mt-3" data-testid="auto-integrate-preview-panel">
         <n-alert :type="alertTypeFor(evaluation.outcome)" :title="'Auto Integrate preview'" data-testid="auto-integrate-preview-outcome">
-            <div>{{ outcomeLine(evaluation, words) }}</div>
-            <div v-if="evaluation.existingRelease">
+            <!-- The matching outcome names its release once, as the link inside the sentence (text interpolation only). -->
+            <div>{{ outcome.before }}<template v-if="outcome.release"><a v-if="existingReleaseHref" :href="existingReleaseHref"
+                target="_blank" rel="noopener noreferrer" data-testid="auto-integrate-preview-existing-release">{{
+                    releaseText(outcome.release) }}</a><span v-else data-testid="auto-integrate-preview-existing-release">{{
+                    releaseText(outcome.release) }}</span></template>{{ outcome.after }}</div>
+            <div v-if="showsExistingReleaseLine(evaluation)">
                 Existing release:
                 <a v-if="existingReleaseHref" :href="existingReleaseHref" target="_blank" rel="noopener noreferrer"
                     data-testid="auto-integrate-preview-existing-release">{{ releaseText(evaluation.existingRelease) }}</a>
@@ -25,7 +29,7 @@
 import { computed, h } from 'vue'
 import { NAlert, NButton, NDataTable, NTag, DataTableColumns } from 'naive-ui'
 import {
-    alertTypeFor, outcomeLine, refLabel, releaseCellText, releaseText, rowKind, sourceLabel,
+    alertTypeFor, outcomeParts, refLabel, releaseCellText, releaseText, rowKind, showsExistingReleaseLine, sourceLabel,
     type AutoIntegrateDependencyRow, type AutoIntegrateEvaluation, type AutoIntegrateReleaseRef, type AutoIntegrateWords, type RowKind
 } from '@/utils/autoIntegratePreview'
 
@@ -42,6 +46,7 @@ const props = defineProps<{
 }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
 
+const outcome = computed(() => outcomeParts(props.evaluation, props.words))
 const existingReleaseHref = computed((): string | null => {
     const uuid = props.evaluation.existingRelease?.uuid
     return uuid && props.releaseHref ? props.releaseHref(uuid) : null
