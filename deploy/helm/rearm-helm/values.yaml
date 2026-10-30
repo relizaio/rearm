@@ -56,8 +56,26 @@ backend:
   enableDtrackCleanupScheduler: false
   # Probe + graceful-shutdown tuning. /api/healthCheck does a real DB query,
   # so it only returns OK once Spring is up and the DB is reachable.
+  #
+  # The startup budget (startupPeriodSeconds x startupFailureThreshold) must
+  # cover the whole boot, Flyway migrations included: a migration that builds
+  # indexes runs inside it, and a pod the startup probe kills mid-migration
+  # rolls that migration back and repeats it on the next start, a crash loop
+  # until the budget is raised. Measured 2026-10 on a database of about 300k
+  # artifacts and 300k releases (sandbox host): the vulnerability-id GIN
+  # indexes of migration V103 build in about 270 s (4.5 min). The default
+  # below is 20 min (240 x 5 s), about four and a half times that, which
+  # also covers slower database storage and estates up to about 1M rows.
+  # An operator with a larger estate, or slower storage, raises
+  # startupFailureThreshold (not startupPeriodSeconds: 5 s keeps a fast
+  # boot detected within 5 s). With more than one replica booting at once,
+  # the other pods fail to take Flyway's migration lock after about 50 s,
+  # exit and are restarted by the kubelet until the first pod's migration
+  # is done; that is expected and needs no change here.
+  # Liveness (tcpSocket) and readiness are suppressed while the startup
+  # probe runs, so long migrations need no change to them.
   startupPeriodSeconds: 5
-  startupFailureThreshold: 60        # ~5 min budget for slow boot (Flyway, etc.)
+  startupFailureThreshold: 240       # 20 min boot budget: Flyway migrations incl. index builds, see above
   readinessPeriodSeconds: 10
   livenessPeriodSeconds: 10
   livenessFailureThreshold: 6        # ~60s of unresponsiveness before restart (GC-pause tolerant); tcpSocket only, not DB-backed
