@@ -5,6 +5,8 @@
 // modal renders in place.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
+import { readFileSync } from 'node:fs'
+import { join } from 'node:path'
 
 const query = vi.fn(async (_: any): Promise<any> => ({ data: {} }))
 const mutate = vi.fn(async (_: any): Promise<any> => ({ data: {} }))
@@ -245,6 +247,24 @@ describe('PermissionTemplatesPanel: New template', () => {
         expect(notify.mock.calls.at(-1)?.[0]).toBe('error')
         expect(notify.mock.calls.at(-1)?.[2]).toContain('too many templates')
         expect(w.find('[data-testid="permission-template-editor"]').exists()).toBe(true)
+    })
+
+    it('is a plus icon with a New template tooltip and label, in a native button', async () => {
+        const { w } = await open()
+        const btn = w.get('[data-testid="new-permission-template"]')
+        expect(btn.element.tagName).toBe('BUTTON')
+        expect(btn.attributes('type')).toBe('button')
+        expect(btn.attributes('title')).toBe('New template')
+        expect(btn.attributes('aria-label')).toBe('New template')
+        expect(btn.attributes('disabled')).toBeUndefined()
+        expect(btn.find('.n-icon svg').exists()).toBe(true)
+        expect(btn.text()).toBe('')
+        const source = readFileSync(join(process.cwd(), 'src/components/PermissionTemplatesPanel.vue'), 'utf8')
+        expect(source).toContain('<n-icon class="icons" size="24"><CirclePlus /></n-icon>')
+        expect(source).toContain("import { CirclePlus, Edit as EditIcon, Trash } from '@vicons/tabler'")
+        const none = mount(Panel, { props: { orgUuid: null, notify: vi.fn() }, global })
+        await flushPromises()
+        expect(none.find('[data-testid="new-permission-template"]').exists()).toBe(false, 'no organization, no list')
     })
 
     it('shows no New template control on a server without templates (CE)', async () => {

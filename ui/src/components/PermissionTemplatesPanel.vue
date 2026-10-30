@@ -1,7 +1,11 @@
 <template>
     <div v-if="supported" class="permission-templates-panel">
         <n-space justify="end" style="margin-bottom: 8px;">
-            <n-button size="small" :disabled="!orgUuid" data-testid="new-permission-template" @click="openNew">New template</n-button>
+            <!-- The plus icon of the other add controls, with its title as the tooltip; a native button for the keyboard. -->
+            <button type="button" class="new-template" :class="orgUuid ? 'clickable' : ''" :disabled="!orgUuid" title="New template"
+                    aria-label="New template" data-testid="new-permission-template" @click="openNew">
+                <n-icon class="icons" size="24"><CirclePlus /></n-icon>
+            </button>
         </n-space>
         <n-data-table
             data-testid="permission-templates-table"
@@ -62,7 +66,7 @@
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { NButton, NDataTable, NFormItem, NIcon, NInput, NModal, NSpace, NSpin, NTooltip, useDialog } from 'naive-ui'
-import { Edit as EditIcon, Trash } from '@vicons/tabler'
+import { CirclePlus, Edit as EditIcon, Trash } from '@vicons/tabler'
 import { Info20Regular } from '@vicons/fluent'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
@@ -293,3 +297,8 @@ const columns = computed(() => [
     }
 ])
 </script>
+
+<style scoped lang="scss">
+.new-template { background: none; border: none; padding: 0; color: inherit; line-height: 0; }
+.new-template:disabled { opacity: 0.5; }
+</style>
