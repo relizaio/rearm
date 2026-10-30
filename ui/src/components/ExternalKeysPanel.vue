@@ -15,7 +15,12 @@
             </div>
         </n-alert>
         <div class="programmaticAccessBlock mt-4">
-            <h5>External Keys</h5>
+            <!-- The create icon right of the heading, as the component view's Branch heading has it. -->
+            <h5 class="listHead" style="display: flex; align-items: center; gap: 8px;">
+                <span>External Keys</span>
+                <n-icon v-if="isOrgAdmin" class="clickable" data-testid="external-key-create" title="Create External Key" size="20"
+                    @click="createExternalKey"><CirclePlus /></n-icon>
+            </h5>
             <n-input v-model:value="externalKeysSearch" clearable class="mb-2" style="max-width: 460px"
                 placeholder="Search keys by uuid, key id, holder or notes" data-testid="keys-search-externalKeys" />
             <n-spin :show="loading">
@@ -24,8 +29,6 @@
                     <template #empty><n-empty data-testid="keys-empty-externalKeys" :description="keysEmptyText(externalKeysSearch)" /></template>
                 </n-data-table>
             </n-spin>
-            <n-icon v-if="isOrgAdmin" class="clickable" data-testid="external-key-create" title="Create External Key" size="24"
-                @click="createExternalKey"><CirclePlus /></n-icon>
         </div>
         <ApiKeyPermissionsModal v-model:show="showGrants" :api-key="grantsKey" :org-uuid="orgUuid" :notify="notify" @saved="reload" />
     </div>

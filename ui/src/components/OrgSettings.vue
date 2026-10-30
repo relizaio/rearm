@@ -712,13 +712,16 @@
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
-                            <h5>Free Form Keys</h5>
+                            <!-- The create icon right of the heading, as the component view's Branch heading has it. -->
+                            <h5 class="listHead" style="display: flex; align-items: center; gap: 8px;">
+                                <span>Free Form Keys</span>
+                                <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
+                                    title="Create Free Form Key" size="20"><CirclePlus /></n-icon>
+                            </h5>
                             <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="2000"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                                 <template #empty><n-empty data-testid="keys-empty-freeFormKeys" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
-                            <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
-                                title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
                         </div>
                     </n-tab-pane>
                     <!-- Groups hold Free Form keys, so they sit beside them (formerly a top-level tab; old links land here). -->
