@@ -1,4 +1,5 @@
 import { describe, expect, it } from 'vitest'
+import { compareHopTimes } from './agentTaskLabels'
 import { agentName, dur, hopHistory, isTerminal, missingRequiredRoles, requiredSignOffsLine, roleName, shortId, statusRowWords,
     statusTone, taskLabel, taskPagePath, ts, tsDate, tsFull } from './agentTaskFormat'
 
@@ -100,5 +101,64 @@ describe('agentTaskFormat', () => {
     it('lines up the required sign-offs still missing', () => {
         expect(requiredSignOffsLine(['reviewer', 'coder'])).toBe('Required sign-offs: reviewer ✗ · coder ✗')
         expect(requiredSignOffsLine([])).toBeNull()
+    })
+})
+
+// The design checkpoint's row in the hop log (task SPLIT-8, T-18 b'): a settled record at its reachedAt, a PENDING one last.
+describe('hopHistory: the design checkpoint row', () => {
+    const reviewer = { role: 'reviewer', signedOffAt: '2026-09-23T09:00:00Z', outcome: 'PASSED' }
+    const rec = (over: Record<string, any> = {}) => ({ reachedAt: '2026-09-23T10:00:00Z', afterRole: 'reviewer', beforeRole: 'coder',
+        design: [], state: 'PENDING', settledBy: null, settledAt: null, note: null, ...over })
+    const kinds = (h: any[]) => h.map(e => `${e.kind}:${e.rec.role ?? e.rec.beforeRole}`)
+
+    it('has no row without a record', () => {
+        expect(hopHistory({ signOffs: [reviewer], returns: [] }).map(e => e.kind)).toEqual(['signoff'])
+    })
+
+    it('puts a PENDING record at the coordinator last, after the review it followed', () => {
+        const h = hopHistory({ status: 'AWAITING_COORDINATOR', role: 'reviewer', signOffs: [reviewer], returns: [], designCheckpoint: rec() })
+        expect(kinds(h)).toEqual(['signoff:reviewer', 'checkpoint:coder'])
+        expect(h[1]).toMatchObject({ kind: 'checkpoint', phase: 'waiting', at: '2026-09-23T10:00:00Z' })
+    })
+
+    it('puts a re-arrived PENDING record last, at the newest hop\'s time', () => {
+        const h = hopHistory({
+            status: 'ASSIGNED', role: 'architect', assignment: { role: 'architect' },
+            signOffs: [reviewer, { role: 'architect', signedOffAt: '2026-09-23T12:00:00Z' }, { role: 'reviewer', signedOffAt: '2026-09-23T13:00:00Z' }],
+            returns: [], designCheckpoint: rec(),
+        })
+        expect(kinds(h)).toEqual(['signoff:reviewer', 'signoff:architect', 'signoff:reviewer', 'checkpoint:coder'])
+        expect(h[3]).toMatchObject({ phase: 'ahead', at: '2026-09-23T13:00:00Z' })
+    })
+
+    it('keeps a PENDING record last on a tie with the newest hop', () => {
+        const h = hopHistory({ status: 'AWAITING_COORDINATOR', signOffs: [{ role: 'reviewer', signedOffAt: '2026-09-23T10:00:00Z' }],
+            returns: [{ role: 'x', returnedAt: '2026-09-22T10:00:00Z' }], designCheckpoint: rec() })
+        expect(h[h.length - 1].kind).toBe('checkpoint')
+    })
+
+    it('picks the PENDING time with the sort\'s own comparator, not by Date', () => {
+        const hop = '2026-09-23T10:00:00.500Z'
+        const h = hopHistory({ status: 'AWAITING_COORDINATOR', signOffs: [{ role: 'reviewer', signedOffAt: hop }], returns: [],
+            designCheckpoint: rec({ reachedAt: '2026-09-23T10:00:00Z' }) })
+        const later = compareHopTimes(hop, '2026-09-23T10:00:00Z') > 0 ? hop : '2026-09-23T10:00:00Z'
+        expect(h[h.length - 1]).toMatchObject({ kind: 'checkpoint', at: later })
+        // The row's time is never earlier than the newest hop's, in the sort's own order.
+        const newest = hopHistory({ status: 'ASSIGNED', signOffs: [{ role: 'reviewer', signedOffAt: '2026-09-25T00:00:00Z' }], returns: [],
+            designCheckpoint: rec() })
+        expect(newest[1].at).toBe('2026-09-25T00:00:00Z')
+        // A PENDING record newer than every hop keeps its reachedAt.
+        expect(hopHistory({ status: 'AWAITING_COORDINATOR', signOffs: [reviewer], returns: [], designCheckpoint: rec() })[1].at)
+            .toBe('2026-09-23T10:00:00Z')
+    })
+
+    it('places a SENT_ON record at its reachedAt, between the review and the coder', () => {
+        const h = hopHistory({
+            status: 'ASSIGNED', role: 'tester', assignment: { role: 'tester' },
+            signOffs: [{ role: 'coder', signedOffAt: '2026-09-24T10:00:00Z' }, reviewer], returns: [],
+            designCheckpoint: rec({ state: 'SENT_ON', settledAt: '2026-09-23T11:00:00Z' }),
+        })
+        expect(kinds(h)).toEqual(['signoff:reviewer', 'checkpoint:coder', 'signoff:coder'])
+        expect(h[1]).toMatchObject({ phase: 'sent_on', at: '2026-09-23T10:00:00Z' })
     })
 })

@@ -50,6 +50,13 @@
             <n-tag v-if="waitingOnLabel(task)" size="small" :bordered="false" type="warning" data-testid="waiting-chip">
                 {{ waitingOnLabel(task) }}
             </n-tag>
+            <!-- The design checkpoint (task SPLIT-8): at it, ahead of it, or who sent the task on or split it. -->
+            <n-tooltip v-if="checkpoint" trigger="hover">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" :type="checkpoint.type" data-testid="checkpoint-chip">{{ checkpoint.text }}</n-tag>
+                </template>
+                {{ checkpointTooltip(task) }}
+            </n-tooltip>
             <n-tag v-for="k in tagKeys(task)" :key="k" size="small" :bordered="false" round class="dhead__tag"
                    data-testid="tag-chip">#{{ k }}</n-tag>
             <slot/>
@@ -64,7 +71,7 @@ import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
 import { missingRequiredRoles, requiredSignOffsLine, statusTone } from '@/utils/agentTaskFormat'
 import { statusWord } from '@/utils/agentWords'
-import { refLabel, roleTagFor } from '@/utils/agentTaskLabels'
+import { checkpointTag, checkpointTooltip, refLabel, roleTagFor } from '@/utils/agentTaskLabels'
 import { levelTooltip, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
@@ -74,6 +81,7 @@ const props = defineProps<{ task: any, board?: any, clamp?: boolean, roles?: any
 // A board without sources is its own tracker: no task has a ref there, and none is a "draft".
 const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
 const roleTag = computed(() => roleTagFor(props.task))
+const checkpoint = computed(() => checkpointTag(props.task))
 const requiredLine = computed(() => requiredSignOffsLine(missingRequiredRoles(props.task, props.roles)))
 </script>
 
