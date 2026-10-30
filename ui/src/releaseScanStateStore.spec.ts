@@ -58,6 +58,7 @@ beforeEach(() => {
     mutate.mockReset()
     store.state.releases = []
     store.state.artifactScanStateSupported = true
+    store.state.releaseBomScanSupported = true
     errorSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
 })
 afterEach(() => errorSpy.mockRestore())
@@ -141,31 +142,134 @@ describe('fetchReleaseById sends the release document with the artifact scan sta
     })
 })
 
-describe('fetchReleases (the branch list) is sent as before (TPF-127, D18)', () => {
-    it.each([true, false])('(f) one FetchReleases document without the field, flag %s', async (flag) => {
-        store.state.artifactScanStateSupported = flag
-        query.mockResolvedValue({ data: { releases: [R] } })
-        await store.dispatch('fetchReleases', { branch: 'b1' })
-        expect(query).toHaveBeenCalledTimes(1)
-        const doc = call(0).query
+describe('fetchReleases (the branch list) sends the BOM scan tally on its own tier (TPF-133)', () => {
+    function expectBranchShape (c: any) {
+        const doc = c.query
         expect(operation(doc).name?.value).toBe('FetchReleases')
         const root = rootField(doc)
         expect(root.name.value).toBe('releases')
         const arg: any = (root.arguments || []).find((a: any) => a.name.value === 'branchFilter')
         expect(arg?.value?.name?.value).toBe('branchID')
-        expect(call(0).variables).toEqual({ branchID: 'b1' })
-        expect(call(0).fetchPolicy).toBe('no-cache')
-        expect(print(doc)).not.toContain('notScannable')
-        expect(errorsAgainst(ceSchema, doc)).toEqual([])
+        expect(c.variables).toEqual({ branchID: 'b1' })
+        expect(c.fetchPolicy).toBe('no-cache')
+    }
+
+    it('(a) both flags true: one call, the full document with bomScan and componentDetails, no artifact marker', async () => {
+        query.mockResolvedValue({ data: { releases: [R] } })
+        await store.dispatch('fetchReleases', { branch: 'b1' })
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(hoisted.FETCH_RELEASES_GQL)
+        expectBranchShape(call(0))
+        const printed = print(call(0).query)
+        expect(printed).toContain('bomScan {')
+        expect(printed).toContain('componentDetails')
+        expect(printed).not.toMatch(/\bnotScannable\b/)
         expect(store.state.releases).toEqual([R])
     })
 
-    it('(f) a drift answer is rethrown unchanged with one call: there is no twin', async () => {
-        const err = drift('anything')
+    it('(b) drift for bomScan then a served core: two calls, B false only after the core resolved, A kept', async () => {
+        let resolveCore: (v: any) => void = () => {}
+        query.mockRejectedValueOnce(drift('bomScan'))
+        query.mockImplementationOnce(() => new Promise((resolve) => { resolveCore = resolve }))
+        const pending = store.dispatch('fetchReleases', { branch: 'b1' })
+        await vi.waitFor(() => expect(query).toHaveBeenCalledTimes(2))
+        expect(call(1).query).toBe(hoisted.FETCH_RELEASES_GQL_CORE)
+        expectBranchShape(call(1))
+        expect(errorsAgainst(ceSchema, call(1).query)).toEqual([])
+        expect(store.state.releaseBomScanSupported).toBe(true)
+        resolveCore({ data: { releases: [R] } })
+        await expect(pending).resolves.toEqual([R])
+        expect(store.state.releaseBomScanSupported).toBe(false)
+        expect(store.state.artifactScanStateSupported).toBe(true)
+        expect(errorSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('(c) B false: one call, the core; A false alone: one call, the full document (A does not gate it)', async () => {
+        query.mockResolvedValue({ data: { releases: [R] } })
+        store.state.releaseBomScanSupported = false
+        await store.dispatch('fetchReleases', { branch: 'b1' })
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(hoisted.FETCH_RELEASES_GQL_CORE)
+        query.mockClear()
+        store.state.releaseBomScanSupported = true
+        store.state.artifactScanStateSupported = false
+        await store.dispatch('fetchReleases', { branch: 'b1' })
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(hoisted.FETCH_RELEASES_GQL)
+    })
+
+    it.each([['500', () => status(500)], ['transport', transport]])(
+        '(d) %s on the full document is rethrown with one call and both flags kept', async (_n, make) => {
+            const err = make()
+            query.mockRejectedValueOnce(err)
+            await expect(store.dispatch('fetchReleases', { branch: 'b1' })).rejects.toBe(err)
+            expect(query).toHaveBeenCalledTimes(1)
+            expect(store.state.releaseBomScanSupported).toBe(true)
+            expect(store.state.artifactScanStateSupported).toBe(true)
+        })
+
+    it('(d) drift then a failing core rejects with the core error and keeps both flags', async () => {
+        const err = status(500)
+        query.mockRejectedValueOnce(drift('bomScan'))
         query.mockRejectedValueOnce(err)
         await expect(store.dispatch('fetchReleases', { branch: 'b1' })).rejects.toBe(err)
-        expect(query).toHaveBeenCalledTimes(1)
+        expect(query).toHaveBeenCalledTimes(2)
+        expect(store.state.releaseBomScanSupported).toBe(true)
         expect(store.state.artifactScanStateSupported).toBe(true)
+    })
+})
+
+describe('fetchReleaseById for a product sends the two-tier product document (TPF-133)', () => {
+    const product = { release: 'r1', org: 'O', product: true }
+
+    it('(e) both flags true: one call, SingleReleaseProductGql', async () => {
+        query.mockResolvedValue({ data: { release: R } })
+        await store.dispatch('fetchReleaseById', product)
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(graphqlQueries.SingleReleaseProductGql)
+    })
+
+    it('(f) drift for bomScan then served: two calls, the second without bomScan; B false after, A true', async () => {
+        query.mockRejectedValueOnce(drift('bomScan'))
+        query.mockResolvedValueOnce({ data: { release: R } })
+        await store.dispatch('fetchReleaseById', product)
+        expect(query).toHaveBeenCalledTimes(2)
+        expect(call(1).query).toBe(graphqlQueries.SingleReleaseProductGqlWithoutBomScan)
+        expect(call(1).variables).toEqual({ releaseID: 'r1', orgID: 'O' })
+        expect(call(1).fetchPolicy).toBe('no-cache')
+        expect(store.state.releaseBomScanSupported).toBe(false)
+        expect(store.state.artifactScanStateSupported).toBe(true)
+        expect(errorSpy).toHaveBeenCalledTimes(1)
+    })
+
+    it('(g) drift, drift, served: three calls ending in the core, both flags false, two console.error', async () => {
+        query.mockRejectedValueOnce(drift('bomScan'))
+        query.mockRejectedValueOnce(drift('notScannable'))
+        query.mockResolvedValueOnce({ data: { release: R } })
+        await store.dispatch('fetchReleaseById', product)
+        expect(query).toHaveBeenCalledTimes(3)
+        expect(call(0).query).toBe(graphqlQueries.SingleReleaseProductGql)
+        expect(call(1).query).toBe(graphqlQueries.SingleReleaseProductGqlWithoutBomScan)
+        expect(call(2).query).toBe(graphqlQueries.SingleReleaseProductGqlCore)
+        expect(store.state.releaseBomScanSupported).toBe(false)
+        expect(store.state.artifactScanStateSupported).toBe(false)
+        expect(errorSpy).toHaveBeenCalledTimes(2)
+    })
+
+    it('(h) A false, B true: one call, the core (no request for a field on a backend proven to lack the earlier one)', async () => {
+        store.state.artifactScanStateSupported = false
+        query.mockResolvedValue({ data: { release: R } })
+        await store.dispatch('fetchReleaseById', product)
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(graphqlQueries.SingleReleaseProductGqlCore)
+    })
+
+    it('(i) B false, A true: one call, the document without bomScan', async () => {
+        store.state.releaseBomScanSupported = false
+        query.mockResolvedValue({ data: { release: R } })
+        await store.dispatch('fetchReleaseById', product)
+        expect(query).toHaveBeenCalledTimes(1)
+        expect(call(0).query).toBe(graphqlQueries.SingleReleaseProductGqlWithoutBomScan)
     })
 })
 

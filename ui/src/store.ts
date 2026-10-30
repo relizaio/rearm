@@ -5,7 +5,7 @@ import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
-import { loadWithSchemaDriftFallback, sendWithLatchedFallback, withoutAdditiveFields, artifactScanStateLatch } from './utils/graphqlDriftFallback'
+import { loadWithSchemaDriftFallback, sendWithLatchedFallback, sendWithLatchedTiers, withoutAdditiveFields, artifactScanStateLatch, releaseBomScanLatch } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
@@ -306,6 +306,17 @@ const REEVALUATE_RELEASE_TRIGGERS_GQL = gql`
                     }`
 const REEVALUATE_RELEASE_TRIGGERS_GQL_CORE = withoutAdditiveFields(REEVALUATE_RELEASE_TRIGGERS_GQL)
 
+// TPF-133: the branch list document of fetchReleases, hoisted (text unchanged) so it has a core twin. Its
+// fragment carries the #additive-field:bomScan line only (no artifact marker line), so the core is also
+// the document without the tally; sent through sendWithLatchedFallback with the release BOM scan latch.
+const FETCH_RELEASES_GQL = gql`
+                    query FetchReleases($branchID: ID!) {
+                        releases(branchFilter: $branchID) {
+                            ${graphqlQueries.BranchReleaseListGqlData}
+                        }
+                    }`
+const FETCH_RELEASES_GQL_CORE = withoutAdditiveFields(FETCH_RELEASES_GQL)
+
 const storeObject : any = {
     state () {
         return {
@@ -351,6 +362,16 @@ const storeObject : any = {
              * refusal whose fallback failed too.
              */
             artifactScanStateSupported: true,
+            /**
+             * False once a list or product document carrying the release BOM scan tally (the
+             * #additive-field:bomScan line of graphqlQueries, TPF-133) was refused as schema drift AND the
+             * same document without that line was then served: a backend without
+             * DependencyTrackMetrics.bomScan (a CE mirror, or a Pro backend that has the artifact marker
+             * but not the tally). The lists then read no server state for the session and render as
+             * TPF-127 left them; the artifact marker is unaffected (its own flag above). A reload clears
+             * it; a refusal of another kind does not set it, nor a drift refusal whose fallback failed.
+             */
+            releaseBomScanSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -604,6 +625,9 @@ const storeObject : any = {
         },
         SET_ARTIFACT_SCAN_STATE_SUPPORTED (state : any, supported : boolean) {
             state.artifactScanStateSupported = supported
+        },
+        SET_RELEASE_BOM_SCAN_SUPPORTED (state : any, supported : boolean) {
+            state.releaseBomScanSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -1074,15 +1098,11 @@ const storeObject : any = {
             return response.data.component
         },
         async fetchReleases (context: any, params: any) {
-            const response = await graphqlClient.query({
-                query: gql`
-                    query FetchReleases($branchID: ID!) {
-                        releases(branchFilter: $branchID) {
-                            ${graphqlQueries.BranchReleaseListGqlData}
-                        }
-                    }`,
-                variables: { branchID: params.branch },
-                fetchPolicy: 'no-cache'
+            const { data: response } = await sendWithLatchedFallback<any>({
+                preferred: FETCH_RELEASES_GQL,
+                fallback: FETCH_RELEASES_GQL_CORE,
+                send: (query) => graphqlClient.query({ query, variables: { branchID: params.branch }, fetchPolicy: 'no-cache' }),
+                latch: releaseBomScanLatch(context)
             })
             context.commit('ADD_RELEASES', response.data.releases)
             return response.data.releases
@@ -1183,14 +1203,26 @@ const storeObject : any = {
                     fetchPolicy: 'no-cache'
                 })
             } else {
-                const product = !!params.product
-                const sent = await sendWithLatchedFallback<any>({
-                    preferred: product ? graphqlQueries.SingleReleaseProductGql : graphqlQueries.SingleReleaseGql,
-                    fallback: product ? graphqlQueries.SingleReleaseProductGqlCore : graphqlQueries.SingleReleaseGqlCore,
-                    send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' }),
-                    latch: artifactScanStateLatch(context)
-                })
-                response = sent.data
+                const send = (query: any) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
+                if (params.product) {
+                    const sent = await sendWithLatchedTiers<any>({
+                        tiers: [
+                            { doc: graphqlQueries.SingleReleaseProductGql, latch: releaseBomScanLatch(context) },
+                            { doc: graphqlQueries.SingleReleaseProductGqlWithoutBomScan, latch: artifactScanStateLatch(context) }
+                        ],
+                        core: graphqlQueries.SingleReleaseProductGqlCore,
+                        send
+                    })
+                    response = sent.data
+                } else {
+                    const sent = await sendWithLatchedFallback<any>({
+                        preferred: graphqlQueries.SingleReleaseGql,
+                        fallback: graphqlQueries.SingleReleaseGqlCore,
+                        send,
+                        latch: artifactScanStateLatch(context)
+                    })
+                    response = sent.data
+                }
             }
             context.commit('ADD_RELEASE', response.data.release)
             return response.data.release
@@ -4534,7 +4566,9 @@ export const releaseScanStateDocumentsForTests = {
     UPDATE_RELEASE_LIFECYCLE_GQL,
     UPDATE_RELEASE_LIFECYCLE_GQL_CORE,
     REEVALUATE_RELEASE_TRIGGERS_GQL,
-    REEVALUATE_RELEASE_TRIGGERS_GQL_CORE
+    REEVALUATE_RELEASE_TRIGGERS_GQL_CORE,
+    FETCH_RELEASES_GQL,
+    FETCH_RELEASES_GQL_CORE
 }
 
 export default {

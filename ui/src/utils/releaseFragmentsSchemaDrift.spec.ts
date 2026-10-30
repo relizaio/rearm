@@ -2,6 +2,7 @@ import { describe, it, expect } from 'vitest'
 import { validate, parse } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { ceSchema, proSchema } from './schemaDriftSupport'
+import { stripAdditiveFields } from './graphqlDriftFallback'
 
 // These release selection sets are interpolated into `gql` templates at
 // runtime (store.fetchReleasesByOrgUuids and friends). scripts/validate-graphql
@@ -17,6 +18,11 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 // resolves and there is nothing to skip; and against Pro when a sibling
 // rearm-core checkout is present. CE is expected to match Pro (it may lag on
 // updates), so a field valid on CE is valid on Pro.
+//
+// TPF-133: the branch list fragment now carries a tagged line (the release BOM scan tally, on the
+// #additive-field:bomScan tier), which CE lacks; so the CE row validates each fragment with its tagged
+// lines stripped (the core every backend is sent; a no-op for the two fragments without one), and the
+// fragments as written are validated against Pro.
 
 // Every fragment here is a selection set on Release, so each one is checked in
 // the operation shape the UI actually sends it in.
@@ -105,7 +111,11 @@ describe('single-release documents vs the CE schema', () => {
 })
 
 describe('release selection fragments vs the CE schema', () => {
-    it.each(RELEASE_FRAGMENTS)('%s is valid against the CE schema', (_name, fragment) => {
-        expect(validate(ceSchema, asReleaseQuery(fragment)).map(e => e.message)).toEqual([])
+    it.each(RELEASE_FRAGMENTS)('%s without its tagged lines is valid against the CE schema', (_name, fragment) => {
+        expect(validate(ceSchema, asReleaseQuery(stripAdditiveFields(fragment))).map(e => e.message)).toEqual([])
+    })
+
+    it.runIf(proSchema).each(RELEASE_FRAGMENTS)('%s is valid against the Pro schema', (_name, fragment) => {
+        expect(validate(proSchema!, asReleaseQuery(fragment)).map(e => e.message)).toEqual([])
     })
 })

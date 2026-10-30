@@ -1,5 +1,5 @@
 import gql from 'graphql-tag'
-import { withoutAdditiveFields } from './graphqlDriftFallback'
+import { withoutAdditiveFields, BOM_SCAN_FIELD_MARKER } from './graphqlDriftFallback'
 
 // TPF-127 (TPF-125 part 2): the fan-out's not-scannable marker on a BOM artifact. One line, tagged
 // #additive-field, so a server without the field (a CE mirror before its sync) is served the same
@@ -21,6 +21,15 @@ export const CHILD_SCAN_INPUT_ARTIFACT_FIELDS = `type componentUuid enrichmentSt
 export const CHILD_RELEASE_SCAN_INPUTS_LINE = `artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } #additive-field`
 export const CHILD_RELEASE_SCE_SCAN_INPUTS_LINE = `sourceCodeEntryDetails { uuid artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } } #additive-field`
 export const CHILD_RELEASE_DELIVERABLE_SCAN_INPUTS_LINE = `variantDetails { uuid outboundDeliverableDetails { uuid artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } } } #additive-field`
+// TPF-133: the server's BOM scan tally of a release (DependencyTrackMetrics.bomScan), the statement
+// releaseBomScanState reads first, on the documents whose rows hold a partial artifact set (the lists)
+// and on the product page's child rows. Its own marker tier, #additive-field:bomScan: a server that has
+// the artifact marker but not yet the tally is served the document without this line and keeps the
+// marker (withoutAdditiveFields(doc, BOM_SCAN_FIELD_MARKER), releaseBomScanLatch); the core strip removes
+// every tier, because every tier's marker starts with #additive-field. RULE as above: one self-contained
+// line. The list field is reasons, the served name (not the longer name of the record component behind it).
+export const RELEASE_BOM_SCAN_LINE = `bomScan { state scannableBoms notScannableBoms reasons } #additive-field:bomScan`
+export const RELEASE_BOM_SCAN_LIST_LINE = `metrics { bomScan { state scannableBoms notScannableBoms reasons } } #additive-field:bomScan`
 
 const MULTI_RELEASE_GQL_DATA = `
     createdDate
@@ -170,6 +179,7 @@ const BRANCH_RELEASE_LIST_GQL_DATA = `
         policyViolationsSecurityTotal
         policyViolationsLicenseTotal
         policyViolationsOperationalTotal
+        ${RELEASE_BOM_SCAN_LINE}
     }
     artifactDetails {
         enrichmentStatus
@@ -178,6 +188,9 @@ const BRANCH_RELEASE_LIST_GQL_DATA = `
             dependencyTrackFullUri
             firstScanned
         }
+    }
+    componentDetails {
+        type
     }
 `
 
@@ -1956,6 +1969,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 policyViolationsSecurityTotal
                 policyViolationsLicenseTotal
                 policyViolationsOperationalTotal
+                ${RELEASE_BOM_SCAN_LINE}
             }
             tags {
                 key
@@ -1996,6 +2010,7 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                         policyViolationsSecurityTotal
                         policyViolationsLicenseTotal
                         policyViolationsOperationalTotal
+                        ${RELEASE_BOM_SCAN_LINE}
                     }
                     tags {
                         key
@@ -2030,6 +2045,7 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
     }
 }`
 const SINGLE_RELEASE_PRODUCT_GQL_CORE = withoutAdditiveFields(SINGLE_RELEASE_PRODUCT_GQL)
+const SINGLE_RELEASE_PRODUCT_GQL_WITHOUT_BOM_SCAN = withoutAdditiveFields(SINGLE_RELEASE_PRODUCT_GQL, BOM_SCAN_FIELD_MARKER)
 
 const BRANCHES_GQL = gql`
 query FetchBranches($componentUuid: ID!) {
@@ -2300,9 +2316,11 @@ query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!,
     releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
         ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
+        ${RELEASE_BOM_SCAN_LIST_LINE}
     }
 }`
 const RELEASES_BY_DATE_RANGE_GQL_CORE = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_GQL)
+const RELEASES_BY_DATE_RANGE_GQL_WITHOUT_BOM_SCAN = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_GQL, BOM_SCAN_FIELD_MARKER)
 
 // Most recent releases of a component across all its branches, for the
 // component page's Latest tab. branchDetails is widened beyond the shared
@@ -2312,6 +2330,7 @@ query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
     latestReleasesOfComponent(componentUuid: $componentUuid, limit: $limit) {
         ${MULTI_RELEASE_GQL_DATA}
         ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
+        ${RELEASE_BOM_SCAN_LIST_LINE}
         branchDetails {
             uuid
             name
@@ -2321,14 +2340,17 @@ query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
     }
 }`
 const LATEST_RELEASES_OF_COMPONENT_GQL_CORE = withoutAdditiveFields(LATEST_RELEASES_OF_COMPONENT_GQL)
+const LATEST_RELEASES_OF_COMPONENT_GQL_WITHOUT_BOM_SCAN = withoutAdditiveFields(LATEST_RELEASES_OF_COMPONENT_GQL, BOM_SCAN_FIELD_MARKER)
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
 query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
     releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
         ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
+        ${RELEASE_BOM_SCAN_LIST_LINE}
     }
 }`
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL_CORE = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL)
+const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL_WITHOUT_BOM_SCAN = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL, BOM_SCAN_FIELD_MARKER)
 
 export default {
     BranchGql: BRANCH_GQL_DATA,
@@ -2405,4 +2427,8 @@ export default {
     ReleaseGqlMutateCore: RELEASE_GQL_MUTATE_CORE,
     ReleaseTagsMetaGqlMutateCore: RELEASE_TAGS_META_GQL_MUTATE_CORE,
     ApproveReleaseGqlMutateCore: APPROVE_RELEASE_GQL_MUTATE_CORE,
+    ReleasesByDateRangeGqlWithoutBomScan: RELEASES_BY_DATE_RANGE_GQL_WITHOUT_BOM_SCAN,
+    LatestReleasesOfComponentGqlWithoutBomScan: LATEST_RELEASES_OF_COMPONENT_GQL_WITHOUT_BOM_SCAN,
+    ReleasesByDateRangeAndPerspectiveGqlWithoutBomScan: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL_WITHOUT_BOM_SCAN,
+    SingleReleaseProductGqlWithoutBomScan: SINGLE_RELEASE_PRODUCT_GQL_WITHOUT_BOM_SCAN,
 }

@@ -55,7 +55,7 @@ import { NDataTable, NIcon, NInputNumber, NTag, NTooltip, useNotification, DataT
 import { Refresh, Star, CalendarTime } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import graphqlClient from '@/utils/graphql'
-import { artifactScanStateLatch, sendWithLatchedFallback } from '@/utils/graphqlDriftFallback'
+import { artifactScanStateLatch, releaseBomScanLatch, sendWithLatchedTiers } from '@/utils/graphqlDriftFallback'
 import GqlQueries from '@/utils/graphqlQueries'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
@@ -103,11 +103,13 @@ async function fetchLatest () {
     loadError.value = ''
     try {
         const variables = { componentUuid: props.componentUuid, limit: limit.value }
-        const { data: response } = await sendWithLatchedFallback<any>({
-            preferred: GqlQueries.LatestReleasesOfComponentGql,
-            fallback: GqlQueries.LatestReleasesOfComponentGqlCore,
-            send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' }),
-            latch: artifactScanStateLatch(store)
+        const { data: response } = await sendWithLatchedTiers<any>({
+            tiers: [
+                { doc: GqlQueries.LatestReleasesOfComponentGql, latch: releaseBomScanLatch(store) },
+                { doc: GqlQueries.LatestReleasesOfComponentGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+            ],
+            core: GqlQueries.LatestReleasesOfComponentGqlCore,
+            send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
         })
         rows.value = (response.data as any).latestReleasesOfComponent || []
     } catch (error: any) {

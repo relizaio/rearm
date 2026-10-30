@@ -2,6 +2,7 @@ import gql from 'graphql-tag'
 import graphqlClient from './graphql'
 import { isDocumentComponent } from './agentDocumentsView'
 import { notScannableReleaseTitle, notScannableCountLabel, type ArtifactNotScannable } from './artifactScanStatus'
+import { BOM_SCAN_STATES, type BomScanState } from './celConditionBuilder'
 
 /**
  * Per-org cache of configuredBaseIntegrations. The list is keyed by org uuid;
@@ -43,10 +44,6 @@ export interface ReleaseScanStatus {
     label: string
     title: string
 }
-
-/** TPF-129's four states of a release's gathered BOMs, as the server names them. */
-export type BomScanState = 'NO_BOMS' | 'ALL_SCANNABLE' | 'SOME_NOT_SCANNABLE' | 'ALL_NOT_SCANNABLE'
-const BOM_SCAN_STATES: readonly BomScanState[] = ['NO_BOMS', 'ALL_SCANNABLE', 'SOME_NOT_SCANNABLE', 'ALL_NOT_SCANNABLE']
 
 /** The release's BOM scan state as the UI knows it: the server's statement, or a derivation from the whole set. */
 export interface ReleaseBomScan {

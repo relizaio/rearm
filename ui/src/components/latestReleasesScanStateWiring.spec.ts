@@ -8,6 +8,9 @@ import { parse as parseSfc } from '@vue/compiler-sfc'
  * row 8): the Latest tab and the dashboard widget send their documents through the latched fallback
  * with the artifact scan state latch from the util (never from the store module), and the branch list
  * is untouched (D18). The widget's behaviour runs mounted in MostRecentReleasesWidgetScanState.spec.ts.
+ * TPF-133: both components send their documents through the two-tier sender (sendWithLatchedTiers), the
+ * release BOM scan latch gating the full document and the artifact scan state latch the document
+ * without bomScan; the branch list reads the tally through the store's rows, so BranchView stays untouched.
  */
 function sfc (file: string) {
     const source = readFileSync(fileURLToPath(new URL(file, import.meta.url)), 'utf8')
@@ -30,19 +33,31 @@ const latest = sfc('./LatestReleasesOfComponent.vue')
 const widget = sfc('./MostRecentReleasesWidget.vue')
 const branch = sfc('./BranchView.vue')
 
+/** The tiers of one sendWithLatchedTiers call, in order: full document, document without bomScan, core. */
+function expectTiers (text: string, full: string) {
+    const parts = [`doc: GqlQueries.${full}, latch: releaseBomScanLatch(store)`,
+        `doc: GqlQueries.${full}WithoutBomScan, latch: artifactScanStateLatch(store)`,
+        `core: GqlQueries.${full}Core`]
+    const at = parts.map((p) => text.indexOf(p))
+    for (const i of at) expect(i).toBeGreaterThanOrEqual(0)
+    expect(at[0]).toBeLessThan(at[1])
+    expect(at[1]).toBeLessThan(at[2])
+}
+
 describe('LatestReleasesOfComponent loads through the latched fallback (TPF-127)', () => {
     it('imports useStore from vuex and the helper and the latch from the util, never the store module', () => {
         expect(latest.importLine('vuex')).toContain('useStore')
         const line = latest.importLine('@/utils/graphqlDriftFallback')
         expect(line).toContain('artifactScanStateLatch')
-        expect(line).toContain('sendWithLatchedFallback')
+        expect(line).toContain('releaseBomScanLatch')
+        expect(line).toContain('sendWithLatchedTiers')
         expect(latest.source).not.toContain("from '@/store'")
     })
 
-    it('sends the preferred document and its core twin, no-cache', () => {
+    it('sends the three tiers of its document, the bomScan latch first, no-cache (TPF-133)', () => {
         const fetchLatest = latest.fn('fetchLatest')
-        expect(fetchLatest).toContain('preferred: GqlQueries.LatestReleasesOfComponentGql')
-        expect(fetchLatest).toContain('fallback: GqlQueries.LatestReleasesOfComponentGqlCore')
+        expect(fetchLatest).toContain('sendWithLatchedTiers')
+        expectTiers(fetchLatest, 'LatestReleasesOfComponentGql')
         expect(fetchLatest).toContain("fetchPolicy: 'no-cache'")
     })
 
@@ -56,16 +71,16 @@ describe('MostRecentReleasesWidget loads through the latched fallback and draws 
     it('imports the helper and the latch from the util, never the store module', () => {
         const line = widget.importLine('@/utils/graphqlDriftFallback')
         expect(line).toContain('artifactScanStateLatch')
-        expect(line).toContain('sendWithLatchedFallback')
+        expect(line).toContain('releaseBomScanLatch')
+        expect(line).toContain('sendWithLatchedTiers')
         expect(widget.source).not.toContain("from '@/store'")
     })
 
-    it('sends both document pairs, no-cache', () => {
+    it('sends the three tiers of both documents, the bomScan latch first, no-cache (TPF-133)', () => {
         const fetchReleases = widget.fn('fetchReleases')
-        expect(fetchReleases).toContain('preferred: GqlQueries.ReleasesByDateRangeAndPerspectiveGql')
-        expect(fetchReleases).toContain('fallback: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlCore')
-        expect(fetchReleases).toContain('preferred: GqlQueries.ReleasesByDateRangeGql')
-        expect(fetchReleases).toContain('fallback: GqlQueries.ReleasesByDateRangeGqlCore')
+        expect(count(fetchReleases, 'sendWithLatchedTiers')).toBe(2)
+        expectTiers(fetchReleases, 'ReleasesByDateRangeAndPerspectiveGql')
+        expectTiers(fetchReleases, 'ReleasesByDateRangeGql')
         expect(count(fetchReleases, "fetchPolicy: 'no-cache'")).toBe(2)
     })
 
@@ -83,7 +98,7 @@ describe('MostRecentReleasesWidget loads through the latched fallback and draws 
 describe('BranchView is untouched (TPF-127, D18)', () => {
     it('keeps its two cell lines and reads nothing new', () => {
         expect(count(branch.script, 'getReleaseScanStatus(row, dtrackConfigured.value)')).toBe(2)
-        for (const name of ['scanBadgeBackground', 'notScannable', 'ownNotScannableNote', 'artifactScanStateLatch']) {
+        for (const name of ['scanBadgeBackground', 'notScannable', 'ownNotScannableNote', 'artifactScanStateLatch', 'releaseBomScanLatch', 'bomScan']) {
             expect(branch.source).not.toContain(name)
         }
     })

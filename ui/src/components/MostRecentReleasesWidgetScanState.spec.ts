@@ -24,7 +24,7 @@ const SCANNED = { ...PENDING, uuid: 'r-sw2', metrics: { firstScanned: '2026-09-2
 
 const query = vi.fn(async (_: any) => ({ data: { releasesByDateRange: [DOC, LEGACY_DOC, PENDING, SCANNED] } }))
 vi.mock('@/utils/graphql', () => ({ default: { query: (q: any) => query(q) } }))
-const { state, commit } = vi.hoisted(() => ({ state: { artifactScanStateSupported: true }, commit: vi.fn() }))
+const { state, commit } = vi.hoisted(() => ({ state: { artifactScanStateSupported: true, releaseBomScanSupported: true }, commit: vi.fn() }))
 vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {}, state, commit }) }))
 vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ error: vi.fn() }) }))
 vi.mock('@/utils/releaseVulnerabilityService', () => ({ ReleaseVulnerabilityService: {} }))
@@ -115,9 +115,10 @@ describe('MostRecentReleasesWidget not-scannable state (TPF-127)', () => {
         query.mockReset()
         commit.mockClear()
         state.artifactScanStateSupported = true
+        state.releaseBomScanSupported = true
     })
 
-    it('(a) sends the preferred documents first', async () => {
+    it('(a) sends the full documents first', async () => {
         answering([])
         await mountRows()
         expect(releaseCalls()[0].query).toBe(GqlQueries.ReleasesByDateRangeGql)
@@ -126,31 +127,58 @@ describe('MostRecentReleasesWidget not-scannable state (TPF-127)', () => {
         expect(releaseCalls()[0].query).toBe(GqlQueries.ReleasesByDateRangeAndPerspectiveGql)
     })
 
-    it('(b) on drift sends the core twin once more and latches after it answered', async () => {
-        const rows = [row('r1', []), row('r2', []), row('r3', []), row('r4', [])]
-        let first = true
+    // TPF-133: the two document triples (full, without bomScan, core), the plain one and the perspective one.
+    const TRIPLES: Array<[string, Record<string, any>, any, any, any]> = [
+        ['the org documents', {}, GqlQueries.ReleasesByDateRangeGql, GqlQueries.ReleasesByDateRangeGqlWithoutBomScan, GqlQueries.ReleasesByDateRangeGqlCore],
+        ['the perspective documents', { perspectiveUuid: 'p1' }, GqlQueries.ReleasesByDateRangeAndPerspectiveGql, GqlQueries.ReleasesByDateRangeAndPerspectiveGqlWithoutBomScan, GqlQueries.ReleasesByDateRangeAndPerspectiveGqlCore]
+    ]
+    const fourRows = () => [row('r1', []), row('r2', []), row('r3', []), row('r4', [])]
+    /** Refuses the first `refusals` release calls as drift, then answers; asserts nothing is committed before the answer. */
+    function driftThenServe (refusals: number, rows: any[]) {
+        let left = refusals
         query.mockImplementation(async (opts: any) => {
             if (opName(opts) === 'configuredBaseIntegrations') return { data: { configuredBaseIntegrations: [] } }
-            if (first) { first = false; throw driftError() }
+            if (left > 0) { left--; throw driftError() }
             expect(commit).not.toHaveBeenCalled()
-            return { data: { releasesByDateRange: rows } }
+            return { data: { releasesByDateRange: rows, releasesByDateRangeAndPerspective: rows } }
         })
-        const lis = await mountRows()
+    }
+
+    it.each(TRIPLES)('(b) %s: one drift, then the document without bomScan; B committed once after it answered', async (_n, props, full, withoutBomScan) => {
+        driftThenServe(1, fourRows())
+        const lis = await mountRows(props)
         const calls = releaseCalls()
         expect(calls).toHaveLength(2)
-        expect(calls[0].query).toBe(GqlQueries.ReleasesByDateRangeGql)
-        expect(calls[1].query).toBe(GqlQueries.ReleasesByDateRangeGqlCore)
+        expect(calls[0].query).toBe(full)
+        expect(calls[1].query).toBe(withoutBomScan)
         expect(commit).toHaveBeenCalledTimes(1)
-        expect(commit).toHaveBeenCalledWith('SET_ARTIFACT_SCAN_STATE_SUPPORTED', false)
+        expect(commit).toHaveBeenCalledWith('SET_RELEASE_BOM_SCAN_SUPPORTED', false)
         expect(lis).toHaveLength(4)
     })
 
-    it('(b2) a latched session sends the core twin alone', async () => {
+    it.each(TRIPLES)('(b1) %s: drift, drift, then the core; B then A committed', async (_n, props, full, withoutBomScan, core) => {
+        driftThenServe(2, fourRows())
+        const lis = await mountRows(props)
+        expect(releaseCalls().map((c: any) => c.query)).toEqual([full, withoutBomScan, core])
+        expect(commit.mock.calls).toEqual([['SET_RELEASE_BOM_SCAN_SUPPORTED', false], ['SET_ARTIFACT_SCAN_STATE_SUPPORTED', false]])
+        expect(lis).toHaveLength(4)
+    })
+
+    it.each(TRIPLES)('(b2) %s: B latched sends the document without bomScan alone', async (_n, props, _full, withoutBomScan) => {
+        state.releaseBomScanSupported = false
+        answering([row('r1', [])])
+        await mountRows(props)
+        expect(releaseCalls()).toHaveLength(1)
+        expect(releaseCalls()[0].query).toBe(withoutBomScan)
+        expect(commit).not.toHaveBeenCalled()
+    })
+
+    it.each(TRIPLES)('(b3) %s: A latched alone sends the core alone', async (_n, props, _full, _withoutBomScan, core) => {
         state.artifactScanStateSupported = false
         answering([row('r1', [])])
-        await mountRows()
+        await mountRows(props)
         expect(releaseCalls()).toHaveLength(1)
-        expect(releaseCalls()[0].query).toBe(GqlQueries.ReleasesByDateRangeGqlCore)
+        expect(releaseCalls()[0].query).toBe(core)
         expect(commit).not.toHaveBeenCalled()
     })
 
@@ -221,6 +249,25 @@ describe('MostRecentReleasesWidget not-scannable state (TPF-127)', () => {
     it('(c6) a served state never covers a product', async () => {
         const bomScan = { state: 'ALL_NOT_SCANNABLE', scannableBoms: 0, notScannableBoms: 1, reasons: ['ONLY_ROOT'] }
         answering([row('r1', [], { ...ANCHORED, bomScan }, 'PRODUCT')])
+        const [li] = await mountRows()
+        expect(li.findAll('.circle')).toHaveLength(8)
+        expect(badges(li)).toHaveLength(0)
+        expect(notes(li)).toHaveLength(0)
+    })
+
+    it('(c7) a served SOME_NOT_SCANNABLE keeps the circles and the note of the held marked BOM (TPF-133)', async () => {
+        const bomScan = { state: 'SOME_NOT_SCANNABLE', scannableBoms: 1, notScannableBoms: 1, reasons: ['ONLY_ROOT'] }
+        answering([row('r1', [markedBom()], { ...ANCHORED, bomScan })])
+        const [li] = await mountRows()
+        expect(li.findAll('.circle')).toHaveLength(8)
+        expect(badges(li)).toHaveLength(0)
+        expect(notes(li)).toHaveLength(1)
+        expect(notes(li)[0].text()).toBe('1 BOM not scannable')
+    })
+
+    it.each([['NO_BOMS', 0], ['ALL_SCANNABLE', 1]])('(c8) a served %s on an anchored row draws the circles, no badge, no note (TPF-133)', async (served, scannable) => {
+        const bomScan = { state: served, scannableBoms: scannable, notScannableBoms: 0, reasons: [] }
+        answering([row('r1', scannable ? [scannedBom] : [], { ...ANCHORED, bomScan })])
         const [li] = await mountRows()
         expect(li.findAll('.circle')).toHaveLength(8)
         expect(badges(li)).toHaveLength(0)
