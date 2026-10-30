@@ -167,7 +167,14 @@ public class UserPermission {
 		// BOARD_AGENT and BOARD_WRITE each imply BOARD_READ; neither implies the other.
 		BOARD_READ,
 		BOARD_AGENT,
-		BOARD_WRITE
+		BOARD_WRITE,
+		// Task TEA-3. TEA_READ: read what the organization published on TEA. The only function an
+		// EXTERNAL key carries, forced on every grant it is given, and the one the TEA per-object
+		// check asks for. Never offered in the editors; accepted and inert on any other key.
+		TEA_READ,
+		// Publish, re-publish and hide releases on TEA, for users and RBAC keys at ORGANIZATION,
+		// PERSPECTIVE or COMPONENT scope. Enforced by the TEA publication work (task TEA-5).
+		PUBLISH_EXTERNALLY
 		;
 
 		private PermissionFunction () {}

@@ -312,8 +312,17 @@ public class ReleaseMetricsComputeService {
 			// window, fence of 0s) so the healthy path — DTrack returns within a few
 			// minutes — keeps today's per-minute retry latency. A complete compute
 			// drops the fence so any future wait starts fresh.
+			//
+			// Child nudge (TPF-68): once a product waiting on its children has climbed to the hourly cap,
+			// it re-queues each child that is settled (outside every finder pool), unfenced and still
+			// without firstScanned -- the state in which nothing else would ever recompute the child,
+			// e.g. when the push that should have followed its scan was missed. Read on the same
+			// pre-increment flow_control fenceIncompleteCompute reads.
 			if (scanIncomplete) {
 				fenceIncompleteCompute(r);
+				if (childrenIncomplete && isAtMetricsComputeBackoffCap(r.getFlowControl())) {
+					nudgeSettledUnscannedChildren(rd, scannedChildren);
+				}
 			} else {
 				repository.clearMetricsComputeBackoff(r.getUuid());
 			}
@@ -477,6 +486,8 @@ public class ReleaseMetricsComputeService {
 	private final AtomicInteger stallMaxAttempts = new AtomicInteger();
 	private final Set<UUID> stallSample = ConcurrentHashMap.newKeySet();
 	private final AtomicReference<Instant> lastStallReport = new AtomicReference<>();
+	// Children re-queued by a product at the backoff cap (TPF-68), reported and reset on the stall line.
+	private final AtomicLong childNudges = new AtomicLong();
 
 	/**
 	 * Count one stalled compute and emit the aggregate when the window elapses.
@@ -531,9 +542,9 @@ public class ReleaseMetricsComputeService {
 		if (last.isBefore(now.minus(STALL_GAUGE_INTERVAL)) && lastStallReport.compareAndSet(last, now)) {
 			List<UUID> sample = List.copyOf(stallSample);
 			stallSample.clear();
-			log.error("[METRICS-STALLED] windowSec={} stalledComputes={} maxAttempts={} sample={}",
+			log.error("[METRICS-STALLED] windowSec={} stalledComputes={} maxAttempts={} childNudges={} sample={}",
 					Duration.between(last, now).toSeconds(), stallObservations.getAndSet(0),
-					stallMaxAttempts.getAndSet(0), sample);
+					stallMaxAttempts.getAndSet(0), childNudges.getAndSet(0), sample);
 		}
 	}
 
@@ -1036,6 +1047,46 @@ public class ReleaseMetricsComputeService {
 	}
 
 	/**
+	 * True once the fence computed for this flow_control is the hourly cap: from the 12th incomplete
+	 * attempt on (a pre-increment failure count of 11 with the current constants). Defined through
+	 * {@link #nextMetricsComputeBackoffSeconds} so the cap test moves with the schedule.
+	 */
+	static boolean isAtMetricsComputeBackoffCap(FlowControl fc) {
+		return nextMetricsComputeBackoffSeconds(fc) >= METRICS_BACKOFF_MAX_SECONDS;
+	}
+
+	/**
+	 * TPF-68: re-queue the children a product at the backoff cap is stuck on. The candidates are the
+	 * product's own {@code scannedChildren} (already resolved in its organization, scannable kind)
+	 * that lack firstScanned, whatever their lifecycle: the child's own compute decides whether it can
+	 * heal. A scanned BOM anchors firstScanned through the artifact merge in any lifecycle, so a DRAFT
+	 * or CANCELLED child whose re-queue was missed heals from the touch alone; a child that cannot heal
+	 * (no BOM or an unscanned BOM below ASSEMBLED) settles again without a metrics write and without
+	 * pushing this product, so the cost is one guarded touch per such child per hour. One query keeps
+	 * the candidates that are settled and unfenced, and each is touched back into the BY_UPDATE pool
+	 * with the statement a manual re-queue uses. The {@link #markContainingProductsStale} idiom in the
+	 * other direction: uuid order, inside the compute transaction, best-effort.
+	 */
+	private void nudgeSettledUnscannedChildren(ReleaseData product, List<ReleaseData> scannedChildren) {
+		try {
+			List<UUID> candidates = scannedChildren.stream()
+					.filter(c -> c.getMetrics() == null || c.getMetrics().getFirstScanned() == null)
+					.map(ReleaseData::getUuid).sorted().toList();
+			if (candidates.isEmpty()) return;
+			List<UUID> eligible = new ArrayList<>(repository.findSettledUnscannedAmong(candidates));
+			Collections.sort(eligible);
+			for (UUID child : eligible) {
+				repository.touchForMetricsRecompute(child);
+				childNudges.incrementAndGet();
+				log.info("[METRICS-NUDGE] product {} at the backoff cap nudged settled unscanned child {} back into the metrics queue",
+						product.getUuid(), child);
+			}
+		} catch (Exception e) {
+			log.error("Failed to nudge the children of product {}", product.getUuid(), e);
+		}
+	}
+
+	/**
 	 * Push this release's metrics change to every product release that bundles
 	 * {@code rd}: bump each product back into the {@code BY_UPDATE} finder pool
 	 * (and drop its fence) so its aggregate is re-derived from current child
@@ -1068,14 +1119,31 @@ public class ReleaseMetricsComputeService {
 	 * The release's child releases that are scanned, in order. A child that is not (a board's
 	 * document round, task RD4-11) never gets a firstScanned, so counting it would hold every
 	 * product composed of one in "Scan pending" for ever.
+	 *
+	 * A child that does not resolve in the product's organization (another org's release on a
+	 * legacy row, or a deleted one; task TPF-6) is left out of the rollup and named in one WARN,
+	 * instead of throwing out of the metrics pass on every attempt. The lookup is the same
+	 * org-scoped read as before (own org or the external-components org), so no row of another
+	 * organization is read.
 	 */
 	private List<ReleaseData> scannedChildrenOf(ReleaseData rd) {
 		var parents = rd.getParentReleases();
 		if (parents == null || parents.isEmpty()) return List.of();
 		List<ReleaseData> out = new ArrayList<>();
+		List<UUID> skipped = new ArrayList<>();
 		for (var p : parents) {
-			ReleaseData child = sharedReleaseService.getReleaseData(p.getRelease(), rd.getOrg()).get();
-			if (componentKindPolicy.isScannableRelease(child)) out.add(child);
+			UUID childUuid = null == p ? null : p.getRelease();
+			Optional<ReleaseData> child = null == childUuid ? Optional.empty()
+					: sharedReleaseService.getReleaseData(childUuid, rd.getOrg());
+			if (child.isEmpty()) {
+				skipped.add(childUuid);
+				continue;
+			}
+			if (componentKindPolicy.isScannableRelease(child.get())) out.add(child.get());
+		}
+		if (!skipped.isEmpty()) {
+			log.warn("Product release {} of org {}: {} of {} parent release(s) not found in this organization, left out of the metrics rollup: {}",
+					rd.getUuid(), rd.getOrg(), skipped.size(), parents.size(), skipped);
 		}
 		return out;
 	}

@@ -25,6 +25,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -79,7 +80,7 @@ public class OssComponentDataFetcher {
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> componentUpdateData = dfe.getArgument("component");
 
-		UpdateComponentDto ucdto = io.reliza.common.Utils.OM.convertValue(componentUpdateData, UpdateComponentDto.class);
+		UpdateComponentDto ucdto = InputConversion.convert(componentUpdateData, UpdateComponentDto.class, "component");
 		UUID componentUuid = ucdto.getUuid();
 		List<RelizaObject> ros = new LinkedList<>();
 		Optional<ComponentData> ocd = getComponentService.getComponentData(componentUuid);
@@ -99,6 +100,14 @@ public class OssComponentDataFetcher {
 				.getVcsRepositoryData(ocd.get().getVcs()).get());
 		if (null != ucdto.getOutputTriggers() && !ucdto.getOutputTriggers().isEmpty()) {
 			for (var trigger : ucdto.getOutputTriggers()) {
+				// CE has no engine that fires TEA output events (Pro's ReleaseTriggerService and
+				// TeaActDispatcher), so a TEA_PUBLISH or TEA_HIDE action would be stored and never run;
+				// a TEA_HIDE that never runs leaves a release public. Refused here, the one write path
+				// that can carry these kinds, after the RESOURCE WRITE check above and before the try
+				// below, so the writer gets this message (SCORE-72 design 3.3.3, ADR-11).
+				if (EventType.TEA_PUBLISH == trigger.getType() || EventType.TEA_HIDE == trigger.getType()) {
+					throw new RelizaException("TEA output events are a ReARM Pro feature");
+				}
 				if (null != trigger.getIntegration()) {
 					orgCheckList.add(integrationService.getIntegrationData(trigger.getIntegration()).get());
 				}

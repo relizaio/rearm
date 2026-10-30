@@ -229,3 +229,7 @@ echo $(kubectl get secret --namespace rearm system-secret -o jsonpath="{.data.sy
 Note, if you're getting repeated error, try restarting (deleting) `rearm-backend` pod and then retry the unseal process.
 
 Once you sign in and unseal the system, your user will automatically become the system administrator and the admin of the pre-created organization.
+
+## Upgrading
+
+Before you upgrade an installation of 26.10.52 or earlier, or one that ran a build of the main branch, run the read-only checks in [Upgrading to the release after 26.10.52](../workflows/exporting-compliance-artifacts#who-may-upload-a-new-version-of-an-sbom), at the end of that subsection. One of them is for every installation: this release's backend does not start while an agent task board has two tasks with the same number.

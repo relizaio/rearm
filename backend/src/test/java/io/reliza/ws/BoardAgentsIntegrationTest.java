@@ -259,7 +259,42 @@ public class BoardAgentsIntegrationTest {
 		assertEquals(1, w.stale().size(), w.stale().toString());
 		assertEquals("hopNoProgress", w.stale().get(0).rule());
 		assertTrue(w.stale().get(0).message().contains("stalled"), w.stale().get(0).message());
+		// the span the mark measures (task TPF-69): from the assignment to the read
+		assertEquals(61, w.stale().get(0).minutes());
+		assertNotNull(w.stale().get(0).since());
 		assertTrue(rowOf(later, other).stale().isEmpty(), "the rule names the stalled session only");
+	}
+
+	@Test
+	public void aSessionWhoseHopIsParkedForTheOperatorIsNotWorking() throws Exception {
+		Rig r = rig();
+		AgentSessionData parker = session(r, "parker");
+		AgentTaskData t = queued(r);
+		agentTaskService.assign(t.getUuid(), board(r), parker.getAgent(), parker.getUuid(), WU);
+		agentTaskService.parkHopForOperator(t.getUuid(), parker.getUuid(), "per-org or per-board?", WU);
+		AgentTaskData parked = agentTaskService.getTaskData(t.getUuid()).orElseThrow();
+		assertNull(parked.getAssignment(), "the park ends the hop (TPF-66)");
+		ZonedDateTime returnedAt = parked.getReturns().get(parked.getReturns().size() - 1).returnedAt();
+
+		AgentRow idle = rowOf(boardAgentsService.agents(board(r), null, null, ZonedDateTime.now()), parker);
+		assertEquals(StateKind.IDLE, idle.state().kind());
+		assertEquals(returnedAt.toInstant(), idle.state().since().toInstant(), "the park is its newest moment");
+		assertTrue(idle.roles().contains("coder"), idle.roles().toString());
+		agentSessionService.recordBoardPolls(parker.getUuid(), List.of(r.board().getUuid()), List.of("coder"), null,
+				ZonedDateTime.now());
+		assertEquals(StateKind.WAITING,
+				rowOf(boardAgentsService.agents(board(r), null, null, ZonedDateTime.now()), parker).state().kind());
+
+		// the shape a park stored before TPF-66: still assigned, no return; the listing guard keeps it off WORKING
+		AgentTaskData before = agentTaskService.getTaskData(t.getUuid()).orElseThrow();
+		UUID roleUuid = before.getReturns().get(0).roleUuid();
+		before.setReturns(new java.util.ArrayList<>());
+		before.setAssignment(new AgentTaskData.TaskAssignment(parker.getUuid(), parker.getAgent(), "coder", roleUuid,
+				ZonedDateTime.now().minusHours(1), "v"));
+		agentTaskService.saveData(before, WU);
+		AgentRow old = rowOf(boardAgentsService.agents(board(r), null, null, ZonedDateTime.now()), parker);
+		assertNotEquals(StateKind.WORKING, old.state().kind(), old.state().toString());
+		assertNull(old.state().taskUuid());
 	}
 
 	// ---------- read only with the board ----------

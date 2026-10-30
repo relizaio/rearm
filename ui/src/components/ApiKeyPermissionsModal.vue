@@ -6,7 +6,7 @@
         :show="show"
         @update:show="(v: boolean) => { if (!v) emit('update:show', false) }"
     >
-        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : 'Edit key ') + apiKey?.uuid }}</template>
+        <template #header>{{ isRequest ? 'Request a Free Form key' : (isView ? 'Permissions of key ' : (isExternal ? 'Grants of external key ' : 'Edit key ')) + (apiKey ? apiKeyLabel(apiKey, { withType: true, siblings: siblingKeys }) : '') }}</template>
         <div style="height: 700px; overflow-y: auto; padding-right: 8px;">
             <div v-if="isView">
                 <p class="subtle" style="margin-top: 0;">What this key may do, as set by the organization admins. Ask an admin to change it.</p>
@@ -39,6 +39,14 @@
                 <n-form-item label="Purpose / notes (admins see this)">
                     <n-input v-model:value="notes" type="textarea" :autosize="{ minRows: 2, maxRows: 6 }" placeholder="e.g. CI pipeline for repo X needs release write on component Y" />
                 </n-form-item>
+                <PermissionTemplatePicker
+                    :org-uuid="orgUuid"
+                    :model="scoped"
+                    :disabled="loading"
+                    :name-of="resolveScopedObjectName"
+                    :notify="notify"
+                    @apply="onTemplateApply"
+                />
                 <n-spin :show="loading">
                     <ScopedPermissions
                         v-model="scoped"
@@ -59,6 +67,9 @@
                 </n-space>
             </div>
             <template v-else>
+            <p v-if="isExternal" class="subtle" style="margin-top: 0;" data-testid="external-key-grants-lead">
+                Read-only access to what is published on TEA. Pick the organization, or the perspectives, products and components the outside party may read.
+            </p>
             <p v-if="apiKey?.type === 'USER'" class="subtle" style="margin-top: 0;">
                 These permissions are a ceiling. What you save is stored reduced to the owner's own permissions at this moment, and every call is checked
                 against them again, so the key can never exceed the owner. Nothing is allowed until at least one permission is set.
@@ -70,6 +81,10 @@
             </n-alert>
             <n-tabs v-model:value="editTab" type="segment" animated>
                 <n-tab-pane name="permissions" tab="Permissions">
+                    <p v-if="apiKey?.type === 'FREEFORM' && apiKeyGroups?.length" class="subtle" style="margin-top: 0;" data-testid="api-key-groups-of-key">
+                        Also in API key groups: {{ apiKeyGroups.map(g => g.name).join(', ') }}. Their permissions are added to
+                        this key's at call time; edit them on the API Key Groups tab.
+                    </p>
                     <n-spin :show="loading">
                         <ScopedPermissions
                             v-model="scoped"
@@ -82,6 +97,7 @@
                             :clusters="orgClusters"
                             :boards="orgBoards"
                             :show-sbom-probing="true"
+                            :external-key="isExternal"
                         />
                     </n-spin>
                     <n-space style="margin-top: 20px;">
@@ -89,7 +105,7 @@
                         <n-button @click="emit('update:show', false)">Cancel</n-button>
                     </n-space>
                 </n-tab-pane>
-                <n-tab-pane name="device-login" tab="Device Login">
+                <n-tab-pane v-if="!isExternal" name="device-login" tab="Device Login">
                     <SessionLimitEditor :api-key="apiKey" :notify="notify" @saved="emit('saved')" />
                 </n-tab-pane>
                 <n-tab-pane name="notes" tab="Notes">
@@ -108,7 +124,7 @@
 
 <script lang="ts" setup>
 /**
- * Permissions + notes editor for an RBAC key (FREEFORM or USER). Loads the org's perspectives,
+ * Permissions + notes editor for an RBAC key (FREEFORM or USER), and the grants editor of an EXTERNAL key. Loads the org's perspectives,
  * components, products and instances itself, so it can be used from org settings and from the
  * user's own keys on the profile page. Saves through setPermissionsOnFreeformApiKey / setNotesOnApiKey,
  * and the device-login session limit through setApiKeySessionMaxMinutes (SessionLimitEditor).
@@ -122,7 +138,9 @@ import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
 import ScopedPermissions from './ScopedPermissions.vue'
 import SessionLimitEditor from './SessionLimitEditor.vue'
+import PermissionTemplatePicker from './PermissionTemplatePicker.vue'
 import { boardNameOf, editorKeepsScope } from '@/utils/boardPermissions'
+import { apiKeyLabel } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     show: boolean
@@ -132,9 +150,17 @@ const props = defineProps<{
     notify: (type: 'success' | 'error' | 'warning' | 'info', title: string, content: string) => void
     /** 'edit' (default) edits an existing key; 'request' asks admins for a new Free Form key with purpose and proposed permissions on one screen */
     mode?: 'edit' | 'request' | 'view'
+    /** the keys listed alongside, so the header's short id is unique among them */
+    siblingKeys?: any[]
+    /** the ACTIVE API key groups holding this key (admin surface); absent on the profile page */
+    apiKeyGroups?: { uuid: string, name: string }[]
 }>()
 const isRequest = computed(() => props.mode === 'request')
 const isView = computed(() => props.mode === 'view')
+// An EXTERNAL key (task TEA-3): its grants are read-only scopes on TEA, edited with the scope editor's
+// externalKey mode; it backs no device login. The payload is the usual one: functions and approvals
+// travel as the editor leaves them and the server forces READ_ONLY with TEA_READ.
+const isExternal = computed(() => props.apiKey?.type === 'EXTERNAL')
 const emit = defineEmits(['update:show', 'saved'])
 const store = useStore()
 
@@ -222,6 +248,11 @@ function permissionsPayload (): { orgPermType: string, permissions: any[] } {
         if (sp.type && sp.type !== 'NONE') permissions.push({ org: props.orgUuid, scope: sp.scope, type: sp.type, object: sp.objectId, functions: sp.functions || [], approvals: sp.approvals || [] })
     }
     return { orgPermType: orgPermType || 'NONE', permissions }
+}
+
+// request mode (TPF-113): a template pick fills the proposal by value; nothing is clipped, the admins decide
+function onTemplateApply (model: { orgPermission: any, scopedPermissions: any[] }) {
+    scoped.value = model
 }
 
 async function sendRequest () {

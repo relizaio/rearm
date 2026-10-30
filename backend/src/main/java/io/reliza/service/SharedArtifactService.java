@@ -37,7 +37,7 @@ import io.reliza.model.dto.CarryForwardArm;
 import io.reliza.model.dto.CarryForwardPairing;
 import io.reliza.model.dto.CarryForwardTally;
 import io.reliza.model.dto.ExportMetadataOptions;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactData.DigestRecord;
@@ -401,7 +401,7 @@ public class SharedArtifactService {
 	 * {@code ==} is null-safe and is the comparison these are really asking for.
 	 */
 	private static boolean isSha256(DigestRecord dr, DigestScope scope) {
-		return TeaChecksumType.SHA_256 == dr.algo() && scope == dr.scope();
+		return DigestAlgorithm.SHA_256 == dr.algo() && scope == dr.scope();
 	}
 
 	private Mono<ResponseEntity<byte[]>> downloadRearmNonBomArtifact(ArtifactData ad)throws RelizaException{
@@ -448,16 +448,7 @@ public class SharedArtifactService {
 	 */
 	private Mono<ResponseEntity<byte[]>> fetchAndValidateOciBlob(ArtifactData ad, String repositoryName,
 			String ociDigest, Optional<String> expectedDigest, String mediaType, String resolvedFileName) {
-		return this.webClient.get()
-					.uri(uriBuilder -> uriBuilder
-							.path("/pull")
-									.queryParam("repo", repositoryName)
-							.queryParam("tag", "sha256:" + ociDigest)
-							.build()
-					)
-					.accept(MediaType.APPLICATION_OCTET_STREAM)
-					.retrieve()
-					.bodyToMono(byte[].class)
+		return pullOciBlob(repositoryName, ociDigest)
 					.map(data -> {
 						// Validate downloaded artifact digest
 						if (expectedDigest.isPresent()) {
@@ -508,6 +499,25 @@ public class SharedArtifactService {
 						}
 					});
 	}
+
+	/**
+	 * The registry pull of one stored blob, nothing else (task TEA-35): the digest check and the
+	 * response headers stay in {@link #fetchAndValidateOciBlob}. Package-private so a test can stub
+	 * the registry on a spied bean, as {@code ArtifactService.uploadFileToConfiguredOci} is stubbed.
+	 */
+	Mono<byte[]> pullOciBlob(String repositoryName, String ociDigest) {
+		return this.webClient.get()
+					.uri(uriBuilder -> uriBuilder
+							.path("/pull")
+									.queryParam("repo", repositoryName)
+							.queryParam("tag", "sha256:" + ociDigest)
+							.build()
+					)
+					.accept(MediaType.APPLICATION_OCTET_STREAM)
+					.retrieve()
+					.bodyToMono(byte[].class);
+	}
+
 	public Mono<ResponseEntity<byte[]>> downloadRawArtifact(ArtifactData ad) throws Exception{
 		Mono<ResponseEntity<byte[]>> monoResponseEntity = null;
 
@@ -933,6 +943,7 @@ public class SharedArtifactService {
 		
 		Optional<Artifact> oa = getArtifact(a.getUuid());
 		if (oa.isPresent()) {
+			recordData = Utils.withStoredTeaUuid(recordData, repository.currentTeaUuidForUpdate(a.getUuid()));
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
 			a.setLastUpdatedDate(ZonedDateTime.now());
 		}
@@ -994,6 +1005,7 @@ public class SharedArtifactService {
 				newArtifactData.addVersionSnapshot(currentSnapshot);
 				recordData = Utils.dataToRecord(newArtifactData);
 			}
+			recordData = Utils.withStoredTeaUuid(recordData, repository.currentTeaUuidForUpdate(a.getUuid()));
 			
 			auditService.createAndSaveAuditRecord(TableName.ARTIFACTS, a);
 			a.setLastUpdatedDate(ZonedDateTime.now());

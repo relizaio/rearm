@@ -39,7 +39,11 @@
         <n-alert v-if="hiddenBoard" type="warning" :bordered="false" class="boardbanner" data-testid="hidden-board">
             {{ hiddenBoardText(hiddenBoard) }}
         </n-alert>
-        <div v-if="!boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>
+        <div v-if="boardsListed && !boards.length" class="empty" data-testid="no-boards">{{ noBoardsText(isAdmin) }}</div>
+        <!-- While the boards are first listed, before any board shows. -->
+        <div v-if="boardLoading && !currentBoard" class="board__loading" data-testid="board-loading">
+            <n-spin size="small"/><span>Loading board…</span>
+        </div>
 
         <template v-if="currentBoard">
             <!-- Pause banner + operator pause controls -->
@@ -147,7 +151,11 @@
                 </n-collapse-item>
             </n-collapse>
 
-            <n-tabs type="segment" size="small" class="viewtabs"
+            <!-- The board's tasks loading (a board opened or switched to): no view, and no "empty board", until they arrive. -->
+            <div v-if="boardLoading" class="board__loading" data-testid="board-loading">
+                <n-spin size="small"/><span>Loading board…</span>
+            </div>
+            <n-tabs v-else type="segment" size="small" class="viewtabs"
                     :value="boardView" @update:value="setBoardView">
             <n-tab-pane name="kanban" tab="Kanban">
             <!-- Grouping and the level filter (RD2-1), kept in the URL (?groupBy=level&level=2). The
@@ -168,6 +176,9 @@
                 <n-select v-if="tagFilterOptions.length" :value="tagFilter" :options="tagFilterOptions" size="small" clearable filterable
                           placeholder="any tag" style="width: 150px" data-testid="tag-filter"
                           @update:value="setTagFilter"/>
+                <!-- Only on a board with a staleness block (TPF-69), in the URL as ?stale=1. -->
+                <n-checkbox v-if="currentBoard?.staleness" :checked="staleOnly" size="small" data-testid="stale-filter"
+                            @update:checked="setStaleOnly">stale only</n-checkbox>
             </n-space>
             <!-- Hub-and-spoke kanban: intake / per-role / awaiting coordinator / done -->
             <div v-for="lane in kanbanLanes" :key="lane.key" class="lane" :data-lane="lane.key">
@@ -184,7 +195,7 @@
                 <div class="col" :class="{ 'col--folded': folded('intake', byStatus('PENDING_INTAKE', lane.tasks)) }" data-col="intake">
                     <div class="col__head" @click="openColumn('intake')">Pending intake<span class="col__count" data-testid="col-count">{{ byStatus('PENDING_INTAKE', lane.tasks).length }}</span></div>
                     <template v-if="!folded('intake', byStatus('PENDING_INTAKE', lane.tasks))">
-                        <TaskCard v-for="t in byStatus('PENDING_INTAKE', lane.tasks)" :key="t.uuid" :t="t"/>
+                        <LaneCards :cards="byStatus('PENDING_INTAKE', lane.tasks)" :at="columnKey(lane.key, 'intake')"/>
                     </template>
                 </div>
                 <div class="col" v-for="r in activeRoles" :key="r.name" :class="{ 'col--folded': folded('role:' + r.name, atRole(r.name, lane.tasks)) }"
@@ -209,27 +220,27 @@
                         </span>
                     </div>
                     <template v-if="!folded('role:' + r.name, atRole(r.name, lane.tasks))">
-                        <TaskCard v-for="t in atRole(r.name, lane.tasks)" :key="t.uuid" :t="t"/>
+                        <LaneCards :cards="atRole(r.name, lane.tasks)" :at="columnKey(lane.key, 'role:' + r.name)"/>
                     </template>
                 </div>
                 <div class="col" :class="{ 'col--folded': folded('awaiting', byStatus('AWAITING_COORDINATOR', lane.tasks)) }" data-col="awaiting">
                     <div class="col__head" @click="openColumn('awaiting')">Awaiting coordinator<span class="col__count" data-testid="col-count">{{ byStatus('AWAITING_COORDINATOR', lane.tasks).length }}</span></div>
                     <template v-if="!folded('awaiting', byStatus('AWAITING_COORDINATOR', lane.tasks))">
-                        <TaskCard v-for="t in byStatus('AWAITING_COORDINATOR', lane.tasks)" :key="t.uuid" :t="t"/>
+                        <LaneCards :cards="byStatus('AWAITING_COORDINATOR', lane.tasks)" :at="columnKey(lane.key, 'awaiting')"/>
                     </template>
                 </div>
                 <div class="col" v-if="byStatus('ON_HOLD', lane.tasks).length" data-col="hold">
                     <div class="col__head col__head--hold">On hold<span class="col__count" data-testid="col-count">{{ byStatus('ON_HOLD', lane.tasks).length }}</span></div>
-                    <TaskCard v-for="t in byStatus('ON_HOLD', lane.tasks)" :key="t.uuid" :t="t"/>
+                    <LaneCards :cards="byStatus('ON_HOLD', lane.tasks)" :at="columnKey(lane.key, 'hold')"/>
                 </div>
                 <div class="col" v-if="byStatus('DELIVERING', lane.tasks).length" data-col="delivering">
                     <div class="col__head">Delivering<span class="col__count" data-testid="col-count">{{ byStatus('DELIVERING', lane.tasks).length }}</span></div>
-                    <TaskCard v-for="t in byStatus('DELIVERING', lane.tasks)" :key="t.uuid" :t="t"/>
+                    <LaneCards :cards="byStatus('DELIVERING', lane.tasks)" :at="columnKey(lane.key, 'delivering')"/>
                 </div>
                 <div class="col col--done" :class="{ 'col--folded': folded('done', byStatus('COMPLETED', lane.tasks)) }" data-col="done">
                     <div class="col__head" @click="openColumn('done')">Completed<span class="col__count" data-testid="col-count">{{ byStatus('COMPLETED', lane.tasks).length }}</span></div>
                     <template v-if="!folded('done', byStatus('COMPLETED', lane.tasks))">
-                        <TaskCard v-for="t in byStatus('COMPLETED', lane.tasks)" :key="t.uuid" :t="t"/>
+                        <LaneCards :cards="byStatus('COMPLETED', lane.tasks)" :at="columnKey(lane.key, 'done')"/>
                     </template>
                 </div>
             </div>
@@ -269,7 +280,8 @@
             <AiAgentTaskDetailDrawer
                 :task="selectedTask" :tasks="tasks" :agent-names="agentNames" :roles="roles"
                 :board="currentBoard" :priority-levels="priorityLevels"
-                @close="selectedTask = null" @open="openTask"
+                :loading="taskDetailLoading" :load-error="taskDetailError"
+                @close="closeTask" @open="openTask"
                 @human-review="humanReview" @human-signoff="humanSignOff"
                 @lift-hold="liftHold" @require-review="requireReview"
                 @authorize="authorizeTask" @order="orderTask"
@@ -542,7 +554,9 @@
                     </n-input>
                     <n-text depth="3" style="font-size: 11.5px;">
                         Placeholders: <template v-for="p in PATH_PLACEHOLDERS" :key="p"><code>{{ p }}</code> </template>
-                        (<code>{task}</code> is read as <code>{key}</code>, the task's key). Blank
+                        (<code>{task}</code> is read as <code>{key}</code>, the task's key;
+                        <code>{role}</code> is the publishing role, so two roles producing one type,
+                        such as two reviewers, write to separate folders). Blank
                         uses the default shown, which the server picks by scope: per task for a type
                         a role produces per task, else one file per component.
                         <template v-if="documentsRootNote(editingBoard.documentsRoot)">
@@ -992,7 +1006,9 @@ import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsP
 import { STALENESS_FIELDS, stalenessDraftOf, stalenessPatch, stalenessProblem } from '@/utils/agentStaleness'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag, waitsOnLabel } from '@/utils/agentTaskLabels'
-import { columnFolded, EMPTY_BOARD_HINT, moreLanesHint, stripMeasure } from '@/utils/agentKanban'
+import { CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, columnFolded, columnKey, EMPTY_BOARD_HINT, moreCardsLabel, moreLanesHint,
+    shownCards, stripMeasure } from '@/utils/agentKanban'
+import { initialBoard, readLastBoard, writeLastBoard } from '@/utils/agentLastBoard'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
 import { boardFieldOfError, derivedTaskPrefix, documentsDraftOf, documentsPatch, documentsRootPlaceholder,
@@ -1012,6 +1028,7 @@ import AgentBoardLadderEditor from '@/components/AgentBoardLadderEditor.vue'
 import { groupColour, groupFromQuery, groupLabel, groupByKey, groupOptions, NO_GROUP, parseTags, passesGroupAndTag,
     registerGroupFields, tagFromQuery, tagOptions, tagsProblem, waitingOnLabel, withGroupQuery } from '@/utils/agentTaskGroups'
 import { boardPerspectiveOptions, perspectiveChips, perspectivesPatch } from '@/utils/agentBoardPerspectives'
+import { passesStale, staleChip, staleFromQuery, withStaleQuery } from '@/utils/agentTaskStale'
 import { DELIVERY_MODE_OPTIONS, MERGE_BY_OPTIONS, MERGE_METHOD_OPTIONS, MERGE_ORDER_OPTIONS, deliveryPolicyPatch, mergeDraftOf,
     prChips } from '@/utils/agentDelivery'
 
@@ -1054,8 +1071,8 @@ const boardView = ref<string>(
     BOARD_VIEWS.includes(route.query.view as string) ? (route.query.view as string) : 'kanban')
 
 function syncQuery () {
-    const q: Record<string, string> = withGroupQuery(withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
-        groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value)
+    const q: Record<string, string> = withStaleQuery(withGroupQuery(withLevelQuery({ ...(route.query as Record<string, string>), tab: 'boards' },
+        groupBy.value, levelFilter.value), groupFilter.value, tagFilter.value), staleOnly.value)
     if (selectedBoard.value) q.board = selectedBoard.value
     else delete q.board
     q.view = boardView.value
@@ -1087,6 +1104,12 @@ function setTagFilter (v: string | null) {
     tagFilter.value = v ?? null
     syncQuery()
 }
+// The kanban's "stale only" filter (TPF-69), kept in the URL; it acts only on a board whose block shows it.
+const staleOnly = ref<boolean>(staleFromQuery(route.query))
+function setStaleOnly (v: boolean) {
+    staleOnly.value = !!v
+    syncQuery()
+}
 const groupFilterOptions = computed(() => [{ label: 'ungrouped', value: NO_GROUP }, ...groupOptions(currentBoard.value)])
 const tagFilterOptions = computed(() => tagOptions(tasks.value))
 
@@ -1098,10 +1121,16 @@ function setBoardView (v: string) {
 const boards = ref<any[]>([])
 const selectedBoard = ref<string | null>(null)
 const tasks = ref<any[]>([])
+// Whether the org's boards were listed once: until then "no boards" is not yet known, so not said.
+const boardsListed = ref(false)
+// The boards listing for the first time, or a board's tasks loading for a board not yet shown: a spinner in place
+// of the views, and no "empty board" hint. A reload of the board on screen keeps its cards while it reads.
+const boardLoading = ref(true)
 // The kanban's tasks under the level filter, in lanes by the grouping (one lane for "none").
 const kanbanLanes = computed(() => groupTasks(
     tasks.value.filter(t => passesLevel(t, currentBoard.value, levelFilter.value)
-        && passesGroupAndTag(t, groupFilter.value, tagFilter.value)),
+        && passesGroupAndTag(t, groupFilter.value, tagFilter.value)
+        && passesStale(t, staleOnly.value && !!currentBoard.value?.staleness)),
     groupBy.value, currentBoard.value))
 const roles = ref<any[]>([])
 const showRoles = ref(false)
@@ -1227,10 +1256,52 @@ const agentDir = ref<Record<string, AgentName>>({})
 provide(AGENT_DIR, agentDir)
 provide(COORDINATOR_SEAT, computed(() => currentBoard.value?.coordinatorSeat ?? null))
 
+// The board reads its tasks card-level (AGENT_TASK_CARD_SELECTION); the drawer's task is read whole when it
+// opens (fetchAgentTask, the page's read) and merged over its card, with a spinner until it arrives.
+const taskDetailLoading = ref(false)
+const taskDetailError = ref<string | null>(null)
+let detailSeq = 0
+let detailOf: string | null = null
+
+async function loadTaskDetail (uuid: string) {
+    const seq = ++detailSeq
+    taskDetailError.value = null
+    try {
+        const full = await store.dispatch('fetchAgentTask', uuid)
+        if (seq !== detailSeq || selectedTask.value?.uuid !== uuid) return
+        if (!full) {
+            taskDetailError.value = 'The task could not be read.'
+            return
+        }
+        selectedTask.value = { ...selectedTask.value, ...full }
+        detailOf = uuid
+    } catch (e: any) {
+        if (seq === detailSeq) taskDetailError.value = `Could not load the task: ${e?.message ?? e}`
+    } finally {
+        if (seq === detailSeq) taskDetailLoading.value = false
+    }
+}
+
 function openTask (t: any) {
     // resolve to the freshest copy from the board so drawer navigation
     // (deps/lineage chips) always shows current state
-    selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? t
+    const card = tasks.value.find(x => x.uuid === t.uuid) ?? t
+    // The task already shown whole stays on screen while it is read again (after an action); another shows
+    // its card and the spinner.
+    if (selectedTask.value?.uuid !== card.uuid || detailOf !== card.uuid) {
+        selectedTask.value = card
+        detailOf = null
+        taskDetailLoading.value = true
+    }
+    void loadTaskDetail(card.uuid)
+}
+
+function closeTask () {
+    selectedTask.value = null
+    detailOf = null
+    detailSeq++
+    taskDetailLoading.value = false
+    taskDetailError.value = null
 }
 
 const showPresets = ref(false)
@@ -1331,9 +1402,12 @@ const {
     completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, setBudget, setWorkLevel,
     setGroup, setTags, declareDelivery, unassign,
 } = useAgentTaskActions(async (t: any, keepOpen: boolean) => {
-    if (!keepOpen) selectedTask.value = null
+    if (!keepOpen) closeTask()
     await refreshBoardContent()
-    if (keepOpen) selectedTask.value = tasks.value.find(x => x.uuid === t.uuid) ?? null
+    if (!keepOpen) return
+    const card = tasks.value.find(x => x.uuid === t.uuid)
+    if (card) openTask(card)
+    else closeTask()
 })
 
 const priorityLevels = computed(() =>
@@ -1478,6 +1552,13 @@ function atRole (role: string, among: any[] = tasks.value): any[] {
         (t.status === 'QUEUED' || t.status === 'ASSIGNED') && t.role === role))
 }
 
+// A card's tooltips stay on the screen, however long the note, reason or title in them (CARD_TOOLTIP_STYLE); free
+// text wraps, keeps its line breaks and scrolls past 60% of the screen's height (CARD_TOOLTIP_TEXT_STYLE).
+const CARD_TIP = { trigger: 'hover' as const, style: CARD_TOOLTIP_STYLE }
+function tipText (text: string | null | undefined) {
+    return h('span', { style: CARD_TOOLTIP_TEXT_STYLE }, text ?? '')
+}
+
 // Compact task card as a local render component to keep the template lean.
 const TaskCard = defineComponent({
     props: { t: { type: Object, required: true } },
@@ -1493,17 +1574,17 @@ const TaskCard = defineComponent({
             h('div', { class: 'tcard__title' }, [
                 // The key leads the card, as on the task page (RD2-22); the level beside it (RD2-1).
                 p.t.key ? h('span', { class: 'tcard__key', 'data-testid': 'card-key' }, p.t.key) : null,
-                taskLevelLabel(p.t, currentBoard.value) ? h(NTooltip, { trigger: 'hover' }, {
+                taskLevelLabel(p.t, currentBoard.value) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__level', 'data-testid': 'card-level' },
                         { default: () => taskLevelLabel(p.t, currentBoard.value) }),
-                    default: () => levelTooltip(p.t, currentBoard.value, actorLabel),
+                    default: () => tipText(levelTooltip(p.t, currentBoard.value, actorLabel)),
                 }) : null,
                 // The group beside the key and level (RD2-31).
-                p.t.group?.key ? h(NTooltip, { trigger: 'hover' }, {
+                p.t.group?.key ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tcard__group', 'data-testid': 'card-group',
                         color: { color: `${groupColour(p.t.group.key)}22`, textColor: groupColour(p.t.group.key) ?? undefined } },
                     { default: () => p.t.group.key }),
-                    default: () => groupLabel(groupByKey(currentBoard.value, p.t.group.key) ?? p.t.group),
+                    default: () => tipText(groupLabel(groupByKey(currentBoard.value, p.t.group.key) ?? p.t.group)),
                 }) : null,
                 p.t.title,
                 // The page, without opening the drawer on the way.
@@ -1517,84 +1598,117 @@ const TaskCard = defineComponent({
             h('div', { class: 'tcard__meta' }, [
                 p.t.status === 'QUEUED' ? h(NTag, { size: 'tiny', bordered: false }, { default: () => `queued #${p.t.orderIndex}` }) : null,
                 p.t.status === 'ASSIGNED' ? h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'assigned' }) : null,
-                roleTagFor(p.t)?.kind === 'history' ? h(NTooltip, { trigger: 'hover' }, {
+                // A staleness rule the task breaches now (TPF-69), with the ALERT text on hover.
+                staleChip(p.t) ? h(NTooltip, CARD_TIP, {
+                    trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error', class: 'tcard__stale', 'data-testid': 'card-stale' },
+                        { default: () => staleChip(p.t)?.label }),
+                    default: () => tipText(staleChip(p.t)?.tooltip),
+                }) : null,
+                roleTagFor(p.t)?.kind === 'history' ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, class: 'tag--history' }, { default: () => roleTagFor(p.t)?.text }),
                     default: () => roleTagFor(p.t)?.tooltip,
                 }) : null,
                 // A question for the operator, a hop's or the seat's, reads as one on the card (RD4-17).
-                holdChip(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                holdChip(p.t) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error',
                         'data-testid': holdChip(p.t)?.operator ? 'card-awaiting-operator' : undefined }, {
                         default: () => holdChip(p.t)?.label,
                     }),
-                    default: () => holdChip(p.t)?.tooltip,
+                    default: () => tipText(holdChip(p.t)?.tooltip),
                 }) : null,
-                p.t.requireHumanReview ? h(NTooltip, { trigger: 'hover' }, {
+                p.t.requireHumanReview ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning' }, { default: () => 'review flagged' }),
                     default: () => 'The next sign-off on this task parks it for human review.',
                 }) : null,
-                missingRequired(p.t).length && (p.t.status === 'AWAITING_COORDINATOR') ? h(NTooltip, { trigger: 'hover' }, {
+                missingRequired(p.t).length && (p.t.status === 'AWAITING_COORDINATOR') ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, {
                         default: () => 'needs ' + missingRequired(p.t).join(', '),
                     }),
                     default: () => 'Required role(s) without a passing sign-off — completion is blocked until they stamp.',
                 }) : null,
                 // The blocker named once, by key (RD2-13): the "after" row that named it again is gone.
-                waitsOnLabel(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
+                waitsOnLabel(p.t, tasks.value) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waits-on' },
                         { default: () => waitsOnLabel(p.t, tasks.value) }),
                     default: () => 'Not assignable until every dependency is COMPLETED; the server queues it automatically.',
                 }) : null,
                 // A linked PR moved past the head its passing test named (RD2-13): re-test before merging.
-                prChips(p.t).some((c: any) => c.moved) ? h(NTooltip, { trigger: 'hover' }, {
+                prChips(p.t).some((c: any) => c.moved) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error', 'data-testid': 'card-pr-moved' },
                         { default: () => 'PR moved · re-test' }),
-                    default: () => prChips(p.t).filter((c: any) => c.moved).map((c: any) => `${c.label}: ${c.heads}`).join(' | '),
+                    default: () => tipText(prChips(p.t).filter((c: any) => c.moved).map((c: any) => `${c.label}: ${c.heads}`).join(' | ')),
                 }) : null,
-                waitingOnLabel(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                waitingOnLabel(p.t) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'warning', 'data-testid': 'card-waiting' },
                         { default: () => waitingOnLabel(p.t) }),
                     default: () => 'Not offered or assignable until every task of the groups it waits on is done or cancelled.',
                 }) : null,
-                wipCapped(p.t) ? h(NTooltip, { trigger: 'hover' }, {
+                wipCapped(p.t) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'wip-capped' }),
                     default: () => `Role ${p.t.role} is at its WIP limit — assignable as soon as a slot frees.`,
                 }) : null,
                 p.t.parentTask ? h(NTag, { size: 'tiny', bordered: false, type: 'info' }, { default: () => 'subtask' }) : null,
-                subtaskTag(p.t, tasks.value) ? h(NTooltip, { trigger: 'hover' }, {
+                subtaskTag(p.t, tasks.value) ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: subtaskTag(p.t, tasks.value)?.type },
                         { default: () => subtaskTag(p.t, tasks.value)?.text }),
-                    default: () => subtaskProgress(p.t, tasks.value).open.length
+                    default: () => tipText(subtaskProgress(p.t, tasks.value).open.length
                         ? 'Open: ' + subtaskProgress(p.t, tasks.value).open
                             .map((c: any) => `${depLabel(c)} (${String(c.status ?? '').toLowerCase().replace(/_/g, ' ')})`).join(', ')
                         + '. The board completes this task when they finish.'
-                        : 'Every subtask is done.',
+                        : 'Every subtask is done.'),
                 }) : null,
-                p.t.returns?.length ? h(NTooltip, { trigger: 'hover' }, {
+                p.t.returns?.length ? h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => `${p.t.returns.length} return${p.t.returns.length > 1 ? 's' : ''}` }),
-                    default: () => p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | '),
+                    default: () => tipText(p.t.returns.map((r: any) => `${r.role ?? '?'}: ${r.reason}${r.description ? ' — ' + r.description : ''}`).join(' | ')),
                 }) : null,
-                ...prChips(p.t).map((c) => h(NTooltip, { trigger: 'hover' }, {
+                ...prChips(p.t).map((c) => h(NTooltip, CARD_TIP, {
                     trigger: () => h(NTag, { size: 'tiny', bordered: false, type: c.type },
                         { default: () => h('a', { href: c.url, target: '_blank', rel: 'noopener', class: 'prlink' },
                             c.state === 'linked' ? 'PR' : `PR ${c.state}`) }),
-                    default: () => `${c.label}: ${c.title}`,
+                    default: () => tipText(`${c.label}: ${c.title}`),
                 })),
             ]),
             dependentsOf(p.t).length ? h('div', { class: 'tcard__deps' }, [
                 h('span', { class: 'deplabel' }, 'blocks'),
-                ...dependentsOf(p.t).map((d: any, i: number) => h(NTooltip, { trigger: 'hover', key: 'b' + i }, {
+                ...dependentsOf(p.t).map((d: any, i: number) => h(NTooltip, { ...CARD_TIP, key: 'b' + i }, {
                     trigger: () => h('span', { class: 'depchip depchip--blocks' }, depLabel(d)),
-                    default: () => `${d.title} — ${d.status}`,
+                    default: () => tipText(`${d.title} — ${d.status}`),
                 })),
             ]) : null,
             p.t.signOffs?.length ? h('div', { class: 'tcard__passages' },
-                p.t.signOffs.map((s: any, i: number) => h(NTooltip, { trigger: 'hover', key: i }, {
+                p.t.signOffs.map((s: any, i: number) => h(NTooltip, { ...CARD_TIP, key: i }, {
                     trigger: () => h('span', { class: ['passage', 'passage--' + (s.outcome || '').toLowerCase()] },
                         (s.reviewedBy ? '\u270b ' : '') + s.role),
-                    default: () => `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + actorLabel(s.reviewedBy) : ''}${s.note ? ' — ' + s.note : ''}`,
+                    // The note keeps the line breaks it was written with (TPF-89), within the screen.
+                    default: () => tipText(
+                        `${s.role}: ${s.outcome}${s.reviewedBy ? ' by ' + actorLabel(s.reviewedBy) : ''}${s.note ? ' — ' + s.note : ''}`),
                 }))) : null,
         ] })
+    },
+})
+
+
+// A column's cards, the first LANE_CARDS until its "Show N more" (the head still counts every card, the filters
+// already applied); "Show fewer" folds it back. Kept per column of each lane for the session, reset on another board.
+const expandedColumns = ref<Set<string>>(new Set())
+function toggleColumn (key: string) {
+    const next = new Set(expandedColumns.value)
+    if (next.has(key)) next.delete(key)
+    else next.add(key)
+    expandedColumns.value = next
+}
+const LaneCards = defineComponent({
+    props: { cards: { type: Array, required: true }, at: { type: String, required: true } },
+    setup (p: any) {
+        return () => {
+            const expanded = expandedColumns.value.has(p.at)
+            const more = moreCardsLabel(p.cards.length, expanded)
+            return [
+                ...shownCards(p.cards, expanded).map((t: any) => h(TaskCard, { key: t.uuid, t })),
+                more ? h(NButton, { size: 'tiny', quaternary: true, block: true, class: 'col__more', 'data-testid': 'col-more',
+                    onClick: () => toggleColumn(p.at) }, { default: () => more }) : null,
+            ]
+        }
     },
 })
 
@@ -1670,8 +1784,24 @@ onMounted(() => loadTargetComponents(true))
 watch(selectedBoard, async () => {
     // Picking a board the person can read clears the notice about the one they could not.
     if (selectedBoard.value) hiddenBoard.value = null
+    // Opened on it again next time, in this organization (relizaLastBoard_<org>); no board is not remembered.
+    writeLastBoard(props.orgUuid, selectedBoard.value)
+    expandedColumns.value = new Set()
     syncQuery()
     await refreshBoardContent()
+})
+// Another organization with the panel still mounted (the dashboard's org switch): its boards, opened on the
+// board last opened there. The URL's board was the previous organization's, so it is not looked for here.
+watch(() => props.orgUuid, async (org, was) => {
+    if (org === was) return
+    const previous = selectedBoard.value ?? hiddenBoard.value
+    closeTask()
+    boards.value = []
+    boardsListed.value = false
+    boardLoading.value = true
+    hiddenBoard.value = null
+    selectedBoard.value = null
+    await refreshBoards({ ignoreUrlBoard: previous })
 })
 
 // ---------- declarative boards: apply a board or presets file ----------
@@ -1717,27 +1847,64 @@ async function onSpecApplied (p: { kind: SpecKind, name?: string }) {
     }
 }
 
-async function refreshBoards () {
-    boards.value = await store.dispatch('fetchAgentBoardsOfOrg', props.orgUuid) ?? []
+async function refreshBoards (opts: { ignoreUrlBoard?: string | null } = {}) {
+    const before = selectedBoard.value
+    try {
+        boards.value = await store.dispatch('fetchAgentBoardsOfOrg', props.orgUuid) ?? []
+    } catch (e) {
+        if (!boardsListed.value && !selectedBoard.value) boardLoading.value = false
+        throw e
+    } finally {
+        boardsListed.value = true
+    }
     if (!selectedBoard.value) {
         const fromUrl = route.query.board as string | undefined
-        const known = fromUrl && boards.value.some(b => b.uuid === fromUrl)
+        // The URL's board, then the one last opened in the organization, then the first (relizaLastBoard_<org>).
         // A link to a board the list does not hold is not silently another board (RD2-9).
-        hiddenBoard.value = fromUrl && !known ? fromUrl : null
-        selectedBoard.value = known ? (fromUrl as string) : hiddenBoard.value ? null : (boards.value[0]?.uuid ?? null)
+        const pick = initialBoard(boards.value, fromUrl && fromUrl !== opts.ignoreUrlBoard ? fromUrl : null,
+            readLastBoard(props.orgUuid))
+        hiddenBoard.value = pick.hidden
+        selectedBoard.value = pick.board
     }
     syncQuery()
-    await refreshBoardContent()
+    // A board picked here loads through watch(selectedBoard); read it here too and it is read twice.
+    if (selectedBoard.value === before) await refreshBoardContent()
 }
 
+// The board whose tasks are on screen, and the newest read: a slower read of a board left behind is dropped.
+let tasksShownOf: string | null = null
+let contentSeq = 0
+
 async function refreshBoardContent () {
-    if (!selectedBoard.value) { tasks.value = []; roles.value = []; return }
-    const [t, r] = await Promise.all([
-        store.dispatch('fetchAgentTasksOfBoard', { boardUuid: selectedBoard.value }),
-        store.dispatch('fetchAgentTaskRoleConfigsOfBoard', selectedBoard.value),
-    ])
+    const board = selectedBoard.value
+    const seq = ++contentSeq
+    if (!board) {
+        tasks.value = []
+        roles.value = []
+        tasksShownOf = null
+        // Still listing the boards: the spinner stays until the list says whether there are any.
+        boardLoading.value = !boardsListed.value
+        return
+    }
+    if (board !== tasksShownOf) {
+        tasks.value = []
+        boardLoading.value = true
+    }
+    let t: any[] | null
+    let r: any[] | null
+    try {
+        [t, r] = await Promise.all([
+            store.dispatch('fetchAgentTasksOfBoard', { boardUuid: board }),
+            store.dispatch('fetchAgentTaskRoleConfigsOfBoard', board),
+        ])
+    } finally {
+        if (seq === contentSeq) boardLoading.value = false
+    }
+    if (seq !== contentSeq) return
     tasks.value = t ?? []
     roles.value = r ?? []
+    tasksShownOf = board
+    void loadTestedHeads(board, seq)
     await loadLifetimeSpend()
     await loadDocumentSeries()
     await loadCoverage()
@@ -1747,6 +1914,24 @@ async function refreshBoardContent () {
     const agents = await store.dispatch('fetchAgentsOfOrg', props.orgUuid) ?? []
     agentDir.value = agentDirectory(agents)
     agentNames.value = agentNamesOf(agents)
+}
+
+/**
+ * The PR chips' heads line, merged in after the cards render: only tasks that link PRs carry tested
+ * heads, and resolving them is the expensive part of a board read, so it neither blocks the board nor
+ * runs for tasks without PRs. A newer board load discards a late answer.
+ */
+async function loadTestedHeads (board: string, seq: number) {
+    const withPrs = tasks.value.filter((t: any) => (t.prUrls?.length || t.pullRequests?.length)).map((t: any) => t.uuid)
+    if (!withPrs.length) return
+    try {
+        const heads = await store.dispatch('fetchAgentTaskTestedHeads', withPrs)
+        if (seq !== contentSeq || board !== tasksShownOf) return
+        const byUuid = new Map(heads.map((h: any) => [h.uuid, h.testedHeads ?? []]))
+        tasks.value = tasks.value.map((t: any) => byUuid.has(t.uuid) ? { ...t, testedHeads: byUuid.get(t.uuid) } : t)
+    } catch (err) {
+        console.warn('Failed to read the tested heads of the board\'s PR tasks', err)
+    }
 }
 
 // A save refusal about one of the naming fields, shown beside it (task fceb1e57).
@@ -2153,6 +2338,8 @@ async function operatorPause (pause: boolean, reason?: string) {
     .col__count { margin-left: 6px; font-weight: 500; color: #888; }
     .board__more { text-align: right; font-size: 12px; color: #888; margin-bottom: 2px; }
     .board__empty { color: #888; font-size: 13px; padding: 12px 0; }
+    .board__loading { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; padding: 12px 0; }
+    .col__more { margin-bottom: 10px; color: #888; }
     .col__head {
         font-size: 12px;
         font-weight: 600;

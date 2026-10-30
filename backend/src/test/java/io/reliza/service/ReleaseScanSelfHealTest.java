@@ -19,30 +19,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
-import java.util.stream.Collectors;
 
 import org.junit.jupiter.api.Test;
-import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.common.Utils;
 import io.reliza.model.Artifact;
-import io.reliza.model.FlowControl;
 import io.reliza.model.Organization;
 import io.reliza.model.Release;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CarryForwardArm;
 import io.reliza.model.dto.CarryForwardTally;
 import io.reliza.model.dto.ReleaseMetricsDto;
-import io.reliza.repositories.ArtifactRepository;
-import io.reliza.repositories.ReleaseRepository;
-import io.reliza.ws.App;
-import io.reliza.ws.oss.TestInitializer;
 
 /**
  * Regression test for the "product release stranded in Scan pending" self-heal
@@ -68,15 +59,9 @@ import io.reliza.ws.oss.TestInitializer;
  *       {@code firstScanned} (the release heals) and settles it out.</li>
  * </ol>
  */
-@ExtendWith(SpringExtension.class)
-@SpringBootTest(classes = {App.class})
-public class ReleaseScanSelfHealTest {
+public class ReleaseScanSelfHealTest extends ReleaseScanSelfHealTestBase {
 
-	@Autowired private ReleaseRepository releaseRepository;
-	@Autowired private ArtifactRepository artifactRepository;
 	@Autowired private ArtifactService artifactService;
-	@Autowired private ReleaseMetricsComputeService releaseMetricsComputeService;
-	@Autowired private TestInitializer testInitializer;
 
 	// Epoch-seconds sentinel for a "scanned" child. Stored the way the metrics
 	// JSONB stores firstScanned/lastScanned (epoch-seconds number).
@@ -106,7 +91,7 @@ public class ReleaseScanSelfHealTest {
 				"incomplete scan must not stamp lastScanned (would evict from the self-heal finder)");
 		// And the observable consequence: the product is still picked up by the finder,
 		// so the every-minute sweep will retry it until the child scans.
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"product must remain eligible for FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE "
 				+ "so it can self-heal once the child is scanned");
 
@@ -144,7 +129,7 @@ public class ReleaseScanSelfHealTest {
 		// instead of waiting on a scan that will never come.
 		assertNotNull(lastScanned(after),
 				"non-scannable (REJECTED) release must settle: lastScanned stamped even with an unscanned BOM");
-		assertFalse(byUpdateFinderUuids().contains(rejected.getUuid()),
+		assertFalse(eligibleByUpdate(rejected.getUuid()),
 				"settled REJECTED release must leave the BY_UPDATE finder (no more head-squatting)");
 	}
 
@@ -201,7 +186,7 @@ public class ReleaseScanSelfHealTest {
 		assertNotNull(lastScanned(after),
 				"and it still SETTLES -- the lifecycle gate is unchanged, so an abandoned draft does not "
 				+ "squat in the finder waiting for a scan that will never come");
-		assertFalse(byUpdateFinderUuids().contains(r.getUuid()),
+		assertFalse(eligibleByUpdate(r.getUuid()),
 				"which means it leaves the finder pool, exactly as it did before this work");
 	}
 
@@ -210,7 +195,7 @@ public class ReleaseScanSelfHealTest {
 		Organization org = testInitializer.obtainOrganization();
 		Release child = saveScanPendingRelease(org.getUuid(), new ArrayList<>());
 		Release product = saveScanPendingRelease(org.getUuid(), parentReleasesOf(child.getUuid()));
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"pre-fence sanity: scan-pending product is finder-eligible");
 
 		releaseRepository.recordMetricsComputeIncomplete(product.getUuid(), 3600);
@@ -219,11 +204,11 @@ public class ReleaseScanSelfHealTest {
 		assertNotNull(fenced.getFlowControl(), "fence must be recorded on flow_control");
 		assertNotNull(fenced.getFlowControl().metricsComputeSkipUntil());
 		assertEquals(1, fenced.getFlowControl().metricsComputeFailureCount());
-		assertFalse(byUpdateFinderUuids().contains(product.getUuid()),
+		assertFalse(eligibleByUpdate(product.getUuid()),
 				"fenced release must not consume a finder slot while backing off");
 
 		releaseRepository.clearMetricsComputeBackoff(product.getUuid());
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"cleared fence must re-admit the release to the finder");
 	}
 
@@ -237,7 +222,7 @@ public class ReleaseScanSelfHealTest {
 		Release product = saveScanPendingRelease(org.getUuid(), parentReleasesOf(child.getUuid()));
 		// Parent is deep in backoff, e.g. its child took hours to scan.
 		releaseRepository.recordMetricsComputeIncomplete(product.getUuid(), 3600);
-		assertFalse(byUpdateFinderUuids().contains(product.getUuid()));
+		assertFalse(eligibleByUpdate(product.getUuid()));
 
 		releaseMetricsComputeService.computeReleaseMetricsOnRescan(
 				releaseRepository.findById(child.getUuid()).orElseThrow());
@@ -248,7 +233,7 @@ public class ReleaseScanSelfHealTest {
 		assertTrue(productAfter.getFlowControl() == null
 						|| productAfter.getFlowControl().metricsComputeSkipUntil() == null,
 				"child's firstScanned landing must lift the parent's fence (push, not poll)");
-		assertTrue(byUpdateFinderUuids().contains(product.getUuid()),
+		assertTrue(eligibleByUpdate(product.getUuid()),
 				"parent must be finder-eligible again so it heals on the next tick, not after its backoff");
 	}
 
@@ -432,63 +417,8 @@ public class ReleaseScanSelfHealTest {
 				"cap holds for arbitrarily large failure counts");
 	}
 
-	private static FlowControl fcWithFailures(int failureCount) {
-		return new FlowControl(null, null, null, null, null, null, null, null, null, failureCount);
-	}
-
-	// ---- helpers (local, mirroring ReleaseMetricsFinderQueryTest's fixture style) ----
-
-	private Set<UUID> byUpdateFinderUuids() {
-		return releaseRepository.findReleasesForMetricsComputeByUpdate(1000)
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
-	}
-
-	private static Object firstScanned(Release r) {
-		return r.getMetrics() == null ? null : r.getMetrics().get("firstScanned");
-	}
-
-	private static Object lastScanned(Release r) {
-		return r.getMetrics() == null ? null : r.getMetrics().get("lastScanned");
-	}
-
-	private static List<Map<String, Object>> parentReleasesOf(UUID childUuid) {
-		Map<String, Object> entry = new HashMap<>();
-		entry.put("release", childUuid.toString());
-		entry.put("deliverables", new ArrayList<>());
-		List<Map<String, Object>> parents = new ArrayList<>();
-		parents.add(entry);
-		return parents;
-	}
-
-	/**
-	 * Persist an ASSEMBLED release with no firstScanned (== "Scan pending") and an
-	 * empty metrics map. {@code parentReleases} makes it a product/aggregate release.
-	 */
-
-	private Release saveScanPendingRelease(UUID orgUuid, List<Map<String, Object>> parentReleases) {
-		Release r = new Release();
-		r.setUuid(UUID.randomUUID());
-		r.setCreatedDate(ZonedDateTime.now());
-		r.setLastUpdatedDate(ZonedDateTime.now());
-		r.setSchemaVersion(0);
-		Map<String, Object> recordData = new HashMap<>();
-		recordData.put("org", orgUuid.toString());
-		recordData.put("lifecycle", "ASSEMBLED");
-		recordData.put("artifacts", new ArrayList<String>());
-		recordData.put("parentReleases", parentReleases);
-		r.setRecordData(recordData);
-		r.setMetrics(new HashMap<>());
-		return releaseRepository.save(r);
-	}
-
-	private void markScanned(UUID releaseUuid, double firstScannedEpoch) {
-		Release r = releaseRepository.findById(releaseUuid).orElseThrow();
-		Map<String, Object> metrics = r.getMetrics() != null ? r.getMetrics() : new HashMap<>();
-		metrics.put("firstScanned", firstScannedEpoch);
-		metrics.put("lastScanned", firstScannedEpoch);
-		r.setMetrics(metrics);
-		releaseRepository.save(r);
-	}
+	// ---- helpers (local, mirroring ReleaseMetricsFinderQueryTest's fixture style; the release
+	// fixtures shared with ProductChildNudgeIntegrationTest are on ReleaseScanSelfHealTestBase) ----
 
 	/**
 	 * An unscanned BOM that nonetheless CARRIES findings -- the carry-forward state a replacement
@@ -576,65 +506,5 @@ public class ReleaseScanSelfHealTest {
 		dti.setLastScanned(scanned);
 		a.setMetrics(Utils.OM.convertValue(dti, LinkedHashMap.class));
 		return artifactRepository.save(a).getUuid();
-	}
-
-	private static LinkedList<VulnerabilityDto> buildVulns(int findings, String prefix) {
-		LinkedList<VulnerabilityDto> vulns = new LinkedList<>();
-		for (int i = 0; i < findings; i++) {
-			vulns.add(new VulnerabilityDto("pkg:maven/org.example/" + prefix.toLowerCase() + i + "@1.0.0",
-					prefix + "-" + i, VulnerabilitySeverity.HIGH, Set.of(), Set.of(), Set.of(),
-					null, null, ZonedDateTime.now().minusHours(3), null, null, null, null, null, false));
-		}
-		return vulns;
-	}
-
-	/** BOM artifact with no metrics at all -- i.e. never scanned. */
-	private UUID saveUnscannedBomArtifact(UUID orgUuid) {
-		Artifact a = new Artifact();
-		a.setUuid(UUID.randomUUID());
-		a.setCreatedDate(ZonedDateTime.now());
-		a.setLastUpdatedDate(ZonedDateTime.now());
-		a.setSchemaVersion(0);
-		Map<String, Object> recordData = new HashMap<>();
-		recordData.put("org", orgUuid.toString());
-		recordData.put("type", "BOM");
-		a.setRecordData(recordData);
-		return artifactRepository.save(a).getUuid();
-	}
-
-	private void attachArtifact(UUID releaseUuid, UUID artifactUuid) {
-		attachArtifacts(releaseUuid, List.of(artifactUuid));
-	}
-
-	private void attachArtifacts(UUID releaseUuid, List<UUID> artifactUuids) {
-		Release r = releaseRepository.findById(releaseUuid).orElseThrow();
-		Map<String, Object> recordData = r.getRecordData();
-		List<String> artifacts = new ArrayList<>();
-		artifactUuids.forEach(a -> artifacts.add(a.toString()));
-		recordData.put("artifacts", artifacts);
-		r.setRecordData(recordData);
-		releaseRepository.save(r);
-	}
-
-	/** Turn a previously-unscanned BOM into a scanned one carrying {@code findings} -- the swap's own
-	 *  scan landing, which releases the hold. */
-	private void markBomScanned(UUID bomUuid, int findings) {
-		Artifact a = artifactRepository.findById(bomUuid).orElseThrow();
-		DependencyTrackIntegration dti = new DependencyTrackIntegration();
-		dti.setVulnerabilityDetails(buildVulns(findings, "SCAN"));
-		dti.computeMetricsFromFacts();
-		ZonedDateTime scanned = ZonedDateTime.now();
-		dti.setFirstScanned(scanned);
-		dti.setLastScanned(scanned);
-		a.setMetrics(Utils.OM.convertValue(dti, LinkedHashMap.class));
-		artifactRepository.save(a);
-	}
-
-	private void setLifecycle(UUID releaseUuid, String lifecycle) {
-		Release r = releaseRepository.findById(releaseUuid).orElseThrow();
-		Map<String, Object> recordData = r.getRecordData();
-		recordData.put("lifecycle", lifecycle);
-		r.setRecordData(recordData);
-		releaseRepository.save(r);
 	}
 }

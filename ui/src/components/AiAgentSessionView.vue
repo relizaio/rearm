@@ -2,7 +2,7 @@
     <div class="aiAgentSessionView" v-if="session">
         <n-breadcrumb separator="›" class="crumbs">
             <n-breadcrumb-item @click="openAgentsOfOrg">AI Agents</n-breadcrumb-item>
-            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agent.name }}</n-breadcrumb-item>
+            <n-breadcrumb-item v-if="agent" @click="openAgent">{{ agentDisplayLabel(agent) }}</n-breadcrumb-item>
             <n-breadcrumb-item>Session {{ sessionShortLabel }}</n-breadcrumb-item>
         </n-breadcrumb>
         <div class="hero">
@@ -17,7 +17,7 @@
                     <n-button size="tiny" type="error" ghost class="forceclose" :loading="closing">Force close</n-button>
                 </template>
                 <div>Returns every task this session holds to the queue and closes the session.</div>
-                <n-input v-model:value="closeReasonInput" size="small" class="forceclose-reason" placeholder="Reason (optional)" />
+                <growing-text-input v-model:value="closeReasonInput" class="forceclose-reason" placeholder="Reason (optional)" />
             </n-popconfirm>
             <n-tooltip v-if="isIdleWarned(session)" trigger="hover" :width="320">
                 <template #trigger>
@@ -31,7 +31,7 @@
                 <span :style="{ background: agent.color || '#888', color: 'white', padding: '0 4px', borderRadius: '4px', marginRight: '4px' }">
                     {{ agent.iconKind || '◆' }}
                 </span>
-                {{ agent.name }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
+                {{ agentOwnName(agent) }}<span class="dim agent-id" v-if="agent.uuid"> — uuid:{{ agent.uuid.slice(0, 8) }}…{{ agent.uuid.slice(-4) }}</span>
             </a>
             <template v-if="session.primaryModel">
                 <span class="dim">·</span>
@@ -134,7 +134,10 @@
                         </template>
                         <span v-else class="dim">—</span>
                     </n-descriptions-item>
-                    <n-descriptions-item label="API key"><code>{{ session.apiKey || '—' }}</code></n-descriptions-item>
+                    <n-descriptions-item label="API key">
+                        <code v-if="session.apiKey" :title="session.apiKey">{{ sessionKeyLabel }}</code>
+                        <span v-else class="dim">—</span>
+                    </n-descriptions-item>
                     <n-descriptions-item label="Started"><agent-time :at="session.startedAt"/></n-descriptions-item>
                     <n-descriptions-item label="Closed"><agent-time :at="session.closedAt"/></n-descriptions-item>
                     <n-descriptions-item v-if="closeAttribution(session)" label="Closed by">
@@ -225,15 +228,18 @@
 import { computed, h, onMounted, ref } from 'vue'
 import { useStore } from 'vuex'
 import { useRoute, useRouter } from 'vue-router'
-import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NInput, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
+import { NAlert, NBreadcrumb, NBreadcrumbItem, NTabs, NTabPane, NTag, NDataTable, NSpin, NDescriptions, NDescriptionsItem, NButton, NModal, NPopconfirm, NSpace, NTooltip, NCard, DataTableColumns, useNotification } from 'naive-ui'
 import { canForceClose, forceCloseNeedsBoards } from '@/utils/agentTaskAdmin'
 import { sessionLoadErrorText } from '@/utils/agentAccessMessages'
 import { closeAttribution, forceCloseReason, idleWarningText, isIdleWarned } from '@/utils/agentSessionIdle'
+import { agentDisplayLabel, agentOwnName } from '@/utils/agentSessionLabel'
 import { taskPagePath, ts } from '@/utils/agentTaskFormat'
 import { lifecycleWord } from '@/utils/agentWords'
 import { isOrgAdmin } from '@/utils/agentReopen'
+import { apiKeyLabelOf } from '@/utils/apiKeyLabel'
 import AgentUsageSummary from './AgentUsageSummary.vue'
 import AgentTime from './AgentTime.vue'
+import GrowingTextInput from './task/GrowingTextInput.vue'
 import { fetchArrayBufferWithAuth, fetchWithAuth } from '@/utils/fetchClient'
 import { PrismEditor } from 'vue-prism-editor'
 import 'vue-prism-editor/dist/prismeditor.min.css'
@@ -391,6 +397,9 @@ const assertionTip = computed<string>(() =>
 onMounted(load)
 
 const isAdmin = computed(() => isOrgAdmin(store.getters?.myuser?.permissions?.permissions, session.value?.org))
+// the session's key as a label from the agent's bound keys; a personal key, or a session whose agent is
+// gone, reads by its short id, the full uuid in the tooltip
+const sessionKeyLabel = computed(() => apiKeyLabelOf(session.value?.apiKey, agent.value?.boundApiKeys ?? []))
 const closing = ref(false)
 const closeReasonInput = ref('')
 // The org's boards the reader sees, with their myPermissions: read only when they decide whether a
@@ -804,6 +813,8 @@ const policyColumns: DataTableColumns<any> = [
 .crumbs :deep(.n-breadcrumb-item__link) { cursor: pointer; }
 .hero { display: flex; align-items: center; gap: 8px; margin-bottom: 6px; font-size: 13px; }
 .dim { color: var(--n-text-color-3, #666); }
+/* A force-close reason keeps the line breaks it was written with (TPF-89). */
+.close-attribution { white-space: pre-wrap; overflow-wrap: anywhere; }
 .provider-sessions { display: flex; flex-direction: column; gap: 4px; }
 .provider-session { display: flex; align-items: center; gap: 6px; flex-wrap: wrap; }
 .copyable { cursor: pointer; }

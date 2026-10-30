@@ -26,6 +26,8 @@ import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
 import io.reliza.model.dto.notifications.ReleaseCreatedPayload;
 import io.reliza.model.dto.notifications.ReleaseLifecycleChangedPayload;
 import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseTeaPublicationPayload;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
@@ -78,6 +80,9 @@ public class EventActivationMapBuilder {
                 case RELEASE_CREATED -> populateReleaseCreated(eventMap, event);
                 case RELEASE_LIFECYCLE_CHANGED -> populateReleaseLifecycleChanged(eventMap, event);
                 case RELEASE_BOM_DIFF -> populateReleaseBomDiff(eventMap, event);
+                case RELEASE_TEA_PUBLISHED, RELEASE_TEA_HIDDEN -> populateReleaseTeaPublication(eventMap, event);
+                case RELEASE_SUBMISSION_CREATED -> populateReleaseSubmission(eventMap, event);
+                case RELEASE_SUBMISSION_WITHDRAWN -> populateReleaseSubmission(eventMap, event);
                 case APPROVAL_REQUESTED -> populateApprovalRequested(eventMap, event);
                 case APPROVAL_RESOLVED -> populateApprovalResolved(eventMap, event);
                 case INSTANCE_DEPLOYMENT_CHANGED, INSTANCE_DEPLOYMENT_FAILED ->
@@ -187,6 +192,30 @@ public class EventActivationMapBuilder {
         if (p == null) return;
         eventMap.put("oldLifecycle", p.oldLifecycle() != null ? p.oldLifecycle().name() : "");
         eventMap.put("newLifecycle", p.newLifecycle() != null ? p.newLifecycle().name() : "");
+        populateReleaseRef(eventMap, p.release());
+    }
+
+    /** Task TEA-35: event.submission, event.submissionKind, ... so a subscription narrows by kind or act. */
+    private void populateReleaseSubmission(Map<String, Object> eventMap, NotificationOutboxEvent event) {
+        ReleaseSubmissionPayload p = deserialize(event, ReleaseSubmissionPayload.class);
+        if (p == null) return;
+        eventMap.put("submission", p.submission() != null ? p.submission().toString() : "");
+        eventMap.put("submissionKind", p.kind() != null ? p.kind().name() : "");
+        eventMap.put("submissionState", p.state() != null ? p.state().name() : "");
+        eventMap.put("submissionVersion", p.version());
+        eventMap.put("submissionAct", p.act() != null ? p.act().name() : "");
+        populateReleaseRef(eventMap, p.release());
+    }
+
+    private void populateReleaseTeaPublication(Map<String, Object> eventMap, NotificationOutboxEvent event) {
+        ReleaseTeaPublicationPayload p = deserialize(event, ReleaseTeaPublicationPayload.class);
+        if (p == null) return;
+        eventMap.put("teaPublication", p.publication() != null ? p.publication().toString() : "");
+        eventMap.put("teaState", p.state() != null ? p.state().name() : "");
+        eventMap.put("teaCollectionVersion", p.collectionVersion() != null ? p.collectionVersion() : 0);
+        eventMap.put("teaExposure", p.exposure() != null ? p.exposure().name() : "");
+        eventMap.put("teaUrl", StringUtils.defaultString(p.publicUrl()));
+        eventMap.put("teaChildrenPublished", p.childrenPublished());
         populateReleaseRef(eventMap, p.release());
     }
 

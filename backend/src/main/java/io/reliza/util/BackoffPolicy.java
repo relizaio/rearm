@@ -51,6 +51,25 @@ public final class BackoffPolicy {
     }
 
     /**
+     * Backoff for a TEA act (task TEA-7) that must be tried again: a publish or hide in progress
+     * on the release elsewhere, or an unexpected exception. 60, 120, 240, 480, then 900 seconds
+     * (cap) for failure counts 1 to 5.
+     *
+     * <p>Not {@link #autoIntegrateSkipSeconds}: a retry here follows a wait of up to five minutes
+     * on the release's lease, and the common cause (a person's act, or another instance's, on the
+     * same release) clears in seconds to minutes, so the first retry comes after one minute. The
+     * cap is the act queue's lease (TeaOutputEventService.TEA_ACT_LEASE_SECONDS).
+     *
+     * @param failureCount post-increment failure count (1 = first failure).
+     * @return seconds to push {@code teaActSkipUntil} forward by.
+     */
+    public static int teaActRetrySeconds(int failureCount) {
+        if (failureCount <= 0) return 60;            // defensive - caller should pass >=1
+        if (failureCount >= 5) return 900;           // cap at 15 minutes
+        return (1 << (failureCount - 1)) * 60;       // 1,2,4,8 minutes
+    }
+
+    /**
      * Backoff for a notification-outbox event deferred because the releases it
      * affects are not resolvable yet: 30s, 60s, then 2 minutes per attempt (cap).
      *

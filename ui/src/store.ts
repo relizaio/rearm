@@ -5,10 +5,11 @@ import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
-import { loadWithSchemaDriftFallback } from './utils/graphqlDriftFallback'
+import { loadWithSchemaDriftFallback, isSchemaDriftError } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
+import { withExpectedRevision } from '@/utils/componentRevision'
 import VcsReposOfOrg from './components/VcsReposOfOrg.vue'
 
 // Browser memory of the view choice; sibling of relizaOrgUuid / relizaPerspectiveUuid.
@@ -66,6 +67,26 @@ const AGENT_BOARD_SELECTION = `
         progress { total done open complete } spentMicros }
 `
 
+// What a task export adds to AGENT_TASK_SELECTION: every AgentTask field the page itself does not
+// read, so the exported JSON is the whole task in the page's shape. Left out on purpose: the element
+// graph lookups that take an element as input (dependentsOf, elementHistory), the stored revisions
+// (agentTaskHistory) and the documents' file text.
+const AGENT_TASK_EXPORT_EXTRA = `
+    updatedAt
+    unassignments { role roleUuid agent session assignedAt unassignedAt unassignedBy { kind uuid name } reason usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros priceVersions costComplete allowanceMicros refreshedAt } }
+    unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
+    testedHeads { pr head }
+    requiredInputs { kind specification scope component minLifecycle resolution release }
+    regressedInputs
+    releases
+    cycles
+    roleUuid
+    producesComponent
+    producesComponentDetails { uuid name }
+    elements { id family title parent level traces { verb target } assumes speculative contentDigest line release specification terms }
+    elementChecks { catalogueVersion grammarVersion scope { task checked releases { release specification elementsDigest lifecycle } } results { check result blocking reason offences { elementId release message } } digest }
+`
+
 const AGENT_TASK_SELECTION = `
     uuid
     key
@@ -87,6 +108,7 @@ const AGENT_TASK_SELECTION = `
     hold { level kind gateRole reason heldBy { kind uuid name } heldAt stop returnTo linked { prUrl by at } }
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
+    stale { rule since minutes message }
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     designCheckpoint { reachedAt afterRole beforeRole design state settledBy { kind uuid name } settledAt note }
@@ -200,6 +222,70 @@ const AGENT_TASK_SELECTION = `
     completedAt
 `
 
+// What the board's views read of every task without opening one: the kanban cards and their tooltips, the
+// filters and lanes, the PERT, Timeline and Table views, the WIP chips and the review banner. Documents,
+// review items, questions, usage and the other detail stay with AGENT_TASK_SELECTION, which a task's drawer
+// and page read for that one task: on a 115-task board the full read is ~2.6 MB, this one ~0.1 MB.
+const AGENT_TASK_CARD_SELECTION = `
+    uuid
+    key
+    number
+    externalRef
+    title
+    sourceUrl
+    status
+    role
+    orderIndex
+    dependsOn
+    parentTask
+    childTasks
+    hold { level kind gateRole reason heldBy { kind } returnTo }
+    requireHumanReview
+    assignment { session agent role assignedAt }
+    stale { rule since minutes message }
+    signOffs { role agent session assignedAt signedOffAt outcome note reviewedBy { kind uuid name } }
+    returns { role agent session reason description returnedAt }
+    statusHistory { from to trigger actor { kind } }
+    prUrls
+    pullRequests { url state targetBranch mergedDate registered baseMovedBy head
+        declaration { outcome commit note supersededBy by { kind uuid name } } }
+    workLevel
+    effectiveWorkLevel
+    workLevelSetBy { kind uuid name }
+    group { uuid key name }
+    tags { key value }
+    waitingOnGroups
+    createdDate
+    completedAt
+`
+
+// TPF-101 (TPF-74 child 2): the organization's component and product lists read the componentRefs
+// projection (six scalars, no component document, no effectiveLifecycle). A backend without the field
+// refuses the document as schema drift (a validation verdict or an HTTP 400, isSchemaDriftError); the
+// call then sends the caller's full components document, and only when THAT was served is the session
+// latched onto it, so the refused document is not sent again until a reload (the loadRichestServed
+// rule: nothing served, nothing remembered). Any other error of the refs document (401, 403, 5xx,
+// transport) is rethrown unchanged; an error of the full document is rethrown unchanged.
+async function loadComponentRows (context: any, fullQuery: any, variables: any,
+    fetchPolicy: 'network-only' | 'cache-first'): Promise<any[]> {
+    let refsError: any = null
+    if (context.state.componentRefsSupported) {
+        try {
+            const response = await graphqlClient.query({ query: graphqlQueries.ComponentRefsGql, variables, fetchPolicy })
+            return response.data.componentRefs || []
+        } catch (err: any) {
+            if (!isSchemaDriftError(err)) throw err
+            refsError = err
+        }
+    }
+    const response = await graphqlClient.query({ query: fullQuery, variables, fetchPolicy })
+    if (refsError) {
+        console.error('componentRefs not available on this backend; the lists read components instead', refsError)
+        context.commit('SET_COMPONENT_REFS_SUPPORTED', false)
+    }
+    return response.data.components || []
+}
+
 const storeObject : any = {
     state () {
         return {
@@ -214,6 +300,28 @@ const storeObject : any = {
              * would reject.
              */
             supportInjectionSupported: true,
+            /**
+             * False once the organization settings section "SBOM export signing" had its key
+             * list refused as schema drift: a backend without SBOM signing (a CE mirror before
+             * its sync). Latched for the session, like the flag above; a reload clears it.
+             */
+            sbomSigningSupported: true,
+            /**
+             * False once a read of the declared licence (organization default, component or
+             * release, SCORE-42) was refused as schema drift: a backend without the fields (a CE
+             * mirror before its sync). Latched for the session, like the flags above; a reload
+             * clears it. A failed request does not set it.
+             */
+            declaredLicenseSupported: true,
+            /**
+             * False once the organization lists' componentRefs document (TPF-101) was refused as
+             * schema drift AND the full components document was then served: a backend without the
+             * field (a CE mirror before its sync). The lists then read the full document. Latched for
+             * the session, like the flags above; a reload clears it. A refusal of another kind does
+             * not set it, and neither does a drift refusal whose fallback failed too (a blanket 400
+             * from an edge proxy must not hide the refs document after it clears).
+             */
+            componentRefsSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -419,9 +527,20 @@ const storeObject : any = {
             })
         },
         SET_COMPONENTS_OF_ORG (state: any, payload: { orgUuid: string, componentType: string, components: any[] }) {
-            // Remove all components of this org and type, then add the fresh list
-            state.components = state.components.filter((c: any) => !(c.org === payload.orgUuid && c.type === payload.componentType))
-            payload.components.forEach((c: any) => state.components.push(c))
+            // TPF-101: the one cache holds refs as its floor and fuller records above them. The org's
+            // entries of this type are dropped (an archived component leaves the list), then each
+            // fresh row is laid over the entry of the same uuid, if any: every field the row carries
+            // takes the row's value, every other field the entry had is kept. Apollo rows are frozen,
+            // so the merged entry is a new object.
+            const fresh = new Set(payload.components.map((c: any) => c.uuid))
+            const existingByUuid = new Map(state.components.map((c: any) => [c.uuid, c]))
+            const kept = state.components.filter((c: any) =>
+                !(c.org === payload.orgUuid && c.type === payload.componentType) && !fresh.has(c.uuid))
+            payload.components.forEach((row: any) => {
+                const existing = existingByUuid.get(row.uuid)
+                kept.push(existing ? { ...existing, ...row } : row)
+            })
+            state.components = kept
         },
         ADD_UPDATE_COMPONENT (state: any, component: any) {
             const compIndex = state.components.findIndex((c: any) => (c.uuid === component.uuid))
@@ -444,6 +563,15 @@ const storeObject : any = {
         },
         SET_SUPPORT_INJECTION_SUPPORTED (state : any, supported : boolean) {
             state.supportInjectionSupported = supported
+        },
+        SET_SBOM_SIGNING_SUPPORTED (state : any, supported : boolean) {
+            state.sbomSigningSupported = supported
+        },
+        SET_DECLARED_LICENSE_SUPPORTED (state : any, supported : boolean) {
+            state.declaredLicenseSupported = supported
+        },
+        SET_COMPONENT_REFS_SUPPORTED (state : any, supported : boolean) {
+            state.componentRefsSupported = supported
         },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
@@ -534,6 +662,24 @@ const storeObject : any = {
                 // reload branches
                 store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
             }
+        },
+        async archiveBranches (context: any, params: { branchUuids: string[], componentUuid: string }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation archiveBranches($branchUuids: [ID!]!) {
+                        archiveBranches(branchUuids: $branchUuids) {
+                            results { branchUuid outcome message }
+                            archivedCount
+                            skippedCount
+                            failedCount
+                        }
+                    }`,
+                variables: { branchUuids: params.branchUuids }
+            })
+            // Awaited (unlike archiveBranch) so the caller re-derives its selection from the
+            // refreshed list; a thrown mutate skips the refresh and reaches the caller untouched.
+            await store.dispatch('fetchBranches', { componentId: params.componentUuid, forceRefresh: true })
+            return response.data.archiveBranches
         },
         async cloneBranch (context: any, brProps: any) {
             const data = await graphqlClient.mutate({
@@ -834,18 +980,16 @@ const storeObject : any = {
                 variables.perspective = perspectiveUuid
             }
             
-            const response = await graphqlClient.query({
-                query: gql`
+            const fullQuery = gql`
                     query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID, $kinds: [ComponentKind]) {
                         components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective, kinds: $kinds) {
                             ${graphqlQueries.ComponentShortData}
                         }
-                    }`,
-                variables,
-                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-            })
-            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components: response.data.components })
-            return response.data.components
+                    }`
+            const components = await loadComponentRows(context, fullQuery, variables,
+                forceRefresh ? 'network-only' : 'cache-first')
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'COMPONENT', components })
+            return components
         },
         async fetchProducts (context : any, payload: string | { orgid: string, forceRefresh?: boolean }) : Promise<any[]> {
             // Support both string orgid and object payload for backwards compatibility
@@ -863,18 +1007,16 @@ const storeObject : any = {
                 variables.perspective = perspectiveUuid
             }
             
-            const response = await graphqlClient.query({
-                query: gql`
+            const fullQuery = gql`
                     query FetchComponents($orgUuid: ID!, $componentType: ComponentType!, $perspective: ID) {
                         components(orgUuid: $orgUuid, componentType: $componentType, perspective: $perspective) {
                             ${graphqlQueries.ComponentShortData}
                         }
-                    }`,
-                variables,
-                fetchPolicy: forceRefresh ? 'network-only' : 'cache-first'
-            })
-            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components: response.data.components })
-            return response.data.components
+                    }`
+            const components = await loadComponentRows(context, fullQuery, variables,
+                forceRefresh ? 'network-only' : 'cache-first')
+            context.commit('SET_COMPONENTS_OF_ORG', { orgUuid: orgid, componentType: 'PRODUCT', components })
+            return components
         },
         async fetchComponent (context: any, uuid: any) {
             const response = await graphqlClient.query({
@@ -1257,10 +1399,13 @@ const storeObject : any = {
                     : null,
                 clearOwner: component.clearOwner || false
             }
+            // TPF-62: the revision the settings form was read at, when the caller sends one; the
+            // server then refuses the save if the component changed since. Never sent as null.
             const data = await graphqlClient.mutate({
                 mutation: graphqlQueries.ComponentMutate,
                 variables: {
-                    'component': compUpdObject
+                    'component': withExpectedRevision(compUpdObject,
+                        typeof component.expectedRevision === 'number' ? component.expectedRevision : null)
                 }
             })
             context.commit('ADD_UPDATE_COMPONENT', data.data.updateComponent)
@@ -2427,6 +2572,30 @@ const storeObject : any = {
             context.commit('SET_USERS', response.data.users)
             return response.data.users
         },
+        // The org's keys, enough to label a key actor (task t20261013-072815-31687). The server answers
+        // org admins only and the caller asks only as one; a failure leaves the short-id labels, no notification.
+        async fetchApiKeyRefsOfOrg (context: any, orgUuid: string) {
+            try {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query apiKeyRefsOfOrg($orgUuid: ID!) {
+                            apiKeys(orgUuid: $orgUuid) {
+                                uuid
+                                type
+                                declaredName
+                                notes
+                                status
+                            }
+                        }`,
+                    variables: { orgUuid },
+                    fetchPolicy: 'no-cache'
+                })
+                return response.data?.apiKeys || []
+            } catch (err) {
+                console.error(err)
+                return []
+            }
+        },
         async updateUserName (context: any, name: string) {
             const response = await graphqlClient.mutate({
                 mutation: gql`
@@ -2637,7 +2806,6 @@ const storeObject : any = {
                             org
                             name
                             displayName
-                            effectiveDisplayName
                             iconKind
                             color
                             notes
@@ -2686,9 +2854,7 @@ const storeObject : any = {
                             boundApiKeys {
                                 uuid
                                 type
-                                object
-                                keyOrder
-                                notes
+                                declaredName
                             }
                         }
                     }`,
@@ -2823,20 +2989,48 @@ const storeObject : any = {
             })
             return response.data.agentSessionForceClose
         },
-        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string }) {
+        /**
+         * A board's tasks: the card-level fields the board's views read (AGENT_TASK_CARD_SELECTION), or with
+         * full every task's whole read, for a page that shows the tasks beyond their cards.
+         */
+        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string, full?: boolean }) {
+            const selection = payload.full
+                ? `${AGENT_TASK_SELECTION}
+                            testedHeads { pr head }
+                            pullRequests { url head }`
+                : AGENT_TASK_CARD_SELECTION
             const response = await graphqlClient.query({
                 query: gql`
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
-                            ${AGENT_TASK_SELECTION}
-                            testedHeads { pr head }
-                            pullRequests { url head }
+                            ${selection}
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTasksOfBoard
+        },
+        /**
+         * The tested heads of the tasks that link PRs, read after the board's cards: the server resolves
+         * testedHeads per task from its newest passing review or test round, which on a 115-task board
+         * was most of the card read's time (430 of 510 ms) for one line on the PR chips. Only PR-linked
+         * tasks need it, in chunks of the server's 100-task limit; answers { uuid, testedHeads }.
+         */
+        async fetchAgentTaskTestedHeads (context: any, taskUuids: string[]) {
+            const out: any[] = []
+            for (let i = 0; i < taskUuids.length; i += 100) {
+                const response = await graphqlClient.query({
+                    query: gql`
+                        query agentTaskTestedHeads($ts: [ID!]!) {
+                            agentTasksByUuid(taskUuids: $ts) { uuid testedHeads { pr head } }
+                        }`,
+                    variables: { ts: taskUuids.slice(i, i + 100) },
+                    fetchPolicy: 'no-cache'
+                })
+                out.push(...(response.data.agentTasksByUuid ?? []))
+            }
+            return out
         },
         /** The element check catalogue (elements.md §7): what each check means, for the report view. */
         async fetchElementCheckCatalogue () {
@@ -2878,7 +3072,24 @@ const storeObject : any = {
                         agentTask(uuid: $uuid) {
                             ${AGENT_TASK_SELECTION}
                             testedHeads { pr head }
-                            pullRequests { url head }
+                            pullRequests { url head unit }
+                            unlinkedPrs { url by { kind uuid name } at note relinkedBy relinkedAt }
+                        }
+                    }`,
+                variables: { uuid },
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTask
+        },
+        /** The whole task for its JSON export: the page's read plus every field the page does not show. */
+        async exportAgentTask (context: any, uuid: string) {
+            const response = await graphqlClient.query({
+                query: gql`
+                    query agentTaskExport($uuid: ID!) {
+                        agentTask(uuid: $uuid) {
+                            ${AGENT_TASK_SELECTION}
+                            pullRequests { url head unit }
+                            ${AGENT_TASK_EXPORT_EXTRA}
                         }
                     }`,
                 variables: { uuid },
@@ -3440,6 +3651,23 @@ const storeObject : any = {
                 fetchPolicy: 'no-cache'
             })
             return response.data.agentTaskSupersedePullRequest
+        },
+        /**
+         * A person unlinks a PR that should never have counted (task t20261010-033523-18839, t20261010-033525-24393):
+         * a mistaken link, or the superseded half of a pair. Recorded on unlinkedPrs. BOARD_WRITE.
+         */
+        async agentTaskUnlinkPr (context: any, payload: { taskUuid: string, prUrl: string, note: string | null }) {
+            const response = await graphqlClient.mutate({
+                mutation: gql`
+                    mutation agentTaskUnlinkPr($taskUuid: ID!, $prUrl: String!, $note: String) {
+                        agentTaskUnlinkPr(taskUuid: $taskUuid, prUrl: $prUrl, note: $note) {
+                            uuid status
+                        }
+                    }`,
+                variables: payload,
+                fetchPolicy: 'no-cache'
+            })
+            return response.data.agentTaskUnlinkPr
         },
         /** A task's work level, a rung of the board's ladder (task RD3-6); null clears it to the default (RD2-1). BOARD_WRITE. */
         async agentTaskSetWorkLevel (context: any, payload: { taskUuid: string, workLevel: number | null }) {

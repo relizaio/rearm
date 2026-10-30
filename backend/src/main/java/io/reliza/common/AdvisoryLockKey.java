@@ -59,7 +59,28 @@ public enum AdvisoryLockKey {
 	 * Dependency-Track cycle (SyntheticOrgLock), taken with the two-key form
 	 * whose second key is the org; not a scheduler lock.
 	 */
-	SYNTHETIC_ORG_CYCLE(46);
+	SYNTHETIC_ORG_CYCLE(46),
+	/**
+	 * Namespace of the per-object transaction lock around the one-time mint of a TEA-facing id
+	 * (OrganizationService.ensureTeaUuid, ComponentService.ensureTeaUuid; task TEA-2), taken with
+	 * the two-key form whose second key is the organization or component; not a scheduler lock.
+	 * ArtifactService.ensureTeaUuid takes it too, with the artifact as the second key (task TEA-5).
+	 */
+	TEA_ID_MINT(47),
+	/**
+	 * Namespace of the per-release session-level lease held across a whole TEA publish or hide
+	 * (TeaPublishLock; task TEA-5), taken with the two-key form whose second key is the release, on
+	 * a dedicated pooled connection; not a scheduler lock. No transaction-level lock on this key
+	 * exists: a transaction asking for the key the lease holds on another connection would wait for
+	 * itself.
+	 */
+	TEA_PUBLISH(48),
+	/**
+	 * The per-minute drain of the TEA act queue (SaasSchedulingService.drainTeaActs; task TEA-7).
+	 * Its own scheduler lock, not the Dependency-Track tick's: that tick runs minutes of SBOM work
+	 * and a queued publish must not wait behind it.
+	 */
+	TEA_ACT_DRAIN(49);
 	
 	private int queryVal;
 	

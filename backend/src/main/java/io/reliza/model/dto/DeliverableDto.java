@@ -25,7 +25,7 @@ import io.reliza.model.DeliverableData.HardwareDeliverableMetadata;
 import io.reliza.model.DeliverableData.OS;
 import io.reliza.model.DeliverableData.SoftwareDeliverableMetadata;
 import io.reliza.model.RearmIdentifier;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import lombok.Builder;
 import lombok.Data;
 
@@ -89,7 +89,7 @@ public class DeliverableDto {
 			if (null != digests && !digests.isEmpty()) {
 				var shaDigestRec = digests
 							.stream()
-							.filter(digest -> digest.algo() == TeaChecksumType.SHA_256).findFirst().orElse(null);
+							.filter(digest -> digest.algo() == DigestAlgorithm.SHA_256).findFirst().orElse(null);
 				shaDigest = "sha256:" + shaDigestRec.digest();
 			}
 		}

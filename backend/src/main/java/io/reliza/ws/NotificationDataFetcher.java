@@ -26,6 +26,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TableName;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
@@ -586,7 +587,7 @@ public class NotificationDataFetcher {
 	public NotificationChannelResult upsertNotificationChannel(
 			@InputArgument("input") Map<String, Object> input) throws RelizaException {
 		if (input == null) throw new RelizaException("input is required");
-		NotificationChannelInput parsed = convertInput(input, NotificationChannelInput.class, "channel");
+		NotificationChannelInput parsed = convertInput(input, NotificationChannelInput.class);
 		if (parsed.org() == null) throw new RelizaException("org is required");
 		if (StringUtils.isBlank(parsed.name())) throw new RelizaException("name is required");
 		if (parsed.type() == null) throw new RelizaException("type is required");
@@ -686,7 +687,7 @@ public class NotificationDataFetcher {
 			@InputArgument("input") Map<String, Object> input) throws RelizaException {
 		if (input == null) throw new RelizaException("input is required");
 		NotificationSubscriptionInput parsed = convertInput(
-				input, NotificationSubscriptionInput.class, "subscription");
+				input, NotificationSubscriptionInput.class);
 		if (parsed.org() == null) throw new RelizaException("org is required");
 
 		WhoUpdated wu = authorizeOrgAdmin(parsed.org());
@@ -709,6 +710,8 @@ public class NotificationDataFetcher {
 			}
 		}
 
+		NulInputInstrumentation.refuseDecodedJson("input.filter.presetConfigJson",
+				parsed.filter() == null ? null : parsed.filter().presetConfigJson());
 		NotificationSubscriptionData seed = inputToSubscriptionData(parsed);
 		NotificationSubscription saved = subscriptionService.upsertSubscription(
 				parsed.uuid(), parsed.expectedRevision(), seed, wu);
@@ -880,16 +883,12 @@ public class NotificationDataFetcher {
 	 * Deserialize an inbound GraphQL input map into a typed record.
 	 * Matches the {@code WebhookData} / {@code ApprovalPolicyDto}
 	 * precedent: hand the JSON to Jackson, let it coerce the enums +
-	 * UUIDs, and surface any parse failure as a RelizaException so the
-	 * caller gets a clean error rather than a Jackson stack trace.
+	 * UUIDs, and surface a parse failure through {@link InputConversion}:
+	 * a bad request naming the field under {@code input}, rather than a
+	 * Jackson stack trace.
 	 */
-	private static <T> T convertInput(Map<String, Object> input, Class<T> target, String entityLabel)
-			throws RelizaException {
-		try {
-			return Utils.OM.convertValue(input, target);
-		} catch (IllegalArgumentException e) {
-			throw new RelizaException("Invalid " + entityLabel + " input: " + e.getMessage());
-		}
+	private static <T> T convertInput(Map<String, Object> input, Class<T> target) {
+		return InputConversion.convert(input, target, "input");
 	}
 
 	// ------------------------------------------------------------------
@@ -930,7 +929,7 @@ public class NotificationDataFetcher {
 			@InputArgument("input") Map<String, Object> input) throws RelizaException {
 		if (input == null) throw new RelizaException("input is required");
 		NotificationChannelGroupInput parsed = convertInput(
-				input, NotificationChannelGroupInput.class, "channel group");
+				input, NotificationChannelGroupInput.class);
 		if (parsed.org() == null) throw new RelizaException("org is required");
 		if (StringUtils.isBlank(parsed.name())) throw new RelizaException("name is required");
 
@@ -1045,7 +1044,13 @@ public class NotificationDataFetcher {
 		Set<UserPermission> perms = organizationService
 				.obtainCombinedUserOrgPermissions(userData, orgUuid).getOrgPermissionsAsSet(orgUuid);
 		boolean isOrgAdmin = computeIsOrgAdmin(perms);
-		List<UUID> perspectives = computeUserPerspectives(perms);
+		// The perspective arm: the perspectives of the caller's PERSPECTIVE-scope grants that are
+		// live in this organization (task TEA-8, D6), so a grant deletePerspective left behind
+		// opens no inbox and matches no delivery. This maps the design doc's "resource-group
+		// membership" onto PermissionScope.PERSPECTIVE (slice 5 plan section 0 in the memory
+		// notifications-slice5-inbox-plan.md has the reconciliation); perms is the COMBINED set,
+		// so a grant through a UserGroup counts.
+		List<UUID> perspectives = authorizationService.livePerspectivesOfGrants(perms, orgUuid);
 		// Gate membership uses the FIXED >= READ_ONLY component floor (real view
 		// access), independent of the watcher lever below: a read-only viewer/
 		// approver stays a legitimate inbox user (passes the gate, sees their
@@ -1129,33 +1134,6 @@ public class NotificationDataFetcher {
 			}
 		}
 		return false;
-	}
-
-	/**
-	 * The user's perspective membership on this org = the set of
-	 * {@code object} UUIDs on permissions where
-	 * {@code scope == PERSPECTIVE}. Used to intersect against an event's
-	 * {@code affectedReleases[*].perspectives} at SQL time.
-	 *
-	 * <p>Note: this maps the design doc's "resource-group membership"
-	 * concept onto the actual {@code PermissionScope.PERSPECTIVE} the
-	 * codebase ships (the doc's "resource_group" doesn't exist as a
-	 * scope or payload field — see slice 5 plan §0 in the memory
-	 * {@code notifications-slice5-inbox-plan.md} for the reconciliation).
-	 *
-	 * <p>Operates on the caller's COMBINED org permissions (own record +
-	 * UserGroups), so perspective membership granted via a group counts.
-	 */
-	private static List<UUID> computeUserPerspectives(Set<UserPermission> perms) {
-		if (perms == null) return Collections.emptyList();
-		List<UUID> out = new java.util.ArrayList<>();
-		for (UserPermission p : perms) {
-			if (p == null) continue;
-			if (p.getScope() == PermissionScope.PERSPECTIVE && p.getObject() != null) {
-				out.add(p.getObject());
-			}
-		}
-		return out;
 	}
 
 	/**

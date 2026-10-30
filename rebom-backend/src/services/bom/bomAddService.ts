@@ -1,7 +1,8 @@
 import { logger } from '../../logger';
-import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto } from '../../types';
+import { BomInput, BomRecord, BomFormat, RebomOptions, BomSearch, BomDto, canonicalUuid } from '../../types';
 import { BomValidationError, BomStorageError, BomConversionError, OciStorageError, BomNotFoundError, BomVersionConflictError } from '../../types/errors';
 import * as BomRepository from '../../bomRepository';
+import * as BomLineageRepository from '../../bomLineageRepository';
 import * as SpdxRepository from '../../spdxRepository';
 import { SpdxService } from '../spdx';
 import { 
@@ -13,9 +14,10 @@ import {
 } from '../oci';
 import { computeBomDigest, augmentBomForStorage, getInitialEnrichmentStatus, enrichBomAsync, normalizeLicensesInBom, mintProcessedSerialNumber } from './bomProcessingService';
 import { downgradeCycloneDxSpecIfNeeded, isProcessableCycloneDxSpec } from '../cyclonedx/cdxSpecDowngrade';
+import { REBOM_MERGE_MOD, UPLOAD_MOD, stripReleaseNodeStamps } from './releaseNodeStamp';
 import validateBom from '../../validateBom';
 import { v4 as uuidv4 } from 'uuid';
-import { runQuery } from '../../utils';
+import { withTransaction } from '../../utils';
 import { createHash } from 'crypto';
 
 /**
@@ -27,13 +29,54 @@ import { createHash } from 'crypto';
  */
 const AUGMENT_ON_STORAGE = true;
 
-export async function addBom(bomInput: BomInput): Promise<BomRecord> {
-  const format: BomFormat = (bomInput.bomInput as any).format || 'CYCLONEDX';
+/**
+ * Where a stored document comes from. `UPLOAD` (every caller but the merge store): rebom removes
+ * `reliza:export:releaseNode` from the processed document and stores `meta.mod` `raw`. `MERGE`
+ * (mergeAndStoreBoms only): the document is rebom's own merge output, kept with its stamps, and
+ * stored with `meta.mod` `rebom` (SCORE-60 ADR-9). In-process only, never read from a request.
+ */
+export type BomOrigin = 'UPLOAD' | 'MERGE';
+
+export async function addBom(bomInput: BomInput, origin: BomOrigin = 'UPLOAD'): Promise<BomRecord> {
+  const input = withCanonicalOrg(bomInput);
+  const format: BomFormat = (input.bomInput as any).format || 'CYCLONEDX';
   if (format === 'SPDX') {
-    return await addSpdxBom(bomInput);
+    return await addSpdxBom(input);
   } else {
-    return await addCycloneDxBom(bomInput);
+    return await addCycloneDxBom(input, origin);
   }
+}
+
+/**
+ * An uploaded document never carries rebom's release node stamp into storage: only a merge output
+ * keeps it (SCORE-60 ADR-9 (a)).
+ */
+function withoutUploadedStamps(bom: any, origin: BomOrigin): any {
+  if (origin === 'MERGE') return bom;
+  const stripped = stripReleaseNodeStamps(bom);
+  if (stripped.count > 0) {
+    logger.info({ removed: stripped.count }, 'Removed reliza:export:releaseNode from an uploaded document');
+  }
+  return stripped.bom;
+}
+
+/**
+ * The upload with its organization in canonical form (SCORE-46, review item
+ * T-3), set once before anything reads it: rebom.boms stores every spelling
+ * PostgreSQL's uuid type parses as one organization, so the lineage lock, the
+ * deduplication, both version checks and the insert must all see the one text
+ * form. An organization that is not a uuid is refused before any read or push.
+ * The options are a shallow copy too: both routes fill meta into them, and the
+ * caller's object (mergeAndStoreBoms logs and reuses it) is left as it was.
+ */
+function withCanonicalOrg(bomInput: BomInput): BomInput {
+  const org = canonicalUuid(bomInput.bomInput?.org);
+  if (!org) {
+    throw new BomValidationError('org must be a uuid', { field: 'org', value: bomInput.bomInput?.org });
+  }
+  const rebomOptions = bomInput.bomInput.rebomOptions;
+  return { ...bomInput, bomInput: { ...bomInput.bomInput, org,
+    ...(rebomOptions ? { rebomOptions: { ...rebomOptions } } : {}) } };
 }
 
 /**
@@ -84,6 +127,52 @@ async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: 
   return matchingBom || null;
 }
 
+type LineageContext = {
+  org: string,
+  lineageKey: string,
+  // The serialNumber the refusal names: the document's, as the caller sent it.
+  serialNumber: string,
+  bomVersion: string | number | undefined,
+  path: 'CYCLONEDX' | 'SPDX'
+};
+
+/**
+ * The version check (SCORE-45 ADR-4 step 3): a document under a stored
+ * serialNumber must carry a higher version than the newest stored row.
+ */
+function checkVersionAbove(
+  serialNumber: string, latest: { uuid: string, bomVersion: any } | null, bomVersion: any
+): void {
+  if (!latest) {
+    return;
+  }
+  const latestVersion = parseInt(latest.bomVersion) || 0;
+  const newVersion = parseInt(bomVersion) || 0;
+  if (newVersion <= latestVersion) {
+    throw new BomVersionConflictError(
+      `BOM with serialNumber ${serialNumber} already exists at version ${latestVersion}; ` +
+      `uploaded version ${newVersion} must be greater. ` +
+      `Raw artifacts are immutable and are never replaced.`,
+      serialNumber, latestVersion, newVersion, latest.uuid);
+  }
+}
+
+/**
+ * The version decision and the rebom.boms insert in one transaction (SCORE-46
+ * ADR-13): the lineage lock is the first statement, then the version is
+ * re-checked against the lineage's newest stored row on the same client, then
+ * the row is inserted. A row that landed since the pre-check refuses this
+ * upload.
+ */
+async function insertBomRowWithLineage(ctx: LineageContext, queryText: string, queryParams: any[]): Promise<any> {
+  return withTransaction(async client => {
+    await BomLineageRepository.lockLineage(client, ctx.org, ctx.lineageKey);
+    const latest = await BomLineageRepository.latestStoredVersion(client, ctx.org, ctx.lineageKey);
+    checkVersionAbove(ctx.serialNumber, latest && { uuid: latest.uuid, bomVersion: latest.bom_version }, ctx.bomVersion);
+    return client.query(queryText, queryParams);
+  });
+}
+
 /**
  * Adds a CycloneDX BOM to the system.
  * 
@@ -97,7 +186,7 @@ async function findBomByRawDigest(serialNumber: string, rawDigest: string, org: 
  * @param bomInput - BOM input containing the raw BOM and metadata
  * @returns BOM record (existing or newly created)
  */
-async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
+async function addCycloneDxBom(bomInput: BomInput, origin: BomOrigin): Promise<BomRecord> {
   // Step 1: Process and validate BOM
   const rawBom = bomInput.bomInput.bom;
   // CycloneDX 1.7 is published upstream but no library in our stack
@@ -123,16 +212,18 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   // CDX 2.0+ (e.g. HBOM prototype) can't go through the 1.x processing/validation
   // stack -- store the document unprocessed and skip processing/validation. That
   // copy is what gets stored under both keys below, so parseBom/parseHbom read the
-  // real 2.0 content. Re-process once the libraries support the new spec.
+  // real 2.0 content, less any reliza:export:releaseNode an upload carries (SCORE-60
+  // ADR-9 (a): only rebom's own stamp is ever stored under the processed key).
+  // Re-process once the libraries support the new spec.
   const processable = isProcessableCycloneDxSpec(rawBom?.specVersion);
   let processedBom: any;
   if (processable) {
     const inputForProcessing = downgradeCycloneDxSpecIfNeeded(structuredClone(rawBom));
-    processedBom = await processBomObj(inputForProcessing);
+    processedBom = withoutUploadedStamps(await processBomObj(inputForProcessing), origin);
   } else {
     logger.info({ specVersion: rawBom?.specVersion },
       'CycloneDX spec not supported by processing/validation stack — storing raw verbatim, skipping processing/validation/augmentation');
-    processedBom = structuredClone(rawBom);
+    processedBom = withoutUploadedStamps(structuredClone(rawBom), origin);
   }
 
   // serialNumber is the BOM's identity and must come from the producing tool —
@@ -154,7 +245,13 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   const rebomOptions: RebomOptions = bomInput.bomInput.rebomOptions ?? {};
   rebomOptions.serialNumber = processedBom.serialNumber;
   rebomOptions.bomVersion = processedBom.version; // Use version from CycloneDX (set by ReARM backend)
-  rebomOptions.mod = 'raw';
+  // From the in-process origin, never from the request (SCORE-60 ADR-9 (b)).
+  rebomOptions.mod = origin === 'MERGE' ? REBOM_MERGE_MOD : UPLOAD_MOD;
+  // The merge row's records are rebom's, written at the merge; an upload never carries them (SCORE-69 ADR-3).
+  if (origin !== 'MERGE') {
+    delete rebomOptions.nestedProductSerials;
+    delete rebomOptions.listedRootKeys;
+  }
 
   // Step 3: Set enrichment status and optionally augment with component context
   // Enrichment will happen asynchronously after BOM is stored
@@ -176,8 +273,8 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
   //
   // meta.serialNumber stays the producer's -- it is the row's identity and what
   // every lookup keys on; this records which document the row currently serves.
-  // The non-processable path is left alone: that copy really is the uploaded
-  // bytes, verbatim, so it keeps the uploaded identity.
+  // The non-processable path is left alone: that copy is the uploaded document
+  // (less any uploaded release node stamp, ADR-9 (a)), so it keeps the uploaded identity.
   if (processable) {
     finalBom = mintProcessedSerialNumber(finalBom);
     rebomOptions.processedSerialNumber = finalBom.serialNumber;
@@ -212,21 +309,19 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     return duplicateBom;
   }
 
+  const lineage: LineageContext = {
+    org: bomInput.bomInput.org,
+    lineageKey: BomLineageRepository.canonicalSerialNumber(serialNumber),
+    serialNumber,
+    bomVersion: rebomOptions.bomVersion,
+    path: 'CYCLONEDX'
+  };
+
   // Not a duplicate - a different file claiming the same identity has to claim
   // a higher version, or it is asking us to rewrite artifacts that are already
   // stored and already scanned.
   const latestBom = await findLatestBomBySerialNumber(serialNumber, bomInput.bomInput.org);
-  if (latestBom) {
-    const latestVersion = parseInt(latestBom.meta?.bomVersion) || 0;
-    const newVersion = parseInt(rebomOptions.bomVersion) || 0;
-    if (newVersion <= latestVersion) {
-      throw new BomVersionConflictError(
-        `BOM with serialNumber ${serialNumber} already exists at version ${latestVersion}; ` +
-        `uploaded version ${newVersion} must be greater. ` +
-        `Raw artifacts are immutable and are never replaced.`,
-        serialNumber, latestVersion, newVersion, latestBom.uuid);
-    }
-  }
+  checkVersionAbove(serialNumber, latestBom && { uuid: latestBom.uuid, bomVersion: latestBom.meta?.bomVersion }, rebomOptions.bomVersion);
 
   // Step 5: Store artifacts in OCI
   // Calculate repository name ONCE to prevent month boundary race conditions
@@ -297,7 +392,7 @@ async function addCycloneDxBom(bomInput: BomInput): Promise<BomRecord> {
     augmented: AUGMENT_ON_STORAGE
   }, "Inserting BOM record");
 
-  const queryRes = await runQuery(queryText, queryParams);
+  const queryRes = await insertBomRowWithLineage(lineage, queryText, queryParams);
   const bomRecord = queryRes.rows[0];
   
   if (!bomRecord) {
@@ -351,6 +446,13 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       } else {
         logger.warn({ existingSerialNumber }, "existingSerialNumber provided but no existing SPDX found - treating as new upload");
       }
+      // The update continues the lineage of existingSerialNumber.
+      const updateKey = BomLineageRepository.canonicalSerialNumber(existingSerialNumber);
+      // The update's version (the latest SPDX row's plus one) must also be above
+      // the lineage's newest row of any format (SCORE-46 ADR-12 item 1), checked
+      // here before anything is pushed and again under the lineage lock.
+      const latestOfLineage = await findLatestBomBySerialNumber(updateKey, bomInput.bomInput.org);
+      checkVersionAbove(updateKey, latestOfLineage && { uuid: latestOfLineage.uuid, bomVersion: latestOfLineage.meta?.bomVersion }, bomVersion);
     } else {
       const existingByNamespace = await SpdxRepository.findSpdxBomByNamespace(
         spdxMetadata.documentNamespace || '',
@@ -429,6 +531,11 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
 
     const rebomOptions = SpdxService.generateRebomOptionsFromSpdx(spdxMetadata, bomVersion, existingSerialNumber);
     const mergedOptions = { ...rebomOptions, ...bomInput.bomInput.rebomOptions };
+    // After the spread, so a request `mod` never wins: no merge is stored through this route
+    // (SCORE-60 ADR-9 (b)).
+    mergedOptions.mod = UPLOAD_MOD;
+    delete mergedOptions.nestedProductSerials;
+    delete mergedOptions.listedRootKeys;
     
     let serialNumber: string;
     if (existingSerialNumber) {
@@ -447,13 +554,23 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       mergedOptions.serialNumber = serialNumber;
       logger.warn({ serialNumber }, "Generated fallback serial number - rearm-cli output missing serialNumber");
     }
+
+    // The update route's key is existingSerialNumber (its version checked above,
+    // before the SPDX push); a first upload's key is the converter's
+    // serialNumber, known only now.
+    const lineageKey = existingSerialNumber
+      ? BomLineageRepository.canonicalSerialNumber(existingSerialNumber)
+      : BomLineageRepository.canonicalSerialNumber(serialNumber);
+    const lineage: LineageContext = {
+      org: bomInput.bomInput.org, lineageKey, serialNumber: lineageKey, bomVersion, path: 'SPDX'
+    };
     
     // Converted, therefore a distinct document from the SPDX file that was
     // uploaded, and given its own identity for the same reason the augmented
     // CycloneDX copy is. No source reference: the document it came from is
     // SPDX, and BOM-Link has no form for one -- better no link than an
     // invented one.
-    const convertedBom = mintProcessedSerialNumber(conversionResult.convertedBom, null);
+    const convertedBom = mintProcessedSerialNumber(withoutUploadedStamps(conversionResult.convertedBom, 'UPLOAD'), null);
     const bomDigest = computeBomDigest(convertedBom);
     mergedOptions.bomDigest = bomDigest;
     // fileHash is sha256(JSON.stringify(spdxContent)) -- the parsed document, not the
@@ -492,7 +609,7 @@ async function addSpdxBom(bomInput: BomInput): Promise<BomRecord> {
       spdxRecord.uuid
     ];
 
-    const queryRes = await runQuery(queryText, queryParams);
+    const queryRes = await insertBomRowWithLineage(lineage, queryText, queryParams);
     const bomRecord: BomRecord = queryRes.rows[0];
 
     await SpdxRepository.linkConvertedBom(spdxRecord.uuid, bomRecord.uuid);

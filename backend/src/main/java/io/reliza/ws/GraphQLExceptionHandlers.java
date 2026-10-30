@@ -3,6 +3,10 @@
 */
 package io.reliza.ws;
 
+import java.time.format.DateTimeFormatter;
+import java.util.LinkedHashMap;
+import java.util.Map;
+
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.core.convert.ConversionFailedException;
@@ -21,7 +25,13 @@ import graphql.schema.DataFetchingEnvironment;
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
 import io.reliza.exceptions.ActionRefusedException;
+import io.reliza.exceptions.ComponentRevisionConflictException;
+import io.reliza.exceptions.InvalidInputException;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.exceptions.SbomScoreException;
+import io.reliza.exceptions.SbomUpdateNotPermittedException;
+import io.reliza.service.RebomService;
 import jakarta.persistence.LockTimeoutException;
 import jakarta.persistence.PersistenceException;
 import jakarta.persistence.PessimisticLockException;
@@ -30,6 +40,10 @@ import jakarta.persistence.PessimisticLockException;
 @Component
 public class GraphQLExceptionHandlers {
     private static final Logger log = LoggerFactory.getLogger(GraphQLExceptionHandlers.class);
+
+    static final String EXPORT_TOO_LARGE_MESSAGE =
+            "Release SBOM export is too large to serve (limit " + RebomService.REBOM_RESPONSE_LIMIT_MB
+            + " MB); export with fewer components (top-level only)";
 
     private GraphQLError safeError(String message) {
         return GraphqlErrorBuilder.newError().message(message).build();
@@ -65,6 +79,19 @@ public class GraphQLExceptionHandlers {
                 .build();
     }
 
+    /**
+     * A resolver's own argument that does not fit its type (task TPF-63), refused by
+     * {@code InputConversion}: the message names the field and what it must be, never the value
+     * sent. A client error, not a fault: no log line and no ref.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleInvalidInput(InvalidInputException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
     @GraphQlExceptionHandler
     public GraphQLError handleActionRefused(ActionRefusedException ex) {
         // A policy the org configured said no. Same treatment as RelizaException: the message
@@ -72,6 +99,81 @@ public class GraphQLExceptionHandlers {
         return GraphqlErrorBuilder.newError()
                 .message(ex.getMessage())
                 .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * An answer from rebom too large to read: on an export, the document cannot be served from this
+     * buffer, and the user can only make it smaller. The score path never gets here: it answers
+     * {@code INPUT_TOO_LARGE} itself.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleRebomResponseTooLarge(RebomResponseTooLargeException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(EXPORT_TOO_LARGE_MESSAGE)
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * A score that could not be made. With {@link #handleComponentRevisionConflict} one of the two
+     * handlers that set a {@code code} extension (the server-error handlers set only {@code ref}):
+     * the caller decides on {@code extensions.reason}, and the message is shown to a person as it is.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleSbomScore(SbomScoreException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(Map.of("code", SbomScoreException.ERROR_CODE, "reason", ex.getReason().name()))
+                .build();
+    }
+
+    /**
+     * A component settings save prepared from an older revision (TPF-61): nothing was written. A
+     * client switches on {@code extensions.code = COMPONENT_REVISION_CONFLICT}, never on the message,
+     * and reads the current revision and who changed the component last, and when, from the other
+     * extensions. BAD_REQUEST like every other domain refusal; the message stays for clients that do
+     * not know the code. More specific than {@link #handleReliza}, so it wins for this subclass.
+     * Nothing is logged: a refusal is an ordinary outcome.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleComponentRevisionConflict(ComponentRevisionConflictException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(revisionConflictExtensions(ex))
+                .build();
+    }
+
+    /**
+     * The refusal's extensions in a fixed order; a value that is unknown is left out rather than
+     * sent as null ({@code code}, {@code revision} and {@code lastUpdatedDate} are always present).
+     */
+    static Map<String, Object> revisionConflictExtensions(ComponentRevisionConflictException ex) {
+        Map<String, Object> extensions = new LinkedHashMap<>();
+        extensions.put("code", ComponentRevisionConflictException.ERROR_CODE);
+        extensions.put("revision", ex.getCurrentRevision());
+        if (null != ex.getLastUpdatedDate()) {
+            extensions.put("lastUpdatedDate", DateTimeFormatter.ISO_OFFSET_DATE_TIME.format(ex.getLastUpdatedDate()));
+        }
+        if (null != ex.getLastUpdatedBy()) extensions.put("lastUpdatedBy", ex.getLastUpdatedBy().toString());
+        if (null != ex.getLastUpdatedType()) extensions.put("lastUpdatedType", ex.getLastUpdatedType().name());
+        if (null != ex.getLastUpdatedActor()) extensions.put("lastUpdatedActor", ex.getLastUpdatedActor().toString());
+        return extensions;
+    }
+
+    /**
+     * An SBOM upload refused by rule B (SCORE-52 ADR-4): a new version of an existing serialNumber
+     * without org-wide write or write on every holder. The message names the serialNumber as sent
+     * only; {@code extensions} carry the code and nothing naming a holder.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleSbomUpdateNotPermitted(SbomUpdateNotPermittedException ex) {
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .extensions(Map.of("code", SbomUpdateNotPermittedException.ERROR_CODE))
                 .build();
     }
 

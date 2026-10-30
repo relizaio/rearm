@@ -298,17 +298,20 @@ public class SupportInjectionService {
 	 * <p>Only ENABLED injects. UNKNOWN falls to strip-only along with DISABLED, which is the
 	 * safe direction: the document then says we asserted nothing, which is true, rather than
 	 * carrying facts we could not confirm the org wanted published.
+	 *
+	 * <p>Public so the TEA profile code (task TEA-2) asks this same predicate whether a profile
+	 * may carry support metadata, rather than reading the org setting a second way.
 	 */
-	private boolean isInjectionEnabled(UUID orgUuid) {
+	public boolean isInjectionEnabled(UUID orgUuid) {
 		return supportExportState(orgUuid) == SupportExportState.ENABLED;
 	}
 
 	/**
 	 * Inject the CURRENT support facts (status derived as-of now, UTC) into a served CycloneDX
-	 * BOM tree, in place. This is the living, non-attested current-state view. Orgs with no
-	 * support attestations skip the per-component resolution entirely -- the injector still
-	 * runs (with no facts) to strip any uploader-forged reliza:support:* properties and stamp
-	 * the document-level disclosure marker.
+	 * BOM tree, in place. This is the living, non-attested current-state view. The rows are
+	 * resolved for every org, attestations or not: whether a node is the organization's own
+	 * entry is read from its row (SCORE-60). The injector also strips any uploader-forged
+	 * reliza:support:* properties and stamps the document-level disclosure marker.
 	 *
 	 * <p>Note: PR6's attested snapshot does NOT reuse {@link #resolveSupportFactsForBom} (that
 	 * returns LIVE rows); it builds its facts map from the attestation history as-of a cutoff
@@ -327,13 +330,17 @@ public class SupportInjectionService {
 	 * device-related is emitted; the raw component milestone dates still are).
 	 */
 	public JsonNode injectCurrentSupport(JsonNode bom, UUID orgUuid, DeviceLifecycle device) {
-		Map<String, ComponentSupportFacts> facts = sbomComponentSupportRepository.existsSupportByOrg(orgUuid.toString())
-				? resolveSupportFactsForBom(bom, orgUuid)
-				: Map.of();
-		// No facts -> no claims, so skip the context entirely rather than paying for an org
+		// Rows are resolved even for an organization that attests nothing: the injector marks a
+		// node whose row is a root as the organization's own (reliza:support:selfComponent), and
+		// trusts rebom's stamp only for a node it holds no row for (SCORE-58 ADR-4, built as
+		// SCORE-60). Skipping the resolution there would mark nothing by rule 1 and let the stamp
+		// override rule 2.
+		boolean orgAttests = sbomComponentSupportRepository.existsSupportByOrg(orgUuid.toString());
+		Map<String, ComponentSupportFacts> facts = resolveSupportFactsForBom(bom, orgUuid);
+		// No attestation -> no claims, so skip the context entirely rather than paying for an org
 		// read and a user lookup whose result emitDeclarations would discard. This is the
 		// common case: most orgs attest nothing, and every export they take goes through here.
-		DeclarationContext declarations = facts.isEmpty() ? null : declarationContext(orgUuid, facts);
+		DeclarationContext declarations = orgAttests && !facts.isEmpty() ? declarationContext(orgUuid, facts) : null;
 		return SupportBomInjector.inject(bom, facts, LocalDate.now(ZoneOffset.UTC), device, declarations);
 	}
 
@@ -451,13 +458,32 @@ public class SupportInjectionService {
 		Set<String> keys = SupportBomInjector.collectKeys(bom);
 		if (keys.isEmpty()) return Map.of();
 
-		// Byte-exact pass (catches the common case, incl. all cpe-only keys).
-		Set<String> byteMatched = new HashSet<>();
-		for (SbomComponent sc :
-				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), new ArrayList<>(keys))) {
-			byteMatched.add(sc.getCanonicalPurl());
-			byKey.put(sc.getCanonicalPurl(), sc);
+		// Byte-exact pass (catches the common case, incl. all cpe-only keys). It also probes the
+		// legacy key of each purl (SCORE-29 ADR-4): a release-node row written before rebom
+		// stopped encoding the group and name twice carries %2520 where the export now has %20.
+		// A row under the key itself wins over one under its legacy variant.
+		Map<String, String> keyOfVariant = new HashMap<>();
+		for (String key : keys) {
+			Utils.doubleEncodedNamespaceNameVariant(key)
+					.filter(variant -> !keys.contains(variant))
+					.ifPresent(variant -> keyOfVariant.putIfAbsent(variant, key));
 		}
+		List<String> probes = new ArrayList<>(keys);
+		probes.addAll(keyOfVariant.keySet());
+		Set<String> byteMatched = new HashSet<>();
+		Map<String, SbomComponent> byVariant = new HashMap<>();
+		for (SbomComponent sc :
+				sbomComponentRepository.findByOrgAndCanonicalPurlIn(orgUuid.toString(), probes)) {
+			if (keys.contains(sc.getCanonicalPurl())) {
+				byteMatched.add(sc.getCanonicalPurl());
+				byKey.put(sc.getCanonicalPurl(), sc);
+			} else {
+				byVariant.put(keyOfVariant.get(sc.getCanonicalPurl()), sc);
+			}
+		}
+		byVariant.forEach((key, sc) -> {
+			if (byKey.putIfAbsent(key, sc) == null) byteMatched.add(key);
+		});
 
 		// Encoding-safe fallback for purl keys the byte pass missed. cpe keys and malformed
 		// purls do not parse here, so they stay byte-only -- exactly the desired behavior.

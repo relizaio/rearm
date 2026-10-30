@@ -110,6 +110,13 @@ public class ReleaseDto {
 	@JsonProperty
 	private String fdaAssessmentNarrative;
 
+	/**
+	 * Per-release declared licence override (SCORE-39 ADR-1), an SPDX expression. PATCH as the
+	 * narrative: omitted leaves the stored value alone, an empty string clears it.
+	 */
+	@JsonProperty
+	private String licenseExpression;
+
 	/** System-controlled — set by the orchestrator on release create, immutable thereafter. */
 	@JsonProperty
 	private String sidComponentName;

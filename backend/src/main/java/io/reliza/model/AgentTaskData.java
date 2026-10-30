@@ -14,6 +14,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.function.Predicate;
 
 import org.apache.commons.lang3.StringUtils;
 
@@ -88,6 +89,11 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		NEEDS_HUMAN,
 		/** System-generated: the holding session closed (agent close, idle auto-close, or operator force-close). */
 		SESSION_CLOSED,
+		/**
+		 * System-generated when the session working the task parks its hop for the operator (task TPF-66); the hop
+		 * ended there.
+		 */
+		PARKED_FOR_OPERATOR,
 		OTHER
 	}
 
@@ -646,6 +652,27 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	}
 
 	/**
+	 * A linked PR taken off the task (task t20261010-033523-18839): a mistaken link, or the superseded half of a
+	 * pair. Append-only; nothing removes a row. A relink stamps the newest row for the URL.
+	 *
+	 * @param url the PR as the task linked it
+	 * @param by who unlinked it: a session or a person
+	 * @param note why, whitespace collapsed to one line; null when none was given
+	 * @param relinkedBy who linked it again, as a link records it (the linking key's agent); null until relinked
+	 * @param relinkedAt when it was linked again; null until relinked
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record UnlinkedPr(String url, AgentActor by, ZonedDateTime at, String note, String relinkedBy,
+			ZonedDateTime relinkedAt) implements Serializable {
+		private static final long serialVersionUID = 20261010L;
+
+		/** This row, stamped as linked again. */
+		public UnlinkedPr withRelinked(String relinker, ZonedDateTime when) {
+			return new UnlinkedPr(url, by, at, note, relinker, when);
+		}
+	}
+
+	/**
 	 * A PR's state as its tracker reported it (task RD3-20): OPEN, CLOSED (without merging) or MERGED, where it
 	 * was read, and when.
 	 */
@@ -1094,7 +1121,8 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	/**
 	 * Whether the coordinator seat parked this task for an operator decision (task RD4-17): an OPERATOR-level
 	 * MANUAL hold a session placed that records the status to return to. Only the seat's hold records one; a
-	 * hop's own hold (RD4-5) resumes its holder instead, and a person's hold goes back to the coordinator.
+	 * hop's own hold (RD4-5) ended its hop and is queued again for its role on release (TPF-66), and a person's
+	 * hold goes back to the coordinator.
 	 */
 	@JsonIgnore
 	public boolean seatParkedForOperator() {
@@ -1143,6 +1171,13 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 
 	@JsonProperty
 	private List<String> prUrls = new ArrayList<>();
+
+	/**
+	 * PRs taken off {@link #prUrls} (task t20261010-033523-18839). Append-only; nothing removes a row. A relink
+	 * stamps the newest row for the URL.
+	 */
+	@JsonProperty
+	private List<UnlinkedPr> unlinkedPrs = new ArrayList<>();
 
 	/**
 	 * The component this task produces: a document component when the task writes a
@@ -1259,6 +1294,21 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	public void addPrUrl(String prUrl) {
 		if (this.prUrls == null) this.prUrls = new ArrayList<>();
 		if (prUrl != null && !this.prUrls.contains(prUrl)) this.prUrls.add(prUrl);
+	}
+
+	/**
+	 * Remove every linked spelling the predicate accepts (task t20261010-033523-18839). The caller matches by the
+	 * board's match key, which lives in the service layer: links may differ in case or a trailing slash.
+	 *
+	 * @return whether any was removed
+	 */
+	public boolean removePrUrl(Predicate<String> matches) {
+		return null != this.prUrls && this.prUrls.removeIf(matches);
+	}
+
+	public void addUnlinkedPr(UnlinkedPr unlinked) {
+		if (this.unlinkedPrs == null) this.unlinkedPrs = new ArrayList<>();
+		if (unlinked != null) this.unlinkedPrs.add(unlinked);
 	}
 
 	public void addRelease(UUID release) {

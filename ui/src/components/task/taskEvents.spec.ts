@@ -31,11 +31,14 @@ const EMITTERS: [any, string, string[]][] = [
     [TaskActions, 'TaskActions', ['authorize', 'order', 'complete', 'cancel', 'reopen', 'decide', 'set-strength', 'operator-hold', 'set-budget', 'set-work-level',
         'set-group', 'set-tags', 'declare-delivery', 'unassign']],
     [TaskDependencies, 'TaskDependencies', ['open']],
-    [TaskSummary, 'TaskSummary', ['open']],
+    [TaskSummary, 'TaskSummary', ['open', 'focus-unassign']],
     [TaskReviewItems, 'TaskReviewItems', ['decide', 'open-element']],
     [TaskQuestions, 'TaskQuestions', ['answer']],
-    [TaskPullRequests, 'TaskPullRequests', ['declare-delivery', 'supersede']],
+    [TaskPullRequests, 'TaskPullRequests', ['declare-delivery', 'supersede', 'unlink']],
 ]
+
+/** What the drawer handles itself and never forwards: the stale line's link focuses its own TaskActions (TPF-69). */
+const DRAWER_OWN = ['focus-unassign']
 
 /** What the board panel listens to on the drawer, bar close. */
 const DRAWER_EVENTS = ['open', 'human-review', 'human-signoff', 'lift-hold', 'require-review',
@@ -51,7 +54,7 @@ const PAGE_ACTIONS: Record<string, string> = {
     answer: 'agentTaskAnswer', 'set-strength': 'agentTaskSetStrength', 'operator-hold': 'agentTaskOperatorHold', 'set-budget': 'agentTaskSetBudget',
     'set-work-level': 'agentTaskSetWorkLevel', 'set-group': 'agentTaskSetGroup', 'set-tags': 'agentTaskSetTags',
     'declare-delivery': 'agentTaskDeclareDelivery', 'unassign': 'agentTaskUnassign',
-    supersede: 'agentTaskSupersedePullRequest',
+    supersede: 'agentTaskSupersedePullRequest', unlink: 'agentTaskUnlinkPr',
 }
 
 const stubs = {
@@ -80,6 +83,11 @@ describe('task section events', () => {
             if (!section.exists()) continue
             for (const e of events) {
                 const payload = { marker: `${name}/${e}` }
+                if (DRAWER_OWN.includes(e)) {
+                    section.vm.$emit(e)
+                    expect(w.emitted(e), `${name} ${e} stays in the drawer`).toBeUndefined()
+                    continue
+                }
                 section.vm.$emit(e, payload)
                 const got = w.emitted(e) ?? []
                 expect(got[got.length - 1], `${name} → ${e}`).toEqual([payload])

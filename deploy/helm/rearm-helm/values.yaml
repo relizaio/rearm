@@ -1,7 +1,6 @@
 backendReplicaCount: 1
 uiReplicaCount: 1
 ociArtifactReplicaCount: 1
-enableBetaTea: false
 
 use_external_postgres: false
 rearm_postgres_host: ""
@@ -220,6 +219,8 @@ postgresql:
   persistence:
     size: 4Gi
   primary:
+    networkPolicy:
+      enabled: false
     resources:
       requests:
         memory: "300Mi"
@@ -239,3 +240,103 @@ rebom:
       registryNamespace: 123-placeholder
     enrichmentPendingIfNotConfigured: false
     rebomPropsSecretName: ""
+
+# Ingress NetworkPolicies (templates/networkpolicy.yaml): every chart pod is
+# reachable only from the pods that need it. Ingress only; outbound traffic
+# (DNS, GitHub, OSV, Dependency-Track, registries, SMTP, webhooks, external
+# postgres, S3) is not restricted. The policies are enforced only by a CNI
+# that implements NetworkPolicy (Calico, Cilium, Antrea, kube-router...);
+# a cluster without one accepts them and silently ignores them, so a green
+# `kubectl get networkpolicy` is not proof of isolation: run the negative
+# check in the chart tests (a pod outside the allowed set cannot reach
+# postgres).
+#
+# UPGRADING an existing release: the policies apply on the next
+# `helm upgrade`. Before that, check that your ingress controller matches
+# ingressController below (`kubectl get pods -A -l app.kubernetes.io/name=traefik`
+# for the Traefik default)
+# and that no IngressRoute outside this chart targets the backend or keycloak
+# Services (`kubectl get ingressroute -A -o yaml | grep -E 'backend-service|name: keycloak'`);
+# if one does, set backend.fromIngressController / keycloak.fromIngressController.
+# A NodePort UI service or a hostNetwork ingress controller needs an ipBlock
+# in ingressController.extraFrom; a NodePort or LoadBalancer backend Service
+# needs an ipBlock rule in backend.extraIngress. To keep the previous
+# behaviour: enabled: false.
+networkPolicy:
+  enabled: true
+  # The pods allowed to reach the UI (port 80). Set any of namespaceSelector,
+  # podSelector or extraFrom to name your controller, e.g. ingress-nginx:
+  #   ingressController:
+  #     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: ingress-nginx } }
+  #     podSelector: { matchLabels: { app.kubernetes.io/name: ingress-nginx } }
+  # extraFrom takes extra NetworkPolicyPeer entries, e.g. for a hostNetwork
+  # controller:  extraFrom: [ { ipBlock: { cidr: 10.0.0.0/8 } } ]
+  # Left unset (the default):
+  # - with useTraefikLe or traefikBehindLb (the chart renders Traefik
+  #   IngressRoutes) the UI admits the Traefik pods in any namespace
+  #   (app.kubernetes.io/name: traefik, as labelled by the Traefik Helm chart
+  #   and the k3s bundled Traefik); narrow it in production with
+  #     namespaceSelector: { matchLabels: { kubernetes.io/metadata.name: traefik } }
+  #     podSelector: { matchLabels: { app.kubernetes.io/name: traefik } }
+  # - with both false (you bring your own ingress) the controller is unknown,
+  #   so NO UI policy is rendered and the UI accepts any pod as without
+  #   policies, unless ui.extraIngress or ui.allowFromNamespace gives the UI
+  #   rules of its own; backend/keycloak.fromIngressController then fail the
+  #   render. Every other service keeps its policy.
+  ingressController: {}
+  # One deny-ingress policy with podSelector {} for the WHOLE namespace. Off
+  # by default: it also covers pods this chart does not label (the
+  # ecr-regcred subchart's job pods in the Pro chart) and any other release
+  # in the namespace.
+  namespaceDefaultDeny: false
+  # Per service: enabled (false: no policy for that pod, it stays open as
+  # before), allowFromNamespace (open its port to every pod in the
+  # namespace), extraIngress (raw NetworkPolicy ingress rules appended, e.g.
+  # a metrics scraper).
+  ui:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  backend:
+    enabled: true
+    # The chart's IngressRoutes send everything to the UI, whose nginx
+    # proxies /api, /graphql, /v1, /tea and /.well-known/tea to the backend;
+    # set true only when an IngressRoute outside the chart targets the
+    # backend Service directly.
+    fromIngressController: false
+    allowFromNamespace: false
+    extraIngress: []
+  keycloak:
+    enabled: true
+    # Same as backend.fromIngressController: /kauth is proxied by the UI nginx.
+    fromIngressController: false
+    allowFromNamespace: false
+    extraIngress: []
+  keycloakPostgres:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  rebomBackend:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  rebomPostgres:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  ociArtifactService:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  zot:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []
+  # The postgresql subchart's primary pod. Its own policy
+  # (postgresql.primary.networkPolicy) is turned off above because its
+  # default allows every source on 5432, which would undo this one
+  # (NetworkPolicies are a union of allows).
+  postgresql:
+    enabled: true
+    allowFromNamespace: false
+    extraIngress: []

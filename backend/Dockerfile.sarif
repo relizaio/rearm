@@ -1,4 +1,8 @@
-FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:7e461cec477077c1d9e50b13df8aef9018764410f4c4cd7c34803f10c4c99e4c
+FROM maven:3.9.16-eclipse-temurin-25-noble@sha256:93b8a14ea2f412782e4e842651273b4d903e35cc496284f178fbbe2d67d00976
+# October 2026 eMudhra CA compromise: the fixed Ubuntu store for curl, the two roots out of the JDK cacerts for Maven.
+RUN apt-get update && apt-get install -y --only-upgrade ca-certificates && dpkg-query -W ca-certificates && rm -rf /var/lib/apt/lists/*
+COPY ci/trust-gate/jdk-distrust.sh /gate/
+RUN sh /gate/jdk-distrust.sh
 ARG CODEQL_BUNDLE_VERSION=2.25.5
 ARG CODEQL_URL="https://github.com/github/codeql-action/releases/download/codeql-bundle-v${CODEQL_BUNDLE_VERSION}/codeql-bundle-linux64.tar.gz"
 

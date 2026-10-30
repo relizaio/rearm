@@ -187,6 +187,14 @@ export function useAgentTaskActions (after: AfterAction) {
             'Could not declare it superseded')
     }
 
+    /** A person unlinks a PR that should never have counted (task t20261010-033525-24393). */
+    function unlinkPr (p: { task: any, prUrl: string, note: string | null }) {
+        return kept(p.task,
+            () => store.dispatch('agentTaskUnlinkPr', { taskUuid: p.task.uuid, prUrl: p.prUrl, note: p.note }),
+            (res: any) => `${p.prUrl} unlinked` + (res?.status === 'COMPLETED' ? ': task completed' : ''),
+            'Could not unlink')
+    }
+
     /** An operator hold, which the coordinator cannot lift (task 6fdc5a37). */
     function operatorHold (p: { task: any, reason: string }) {
         return kept(p.task,
@@ -222,6 +230,6 @@ export function useAgentTaskActions (after: AfterAction) {
     return {
         humanReview, humanSignOff, liftHold, answerQuestions, authorizeTask, orderTask,
         completeTask, cancelTask, reopenTask, decideReviewItems, requireReview, setStrength, operatorHold, unassign, setBudget,
-        setWorkLevel, setGroup, setTags, declareDelivery, supersedePr, commission,
+        setWorkLevel, setGroup, setTags, declareDelivery, supersedePr, unlinkPr, commission,
     }
 }

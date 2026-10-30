@@ -7,7 +7,7 @@
 // no branch pane, so the branch they named was not shown. The page resolves
 // its tab here instead, so all of them open the tab that lists the branch.
 
-export type ComponentPageTab = 'latest' | 'branches' | 'tags'
+export type ComponentPageTab = 'latest' | 'branches' | 'tags' | 'submissions'
 
 /** The tab with no branch and no explicit tab: one row per branch, newest release. */
 export const LATEST_TAB: ComponentPageTab = 'latest'
@@ -15,6 +15,8 @@ export const LATEST_TAB: ComponentPageTab = 'latest'
 export const BRANCHES_TAB: ComponentPageTab = 'branches'
 /** Tags; components only. */
 export const TAGS_TAB: ComponentPageTab = 'tags'
+/** Regulatory submissions; products on Pro only (TEA-30). Reached by an explicit ?tab=submissions. */
+export const SUBMISSIONS_TAB: ComponentPageTab = 'submissions'
 
 export interface ComponentPageTabInput {
     /** route.query.tab: an explicit tab always wins. */
@@ -44,4 +46,16 @@ export function resolveComponentPageTab (input: ComponentPageTabInput): string {
     if (!nonEmptyString(input.branchUuid)) return LATEST_TAB
     if (input.branchType === 'TAG' && input.isComponent !== false) return TAGS_TAB
     return BRANCHES_TAB
+}
+
+/** The settings modal's first pane, where it opens unless a link names another. */
+export const SETTINGS_DEFAULT_TAB = 'Core Settings'
+
+/**
+ * The pane the component / product settings modal opens on: ?componentSettingsTab= when it names a
+ * pane this page shows (e.g. 'tea', from the organization's TEA overrides table), else Core Settings.
+ */
+export function resolveComponentSettingsTab (queryTab: unknown, visibleTabs: string[]): string {
+    const requested = nonEmptyString(queryTab)
+    return requested && visibleTabs.includes(requested) ? requested : SETTINGS_DEFAULT_TAB
 }

@@ -5,10 +5,12 @@
  */
 package io.reliza.ws.tea;
 
+import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaCle;
 import io.reliza.model.tea.TeaCollection;
 import io.reliza.model.tea.TeaComponentReleaseWithCollection;
 import io.reliza.model.tea.TeaErrorResponse;
+import io.reliza.model.tea.TeaPaginatedCollectionResponse;
 import java.util.UUID;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
 import io.swagger.v3.oas.annotations.Operation;
@@ -37,227 +39,109 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
-@Tag(name = "CLE", description = "the CLE API")
+@Tag(name = "TEA Component Release", description = "the TEA Component Release API")
 public interface ComponentReleaseApi {
 
     default Optional<NativeWebRequest> getRequest() {
         return Optional.empty();
     }
 
-    String PATH_GET_CLE_BY_COMPONENT_RELEASE_ID = "/componentRelease/{uuid}/cle";
+    String PATH_GET_COMPONENT_RELEASE = "/componentRelease/{uuid}";
     /**
-     * GET /componentRelease/{uuid}/cle
-     * Get the CLE (Common Lifecycle Enumeration) data for a TEA Component Release
-     *
-     * @param uuid UUID of TEA Component Release in the TEA server (required)
-     * @return CLE data for the requested TEA Component Release found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
-     */
-    @Operation(
-        operationId = "getCleByComponentReleaseId",
-        description = "Get the CLE (Common Lifecycle Enumeration) data for a TEA Component Release",
-        tags = { "CLE" },
-        responses = {
-            @ApiResponse(responseCode = "200", description = "CLE data for the requested TEA Component Release found and returned", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCle.class))
-            }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
-            })
-        },
-        security = {
-            @SecurityRequirement(name = "basicAuth"),
-            @SecurityRequirement(name = "bearerAuth")
-        }
-    )
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = ComponentReleaseApi.PATH_GET_CLE_BY_COMPONENT_RELEASE_ID,
-        produces = { "application/json" }
-    )
-    default ResponseEntity<TeaCle> getCleByComponentReleaseId(
-        @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"definitions\" : \"\", \"events\" : [ { \"eventId\" : 6, \"reason\" : \"reason\", \"references\" : [ \"https://openapi-generator.tech\", \"https://openapi-generator.tech\" ], \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"supersededByVersion\" : \"supersededByVersion\", \"description\" : \"description\", \"published\" : \"2000-01-23T04:56:07.000+00:00\", \"type\" : \"\", \"version\" : \"version\", \"effective\" : \"2000-01-23T04:56:07.000+00:00\", \"license\" : \"license\", \"versions\" : [ { \"range\" : \"range\", \"version\" : \"version\" }, { \"range\" : \"range\", \"version\" : \"version\" } ], \"id\" : 0, \"supportId\" : \"supportId\" }, { \"eventId\" : 6, \"reason\" : \"reason\", \"references\" : [ \"https://openapi-generator.tech\", \"https://openapi-generator.tech\" ], \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"supersededByVersion\" : \"supersededByVersion\", \"description\" : \"description\", \"published\" : \"2000-01-23T04:56:07.000+00:00\", \"type\" : \"\", \"version\" : \"version\", \"effective\" : \"2000-01-23T04:56:07.000+00:00\", \"license\" : \"license\", \"versions\" : [ { \"range\" : \"range\", \"version\" : \"version\" }, { \"range\" : \"range\", \"version\" : \"version\" } ], \"id\" : 0, \"supportId\" : \"supportId\" } ] }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    String PATH_GET_COLLECTION = "/componentRelease/{uuid}/collection/{collectionVersion}";
-    /**
-     * GET /componentRelease/{uuid}/collection/{collectionVersion}
-     * Get a specific Collection (by version) for a TEA Component Release by its UUID
-     *
-     * @param uuid UUID of TEA Collection in the TEA server (required)
-     * @param collectionVersion Version of TEA Collection (required)
-     * @return Requested TEA Collection Version found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
-     */
-    @Operation(
-        operationId = "getCollection",
-        description = "Get a specific Collection (by version) for a TEA Component Release by its UUID",
-        tags = { "TEA Component Release" },
-        responses = {
-            @ApiResponse(responseCode = "200", description = "Requested TEA Collection Version found and returned", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
-            }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
-            })
-        },
-        security = {
-            @SecurityRequirement(name = "basicAuth"),
-            @SecurityRequirement(name = "bearerAuth")
-        }
-    )
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = ComponentReleaseApi.PATH_GET_COLLECTION,
-        produces = { "application/json" }
-    )
-    default ResponseEntity<TeaCollection> getCollection(
-        @Parameter(name = "uuid", description = "UUID of TEA Collection in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
-        @Parameter(name = "collectionVersion", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("collectionVersion") Integer collectionVersion
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    String PATH_GET_COLLECTIONS_BY_RELEASE_ID = "/componentRelease/{uuid}/collections";
-    /**
-     * GET /componentRelease/{uuid}/collections
-     * Get the TEA Collections belonging to the TEA Component Release
-     *
-     * @param uuid UUID of TEA Component Release in the TEA server (required)
-     * @return Requested TEA Collection found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
-     */
-    @Operation(
-        operationId = "getCollectionsByReleaseId",
-        description = "Get the TEA Collections belonging to the TEA Component Release",
-        tags = { "TEA Component Release" },
-        responses = {
-            @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
-                @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaCollection.class)))
-            }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
-            })
-        },
-        security = {
-            @SecurityRequirement(name = "basicAuth"),
-            @SecurityRequirement(name = "bearerAuth")
-        }
-    )
-    @RequestMapping(
-        method = RequestMethod.GET,
-        value = ComponentReleaseApi.PATH_GET_COLLECTIONS_BY_RELEASE_ID,
-        produces = { "application/json" }
-    )
-    default ResponseEntity<List<TeaCollection>> getCollectionsByReleaseId(
-        @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
-    ) {
-        getRequest().ifPresent(request -> {
-            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }, { \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] } ]";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
-                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
-                    break;
-                }
-            }
-        });
-        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
-
-    }
-
-
-    String PATH_GET_COMPONENT_RELEASE_BY_ID = "/componentRelease/{uuid}";
-    /**
-     * GET /componentRelease/{uuid}
+     * GET /componentRelease/{uuid} : Get a TEA Component Release with its latest collection
      * Get the TEA Component Release with its latest collection
      *
      * @param uuid UUID of TEA Component Release in the TEA server (required)
      * @return Requested TEA Component Release and its latest Collection found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
      */
     @Operation(
-        operationId = "getComponentReleaseById",
+        operationId = "getComponentRelease",
+        summary = "Get a TEA Component Release with its latest collection",
         description = "Get the TEA Component Release with its latest collection",
         tags = { "TEA Component Release" },
         responses = {
             @ApiResponse(responseCode = "200", description = "Requested TEA Component Release and its latest Collection found and returned", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaComponentReleaseWithCollection.class))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
             })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ComponentReleaseApi.PATH_GET_COMPONENT_RELEASE_BY_ID,
+        value = ComponentReleaseApi.PATH_GET_COMPONENT_RELEASE,
         produces = { "application/json" }
     )
-    default ResponseEntity<TeaComponentReleaseWithCollection> getComponentReleaseById(
+    default ResponseEntity<TeaComponentReleaseWithCollection> getComponentRelease(
         @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"release\" : \"\", \"latestCollection\" : \"\" }";
+                    String exampleString = "{ \"component\" : \"\", \"createdDate\" : \"\", \"releaseDate\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"latestCollection\" : \"\", \"componentName\" : \"tomcat\", \"uuid\" : \"\", \"version\" : \"1.2.3\", \"distributions\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"distributionId\" : \"\", \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"url\" : \"https://openapi-generator.tech\" } ], \"preRelease\" : true }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
@@ -268,51 +152,422 @@ public interface ComponentReleaseApi {
     }
 
 
-    String PATH_GET_LATEST_COLLECTION = "/componentRelease/{uuid}/collection/latest";
+    String PATH_GET_COMPONENT_RELEASE_CLE = "/componentRelease/{uuid}/cle";
     /**
-     * GET /componentRelease/{uuid}/collection/latest
-     * Get the latest TEA Collection belonging to the TEA Component Release
+     * GET /componentRelease/{uuid}/cle : Get the lifecycle events of a TEA Component Release
+     * Get the CLE (Common Lifecycle Enumeration) data for a TEA Component Release
      *
      * @param uuid UUID of TEA Component Release in the TEA server (required)
-     * @return Requested TEA Collection found and returned (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
+     * @return CLE data for the requested TEA Component Release found and returned (status code 200)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
      */
     @Operation(
-        operationId = "getLatestCollection",
-        description = "Get the latest TEA Collection belonging to the TEA Component Release",
-        tags = { "TEA Component Release" },
+        operationId = "getComponentReleaseCle",
+        summary = "Get the lifecycle events of a TEA Component Release",
+        description = "Get the CLE (Common Lifecycle Enumeration) data for a TEA Component Release",
+        tags = { "CLE" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
-                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
+            @ApiResponse(responseCode = "200", description = "CLE data for the requested TEA Component Release found and returned", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCle.class))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
             })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = ComponentReleaseApi.PATH_GET_LATEST_COLLECTION,
+        value = ComponentReleaseApi.PATH_GET_COMPONENT_RELEASE_CLE,
         produces = { "application/json" }
     )
-    default ResponseEntity<TeaCollection> getLatestCollection(
+    default ResponseEntity<TeaCle> getComponentReleaseCle(
         @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"date\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" }, { \"checksums\" : [ { \"algValue\" : \"algValue\", \"algType\" : \"\" }, { \"algValue\" : \"algValue\", \"algType\" : \"\" } ], \"signatureUrl\" : \"http://example.com/aeiou\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"http://example.com/aeiou\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }";
+                    String exampleString = "{ \"definitions\" : \"\", \"events\" : [ { \"eventId\" : 6, \"reason\" : \"reason\", \"references\" : [ \"https://openapi-generator.tech\", \"https://openapi-generator.tech\" ], \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"supersededByVersion\" : \"supersededByVersion\", \"description\" : \"description\", \"published\" : \"\", \"type\" : \"\", \"version\" : \"version\", \"effective\" : \"\", \"license\" : \"license\", \"versions\" : [ { \"range\" : \"range\", \"version\" : \"version\" }, { \"range\" : \"range\", \"version\" : \"version\" } ], \"id\" : 0, \"supportId\" : \"supportId\" }, { \"eventId\" : 6, \"reason\" : \"reason\", \"references\" : [ \"https://openapi-generator.tech\", \"https://openapi-generator.tech\" ], \"identifiers\" : [ { \"idType\" : \"\", \"idValue\" : \"idValue\" }, { \"idType\" : \"\", \"idValue\" : \"idValue\" } ], \"supersededByVersion\" : \"supersededByVersion\", \"description\" : \"description\", \"published\" : \"\", \"type\" : \"\", \"version\" : \"version\", \"effective\" : \"\", \"license\" : \"license\", \"versions\" : [ { \"range\" : \"range\", \"version\" : \"version\" }, { \"range\" : \"range\", \"version\" : \"version\" } ], \"id\" : 0, \"supportId\" : \"supportId\" } ] }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_GET_COMPONENT_RELEASE_COLLECTION_BY_VERSION = "/componentRelease/{uuid}/collection/{collectionVersion}";
+    /**
+     * GET /componentRelease/{uuid}/collection/{collectionVersion} : Get one collection version of a TEA Component Release
+     * Get a specific Collection (by version) for a TEA Component Release by its UUID
+     *
+     * @param uuid UUID of TEA Component Release in the TEA server (required)
+     * @param collectionVersion Version of TEA Collection (required)
+     * @return Requested TEA Collection Version found and returned (status code 200)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     */
+    @Operation(
+        operationId = "getComponentReleaseCollectionByVersion",
+        summary = "Get one collection version of a TEA Component Release",
+        description = "Get a specific Collection (by version) for a TEA Component Release by its UUID",
+        tags = { "TEA Collection" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "Requested TEA Collection Version found and returned", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
+            }),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ComponentReleaseApi.PATH_GET_COMPONENT_RELEASE_COLLECTION_BY_VERSION,
+        produces = { "application/json" }
+    )
+    default ResponseEntity<TeaCollection> getComponentReleaseCollectionByVersion(
+        @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Parameter(name = "collectionVersion", description = "Version of TEA Collection", required = true, in = ParameterIn.PATH) @PathVariable("collectionVersion") Integer collectionVersion
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdDate\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_GET_LATEST_COMPONENT_RELEASE_COLLECTION = "/componentRelease/{uuid}/collection/latest";
+    /**
+     * GET /componentRelease/{uuid}/collection/latest : Get the latest collection of a TEA Component Release
+     * Get the latest TEA Collection belonging to the TEA Component Release, that is, the collection with the greatest published &#x60;version&#x60;.  &#x60;404&#x60; means the release is unknown; a release always has a latest collection. 
+     *
+     * @param uuid UUID of TEA Component Release in the TEA server (required)
+     * @return Requested TEA Collection found and returned (status code 200)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     */
+    @Operation(
+        operationId = "getLatestComponentReleaseCollection",
+        summary = "Get the latest collection of a TEA Component Release",
+        description = "Get the latest TEA Collection belonging to the TEA Component Release, that is, the collection with the greatest published `version`.  `404` means the release is unknown; a release always has a latest collection. ",
+        tags = { "TEA Collection" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "Requested TEA Collection found and returned", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaCollection.class))
+            }),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ComponentReleaseApi.PATH_GET_LATEST_COMPONENT_RELEASE_COLLECTION,
+        produces = { "application/json" }
+    )
+    default ResponseEntity<TeaCollection> getLatestComponentReleaseCollection(
+        @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"createdDate\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+            }
+        });
+        return new ResponseEntity<>(HttpStatus.NOT_IMPLEMENTED);
+
+    }
+
+
+    String PATH_LIST_COMPONENT_RELEASE_COLLECTIONS = "/componentRelease/{uuid}/collections";
+    /**
+     * GET /componentRelease/{uuid}/collections : List the collections of a TEA Component Release
+     * Get the TEA Collections belonging to the TEA Component Release
+     *
+     * @param uuid UUID of TEA Component Release in the TEA server (required)
+     * @param pageSize The maximum number of results to return. (optional, default to 25)
+     * @param pageToken An opaque continuation token produced by a previous response. This token shall be copied verbatim from the &#x60;nextPageToken&#x60; value returned by the previous response. Clients shall not parse, construct, or modify this token.  The token represents continuation state for the original query, including &#x60;sortField&#x60;, &#x60;sortOrder&#x60;, result-affecting filters such as &#x60;idType&#x60; and &#x60;idValue&#x60;, and path parameters such as parent &#x60;uuid&#x60;. When &#x60;pageToken&#x60; is supplied, clients shall not change those result-affecting query parameters. Servers shall return &#x60;400 Bad Request&#x60; if supplied result-affecting query parameters conflict with the token state. To change any result-affecting parameter, clients shall start a new pagination sequence without &#x60;pageToken&#x60;.  A &#x60;pageToken&#x60; is only valid with the same request path and same path parameter values used to obtain it. Clients shall not reuse a &#x60;pageToken&#x60; across different parent resource paths or different path &#x60;uuid&#x60; values. Servers shall return &#x60;400 Bad Request&#x60; when a &#x60;pageToken&#x60; is used with a different path or different path parameter values.  Servers shall return &#x60;400 Bad Request&#x60; for malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values.  (optional)
+     * @param sortField The field by which to sort the results.  Paginated collection results shall be ordered first by the selected &#x60;sortField&#x60;, then by &#x60;version&#x60; as the deterministic secondary key if additional tie-breaking is needed. Collection UUIDs are not used as tie-breakers because collection UUIDs match the associated release UUID and can be shared across collection revisions.  The only currently supported collection &#x60;sortField&#x60; is &#x60;version&#x60;, so the secondary &#x60;version&#x60; key is redundant unless additional collection sort fields are added later.  (optional, default to version)
+     * @param sortOrder The direction of the sort.  The default is &#x60;asc&#x60; for all paginated resources. Clients that need newest release or collection versions first can request &#x60;sortOrder&#x3D;desc&#x60;.  The selected sort order applies to both the primary &#x60;sortField&#x60; and the resource-specific deterministic secondary tie-breaker. For products, components, product releases, and component releases, the secondary key is &#x60;uuid&#x60;. For collections, the secondary key is &#x60;version&#x60; if additional tie-breaking is needed.  (optional, default to asc)
+     * @return A paginated response containing TEA Collections (status code 200)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
+     */
+    @Operation(
+        operationId = "listComponentReleaseCollections",
+        summary = "List the collections of a TEA Component Release",
+        description = "Get the TEA Collections belonging to the TEA Component Release",
+        tags = { "TEA Collection" },
+        responses = {
+            @ApiResponse(responseCode = "200", description = "A paginated response containing TEA Collections", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaPaginatedCollectionResponse.class))
+            }),
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
+            })
+        },
+        security = {
+            @SecurityRequirement(name = "bearerAuth")
+        }
+    )
+    @RequestMapping(
+        method = RequestMethod.GET,
+        value = ComponentReleaseApi.PATH_LIST_COMPONENT_RELEASE_COLLECTIONS,
+        produces = { "application/json" }
+    )
+    default ResponseEntity<TeaPaginatedCollectionResponse> listComponentReleaseCollections(
+        @Parameter(name = "uuid", description = "UUID of TEA Component Release in the TEA server", required = true, in = ParameterIn.PATH) @PathVariable("uuid") UUID uuid,
+        @Min(value = 1L) @Max(value = 100L) @Parameter(name = "pageSize", description = "The maximum number of results to return.", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageSize", required = false, defaultValue = "25") Long pageSize,
+        @Parameter(name = "pageToken", description = "An opaque continuation token produced by a previous response. This token shall be copied verbatim from the `nextPageToken` value returned by the previous response. Clients shall not parse, construct, or modify this token.  The token represents continuation state for the original query, including `sortField`, `sortOrder`, result-affecting filters such as `idType` and `idValue`, and path parameters such as parent `uuid`. When `pageToken` is supplied, clients shall not change those result-affecting query parameters. Servers shall return `400 Bad Request` if supplied result-affecting query parameters conflict with the token state. To change any result-affecting parameter, clients shall start a new pagination sequence without `pageToken`.  A `pageToken` is only valid with the same request path and same path parameter values used to obtain it. Clients shall not reuse a `pageToken` across different parent resource paths or different path `uuid` values. Servers shall return `400 Bad Request` when a `pageToken` is used with a different path or different path parameter values.  Servers shall return `400 Bad Request` for malformed, invalid, expired, or conflicting `pageToken` values. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "pageToken", required = false) @Nullable String pageToken,
+        @Parameter(name = "sortField", description = "The field by which to sort the results.  Paginated collection results shall be ordered first by the selected `sortField`, then by `version` as the deterministic secondary key if additional tie-breaking is needed. Collection UUIDs are not used as tie-breakers because collection UUIDs match the associated release UUID and can be shared across collection revisions.  The only currently supported collection `sortField` is `version`, so the secondary `version` key is redundant unless additional collection sort fields are added later. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortField", required = false, defaultValue = "version") String sortField,
+        @Parameter(name = "sortOrder", description = "The direction of the sort.  The default is `asc` for all paginated resources. Clients that need newest release or collection versions first can request `sortOrder=desc`.  The selected sort order applies to both the primary `sortField` and the resource-specific deterministic secondary tie-breaker. For products, components, product releases, and component releases, the secondary key is `uuid`. For collections, the secondary key is `version` if additional tie-breaking is needed. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "sortOrder", required = false, defaultValue = "asc") String sortOrder
+    ) {
+        getRequest().ifPresent(request -> {
+            for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"nextPageToken\" : \"nextPageToken\", \"hasNext\" : false, \"results\" : [ { \"createdDate\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] }, { \"createdDate\" : \"\", \"updateReason\" : \"\", \"uuid\" : \"\", \"version\" : 0, \"belongsTo\" : \"\", \"artifacts\" : [ { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] }, { \"createdDate\" : \"\", \"formats\" : [ { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" }, { \"checksums\" : [ { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" }, { \"algValue\" : \"9da736a1cdd27231e70187cbc67398d29ca0b714f885e7032da9f1fb247693c1\", \"algType\" : \"\" } ], \"signatureUrl\" : \"https://openapi-generator.tech\", \"description\" : \"description\", \"mediaType\" : \"mediaType\", \"url\" : \"https://openapi-generator.tech\" } ], \"name\" : \"name\", \"type\" : \"\", \"uuid\" : \"\", \"version\" : 6, \"distributionIds\" : [ null, null ] } ] } ] }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

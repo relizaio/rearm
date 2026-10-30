@@ -305,22 +305,37 @@ describe('the D7 UI surfaces can actually render and read', () => {
         for (const f of ['siteName', 'shipDate', 'batchIdentifier']) expect(fn).toMatch(f)
     })
 
-    it('the panels are siblings of coreSettingsActions, not children of it', () => {
+    it('the panels live in their own Device tab, outside Core Settings and its coreSettingsActions', () => {
         // coreSettingsActions has v-if="hasCoreSettingsChanges && isWritable" -- it is the
         // UNSAVED-CHANGES action bar. Nested inside it, the device window panel appeared only
         // after you had edited some other core setting and vanished the moment you saved, so
         // on a freshly opened component -- every reader following the walkthrough -- it did
         // not exist at all. This is the defect that made the whole D7 write path unreachable,
-        // and neither the build, the suite nor a GraphQL-driven probe could see it.
+        // and neither the build, the suite nor a GraphQL-driven probe could see it. The panels
+        // now sit in a Device tab of their own (one tab per Save), shown where the backend
+        // answers for the window.
+        const core = source.indexOf('<n-tab-pane name="Core Settings">')
         const bar = source.indexOf('class="coreSettingsActions"')
-        const panel = source.indexOf('THE DEVICE SUPPORT WINDOW LIVES HERE NOW')
-        expect(bar).toBeGreaterThan(-1)
-        expect(panel).toBeGreaterThan(bar)
-        // Everything between the action bar and the panel, with the panel OUTSIDE: the bar's
-        // own div must have closed first. Count div depth across the gap.
-        const gap = source.slice(bar, panel)
-        const opens = (gap.match(/<div\b/g) || []).length
-        const closes = (gap.match(/<\/div>/g) || []).length
-        expect(closes).toBeGreaterThanOrEqual(opens)
+        const coreEnd = source.indexOf('</n-tab-pane>', core)
+        expect(core).toBeGreaterThan(-1)
+        expect(bar).toBeGreaterThan(core)
+        expect(bar).toBeLessThan(coreEnd)
+        const deviceLine = '<n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">'
+        const device = source.indexOf(deviceLine)
+        expect(device).toBeGreaterThan(coreEnd)
+        const pane = source.slice(device, source.indexOf('</n-tab-pane>', device))
+        expect(pane).toContain('THE DEVICE SUPPORT WINDOW LIVES HERE NOW')
+        expect(pane).toContain('<div v-if="deviceWindowSupported" style="margin-top: 22px;">')
+        expect(pane).toContain('<h4>Device class</h4>')
+        expect(pane).toContain('<div v-if="deviceWindowSupported && isDeviceComponent"')
+        expect(pane).toContain('<h4>Device support window</h4>')
+        expect(pane).not.toContain('class="coreSettingsActions"')
+        // Every div of the pane closes inside it.
+        const opens = (pane.match(/<div\b/g) || []).length
+        const closes = (pane.match(/<\/div>/g) || []).length
+        expect(closes).toBe(opens)
+        const corePane = source.slice(core, coreEnd)
+        expect(corePane).not.toContain('Device class')
+        expect(corePane).not.toContain('saveDeviceWindow')
     })
 })

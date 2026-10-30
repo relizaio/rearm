@@ -154,7 +154,7 @@ public class CliSessionService {
 
 	/**
 	 * The user approves a pending request with an existing key of theirs: a personal key they own, or
-	 * a Free Form key they hold. The key must be ACTIVE.
+	 * a Free Form key they hold, in an org they are a member of (global admins excepted). The key must be ACTIVE.
 	 */
 	@Transactional
 	public CliSession approveWithKey(String userCode, UserData user, UUID apiKeyUuid) throws RelizaException {
@@ -164,12 +164,15 @@ public class CliSessionService {
 	/** The same, the approver optionally shortening the session below the key's bound ({@code maxMinutes}). */
 	@Transactional
 	public CliSession approveWithKey(String userCode, UserData user, UUID apiKeyUuid, Integer maxMinutes) throws RelizaException {
-		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		ApiKey ak = apiKeyService.getApiKey(apiKeyUuid).orElseThrow(() -> new RelizaException("API key not found"));
+		if (ak.getObjectType() != ApiTypeEnum.USER && ak.getObjectType() != ApiTypeEnum.FREEFORM) {
+			// explicit type guard (task TEA-3): an external key, or any other type, never backs a device login
+			throw new RelizaException("Only personal and Free Form keys back device-login sessions");
+		}
+		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
 		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
-		boolean mine = (ak.getObjectType() == ApiTypeEnum.USER && user.getUuid().equals(ak.getObjectUuid()))
-				|| (ak.getObjectType() == ApiTypeEnum.FREEFORM && user.getUuid().equals(akd.getHolder()));
-		if (!mine) throw new RelizaException("Only a personal key you own or a Free Form key you hold can back a CLI session");
+		if (!ownsOrHolds(user, ak, akd)) throw new RelizaException("Only a personal key you own or a Free Form key you hold can back a CLI session");
+		if (!isMember(user, ak.getOrg())) throw new RelizaException("Not a member of this organization");
 		if (akd.getStatus() != ApiKeyStatus.ACTIVE) throw new RelizaException("This key is not active");
 		return activate(s, user, ak, sessionMinutes(akd.getSessionMaxMinutes(), maxMinutes));
 	}
@@ -197,7 +200,7 @@ public class CliSessionService {
 			PermissionType orgType, List<PermissionDto> permissions, Integer maxMinutes, WhoUpdated wu) throws RelizaException {
 		Integer minutes = sessionMinutes(null, maxMinutes);
 		CliSession s = pending(userCode).orElseThrow(() -> new RelizaException("No pending login for this code; it may have expired, ask the CLI to start again"));
-		if (!user.isGlobalAdmin() && !user.getOrganizations().contains(orgUuid)) throw new RelizaException("Not a member of this organization");
+		if (!isMember(user, orgUuid)) throw new RelizaException("Not a member of this organization");
 		String n = (notes == null || notes.isBlank()) ? "CLI session" + (s.getRequestedFrom() == null ? "" : " on " + s.getRequestedFrom()) : notes;
 		ApiKey ak = apiKeyService.createObjectApiKey(user.getUuid(), ApiTypeEnum.USER, orgUuid, UUID.randomUUID().toString(), n, wu);
 		ak = apiKeyService.setApiKeyOrigin(ak.getUuid(), ApiKeyOrigin.CLI_SESSION, wu);
@@ -325,13 +328,16 @@ public class CliSessionService {
 			throw new SessionEnded(s.getHardExpiresDate());
 		}
 		RefreshVerdict verdict = verdict(s, hash, now);
-		// the key behind the session must still be usable before anything on the row changes: a refusal here
-		// must not retire the client's token for a session that is dead anyway, and the managed entity would
-		// otherwise flush a half-rotation at commit even without an explicit save
+		// the key behind the session must still be usable, and still backed by the session's user, before
+		// anything on the row changes: a refusal here must not retire the client's token for a session that is
+		// dead anyway, and the managed entity would otherwise flush a half-rotation at commit even without an
+		// explicit save
 		if (verdict == RefreshVerdict.CURRENT || verdict == RefreshVerdict.PREVIOUS_IN_GRACE) {
-			boolean keyActive = s.getApiKey() != null && apiKeyService.getApiKey(s.getApiKey())
-					.map(ak -> ApiKeyData.dataFromRecord(ak).getStatus() == ApiKeyStatus.ACTIVE).orElse(false);
-			if (!keyActive) return Optional.empty();
+			Optional<ApiKey> oak = s.getApiKey() == null ? Optional.empty() : apiKeyService.getApiKey(s.getApiKey());
+			ApiKeyData akd = oak.map(ApiKeyData::dataFromRecord).orElse(null);
+			boolean keyUsable = akd != null && akd.getStatus() == ApiKeyStatus.ACTIVE
+					&& owner(s).filter(u -> backs(u, oak.get(), akd)).isPresent();
+			if (!keyUsable) return Optional.empty();
 		}
 		switch (verdict) {
 			case REUSED:
@@ -401,6 +407,25 @@ public class CliSessionService {
 	public List<CliSession> listByKey(UUID apiKey) { return repository.findActiveByApiKey(apiKey); }
 	public void touchLastUsed(UUID uuid) { try { repository.touchLastUsed(uuid); } catch (RuntimeException e) { log.error("could not record last use of CLI session {}", uuid, e); } }
 	public int purge() { return repository.purge(ZonedDateTime.now().minus(CliSessionCodes.ENDED_RETENTION)); }
+
+	/**
+	 * Whether the user may stand behind a CLI session on this key: they own it (personal key) or hold it (Free
+	 * Form key) and are a member of its org (global admins excepted). Checked at approval and again on every
+	 * use and refresh, so a session whose user left the org or stopped holding the key works no more, whether
+	 * or not anything revoked it.
+	 */
+	public static boolean backs(UserData user, ApiKey ak, ApiKeyData akd) {
+		return ownsOrHolds(user, ak, akd) && isMember(user, ak.getOrg());
+	}
+
+	private static boolean ownsOrHolds(UserData user, ApiKey ak, ApiKeyData akd) {
+		return (ak.getObjectType() == ApiTypeEnum.USER && user.getUuid().equals(ak.getObjectUuid()))
+				|| (ak.getObjectType() == ApiTypeEnum.FREEFORM && user.getUuid().equals(akd.getHolder()));
+	}
+
+	private static boolean isMember(UserData user, UUID org) {
+		return user.isGlobalAdmin() || user.getOrganizations().contains(org);
+	}
 
 	/** Owner of a session for the actor claim and the listing; empty when the user is gone. */
 	public Optional<UserData> owner(CliSession s) {

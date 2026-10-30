@@ -71,12 +71,17 @@ import io.reliza.model.VersionAssignment.VersionTypeEnum;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.common.TxUtils;
 import io.reliza.service.ComponentLockService;
 import io.reliza.service.ComponentLockService.LockedOperation;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
+import io.reliza.service.ArtifactAttachmentGuard;
 import io.reliza.service.ArtifactService;
+import io.reliza.service.DeclaredLicenses;
+import io.reliza.service.ReleaseRebomService;
+import io.reliza.service.ReleaseService;
 import io.reliza.service.AuditService;
 import io.reliza.service.BranchService;
 import io.reliza.service.DependencyPatternService;
@@ -145,6 +150,9 @@ public class OssReleaseService {
 
 	@Autowired
 	private ArtifactService artifactService;
+
+	@Autowired
+	private ArtifactAttachmentGuard artifactAttachmentGuard;
 			
 	@Autowired
 	@Lazy
@@ -153,6 +161,13 @@ public class OssReleaseService {
 	@Autowired
 	@Lazy
 	private OssPullRequestAggregatorService pullRequestAggregatorService;
+
+	@Autowired
+	@Lazy
+	private ReleaseService releaseService;
+
+	@Autowired
+	private ReleaseRebomService releaseRebomService;
 
 	// Self-proxy so the per-feature-set @Transactional methods run through the
 	// Spring proxy (off-request workers have no ambient transaction).
@@ -250,9 +265,7 @@ public class OssReleaseService {
 			r.setApprovalEvents(rd.getApprovalEvents() != null
 				? rd.getApprovalEvents().stream().map(e -> (Map<String,Object>) Utils.OM.convertValue(e, LinkedHashMap.class)).toList()
 				: null);
-			r.setUpdateEvents(rd.getUpdateEvents() != null
-				? rd.getUpdateEvents().stream().map(e -> (Map<String,Object>) Utils.OM.convertValue(e, LinkedHashMap.class)).toList()
-				: null);
+			r.setUpdateEvents(rd.getUpdateEvents() != null ? ReleaseData.updateEventRecords(rd.getUpdateEvents()) : null);
 		}
 		log.debug("setting release recordData:{}", recordData);
 		r = (Release) WhoUpdated.injectWhoUpdatedData(r, wu);
@@ -579,8 +592,20 @@ public class OssReleaseService {
 
 		var compRDs = sharedReleaseService.listReleaseDatasOfComponent(componentUuid, 100000, 0);
 		// for-loop (not forEach) so the checked RelizaException propagates and aborts the batch.
+		List<UUID> filled = new ArrayList<>();
 		for (ReleaseData rd : compRDs) {
-			updateReleaseIdentifiersFromComponent(rd, wu);
+			boolean hadNone = null == rd.getIdentifiers() || rd.getIdentifiers().isEmpty();
+			ReleaseData after = updateReleaseIdentifiersFromComponent(rd, wu);
+			if (hadNone && null != after.getIdentifiers() && !after.getIdentifiers().isEmpty()) {
+				filled.add(after.getUuid());
+			}
+		}
+		// A fill is a preferred-purl change from none: one invalidation of the filled releases and the
+		// products above them, in this transaction (SCORE-71 ADR-2 (c)).
+		if (!filled.isEmpty()) {
+			int n = releaseRebomService.invalidateRowsOfAndAbove(cd.getOrg(), filled);
+			log.info("merged SBOM rows of {} release(s) invalidated: identifiers filled on {} release(s) of component {} from its own; the next export or merge rebuilds them (SCORE-71)",
+					n, filled.size(), componentUuid);
 		}
 	}
 	
@@ -839,6 +864,22 @@ public class OssReleaseService {
 					+ ", attempted=" + releaseDto.getSidComponentName() + ")");
 		}
 		List<UuidDiff> artDiff = Utils.diffUuidLists(rData.getArtifacts(), releaseDto.getArtifacts());
+		// An added artifact must be of the release's organization and not an agent session's (the
+		// floor, SCORE-52 ADR-6), checked before the list is written.
+		List<UUID> addedArtifacts = artDiff.stream().filter(ad -> ad.diffAction() == ReleaseUpdateAction.ADDED)
+				.map(UuidDiff::object).toList();
+		if (!addedArtifacts.isEmpty()) {
+			artifactAttachmentGuard.refuseForeignAttachment(rData.getOrg(), rData.getComponent(), r.getUuid(),
+					addedArtifacts);
+		}
+		// A generated artifact (of this release or any other) is never attached as inventory; refused
+		// before anything is changed or saved. The synthetic list itself is not on the dto and stays.
+		for (UuidDiff ad : artDiff) {
+			if (ad.diffAction() == ReleaseUpdateAction.ADDED) {
+				sharedReleaseService.assertNotGeneratedArtifact(rData, ad.object(),
+						artifactService.getArtifactData(ad.object()).orElse(null));
+			}
+		}
 		if (!artDiff.isEmpty()) {
 			rData.setArtifacts(releaseDto.getArtifacts());
 			artDiff.forEach(ad -> {
@@ -860,6 +901,22 @@ public class OssReleaseService {
 			rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.VERSION, ReleaseUpdateAction.CHANGED, rData.getVersion(),
 					releaseDto.getVersion(), null, ZonedDateTime.now(), wu));
 		}
+		// Per-release declared licence override (SCORE-39 ADR-1). PATCH as the narrative: omitted
+		// leaves it alone, "" clears it and the release inherits again; a refusal throws before any
+		// write. A change rebuilds the products above the release once it is committed (ADR-5).
+		boolean declaredLicenseChanged = false;
+		if (null != releaseDto.getLicenseExpression()) {
+			String oldLicense = rData.getLicenseExpression();
+			String newLicense = releaseDto.getLicenseExpression().isBlank() ? null
+					: DeclaredLicenses.canonicalExpression(releaseDto.getLicenseExpression(), "licenseExpression");
+			if (!Objects.equals(oldLicense, newLicense)) {
+				rData.setLicenseExpression(newLicense);
+				rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.DECLARED_LICENSE,
+						ReleaseData.narrativeAction(oldLicense, newLicense), oldLicense, newLicense,
+						null, ZonedDateTime.now(), wu));
+				declaredLicenseChanged = true;
+			}
+		}
 		if(null != releaseDto.getParentReleases()){
 			sharedReleaseService.checkCircularDependency(r.getUuid(), releaseDto.getParentReleases());
 			if (!parentReleaseDiff.isEmpty()) {
@@ -877,7 +934,9 @@ public class OssReleaseService {
 		if (null != releaseDto.getTickets()) {
 			rData.setTickets(releaseDto.getTickets());
 		}
+		boolean sceChanged = false;
 		if (null != releaseDto.getSourceCodeEntry() && !releaseDto.getSourceCodeEntry().equals(rData.getSourceCodeEntry())) {
+			sceChanged = true;
 			if (null != rData.getSourceCodeEntry()) rData.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.SOURCE_CODE_ENTRY,
 					ReleaseUpdateAction.REMOVED, null, null, rData.getSourceCodeEntry(), ZonedDateTime.now(), wu));
 			rData.setSourceCodeEntry(releaseDto.getSourceCodeEntry());
@@ -924,6 +983,9 @@ public class OssReleaseService {
 					null, null, idd.object(), ZonedDateTime.now(), wu)));
 		}
 	
+		// Captured before the setter below (SCORE-71 ADR-2 (a)); a null list leaves them alone.
+		boolean preferredPurlChanged = null != releaseDto.getIdentifiers()
+				&& preferredPurlChanged(rData.getIdentifiers(), releaseDto.getIdentifiers());
 		if (null != releaseDto.getIdentifiers()) {
 			// sid PURLs are platform-controlled. Reject sid set changes; allow idempotent pass.
 			Set<String> dtoSidPurls = collectSidPurlValues(releaseDto.getIdentifiers());
@@ -936,7 +998,49 @@ public class OssReleaseService {
 			rData.setIdentifiers(releaseDto.getIdentifiers());
 		}
 		log.debug("saving release with rData: {}", rData);
-		return saveRelease(r, rData, wu);
+		Release saved = saveRelease(r, rData, wu);
+		boolean mergeInputsChanged = preferredPurlChanged || !artDiff.isEmpty() || sceChanged
+				|| !inboundDelDiff.isEmpty() || !parentReleaseDiff.isEmpty();
+		if (declaredLicenseChanged || mergeInputsChanged) {
+			ReleaseData savedRd = ReleaseData.dataFromRecord(saved);
+			if (declaredLicenseChanged) reconcileMergedSbomsAfterCommit(savedRd, wu);
+			if (mergeInputsChanged) invalidateMergedSbomRows(savedRd);
+		}
+		return saved;
+	}
+
+	/**
+	 * Empties the stored merged SBOM rows of {@code rd} and of every product above it, in the current
+	 * transaction (SCORE-71 ADR-1, ADR-2). The rule: every write to what a release's merge reads, or to
+	 * what its rows carry of its identity, invalidates: a change of the preferred purl, the artifacts,
+	 * the source code entry, the inbound deliverables or the parent releases, and a rebuild or PENDING
+	 * completion in {@code createRelease}. The declared licence keeps its after-commit reconcile.
+	 */
+	private void invalidateMergedSbomRows(ReleaseData rd) {
+		releaseService.invalidateMergedSbomRows(rd);
+	}
+
+	/**
+	 * Whether the preferred purl ({@link SidPurlUtils#pickPreferredPurl}), the one identifier a stored
+	 * merged row carries, differs between {@code before} and {@code after} (SCORE-71 ADR-2 (a)).
+	 * Null-safe on both lists.
+	 */
+	static boolean preferredPurlChanged(List<RearmIdentifier> before, List<RearmIdentifier> after) {
+		return !Objects.equals(preferredPurl(before), preferredPurl(after));
+	}
+
+	private static String preferredPurl(List<RearmIdentifier> identifiers) {
+		return SidPurlUtils.pickPreferredPurl(identifiers).map(RearmIdentifier::getIdValue).orElse(null);
+	}
+
+	/**
+	 * Rebuilds the merged SBOMs of every product above {@code rd} once the current transaction has
+	 * committed (SCORE-39 ADR-5): the routine is asynchronous, and started inside the transaction
+	 * its thread could read the release before the commit and store product merges under the old
+	 * facts. Without a transaction, at once.
+	 */
+	private void reconcileMergedSbomsAfterCommit(ReleaseData rd, WhoUpdated wu) {
+		TxUtils.afterCommitOrNow(() -> releaseService.reconcileMergedSbomRoutine(rd.getUuid(), wu));
 	}
 
 	/** Collect {@code idValue}s for sid-typed PURL identifiers. Null-safe. */
@@ -1807,7 +1911,17 @@ public class OssReleaseService {
 			} else if (bdOpt.isEmpty()) {
 				throw new RelizaException("Could not locate branch when creating release for branch = " + releaseDto.getBranch());
 			} else if (!bdOpt.get().getComponent().equals(releaseDto.getComponent())) {
-				throw new RelizaException("Component and branch mismatch for component = " + releaseDto.getComponent() 
+				throw new RelizaException("Component and branch mismatch for component = " + releaseDto.getComponent()
+					+ " and branch = " + releaseDto.getBranch());
+			}
+			// The organization the references are validated against, and the release recorded under, is
+			// the branch's: a caller passing another organization (a global admin on the manual lane) is
+			// refused here, before anything is read by component or minted. A null org cannot be another
+			// organization's, so it is filled from the branch as the component is above.
+			if (null == releaseDto.getOrg()) {
+				releaseDto.setOrg(bdOpt.get().getOrg());
+			} else if (!bdOpt.get().getOrg().equals(releaseDto.getOrg())) {
+				throw new RelizaException("Organization and branch mismatch for org = " + releaseDto.getOrg()
 					+ " and branch = " + releaseDto.getBranch());
 			}
 		}
@@ -1833,6 +1947,18 @@ public class OssReleaseService {
 			if (null != releaseDto.getSourceCodeEntry()) suppliedSces.add(releaseDto.getSourceCodeEntry());
 			if (null != releaseDto.getCommits()) suppliedSces.addAll(releaseDto.getCommits());
 			validateReleaseReferences(releaseDto.getOrg(), suppliedSces, suppliedParents);
+			// Every artifact a new release lists must be of its organization and not an agent
+			// session's (the floor, SCORE-52 ADR-6).
+			if (null != releaseDto.getArtifacts() && !releaseDto.getArtifacts().isEmpty()) {
+				artifactAttachmentGuard.refuseForeignAttachment(releaseDto.getOrg(), releaseDto.getComponent(), null,
+						releaseDto.getArtifacts());
+				// A generated artifact (TEA-4) is never listed as inventory, on a new release either: refused
+				// before the version is minted or anything is written, as doUpdateRelease refuses it on an update.
+				for (UUID listed : releaseDto.getArtifacts()) {
+					sharedReleaseService.assertNotGeneratedArtifact(releaseDto.getOrg(), listed,
+							artifactService.getArtifactData(listed).orElse(null));
+				}
+			}
 		} else if (existingReleaseData.isPresent()) {
 			// Rebuild / PENDING: the arm completes through updateRelease, which checks the references
 			// that differ from the stored release -- a legacy one re-sent unchanged does not block it.
@@ -1892,6 +2018,13 @@ public class OssReleaseService {
 			}
 		}
 
+		// The declared licence override is refused here, before anything is written (SCORE-39 ADR-1);
+		// a blank one is left for the factory (stored as null) or, for an existing release, for
+		// updateRelease (a clear).
+		if (null != releaseDto.getLicenseExpression() && !releaseDto.getLicenseExpression().isBlank()) {
+			releaseDto.setLicenseExpression(
+					DeclaredLicenses.canonicalExpression(releaseDto.getLicenseExpression(), "licenseExpression"));
+		}
 		ReleaseData rData = ReleaseData.releaseDataFactory(releaseDto);
 		ReleaseUpdateEvent rue = new ReleaseUpdateEvent(ReleaseUpdateScope.RELEASE_CREATED, ReleaseUpdateAction.ADDED, null, null, null,
 				ZonedDateTime.now(), wu);
@@ -1928,6 +2061,9 @@ public class OssReleaseService {
 				r = updateRelease(releaseDto, UpdateReleaseStrength.FULL, wu);
 				r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
 				rData = ReleaseData.dataFromRecord(r);
+				// A rebuild replaces the inventory wholesale, and the base variant's outbound
+				// deliverables are swapped after this in the same transaction (SCORE-71 ADR-2 (b)).
+				invalidateMergedSbomRows(rData);
 			} else if (existingRd.getLifecycle() != ReleaseLifecycle.PENDING) {
 				// Only allow updates from PENDING lifecycle if rebuildRelease is false
 				throw new RelizaException("Cannot create release because this version already belongs to another non-pending release, version = " + rData.getVersion());
@@ -1936,6 +2072,8 @@ public class OssReleaseService {
 				r = updateRelease(releaseDto, UpdateReleaseStrength.DRAFT_PENDING, wu);
 				r = updateReleaseLifecycle(existingRd.getUuid(), releaseDto.getLifecycle(), wu);
 				rData = ReleaseData.dataFromRecord(r);
+				// A PENDING completion replaces the inventory too (SCORE-71 ADR-2 (b)).
+				invalidateMergedSbomRows(rData);
 			}
 		} else if (ova.isPresent()) {
 			r = saveRelease(r, rData, wu);

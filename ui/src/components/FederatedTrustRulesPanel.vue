@@ -20,7 +20,11 @@
                 The repository id is pinned on first use, so a renamed or recreated repository is refused until the pin is reset. Deactivating a row refuses that repository alone and holds
                 until an admin activates it again; deleting a row only forgets its history, the next run from that repository materialises it again as long as a rule trusts it.
             </p>
-            <n-data-table :columns="identityFields" :data="identities" :scroll-x="1900" :row-key="(row: any) => row.uuid" :pagination="identitiesPagination" class="table-hover"></n-data-table>
+            <n-input v-model:value="identitiesSearch" clearable class="mb-2" style="max-width: 460px"
+                     placeholder="Search identities by uuid, API id, repository or notes" data-testid="keys-search-federatedIdentities" />
+            <n-data-table :columns="identityFields" :data="shownIdentities" :scroll-x="2220" :row-key="(row: any) => row.uuid" :pagination="identitiesPagination" class="table-hover">
+                <template #empty><n-empty data-testid="keys-empty-federatedIdentities" :description="keysEmptyText(identitiesSearch)" /></template>
+            </n-data-table>
         </div>
 
         <n-modal preset="dialog" :show-icon="false" style="width: 85%;" :show="showEditor" @update:show="(v: boolean) => { if (!v) showEditor = false }">
@@ -72,7 +76,7 @@
                     </n-radio-group>
                     <div v-if="form.grant.type === 'KEY'">
                         <n-form-item label="Free Form key of this organization to act as (its permissions and attribution)">
-                            <n-select v-model:value="form.grant.keyUuid" :options="keyOptions" placeholder="Choose a key" filterable />
+                            <n-select v-model:value="form.grant.keyUuid" :options="keyOptions" :fallback-option="keyFallbackOption" placeholder="Choose a key" filterable />
                         </n-form-item>
                     </div>
                     <div v-else>
@@ -143,7 +147,7 @@
  */
 import { h, ref, computed, watch } from 'vue'
 import { NDataTable, NModal, NForm, NFormItem, NFormItemGi, NGrid, NInput, NSelect, NDynamicTags, NRadioGroup, NRadio, NCheckbox, NCheckboxGroup,
-    NSpace, NButton, NIcon, NTag, NTooltip, NDatePicker, NSpin } from 'naive-ui'
+    NSpace, NButton, NIcon, NTag, NTooltip, NDatePicker, NSpin, NEmpty } from 'naive-ui'
 import { CirclePlus, Edit as EditIcon, Trash, Refresh } from '@vicons/tabler'
 import { useStore } from 'vuex'
 import gql from 'graphql-tag'
@@ -151,8 +155,12 @@ import Swal from 'sweetalert2'
 import graphqlClient from '../utils/graphql'
 import constants from '../utils/constants'
 import commonFunctions from '@/utils/commonFunctions'
-import { apiKeyIdsColumn } from '../utils/apiKeyControls'
+import { apiKeyIdsColumn, apiKeyLastAccessColumn, apiKeySorters, filterApiKeysBySearch } from '../utils/apiKeyControls'
+import { editionPermissionFunctions } from '@/utils/teaProfile'
 import { apiKeyPagination } from '@/utils/apiKeyTable'
+import { uuidCopyColumn } from '../utils/uuidCopyColumn'
+import { normalizeSearchTerm } from '@/utils/tableSearch'
+import { actAsKeyLabel, actAsKeyLabelOf } from '@/utils/apiKeyLabel'
 
 const props = defineProps<{
     orgUuid: string
@@ -168,6 +176,11 @@ const props = defineProps<{
 const emit = defineEmits(['changed'])
 const store = useStore()
 const identitiesPagination = apiKeyPagination()
+// the identities search lives in the panel: it starts empty again each time the Federated Identities sub-tab is opened
+const identitiesSearch = ref('')
+const shownIdentities = computed(() => filterApiKeysBySearch(props.identities, identitiesSearch.value))
+/** The empty-table text: names the term when one is set, naive-ui's "No Data" otherwise. */
+function keysEmptyText (raw: string): string { const t = normalizeSearchTerm(raw); return t ? `No keys match "${t}"` : 'No Data' }
 
 const rules = ref<any[]>([])
 const loading = ref(false)
@@ -207,8 +220,7 @@ function matcherSummary (m: any): { main: string, constraints: string[] } {
     return { main: `${m?.owner || '?'} / ${repos}`, constraints }
 }
 function keyLabel (uuid: string): string {
-    const k = props.freeFormKeys.find((x: any) => x.uuid === uuid)
-    return k ? (k.notes || k.uuid) : (uuid || '?')
+    return actAsKeyLabelOf(uuid, props.freeFormKeys)
 }
 function grantSummary (g: any): string {
     if (!g) return ''
@@ -229,7 +241,8 @@ async function setStatus (row: any, status: string) {
     } catch (e: any) { fail(e) }
 }
 async function deleteRule (row: any) {
-    const r = await Swal.fire({ title: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
+    // titleText: a rule name is user text, and Swal renders title as HTML
+    const r = await Swal.fire({ titleText: `Delete rule ${row.name}?`, text: 'Tokens minted through it stop working. Identity rows it created stay listed and can be deleted separately.', icon: 'warning', showCancelButton: true, confirmButtonText: 'Delete', cancelButtonText: 'Cancel' })
     if (!r.value) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation deleteFederatedTrustRule($uuid: ID!) { deleteFederatedTrustRule(uuid: $uuid) }`, variables: { uuid: row.uuid }, fetchPolicy: 'no-cache' })
@@ -302,9 +315,11 @@ async function resetIdentityPin (row: any) {
 const identityFields = computed(() => [
     {
         key: 'repository', width: 260, title: 'Repository',
+        sorter: apiKeySorters.repository,
         render: (row: any) => h('div', [h('strong', row.federation?.repository || row.keyOrder), h('div', { class: 'subtle', style: 'font-size: 11px;' }, row.federation?.provider === 'GITHUB_ACTIONS' ? 'GitHub Actions' : (row.federation?.provider || ''))])
     },
     apiKeyIdsColumn(),
+    { ...uuidCopyColumn({ what: 'Key UUID', testid: 'federatedIdentities-key-uuid', notify: props.notify }), width: 320 },
     { key: 'repositoryUri', width: 260, title: 'VCS repository', render: (row: any) => h('code', { style: 'font-size: 12px;' }, row.federation?.repositoryUri || '') },
     {
         key: 'pins', width: 230, title: 'Pinned ids',
@@ -326,7 +341,7 @@ const identityFields = computed(() => [
             return h('div', [h('div', f.lastRef || ''), h('div', { class: 'subtle', style: 'font-size: 11px;' }, `run ${f.lastRunId || '?'}${f.lastActor ? ' by ' + f.lastActor : ''}`)])
         }
     },
-    { key: 'accessDate', width: 170, title: 'Last Accessed' },
+    apiKeyLastAccessColumn(170),
     { key: 'status', width: 170, title: 'Status', render: (row: any) => props.apiKeyControls.statusCell(row) },
     {
         key: 'controls', title: 'Manage',
@@ -353,15 +368,18 @@ const providerOptions = [{ label: 'GitHub Actions', value: 'GITHUB_ACTIONS' }]
 const vcsPermissionOptions = ['NONE', 'READ_ONLY', 'READ_WRITE'].map(v => ({ label: v, value: v }))
 const orgPermissionOptions = ['NONE', 'ESSENTIAL_READ', 'READ_ONLY'].map(v => ({ label: v, value: v }))
 const extraTypeOptions = ['READ_ONLY', 'READ_WRITE'].map(v => ({ label: v, value: v }))
-const permissionFunctions: string[] = constants.PermissionFunctions
-const functionOptions = permissionFunctions.map(f => ({ label: translateFunctionName(f), value: f }))
 const installationType = computed(() => store.getters.myuser?.installationType)
+// The TEA functions only where the backend serves TEA (editionPermissionFunctions).
+const permissionFunctions = computed((): string[] => editionPermissionFunctions(constants.PermissionFunctions, installationType.value))
+const functionOptions = computed(() => permissionFunctions.value.map(f => ({ label: translateFunctionName(f), value: f })))
 const scopeOptions = computed(() => {
     const o = [{ label: 'Component / Product', value: 'COMPONENT' }, { label: 'Perspective', value: 'PERSPECTIVE' }]
     if (installationType.value !== 'OSS') o.push({ label: 'Instance / Cluster', value: 'INSTANCE' })
     return o
 })
-const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: `${k.notes || '(no notes)'} · ${k.uuid.slice(0, 8)}`, value: k.uuid })))
+const keyOptions = computed(() => props.freeFormKeys.map((k: any) => ({ label: actAsKeyLabel(k, props.freeFormKeys), value: k.uuid })))
+// a rule whose key is gone still opens in the editor: its value reads as the Grant column says, not a bare uuid
+const keyFallbackOption = (value: string | number) => ({ label: keyLabel(String(value)), value })
 function objectOptions (scope: string) {
     if (scope === 'PERSPECTIVE') return perspectives.value.map((p: any) => ({ label: p.name, value: p.uuid }))
     if (scope === 'INSTANCE') {

@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import java.time.ZonedDateTime;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.LinkedHashSet;
@@ -1018,10 +1019,11 @@ public class AgentTaskService {
 
 	/**
 	 * The session working a task parks its own hop for a person (task RD4-5): an OPERATOR-level MANUAL hold
-	 * whose reason is the question. The task shows "awaiting the operator: question", the people who write
-	 * the board are told (the needs-a-person path in {@link #saveData}), and the hop stays assigned to the
-	 * session, so its idle window is still the holder's. A person's release, with the answer as its note,
-	 * gives the hop back to it. The caller has checked that the session holds the assignment.
+	 * whose reason is the question. The task shows "awaiting the operator: question" and the people who write
+	 * the board are told (the needs-a-person path in {@link #saveData}). The park ends the hop (task TPF-66), as a
+	 * return or a session close ends one: a PARKED_FOR_OPERATOR return keeps the hop's usage, role and session,
+	 * and the assignment is cleared, so the task waits with no holder. A person's release, with the answer as its
+	 * note, queues the task again for its role. The caller has checked that the session holds the assignment.
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentTaskData parkHopForOperator(UUID taskUuid, UUID sessionUuid, String question, WhoUpdated wu)
@@ -1033,14 +1035,30 @@ public class AgentTaskService {
 		TaskAssignment a = requireAssignmentBySession(td, taskUuid, sessionUuid);
 		AgentActor holder = AgentActor.ofSession(sessionUuid);
 		String reason = AgentTaskData.AWAITING_THE_OPERATOR + question.strip();
+		HopUsage usage = endHopAtPark(td, a, taskUuid, question.strip());
 		td.transitionStatus(TaskStatus.ON_HOLD, StatusTrigger.HOLD, holder, reason);
 		td.setHold(new TaskHold(HoldLevel.OPERATOR, HoldKind.MANUAL, null, reason, holder, ZonedDateTime.now()));
 		AgentTaskData saved = saveData(td, wu);
 		BoardEffects effects = new BoardEffects(saved.getBoard());
 		effects.info("Task " + label(saved) + " parked by its " + a.role() + " hop, " + reason
-				+ "; a person lifts the hold with the answer as the note");
+				+ "; the hop ended; a person lifts the hold with the answer as the note and the task is queued again for "
+				+ a.role());
+		alertIfOverAllowance(saved, a.role(), usage, effects);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
+	}
+
+	/**
+	 * Ends a hop parked for the operator (task TPF-66) the way a return ends one: the hop's usage frozen now, a
+	 * PARKED_FOR_OPERATOR return carrying the question with the hop's role, agent and session, and the assignment
+	 * cleared. Called at the park, and at the lift of a hold parked before the park ended the hop.
+	 */
+	private HopUsage endHopAtPark(AgentTaskData td, TaskAssignment a, UUID taskUuid, String question) {
+		HopUsage usage = hopUsageWithAllowance(td, a, taskUuid, a.session());
+		td.addReturn(new TaskReturn(a.role(), a.roleUuid(), a.agent(), a.session(), TaskReturnReason.PARKED_FOR_OPERATOR,
+				question, ZonedDateTime.now(), usage, List.of()));
+		td.setAssignment(null);
+		return usage;
 	}
 
 	/** The states the coordinator seat parks a task in for an operator decision (task RD4-17): nobody is working it. */
@@ -1089,7 +1107,7 @@ public class AgentTaskService {
 	 * "action by person: summary"; an INFO names the question and that answer; and the verb then runs as it would on
 	 * an unheld task, moving the task on when it moves it (a completion completes, a cancel cancels, an answer to the
 	 * open questions routes). A person's verb on a hop's own hold runs as before: that hold is answered by its
-	 * release, which gives the hop back to its holder.
+	 * release, which queues the task again for its role (TPF-66).
 	 *
 	 * <p>Call it under the task's lock, before anything else is read from the task, and only where the verb then
 	 * saves the task or throws: the INFO is posted after the commit, and a refusal rolls the release back with it.
@@ -1222,9 +1240,10 @@ public class AgentTaskService {
 	/**
 	 * A person answers the question a hop was parked on (task RD4-5). The note is required, since it is the
 	 * answer: the status row reads "lifted by person: note", and an INFO names the task, the question and
-	 * the answer. The hop goes back to its holder (ASSIGNED). When the holder's session closed meanwhile, the
-	 * task is queued again for the same role, as the close would have done, with the answer on its record for
-	 * the next session. A role is refused: nothing is routed, the hop resumes.
+	 * the answer. The task is queued again for the role that parked it (task TPF-66), with the question and the
+	 * answer on its record for the next hop of the role, which the ordinary offer delivers. A hold parked before
+	 * the park ended the hop still carries the assignment: that hop is ended here, as the park now ends it. A
+	 * role is refused: nothing is routed.
 	 */
 	private AgentTaskData answerParkedHop(AgentTaskData td, AgentActor actor, String note, String role, WhoUpdated wu)
 			throws RelizaException {
@@ -1233,20 +1252,22 @@ public class AgentTaskService {
 					+ " answer as the note: it is recorded on the task for the hop that asked.");
 		}
 		if (StringUtils.isNotBlank(role)) {
-			throw new RelizaException("Task " + label(td) + " was parked by the hop working it, and lifting it gives"
-					+ " the hop back to its holder rather than routing it; lift it without a role.");
+			throw new RelizaException("Task " + label(td) + " was parked by the hop working it, and lifting it queues"
+					+ " the task for " + td.getRole() + " with the answer on its record rather than routing it; lift it"
+					+ " without a role.");
 		}
 		String question = StringUtils.removeStart(td.getHold().reason(), AgentTaskData.AWAITING_THE_OPERATOR);
 		String answer = note.strip();
-		String row = "lifted by " + (null == actor ? "a person" : actor.display()) + ": " + answer;
-		boolean resumes = null != td.getAssignment();
-		td.transitionStatus(resumes ? TaskStatus.ASSIGNED : TaskStatus.QUEUED, StatusTrigger.LIFT_HOLD, actor, row);
+		String who = null == actor ? "a person" : actor.display();
+		TaskAssignment leftover = td.getAssignment();
+		if (null != leftover) endHopAtPark(td, leftover, td.getUuid(), question);
+		td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.LIFT_HOLD, actor, "lifted by " + who + ": " + answer);
 		td.setHold(null);
 		AgentTaskData saved = saveData(td, wu);
 		BoardEffects effects = new BoardEffects(saved.getBoard());
-		effects.info("Task " + label(saved) + " answered by " + (null == actor ? "a person" : actor.display()) + ": "
-				+ answer + " (the question: " + question + ")" + (resumes ? "; the hop resumes with its holder"
-						: "; its session closed meanwhile, so it is queued again for " + saved.getRole()));
+		effects.info("Task " + label(saved) + " answered by " + who + ": " + answer + " (the question: " + question
+				+ "); queued again for " + saved.getRole() + " with the answer on its record"
+				+ (null == leftover ? "" : "; the hop was still assigned from before the change and is ended now"));
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
 	}
@@ -2130,7 +2151,8 @@ public class AgentTaskService {
 	/**
 	 * Record that a delivery unit landed, or never will (task 18c5c293): a linked PR merged where this
 	 * ReARM cannot see it, or on a board delivering without PRs, a push or release. Append-only; the
-	 * newest declaration of a unit counts. A DELIVERING task then settles on what it has: completed
+	 * newest declaration of a unit counts, except that a unit declared superseded accepts no further
+	 * declaration (task t20261010-033522-23606). A DELIVERING task then settles on what it has: completed
 	 * once every unit is delivered, to the coordinator with an ALERT when one is abandoned.
 	 *
 	 * @param unit a linked PR's URL (matched as the board matches them) or, on a board delivering
@@ -2169,6 +2191,15 @@ public class AgentTaskService {
 					.orElseThrow(() -> new RelizaException("The unit " + unit.strip() + " is not a PR linked to this task"
 							+ (null == td.getPrUrls() || td.getPrUrls().isEmpty() ? " (it links none)"
 									: " (linked: " + String.join(", ", td.getPrUrls()) + ")")));
+		}
+		// A superseded unit's declaration stands (task t20261010-033522-23606): marking it abandoned would replace
+		// SUPERSEDED, lose supersededBy and block a delivery its replacement is making. A merge after all has its ALERT.
+		AgentTaskData.Delivery newest = AgentDeliveryService.declarationFor(td, recorded);
+		if (null != newest && AgentTaskData.DeliveryOutcome.SUPERSEDED == newest.outcome()) {
+			throw new RelizaException(recorded + " is declared superseded by " + newest.supersededBy()
+					+ (AgentTaskData.DeliveryOutcome.ABANDONED == said
+							? "; a superseded PR is abandoned already, and its replacement is what delivery counts"
+							: "; a superseded PR is never delivered: if " + newest.supersededBy() + " landed, declare that one"));
 		}
 		// An abandonment of a PR no CI reported records what its tracker says, so it and a later supersede read the
 		// same source (RD3-20). It never refuses: the declaration is a person's or the seat's word.
@@ -2279,6 +2310,114 @@ public class AgentTaskService {
 		AgentTaskData saved = saveData(td, wu);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
+	}
+
+	/**
+	 * Unlink a PR that should never have counted (task t20261010-033523-18839): a mistaken link, or the superseded
+	 * half of a pair. The URL leaves the task's PRs in every spelling, an {@link AgentTaskData.UnlinkedPr} row records
+	 * who, when and why, and an INFO says so; a DELIVERING task then settles on what is left.
+	 *
+	 * <p>It never shrinks what a task has to deliver past its pass. Past the pass is: DELIVERING; a live tested pass
+	 * ({@link #testedPassLive}, so a later hop or a human gate after the tester's pass too); or standing at the
+	 * coordinator with every required role passed, when a complete would accept it (a board with no tester). There
+	 * it is refused when no PR still to land would remain, and a session may unlink only a PR that is blocked or
+	 * superseded; a person may unlink an open one, with an ALERT naming the tested head that no longer counts. A
+	 * returned or rejected task has no live pass and a role missing, so it is not past it; on a board delivering
+	 * without PRs nothing is. Always refused: a merged or delivered PR, the replacement another linked PR is
+	 * superseded by, a task parked for the operator (an unlink changes the delivery set the person is deciding on, as
+	 * a link does, so it is neither the answer nor a way past the hold), and a terminal task. Nothing is written
+	 * before every rule passes.
+	 *
+	 * <p>The declarations naming the PR, the delivering and assignment heads and the merged-after-all record stay as
+	 * they are: each is keyed by the PR's match key and every reader walks the linked PRs, so an unlinked PR is not
+	 * read, and a relinked one comes back with its newest declaration and its moved-head check.
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData unlinkPr(UUID taskUuid, String prUrl, String note, AgentActor by, WhoUpdated wu)
+			throws RelizaException {
+		if (StringUtils.isBlank(prUrl)) throw new RelizaException("Name the PR to unlink (--pr)");
+		if (null != note && note.length() > DESCRIPTION_MAX) {
+			throw new RelizaException("note is at most " + DESCRIPTION_MAX + " characters");
+		}
+		// One line: a line break in the note, U+2028 and NEL included, would forge a second "Task X: ..." line in the
+		// event text agents read.
+		String n = StringUtils.isBlank(note) ? null : note.strip().replaceAll("(?U)\\s+", " ");
+		AgentTaskData td = lockedTask(taskUuid);
+		// Parked by the seat or by its own hop alike: every other verb refuses a session there, and this one does not
+		// go through answeredByActing, so it refuses everyone.
+		if (td.awaitsTheOperator()) {
+			throw new RelizaException("Task " + label(td) + " is parked, awaiting the operator; release the hold first,"
+					+ " then unlink");
+		}
+		if (TaskStatus.COMPLETED == td.getStatus() || TaskStatus.CANCELLED == td.getStatus()) {
+			throw new RelizaException("Task " + label(td) + " is " + td.getStatus() + "; its links are history");
+		}
+		String url = linkedPr(td, prUrl, "PR to unlink");
+		String key = AgentDeliveryService.matchKey(url);
+		List<AgentDeliveryService.TaskPullRequest> rows = agentDeliveryService.pullRequestsOf(td);
+		AgentDeliveryService.TaskPullRequest row = rows.stream()
+				.filter(pr -> key.equals(AgentDeliveryService.matchKey(pr.url()))).findFirst().orElseThrow();
+		if (row.registered() && PullRequestState.MERGED == row.state()) {
+			throw new RelizaException(url + " merged; a delivered PR stays linked");
+		}
+		if (null != row.declaration() && AgentTaskData.DeliveryOutcome.DELIVERED == row.declaration().outcome()) {
+			throw new RelizaException(url + " is declared delivered; a delivered PR stays linked");
+		}
+		for (AgentDeliveryService.TaskPullRequest other : rows) {
+			AgentTaskData.Delivery d = other.declaration();
+			if (key.equals(AgentDeliveryService.matchKey(other.url())) || null == d
+					|| AgentTaskData.DeliveryOutcome.SUPERSEDED != d.outcome()
+					|| !key.equals(AgentDeliveryService.matchKey(d.supersededBy()))) continue;
+			throw new RelizaException(url + " is the replacement of " + other.url() + " (declared superseded by it); unlink "
+					+ other.url() + " first, or supersede it by another PR");
+		}
+		boolean openPastThePass = false;
+		boolean live = testedPassLive(td);
+		if (AgentBoardData.DeliveryMode.NONE != boardOf(td).getEffectiveDeliveryPolicy().mode() && (live
+				|| TaskStatus.DELIVERING == td.getStatus() || (standsAtCoordinator(td) && missingRequiredRoles(td).isEmpty()))) {
+			boolean remains = rows.stream().filter(pr -> !key.equals(AgentDeliveryService.matchKey(pr.url())))
+					.anyMatch(pr -> AgentDeliveryService.Delivery.WAITING == pr.unit()
+							|| AgentDeliveryService.Delivery.DELIVERED == pr.unit());
+			if (!remains) {
+				throw new RelizaException("Unlinking " + url + " would leave task " + label(td) + " with no PR to deliver;"
+						+ " reopen it to the role that redoes the work, supersede it (task supersedepr), or cancel it");
+			}
+			if (AgentDeliveryService.Delivery.WAITING == row.unit()) {
+				if (null == by || AgentActor.ActorKind.USER != by.kind()) {
+					throw new RelizaException(url + " is " + (row.registered() ? "open" : "unregistered") + " and a pass"
+							+ " names its head; close it unmerged, or supersede it, then unlink");
+				}
+				openPastThePass = true;
+			}
+		}
+		td.removePrUrl(u -> key.equals(AgentDeliveryService.matchKey(u)));
+		td.addUnlinkedPr(new AgentTaskData.UnlinkedPr(url, by, ZonedDateTime.now(), n, null, null));
+		BoardEffects effects = new BoardEffects(td.getBoard());
+		String said = "Task " + label(td) + ": PR " + url + " unlinked by " + (null == by ? "someone" : by.display())
+				+ (null == n ? "" : ": " + n);
+		if (openPastThePass) {
+			effects.alert(said + (!live ? "" : agentDeliveryService.testedOf(td).flatMap(t -> t.headFor(url))
+					.map(h -> "; the tested head " + AgentDeliveryService.shortSha(h.head()) + " no longer counts").orElse("")));
+		} else {
+			effects.info(said);
+		}
+		agentDeliveryService.leaveDelivering(td, null == by ? AgentActor.system("delivery") : by, effects);
+		AgentTaskData saved = saveData(td, wu);
+		boardEffectsApplier.applyAfterCommit(effects, wu);
+		return saved;
+	}
+
+	/**
+	 * AWAITING_COORDINATOR, or on a hold that returns there (task t20261010-033523-18839): a seat's park says where it
+	 * returns ({@code returnTo}); any other hold but a hop's own and a human gate lifts to AWAITING_COORDINATOR, as
+	 * {@link #liftHold} does.
+	 */
+	private static boolean standsAtCoordinator(AgentTaskData td) {
+		if (TaskStatus.AWAITING_COORDINATOR == td.getStatus()) return true;
+		TaskHold h = td.getHold();
+		if (TaskStatus.ON_HOLD != td.getStatus() || null == h) return false;
+		if (null != h.returnTo()) return TaskStatus.AWAITING_COORDINATOR == h.returnTo();
+		return HoldKind.HUMAN_GATE != h.kind() && !td.holdParksAHop();
 	}
 
 	/** The PR's tracker, read now (task RD3-20); a failure when this edition has no reader or the read fails. */
@@ -3031,12 +3170,15 @@ public class AgentTaskService {
 	/**
 	 * The PR heads a review or test round says it covered (task 3b97ccfd), against the task's
 	 * linked PRs: every head names a linked PR, and a passing round of a task with linked PRs names
-	 * a head for each, so the board knows what a pass was of and can notice a push after it. A
-	 * rejection, and a task without PRs, need none.
+	 * a head for each linked PR that is still to land, so the board knows what a pass was of and can
+	 * notice a push after it; a superseded PR, or one declared abandoned, needs none (task
+	 * t20261010-033522-23606). A closed row nobody declared still does: reopened on its tracker it would
+	 * wait again with no head on record. A rejection, and a task without PRs, need none.
 	 */
 	private void assertTestedHeads(AgentTaskData td, List<UUID> outputs, SignOffOutcome outcome)
 			throws RelizaException {
 		Set<String> linked = AgentDeliveryService.matchKeys(td);
+		List<AgentDeliveryService.TaskPullRequest> prs = null;
 		for (UUID r : null == outputs ? List.<UUID>of() : outputs) {
 			DocumentRef doc = sharedReleaseService.getReleaseData(r).map(ReleaseData::getDocument).orElse(null);
 			BoardReviewItemIndex index = null == doc ? null : doc.reviewItems();
@@ -3057,13 +3199,37 @@ public class AgentTaskService {
 			// names must be linked (above); only a BOARD_TEST_REPORT pass must name them all.
 			if (index.kind() != RearmSpecificationType.BOARD_TEST_REPORT) continue;
 			if (SignOffOutcome.PASSED != outcome || BoardReviewItemIndex.BoardReviewVerdict.PASSED != index.verdict()) continue;
-			for (String url : null == td.getPrUrls() ? List.<String>of() : td.getPrUrls()) {
-				if (!named.contains(AgentDeliveryService.matchKey(url))) {
-					throw new RelizaException("A pass says what it tested: say the head you tested for " + url
-							+ " (tested: [{pr, head}]) in the " + index.kind() + " index");
+			// The unit rule delivery counts by: a supersede is final and an abandonment changes only by another
+			// declaration, so neither will land unless someone says so; a closed row may be reopened on its tracker,
+			// so it is named like an open one.
+			if (null == prs) prs = agentDeliveryService.pullRequestsOf(td);
+			for (AgentDeliveryService.TaskPullRequest pr : prs) {
+				if (AgentDeliveryService.Delivery.SUPERSEDED == pr.unit()
+						|| (AgentDeliveryService.Delivery.BLOCKED == pr.unit() && null != pr.declaration())) continue;
+				if (!named.contains(AgentDeliveryService.matchKey(pr.url()))) {
+					throw new RelizaException("A pass says what it tested: say the head you tested for " + pr.url()
+							+ " (tested: [{pr, head}]) in the " + index.kind() + " index; a superseded or abandoned PR"
+							+ " needs none");
 				}
 			}
 		}
+	}
+
+	/**
+	 * Whether the newest passing test report that names heads still stands (task t20261010-033523-18839): the role
+	 * that offered it last signed off PASSED with that round among its outputs, and the task was not reopened to it
+	 * since, the staleness rule {@link #missingRequiredRoles} uses. A reopen to that role, a rejection by it, or a
+	 * later round of it that did not pass make it not live. A reopen to another role does not end the tester's pass,
+	 * because complete still counts it.
+	 */
+	private boolean testedPassLive(AgentTaskData td) {
+		AgentDeliveryService.Tested tested = agentDeliveryService.testedOf(td).orElse(null);
+		if (null == tested || null == tested.role()) return false;
+		UUID roleUuid = agentBoardService.getRoleConfig(td.getBoard(), tested.role())
+				.map(AgentTaskRoleConfigData::getUuid).orElse(null);
+		SignOff so = td.lastSignOffForRole(roleUuid, tested.role());
+		return null != so && SignOffOutcome.PASSED == so.outcome() && null != so.outputs()
+				&& so.outputs().contains(tested.round()) && !td.reopenedSince(so);
 	}
 
 	/**
@@ -3831,6 +3997,10 @@ public class AgentTaskService {
 	 * and one INFO says so after the commit. A link on any other task, a hop's own hold (RD4-5) included, and a PR
 	 * the task already links, record nothing new.
 	 *
+	 * <p>Linking a PR the task unlinked (task t20261010-033523-18839) stamps the newest unlinked row for it with who
+	 * and when, and posts an INFO naming the unlink. The PR comes back with its newest declaration, which unlinking
+	 * left in place: declared abandoned it is blocked again, declared superseded it is superseded again.
+	 *
 	 * @param linkedBy who links it, as the hold records it: the linking key's agent; blank reads "an API key"
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
@@ -3842,19 +4012,48 @@ public class AgentTaskService {
 					+ " links no PRs");
 		}
 		boolean added = null == td.getPrUrls() || !td.getPrUrls().contains(prUrl);
+		String key = AgentDeliveryService.matchKey(prUrl);
+		boolean keyWasLinked = null != td.getPrUrls()
+				&& td.getPrUrls().stream().anyMatch(u -> null != key && key.equals(AgentDeliveryService.matchKey(u)));
 		td.addPrUrl(prUrl);
 		recordLinkedHead(td, prUrl);
+		String by = StringUtils.isBlank(linkedBy) ? "an API key" : linkedBy.strip();
 		BoardEffects effects = null;
 		if (added && td.seatParkedForOperator()) {
-			String by = StringUtils.isBlank(linkedBy) ? "an API key" : linkedBy.strip();
 			td.setHold(td.getHold().withLinked(new AgentTaskData.HoldLink(prUrl, by, ZonedDateTime.now())));
 			effects = new BoardEffects(td.getBoard());
 			effects.info("Task " + label(td) + " is parked, awaiting the operator: PR " + prUrl + " linked by "
 					+ by + "; the delivery set the person is deciding on has changed");
 		}
+		String relinked = keyWasLinked ? null : stampRelinked(td, key, by);
+		if (null != relinked) {
+			if (null == effects) effects = new BoardEffects(td.getBoard());
+			effects.info("Task " + label(td) + ": PR " + prUrl + " re-linked by " + by + " (" + relinked + ")");
+		}
 		AgentTaskData saved = saveData(td, wu);
 		if (null != effects) boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
+	}
+
+	/**
+	 * Stamp the newest unlinked row for this PR as linked again (task t20261010-033523-18839), when it is not stamped
+	 * yet.
+	 *
+	 * @return what the unlink was, for the INFO ("unlinked <UTC instant> by <who>: <note>"); null when nothing was
+	 *         stamped
+	 */
+	private static String stampRelinked(AgentTaskData td, String key, String by) {
+		List<AgentTaskData.UnlinkedPr> unlinked = td.getUnlinkedPrs();
+		if (null == key || null == unlinked) return null;
+		for (int i = unlinked.size() - 1; i >= 0; i--) {
+			AgentTaskData.UnlinkedPr u = unlinked.get(i);
+			if (!key.equals(AgentDeliveryService.matchKey(u.url()))) continue;
+			if (null != u.relinkedAt()) return null;
+			unlinked.set(i, u.withRelinked(by, ZonedDateTime.now()));
+			return "unlinked" + (null == u.at() ? "" : " " + u.at().toInstant().truncatedTo(ChronoUnit.SECONDS))
+					+ " by " + (null == u.by() ? "someone" : u.by().display()) + (null == u.note() ? "" : ": " + u.note());
+		}
+		return null;
 	}
 
 	/**
@@ -3974,8 +4173,9 @@ public class AgentTaskService {
 				td.addReturn(new TaskReturn(a.role(), a.roleUuid(), a.agent(), a.session(),
 						TaskReturnReason.SESSION_CLOSED, closeNote, ZonedDateTime.now(), usage));
 				td.setAssignment(null);
-				// A hop parked for the operator (task RD4-5) stays parked: the question still waits on a
-				// person, whose release then queues the task for the role, the answer on its record.
+				// A hop parked for the operator (task RD4-5) before its park ended the hop (TPF-66) stays parked:
+				// the question still waits on a person, whose release then queues the task for the role, the
+				// answer on its record. A hop parked since holds no assignment, so the close never meets it.
 				if (TaskStatus.ON_HOLD != td.getStatus()) {
 					td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.SESSION_CLOSED, AgentActor.ofSession(sessionUuid),
 							closeNote);
@@ -4050,6 +4250,18 @@ public class AgentTaskService {
 		return asked.stream().map(found::get).filter(Objects::nonNull).toList();
 	}
 
+	/**
+	 * Tasks by uuid in one read, unordered, uncapped (task TPF-69): what a GraphQL batch loader reads for the
+	 * tasks one request already served. Not {@link #getTasksData(List)}, which refuses more than
+	 * {@link #TASKS_BY_UUID_MAX} and must not throw under a loader batch for a busy board.
+	 */
+	public List<AgentTaskData> listByUuids(java.util.Collection<UUID> uuids) {
+		if (null == uuids || uuids.isEmpty()) return List.of();
+		return StreamSupport.stream(repository.findAllById(uuids).spliterator(), false)
+				.map(AgentTaskData::dataFromRecord)
+				.collect(Collectors.toList());
+	}
+
 	public List<AgentTaskData> listByBoard(UUID boardUuid, String status) {
 		if (boardUuid == null) return List.of();
 		Iterable<AgentTask> rows = StringUtils.isBlank(status)
@@ -4119,10 +4331,11 @@ public class AgentTaskService {
 		// a released session hears that it was released, before any status check could say something vaguer
 		Optional<AgentTaskData.Unassignment> released = td.unassignedFor(sessionUuid);
 		if (released.isPresent()) throw new RelizaException(released.get().refusal(td.keyOrUuid()));
-		// the holder of a parked hop (task RD4-5) hears what it is waiting on, not a bare status
-		if (td.holdParksAHop() && null != td.getAssignment() && td.getAssignment().session().equals(sessionUuid)) {
-			throw new RelizaException("Task " + label(td) + " is parked, " + td.getHold().reason()
-					+ "; the hop resumes when a person lifts the hold with the answer");
+		// the session that parked a hop (task RD4-5) hears what the task waits on and that its hop ended (TPF-66),
+		// not a bare status
+		if (td.holdParksAHop() && parkedBy(td, sessionUuid)) {
+			throw new RelizaException("Task " + label(td) + " is parked, " + td.getHold().reason() + "; your hop ended"
+					+ " when you parked it, and the answer queues the task for " + td.getRole() + " again");
 		}
 		requireStatus(td, taskUuid, TaskStatus.ASSIGNED);
 		TaskAssignment a = td.getAssignment();
@@ -4131,6 +4344,15 @@ public class AgentTaskService {
 			throw new RelizaException("Task " + taskUuid + " is assigned to a different session");
 		}
 		return a;
+	}
+
+	/** Whether this session parked the task's hop (task TPF-66): the task's newest return is its PARKED_FOR_OPERATOR. */
+	private static boolean parkedBy(AgentTaskData td, UUID sessionUuid) {
+		if (null == sessionUuid) return false;
+		List<TaskReturn> returns = td.getReturns();
+		if (null == returns || returns.isEmpty()) return false;
+		TaskReturn newest = returns.get(returns.size() - 1);
+		return TaskReturnReason.PARKED_FOR_OPERATOR == newest.reason() && sessionUuid.equals(newest.session());
 	}
 
 	public AgentTaskData saveData(AgentTaskData td, WhoUpdated wu) {

@@ -7,6 +7,7 @@ import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
 import io.reliza.model.tea.TeaChecksum;
 import io.reliza.model.tea.TeaIdentifier;
+import java.net.URI;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -27,7 +28,7 @@ import jakarta.annotation.Generated;
  */
 
 @JsonTypeName("release-distribution")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaReleaseDistribution {
 
   private UUID distributionId;
@@ -37,9 +38,9 @@ public class TeaReleaseDistribution {
   @Valid
   private List<@Valid TeaIdentifier> identifiers = new ArrayList<>();
 
-  private @Nullable String url;
+  private @Nullable URI url;
 
-  private @Nullable String signatureUrl;
+  private @Nullable URI signatureUrl;
 
   @Valid
   private List<@Valid TeaChecksum> checksums = new ArrayList<>();
@@ -61,11 +62,11 @@ public class TeaReleaseDistribution {
   }
 
   /**
-   * A unique identifier for the TEA Distribution object
+   * A unique identifier for the TEA Distribution object (uuid)
    * @return distributionId
    */
   @NotNull @Valid 
-  @Schema(name = "distributionId", description = "A unique identifier for the TEA Distribution object", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "distributionId", description = "A unique identifier for the TEA Distribution object (uuid)", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("distributionId")
   public UUID getDistributionId() {
     return distributionId;
@@ -82,11 +83,11 @@ public class TeaReleaseDistribution {
   }
 
   /**
-   * Free-text description of the distribution.
+   * Free-text description of the distribution
    * @return description
    */
   
-  @Schema(name = "description", description = "Free-text description of the distribution.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "description", description = "Free-text description of the distribution", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("description")
   public @Nullable String getDescription() {
     return description;
@@ -111,11 +112,11 @@ public class TeaReleaseDistribution {
   }
 
   /**
-   * List of identifiers specific to this distribution.
+   * Array of identifiers specific to this distribution
    * @return identifiers
    */
   @Valid 
-  @Schema(name = "identifiers", description = "List of identifiers specific to this distribution.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "identifiers", description = "Array of identifiers specific to this distribution", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("identifiers")
   public List<@Valid TeaIdentifier> getIdentifiers() {
     return identifiers;
@@ -126,45 +127,45 @@ public class TeaReleaseDistribution {
     this.identifiers = identifiers;
   }
 
-  public TeaReleaseDistribution url(@Nullable String url) {
+  public TeaReleaseDistribution url(@Nullable URI url) {
     this.url = url;
     return this;
   }
 
   /**
-   * Direct download URL for the distribution.
+   * Direct download URL for the distribution. This is always a location outside the TEA API. A TEA access token is sent only to the TEA server's own API base URL, never to an external URL: distribution locations are either openly accessible, pre-signed, or require credentials the client arranges separately. 
    * @return url
    */
-  
-  @Schema(name = "url", description = "Direct download URL for the distribution.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Valid 
+  @Schema(name = "url", description = "Direct download URL for the distribution. This is always a location outside the TEA API. A TEA access token is sent only to the TEA server's own API base URL, never to an external URL: distribution locations are either openly accessible, pre-signed, or require credentials the client arranges separately. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("url")
-  public @Nullable String getUrl() {
+  public @Nullable URI getUrl() {
     return url;
   }
 
   @JsonProperty("url")
-  public void setUrl(@Nullable String url) {
+  public void setUrl(@Nullable URI url) {
     this.url = url;
   }
 
-  public TeaReleaseDistribution signatureUrl(@Nullable String signatureUrl) {
+  public TeaReleaseDistribution signatureUrl(@Nullable URI signatureUrl) {
     this.signatureUrl = signatureUrl;
     return this;
   }
 
   /**
-   * Direct download URL for the distribution's external signature.
+   * Direct download URL for the distribution's external signature. As with `url`, this is always a location outside the TEA API. A TEA access token is sent only to the TEA server's own API base URL, never to an external URL. 
    * @return signatureUrl
    */
-  
-  @Schema(name = "signatureUrl", description = "Direct download URL for the distribution's external signature.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Valid 
+  @Schema(name = "signatureUrl", description = "Direct download URL for the distribution's external signature. As with `url`, this is always a location outside the TEA API. A TEA access token is sent only to the TEA server's own API base URL, never to an external URL. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("signatureUrl")
-  public @Nullable String getSignatureUrl() {
+  public @Nullable URI getSignatureUrl() {
     return signatureUrl;
   }
 
   @JsonProperty("signatureUrl")
-  public void setSignatureUrl(@Nullable String signatureUrl) {
+  public void setSignatureUrl(@Nullable URI signatureUrl) {
     this.signatureUrl = signatureUrl;
   }
 
@@ -182,11 +183,11 @@ public class TeaReleaseDistribution {
   }
 
   /**
-   * List of checksums for the distribution.
+   * Array of checksums for the distribution payload retrieved from `url` (the distribution bytes, not the signature at `signatureUrl`). 
    * @return checksums
    */
   @Valid 
-  @Schema(name = "checksums", description = "List of checksums for the distribution.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @Schema(name = "checksums", description = "Array of checksums for the distribution payload retrieved from `url` (the distribution bytes, not the signature at `signatureUrl`). ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
   @JsonProperty("checksums")
   public List<@Valid TeaChecksum> getChecksums() {
     return checksums;

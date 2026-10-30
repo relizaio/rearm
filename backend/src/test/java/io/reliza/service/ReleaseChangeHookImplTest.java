@@ -14,6 +14,9 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -33,7 +36,14 @@ import io.reliza.model.NotificationDeliveryOrigin;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationOutboxStatus;
+import io.reliza.model.PackageKind;
+import io.reliza.model.SubmissionActOutcome;
+import io.reliza.model.SubmissionNotice;
+import io.reliza.model.SubmissionState;
+import io.reliza.model.TeaPublicationData;
 import io.reliza.repositories.NotificationOutboxEventRepository;
+import io.reliza.service.TeaPublicationService.TeaExposureState;
+import io.reliza.service.oss.OssPerspectiveService;
 
 /**
  * Unit surface for the shared release producer hook. Each test stubs
@@ -67,6 +77,7 @@ class ReleaseChangeHookImplTest {
     private GetComponentService getComponentService;
     private BranchService branchService;
     private ReleaseNotificationSupport support;
+    private OssPerspectiveService ossPerspectiveService;
     private ReleaseChangeHookImpl hook;
 
     @BeforeEach
@@ -84,6 +95,12 @@ class ReleaseChangeHookImplTest {
         injectSupport("branchService", branchService);
         injectSupport("getSourceCodeEntryService", getSourceCodeEntryService);
         injectSupport("vcsRepositoryService", vcsRepositoryService);
+        // The one filter of a component's stored perspectives (task TEA-8, D13), pass-through here
+        // so the stamping cases see the component's set; the TEA-8 cases stub it per test.
+        ossPerspectiveService = mock(OssPerspectiveService.class);
+        when(ossPerspectiveService.assignablePerspectiveUuids(any(), any()))
+                .thenAnswer(inv -> new ArrayList<UUID>(inv.<java.util.Collection<UUID>>getArgument(1)));
+        injectSupport("ossPerspectiveService", ossPerspectiveService);
 
         hook = new ReleaseChangeHookImpl();
         injectHook("support", support);
@@ -153,6 +170,68 @@ class ReleaseChangeHookImplTest {
         java.util.Collection<?> persp = (java.util.Collection<?>) ar.get("perspectives");
         assertTrue(persp.stream().map(String::valueOf).anyMatch(s -> s.equals(perspective.toString())),
                 "perspective arm needs the component's perspectives stamped");
+    }
+
+    // Task TEA-8 (design round 3, D13): only the component's assignable perspectives are stamped.
+
+    @Test
+    void onReleaseCreatedStampsOnlyAssignablePerspectives() {
+        UUID org = UUID.randomUUID();
+        UUID componentUuid = UUID.randomUUID();
+        UUID live = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+        Set<UUID> stored = new LinkedHashSet<>(List.of(live, deleted));
+        ComponentData cd = component(org, componentUuid, stored);
+        when(getComponentService.getComponentData(any())).thenReturn(Optional.of(cd));
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        when(ossPerspectiveService.assignablePerspectiveUuids(org, stored)).thenReturn(List.of(live));
+
+        hook.onReleaseCreated(release(componentUuid, ReleaseLifecycle.DRAFT), false);
+
+        java.util.Map<String, Object> ar = onlyAffectedRelease(captureSaved());
+        assertEquals(componentUuid.toString(), String.valueOf(ar.get("componentUuid")));
+        assertEquals(Set.of(live.toString()), stampedPerspectives(ar));
+    }
+
+    @Test
+    void onReleaseCreatedStampsNoPerspectiveWhenNoneIsAssignable() {
+        UUID org = UUID.randomUUID();
+        UUID componentUuid = UUID.randomUUID();
+        UUID deleted = UUID.randomUUID();
+        ComponentData cd = component(org, componentUuid, Set.of(deleted));
+        when(getComponentService.getComponentData(any())).thenReturn(Optional.of(cd));
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        when(ossPerspectiveService.assignablePerspectiveUuids(org, Set.of(deleted))).thenReturn(List.of());
+
+        hook.onReleaseCreated(release(componentUuid, ReleaseLifecycle.DRAFT), false);
+
+        // The component arm keeps working for a component whose only membership is stale.
+        java.util.Map<String, Object> ar = onlyAffectedRelease(captureSaved());
+        assertEquals(componentUuid.toString(), String.valueOf(ar.get("componentUuid")));
+        assertEquals(Set.of(), stampedPerspectives(ar));
+    }
+
+    private static ComponentData component(UUID org, UUID uuid, Set<UUID> perspectives) {
+        ComponentData cd = new ComponentData();
+        cd.setUuid(uuid);
+        cd.setOrg(org);
+        cd.setName("myapp");
+        cd.setType(ComponentType.COMPONENT);
+        cd.setPerspectives(perspectives);
+        return cd;
+    }
+
+    @SuppressWarnings("unchecked")
+    private static java.util.Map<String, Object> onlyAffectedRelease(NotificationOutboxEvent saved) {
+        List<?> ars = (List<?>) saved.getRecordData().get("affectedReleases");
+        assertNotNull(ars);
+        assertEquals(1, ars.size());
+        return (java.util.Map<String, Object>) ars.get(0);
+    }
+
+    private static Set<String> stampedPerspectives(java.util.Map<String, Object> ar) {
+        java.util.Collection<?> persp = (java.util.Collection<?>) ar.get("perspectives");
+        return persp.stream().map(String::valueOf).collect(java.util.stream.Collectors.toSet());
     }
 
     @Test
@@ -272,7 +351,149 @@ class ReleaseChangeHookImplTest {
         verify(outboxRepo, times(1)).save(any());
     }
 
+    // ---------- TEA publication (task TEA-5, design 4.7 case 36) ----------
+
+    private static final String API_BASE = "https://rearm.example.com/tea/0d7c4c5e-0000-0000-0000-000000000001";
+
+    private TeaPublicationData teaPublication(ReleaseData rd) throws Exception {
+        TeaPublicationService teaPublicationService = mock(TeaPublicationService.class);
+        when(teaPublicationService.apiBaseOf(rd.getOrg())).thenReturn(API_BASE);
+        injectHook("teaPublicationService", teaPublicationService);
+        TeaPublicationData p = new TeaPublicationData();
+        p.setUuid(UUID.randomUUID());
+        p.setOrg(rd.getOrg());
+        p.setRelease(rd.getUuid());
+        p.setComponent(rd.getComponent());
+        p.setComponentType(ComponentType.PRODUCT);
+        p.setLatestVersion(3);
+        return p;
+    }
+
+    @Test
+    void onReleaseTeaPublishedEmitsOneRowWithThePayloadAndTheVersionKey() throws Exception {
+        stubComponent(ComponentType.PRODUCT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        ReleaseData rd = release(UUID.randomUUID(), ReleaseLifecycle.GENERAL_AVAILABILITY);
+        setField(rd, "uuid", UUID.randomUUID());
+        TeaPublicationData p = teaPublication(rd);
+
+        hook.onReleaseTeaPublished(rd, p, 3, TeaExposureState.PRIVATE, 2);
+
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals(NotificationEventType.RELEASE_TEA_PUBLISHED, saved.getEventType());
+        assertEquals(rd.getOrg(), saved.getOrg());
+        assertEquals("tea-published:" + p.getUuid() + ":3", saved.getDedupKey());
+        java.util.Map<String, Object> data = saved.getRecordData();
+        assertEquals(p.getUuid().toString(), String.valueOf(data.get("publication")));
+        assertEquals("PUBLISHED", data.get("state"));
+        assertEquals(3, ((Number) data.get("collectionVersion")).intValue());
+        assertEquals("PRIVATE", data.get("exposure"));
+        assertEquals(API_BASE + "/v1.0.0/productRelease/" + p.getUuid(), data.get("publicUrl"));
+        assertEquals(2, ((Number) data.get("childrenPublished")).intValue());
+        assertEquals("myapp", release(saved).get("componentName"));
+        assertEquals("v2.0", release(saved).get("version"));
+        assertEquals(rd.getUuid().toString(), String.valueOf(release(saved).get("releaseUuid")));
+        assertNotNull(data.get("affectedReleases"), "TEA events stamp affectedReleases like every release event");
+    }
+
+    @Test
+    void onReleaseTeaHiddenEmitsOneRowKeyedByTheMinute() throws Exception {
+        stubComponent(ComponentType.COMPONENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        ReleaseData rd = release(UUID.randomUUID(), ReleaseLifecycle.GENERAL_AVAILABILITY);
+        setField(rd, "uuid", UUID.randomUUID());
+        TeaPublicationData p = teaPublication(rd);
+        p.setComponentType(ComponentType.COMPONENT);
+        java.time.Instant before = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+
+        hook.onReleaseTeaHidden(rd, p);
+
+        java.time.Instant after = java.time.Instant.now().truncatedTo(java.time.temporal.ChronoUnit.MINUTES);
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals(NotificationEventType.RELEASE_TEA_HIDDEN, saved.getEventType());
+        String prefix = "tea-hidden:" + p.getUuid() + ":";
+        assertTrue(saved.getDedupKey().startsWith(prefix), "Unexpected dedup key: " + saved.getDedupKey());
+        java.time.Instant minute = java.time.Instant.parse(saved.getDedupKey().substring(prefix.length()));
+        assertEquals(minute, minute.truncatedTo(java.time.temporal.ChronoUnit.MINUTES), "the instant is truncated to minutes");
+        assertTrue(!minute.isBefore(before) && !minute.isAfter(after), "the minute of the hide: " + minute);
+        java.util.Map<String, Object> data = saved.getRecordData();
+        assertEquals(p.getUuid().toString(), String.valueOf(data.get("publication")));
+        assertEquals("HIDDEN", data.get("state"));
+        assertEquals(null, data.get("collectionVersion"));
+        assertEquals(null, data.get("exposure"));
+        assertEquals(API_BASE + "/v1.0.0/componentRelease/" + p.getUuid(), data.get("publicUrl"));
+        assertEquals(0, ((Number) data.get("childrenPublished")).intValue());
+        assertEquals("myapp", release(saved).get("componentName"));
+    }
+
+    @Test
+    void teaEventsSkipAMissingPublicationAndAnExternalRelease() throws Exception {
+        ReleaseData rd = release(UUID.randomUUID(), ReleaseLifecycle.GENERAL_AVAILABILITY);
+        hook.onReleaseTeaPublished(rd, null, 1, TeaExposureState.PUBLIC, 0);
+        hook.onReleaseTeaHidden(rd, null);
+        ReleaseData external = new ReleaseData();
+        setField(external, "org", CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+        setField(external, "component", UUID.randomUUID());
+        TeaPublicationData p = new TeaPublicationData();
+        p.setUuid(UUID.randomUUID());
+        hook.onReleaseTeaPublished(external, p, 1, TeaExposureState.PUBLIC, 0);
+        hook.onReleaseTeaHidden(external, p);
+
+        verify(outboxRepo, never()).save(any());
+    }
+
     // ---------- helpers ----------
+
+    /** Task TEA-35, design 4.4 case 12: one row per created version, the six payload fields, keyed by the version (E14). */
+    @Test
+    void onReleaseSubmissionCreatedEmitsOneRowWithTheSixFieldsAndTheVersionKey() {
+        stubComponent(ComponentType.PRODUCT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        ReleaseData rd = release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED);
+        setField(rd, "uuid", UUID.randomUUID());
+        UUID submission = UUID.randomUUID();
+
+        hook.onReleaseSubmissionCreated(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
+                SubmissionState.ACTIVE, 2, SubmissionActOutcome.RESUBMITTED));
+
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals(NotificationEventType.RELEASE_SUBMISSION_CREATED, saved.getEventType());
+        assertEquals(rd.getOrg(), saved.getOrg());
+        assertEquals("submission-created:" + submission + ":2", saved.getDedupKey());
+        java.util.Map<String, Object> data = saved.getRecordData();
+        assertEquals(Set.of("release", "submission", "kind", "state", "version", "act", "affectedReleases"),
+                data.keySet(), "the payload's six fields and the stamped affected releases, and no other key");
+        assertEquals(submission.toString(), String.valueOf(data.get("submission")));
+        assertEquals("FDA_PREMARKET", data.get("kind"));
+        assertEquals("ACTIVE", data.get("state"));
+        assertEquals(2, ((Number) data.get("version")).intValue());
+        assertEquals("RESUBMITTED", data.get("act"));
+        assertEquals("myapp", release(saved).get("componentName"));
+        assertEquals(rd.getUuid().toString(), String.valueOf(release(saved).get("releaseUuid")));
+    }
+
+    /** Task TEA-35, F-7: two withdrawals of one submission inside one minute write distinct keys, by version. */
+    @Test
+    void onReleaseSubmissionWithdrawnIsKeyedByTheTombstonedVersion() {
+        stubComponent(ComponentType.PRODUCT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        ReleaseData rd = release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED);
+        setField(rd, "uuid", UUID.randomUUID());
+        UUID submission = UUID.randomUUID();
+
+        hook.onReleaseSubmissionWithdrawn(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
+                SubmissionState.WITHDRAWN, 2, SubmissionActOutcome.WITHDRAWN));
+        hook.onReleaseSubmissionWithdrawn(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
+                SubmissionState.WITHDRAWN, 3, SubmissionActOutcome.WITHDRAWN));
+
+        ArgumentCaptor<NotificationOutboxEvent> captor = ArgumentCaptor.forClass(NotificationOutboxEvent.class);
+        verify(outboxRepo, times(2)).save(captor.capture());
+        List<NotificationOutboxEvent> rows = captor.getAllValues();
+        assertEquals(NotificationEventType.RELEASE_SUBMISSION_WITHDRAWN, rows.get(0).getEventType());
+        assertEquals("submission-withdrawn:" + submission + ":2", rows.get(0).getDedupKey());
+        assertEquals("submission-withdrawn:" + submission + ":3", rows.get(1).getDedupKey());
+        assertEquals("WITHDRAWN", rows.get(0).getRecordData().get("act"));
+    }
 
     private void stubComponent(ComponentType type) {
         ComponentData cd = new ComponentData();

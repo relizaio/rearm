@@ -2,14 +2,19 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Storage and registry are observed through mocks: what matters here is the
 // identity of the documents that reach the registry, not that they reach it.
-const runQuery = vi.fn(async () => ({ rows: [{ uuid: 'inserted' }] }));
+// On the transaction client (SCORE-51): the lineage lock and the latest-version
+// read answer no rows, the insert answers the row.
+const runQuery = vi.fn(async (text: string, _params?: any[]) =>
+    (/^INSERT/.test(text) ? { rows: [{ uuid: 'inserted' }] } : { rows: [] as any[] }));
+const insertCall = () => runQuery.mock.calls.find(c => (c[0] as string).startsWith('INSERT INTO rebom.boms'))!;
 const pushed: Array<{ tag: string; bom: any }> = [];
 const pushToOci = vi.fn(async (tag: string, bom: any) => {
     pushed.push({ tag, bom });
     return { ociRepositoryName: 'rebom-artifacts-2026-09', fileSHA256Digest: `digest-of-${tag}`, originalSize: 10 };
 });
 
-vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {} }));
+vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {},
+    withTransaction: async (fn: any) => fn({ query: (...a: any[]) => runQuery.apply(null, a as any) }) }));
 vi.mock('../../src/logger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
@@ -201,13 +206,13 @@ describe('an accepted CycloneDX upload', () => {
         expect(processedPush.bom.serialNumber).toMatch(MINTED);
         expect(processedPush.bom.serialNumber).not.toBe(PRODUCER_SERIAL);
         expect(processedPush.bom.externalReferences).toContainEqual(producerRef(PRODUCER_SERIAL, 1));
-        expect((runQuery.mock.calls[0] as any)[1][1].processedSerialNumber).toBe(processedPush.bom.serialNumber);
+        expect((insertCall() as any)[1][1].processedSerialNumber).toBe(processedPush.bom.serialNumber);
     });
 
     it('keeps the producer serial as the row identity and records what it serves', async () => {
         await addBom({ bomInput: { format: 'CYCLONEDX', org: ORG, bom: producerBom(1), tags: [], rebomOptions: rebomOptions() } } as any);
 
-        const [query, params] = runQuery.mock.calls[0] as unknown as [string, any[]];
+        const [query, params] = insertCall() as unknown as [string, any[]];
         expect(query.startsWith('INSERT')).toBe(true);
         const meta = params[1];
         const processedPush = pushed.find(p => !p.tag.endsWith('-raw'))!;

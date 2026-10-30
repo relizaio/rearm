@@ -21,8 +21,11 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import java.util.function.Consumer;
+import java.util.function.Supplier;
 import java.util.stream.Collectors;
 
+import jakarta.persistence.EntityManager;
+import jakarta.persistence.PersistenceContext;
 import jakarta.servlet.http.HttpServletResponse;
 
 import org.apache.commons.lang3.StringUtils;
@@ -30,13 +33,17 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.http.HttpStatus;
 import org.springframework.lang.NonNull;
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 import org.springframework.security.crypto.keygen.KeyGenerators;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.AuthorizationStatus;
 import io.reliza.common.CommonVariables.BranchSuffixMode;
@@ -51,6 +58,7 @@ import io.reliza.common.SidPurlUtils;
 import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
+import io.reliza.model.BrandingPreset;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
@@ -65,6 +73,7 @@ import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
 import io.reliza.model.UserGroupData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.service.BrandedEmailText.EmailText;
 import io.reliza.repositories.OrganizationRepository;
 import io.reliza.ws.RelizaConfigProps;
 
@@ -78,11 +87,20 @@ public class OrganizationService {
 	 */
 	public static final int MAX_IGNORE_VIOLATION_PATTERNS = 100;
 
+	@PersistenceContext
+	private EntityManager entityManager;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
+
 	@Autowired
     private AuditService auditService;
 	
 	@Autowired
     private EmailService emailService;
+
+	@Autowired
+	private BrandingService brandingService;
 	
 	@Autowired
 	@Lazy
@@ -122,6 +140,8 @@ public class OrganizationService {
 		}
 		Optional<Organization> oo = getOrganizationService.getOrganization(org.getUuid());
 		if (oo.isPresent()) {
+			recordData = Utils.withStoredTeaUuid(recordData, repository.currentTeaUuidForUpdate(org.getUuid()));
+			recordData = OrganizationData.keepArchived(recordData, repository.currentStatusForUpdate(org.getUuid()));
 			auditService.createAndSaveAuditRecord(TableName.ORGANIZATIONS, org);
 			org.setRevision(org.getRevision() + 1);
 			org.setLastUpdatedDate(ZonedDateTime.now());
@@ -133,6 +153,46 @@ public class OrganizationService {
 
 	public void saveOrg(Organization org){
 		repository.save(org);
+	}
+
+	/**
+	 * The organization's TEA-facing id, minted on the first call and returned unchanged after that
+	 * (task TEA-2). Called by {@code TeaProfileService} after the first ENABLED profile save.
+	 *
+	 * <p>Under a transaction lock keyed on the org: two concurrent first saves must not mint two
+	 * ids and hand the loser's to a caller. The unique index on {@code teaUuid} prevents duplicates
+	 * across orgs, not a double mint of one org. The lock comes before the read the decision is
+	 * made from, and the row is refreshed after it, because a caller that read the org earlier in
+	 * the same transaction would otherwise be handed its pre-lock copy.
+	 */
+	@Transactional
+	public UUID ensureTeaUuid(UUID orgUuid, WhoUpdated wu) throws RelizaException {
+		repository.lockTeaIdMint(AdvisoryLockKey.TEA_ID_MINT.getQueryVal(), orgUuid.toString());
+		Organization org = repository.findById(orgUuid)
+				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
+		if (null != entityManager) entityManager.refresh(org);
+		UUID existing = OrganizationData.orgDataFromDbRecord(org).getTeaUuid();
+		if (null != existing) return existing;
+		// one conditional single-key statement (TEA-5 round 4, decision 24): no revision bump, no
+		// audit row, never the funnel, which carries the stored id forward under the row lock
+		UUID teaUuid = UUID.randomUUID();
+		int updated;
+		try {
+			updated = repository.mintTeaUuid(orgUuid, teaUuid.toString());
+		} catch (DataIntegrityViolationException e) {
+			log.error("The TEA id of organization " + orgUuid + " could not be assigned", e);
+			throw new RelizaException("the TEA id of organization " + orgUuid + " could not be assigned: "
+					+ e.getMostSpecificCause().getMessage());
+		}
+		// the request's or the transaction's managed instance must read the id from here on
+		if (null != entityManager) entityManager.refresh(org);
+		if (1 == updated) {
+			log.info("TEA id minted for organization " + orgUuid + ": " + teaUuid);
+			return teaUuid;
+		}
+		UUID stored = OrganizationData.orgDataFromDbRecord(org).getTeaUuid();
+		if (null != stored) return stored;
+		throw new RelizaException("Organization not found: " + orgUuid);
 	}
 
 	/**
@@ -199,16 +259,22 @@ public class OrganizationService {
 
 	/**
 	 * Record a task-key prefix claim (board-documents.md D9). Persistence only: the caller holds
-	 * the org's AGENT_TASK_PREFIXES lock and has checked the prefix is free.
+	 * the org's AGENT_TASK_PREFIXES lock and read the registry under it, fresh (TPF-35). One
+	 * statement on the one registry key, put-if-absent ({@link OrganizationRepository#recordTaskPrefixClaim}),
+	 * so it can erase neither a committed claim nor any other organization field; no revision, no
+	 * audit row, and {@code wu} is not written (the claim carries its own board and date; the board
+	 * row records the prefix with its own who-updated). The request's managed copy of the
+	 * organization is refreshed afterwards, so every later reader, and any later whole-record save
+	 * in the request, sees the claim.
 	 */
 	@Transactional
 	public void recordTaskPrefixClaim(UUID orgUuid, String prefix, UUID board, WhoUpdated wu) throws RelizaException {
-		Organization org = getOrganizationService.getOrganization(orgUuid)
-				.orElseThrow(() -> new RelizaException("Organization not found: " + orgUuid));
-		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
-		if (null == od.getAgentTaskPrefixes()) od.setAgentTaskPrefixes(new java.util.LinkedHashMap<>());
-		od.getAgentTaskPrefixes().putIfAbsent(prefix, new OrganizationData.TaskPrefixClaim(board, ZonedDateTime.now()));
-		saveOrganization(org, Utils.dataToRecord(od), wu);
+		String claim = Utils.OM.writeValueAsString(new OrganizationData.TaskPrefixClaim(board, ZonedDateTime.now()));
+		if (0 == repository.recordTaskPrefixClaim(orgUuid, prefix, claim)) {
+			throw new RelizaException("Organization not found: " + orgUuid);
+		}
+		Organization org = entityManager.find(Organization.class, orgUuid);
+		if (null != org) entityManager.refresh(org);
 	}
 
 	/** Persist validated team-assignment rules (T2). Validation lives in
@@ -324,8 +390,28 @@ public class OrganizationService {
 				.collect(Collectors.toList());
 	}
 
+	/**
+	 * TPF-70: run one totals read in its own read-only transaction with the planner told to take
+	 * the index paths of the org totals indexes migration (SET LOCAL enable_seqscan = off: the cost
+	 * model does not see the detoasting a sequential scan pays when the organization owns most of a
+	 * table), JIT off (the inflated estimate buys LLVM emission for a one-row result) and a 30 s
+	 * statement timeout below the global one. SET LOCAL reverts at commit, so the pooled connection
+	 * returns clean. Package-private so a test can read the settings through it.
+	 */
+	<T> T inTotalsReadTransaction(Supplier<T> read) {
+		TransactionTemplate tx = new TransactionTemplate(transactionManager);
+		tx.setReadOnly(true);
+		return tx.execute(status -> {
+			entityManager.createNativeQuery("SET LOCAL enable_seqscan = off").executeUpdate();
+			entityManager.createNativeQuery("SET LOCAL jit = off").executeUpdate();
+			entityManager.createNativeQuery("SET LOCAL statement_timeout = '30s'").executeUpdate();
+			return read.get();
+		});
+	}
+
 	public Map<String,BigInteger> getNumericAnalytics(UUID orgUuid) {
-		Map<String, BigInteger> analytics = new HashMap<>(repository.getNumericAnalytics(orgUuid.toString()));
+		Map<String, BigInteger> analytics = new HashMap<>(
+				inTotalsReadTransaction(() -> repository.getNumericAnalytics(orgUuid.toString())));
 
 		List<OrgUserRecord> orgUserRecords = getOrgUserRecords(orgUuid);
 		long writeUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.WRITE).count();
@@ -463,16 +549,36 @@ public class OrganizationService {
 
 	private UserPermission.Permissions obtainCombinedUserOrgPermissions(UserData ud, UUID org,
 			Collection<UserGroupData> preloadedUserGroups) {
+		List<Set<UserPermission>> groupSets = null == preloadedUserGroups ? List.of()
+				: preloadedUserGroups.stream().map(g -> g.getOrgPermissions(org)).toList();
+		return combinePermissions(ud.getOrgPermissions(org), org, groupSets);
+	}
+
+	/**
+	 * The one merge loop for effective permissions (TPF-91): seeds with {@code own}, then for every
+	 * permission of every group set on the same (org, scope, object) the higher {@code PermissionType}
+	 * wins and functions and approvals are unioned; a permission no earlier source holds is added.
+	 * Users merge their user groups through it; FREEFORM API keys merge their API key groups
+	 * (AuthorizationService.keyPermissions, the declarative demand side and the approval vote).
+	 * The inputs are not modified: every entry of the result is a new permission.
+	 * @param own the holder's own permissions (null is read as none)
+	 * @param org organization UUID (kept for the call shape; entries carry their own org)
+	 * @param groupSets the permission sets of the holder's groups (null is read as none)
+	 * @return merged Permissions object
+	 */
+	public static UserPermission.Permissions combinePermissions(Set<UserPermission> own, UUID org,
+			Collection<Set<UserPermission>> groupSets) {
 		UserPermission.Permissions combined = new UserPermission.Permissions();
-		// seed with user's own permissions for this org
-		for (UserPermission up : ud.getOrgPermissions(org)) {
-			combined.setPermission(up.getOrg(), up.getScope(), up.getObject(), up.getType(), up.getFunctions(), up.getApprovals());
+		// seed with the holder's own permissions for this org
+		if (null != own) {
+			for (UserPermission up : own) {
+				combined.setPermission(up.getOrg(), up.getScope(), up.getObject(), up.getType(), up.getFunctions(), up.getApprovals());
+			}
 		}
-		// merge in permissions from user groups
-		var userGroups = preloadedUserGroups;
-		if (null != userGroups && !userGroups.isEmpty()) {
-			for (var ugd : userGroups) {
-				Set<UserPermission> groupPermissions = ugd.getOrgPermissions(org);
+		// merge in permissions from groups
+		if (null != groupSets && !groupSets.isEmpty()) {
+			for (Set<UserPermission> groupPermissions : groupSets) {
+				if (null == groupPermissions) continue;
 				for (UserPermission gp : groupPermissions) {
 					var existing = combined.getPermission(gp.getOrg(), gp.getScope(), gp.getObject());
 					if (existing.isPresent()) {
@@ -529,14 +635,12 @@ public class OrganizationService {
 			od.addInvitee(secret, type, userEmail, wu.getLastUpdatedBy());
 			Organization o = saveOrganization(getOrganizationService.getOrganization(od.getUuid()).get(), Utils.dataToRecord(od), wu);
 			String orgName = od.getName();
-			String emailSubject = "You are invited to join organization " + orgName + " on ReARM";
-			String contentStr = "Please click <a clicktracking=off href=\"" + relizaConfigProps.getBaseuri() + "/joinOrganization/" 
-					+ urlSafeKey + "\">the link </a> to join organization. The link is valid for 48 hours. Note that by clicking the link you are also accepting ReARM cookie and privacy policies.";
-			emailService.sendEmail(List.of(userEmail), emailSubject, "text/html", contentStr);
-			String admingEmailSub = "New user invited to join the organizaiton " + orgName + " on ReARM";
-			String adminEmailContent = "Admin user with uuid = " + wu.getLastUpdatedBy() + " invited a new user to join the organization " + orgName + " on ReARM with permission: " + type.toString() + ". Check pending invitations for details.";
+			BrandingPreset branding = brandingService.current().values();
+			EmailText invite = BrandedEmailText.invite(branding, relizaConfigProps.getBaseuri(), orgName, urlSafeKey);
+			emailService.sendEmail(List.of(userEmail), invite.subject(), "text/html", invite.body());
+			EmailText adminNotice = BrandedEmailText.adminInviteNotice(branding, orgName, wu.getLastUpdatedBy(), type);
 			var adminEmails = userService.listOrgAdminUsersDataByOrg(od.getUuid()).stream().map(admin -> admin.getEmail()).toList();
-			emailService.sendEmail(adminEmails, admingEmailSub, "text/html", adminEmailContent);
+			emailService.sendEmail(adminEmails, adminNotice.subject(), "text/html", adminNotice.body());
 			od = OrganizationData.orgDataFromDbRecord(o);
 		} catch (Exception e) {
 			log.error("Exception when inviting user to organization", e);
@@ -552,10 +656,14 @@ public class OrganizationService {
 		String[] splitSecret = secret.split(CommonVariables.JOIN_SECRET_SEPARATOR);
 		String orgUuidStr = encryptionService.decrypt(splitSecret[0]);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
-		Optional<Organization> oorg = getOrganizationService.getOrganization(orgUuid);
+		// TPF-48: the row locked and refreshed, so a join that read before an archive committed waits
+		// for it and sees ARCHIVED, and the save below writes from the committed row
+		Optional<Organization> oorg = repository.findByIdWriteLocked(orgUuid);
 		if (oorg.isPresent()) {
 			Organization org = oorg.get();
+			entityManager.refresh(org);
 			OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+			if (StatusEnum.ARCHIVED == od.getStatus()) throw new RelizaException("Invitation expired");
 			Optional<InvitedObject> oio = od.resolveInvitee(secret);
 			if (oio.isPresent()) {
 				if (ZonedDateTime.now().isAfter(oio.get().getChallengeExpiry())) {
@@ -763,6 +871,7 @@ public class OrganizationService {
 					"fdaRiskTransferProcessRef");
 			applyProse(settingsPatch.getFdaRiskIncreasesNotice(), settings::setFdaRiskIncreasesNotice,
 					"fdaRiskIncreasesNotice");
+			applyDeclaredLicense(settingsPatch, settings);
 
 			if (settingsPatch.getDefaultView() != null) {
 				settings.setDefaultView(settingsPatch.getDefaultView());
@@ -881,6 +990,22 @@ public class OrganizationService {
 		// runs at all -- FdaProse returns null both for "omitted" and for "cleared", and only
 		// this caller knows those must behave differently.
 		setter.accept(FdaProse.normalize(value, fieldName));
+	}
+
+	/**
+	 * The organization's default declared licence (SCORE-39 ADR-1), PATCH as the prose fields:
+	 * omitted leaves each value alone, blank clears it (clearing the expression clears the URL),
+	 * anything else is validated and stored in canonical form; a URL needs an expression at the
+	 * organization level. A refusal names the field and stores nothing.
+	 */
+	private static void applyDeclaredLicense(OrganizationData.Settings patch, OrganizationData.Settings settings)
+			throws RelizaException {
+		if (null == patch.getDefaultLicenseExpression() && null == patch.getDefaultLicenseUrl()) return;
+		DeclaredLicenses.LicensePatch applied = DeclaredLicenses.patch(settings.getDefaultLicenseExpression(),
+				settings.getDefaultLicenseUrl(), patch.getDefaultLicenseExpression(), patch.getDefaultLicenseUrl(),
+				"defaultLicenseExpression", "defaultLicenseUrl");
+		settings.setDefaultLicenseExpression(applied.expression());
+		settings.setDefaultLicenseUrl(applied.url());
 	}
 
 	/**

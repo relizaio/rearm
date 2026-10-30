@@ -56,7 +56,9 @@ class SharedArtifactServiceForgedSupportStripTest {
 			  },
 			  "metadata": {
 			    "properties": [
-			      {"name": "reliza:support:disclosure", "value": "forged-marker"}
+			      {"name": "reliza:support:disclosure", "value": "forged-marker"},
+			      {"name": "reliza:support:unidentifiedComponents", "value": "forged-count"},
+			      {"name": "reliza:support:unassessedComponents", "value": "forged-count"}
 			    ]
 			  },
 			  "components": [
@@ -153,6 +155,16 @@ class SharedArtifactServiceForgedSupportStripTest {
 				"a forged end-of-support date was served: " + served);
 		assertFalse(served.contains("forged-marker"),
 				"an uploader stamped our own disclosure marker and it survived: " + served);
+	}
+
+	/** T-10 (SCORE-21): the SPDX-augmented download strips and marks, so it carries no count. */
+	@Test
+	void forgedComponentCountsDoNotSurviveTheSpdxAugmentedDownload() throws Exception {
+		String served = servedBody(spdxArtifactData());
+
+		assertFalse(served.contains("forged-count"), "a forged count was served: " + served);
+		assertFalse(served.contains("unidentifiedComponents"), "a stripped download carries a count: " + served);
+		assertFalse(served.contains("unassessedComponents"), "a stripped download carries a count: " + served);
 	}
 
 	@Test

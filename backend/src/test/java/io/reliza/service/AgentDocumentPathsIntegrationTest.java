@@ -18,6 +18,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.common.Utils;
@@ -67,6 +68,7 @@ public class AgentDocumentPathsIntegrationTest {
 	@Autowired private AgentSessionService agentSessionService;
 	@Autowired private AgentBoardRepository boardRepository;
 	@Autowired private SharedReleaseService sharedReleaseService;
+	@Autowired private JdbcTemplate jdbcTemplate;
 
 	private record Rig(Organization org, Component target, String targetName, AgentBoardData board, AgentTaskData task,
 			AgentData agent, AgentSessionData session) {}
@@ -215,10 +217,10 @@ public class AgentDocumentPathsIntegrationTest {
 		agentTaskService.saveData(unkeyed, WU);
 		AgentBoardData unnumbered = board(r);
 		unnumbered.setTasksNumbered(false);
-		unnumbered.setNextTaskNumber(0);
 		unnumbered.setTaskPrefix(null);
 		unnumbered.setTaskPrefixHistory(new java.util.ArrayList<>());
 		agentBoardService.saveData(unnumbered, WU);
+		jdbcTemplate.update("UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{nextTaskNumber}', '0') WHERE uuid = ?", unnumbered.getUuid());
 		assertNull(task(r).getKey());
 
 		String next = path(r, ARCH);
@@ -235,6 +237,34 @@ public class AgentDocumentPathsIntegrationTest {
 		publishArchitecture(r, next);
 		assertEquals("design/" + key + "/architecture-3.md", path(r, ARCH));
 		assertEquals(List.of(oldPath, next), rounds(r));
+	}
+
+	// ---------- 3b. {role} ----------
+
+	@Test
+	public void aRolePlaceholderPartsTheRolesAndKeepsOneRoundSequence() throws RelizaException {
+		Rig r = rig();
+		String key = r.task().getKey();
+		agentBoardService.setDocumentsConfig(r.board().getUuid(), null,
+				Map.of(ARCH, "design/{key}/{role}/architecture-{round}.md"), WU);
+
+		RelizaException noRole = assertThrows(RelizaException.class, () -> path(r, ARCH));
+		assertTrue(noRole.getMessage().contains("per role"), noRole.getMessage());
+		assertEquals("design/" + key + "/coder/architecture-1.md",
+				agentDocumentService.resolveDocumentPath(board(r), ARCH, r.task().getUuid(), null, "coder"));
+		RelizaException stranger = assertThrows(RelizaException.class,
+				() -> agentDocumentService.resolveDocumentPath(board(r), ARCH, r.task().getUuid(), null, "auditor"));
+		assertTrue(stranger.getMessage().contains("not on board"), stranger.getMessage());
+
+		// Without a role, the holder's.
+		assignArchitect(r);
+		String first = path(r, ARCH);
+		assertEquals("design/" + key + "/architect/architecture-1.md", first);
+		publishArchitecture(r, first);
+		// {round} still counts by task and type: another role's next round is round 2, in its own folder.
+		assertEquals("design/" + key + "/coder/architecture-2.md",
+				agentDocumentService.resolveDocumentPath(board(r), ARCH, r.task().getUuid(), null, "coder"));
+		assertEquals("design/" + key + "/architect/architecture-2.md", path(r, ARCH));
 	}
 
 	// ---------- 4. root ----------

@@ -1000,9 +1000,11 @@ public class AgentDocumentService {
 		Optional<UUID> legacy = boardDocumentComponentService.legacyComponentOf(board, spec);
 		if (legacy.isPresent()) {
 			if (boardLocked) {
+				// An adopted component joins the board's real perspectives, as a created one does (section 3.3);
+				// a join that would make it PUBLIC is refused first (task TEA-26). Nothing is logged for a
+				// refusal: the INFO line below is written once the join is, so "adopted" is true when it prints.
+				boardPerspectiveService.adoptDocumentComponent(board, spec, legacy.get(), wu);
 				log.info("Board {} adopted component {} for specification {}", board.getUuid(), legacy.get(), spec);
-				// An adopted component joins the board's real perspectives, as a created one does (§3.3).
-				boardPerspectiveService.joinDocumentComponent(board, legacy.get(), wu);
 				return record(board, spec, legacy.get(), wu);
 			}
 			return legacy.get();
@@ -1224,9 +1226,9 @@ public class AgentDocumentService {
 	 * The repository path a new document of this type would take on this board, every placeholder
 	 * filled (gaps §1.18): {@code {key}} the task's key (board-documents.md D11), {@code {round}} the
 	 * task's next round of the type -- the counter publish itself uses -- {@code {type}} lower case,
-	 * and {@code {component}} the component's name slugged; then the board's documents root in
-	 * front (D6). What the CLI publishes to when it is not given a file; the release records the
-	 * path actually used.
+	 * {@code {component}} the component's name slugged, and {@code {role}} the publishing role's
+	 * name slugged; then the board's documents root in front (D6). What the CLI publishes to when it
+	 * is not given a file; the release records the path actually used.
 	 *
 	 * <p>Refuses when the template needs a task or a component the caller did not name, and when
 	 * either does not belong to this board's organization -- a component's name is not the
@@ -1234,6 +1236,17 @@ public class AgentDocumentService {
 	 */
 	public String resolveDocumentPath(AgentBoardData board, RearmSpecificationType spec, UUID taskUuid,
 			UUID componentUuid) throws RelizaException {
+		return resolveDocumentPath(board, spec, taskUuid, componentUuid, null);
+	}
+
+	/**
+	 * As {@link #resolveDocumentPath(AgentBoardData, RearmSpecificationType, UUID, UUID)}, with the role
+	 * {@code {role}} names: one of the board's roles, or when null the role of the session holding the task.
+	 * {@code {round}} still counts by task and type, so two reviewers' rounds stay numbered as one sequence
+	 * and only their folders part; the round number keeps meaning what the release records.
+	 */
+	public String resolveDocumentPath(AgentBoardData board, RearmSpecificationType spec, UUID taskUuid,
+			UUID componentUuid, String role) throws RelizaException {
 		if (RearmSpecificationType.BOARD_ELEMENT_CHECK_REPORT == spec) {
 			throw new RelizaException("BOARD_ELEMENT_CHECK_REPORT has no path: the board cuts it, and it is never a file");
 		}
@@ -1244,14 +1257,13 @@ public class AgentDocumentService {
 					+ ") uses {task}, which is gone; use {key}");
 		}
 		String path = template.replace("{type}", spec.name().toLowerCase(java.util.Locale.ROOT));
+		AgentTaskData td = null;
 		if (path.contains("{key}") || path.contains("{round}")) {
 			if (null == taskUuid) {
 				throw new RelizaException("The " + spec + " path on board " + board.getName() + " (" + template
 						+ ") is per task; name the task");
 			}
-			AgentTaskData td = agentTaskService.getTaskData(taskUuid)
-					.filter(t -> board.getUuid().equals(t.getBoard()))
-					.orElseThrow(() -> new RelizaException("Task " + taskUuid + " is not on board " + board.getName()));
+			td = boardTask(board, taskUuid);
 			if (null == td.getKey()) {
 				// A task from before keys gets its key on its first publish: number its board, read it again.
 				agentTaskService.ensureNumbered(board.getUuid(), WhoUpdated.getAutoWhoUpdated());
@@ -1261,6 +1273,10 @@ public class AgentDocumentService {
 			// continues at round 2 under its key while round 1 stays where it was written.
 			path = path.replace("{key}", String.valueOf(td.getKey()))
 					.replace("{round}", String.valueOf(countRounds(td, spec) + 1));
+		}
+		if (path.contains("{role}")) {
+			if (StringUtils.isBlank(role) && null == td && null != taskUuid) td = boardTask(board, taskUuid);
+			path = path.replace("{role}", pathRole(board, spec, template, td, role));
 		}
 		if (path.contains("{component}")) {
 			if (null == componentUuid) {
@@ -1276,6 +1292,39 @@ public class AgentDocumentService {
 		// The board's root, once, after the template (board-documents.md D6): boards/<slug>/ on a shared
 		// repository, whatever the operator set, or nothing.
 		return board.documentsRoot() + path;
+	}
+
+	private AgentTaskData boardTask(AgentBoardData board, UUID taskUuid) throws RelizaException {
+		return agentTaskService.getTaskData(taskUuid)
+				.filter(t -> board.getUuid().equals(t.getBoard()))
+				.orElseThrow(() -> new RelizaException("Task " + taskUuid + " is not on board " + board.getName()));
+	}
+
+	/**
+	 * What {@code {role}} becomes: the named role, which must be one of the board's, else the role of the session
+	 * holding the task -- the author of a normal round. Slugged like {@code {component}}, falling back to the
+	 * role's uuid prefix when its name has nothing a path can carry.
+	 */
+	private String pathRole(AgentBoardData board, RearmSpecificationType spec, String template, AgentTaskData td,
+			String role) throws RelizaException {
+		String name;
+		UUID roleUuid;
+		if (StringUtils.isNotBlank(role)) {
+			AgentTaskRoleConfigData rc = agentBoardService.listRoleConfigs(board.getUuid()).stream()
+					.filter(c -> role.equals(c.getName())).findFirst()
+					.orElseThrow(() -> new RelizaException("Role " + role + " is not on board " + board.getName()));
+			name = rc.getName();
+			roleUuid = rc.getUuid();
+		} else if (null != td && null != td.getAssignment() && StringUtils.isNotBlank(td.getAssignment().role())) {
+			name = td.getAssignment().role();
+			roleUuid = td.getAssignment().roleUuid();
+		} else {
+			throw new RelizaException("The " + spec + " path on board " + board.getName() + " (" + template
+					+ ") is per role; name the role" + (null == td ? " or the task" : ", since no session holds task " + td.label()));
+		}
+		String slug = io.reliza.common.Utils.slug(name);
+		if (!slug.isEmpty()) return slug;
+		return null == roleUuid ? Integer.toHexString(name.hashCode()) : roleUuid.toString().substring(0, 8);
 	}
 
 	/** The previous round's index for this task and type, for the carry-forward check. */

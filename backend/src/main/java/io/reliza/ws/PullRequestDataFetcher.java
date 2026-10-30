@@ -144,6 +144,8 @@ public class PullRequestDataFetcher {
 		var ahp = authCtx.ahp();
 		UUID authOrgUuid = authCtx.orgUuid();
 		if (null == ahp) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.WRITE);
 
 		Map<String, Object> input = dfe.getArgument("input");
 		String identity = (String) input.get("identity");

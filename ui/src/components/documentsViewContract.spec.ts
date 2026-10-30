@@ -16,7 +16,9 @@ describe('documents view contract', () => {
         expect(cv).toContain('<n-gi v-if="!isDocument && myview === \'devops\'" span="10">')
         expect(cv).toContain('<n-gi v-else-if="!isDocument" span="10">')
         expect(cv).toContain('<div class="componentDetails" v-if="!isDocument">')
-        expect(cv).toContain('v-if="!isDocument && selectedTab !== \'latest\'"')
+        // The right column hides on the wide tabs (Latest and, TEA-30, Submissions) and for a document.
+        expect(cv).toContain('<n-gi v-if="!isDocument && !wideTab" span="7">')
+        expect(cv).toContain("const wideTab = computed(() => selectedTab.value === 'latest' || selectedTab.value === 'submissions')")
         expect(cv).toMatch(/genApiKey\('rlz'\)/)
         expect(cv).toMatch(/isWritable && !isDocument" @click="genApiKey/)
         expect(cv).toMatch(/v-if="componentData && !isDocument" @click="navigateToVulnAnalysis"/)
@@ -84,7 +86,12 @@ describe('documents view contract', () => {
         const sections = [...pane.matchAll(/<div class="container"(?: v-if="([^"]*)")?[^>]*>\s*<h3>\s*([^<\n]*?)\s*(?:<|\n)/g)]
             .map(m => ({ guard: m[1] ?? '', heading: m[2] }))
         expect(sections.map(s => s.heading)).toEqual(['Document round', 'Components', 'Source Code Entries',
-            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Produced Deliverables', 'Inbound Deliverables'])
+            'Source Code Entries from Failed/Pending Releases', 'Artifacts', 'Generated artifacts',
+            'Produced Deliverables', 'Inbound Deliverables'])
+        // The TEA section is a tab of its own now, hidden for a round as the section was.
+        expect(rv).toContain("computed(() => teaView.value?.publishing === 'ENABLED' && !isDocumentRound.value)")
+        // So are the Regulatory submissions, hidden for a round as their section was.
+        expect(rv).toMatch(/const regulatoryTabShown: ComputedRef<boolean> = computed\(\(\) => submissionsAvailable\(myUser\?\.installationType\)\s*&& !isDocumentRound\.value/)
         // A round's component is never a PRODUCT, so a PRODUCT-only section does not render for one.
         const shownForARound = sections.filter(s => s.guard !== 'false' && !s.guard.includes('!isDocumentRound')
             && !/componentDetails\.type === 'PRODUCT'$/.test(s.guard))

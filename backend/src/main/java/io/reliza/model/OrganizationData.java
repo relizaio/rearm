@@ -6,6 +6,7 @@ package io.reliza.model;
 
 import java.time.ZonedDateTime;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -207,6 +208,18 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		/** Notice that end-user cybersecurity risk increases over time (labeling VI.A.4). */
 		@JsonProperty
 		private String fdaRiskIncreasesNotice;
+
+		/**
+		 * The organization's default declared licence, a canonical SPDX expression (SCORE-39
+		 * ADR-1): what ReARM writes on the SBOM nodes it makes for a release whose component and
+		 * release declare none. Null when unset. Read through {@code DeclaredLicenses.forRelease}.
+		 */
+		@JsonProperty
+		private String defaultLicenseExpression;
+
+		/** The URL of {@link #defaultLicenseExpression}, an http or https URL; null when unset. */
+		@JsonProperty
+		private String defaultLicenseUrl;
 
 		public static final int NOTIFICATION_RETENTION_DAYS_DEFAULT = 90;
 		public static final int BRANCH_HISTORY_HORIZON_DEFAULT = 10;
@@ -583,6 +596,13 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private Settings settings;
 	/**
+	 * The organization's TEA-facing id (task TEA-2): the TEA API base is {@code <host>/tea/<teaUuid>}.
+	 * Minted once by the server on the first ENABLED TEA profile save
+	 * ({@code OrganizationService.ensureTeaUuid}), never editable, and never on an input.
+	 */
+	@JsonProperty
+	private UUID teaUuid;
+	/**
 	 * Org-wide PR-validation trigger rules -- see
 	 * {@link GlobalPrValidationTriggerRule}. Empty/null means "no
 	 * org-wide rules"; per-repo triggers behave exactly as before.
@@ -694,6 +714,15 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 		od.setCreatedDate(org.getCreatedDate());
 		od.setUuid(org.getUuid());
 		return od;
+	}
+
+	/** The record with status ARCHIVED when the stored row is archived (TPF-48), otherwise unchanged:
+	 *  no whole-record save clears ARCHIVED. */
+	public static Map<String, Object> keepArchived(Map<String, Object> recordData, Optional<String> storedStatus) {
+		if (storedStatus.isEmpty() || !StatusEnum.ARCHIVED.name().equals(storedStatus.get())) return recordData;
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		out.put(CommonVariables.STATUS_FIELD, StatusEnum.ARCHIVED.name());
+		return out;
 	}
 	
 	@JsonIgnore

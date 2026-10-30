@@ -22,7 +22,7 @@ import com.netflix.graphql.dgs.DgsData;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.FederatedGrant;
@@ -83,8 +83,8 @@ public class FederatedTrustRuleDataFetcher {
 			@InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		WhoUpdated wu = orgAdmin(me(), orgUuid);
-		return federatedTrustRuleService.create(orgUuid, name, provider, issuer, Utils.OM.convertValue(matcher, FederatedMatcher.class),
-				Utils.OM.convertValue(grant, FederatedGrant.class), expiresDate, wu);
+		return federatedTrustRuleService.create(orgUuid, name, provider, issuer, InputConversion.convert(matcher, FederatedMatcher.class, "matcher"),
+				InputConversion.convert(grant, FederatedGrant.class, "grant"), expiresDate, wu);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -94,8 +94,8 @@ public class FederatedTrustRuleDataFetcher {
 			@InputArgument("expiresDate") ZonedDateTime expiresDate) throws RelizaException {
 		FederatedTrustRule r = rule(uuidStr);
 		WhoUpdated wu = orgAdmin(me(), r.getOrg());
-		return federatedTrustRuleService.update(r.getUuid(), name, Utils.OM.convertValue(matcher, FederatedMatcher.class),
-				Utils.OM.convertValue(grant, FederatedGrant.class), expiresDate, wu);
+		return federatedTrustRuleService.update(r.getUuid(), name, InputConversion.convert(matcher, FederatedMatcher.class, "matcher"),
+				InputConversion.convert(grant, FederatedGrant.class, "grant"), expiresDate, wu);
 	}
 
 	@PreAuthorize("isAuthenticated()")

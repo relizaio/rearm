@@ -13,8 +13,10 @@ import java.nio.charset.StandardCharsets;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
 import java.util.EnumMap;
 import java.util.HashMap;
+import java.util.List;
 import java.util.Map;
 
 import org.cyclonedx.model.Bom;
@@ -48,6 +50,8 @@ class SupportBomInjectorTest {
 	private static final ZonedDateTime LAST_ASSESSED = ZonedDateTime.of(2026, 8, 26, 12, 0, 0, 0, ZoneOffset.UTC);
 
 	private static final String ASSESSED_AT = LAST_ASSESSED.toInstant().toString();
+	private static final String SELF = SupportBomInjector.PROP_SELF;
+	private static final String SELF_COUNT = SupportBomInjector.PROP_SELF_COUNT;
 
 	private SupportMilestoneFact milestone(LocalDate date, SupportSource source, String notes) {
 		return new SupportMilestoneFact(date.toString(), source, ASSESSED_AT, null, notes);
@@ -409,6 +413,73 @@ class SupportBomInjectorTest {
 		JsonNode tool = bom.get("metadata").get("tools").get("components").get(0);
 		assertTrue(propMap(tool).keySet().stream().noneMatch(k -> k.startsWith("reliza:support:")),
 				"forged prop in metadata.tools.components stripped");
+	}
+
+	private static String forgedSelfBom() {
+		return """
+			{"metadata":{"properties":[{"name":"reliza:support:selfComponents","value":"42"}]},
+			 "components":[
+			  {"name":"third","purl":"pkg:npm/third@1.0.0","properties":[
+			    {"name":"reliza:support:selfComponent","value":"true"}]},
+			  {"name":"own","purl":"pkg:generic/acme/own@1.0.0","properties":[
+			    {"name":"reliza:support:selfComponent","value":"true"}]}]}""";
+	}
+
+	private static ComponentSupportFacts rootRow() {
+		SbomComponent sc = new SbomComponent();
+		sc.setRecordData(Map.of("isRoot", true));
+		return new ComponentSupportFacts(sc, null);
+	}
+
+	// T-14 (SCORE-60): a forged selfComponent on a non-self node goes on every path; a self node
+	// carries exactly one; a forged count is replaced by the computed one
+	@Test
+	void stripsForgedSelfComponentAndKeepsExactlyOneOnASelfNode() throws Exception {
+		JsonNode bom = parse(forgedSelfBom());
+		SupportBomInjector.inject(bom, Map.of("pkg:generic/acme/own@1.0.0", rootRow()), ASOF);
+		assertEquals(0, count(propsOrEmpty(bom.get("components").get(0)), SELF), "forged marker on a third party gone");
+		assertEquals(1, count((ArrayNode) bom.get("components").get(1).get("properties"), SELF),
+				"exactly one marker on the root-row node");
+		ArrayNode meta = (ArrayNode) bom.get("metadata").get("properties");
+		assertEquals(1, count(meta, SELF_COUNT));
+		assertEquals("1", propMap(bom.get("metadata")).get(SELF_COUNT), "computed count, not the forged 42");
+
+		for (JsonNode stripped : new JsonNode[] {SupportBomInjector.stripOnly(parse(forgedSelfBom())),
+				SupportBomInjector.stripSilently(parse(forgedSelfBom()))}) {
+			assertTrue(namesEverywhere(stripped).stream().noneMatch(n -> n.startsWith(SELF)),
+					"no marker and no count after a strip path: " + stripped);
+		}
+	}
+
+	// T-14 (SCORE-60): the stripsForgedRelizaSupportEverywhereInTree shape for the marker
+	@Test
+	void stripsForgedSelfComponentEverywhereInTree() throws Exception {
+		JsonNode bom = parse("""
+			{"components":[
+			  {"name":"c","purl":"pkg:npm/c@1.0.0","pedigree":{"variants":[
+			    {"name":"variant","purl":"pkg:npm/v@1.0.0","properties":[
+			      {"name":"reliza:support:selfComponent","value":"true"}]}]}}],
+			 "services":[{"name":"svc","properties":[
+			   {"name":"reliza:support:selfComponent","value":"true"}]}],
+			 "metadata":{"tools":{"components":[{"name":"tool","properties":[
+			   {"name":"reliza:support:selfComponent","value":"true"}]}]}}}""");
+		SupportBomInjector.inject(bom, Map.of(), ASOF);
+		assertTrue(namesEverywhere(bom).stream().noneMatch(SELF::equals), "every forged marker gone: " + bom);
+	}
+
+	private static ArrayNode propsOrEmpty(JsonNode node) {
+		JsonNode props = node.get("properties");
+		return props != null && props.isArray() ? (ArrayNode) props : Utils.OM.createArrayNode();
+	}
+
+	/** Every property name anywhere in the tree. */
+	private static List<String> namesEverywhere(JsonNode node) {
+		List<String> out = new ArrayList<>();
+		if (node.isObject() && node.has("value") && node.get("name") != null && node.get("name").isTextual()) {
+			out.add(node.get("name").asText());
+		}
+		node.forEach(child -> out.addAll(namesEverywhere(child)));
+		return out;
 	}
 
 	@Test

@@ -18,12 +18,6 @@ class VariableQueries {
 				ORDER BY aka.api_key_uuid, aka.access_date DESC
 		 		""";
 	
-	 protected static final String FIND_API_KEY_ACCESS_BY_ORGANIZATION_KEY_ID = """
-		 		SELECT DISTINCT ON (aka.api_key_uuid) aka.* FROM rearm.api_key_access aka
-				where aka.org = :orgUuid and aka.api_key_uuid = :keyUuid 
-				ORDER BY aka.api_key_uuid, aka.access_date DESC
-		 		""";
-	 
 	 protected static final String COUNT_KEY_ACCESS_BY_KEY_ID = """
 		 		SELECT COUNT(aka.*) FROM rearm.api_key_access aka
 				where aka.api_key_uuid = :keyUuid
@@ -31,8 +25,13 @@ class VariableQueries {
 	 
 	 /** API Key **/
  
-	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE ((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
-			+ "(ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER')) AND ak.uuid = :uuid";
+	/** A key row is live while it has a legacy secret column or a status other than REVOKED (registry robot rows always); a deleted key is not. */
+	protected static final String API_KEY_LIVE = "((ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) OR "
+			+ "(ak.object_type = 'REGISTRY_ORG' OR ak.object_type = 'REGISTRY_USER'))";
+
+	protected static final String FIND_API_KEY_BY_UUID = "SELECT * from rearm.api_keys ak WHERE " + API_KEY_LIVE + " AND ak.uuid = :uuid";
+
+	protected static final String LOCK_API_KEY_LIVENESS = "SELECT " + API_KEY_LIVE + " FROM rearm.api_keys ak WHERE ak.uuid = :uuid FOR UPDATE";
 
 	protected static final String FIND_API_KEY_BY_ID_AND_TYPE = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :uuid and ak.object_type = :type and ak.org = :org";
@@ -62,6 +61,9 @@ class VariableQueries {
 	protected static final String FIND_USER_API_KEY_BY_USER_ID_AND_ORG = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "ak.object_uuid = :userUuid and ak.object_type = 'USER' and ak.org = :orgUuid";
 	
+	protected static final String FIND_HELD_API_KEYS_BY_USER_AND_ORG = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
+			+ "ak.object_type = 'FREEFORM' and ak.org = :orgUuid and ak.record_data->>'holder' = cast(:userUuid as varchar)";
+
 	protected static final String FIND_USER_API_KEYS_BY_USER = "SELECT * from rearm.api_keys ak WHERE (ak.api_key IS NOT NULL OR (ak.record_data->>'status' IS NOT NULL AND ak.record_data->>'status' <> 'REVOKED')) and "
 			+ "((ak.object_uuid = :userUuid and ak.object_type = 'USER') or ak.record_data->>'holder' = cast(:userUuid as varchar))";
 	
@@ -394,6 +396,24 @@ class VariableQueries {
 	protected static final String FIND_COMPONENTS_BY_ORG_BY_TYPE = "select * from rearm.components p where p.record_data->>'"
 			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString and p.record_data->>'" + CommonVariables.TYPE_FIELD + "' = :componentTypeAsString"
 			+ " and (p.record_data->>'status' != 'ARCHIVED' or p.record_data->>'status' is null)";
+
+	/** TPF-100 (TPF-74 child 1): the list projection; the predicates are FIND_COMPONENTS_BY_ORG's, verbatim. */
+	protected static final String FIND_COMPONENT_REFS_BY_ORG = "select cast(p.uuid as text), p.record_data->>'"
+			+ CommonVariables.NAME_FIELD + "', p.record_data->>'" + CommonVariables.TYPE_FIELD + "',"
+			+ " p.record_data->>'status', p.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "', p.record_data->>'vcs',"
+			+ " p.record_data->>'kind'"
+			+ " from rearm.components p where p.record_data->>'"
+			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString"
+			+ " and (p.record_data->>'status' != 'ARCHIVED' or p.record_data->>'status' is null)";
+
+	/** TPF-100: as FIND_COMPONENT_REFS_BY_ORG with FIND_COMPONENTS_BY_ORG_BY_TYPE's type predicate. */
+	protected static final String FIND_COMPONENT_REFS_BY_ORG_BY_TYPE = "select cast(p.uuid as text), p.record_data->>'"
+			+ CommonVariables.NAME_FIELD + "', p.record_data->>'" + CommonVariables.TYPE_FIELD + "',"
+			+ " p.record_data->>'status', p.record_data->>'" + CommonVariables.ORGANIZATION_FIELD + "', p.record_data->>'vcs',"
+			+ " p.record_data->>'kind'"
+			+ " from rearm.components p where p.record_data->>'"
+			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString and p.record_data->>'" + CommonVariables.TYPE_FIELD + "' = :componentTypeAsString"
+			+ " and (p.record_data->>'status' != 'ARCHIVED' or p.record_data->>'status' is null)";
 	
 	protected static final String FIND_COMPONENT_BY_PARENT = """
 			SELECT * FROM rearm.components p
@@ -445,6 +465,70 @@ class VariableQueries {
 	 protected static final String FIND_RELEASE_REBOM_BY_RELEASE_AND_ORG = """
 		SELECT * from rearm.release_reboms r where r.record_data->>'release' = :releaseUuidAsString
 		AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		""";
+
+	protected static final String EXISTS_RELEASE_REBOM_LISTING_REBOM_ID = """
+		SELECT EXISTS (SELECT 1 FROM rearm.release_reboms
+			WHERE record_data->'reboms' @> jsonb_build_array(
+				jsonb_build_object('rebomId', cast(:rebomIdAsString as text))))
+		""";
+
+	/*
+	 * SCORE-71 ADR-1: the stored merged rows of the seed releases and of every release of the same
+	 * organization above them (parentReleases, transitively) are emptied, and the revision and
+	 * last_updated_date of every one of those records move, already empty or not, so a store fenced on
+	 * an earlier read is refused (ADR-11). UNION (not UNION ALL) ends the walk on a cycle. jsonb_exists
+	 * is the function behind the ? operator, which Hibernate reads as a positional parameter.
+	 */
+	private static final String INVALIDATE_RELEASE_REBOMS_ABOVE_TAIL = """
+		  UNION
+			SELECT p.uuid::text FROM rearm.releases p JOIN above a
+				ON p.record_data->>'org' = :orgUuidAsString
+			   AND jsonb_exists(jsonb_path_query_array(p.record_data, '$.parentReleases[*].release'), a.u)
+		)
+		UPDATE rearm.release_reboms rr
+		   SET record_data = jsonb_set(rr.record_data, '{reboms}', '[]'::jsonb),
+			   revision = rr.revision + 1,
+			   last_updated_date = now()
+		 WHERE rr.record_data->>'org' = :orgUuidAsString
+		   AND rr.record_data->>'release' IN (SELECT u FROM above)
+		""";
+
+	protected static final String INVALIDATE_RELEASE_REBOMS_OF_RELEASES_AND_ABOVE = """
+		WITH RECURSIVE above(u) AS (
+			SELECT r.uuid::text FROM rearm.releases r
+			 WHERE r.record_data->>'org' = :orgUuidAsString
+			   AND r.uuid::text = ANY(CAST(:seedReleaseUuidsAsStrings AS text[]))
+		""" + INVALIDATE_RELEASE_REBOMS_ABOVE_TAIL;
+
+	protected static final String INVALIDATE_RELEASE_REBOMS_OF_COMPONENT_RELEASES_AND_ABOVE = """
+		WITH RECURSIVE above(u) AS (
+			SELECT r.uuid::text FROM rearm.releases r
+			 WHERE r.record_data->>'org' = :orgUuidAsString
+			   AND r.record_data->>'component' = :componentUuidAsString
+		""" + INVALIDATE_RELEASE_REBOMS_ABOVE_TAIL;
+
+	/*
+	 * SCORE-71 ADR-11: the record of a release read as scalars (uuid, revision, created epoch millis,
+	 * record_data), so the persistence context is neither read nor written; the predicate of
+	 * FIND_RELEASE_REBOM_BY_RELEASE_AND_ORG, so the same record is found.
+	 */
+	protected static final String READ_RELEASE_REBOM_STAMP = """
+		SELECT r.uuid::text, r.revision, cast(extract(epoch from r.created_date) * 1000 as bigint), r.record_data::text
+		FROM rearm.release_reboms r WHERE r.record_data->>'release' = :releaseUuidAsString
+		AND r.record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		""";
+
+	protected static final String UPDATE_RELEASE_REBOM_IF_REVISION = """
+		UPDATE rearm.release_reboms SET record_data = CAST(:recordData AS jsonb), revision = revision + 1,
+		last_updated_date = now() WHERE uuid = :uuid AND revision = :revision
+		""";
+
+	protected static final String INSERT_RELEASE_REBOM_IF_ABSENT = """
+		INSERT INTO rearm.release_reboms (uuid, revision, schema_version, created_date, last_updated_date, record_data)
+		SELECT CAST(:uuid AS uuid), 0, 0, now(), now(), CAST(:recordData AS jsonb)
+		WHERE NOT EXISTS (SELECT 1 FROM rearm.release_reboms e WHERE e.record_data->>'release' = :releaseUuidAsString
+		AND e.record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
 		""";
 
 
@@ -621,6 +705,14 @@ class VariableQueries {
 			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
 			""";
 	
+	// Twin of FIND_RELEASES_BY_ARTIFACT_AND_ORG over the generated-artifact list; the same
+	// top-level containment rides idx_releases_record_data_gin (jsonb_path_ops).
+	protected static final String FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG = """
+			select * from rearm.releases
+			WHERE record_data @> jsonb_build_object('syntheticArtifacts', jsonb_build_array(:artifactUuidAsString))
+			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+			""";
+	
 	// Commit membership is expressed as whole-document containment
 	// (record_data @> {"commits": [sce]}) rather than
 	// jsonb_contains(record_data->'commits', ...): the two are
@@ -656,12 +748,32 @@ class VariableQueries {
 			+ " FROM unnest(CAST(:sceUuidsAsStrings AS text[])) sce)))"
 			+ " ORDER BY last_updated_date desc";
 
+	/**
+	 * TPF-75: leaves out the releases of BOARD_DOCUMENT components (a ReARM
+	 * agent board's document rounds) from the org-wide release analytics:
+	 * {@link #COUNT_RELEASES_OF_ORG_BY_DATE} and the six
+	 * ANALYTICS_*_WITH_MOST_RELEASES* statements. Appended to the WHERE of
+	 * their releases scan, whose alias must be {@code r}. A component without
+	 * a kind key, or a release whose component row is gone, stays counted.
+	 * Written once so the statements cannot drift; it takes no parameter and
+	 * must stay a compile-time constant (the statements are used in
+	 * {@code @Query} annotations). The Java twin of the rule is in
+	 * ReleaseService.getReleaseCreateOverTimeAnalyticsByPerspective and
+	 * SharedReleaseService.findReleasesByTimeFrame.
+	 */
+	protected static final String RELEASE_NOT_OF_DOCUMENT_COMPONENT = """
+					AND NOT EXISTS (SELECT 1 FROM rearm.components dc
+						WHERE dc.uuid = CAST(r.record_data->>'component' AS uuid)
+						AND dc.record_data->>'kind' = 'BOARD_DOCUMENT')
+			""";
+
 	protected static final String COUNT_RELEASES_OF_ORG_BY_DATE = """
 			select d.date, COUNT(*) as num from (
 				select to_char(DATE(r.created_date AT TIME ZONE :tz), 'YYYY-MM-DD') as date
 				from rearm.releases r
 				where r.record_data->>'org' = :orgUuidAsString
 					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
 			) d
 			GROUP BY d.date
 			ORDER BY d.date
@@ -891,14 +1003,27 @@ class VariableQueries {
 	// reword one without the other: a mismatch silently degrades this finder back
 	// to a whole-table walk (the fence condition is deliberately NOT part of the
 	// index predicate; now() is not immutable).
-	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE = """
-		SELECT * FROM rearm.releases
-			 WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
+	//
+	// The eligibility condition is defined ONCE, here, and composed into the finder, the
+	// backlog count (ReleaseRepository#countReleasesEligibleForMetricsCompute) and the
+	// per-release check (ReleaseRepository#isEligibleForMetricsComputeByUpdate), so the three
+	// cannot drift apart -- and none of them can drift from the index predicate above.
+	protected static final String METRICS_COMPUTE_BY_UPDATE_ELIGIBLE = """
+		last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
 			   AND (flow_control->>'metricsComputeSkipUntil' IS NULL
 			        OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
-			 ORDER BY last_updated_date ASC
-			 LIMIT :limit
 		""";
+
+	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT * FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE
+		+ " ORDER BY last_updated_date ASC LIMIT :limit";
+
+	protected static final String IS_RELEASE_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT EXISTS (SELECT 1 FROM rearm.releases WHERE uuid = :uuid AND ("
+		+ METRICS_COMPUTE_BY_UPDATE_ELIGIBLE + "))";
+
+	protected static final String COUNT_RELEASES_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
+		"SELECT count(*) FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE;
 
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
 		WITH
@@ -924,6 +1049,42 @@ class VariableQueries {
 				WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid)))
 			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
 				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+		""";
+
+	protected static final String FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM = """
+		SELECT * FROM rearm.artifacts
+		WHERE record_data->>'org' = :org
+		  AND record_data->'internalBom'->>'id' = :serial
+		  AND record_data->>'type' = 'BOM'
+		""";
+
+	/*
+	 * Every release listing an artifact, in any organization (SCORE-52 ADR-8): rule B's holder
+	 * read. Not bounded by organization, as the deliverable and container reads are not, so that a
+	 * listing of another organization is seen and fails closed rather than being missed.
+	 */
+	protected static final String FIND_RELEASES_HOLDING_ARTIFACT = """
+		SELECT * FROM rearm.releases
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(cast(:artUuidAsString as text)))
+		""";
+
+	protected static final String FIND_DELIVERABLES_BY_ARTIFACT = """
+		SELECT * FROM rearm.deliverables
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString))
+		""";
+
+	protected static final String FIND_SCE_ARTIFACT_HOLDERS = """
+		SELECT cast(sce.uuid as text), artifact_element->>'componentUuid', sce.record_data->>'org'
+		FROM rearm.source_code_entries sce,
+			jsonb_array_elements(sce.record_data->'artifacts') AS artifact_element
+		WHERE sce.record_data->'artifacts' @> jsonb_build_array(
+				jsonb_build_object('artifactUuid', cast(:artUuidAsString as text)))
+		  AND artifact_element->>'artifactUuid' = :artUuidAsString
+		""";
+
+	protected static final String FIND_ARTIFACTS_CONTAINING_ARTIFACT = """
+		SELECT * FROM rearm.artifacts
+		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(cast(:artUuidAsString as text)))
 		""";
 
 	protected static final String FIND_RELEASES_BY_ARTIFACTS_AND_ORG = """
@@ -1151,6 +1312,15 @@ class VariableQueries {
 			+ " (sce.record_data->>'" + CommonVariables.COMMIT_FIELD + "' like :commit OR "
 					+ "sce.record_data->>'" + CommonVariables.VCS_TAG_FIELD + "' = :tag)";
 	
+	/**
+	 * Entries of an organization recording exactly this commit, one per repository (TPF-72 / TPF-98).
+	 * A top-level containment predicate so the V13 jsonb_path_ops GIN index
+	 * (idx_source_code_entries_record_data_gin) serves it; equality, not like.
+	 */
+	protected static final String FIND_SCE_BY_COMMIT_AND_ORG = "select * from rearm.source_code_entries sce"
+			+ " where sce.record_data @> jsonb_build_object('" + CommonVariables.ORGANIZATION_FIELD + "', :orgUuidAsString,"
+			+ " '" + CommonVariables.COMMIT_FIELD + "', :commit)";
+	
 	protected static final String FIND_SCE_BY_COMPONENT = "select * from rearm.source_code_entries where"
 			+ " uuid in (select cast (record_data->>'sourceCodeEntry' as uuid) from rearm.releases where"
 			+ " record_data->>'component' = :compUuidAsString and record_data ->>'sourceCodeEntry'"
@@ -1218,6 +1388,12 @@ class VariableQueries {
 			select * from rearm.components c
 			where jsonb_exists(c.record_data->'perspectives', :perspectiveUuidAsString)
 			and (c.record_data->>'status' != 'ARCHIVED' or c.record_data->>'status' is null)
+			""";
+
+	/** As FIND_COMPONENTS_BY_PERSPECTIVE, archived components included (task TEA-9). */
+	protected static final String FIND_COMPONENTS_BY_PERSPECTIVE_WITH_ARCHIVED = """
+			select * from rearm.components c
+			where jsonb_exists(c.record_data->'perspectives', :perspectiveUuidAsString)
 			""";
 
 	protected static final String FIND_BRANCHES_BY_VCS = """
@@ -1295,29 +1471,37 @@ class VariableQueries {
 	/*
 	 * Organizations
 	 */
+	/**
+	 * TPF-70: the Statistics totals table, nine counts of one organization. Every count is an index
+	 * path on the org totals indexes migration (org leading; the status predicate spelled
+	 * {@code coalesce(status, 'ACTIVE') = 'ACTIVE'} so it is an index condition, not a heap filter
+	 * that detoasts the document), and the branch counts join components once on the primary key
+	 * instead of a correlated lookup per branch. Run only through
+	 * {@code OrganizationService.inTotalsReadTransaction} (SET LOCAL enable_seqscan = off), because
+	 * the planner prefers the sequential scan when the organization owns most of a table. Keep the
+	 * one cast spelled {@code cast(... as uuid)}: the plan tests bind named parameters by regex.
+	 */
 	protected static final String GET_NUMERIC_ANALYTICS_FOR_ORG = """
-			select component_count.components, product_count.products, release_count.releases,
-			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, feature_set_count.feature_sets
+			select component_count.components, component_count.products, release_count.releases,
+			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, branch_count.feature_sets
 			from
-			(select count(*) as components from rearm.components where record_data->>'org' = :orgUuidAsString 
-			   and record_data->>'type' = 'COMPONENT' and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as component_count,
-			(select count(*) as products from rearm.components where record_data->>'org' = :orgUuidAsString 
-			   and record_data->>'type' = 'PRODUCT' and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as product_count,
-			(select count(*) as releases from rearm.releases where record_data->>'org' = :orgUuidAsString 
-			    and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as release_count,
-			(select count(*) as vcs from rearm.vcs_repositories as vcs where record_data->>'org' = :orgUuidAsString 
-			    and (record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as vcs_count,
-			(select count(*) as artifacts from rearm.artifacts where record_data->>'org' = :orgUuidAsString
-				) as artifact_count,
+			(select count(*) filter (where record_data->>'type' = 'COMPONENT') as components,
+			        count(*) filter (where record_data->>'type' = 'PRODUCT') as products
+			   from rearm.components where record_data->>'org' = :orgUuidAsString
+			   and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as component_count,
+			(select count(*) as releases from rearm.releases where record_data->>'org' = :orgUuidAsString
+			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as release_count,
+			(select count(*) as vcs from rearm.vcs_repositories where record_data->>'org' = :orgUuidAsString
+			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as vcs_count,
+			(select count(*) as artifacts from rearm.artifacts where record_data->>'org' = :orgUuidAsString) as artifact_count,
 			(select count(*) as commits from rearm.source_code_entries where record_data->>'org' = :orgUuidAsString) as sce_count,
-			(select count(*) as branches from rearm.branches b where b.record_data->>'org' = :orgUuidAsString and
-				(b.record_data->>'status' is null or b.record_data->>'status' = 'ACTIVE') and 
-				'COMPONENT' = (select rc.record_data->>'type' from rearm.components rc where rc.record_data->>'uuid' = b.record_data->>'component')) as branch_count,
-			(select count(*) as feature_sets from rearm.branches b where b.record_data->>'org' = :orgUuidAsString and
-				(b.record_data->>'status' is null or b.record_data->>'status' = 'ACTIVE') and 
-				'PRODUCT' = (select rc.record_data->>'type' from rearm.components rc where rc.record_data->>'uuid' = b.record_data->>'component')) as feature_set_count,
-			(select count(*) as deliverables from rearm.deliverables where record_data->>'org' = :orgUuidAsString and
-				(record_data->>'status' is null or record_data->>'status' = 'ACTIVE')) as deliverable_count
+			(select count(*) filter (where c.record_data->>'type' = 'COMPONENT') as branches,
+			        count(*) filter (where c.record_data->>'type' = 'PRODUCT') as feature_sets
+			   from rearm.branches b join rearm.components c on c.uuid = cast(b.record_data->>'component' as uuid)
+			   where b.record_data->>'org' = :orgUuidAsString
+			   and coalesce(b.record_data->>'status', 'ACTIVE') = 'ACTIVE') as branch_count,
+			(select count(*) as deliverables from rearm.deliverables where record_data->>'org' = :orgUuidAsString
+			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as deliverable_count
 		""";
 
 	/*
@@ -1325,9 +1509,11 @@ class VariableQueries {
 	 */
 	protected static final String ANALYTICS_COMPONENTS_WITH_MOST_RELEASES = """
 			WITH release_stats (uuid, rlzcount) AS (
-				select record_data->>'component', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'component')
+				select r.record_data->>'component', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'component')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
 				FROM rearm.components comp, release_stats rs WHERE comp.uuid::text = rs.uuid
@@ -1337,9 +1523,11 @@ class VariableQueries {
 	
 	protected static final String ANALYTICS_BRANCHES_WITH_MOST_RELEASES = """
 			WITH release_stats (uuid, rlzcount) AS (
-				SELECT record_data->>'branch', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'branch')
+				SELECT r.record_data->>'branch', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'branch')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 			    branch.uuid AS branchuuid, branch.record_data->>'name' AS branchname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
@@ -1351,9 +1539,11 @@ class VariableQueries {
 	
 	protected static final String ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PERSPECTIVE = """
 			WITH release_stats (uuid, rlzcount) AS (
-				select record_data->>'component', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'component')
+				select r.record_data->>'component', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'component')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
 				FROM rearm.components comp, release_stats rs WHERE comp.uuid::text = rs.uuid
@@ -1365,9 +1555,11 @@ class VariableQueries {
 	
 	protected static final String ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PERSPECTIVE = """
 			WITH release_stats (uuid, rlzcount) AS (
-				SELECT record_data->>'branch', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'branch')
+				SELECT r.record_data->>'branch', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'branch')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 			    branch.uuid AS branchuuid, branch.record_data->>'name' AS branchname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
@@ -1381,9 +1573,11 @@ class VariableQueries {
 	
 	protected static final String ANALYTICS_COMPONENTS_WITH_MOST_RELEASES_BY_PRODUCT = """
 			WITH release_stats (uuid, rlzcount) AS (
-				select record_data->>'component', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'component')
+				select r.record_data->>'component', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'component')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
 				FROM rearm.components comp, release_stats rs WHERE comp.uuid::text = rs.uuid
@@ -1395,9 +1589,11 @@ class VariableQueries {
 	
 	protected static final String ANALYTICS_BRANCHES_WITH_MOST_RELEASES_BY_PRODUCT = """
 			WITH release_stats (uuid, rlzcount) AS (
-				SELECT record_data->>'branch', count(rlz) AS rlzcount FROM rearm.releases rlz
-					WHERE rlz.record_data->>'org' = :organization 
-					AND rlz.created_date > :cutOffDate group by record_data->>'branch')
+				SELECT r.record_data->>'branch', count(*) AS rlzcount FROM rearm.releases r
+					WHERE r.record_data->>'org' = :organization
+					AND r.created_date > :cutOffDate
+			""" + RELEASE_NOT_OF_DOCUMENT_COMPONENT + """
+					group by r.record_data->>'branch')
 			SELECT comp.uuid AS componentuuid, comp.record_data->>'name' AS componentname,
 			    branch.uuid AS branchuuid, branch.record_data->>'name' AS branchname,
 				comp.record_data->>'type' AS componenttype, rs.rlzcount AS rlzcount 
@@ -1496,6 +1692,35 @@ class VariableQueries {
 					OR jsonb_contains(record_data, jsonb_build_object('manualUsers', jsonb_build_array(:userUuidAsString)))
 				)
 				AND record_data->>'status' = 'ACTIVE'
+			""";
+
+	/*
+	 * API Key Groups (TPF-91)
+	 */
+	protected static final String FIND_ALL_API_KEY_GROUPS_BY_ORGANIZATION = """
+			SELECT * FROM rearm.api_key_groups
+				WHERE record_data->>'org' = :orgUuidAsString
+			""";
+
+	protected static final String FIND_API_KEY_GROUPS_BY_KEY_AND_ORGANIZATION = """
+			SELECT * FROM rearm.api_key_groups
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND jsonb_contains(record_data, jsonb_build_object('apiKeys', jsonb_build_array(:keyUuidAsString)))
+				AND record_data->>'status' = 'ACTIVE'
+			""";
+
+	/* Permission templates (TPF-87) */
+	protected static final String FIND_PERMISSION_TEMPLATES_BY_USER_AND_ORGANIZATION = """
+			SELECT * FROM rearm.permission_templates
+				WHERE record_data->>'user' = :userUuidAsString
+				AND record_data->>'org' = :orgUuidAsString
+				ORDER BY record_data->>'name'
+			""";
+
+	protected static final String FIND_PERMISSION_TEMPLATES_BY_USER = """
+			SELECT * FROM rearm.permission_templates
+				WHERE record_data->>'user' = :userUuidAsString
+				ORDER BY record_data->>'name'
 			""";
 	
 	/*
@@ -1779,5 +2004,123 @@ class VariableQueries {
 			)
 			ORDER BY r.created_date DESC
 			LIMIT :limit
+			""";
+
+	// TEA profiles (task TEA-2). The key columns are plain columns, so these read no jsonb.
+
+	protected static final String FIND_TEA_PROFILE_OF_ORG = """
+			SELECT * FROM rearm.tea_profiles
+				WHERE org = :org AND scope = 'ORGANIZATION' AND object IS NULL
+			""";
+
+	protected static final String FIND_TEA_PROFILE_BY_SCOPE_OBJECT = """
+			SELECT * FROM rearm.tea_profiles
+				WHERE org = :org AND scope = :scope AND object = :object
+			""";
+
+	protected static final String LIST_TEA_PROFILES_OF_ORG = """
+			SELECT * FROM rearm.tea_profiles
+				WHERE org = :org
+				ORDER BY created_date
+			""";
+
+	protected static final String LIST_TEA_PROFILES_OF_SCOPE_OBJECTS = """
+			SELECT * FROM rearm.tea_profiles
+				WHERE org = :org AND scope = :scope AND CAST(object AS text) = ANY(:objectsAsString)
+				ORDER BY created_date
+			""";
+
+	protected static final String LIST_TEA_PROFILES_OF_OBJECT = """
+			SELECT * FROM rearm.tea_profiles
+				WHERE org = :org AND object = :object
+			""";
+
+	// SBOM profiles (task TEA-27). The key columns are plain columns, every lookup is covered by the
+	// unique (org, scope, object, name) index, and none reads jsonb.
+
+	protected static final String FIND_SBOM_PROFILE_OF_ORG = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND scope = 'ORGANIZATION' AND object IS NULL AND name = :name
+			""";
+
+	protected static final String FIND_SBOM_PROFILE_BY_SCOPE_OBJECT_NAME = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND scope = :scope AND object = :object AND name = :name
+			""";
+
+	protected static final String LIST_SBOM_PROFILES_OF_ORG_SCOPE = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND scope = 'ORGANIZATION' AND object IS NULL
+				ORDER BY name
+			""";
+
+	protected static final String LIST_SBOM_PROFILES_OF_SCOPE_OBJECT = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND scope = :scope AND object = :object
+				ORDER BY name
+			""";
+
+	protected static final String LIST_SBOM_PROFILES_OF_SCOPE_OBJECTS_AND_NAME = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND scope = :scope AND CAST(object AS text) = ANY(:objectsAsString) AND name = :name
+				ORDER BY created_date
+			""";
+
+	protected static final String LIST_SBOM_PROFILES_OF_ORG = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org
+				ORDER BY scope, name, created_date
+			""";
+
+	protected static final String LIST_SBOM_PROFILES_OF_OBJECT = """
+			SELECT * FROM rearm.sbom_profiles
+				WHERE org = :org AND object = :object
+			""";
+
+	/** The TEA request path (part 5) finds a live organization by its TEA-facing id, never an ARCHIVED one (TEA-22); indexed by V97. */
+	protected static final String FIND_ORGANIZATION_BY_TEA_UUID = """
+			SELECT * FROM rearm.organizations
+				WHERE record_data->>'teaUuid' = :teaUuidAsString
+				AND COALESCE(record_data->>'status', '') <> 'ARCHIVED'
+			""";
+
+	/** The organizations that have a TEA id: the instance discovery document (task TEA-6); the V97 partial index. */
+	protected static final String LIST_ORGANIZATIONS_WITH_TEA_UUID = """
+			SELECT * FROM rearm.organizations
+				WHERE record_data->>'teaUuid' IS NOT NULL
+			""";
+
+	/** The TEA request path (part 5) finds a component by its TEA-facing id; indexed by V97. */
+	protected static final String FIND_COMPONENT_BY_TEA_UUID = """
+			SELECT * FROM rearm.components
+				WHERE record_data->>'teaUuid' = :teaUuidAsString
+			""";
+	/** The TEA request path (part 5) finds an artifact row by its TEA artifact id; indexed by V97. */
+	protected static final String FIND_ARTIFACT_BY_TEA_UUID = """
+			SELECT * FROM rearm.artifacts
+				WHERE record_data->>'teaUuid' = :teaUuidAsString
+			""";
+
+	/**
+	 * The TEA artifact endpoints (task TEA-10) find every collection version of the organization whose
+	 * frozen entries name a TEA artifact id: {@code needle} is {@code [{"teaUuid":"<id>"}]}, which
+	 * jsonb containment matches against any element carrying that id. Oldest first, so the first
+	 * publication of a revision answers. No index yet: the scan is bounded by the organization's rows.
+	 */
+	protected static final String LIST_TEA_COLLECTIONS_NAMING_ARTIFACT = """
+			SELECT * FROM rearm.tea_collections
+				WHERE org = :org AND record_data->'entries' @> CAST(:needle AS jsonb)
+				ORDER BY created_date, uuid, version
+			""";
+
+	/**
+	 * The oldest collection version of one publication whose entries contain {@code needle} (task TEA-28,
+	 * D13): the containment shape of {@link #LIST_TEA_COLLECTIONS_NAMING_ARTIFACT}, narrowed by the
+	 * primary key.
+	 */
+	protected static final String FIND_OLDEST_TEA_COLLECTION_NAMING = """
+			SELECT * FROM rearm.tea_collections
+				WHERE uuid = :uuid AND record_data->'entries' @> CAST(:needle AS jsonb)
+				ORDER BY version LIMIT 1
 			""";
 }

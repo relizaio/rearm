@@ -442,9 +442,10 @@ public class IntegrationService {
 	 * per {@link #DTRACK_V4_REPROBE_INTERVAL} those stored as the legacy
 	 * version 4 (upgraded in place since, or stored when a failed probe still
 	 * meant version 4). A version 4 that does not answer keeps its version
-	 * quietly. The row is read again after the probe and that fresh copy is
-	 * written, so a change made while the probe waited is kept and a row
-	 * deleted meanwhile is not brought back. One integration failing does not
+	 * quietly. The version is stored in place only if the row still holds the
+	 * version the probe started from and the URI probed (TPF-71 / TPF-107), so
+	 * a change made while the probe waited is kept and a row deleted meanwhile
+	 * is not brought back. One integration failing does not
 	 * stop the others. The caller holds the {@code REDETECT_DTRACK_VERSIONS}
 	 * lock.
 	 *
@@ -484,12 +485,14 @@ public class IntegrationService {
 					dtrackV4ProbedAt.put(row.getUuid(), now);
 				}
 				if (detected == known) continue;
-				Optional<Integration> fresh = repository.findById(row.getUuid());
-				if (fresh.isEmpty()) continue;
-				IntegrationData freshData = IntegrationData.dataFromRecord(fresh.get());
-				if (freshData.getDtrackVersion() != known || !Objects.equals(freshData.getUri(), id.getUri())) continue;
-				freshData.setDtrackVersion(detected);
-				saveIntegration(fresh.get(), Utils.dataToRecord(freshData), WhoUpdated.getAutoWhoUpdated());
+				// In place (TPF-71 / TPF-107): the guard the re-read applied is the statement's WHERE, re-tested at
+				// write time; a row deleted, re-pointed or re-detected meanwhile is left alone (0 rows).
+				int rows = repository.stampDtrackVersion(row.getUuid(), detected.name(),
+						known == null ? null : known.name(), id.getUri().toString());
+				if (rows == 0) {
+					log.debug("Dependency-Track version of integration {} not stored: the row changed or went away meanwhile", row.getUuid());
+					continue;
+				}
 				stored++;
 				log.info("Detected Dependency-Track {} for org {} (was {})", detected, id.getOrg(),
 						known == null ? "not detected" : known);

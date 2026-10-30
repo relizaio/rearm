@@ -94,7 +94,8 @@
                 <n-input v-model:value="deliveryDraft.commit" size="small" placeholder="Commit (7 to 40 hex)" style="width: 170px"
                          data-testid="declare-delivery-commit"
                          :status="deliveryDraft.commit && commitProblem(deliveryDraft.commit) ? 'error' : undefined"/>
-                <n-input v-model:value="deliveryDraft.note" size="small" placeholder="Note (optional)" style="width: 180px"/>
+                <growing-text-input v-model:value="deliveryDraft.note" placeholder="Note (optional)" style="width: 180px"
+                                    data-testid="declare-delivery-note"/>
                 <n-button size="small" type="primary" :disabled="!declarationPayload(task, deliveryDraft)" data-testid="declare-delivery-submit"
                           @click="submitDelivery">Declare</n-button>
                 <n-button size="small" quaternary @click="deliveryDraft = null">Cancel</n-button>
@@ -102,8 +103,8 @@
         </div>
         <!-- An operator hold: the coordinator cannot lift it; the hold banner offers the lift. -->
         <div v-if="canPlaceHold(task, !!admin)" class="deprow holdrow">
-            <n-input v-model:value="holdReason" size="small" placeholder="Why hold it (required)"
-                     style="width: 260px"/>
+            <growing-text-input v-model:value="holdReason" placeholder="Why hold it (required)"
+                                style="width: 260px" data-testid="hold-reason"/>
             <disabled-hint :reason="hint('hold')">
                 <n-button size="small" type="warning" ghost :disabled="!holdPayload(task, holdReason)" data-testid="hold-place"
                           @click="placeHold">Put on hold (operator)</n-button>
@@ -111,8 +112,8 @@
         </div>
         <!-- task RD3-4: a person takes a stalled assignment back to the queue for the same role. -->
         <div v-if="!terminal" class="deprow unassignrow">
-            <n-input v-model:value="unassignReason" size="small" placeholder="Why unassign it (required)"
-                     style="width: 260px" data-testid="unassign-reason"/>
+            <growing-text-input ref="unassignInput" v-model:value="unassignReason" placeholder="Why unassign it (required)"
+                                style="width: 260px" data-testid="unassign-reason"/>
             <disabled-hint :reason="hint('unassign')">
                 <n-button size="small" type="warning" ghost :disabled="!!hint('unassign')" data-testid="unassign"
                           @click="unassign">Unassign</n-button>
@@ -138,8 +139,8 @@
                 <n-button size="small" type="primary" ghost :disabled="!!hint('complete')" data-testid="complete-open"
                           @click="showComplete = true">Complete…</n-button>
             </disabled-hint>
-            <n-input v-model:value="cancelNote" size="small" placeholder="Why cancel (optional)"
-                     style="width: 220px"/>
+            <growing-text-input v-model:value="cancelNote" placeholder="Why cancel (optional)"
+                                style="width: 220px" data-testid="cancel-note"/>
             <n-popconfirm @positive-click="emit('cancel', { task, note: cancelNote })">
                 <template #trigger>
                     <n-button size="small" type="error" ghost>Cancel task</n-button>
@@ -156,8 +157,8 @@
         <div class="deprow">
             <n-select v-model:value="reopenRole" :options="reopenOptions" size="small"
                       placeholder="role" style="width: 170px"/>
-            <n-input v-model:value="reopenReason" size="small" style="width: 300px"
-                     placeholder="Why its delivery cannot land (required)"/>
+            <growing-text-input v-model:value="reopenReason" style="width: 300px"
+                                placeholder="Why its delivery cannot land (required)" data-testid="reopen-reason"/>
             <n-popconfirm @positive-click="reopen">
                 <template #trigger>
                     <disabled-hint :reason="hint('reopen')">
@@ -186,8 +187,8 @@
                     <n-tag size="tiny" :bordered="false" type="error">P{{ b.reviewItem.priority ?? '?' }}</n-tag>
                     <span class="frow__title">{{ b.reviewItem.title }}</span>
                     <div class="fedit">
-                        <n-input v-model:value="blockerWords[b.reviewItem.id ?? '']" size="small"
-                                 placeholder="Why"/>
+                        <growing-text-input v-model:value="blockerWords[b.reviewItem.id ?? '']"
+                                            placeholder="Why" data-testid="blocker-words"/>
                         <n-space :size="6" style="margin-top: 6px">
                             <n-button size="tiny" type="warning"
                                       :disabled="!(blockerWords[b.reviewItem.id ?? ''] ?? '').trim()"
@@ -238,6 +239,7 @@ import { NButton, NCheckbox, NDynamicTags, NInput, NInputNumber, NModal, NPopcon
 import { groupOptions, groupToSend, NO_GROUP, parseTags, tagKeys, tagsProblem, tagsToSet } from '@/utils/agentTaskGroups'
 import ActorRef from '../ActorRef.vue'
 import DisabledHint from './DisabledHint.vue'
+import GrowingTextInput from './GrowingTextInput.vue'
 import { boardPaused, disabledReason, HintedAction, reopenLine } from '@/utils/agentTaskHints'
 import { reopenPayload, reopenRoleOptions } from '@/utils/agentReopen'
 import { actingAnswers, effectiveStatus } from '@/utils/agentOperatorQuestion'
@@ -302,6 +304,13 @@ const groupChanged = computed(() => groupToSend(groupDraft.value) !== (props.tas
 const tagsDraft = ref<string[]>([])
 const tagsReady = computed(() => tagsToSet(props.task, tagsDraft.value) !== undefined && !tagsProblem(tagsDraft.value))
 const unassignReason = ref('')
+// The drawer's stale line links here (TPF-69): NInput's own focus() focuses its inner <input>, not the wrapper.
+const unassignInput = ref<InstanceType<typeof GrowingTextInput> | null>(null)
+function focusUnassign () {
+    unassignInput.value?.focus()
+    ;(unassignInput.value?.$el as HTMLElement | undefined)?.scrollIntoView?.({ block: 'nearest' })
+}
+defineExpose({ focusUnassign })
 function unassign () {
     const p = unassignPayload(props.task, unassignReason.value)
     if (p) {

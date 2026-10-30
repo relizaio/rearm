@@ -29,49 +29,85 @@
             </n-alert>
             <n-radio-group v-model:value="choice" style="display: block; margin-bottom: 12px;">
                 <n-space vertical>
-                    <n-radio value="new">
-                        Create a personal key for this session
-                    </n-radio>
-                    <div v-if="choice === 'new'" style="margin-left: 26px; margin-bottom: 8px;">
-                        <n-space align="end">
-                            <n-form-item label="Organization"><n-select v-model:value="newKeyOrg" :options="orgOptions" style="min-width: 260px;" /></n-form-item>
-                            <n-form-item label="Notes"><n-input v-model:value="newKeyNotes" :placeholder="defaultNotes" style="min-width: 260px;" /></n-form-item>
-                        </n-space>
-                        <p class="subtle" style="margin: 0 0 8px 0;">Give the key what this session needs. Whatever you set is stored reduced to your own permissions in the organization, and every call is checked against them again; the key can never exceed you. It is deleted when the session ends.</p>
-                        <n-alert v-if="boundsError" type="warning" :show-icon="true" style="margin-bottom: 8px;">
-                            Your own permissions in this organization could not be read, so this form is not bounded here: {{ boundsError }}.
-                            Anything you set is still stored reduced to what you hold - the server applies the same limit.
-                        </n-alert>
-                        <n-spin :show="loadingBounds">
-                            <ScopedPermissions v-if="newKeyOrg"
-                                v-model="scoped"
+                    <!-- Each option is one fixed child of the n-space, with its panel toggled inside it. A v-if
+                         panel as a direct n-space child is wrapped in an unkeyed box, and toggling it left stale
+                         copies behind: the key list shown twice, "Use one of my keys" duplicated. -->
+                    <div>
+                        <n-radio value="new">
+                            Create a personal key for this session
+                        </n-radio>
+                        <div v-if="choice === 'new'" style="margin-left: 26px; margin-bottom: 8px;">
+                            <n-space align="end">
+                                <n-form-item label="Organization"><n-select v-model:value="newKeyOrg" :options="orgOptions" style="min-width: 260px;" /></n-form-item>
+                                <n-form-item label="Notes"><n-input v-model:value="newKeyNotes" :placeholder="defaultNotes" style="min-width: 260px;" /></n-form-item>
+                            </n-space>
+                            <PermissionTemplatePicker
                                 :org-uuid="newKeyOrg"
-                                :approval-roles="approvalRoles"
-                                :perspectives="perspectives"
-                                :products="orgProducts"
-                                :components="orgComponents"
-                                :instances="orgInstances"
-                                :clusters="orgClusters"
-                                :show-sbom-probing="true"
+                                :model="scoped"
                                 :max-org-type="ownerOrgType"
                                 :allowed-functions="ownerFunctions"
+                                :org-functions="ownerOrgFunctions"
+                                :disabled="loadingBounds"
+                                :name-of="resolveName"
+                                :notify="notify"
+                                @apply="onTemplateApply"
                             />
-                        </n-spin>
+                            <div v-if="templatePicked" class="subtle" data-testid="template-reductions" style="margin: 0 0 8px 0;">
+                                <div>{{ REDUCTIONS_SENTENCE }}</div>
+                                <ul v-if="templateReductions.length" style="margin: 4px 0 0 0;">
+                                    <li v-for="r in templateReductions" :key="r">{{ r }}</li>
+                                </ul>
+                            </div>
+                            <p class="subtle" style="margin: 0 0 8px 0;">Give the key what this session needs. Whatever you set is stored reduced to your own permissions in the organization, and every call is checked against them again; the key can never exceed you. It is deleted when the session ends.</p>
+                            <n-alert v-if="boundsError" type="warning" :show-icon="true" style="margin-bottom: 8px;">
+                                Your own permissions in this organization could not be read, so this form is not bounded here: {{ boundsError }}.
+                                Anything you set is still stored reduced to what you hold - the server applies the same limit.
+                            </n-alert>
+                            <n-spin :show="loadingBounds">
+                                <ScopedPermissions v-if="newKeyOrg"
+                                    v-model="scoped"
+                                    :org-uuid="newKeyOrg"
+                                    :approval-roles="approvalRoles"
+                                    :perspectives="perspectives"
+                                    :products="orgProducts"
+                                    :components="orgComponents"
+                                    :instances="orgInstances"
+                                    :clusters="orgClusters"
+                                    :show-sbom-probing="true"
+                                    :max-org-type="ownerOrgType"
+                                    :allowed-functions="ownerFunctions"
+                                />
+                            </n-spin>
+                        </div>
                     </div>
-                    <n-radio value="existing" :disabled="!eligibleKeys.length">
-                        Use one of my keys <span class="subtle" v-if="!eligibleKeys.length">(no active personal or held Free Form keys)</span>
-                    </n-radio>
-                    <div v-if="choice === 'existing'" style="margin-left: 26px;">
-                        <n-radio-group v-model:value="chosenKey">
-                            <n-space vertical>
-                                <n-radio v-for="k in eligibleKeys" :key="k.uuid" :value="k.uuid">
-                                    <strong>{{ k.type === 'USER' ? 'Personal' : 'Free Form (held)' }}</strong> · {{ orgName(k.org) }}
-                                    <span class="subtle"> · {{ (k.permissions?.permissions || []).length }} permission{{ (k.permissions?.permissions || []).length === 1 ? '' : 's' }}</span>
-                                    <span class="subtle" v-if="k.notes"> · {{ k.notes }}</span>
-                                    <span class="subtle" v-if="k.sessionMaxMinutes"> · sessions end after {{ describeMinutes(k.sessionMaxMinutes) }}</span>
-                                </n-radio>
-                            </n-space>
-                        </n-radio-group>
+                    <div>
+                        <n-radio value="existing" :disabled="!eligibleKeys.length">
+                            Use one of my keys <span class="subtle" v-if="!eligibleKeys.length">(no active personal or held Free Form keys)</span>
+                        </n-radio>
+                        <div v-if="choice === 'existing'" style="margin-left: 26px;">
+                            <n-radio-group v-model:value="chosenKey">
+                                <n-space vertical>
+                                    <n-radio v-for="r in offeredRows" :key="r.key.uuid" :value="r.key.uuid">
+                                        <strong>{{ r.typeWord }}</strong>
+                                        <template v-if="r.name.kind !== 'type'"> · <code v-if="r.name.kind === 'declared'">{{ r.name.text }}</code><span v-else :title="r.fullNotes">{{ r.name.text }}</span></template>
+                                        · <code class="key-id-chip" :title="r.key.uuid">id {{ r.shortId }}</code>
+                                        · {{ orgName(r.key.org) }}
+                                        <span class="subtle"> · {{ r.permissions }}</span>
+                                        <span class="subtle" v-if="r.name.kind === 'declared' && r.notes" :title="r.fullNotes"> · {{ r.notes }}</span>
+                                        <span class="subtle" v-if="r.key.sessionMaxMinutes"> · sessions end after {{ describeMinutes(r.key.sessionMaxMinutes) }}</span>
+                                        <n-tag v-if="isBoundToAgent(r.key)" size="tiny" type="warning" style="margin-left: 6px;">{{ boundAgentsLabel(r.key) }}</n-tag>
+                                    </n-radio>
+                                </n-space>
+                            </n-radio-group>
+                            <p class="subtle" v-if="!offeredKeys.length" style="margin: 4px 0;">
+                                Every key you could use is already bound to an agent.
+                            </p>
+                            <div v-if="boundKeyCount" style="margin-top: 10px;">
+                                <n-checkbox v-model:checked="showBoundKeys">
+                                    Show {{ boundKeyCount }} key{{ boundKeyCount === 1 ? '' : 's' }} already bound to agents
+                                </n-checkbox>
+                            </div>
+                        </div>
                     </div>
                 </n-space>
             </n-radio-group>
@@ -79,8 +115,9 @@
                 <n-input-number v-model:value="maxMinutes" clearable :show-button="false" style="max-width: 280px;"
                     :placeholder="keyLimit ? 'The key allows up to ' + keyLimit : 'Shorter than the default, if you want'" />
             </n-form-item>
+            <p class="subtle" v-if="chosenKeyRow">This session will act as {{ chosenKeyLabel }} in {{ orgName(chosenKeyRow.org) }}, with {{ permissionSummary(chosenKeyRow) }}.</p>
             <n-space>
-                <n-button type="primary" :disabled="!canApprove" @click="approve">Approve</n-button>
+                <n-button type="primary" :disabled="!canApprove" @click="approve">{{ approveLabel }}</n-button>
                 <n-button type="error" ghost @click="deny">Deny</n-button>
             </n-space>
         </div>
@@ -99,9 +136,10 @@
  * Browser side of `rearm login` (device authorization). The user is already signed in to ReARM
  * (the SPA requires it); here they approve the CLI's request by choosing what the session acts as.
  */
-import { NAlert, NButton, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, useNotification, NotificationType } from 'naive-ui'
+import { NAlert, NButton, NCheckbox, NFormItem, NInput, NInputNumber, NRadio, NRadioGroup, NSelect, NSpace, NSpin, NTag, useNotification, NotificationType } from 'naive-ui'
 import { computed, onMounted, ref, watch } from 'vue'
 import ScopedPermissions from './ScopedPermissions.vue'
+import PermissionTemplatePicker from './PermissionTemplatePicker.vue'
 import constants from '../utils/constants'
 import { useRoute } from 'vue-router'
 import { useStore } from 'vuex'
@@ -109,6 +147,9 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { approvalLifetimeProblem, describeMinutes, sessionEndSentence } from '@/utils/cliSessionLifetime'
+import { boundAgentsLabel, isBoundToAgent, keysToOffer, permissionSummary } from '@/utils/cliLoginKeys'
+import { apiKeyLabel, apiKeyName, apiKeyNotesForLabel, apiKeyNotesUncut, apiKeyShortId, apiKeyTypeWord } from '@/utils/apiKeyLabel'
+import { REDUCTIONS_SENTENCE } from '@/utils/permissionTemplates'
 
 const route = useRoute()
 const store = useStore()
@@ -128,7 +169,27 @@ const newKeyNotes = ref('')
 const organizations = computed(() => store.getters.allOrganizations || [])
 const orgOptions = computed(() => organizations.value.map((o: any) => ({ label: o.name, value: o.uuid })))
 const orgName = (uuid: string) => organizations.value.find((o: any) => o.uuid === uuid)?.name || uuid
-const eligibleKeys = computed(() => myKeys.value.filter((k: any) => k.status === 'ACTIVE' && (k.type === 'USER' || k.type === 'FREEFORM')))
+const eligibleKeys = computed(() => keysToOffer(myKeys.value, true))
+// Keys an agent already signs in with are hidden unless asked for: the first list is the keys that are free to
+// hand to this session, and approving on a bound key would act as that agent.
+const showBoundKeys = ref(false)
+const offeredKeys = computed(() => keysToOffer(myKeys.value, showBoundKeys.value))
+const boundKeyCount = computed(() => eligibleKeys.value.filter(isBoundToAgent).length)
+// hiding the bound keys again drops a choice that is no longer on screen, so nothing unseen is approved
+watch(showBoundKeys, (show) => { if (!show && chosenKey.value && !offeredKeys.value.some((k: any) => k.uuid === chosenKey.value)) chosenKey.value = null })
+// each offered key's label parts, worked out once per list rather than per template binding
+const offeredRows = computed(() => offeredKeys.value.map((k: any) => {
+    const notes = apiKeyNotesForLabel(k)
+    const fullNotes = apiKeyNotesUncut(k)
+    return {
+        key: k, typeWord: apiKeyTypeWord(k.type), name: apiKeyName(k), shortId: apiKeyShortId(k, offeredKeys.value),
+        notes, fullNotes: fullNotes !== notes ? fullNotes : undefined, permissions: permissionSummary(k)
+    }
+}))
+// the chosen key named on the button and in the line above it, so the approver sees which of two alike keys they picked
+const chosenKeyRow = computed(() => choice.value === 'existing' ? offeredKeys.value.find((k: any) => k.uuid === chosenKey.value) ?? null : null)
+const chosenKeyLabel = computed(() => chosenKeyRow.value ? apiKeyLabel(chosenKeyRow.value, { withType: true, siblings: offeredKeys.value }) : '')
+const approveLabel = computed(() => chosenKeyLabel.value ? 'Approve as ' + chosenKeyLabel.value : 'Approve')
 const defaultNotes = computed(() => 'CLI session' + (request.value.requestedFrom ? ' on ' + request.value.requestedFrom : ''))
 // the session's lifetime (task RD3-7): the chosen key's limit, which the approver may shorten but not lengthen;
 // a fresh key carries no limit
@@ -161,6 +222,11 @@ const ownerFunctions = computed<string[] | undefined>(() => {
     for (const p of ownerPerms.value) for (const f of (p.functions || [])) set.add(f)
     return Array.from(set)
 })
+// the owner's organization-wide functions: the server intersects the key's ORGANIZATION row with these only (TPF-113 F-4)
+const ownerOrgFunctions = computed<string[] | undefined>(() => {
+    if (me.value?.isGlobalAdmin || ownerOrgType.value === 'ADMIN' || boundsError.value) return undefined
+    return ownerOrgPerm.value?.functions || []
+})
 const approvalRoles = computed(() => store.getters.orgById(newKeyOrg.value)?.approvalRoles || [])
 const orgComponents = computed(() => store.getters.componentsOfOrg(newKeyOrg.value) || [])
 const orgProducts = computed(() => store.getters.productsOfOrg(newKeyOrg.value) || [])
@@ -177,6 +243,8 @@ async function loadBounds () {
     boundsError.value = ''
     ownerPerms.value = []
     scoped.value = { orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] }
+    templatePicked.value = false
+    templateReductions.value = []
     try {
         // every list is best effort: the queries already return only what this user may read
         const loads: Promise<any>[] = [
@@ -194,6 +262,36 @@ async function loadBounds () {
     } finally { loadingBounds.value = false }
 }
 watch(newKeyOrg, () => loadBounds())
+
+// ---- permission templates (TPF-113): a pick fills the form only; Approve stays the user's explicit click ----
+const templatePicked = ref(false)
+const templateReductions = ref<string[]>([])
+function onTemplateApply (model: { orgPermission: any, scopedPermissions: any[] }, reductions: string[]) {
+    scoped.value = model
+    templateReductions.value = reductions
+    templatePicked.value = true
+}
+// a grant's object name for the form, the request modal's resolver over this page's lists; the page loads no
+// boards (the editor names BOARD cards from its own list), so a BOARD row keeps its uuid here
+async function resolveName (scope: string, objectId: string): Promise<string> {
+    if (scope === 'BOARD') return objectId
+    if (scope === 'PERSPECTIVE') {
+        const p = perspectives.value.find((x: any) => x.uuid === objectId); return p ? p.name : objectId
+    }
+    if (scope === 'INSTANCE') {
+        const obj = orgInstancesAndClusters.value.find((x: any) => x.uuid === objectId)
+        if (!obj) return objectId
+        if (obj.instanceType === constants.InstanceType.CLUSTER_INSTANCE) {
+            const parent = orgClusters.value.find((c: any) => Array.isArray(c.instances) && c.instances.includes(obj.uuid))
+            return `${parent ? parent.name : '(cluster)'} / ${obj.namespace || obj.uuid}`
+        }
+        if (obj.instanceType === constants.InstanceType.CLUSTER) return obj.name || obj.uri || obj.uuid
+        return obj.uri || obj.name || obj.uuid
+    }
+    const known = [...orgComponents.value, ...orgProducts.value].find((c: any) => c.uuid === objectId)
+    if (known) return known.name
+    try { const fetched = await store.dispatch('fetchComponent', objectId); return fetched?.name || objectId } catch { return objectId }
+}
 function permissionsPayload () {
     const permissions: any[] = []
     const orgPermType = scoped.value.orgPermission.type
@@ -228,7 +326,7 @@ async function lookup () {
         })
         if (!resp.data.cliLoginRequest) { lookupError.value = 'No pending sign-in for this code. It may have expired: run rearm login again.'; return }
         request.value = resp.data.cliLoginRequest
-        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes sessionMaxMinutes permissions { permissions { scope type } } } }`, fetchPolicy: 'no-cache' })
+        const keys: any = await graphqlClient.query({ query: gql`query myApiKeys { myApiKeys { uuid org type status notes declaredName sessionMaxMinutes permissions { permissions { scope type } } boundAgents { uuid name displayName } } }`, fetchPolicy: 'no-cache' })
         myKeys.value = keys.data.myApiKeys || []
         phase.value = 'choose'
     } catch (e: any) { lookupError.value = commonFunctions.parseGraphQLError(e.message) }

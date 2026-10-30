@@ -8,16 +8,53 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.springframework.data.jpa.repository.Lock;
 import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
+import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.CrudRepository;
 import org.springframework.data.repository.query.Param;
+import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import org.hibernate.Timeouts;
+
 import io.reliza.model.ApiKey;
+import jakarta.persistence.LockModeType;
+import jakarta.persistence.QueryHint;
 
 public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
-	
+
+	// The three lock reads below are MANDATORY: the lock belongs to the caller's transaction and lasts until it
+	// commits, and a caller without one fails instead of getting a lock released on return.
+
+	/** The key row in any status, locked until the caller's transaction ends. Callers apply ApiKeyService.isLive. */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "30000"))
+	@Query("SELECT k FROM ApiKey k WHERE k.uuid = :uuid")
+	Optional<ApiKey> findByIdWriteLocked(@Param("uuid") UUID uuid);
+
+	/**
+	 * As findByIdWriteLocked, but never waits: a row locked by another transaction reads as empty (SKIP LOCKED).
+	 * Not NOWAIT, whose refusal is an error that marks the reading transaction for rollback.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@Lock(LockModeType.PESSIMISTIC_WRITE)
+	@QueryHints(@QueryHint(name = "jakarta.persistence.lock.timeout", value = "" + Timeouts.SKIP_LOCKED_MILLI))
+	@Query("SELECT k FROM ApiKey k WHERE k.uuid = :uuid")
+	Optional<ApiKey> findByIdWriteLockedSkipLocked(@Param("uuid") UUID uuid);
+
+	/**
+	 * Whether the key row is live (FIND_API_KEY_BY_UUID's rule), read from the table under the row lock; empty
+	 * when there is no row. COMMIT flush mode: nothing the caller holds in memory is written before the read.
+	 * Its wait is PostgreSQL's lock_timeout; the writers that reach it by uuid already hold the lock.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	@QueryHints(@QueryHint(name = "org.hibernate.flushMode", value = "COMMIT"))
+	@Query(value = VariableQueries.LOCK_API_KEY_LIVENESS, nativeQuery = true)
+	Optional<Boolean> lockAndReadLiveness(@Param("uuid") UUID uuid);
+
 	@Query(
 			value = VariableQueries.FIND_API_KEY_BY_UUID,
 			nativeQuery = true)
@@ -59,6 +96,11 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 	List<ApiKey> findUserApiKeyByUserUuidAndOrgUuid(UUID userUuid, UUID orgUuid);
 
 	@Query(
+			value = VariableQueries.FIND_HELD_API_KEYS_BY_USER_AND_ORG,
+			nativeQuery = true)
+	List<ApiKey> findHeldApiKeysByUserUuidAndOrgUuid(UUID userUuid, UUID orgUuid);
+
+	@Query(
 			value = VariableQueries.FIND_USER_API_KEYS_BY_USER,
 			nativeQuery = true)
 	List<ApiKey> findUserApiKeysByUserUuid(UUID userUuid);
@@ -91,4 +133,24 @@ public interface ApiKeyRepository extends CrudRepository<ApiKey, UUID> {
 	@Query(value = "UPDATE rearm.api_keys SET last_access_date = :ts WHERE uuid = :uuid "
 			+ "AND (last_access_date IS NULL OR last_access_date < :ts)", nativeQuery = true)
 	void touchLastAccessDateIfNewer(@Param("uuid") UUID uuid, @Param("ts") ZonedDateTime ts);
+
+	/**
+	 * Refresh a FEDERATED identity's last-seen triple (ApiKeyService.ensureFederatedIdentity, the per-exchange
+	 * path) in place: no revision, no last_updated_date, no who-updated keys, no version bump and no audit row --
+	 * the triple is what the latest CI run presented and the next run supersedes it; the audit copy a whole save
+	 * wrote carried the previous triple and nothing else (TPF-71 / TPF-107). The three keys are replaced as one
+	 * object merge and nulls are stripped, so a null value removes its key exactly as Jackson's NON_NULL omits
+	 * it on a whole save, and the stored shape is the same either way. Every other key of federation, and every
+	 * other key of record_data, is untouched.
+	 *
+	 * @return the rows updated: 1, or 0 when no row has this uuid or its federation is not an object
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.api_keys SET record_data = jsonb_set(record_data, '{federation}', "
+			+ "jsonb_strip_nulls((record_data->'federation') || jsonb_build_object("
+			+ "'lastRef', cast(:ref as text), 'lastRunId', cast(:runId as text), 'lastActor', cast(:actor as text)))) "
+			+ "WHERE uuid = :uuid AND jsonb_typeof(record_data->'federation') = 'object'", nativeQuery = true)
+	int stampFederatedLastSeen(@Param("uuid") UUID uuid, @Param("ref") String ref, @Param("runId") String runId,
+			@Param("actor") String actor);
 }

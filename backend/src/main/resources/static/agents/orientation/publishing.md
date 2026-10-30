@@ -1,4 +1,4 @@
-<!-- orientation section: publishing · core 2026-10-08 -->
+<!-- orientation section: publishing · core 2026-10-25 -->
 ### 2.5a Publishing documents (task boards)
 
 On a task board, a hop ends with a **document**, not just a sign-off note. If
@@ -107,7 +107,7 @@ documents pinned as its inputs) to `READY_TO_SHIP`, which on a board means
 reviewed; a rejection promotes nothing.
 
 > **CLI version.** `agent doc publish` and the `--outputs` flag need
-> the `26.10.2` pinned in §1.2 (`rearm_cli_min`) or later.
+> the `26.10.17` pinned in §1.2 (`rearm_cli_min`) or later.
 > If either reports an unknown command or flag, do not conclude anything
 > from that alone — check what you have:
 >
@@ -147,13 +147,15 @@ contract rather than a style suggestion:
 }
 ```
 
-- `tested` names the commit you reviewed or tested for each PR the task links,
+- `tested` names the commit you reviewed or tested for a PR the task links,
   7 to 40 hex characters. It is required on a tester's pass: a `BOARD_TEST_REPORT`
-  that passes must name the head it tested for every PR the task links, and the
-  board refuses it otherwise. When a PR moves past the head that pass named, the
-  board sends the task back to the role that passed it. A reviewer may name the
-  heads it looked at; they are informative, and the board holds the PRs to the
-  tester's. Any head named must be of a PR the task links.
+  that passes must name the head it tested for every linked PR that is still to
+  land, and the board refuses it otherwise; a superseded PR, or one declared
+  abandoned, needs none (a closed PR nobody declared still does). When a PR
+  moves past the head that pass named, the board sends the task back to the
+  role that passed it. A reviewer may name the heads it looked at; they are
+  informative, and the board holds the PRs to the tester's. Any head named must
+  be of a PR the task links.
 - `verdict` is `PASSED` or `REJECTED`. A test report uses the same envelope with
   `kind: BOARD_TEST_REPORT` and adds `counts { passed, failed, skipped }`, with one
   entry per failed case.

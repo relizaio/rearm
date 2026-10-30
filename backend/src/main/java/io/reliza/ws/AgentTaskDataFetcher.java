@@ -19,6 +19,7 @@ import java.util.stream.Collectors;
 import org.apache.commons.lang3.StringUtils;
 
 import io.reliza.common.CommonVariables;
+import io.reliza.common.InputConversion;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -41,8 +42,6 @@ import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.UserData;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
-import io.reliza.common.Utils;
-import tools.jackson.core.JacksonException;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentBoardData.BoardPauseLevel;
 import io.reliza.model.AgentData;
@@ -80,6 +79,7 @@ import io.reliza.service.AgentAuditReadService.AgentBoardRevision;
 import io.reliza.service.AgentAuditReadService.AgentRoleConfigRevision;
 import io.reliza.service.AgentAuditReadService.AgentTaskRevision;
 import io.reliza.service.AgentBoardService;
+import io.reliza.service.AgentDeliveryService;
 import io.reliza.service.AgentIdentityService;
 import io.reliza.service.AgentService;
 import io.reliza.service.AgentSessionService;
@@ -89,8 +89,11 @@ import io.reliza.service.AgentSessionUsageService;
 import io.reliza.service.AgentTaskInputService;
 import io.reliza.service.AgentTaskService;
 import io.reliza.service.AgentTaskService.WorkerAssignment;
+import io.reliza.service.BoardAgentsService;
+import io.reliza.service.BoardStalenessService;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.AuthorizationService.FreeformKeyVerification;
+import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.DeclarativeConfigService;
 import io.reliza.service.UserService;
@@ -123,7 +126,7 @@ public class AgentTaskDataFetcher {
 	@Autowired private AuthorizationService authorizationService;
 	@Autowired private AgentTaskInputService agentTaskInputService;
 	@Autowired private AgentSessionUsageService agentSessionUsageService;
-	@Autowired private io.reliza.service.AgentDeliveryService agentDeliveryService;
+	@Autowired private AgentDeliveryService agentDeliveryService;
 	@Autowired private GetSourceCodeEntryService getSourceCodeEntryService;
 	@Autowired private AgentDocumentService agentDocumentService;
 	@Autowired private VcsRepositoryService vcsRepositoryService;
@@ -191,6 +194,7 @@ public class AgentTaskDataFetcher {
 			Map.entry("agentTaskLinkReleaseProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskDeclareDeliveryProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskSupersedePullRequestProgrammatic", AGENT_VERB),
+			Map.entry("agentTaskUnlinkPrProgrammatic", AGENT_VERB),
 			Map.entry("agentTaskBindExternalRefProgrammatic", AGENT_VERB),
 			Map.entry("agentBoardCoordinateProgrammatic", WRITE),
 			Map.entry("agentBoardCoordinatorPauseProgrammatic", WRITE),
@@ -445,6 +449,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Query", field = "agentTaskByKey")
 	public AgentTaskData agentTaskByKey(@InputArgument("orgUuid") UUID orgUuid, @InputArgument("key") String key,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		Optional<AgentTaskData> td = agentTaskService.resolveKey(orgUuid, key);
 		if (td.isEmpty()) {
 			// Nothing to read; still only a person may ask.
@@ -557,7 +562,7 @@ public class AgentTaskDataFetcher {
 				sessionUuid, parentTask,
 				parseUuid((String) input.get("producesComponent"), "producesComponent"),
 				input.get("workLevel") instanceof Number lvl ? lvl.intValue() : null,
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				null != sessionUuid ? AgentActor.ofSession(sessionUuid) : null, false,
 				(String) input.get("group"), parseTags(input.get("tags")),
 				ctx.wu());
@@ -656,7 +661,7 @@ public class AgentTaskDataFetcher {
 		if (seedBudget) agentTaskService.checkBudgetSeed(taskUuid, budget);
 		AgentTaskData authorized = agentTaskService.authorize(taskUuid, board, role, orderIndex, dependsOn,
 				producesComponent, workLevel,
-				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
 				setStrength, rawStrength instanceof Number n ? n.doubleValue() : null,
 				AgentActor.ofSession(sessionUuid), ctx.wu());
 		return seedBudget ? agentTaskService.setBudget(taskUuid, budget, AgentActor.ofSession(sessionUuid), ctx.wu())
@@ -733,15 +738,7 @@ public class AgentTaskDataFetcher {
 	static List<SplitChild> toSplitChildren(List<Map<String, Object>> raw)
 			throws RelizaException {
 		if (null == raw) return List.of();
-		try {
-			return raw.stream().map(m -> Utils.OM.convertValue(m, SplitChild.class)).toList();
-		} catch (JacksonException e) {
-			// Jackson 3 throws its own unchecked JacksonException, NOT the IllegalArgumentException
-			// Jackson 2 raised from convertValue. Catching the wrong one let an InvalidFormatException
-			// escape to the client verbatim -- the same leak this method exists to stop, wearing a
-			// different coat. SplitChildConversionTest is what noticed.
-			throw new RelizaException("Could not read split children: " + e.getMessage());
-		}
+		return InputConversion.convertEach(raw, SplitChild.class, "children");
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskCompleteProgrammatic")
@@ -850,6 +847,10 @@ public class AgentTaskDataFetcher {
 		if (rr == TaskReturnReason.SESSION_CLOSED) {
 			throw new RelizaException("SESSION_CLOSED returns are system-generated only");
 		}
+		if (rr == TaskReturnReason.PARKED_FOR_OPERATOR) {
+			throw new RelizaException("PARKED_FOR_OPERATOR returns are system-generated only: park the hop with task hold"
+					+ " --operator --question");
+		}
 		return agentTaskService.returnTask(taskUuid, sessionUuid, rr, description,
 				null != outputs ? outputs : List.of(), ctx.wu());
 	}
@@ -916,6 +917,7 @@ public class AgentTaskDataFetcher {
 
 	@DgsData(parentType = "Query", field = "agentBoard")
 	public AgentBoardData agentBoard(@InputArgument("uuid") UUID uuid, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(uuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + uuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -927,6 +929,7 @@ public class AgentTaskDataFetcher {
 	public AgentBoardService.EventPage agentBoardEvents(@InputArgument("boardUuid") UUID boardUuid,
 			@InputArgument("after") Long after, @InputArgument("since") ZonedDateTime since,
 			@InputArgument("limit") Integer limit, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -936,6 +939,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Query", field = "agentTasksByUuid")
 	public List<AgentTaskData> agentTasksByUuid(@InputArgument("taskUuids") List<UUID> taskUuids,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		List<AgentTaskData> found = agentTaskService.getTasksData(taskUuids);
 		// Read access per board among what was found (board-permissions.md §4.4); tasks on a board the
 		// person cannot read are absent, as unknown ones are. A credential that is not a person is
@@ -959,6 +963,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("status") String status, @InputArgument("changedSince") ZonedDateTime changedSince,
 			@InputArgument("group") String group, @InputArgument("tag") List<String> tags,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -1019,6 +1024,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentBoardGroupSet")
 	public GroupView agentBoardGroupSet(@InputArgument("boardUuid") UUID boardUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
+		personPreLookup(dfe, PERSON_CONFIGURE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
@@ -1030,6 +1036,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentBoardGroupDelete")
 	public Boolean agentBoardGroupDelete(@InputArgument("boardUuid") UUID boardUuid, @InputArgument("key") String key,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_CONFIGURE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
@@ -1061,6 +1068,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetGroup")
 	public AgentTaskData agentTaskSetGroup(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("group") String group,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1083,6 +1091,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetTags")
 	public AgentTaskData agentTaskSetTags(@InputArgument("taskUuid") UUID taskUuid, DgsDataFetchingEnvironment dfe)
 			throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1217,6 +1226,22 @@ public class AgentTaskDataFetcher {
 		return AgentBoardService.promptVersion(bd, rc.getPrompt());
 	}
 
+	/** AgentTaskRoleConfig.promptByVersion (TPF-97): servedPrompt (roleServedPrompt) by version. */
+	@DgsData(parentType = "AgentTaskRoleConfig", field = "promptByVersion")
+	public AgentBoardService.ServedPrompt rolePromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		return AgentBoardService.ServedPrompt.of(roleServedPrompt(dfe), AgentBoardService.checkHeldVersions(heldVersions));
+	}
+
+	/** AgentTaskAssignment.promptByVersion (TPF-97): the served text the record carries, against what the caller holds. */
+	@DgsData(parentType = "AgentTaskAssignment", field = "promptByVersion")
+	public AgentBoardService.ServedPrompt assignmentPromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		WorkerAssignment wa = dfe.getSource();
+		return null == wa ? null
+				: AgentBoardService.ServedPrompt.of(wa.rolePrompt(), AgentBoardService.checkHeldVersions(heldVersions));
+	}
+
 	@DgsData(parentType = "AgentBoard", field = "groups")
 	public List<GroupView> agentBoardGroups(DgsDataFetchingEnvironment dfe) {
 		AgentBoardData bd = dfe.getSource();
@@ -1281,6 +1306,7 @@ public class AgentTaskDataFetcher {
 	public List<AgentTaskRoleConfigData> agentTaskRoleConfigsOfBoard(
 			@InputArgument("boardUuid") UUID boardUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_READ);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		authorizePersonOnBoard(dfe, bd, PERSON_READ);
@@ -1415,90 +1441,94 @@ public class AgentTaskDataFetcher {
 		PersonContext person = authorizePersonOnBoard(dfe, bd, PERSON_CONFIGURE);
 		WhoUpdated wu = person.wu();
 		Map<String, Object> input = dfe.getArgument("input");
-		// Settings are checked before the rest of the form is written: refused, nothing changes (T-2).
-		if (input.get("settings") instanceof Map<?, ?> settings) {
-			agentBoardService.checkSettingsInput(bd.getOrg(), bd.getName(), stringKeyed(settings));
-		}
-		// And the default level against the ladder, each as the board will have it (task RD3-6).
-		agentBoardService.checkDefaultOnLadderInput(bd,
-				input.get("settings") instanceof Map<?, ?> settings ? stringKeyed(settings) : null,
-				input.containsKey("defaultWorkLevel"), (Integer) input.get("defaultWorkLevel"));
-		// So is the merge procedure with the capabilities it needs, as the board will have them (task 71a3dd22).
-		agentBoardService.checkDeliveryInput(bd.getOrg(), bd, input.containsKey("deliveryPolicy"),
-				deliveryPolicyOf(input.get("deliveryPolicy")), coordinatorCapabilitiesPatch(input), false);
-		AgentBoardData.BoardStatus status = null;
-		if (input.get("status") instanceof String s && StringUtils.isNotBlank(s)) {
-			status = AgentBoardData.BoardStatus.valueOf(s);
-		}
-		AgentBoardData updated = agentBoardService.updateBoard(boardUuid,
-				(String) input.get("description"),
-				stringList(input.get("sources")),
-				(String) input.get("coordinatorPrompt"),
-				(Integer) input.get("perAgentWipLimit"),
-				parsePriorityType(input.get("priorityType")),
-				status,
-				parseUuid((String) input.get("target"), "target"),
-				null, // defaultWorkLevel below: sent as null it clears (RD2-1)
-				wu);
-		if (input.containsKey("defaultWorkLevel")) {
-			updated = agentBoardService.setDefaultWorkLevel(boardUuid, (Integer) input.get("defaultWorkLevel"), wu);
-		}
-		// Applied AFTER the sources patch in the same call, so an operator can add the repository
-		// to sources and name it as the documents repo in one request. Ordered the other way, the
-		// "must be one of sources" check would refuse the very patch that satisfies it.
-		// Partial patch: absent leaves the families, {} restores the defaults.
-		if (input.get("elementFamilies") instanceof Map<?, ?> families) {
-			updated = agentBoardService.setElementFamilies(boardUuid, objectMap(families), wu);
-		}
-		// Partial patch: absent leaves the policy, null restores the defaults.
-		if (input.containsKey("elementCheckPolicy")) {
-			updated = agentBoardService.setElementCheckPolicy(boardUuid, elementCheckPolicyOf(input.get("elementCheckPolicy")), wu);
-		}
-		// Partial patch too: absent leaves how the board proves delivery, null restores PR_ROWS.
-		if (input.containsKey("deliveryPolicy")) {
-			updated = agentBoardService.setDeliveryPolicy(boardUuid, deliveryPolicyOf(input.get("deliveryPolicy")), wu);
-		}
-		// Perspectives (board-permissions.md §3): absent leaves them, null clears; the rules and the
-		// caller's consent are the service's.
-		if (input.containsKey("perspectives")) {
-			updated = agentBoardService.setPerspectives(boardUuid, uuidList(input.get("perspectives")),
-					personConsent(bd.getOrg()), wu);
-		}
-		// Absent leaves the task-key prefix; null derives one anew; either way old keys stay (D10).
-		if (input.containsKey("taskPrefix")) {
-			try {
-				updated = agentBoardService.setTaskPrefix(boardUuid, (String) input.get("taskPrefix"), wu);
-			} catch (AgentBoardService.TaskPrefixTaken taken) {
-				throw taken.forCaller(personAccess(person, bd.getOrg()));
+		// One transaction for every step below (TPF-37): the board row locked and read fresh first, then
+		// the prefix lock when the form sends taskPrefix; any refusal leaves the board as it was.
+		return agentBoardService.updateAtomically(boardUuid, input.containsKey("taskPrefix"), fresh -> {
+			// Settings are checked before the rest of the form is written: refused, nothing changes (T-2).
+			if (input.get("settings") instanceof Map<?, ?> settings) {
+				agentBoardService.checkSettingsInput(fresh.getOrg(), fresh.getName(), stringKeyed(settings));
 			}
-		}
-		// Partial patch, as a board file's block (D15): absent leaves it; documents or its prefix sent
-		// as null restores the default.
-		if (input.containsKey("documents")) {
-			updated = agentBoardService.setDocumentsBlock(boardUuid,
-					input.get("documents") instanceof Map<?, ?> m ? stringKeyed(m) : null, wu);
-		}
+			// And the default level against the ladder, each as the board will have it (task RD3-6).
+			agentBoardService.checkDefaultOnLadderInput(fresh,
+					input.get("settings") instanceof Map<?, ?> settings ? stringKeyed(settings) : null,
+					input.containsKey("defaultWorkLevel"), (Integer) input.get("defaultWorkLevel"));
+			// So is the merge procedure with the capabilities it needs, as the board will have them (task 71a3dd22).
+			agentBoardService.checkDeliveryInput(fresh.getOrg(), fresh, input.containsKey("deliveryPolicy"),
+					deliveryPolicyOf(input.get("deliveryPolicy")), coordinatorCapabilitiesPatch(input), false);
+			AgentBoardData.BoardStatus status = null;
+			if (input.get("status") instanceof String s && StringUtils.isNotBlank(s)) {
+				status = AgentBoardData.BoardStatus.valueOf(s);
+			}
+			AgentBoardData updated = agentBoardService.updateBoard(boardUuid,
+					(String) input.get("description"),
+					stringList(input.get("sources")),
+					(String) input.get("coordinatorPrompt"),
+					(Integer) input.get("perAgentWipLimit"),
+					parsePriorityType(input.get("priorityType")),
+					status,
+					parseUuid((String) input.get("target"), "target"),
+					null, // defaultWorkLevel below: sent as null it clears (RD2-1)
+					wu);
+			if (input.containsKey("defaultWorkLevel")) {
+				updated = agentBoardService.setDefaultWorkLevel(boardUuid, (Integer) input.get("defaultWorkLevel"), wu);
+			}
+			// Applied AFTER the sources patch in the same call, so an operator can add the repository
+			// to sources and name it as the documents repo in one request. Ordered the other way, the
+			// "must be one of sources" check would refuse the very patch that satisfies it.
+			// Partial patch: absent leaves the families, {} restores the defaults.
+			if (input.get("elementFamilies") instanceof Map<?, ?> families) {
+				updated = agentBoardService.setElementFamilies(boardUuid, objectMap(families), wu);
+			}
+			// Partial patch: absent leaves the policy, null restores the defaults.
+			if (input.containsKey("elementCheckPolicy")) {
+				updated = agentBoardService.setElementCheckPolicy(boardUuid, elementCheckPolicyOf(input.get("elementCheckPolicy")), wu);
+			}
+			// Partial patch too: absent leaves how the board proves delivery, null restores PR_ROWS.
+			if (input.containsKey("deliveryPolicy")) {
+				updated = agentBoardService.setDeliveryPolicy(boardUuid, deliveryPolicyOf(input.get("deliveryPolicy")), wu);
+			}
+			// Perspectives (board-permissions.md §3): absent leaves them, null clears; the rules and the
+			// caller's consent are the service's.
+			if (input.containsKey("perspectives")) {
+				updated = agentBoardService.setPerspectives(boardUuid, uuidList(input.get("perspectives")),
+						personConsent(bd.getOrg()), wu);
+			}
+			// Absent leaves the task-key prefix; null derives one anew; either way old keys stay (D10).
+			if (input.containsKey("taskPrefix")) {
+				try {
+					updated = agentBoardService.setTaskPrefix(boardUuid, (String) input.get("taskPrefix"), wu);
+				} catch (AgentBoardService.TaskPrefixTaken taken) {
+					throw taken.forCaller(personAccess(person, bd.getOrg()));
+				}
+			}
+			// Partial patch, as a board file's block (D15): absent leaves it; documents or its prefix sent
+			// as null restores the default.
+			if (input.containsKey("documents")) {
+				updated = agentBoardService.setDocumentsBlock(boardUuid,
+						input.get("documents") instanceof Map<?, ?> m ? stringKeyed(m) : null, wu);
+			}
 
-		if (null != input.get("documentsRepo") || null != input.get("documentPaths")) {
-			updated = agentBoardService.setDocumentsConfig(boardUuid,
-					(String) input.get("documentsRepo"),
-					parseDocumentPaths(input.get("documentPaths")), wu);
-		}
-		List<AgentTaskRoleConfigData.AgentCapability> coordinatorCaps = coordinatorCapabilitiesPatch(input);
-		if (null != coordinatorCaps) {
-			updated = agentBoardService.setCoordinatorCapabilities(boardUuid, coordinatorCaps, wu);
-		}
-		// Budget and stops from the form (task 40f270be), checked and applied as a board file's are.
-		if (input.get("settings") instanceof Map<?, ?> settings) {
-			updated = agentBoardService.updateSettingsFromInput(boardUuid, stringKeyed(settings), wu);
-		}
-		// The group list (task RD2-30), with a board file's rules: absent leaves the groups; null or []
-		// deletes them, refused while one holds tasks; a group the list leaves out is closed.
-		if (input.containsKey("groups")) {
-			updated = agentBoardService.setGroupsFromInput(boardUuid,
-					input.get("groups") instanceof List<?> groups ? groupsInput(groups) : null, wu);
-		}
-		return updated;
+			if (null != input.get("documentsRepo") || null != input.get("documentPaths")) {
+				updated = agentBoardService.setDocumentsConfig(boardUuid,
+						(String) input.get("documentsRepo"),
+						parseDocumentPaths(input.get("documentPaths")), wu);
+			}
+			List<AgentTaskRoleConfigData.AgentCapability> coordinatorCaps = coordinatorCapabilitiesPatch(input);
+			if (null != coordinatorCaps) {
+				updated = agentBoardService.setCoordinatorCapabilities(boardUuid, coordinatorCaps, wu);
+			}
+			// Budget and stops from the form (task 40f270be), checked and applied as a board file's are.
+			if (input.get("settings") instanceof Map<?, ?> settings) {
+				updated = agentBoardService.updateSettingsFromInput(boardUuid, stringKeyed(settings), wu);
+			}
+			// The group list (task RD2-30), with a board file's rules: absent leaves the groups; null or []
+			// deletes them, refused while one holds tasks; a group the list leaves out is closed.
+			if (input.containsKey("groups")) {
+				updated = agentBoardService.setGroupsFromInput(boardUuid,
+						input.get("groups") instanceof List<?> groups ? groupsInput(groups) : null, wu);
+			}
+			return updated;
+		});
 	}
 
 	/** AgentBoardInput.groups as string-keyed maps, members sent as null kept: they clear. */
@@ -1559,6 +1589,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("pause") Boolean pause,
 			@InputArgument("reason") String reason,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentBoardData bd = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		// Ctx rather than the plain authorize: this used to record the literal "operator", so an
@@ -1585,6 +1616,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskSetStrength(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("requiredStrength") Double requiredStrength,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1716,6 +1748,28 @@ public class AgentTaskDataFetcher {
 				ctx.wu());
 	}
 
+	/**
+	 * Unlink a PR that should never have counted (task t20261010-033523-18839). The gate of a supersede: the session
+	 * holding the task in a role that pushes code (CODE_PUSH), the board's coordinator seat, or any key with
+	 * BOARD_WRITE on the board. The service holds the rules, a session's narrower ones past the pass included.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskUnlinkPrProgrammatic")
+	public AgentTaskData agentTaskUnlinkPrProgrammatic(@InputArgument("taskUuid") UUID taskUuid,
+			@InputArgument("sessionUuid") UUID sessionUuid, @InputArgument("prUrl") String prUrl,
+			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		ProgKeyContext ctx = authorizeProgrammaticOrg(dfe);
+		AgentTaskData td = requireOrgTask(ctx, taskUuid);
+		AgentBoardData board = requireOrgBoard(ctx, td.getBoard());
+		resolveCallingAgent(ctx, sessionUuid);
+		if (!holdsInRoleWith(td, board, sessionUuid, AgentTaskRoleConfigData.AgentCapability.CODE_PUSH)
+				&& !agentBoardService.isSeatHolder(board, sessionUuid) && !keyWritesBoard(ctx, board)) {
+			throw new AccessDeniedException("A PR is unlinked by the session holding this task in a role that pushes"
+					+ " code (CODE_PUSH), by the board's coordinator seat, or with a key holding BOARD_WRITE on the board;"
+					+ " this call is none of the three");
+		}
+		return agentTaskService.unlinkPr(taskUuid, prUrl, note, AgentActor.ofSession(sessionUuid), ctx.wu());
+	}
+
 	/** Refuse a caller whose key lacks {@code fn} on the board: the per-caller half of {@link #SEAT_OR_HOLDER}. */
 	private void requireKeyOnBoard(ProgKeyContext ctx, AgentBoardData board, PermissionFunction fn, CallType ct)
 			throws RelizaException {
@@ -1772,11 +1826,7 @@ public class AgentTaskDataFetcher {
 
 	private static AgentBoardData.DeliveryPolicy deliveryPolicyOf(Object raw) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, AgentBoardData.DeliveryPolicy.class);
-		} catch (IllegalArgumentException e) {
-			throw new RelizaException("Could not read deliveryPolicy: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, AgentBoardData.DeliveryPolicy.class, "input.deliveryPolicy");
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskLiftHoldProgrammatic")
@@ -1822,11 +1872,12 @@ public class AgentTaskDataFetcher {
 			@InputArgument("accept") Boolean accept,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
 		return agentTaskService.humanReview(taskUuid, Boolean.TRUE.equals(accept), note, jc.actor(),
-				toReviewItemDecisions(dfe.getArgument("reviewItems")), toAbout(dfe.getArgument("about")), jc.wu());
+				toReviewItemDecisions(dfe.getArgument("reviewItems"), "reviewItems"), toAbout(dfe.getArgument("about"), "about"), jc.wu());
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskHumanSignOff")
@@ -1834,6 +1885,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("outcome") String outcome,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1854,6 +1906,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("reason") String reason,
 			@InputArgument("role") String role,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1876,6 +1929,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("answerAll") String answerAll,
 			@InputArgument("liftHold") Boolean liftHold,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1912,6 +1966,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskRegister")
 	public AgentTaskData agentTaskRegister(@InputArgument("boardUuid") UUID boardUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentBoardData board = agentBoardService.getBoardData(boardUuid)
 				.orElseThrow(() -> new RelizaException("Board not found: " + boardUuid));
 		PersonContext jc = authorizePersonOnBoard(dfe, board, PERSON_WRITE);
@@ -1925,13 +1980,14 @@ public class AgentTaskDataFetcher {
 				parseUuid((String) input.get("parentTask"), "parentTask"),
 				parseUuid((String) input.get("producesComponent"), "producesComponent"),
 				input.get("workLevel") instanceof Number lvl ? lvl.intValue() : null,
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				jc.actor(), true, (String) input.get("group"), parseTags(input.get("tags")), jc.wu());
 	}
 
 	/** Commission an investigation as a person with BOARD_WRITE on the board (task RD4-12). */
 	@DgsData(parentType = "Mutation", field = "agentTaskCommission")
 	public AgentTaskData agentTaskCommission(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		Map<String, Object> input = dfe.getArgument("input");
 		UUID boardUuid = parseUuid((String) input.get("boardUuid"), "boardUuid");
 		if (boardUuid == null) throw new RelizaException("boardUuid is required");
@@ -1952,6 +2008,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("producesComponent") String producesComponentRaw,
 			@InputArgument("workLevel") Integer workLevel,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1965,7 +2022,7 @@ public class AgentTaskDataFetcher {
 		// No strength here: people set it, in either direction, with agentTaskSetStrength.
 		return agentTaskService.authorize(taskUuid, board, role, orderIndex, dependsOn,
 				parseUuid(producesComponentRaw, "producesComponent"), workLevel,
-				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
 				false, null, jc.actor(), jc.wu());
 	}
 
@@ -1973,6 +2030,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskOrder(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("orderIndex") Integer orderIndex,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1987,6 +2045,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetBudget")
 	public AgentTaskData agentTaskSetBudget(@InputArgument("taskUuid") UUID taskUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -1998,6 +2057,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskSetWorkLevel")
 	public AgentTaskData agentTaskSetWorkLevel(@InputArgument("taskUuid") UUID taskUuid,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2009,6 +2069,7 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "Mutation", field = "agentTaskUnassign")
 	public AgentTaskData agentTaskUnassign(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("reason") String reason, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2020,6 +2081,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("note") String note,
 			@InputArgument("skipRequiredRoles") Boolean skipRequiredRoles,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2033,16 +2095,32 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskSupersedePullRequest(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("oldUrl") String oldUrl, @InputArgument("byUrl") String byUrl,
 			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
 		return agentTaskService.supersedePullRequest(taskUuid, oldUrl, byUrl, note, jc.actor(), jc.wu());
 	}
 
+	/**
+	 * A person unlinks a PR (task t20261010-033523-18839), as agentTaskUnlinkPrProgrammatic; past the pass a person
+	 * may also take an open PR out, with an ALERT. PERSON_WRITE on the task.
+	 */
+	@DgsData(parentType = "Mutation", field = "agentTaskUnlinkPr")
+	public AgentTaskData agentTaskUnlinkPr(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("prUrl") String prUrl,
+			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
+		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
+				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
+		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
+		return agentTaskService.unlinkPr(taskUuid, prUrl, note, jc.actor(), jc.wu());
+	}
+
 	@DgsData(parentType = "Mutation", field = "agentTaskDeclareDelivery")
 	public AgentTaskData agentTaskDeclareDelivery(@InputArgument("taskUuid") UUID taskUuid, @InputArgument("unit") String unit,
 			@InputArgument("commit") String commit, @InputArgument("outcome") String outcome,
 			@InputArgument("note") String note, DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2054,6 +2132,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskCancel(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2075,6 +2154,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskDecideReviewItems(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("specification") String specification,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2084,30 +2164,20 @@ public class AgentTaskDataFetcher {
 		} catch (IllegalArgumentException | NullPointerException e) {
 			throw new RelizaException("Unrecognized specification: " + specification);
 		}
-		return agentTaskService.decideReviewItems(taskUuid, spec, toReviewItemDecisions(dfe.getArgument("decisions")),
-				toAbout(dfe.getArgument("about")), jc.actor(), jc.wu());
+		return agentTaskService.decideReviewItems(taskUuid, spec, toReviewItemDecisions(dfe.getArgument("decisions"), "decisions"),
+				toAbout(dfe.getArgument("about"), "about"), jc.actor(), jc.wu());
 	}
 
 	/** Review item decisions from the wire, read as the record the service takes. */
-	static List<AgentDocumentService.BoardReviewItemDecision> toReviewItemDecisions(List<Map<String, Object>> raw)
-			throws RelizaException {
+	static List<AgentDocumentService.BoardReviewItemDecision> toReviewItemDecisions(List<Map<String, Object>> raw,
+			String path) throws RelizaException {
 		if (null == raw) return List.of();
-		try {
-			return raw.stream()
-					.map(m -> Utils.OM.convertValue(m, AgentDocumentService.BoardReviewItemDecision.class))
-					.toList();
-		} catch (JacksonException e) {
-			throw new RelizaException("Could not read review item decisions: " + e.getMessage());
-		}
+		return InputConversion.convertEach(raw, AgentDocumentService.BoardReviewItemDecision.class, path);
 	}
 
-	static BoardReviewItemIndex.About toAbout(Map<String, Object> raw) throws RelizaException {
+	static BoardReviewItemIndex.About toAbout(Map<String, Object> raw, String path) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, BoardReviewItemIndex.About.class);
-		} catch (JacksonException e) {
-			throw new RelizaException("Could not read about: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, BoardReviewItemIndex.About.class, path);
 	}
 
 	/** How far a hop went over its role's allowance; computed, so a refreshed snapshot carries it. */
@@ -2182,6 +2252,7 @@ public class AgentTaskDataFetcher {
 	public AgentTaskData agentTaskRequireHumanReview(@InputArgument("taskUuid") UUID taskUuid,
 			@InputArgument("value") Boolean value,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
+		personPreLookup(dfe, PERSON_WRITE);
 		AgentTaskData td = agentTaskService.getTaskData(taskUuid)
 				.orElseThrow(() -> new RelizaException("Task not found: " + taskUuid));
 		PersonContext jc = authorizePersonOnTask(dfe, td, PERSON_WRITE);
@@ -2234,8 +2305,9 @@ public class AgentTaskDataFetcher {
 		String spec = dfe.getArgument("specification");
 		String task = dfe.getArgument("task");
 		String component = dfe.getArgument("component");
+		String role = dfe.getArgument("role");
 		return agentDocumentService.resolveDocumentPath(bd, RearmSpecificationType.valueOf(spec),
-				null == task ? null : UUID.fromString(task), null == component ? null : UUID.fromString(component));
+				null == task ? null : UUID.fromString(task), null == component ? null : UUID.fromString(component), role);
 	}
 
 	/** One of a board's document series, as AgentBoardDocumentComponent. */
@@ -2391,6 +2463,14 @@ public class AgentTaskDataFetcher {
 		return null == bd ? null : agentBoardService.servedCoordinatorPrompt(bd);
 	}
 
+	/** AgentBoard.coordinatorPromptByVersion (TPF-97): servedCoordinatorPrompt by version. */
+	@DgsData(parentType = "AgentBoard", field = "coordinatorPromptByVersion")
+	public AgentBoardService.ServedPrompt coordinatorPromptByVersion(DgsDataFetchingEnvironment dfe,
+			@InputArgument("heldVersions") List<String> heldVersions) throws RelizaException {
+		return AgentBoardService.ServedPrompt.of(agentBoardServedCoordinatorPrompt(dfe),
+				AgentBoardService.checkHeldVersions(heldVersions));
+	}
+
 	/** Resolved only when selected: it reads the org's keys (task 5c70990d). */
 	@DgsData(parentType = "AgentBoard", field = "missingCoverage")
 	public List<AgentBoardService.CoverageGap> agentBoardMissingCoverage(DgsDataFetchingEnvironment dfe) {
@@ -2463,7 +2543,7 @@ public class AgentTaskDataFetcher {
 				parseEnum(input.get("kind"), AgentTaskRoleConfigData.RoleKind.class, "kind"),
 				parseEnum(input.get("necessity"), AgentTaskRoleConfigData.RoleNecessity.class, "necessity"),
 				parseEnum(input.get("humanGate"), AgentTaskRoleConfigData.HumanGate.class, "humanGate"),
-				refuseQuestions(parseRequiredInputs(input.get("requiredInputs")), "requiredInputs"),
+				refuseQuestions(parseRequiredInputs(input.get("requiredInputs"), "input.requiredInputs"), "requiredInputs"),
 				producedOutputList(input.get("producesOutputs")),
 				strengthSpecFromInput(input),
 				hopBudgetFromInput(input),
@@ -2692,16 +2772,18 @@ public class AgentTaskDataFetcher {
 	}
 
 	/**
-	 * The personal key a person's call on the programmatic endpoint came with: a USER key, not
-	 * federated, whose CLI actor (when there is one) is its owner, in this organization. Anything
-	 * else is not a person and is refused with {@link #PERSON_ONLY}.
+	 * The personal key a person's call on the programmatic endpoint came with, verified: a USER
+	 * key, not federated, whose CLI actor (when there is one) is its owner. Anything else is not a
+	 * person and is refused with {@link #PERSON_ONLY} on what it is, before any key row is read.
+	 * Then the key itself is verified (the secret of a Basic credential, the key ACTIVE, the owner
+	 * an active member of the key's organization), so a credential that does not verify is refused
+	 * with an AccessDeniedException ("Not authorized" on the wire) whatever the call names. The
+	 * returned org is the verified key row's.
 	 */
-	private io.reliza.common.CommonVariables.AuthHeaderParse personalKey(DgsDataFetchingEnvironment dfe, UUID orgUuid)
-			throws RelizaException {
+	private ProgrammaticAuthContext personalCredential(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		DgsWebMvcRequestData requestData = (DgsWebMvcRequestData) DgsContext.getRequestData(dfe);
-		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(
+		var ahp = authorizationService.authenticateProgrammatic(
 				requestData.getHeaders(), (ServletWebRequest) requestData.getWebRequest());
-		var ahp = authCtx.ahp();
 		if (null == ahp || ahp.getType() != ApiTypeEnum.USER || ahp.isFederated()) {
 			throw new RelizaException(PERSON_ONLY);
 		}
@@ -2710,10 +2792,35 @@ public class AgentTaskDataFetcher {
 		if (null != ahp.getActorUser() && !ahp.getActorUser().equals(ahp.getObjUuid())) {
 			throw new RelizaException(PERSON_ONLY);
 		}
-		if (!orgUuid.equals(authCtx.orgUuid())) {
+		VerifiedProgrammaticKey vk = authorizationService.verifyProgrammaticKey(ahp);
+		return new ProgrammaticAuthContext(ahp, vk.org());
+	}
+
+	/**
+	 * The verified personal key of {@link #personalCredential}, in this organization: a key of
+	 * another organization is refused.
+	 */
+	private io.reliza.common.CommonVariables.AuthHeaderParse personalKey(DgsDataFetchingEnvironment dfe, UUID orgUuid)
+			throws RelizaException {
+		var ctx = personalCredential(dfe);
+		if (!orgUuid.equals(ctx.orgUuid())) {
 			throw new AccessDeniedException("The key is not in this board's organization");
 		}
-		return ahp;
+		return ctx.ahp();
+	}
+
+	/**
+	 * The first statement of every person field that looks a board or task up on the programmatic
+	 * endpoint: the credential is classified and verified, then the system state checked with the
+	 * gate's own call type, all before the lookup, so neither a non-person, nor a credential that
+	 * does not verify, nor anyone while the instance is sealed or unlicensed learns whether the uuid
+	 * exists. A browser JWT keeps its order. Never call it inside a catch of AccessDeniedException
+	 * ({@link #personReads}): its refusal must reach the caller.
+	 */
+	private void personPreLookup(DgsDataFetchingEnvironment dfe, BoardGate gate) throws RelizaException {
+		if (SecurityContextHolder.getContext().getAuthentication() instanceof JwtAuthenticationToken) return;
+		personalCredential(dfe);
+		authorizationService.validateSystemOperational(gate.callType());
 	}
 
 	/** What a person's board read needs (board-permissions.md §4.2). */
@@ -2809,18 +2916,10 @@ public class AgentTaskDataFetcher {
 	 * Requirements come over the wire as maps; convert with the shared mapper so the enums are
 	 * validated here rather than deep in resolution.
 	 */
-	private static List<RequiredInput> parseRequiredInputs(Object raw) throws RelizaException {
+	private static List<RequiredInput> parseRequiredInputs(Object raw, String path) throws RelizaException {
 		if (raw == null) return null;
 		if (!(raw instanceof List<?> list)) throw new RelizaException("requiredInputs must be a list");
-		List<RequiredInput> out = new java.util.ArrayList<>();
-		for (Object o : list) {
-			try {
-				out.add(Utils.OM.convertValue(o, RequiredInput.class));
-			} catch (RuntimeException e) {
-				throw new RelizaException("Invalid requiredInput: " + o);
-			}
-		}
-		return out;
+		return InputConversion.convertEach(list, RequiredInput.class, path);
 	}
 
 
@@ -2898,6 +2997,7 @@ public class AgentTaskDataFetcher {
 				throw new RelizaException("Unrecognized lifecycle: " + input.get("lifecycle"));
 			}
 		}
+		NulInputInstrumentation.refuseDecodedJson("input.elements", (String) input.get("elements"));
 		AgentDocumentService.PublishRequest req = new AgentDocumentService.PublishRequest(
 				taskUuid, spec, uuidArg(input.get("component")),
 				(String) input.get("path"), (String) input.get("digest"),
@@ -2920,11 +3020,7 @@ public class AgentTaskDataFetcher {
 
 	private static io.reliza.model.ElementCheckPolicy elementCheckPolicyOf(Object raw) throws RelizaException {
 		if (null == raw) return null;
-		try {
-			return Utils.OM.convertValue(raw, io.reliza.model.ElementCheckPolicy.class);
-		} catch (RuntimeException e) {
-			throw new RelizaException("Could not read elementCheckPolicy: " + e.getMessage());
-		}
+		return InputConversion.convert(raw, io.reliza.model.ElementCheckPolicy.class, "input.elementCheckPolicy");
 	}
 
 	/** The newest check report for each of the task's element-bearing documents (elements.md §7). */
@@ -2963,6 +3059,7 @@ public class AgentTaskDataFetcher {
 		AgentTaskData td = requireOrgTask(ctx, taskUuid);
 		RearmSpecificationType spec = RearmSpecificationType.fromValue(specification);
 		if (null == spec) throw new RelizaException("Unknown specification: " + specification);
+		NulInputInstrumentation.refuseDecodedJson("elements", elements);
 		return agentDocumentService.previewElementChecks(td, spec, elements, elementsDigest);
 	}
 
@@ -3145,11 +3242,12 @@ public class AgentTaskDataFetcher {
 	 * One linked PR as the board sees it; {@code state} is null when CI never reported the URL.
 	 * {@code headSce} is the row's newest commit, resolved to a sha only when {@code head} is read.
 	 * {@code base} is where the task's newest round found the PR's target branch (task RD4-2), counted from only
-	 * when {@code baseMovedBy} is read; null for a PR not in play.
+	 * when {@code baseMovedBy} is read; null for a PR not in play. {@code unit} is how delivery counts the PR now,
+	 * {@link AgentDeliveryService.TaskPullRequest#unit()} (task t20261010-033522-23606).
 	 */
 	public record TaskPullRequestView(String url, String state, String targetBranch,
 			java.time.ZonedDateTime mergedDate, boolean registered, UUID headSce, AgentTaskData.Delivery declaration,
-			AgentTaskData.BaseHead base) {}
+			AgentTaskData.BaseHead base, AgentDeliveryService.Delivery unit) {}
 
 	/**
 	 * The task's linked PRs (task 9af9d722). Batched: every task in one read hands its match keys to
@@ -3163,17 +3261,18 @@ public class AgentTaskDataFetcher {
 		}
 		org.dataloader.DataLoader<TaskPrKey, java.util.Optional<io.reliza.model.PullRequestData>> loader =
 				dfe.getDataLoader("taskPullRequestLoader");
-		List<TaskPrKey> keys = io.reliza.service.AgentDeliveryService.matchKeys(td).stream()
+		List<TaskPrKey> keys = AgentDeliveryService.matchKeys(td).stream()
 				.map(k -> new TaskPrKey(td.getOrg(), k)).toList();
 		return loader.loadMany(keys).thenApply(rows -> {
 			Map<String, io.reliza.model.PullRequestData> byKey = new LinkedHashMap<>();
 			for (int i = 0; i < keys.size(); i++) {
 				if (rows.get(i).isPresent()) byKey.put(keys.get(i).key(), rows.get(i).get());
 			}
-			return io.reliza.service.AgentDeliveryService.pullRequestsOf(td, byKey).stream()
+			return AgentDeliveryService.pullRequestsOf(td, byKey).stream()
 					.map(pr -> new TaskPullRequestView(pr.url(), null == pr.state() ? null : pr.state().name(),
 							pr.targetBranch(), pr.mergedDate(), pr.registered(), pr.headSce(), pr.declaration(),
-							pr.registered() ? io.reliza.service.AgentDeliveryService.roundBase(td, pr.url()) : null))
+							pr.registered() ? AgentDeliveryService.roundBase(td, pr.url()) : null,
+							pr.unit()))
 					.toList();
 		});
 	}
@@ -3202,7 +3301,66 @@ public class AgentTaskDataFetcher {
 	@DgsData(parentType = "AgentTask", field = "testedHeads")
 	public List<BoardReviewItemIndex.TestedHead> taskTestedHeads(DgsDataFetchingEnvironment dfe) {
 		AgentTaskData td = dfe.getSource();
-		return agentDeliveryService.testedOf(td).map(io.reliza.service.AgentDeliveryService.Tested::heads).orElse(List.of());
+		return agentDeliveryService.testedOf(td).map(AgentDeliveryService.Tested::heads).orElse(List.of());
+	}
+
+	/**
+	 * The staleness rules the task breaches now (task TPF-69), live from the board's staleness block. Only a task
+	 * that can be stale reaches the loader: ASSIGNED, DELIVERING, or an open investigation with a deadline. The
+	 * loader reads, per board of the request, the board and the keyed tasks once and the rules' batched reads at
+	 * most once each, whatever the number of tasks.
+	 */
+	@DgsData(parentType = "AgentTask", field = "stale")
+	public java.util.concurrent.CompletionStage<List<BoardAgentsService.StaleMark>> taskStale(DgsDataFetchingEnvironment dfe) {
+		AgentTaskData td = dfe.getSource();
+		if (null == td || null == td.getBoard() || !canBeStale(td)) {
+			return java.util.concurrent.CompletableFuture.completedFuture(List.of());
+		}
+		org.dataloader.DataLoader<TaskStaleKey, List<BoardAgentsService.StaleMark>> loader = dfe.getDataLoader("taskStaleLoader");
+		return loader.load(new TaskStaleKey(td.getBoard(), td.getUuid()));
+	}
+
+	/** Whether a task-keyed staleness rule can name the task: ASSIGNED, DELIVERING, or an open investigation with a deadline. */
+	static boolean canBeStale(AgentTaskData td) {
+		AgentTaskData.TaskStatus s = td.getStatus();
+		if (AgentTaskData.TaskStatus.ASSIGNED == s || AgentTaskData.TaskStatus.DELIVERING == s) return true;
+		return td.isInvestigation() && null != td.getInvestigation().deadline()
+				&& AgentTaskData.TaskStatus.COMPLETED != s && AgentTaskData.TaskStatus.CANCELLED != s;
+	}
+
+	/** A task the request served, and its board. */
+	public record TaskStaleKey(UUID board, UUID task) {}
+
+	/** Its own bean, with its own dependencies: the fetcher it sits in is proxied. */
+	@com.netflix.graphql.dgs.DgsDataLoader(name = "taskStaleLoader")
+	public static class TaskStaleBatchLoader implements org.dataloader.BatchLoader<TaskStaleKey, List<BoardAgentsService.StaleMark>> {
+		@Autowired private AgentTaskService agentTaskService;
+		@Autowired private AgentBoardService agentBoardService;
+		@Autowired private BoardStalenessService boardStalenessService;
+
+		@Override
+		public java.util.concurrent.CompletionStage<List<List<BoardAgentsService.StaleMark>>> load(List<TaskStaleKey> keys) {
+			ZonedDateTime now = ZonedDateTime.now();
+			Map<UUID, java.util.Set<UUID>> byBoard = new LinkedHashMap<>();
+			for (TaskStaleKey k : keys) byBoard.computeIfAbsent(k.board(), b -> new java.util.LinkedHashSet<>()).add(k.task());
+			Map<UUID, Map<UUID, List<BoardStalenessService.Breach>>> found = new java.util.HashMap<>();
+			byBoard.forEach((boardUuid, taskUuids) -> {
+				AgentBoardData board = agentBoardService.getBoardData(boardUuid).orElse(null);
+				if (null == board || null == board.getStaleness() || !board.getStaleness().anyRule()) {
+					found.put(boardUuid, Map.of());
+					return;
+				}
+				List<AgentTaskData> tasks = agentTaskService.listByUuids(taskUuids);
+				found.put(boardUuid, boardStalenessService.taskBreaches(board, tasks, now));
+			});
+			List<List<BoardAgentsService.StaleMark>> out = new ArrayList<>(keys.size());
+			for (TaskStaleKey k : keys) {
+				List<BoardStalenessService.Breach> breaches = found.getOrDefault(k.board(), Map.of()).getOrDefault(k.task(), List.of());
+				out.add(breaches.stream().map(b -> new BoardAgentsService.StaleMark(b.key().split(":")[0], b.since(),
+						b.minutes(), b.message())).toList());
+			}
+			return java.util.concurrent.CompletableFuture.completedFuture(out);
+		}
 	}
 
 	/** A linked PR's match key within its org. */
@@ -3212,7 +3370,7 @@ public class AgentTaskDataFetcher {
 	@com.netflix.graphql.dgs.DgsDataLoader(name = "taskPullRequestLoader")
 	public static class TaskPullRequestBatchLoader implements org.dataloader.BatchLoader<TaskPrKey,
 			java.util.Optional<io.reliza.model.PullRequestData>> {
-		@Autowired private io.reliza.service.AgentDeliveryService agentDeliveryService;
+		@Autowired private AgentDeliveryService agentDeliveryService;
 
 		@Override
 		public java.util.concurrent.CompletionStage<List<java.util.Optional<io.reliza.model.PullRequestData>>> load(
@@ -3259,7 +3417,7 @@ public class AgentTaskDataFetcher {
 		Map<String, Object> source = dfe.getArgument("source");
 		return agentBoardService.applyBoard(orgUuid, AgentBoardService.boardSpecFromInput(dfe.getArgument("spec")),
 				Boolean.TRUE.equals(dfe.getArgument("dryRun")),
-				null == source ? null : Utils.OM.convertValue(source, DeclarativeConfigService.SourceDto.class),
+				null == source ? null : InputConversion.convert(source, DeclarativeConfigService.SourceDto.class, "source"),
 				jc.actor(), personConsent(jc, orgUuid), personAccess(jc, orgUuid), jc.wu());
 	}
 

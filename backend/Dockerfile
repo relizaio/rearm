@@ -1,8 +1,13 @@
-FROM eclipse-temurin:25-jdk-alpine@sha256:09349d79941fd53bb3d487b393ca118d8853c08c09193f416fe6a8718df9e732 AS jre-build
+FROM eclipse-temurin:25-jdk-alpine@sha256:1e20ead9eec7234db293f1913438090d533ed47c0b9e12dc8c7627a802a44ed6 AS jre-build
 # Create a custom Java runtime
 # to get list of java modules, use the following from target/ directory: 
 # jdeps -R -s --multi-release 16 -cp '.\unjar\BOOT-INF\lib\*' .\rearm-core-Version_Managed_By_CI_AND_Reliza.jar
 
+# October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
+# Services from this JDK's cacerts by SHA-256 fingerprint (ci/trust-gate/jdk-distrust.sh).
+COPY ci/trust-gate/jdk-distrust.sh /gate/
+RUN sh /gate/jdk-distrust.sh
+# jlink copies the edited lib/security/cacerts into /javaruntime.
 RUN $JAVA_HOME/bin/jlink \
          --add-modules java.base,java.compiler,java.sql,java.sql.rowset,java.xml,java.logging,java.net.http,java.naming,java.security.jgss,java.datatransfer,java.desktop,java.management,java.instrument,jdk.unsupported,jdk.crypto.ec \
          --strip-java-debug-attributes \
@@ -11,14 +16,22 @@ RUN $JAVA_HOME/bin/jlink \
          --compress=zip-9 \
          --output /javaruntime
 
-FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:72e2d64836e659d053a573ac9ebab05b78ae78fa7bb69b7452a7cb877b465fc7 AS build-cache-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:781f1da87cd3d142e66e47cc149c4582a652fb7f574648206d1e956170c0dc90 AS build-cache-stage
+# October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
+# Services from this JDK's cacerts by SHA-256 fingerprint (ci/trust-gate/jdk-distrust.sh).
+COPY ci/trust-gate/jdk-distrust.sh /gate/
+RUN sh /gate/jdk-distrust.sh
 RUN mkdir /workdir
 WORKDIR /workdir
 
 COPY ./pom.xml .
 RUN mvn -B dependency:go-offline -T1C 
 
-FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:72e2d64836e659d053a573ac9ebab05b78ae78fa7bb69b7452a7cb877b465fc7 AS build-stage
+FROM maven:3.9.16-eclipse-temurin-25-alpine@sha256:781f1da87cd3d142e66e47cc149c4582a652fb7f574648206d1e956170c0dc90 AS build-stage
+# October 2026 eMudhra CA compromise: remove emSign ECC Root CA - G3 and AAA Certificate
+# Services from this JDK's cacerts by SHA-256 fingerprint (ci/trust-gate/jdk-distrust.sh).
+COPY ci/trust-gate/jdk-distrust.sh /gate/
+RUN sh /gate/jdk-distrust.sh
 RUN mkdir -p /root/.m2/repository/com
 COPY --from=build-cache-stage /root/.m2 /root/.m2
 
@@ -37,6 +50,8 @@ RUN mkdir /run/postgresql && chown postgres:postgres /run/postgresql/ && su - po
 RUN mkdir /workdir
 WORKDIR /workdir
 COPY ./ .
+# The Java probe of the trust-gate stage, compiled with this JDK 25 for the jlink 25 runtime.
+RUN javac -d /gate ci/trust-gate/TrustGate.java
 # following line injects desired version into pom for proper logging.
 # Slashes in $VERSION (e.g. from `feat/foo` branch names) get treated
 # as path separators by Maven's jar-naming, which produces
@@ -49,9 +64,10 @@ RUN SKIP="$SKIP_TESTS" && if [ "$SKIP" = "auto" ]; then case "$GIT_BRANCH" in ma
     echo "SKIP_TESTS=$SKIP_TESTS GIT_BRANCH=$GIT_BRANCH -> skipTests=$SKIP" && \
     su - postgres -c "pg_ctl -D /var/lib/postgresql/data start" && mvn -B -T1C clean package spring-boot:repackage -DskipTests=$SKIP && cp target/*.jar application.jar && java -Djarmode=tools -jar application.jar extract --layers --launcher --destination extracted
 
-FROM alpine:3.24.2@sha256:294b683cb724975bec92580e1e685676bd4b50bda910ddb8c51d4cabeaec77e6  AS artifact-stage
+FROM alpine:3.24.3@sha256:be2656061b536c1883c4034790e21d0a09c5aaaf51968b89368a3c0371ea2c9a AS artifact-stage
 ENV JAVA_HOME=/opt/java/openjdk
 ENV PATH="${JAVA_HOME}/bin:${PATH}"
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && apk info -e -v ca-certificates-bundle
 COPY --from=jre-build /javaruntime $JAVA_HOME
 ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
@@ -81,3 +97,16 @@ LABEL git_branch=$GIT_BRANCH
 LABEL ci_environment=$CI_ENV
 LABEL version=$VERSION
 CMD ["/app/start-core.sh"]
+
+# Trust-store gate (October 2026 eMudhra CA compromise): the Alpine bundle and the jlink
+# runtime's cacerts must refuse the compromised chains. release copies the marker, so this
+# stage always builds.
+FROM artifact-stage AS trust-gate
+USER root
+RUN apk add --no-cache curl openssl
+COPY ci/trust-gate/ /gate/
+COPY --from=build-stage /gate/TrustGate.class /gate/
+RUN sh /gate/trust-gate.sh && java -cp /gate TrustGate && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok
+
+FROM artifact-stage AS release
+COPY --from=trust-gate /gate/ok /trust-gate-ok

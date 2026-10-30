@@ -17,6 +17,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
 
+import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentTask;
@@ -164,9 +165,9 @@ public class HopUsageRefresher {
 		}
 
 		if (filled == 0) return 0;
-		td.setSignOffs(signOffs);
-		td.setReturns(returns);
-		agentTaskService.saveData(td, wu);
+		agentTaskRepository.stampHopUsage(taskUuid, Utils.OM.writeValueAsString(signOffs),
+				Utils.OM.writeValueAsString(returns));
+		entityManager.refresh(locked);
 		noteBoardSpend(td.getBoard(), effects);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return filled;

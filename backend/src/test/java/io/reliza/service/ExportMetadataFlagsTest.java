@@ -256,7 +256,7 @@ class ExportMetadataFlagsTest {
 	private static ReleaseService releaseServiceServing(String bomJson) {
 		ReleaseService svc = new ReleaseService(null) {
 			@Override
-			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev,
+			UUID getReleaseBomId(UUID releaseUuid, Boolean tldOnly, Boolean ignoreDev, boolean excludeFileComponents,
 					ArtifactBelongsTo belongsTo, BomStructureType structure, WhoUpdated wu,
 					List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes) {
 				return BOM_ID;
@@ -269,6 +269,8 @@ class ExportMetadataFlagsTest {
 			}
 		};
 		ReflectionTestUtils.setField(svc, "rebomService", rebom);
+		// SCORE-33: the JSON export ends in the signing stamp; here the org has no key
+		ReflectionTestUtils.setField(svc, "sbomExportSigningService", SbomExportSigningFixtures.keylessService());
 		return svc;
 	}
 
@@ -306,7 +308,7 @@ class ExportMetadataFlagsTest {
 			ExportMetadataOptions options) throws Exception {
 		ReleaseService svc = releaseServiceServing(bomJson);
 		ReflectionTestUtils.setField(svc, "supportInjectionService", injectorFor(setting));
-		return svc.exportReleaseSbom(UUID.randomUUID(), false, false, null, BomStructureType.FLAT,
+		return svc.exportReleaseSbom(UUID.randomUUID(), false, false, false, null, BomStructureType.FLAT,
 				BomMediaType.JSON, UUID.randomUUID(), WhoUpdated.getAutoWhoUpdated(), null, options);
 	}
 
@@ -416,8 +418,15 @@ class ExportMetadataFlagsTest {
 		String served = exportMerged(BOM_WITH_INTERNAL_MARKERS, SupportInjectionSetting.ENABLED,
 				options(ExportMetadataChoice.EXCLUDE, ExportMetadataChoice.EXCLUDE));
 
-		assertFalse(served.contains("reliza:"),
-				"both flags off must leave NO reliza-namespaced content at all: " + served);
+		// SCORE-33 (SCORE-31 ADR-8): every merged JSON export says whether it is signed, whatever
+		// the flags; that record and nothing else of ours stays
+		assertEquals(List.of("reliza:export:signed", "reliza:export:unsignedReason"),
+				SbomExportSigningFixtures.metadataPropertyNames(Utils.OM.readTree(served)), served);
+		String withoutSigningRecord = served
+				.replace("{\"name\":\"reliza:export:signed\",\"value\":\"false\"}", "")
+				.replace("{\"name\":\"reliza:export:unsignedReason\",\"value\":\"NO_KEY\"}", "");
+		assertFalse(withoutSigningRecord.contains("reliza:"),
+				"both flags off must leave NO other reliza-namespaced content at all: " + served);
 		assertFalse(served.contains(ATTESTED_LEVEL_IN_DOCUMENT), served);
 		assertTrue(hasRearmTool(served), "ReARM stays among the tools with both flags off: " + served);
 		assertFalse(served.contains("\"declarations\""), served);

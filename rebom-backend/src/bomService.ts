@@ -12,6 +12,7 @@
  * - bomProcessingService: BOM transformations
  * - bomMergeService: Merge operations
  * - bomAddService: Add/store operations
+ * - bomScoreService: Stateless SBOM scoring (rearm bomutils score)
  * - bomMapper: Data Object Pattern
  */
 
@@ -19,6 +20,7 @@
 export {
   findAllBoms,
   findBomObjectById,
+  findBomObjectWithMetaById,
   parseBomById,
   parseHbomById,
   findBomMetasBySerialNumber,
@@ -48,6 +50,9 @@ export {
   overrideRootComponent, // @deprecated - use augmentBomWithComponentContext
   extractTldFromBom,
   extractDevFilteredBom,
+  extractFileFilteredBom,
+  carryServices,
+  dropDanglingRefs,
   establishPurl,
   computeRootDepIndex,
   createRebomToolObject,
@@ -63,6 +68,7 @@ export type { EnrichedBomProbeResult } from './services/bom/bomProcessingService
 // Merge Operations
 export {
   mergeBoms,
+  mergeBomsWithInputRecord,
   mergeAndStoreBoms,
   mergeBomObjects
 } from './services/bom/bomMergeService';
@@ -71,6 +77,11 @@ export {
 export {
   addBom
 } from './services/bom/bomAddService';
+
+// Scoring (stateless)
+export {
+  scoreBom
+} from './services/bom/bomScoreService';
 
 // Data Mapper
 export { BomMapper } from './services/bom/bomMapper';

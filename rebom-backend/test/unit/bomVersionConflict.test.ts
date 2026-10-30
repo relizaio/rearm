@@ -2,7 +2,18 @@ import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // Storage and registry are both observed through mocks: the point of these
 // tests is what is NOT written when an upload is refused.
-const runQuery = vi.fn(async () => ({ rows: [{ uuid: 'inserted' }] }));
+// On the transaction client: the lineage lock and the latest-version read answer
+// no rows, the insert answers the row.
+const runQuery = vi.fn(async (text: string, _params?: any[]) =>
+    (/^INSERT/.test(text) ? { rows: [{ uuid: 'inserted' }] } : { rows: [] as any[] }));
+const LOCK = 'SELECT pg_advisory_xact_lock(hashtext($1::uuid::text), hashtext($2))';
+const statementKinds = () => runQuery.mock.calls.map(c => {
+    const text = c[0] as string;
+    if (text === LOCK) return 'lock';
+    if (/^SELECT uuid, meta->>'bomVersion' AS bom_version FROM rebom\.boms/.test(text)) return 'latest';
+    if (text.startsWith('INSERT INTO rebom.boms')) return 'insert';
+    return text;
+});
 const pushToOci = vi.fn(async (tag: string) => ({
     ociRepositoryName: 'rebom-artifacts-2026-09',
     fileSHA256Digest: `digest-of-${tag}`,
@@ -10,7 +21,8 @@ const pushToOci = vi.fn(async (tag: string) => ({
 }));
 const allBomsBySerialNumber = vi.fn(async () => [] as any[]);
 
-vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {} }));
+vi.mock('../../src/utils', () => ({ runQuery: (...a: any[]) => runQuery.apply(null, a as any), pool: {},
+    withTransaction: async (fn: any) => fn({ query: (...a: any[]) => runQuery.apply(null, a as any) }) }));
 vi.mock('../../src/logger', () => ({
     logger: { info: vi.fn(), warn: vi.fn(), error: vi.fn(), debug: vi.fn() }
 }));
@@ -104,8 +116,8 @@ describe('uploads that are still accepted', () => {
         allBomsBySerialNumber.mockResolvedValue([storedRow(1, 'some-other-digest')] as any);
         await upload(bom(2, 'right-pad'));
         expect(pushToOci).toHaveBeenCalledTimes(2);
-        const query = runQuery.mock.calls[0][0] as unknown as string;
-        expect(query.startsWith('INSERT')).toBe(true);
+        // SCORE-51: the transaction is the lock, the latest-version read and the insert.
+        expect(statementKinds()).toStrictEqual(['lock', 'latest', 'insert']);
     });
 
     it('identical bytes dedupe to the stored row without pushing anything', async () => {
@@ -125,6 +137,6 @@ describe('uploads that are still accepted', () => {
     it('a first upload of an unseen serialNumber inserts', async () => {
         await upload(bom(1));
         expect(pushToOci).toHaveBeenCalledTimes(2);
-        expect(runQuery).toHaveBeenCalledTimes(1);
+        expect(statementKinds()).toStrictEqual(['lock', 'latest', 'insert']);
     });
 });

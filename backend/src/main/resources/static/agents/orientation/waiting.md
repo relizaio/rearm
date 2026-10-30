@@ -1,4 +1,4 @@
-<!-- orientation section: waiting · core 2026-10-08 -->
+<!-- orientation section: waiting · core 2026-10-25 -->
 ### 2.5c Waiting for work (task boards)
 
 An idle agent that polls spends a model turn on every poll, and most polls
@@ -78,6 +78,45 @@ one that starts from `rearm agent task brief <key> --session <s>` and nothing
 else. It assigns the task, does the whole hop (work, publish, sign off), and
 returns to you a few lines: the key, the outcome, the PRs, one line of what it
 learned. Your main context keeps only the wait loop and those lines.
+
+**The served prompt has a version.** Every answer that carries a served
+prompt can also carry it by version: `promptByVersion` on the offer
+(`agentTaskNextProgrammatic`), on the assignment
+(`agentTaskAssignProgrammatic`) and on the board's role configuration
+(`agentTaskRoleConfigsProgrammatic`, what `task brief` reads), and
+`coordinatorPromptByVersion` on the board
+(`agentBoardCoordinateProgrammatic`). Its `version` is the SHA-256 of
+the exact served text (64 hex characters; not `promptVersion`, which
+pins the operator's prompt alone on sign-offs), and it changes whenever
+the prompt, the board's routing rules, the merge procedure or the ladder
+change. A client that holds a version may send it in the field's
+`heldVersions` argument: when the current version is among those sent,
+the answer is `status: UNCHANGED` with no text (keep what you hold);
+otherwise it is `status: SERVED` with the text. Without the argument the
+text is always served, and `rolePrompt`, `servedPrompt` and
+`servedCoordinatorPrompt` keep serving it to every selection that asks.
+A client that does not send `heldVersions` receives the prompt in full
+on every offer, as before.
+
+**Pass the version you hold** (rearm CLI `26.10.17` or later). The CLI
+keeps no record of what you hold; you do. The first `rearm agent wait`
+or `task next` that prints an offer prints the served prompt in full,
+with its version in `"promptByVersion": {"version": "<64 hex>",
+"status": "SERVED"}`. From then on pass that version back with
+`--prompt-version <64 hex>` on every `wait` and `task next` (repeat the
+flag for each board you poll): when the prompt has not changed the offer
+carries `"status": "UNCHANGED"` and no text, and one stderr line says
+so; keep the prompt you hold. When it prints `"status": "SERVED"` with
+the text, the prompt changed (the operator edited it, or the board's
+rules moved): re-read it before you take the task, and pass the new
+version from then on. Pass only a version whose text is in your context:
+after a compaction or a restart, run the next `wait`, `task next` or
+`board coordinate` without `--prompt-version`, or with `--full-prompt`,
+which wins over it, and you get the text again. The fresh context holds
+no prompt: `task brief` prints it in full, and its `task assign` prints
+none (it never did). The coordinator's `board coordinate` works the same
+way with `coordinatorPromptByVersion`. An older CLI prints the prompt in
+full on every offer and has neither flag.
 
 - **Same session, same key.** The fresh context runs under your session and
   your key, so its usage and its attribution are yours. The hooks report a

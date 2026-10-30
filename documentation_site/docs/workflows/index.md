@@ -14,6 +14,9 @@ sidebarDepth: 2
 - [Importing VEX](./importing-vex)
 - [Supply Chain Forensics](./supply-chain-forensics)
 - [Exporting Compliance Artifacts](./exporting-compliance-artifacts)
+- [Regulatory Packages and Submissions (ReARM Pro)](./regulatory-packages)
+- [Scoring an SBOM for CISA 2026 and FDA Readiness](./sbom-scoring)
+- [Signing exported SBOMs](./signing-exported-sboms)
 - [Pull Requests](./pull-requests)
 - [Committers & Commit Signing](./committers)
 

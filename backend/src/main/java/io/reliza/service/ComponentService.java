@@ -11,6 +11,7 @@ import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -23,10 +24,12 @@ import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.context.annotation.Lazy;
+import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.AdvisoryLockKey;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.CommonVariables.SidPurlMode;
@@ -34,8 +37,10 @@ import io.reliza.common.CommonVariables.SidPurlOverride;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.VisibilitySetting;
+import io.reliza.common.LogSafe;
 import io.reliza.common.Utils;
 import io.reliza.common.VcsType;
+import io.reliza.exceptions.ComponentRevisionConflictException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
@@ -60,10 +65,12 @@ import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.ComponentDto;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.repositories.ComponentRepository;
+import io.reliza.service.oss.OssPerspectiveService;
 import lombok.NonNull;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
+import tools.jackson.core.JacksonException;
 
 
 @Service
@@ -97,6 +104,9 @@ public class ComponentService {
 	private SidPurlResolver sidPurlResolver;
 
 	@Autowired
+	private OssPerspectiveService ossPerspectiveService;
+
+	@Autowired
 	private io.reliza.repositories.ReleaseRepository releaseRepository;
 
 	// @Lazy breaks a construction cycle: ComponentService -> ComponentOwnershipService
@@ -104,6 +114,17 @@ public class ComponentService {
 	@Autowired
 	@Lazy
 	private ComponentOwnershipService componentOwnershipService;
+
+	// @Lazy breaks a construction cycle: ReleaseService reaches components through
+	// GetComponentService. Only used at runtime in updateComponent (SCORE-71 ADR-9).
+	@Autowired
+	@Lazy
+	private ReleaseService releaseService;
+
+	// The TEA membership gate of the perspective writers (task TEA-14); @Lazy, as TeaProfileService reads components.
+	@Autowired
+	@Lazy
+	private TeaProfileService teaProfileService;
 
 	private static final Logger log = LoggerFactory.getLogger(ComponentService.class);
 			
@@ -170,6 +191,14 @@ public class ComponentService {
 												.toString(), pt.toString());
 		}
 		return components;
+	}
+
+	/** TPF-100: the list rows without the documents; the same branch on type as listComponentsByOrganization. */
+	public List<ComponentData.ComponentRef> listComponentRefsByOrganization(UUID orgUuid, ComponentType pt) {
+		List<Object[]> rows = (null == pt || pt == ComponentType.ANY)
+				? repository.findComponentRefsByOrganization(orgUuid.toString())
+				: repository.findComponentRefsByOrganization(orgUuid.toString(), pt.toString());
+		return rows.stream().map(ComponentData.ComponentRef::fromRow).toList();
 	}
 	
 	/**
@@ -335,16 +364,15 @@ public class ComponentService {
 	}
 	
 	public List<ComponentData> listComponentDataByOrganizationAndPerspective(UUID orgUuid, UUID perspectiveUuid, ComponentType... pts) {
-		List<ComponentData> components = getComponentService.listComponentsByPerspective(perspectiveUuid);
-		
-		// Check for organization mismatch
-		for (ComponentData cd : components) {
-			if (!cd.getOrg().equals(orgUuid)) {
-				log.error("Access denied: Component {} (UUID: {}) belongs to organization {} but requested for organization {}", 
-						cd.getName(), cd.getUuid(), cd.getOrg(), orgUuid);
-				throw new org.springframework.security.access.AccessDeniedException("Access denied");
-			}
-		}
+		// A member of another organization is dropped, never shown and never thrown on (task TEA-8,
+		// D11): one stale foreign row must not deny the organization its own listing.
+		List<ComponentData> components = getComponentService.listComponentsByPerspective(perspectiveUuid).stream()
+				.filter(cd -> {
+					boolean own = orgUuid.equals(cd.getOrg());
+					if (!own) log.error("Component {} (UUID: {}) belongs to organization {} but was listed for organization {}: dropped",
+							cd.getName(), cd.getUuid(), cd.getOrg(), orgUuid);
+					return own;
+				}).collect(Collectors.toList());
 		
 		// Filter by type if needed
 		if (pts != null && pts.length > 0) {
@@ -389,6 +417,12 @@ public class ComponentService {
 	 * Create a component of any kind but BOARD_DOCUMENT. A BOARD_DOCUMENT component is a board's document series
 	 * (board-documents.md D1): only the board makes one, through {@link #createBoardDocumentComponent},
 	 * so a catalog file, the provider or a form cannot create one that belongs to no board.
+	 *
+	 * <p>No TEA wiring check (task TEA-7, round 3, T-6): the dto carries no action, rule, ref or
+	 * effective policy (approvalPolicy is ignored here). A component created under a name an
+	 * organization rule maps to a policy carrying TEA_PUBLISH or TEA_HIDE is enrolled by that rule,
+	 * by design: the rule is the organization admin's standing choice. A field added here that
+	 * can carry wiring needs the check of OssComponentDataFetcher.authorizeAndStampTeaWiring.
 	 */
 	public Component createComponent (CreateComponentDto cpd, WhoUpdated wu) throws RelizaException {
 		refuseDocumentKind(cpd.getKind());
@@ -437,8 +471,14 @@ public class ComponentService {
 		}
 		
 		log.info("Creating component '{}' with versionSchema='{}', featureBranchVersioning='{}', versionType='{}'", 
-			cpd.getName(), cpd.getVersionSchema(), cpd.getFeatureBranchVersioning(), cpd.getVersionType());
+			LogSafe.text(cpd.getName()), LogSafe.text(cpd.getVersionSchema()),
+			LogSafe.text(cpd.getFeatureBranchVersioning()), cpd.getVersionType());
 		
+		// The factory cannot refuse, so the declared licence and supplier are validated here,
+		// before anything is written, the VCS repository below included (SCORE-39 ADR-1).
+		DeclaredComponentFields declared = DeclaredComponentFields.patch(null, cpd.getLicenseExpression(),
+				cpd.getLicenseUrl(), cpd.getSupplierName());
+
 		// validate vcs repository
 		if (null != cpd.getVcs()) {
 			var vcsRepoOpt = vcsRepositoryService.getVcsRepository(cpd.getVcs());
@@ -465,6 +505,7 @@ public class ComponentService {
 
 		ComponentData cd = ComponentData.componentDataFactory(cpd);
 		cd.setUuid(p.getUuid());
+		declared.applyTo(cd);
 
 		// sidPurl collision check before any side-effecting work (branch creation, save) so
 		// a rejected create leaves no orphan rows behind.
@@ -487,21 +528,92 @@ public class ComponentService {
 		return saveComponent(p, ComponentData, wu);
 	}
 	
-	/** Record the last declarative apply on a component (no other field changes). */
+	/**
+	 * Record the last declarative apply on a component, in place (TPF-71 / TPF-108): no other field changes,
+	 * no revision, no audit row, no who-updated keys. {@code wu} is kept for the callers; the stamp does not
+	 * write it (the who-updated keys stay the last content change's).
+	 */
 	@Transactional
 	public void stampDeclarativeProvenance(UUID componentUuid, DeclarativeProvenance provenance, WhoUpdated wu) throws RelizaException {
-		Component c = getComponentService.getComponent(componentUuid).orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
-		ComponentData cd = ComponentData.dataFromRecord(c);
-		cd.setDeclarative(provenance);
-		saveComponent(c, Utils.dataToRecord(cd), wu);
+		Objects.requireNonNull(provenance, "provenance");
+		lockedComponentRow(componentUuid).orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		String json;
+		try {
+			json = Utils.OM.writeValueAsString(provenance);
+		} catch (JacksonException e) {
+			throw new IllegalStateException("Could not serialize the declarative provenance of component " + componentUuid, e);
+		}
+		if (repository.stampDeclarativeProvenance(componentUuid, json) == 0) {
+			throw new RelizaException("Component not found: " + componentUuid);
+		}
+		Component m = repository.findById(componentUuid).orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		if (null != entityManager) entityManager.refresh(m); // a fresh read by uuid, then the refresh (TPF-108 4.6)
 	}
 
+	/**
+	 * A component's declared licence and supplier name after a patch (SCORE-39 ADR-1, ADR-3).
+	 */
+	record DeclaredComponentFields(String licenseExpression, String licenseUrl, String supplierName) {
+
+		/**
+		 * What {@code stored} (null on create) holds after the patch, PATCH: a null value leaves the
+		 * stored one alone, a blank one clears it (clearing the expression clears the URL), anything
+		 * else is validated, the expression stored in canonical form and the supplier name trimmed. A
+		 * URL needs an expression on the component; the supplier name is checked by
+		 * {@link SbomSupplierNames#validName}.
+		 *
+		 * @throws RelizaException naming the field, before anything is changed
+		 */
+		static DeclaredComponentFields patch(ComponentData stored, String expression, String url,
+				String supplierName) throws RelizaException {
+			DeclaredLicenses.LicensePatch applied = DeclaredLicenses.patch(
+					null == stored ? null : stored.getLicenseExpression(), null == stored ? null : stored.getLicenseUrl(),
+					expression, url, "licenseExpression", "licenseUrl");
+			String supplier = null == stored ? null : stored.getSupplierName();
+			if (null != supplierName) supplier = SbomSupplierNames.validName(supplierName);
+			return new DeclaredComponentFields(applied.expression(), applied.url(), supplier);
+		}
+
+		void applyTo(ComponentData cd) {
+			cd.setLicenseExpression(licenseExpression);
+			cd.setLicenseUrl(licenseUrl);
+			cd.setSupplierName(supplierName);
+		}
+	}
+
+	/**
+	 * The component row locked FOR UPDATE until the caller's transaction ends, then read fresh
+	 * (task TEA-7, round 5, T-13): the read a wiring save checks against. The managed instance is
+	 * refreshed because a read earlier in the transaction may have loaded it before the lock was
+	 * granted. Empty when the row is gone.
+	 */
+	@Transactional(propagation = Propagation.MANDATORY)
+	public Optional<ComponentData> lockForWiringSave(UUID uuid) {
+		return lockAndRefresh(uuid).map(ComponentData::dataFromRecord);
+	}
+
+	/**
+	 * The row locked through {@link #lockedComponentRow} (TPF-38's bounded wait) and refreshed after:
+	 * the one locked read of the funnel and the action-users scrub (task TEA-7, round 8, F-3).
+	 */
+	private Optional<Component> lockAndRefresh(UUID uuid) {
+		return lockedComponentRow(uuid);
+	}
+
+	/**
+	 * The one writer of a component's name, approval policy and wiring lists (the funnel). Its
+	 * first read is the row locked for the save (task TEA-7, round 5, T-13), so every caller holds
+	 * the row from the read to the commit, and it saves in {@link WiringWrite#WRITE} mode.
+	 */
 	@Transactional
 	public Component updateComponent (ComponentDto cdto, WhoUpdated wu) throws RelizaException {
 		Component comp = null;
-		Optional<Component> op = getComponentService.getComponent(cdto.getUuid());
+		Optional<Component> op = lockAndRefresh(cdto.getUuid());
 		if (op.isPresent()) {
 			comp = op.get();
+			// TPF-61: a save prepared from an older read is refused and nothing is written. Compared with the row
+			// lockAndRefresh just locked and refreshed: only there is the stored revision the committed one.
+			assertExpectedRevision(comp, cdto.getExpectedRevision());
 			ComponentData cd = ComponentData.dataFromRecord(comp);
 			if (StringUtils.isNotEmpty(cdto.getName())) {
 				String previousName = cd.getName();
@@ -573,19 +685,30 @@ public class ComponentService {
 				cd.setGlobalInputEventRefs(null);
 				cd.setApprovalPolicy(null);
 			}
+			// Every uuid a rule names resolves to exactly one action, and every rule uuid to one
+			// rule: a list carrying a uuid twice is refused for every caller (task TEA-7, round 3,
+			// T-5). This is the one writer of both lists.
 			if (null != cdto.getReleaseInputTriggers()) {
 				cdto.getReleaseInputTriggers().forEach(t -> {
 					if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
 				});
+				Utils.requireDistinctUuids(cdto.getReleaseInputTriggers().stream().map(ComponentData.ReleaseInputEvent::getUuid)
+						.toList(), "Rule", "component");
 				cd.setReleaseInputTriggers(cdto.getReleaseInputTriggers());
 			}
 			if (null != cdto.getOutputTriggers()) {
 				cdto.getOutputTriggers().forEach(t -> {
 					if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
 				});
+				Utils.requireDistinctUuids(cdto.getOutputTriggers().stream().map(ComponentData.ReleaseOutputEvent::getUuid)
+						.toList(), "Output event", "component");
 				cd.setOutputTriggers(cdto.getOutputTriggers());
 			}
 			if (null != cdto.getGlobalInputEventRefs()) {
+				// one ref per global rule (task TEA-7, round 5, rule A extended): the engine and the
+				// stamps read refs by the rule's uuid
+				Utils.requireDistinctUuids(cdto.getGlobalInputEventRefs().stream().filter(java.util.Objects::nonNull)
+						.map(ComponentData.GlobalInputEventRef::getUuid).toList(), "Global rule ref", "component");
 				cd.setGlobalInputEventRefs(cdto.getGlobalInputEventRefs());
 			}
 			if (null != cdto.getStatus()) {
@@ -653,6 +776,10 @@ public class ComponentService {
 				cd.setSidAuthoritySegments(segments.isEmpty() ? null : segments);
 			}
 			if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
+			// Read before the patch: a PRODUCT component's supplier change invalidates (SCORE-71 ADR-9).
+			String supplierBefore = cd.getSupplierName();
+			DeclaredComponentFields.patch(cd, cdto.getLicenseExpression(), cdto.getLicenseUrl(), cdto.getSupplierName())
+					.applyTo(cd);
 			if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
 			// Durable owner (RFC Phase 4b): validate the ref synchronously (no DB
 			// FK backs it) against the component's org before storing. Null = no
@@ -676,7 +803,12 @@ public class ComponentService {
 			// candidate's own pre-update DB row isn't compared against itself.
 			checkSidCollision(cd, cd.getUuid());
 			Map<String,Object> componentData = Utils.dataToRecord(cd);
-			comp = saveComponent(comp, componentData, wu);
+			comp = saveComponent(comp, componentData, wu, WiringWrite.WRITE);
+			// The supplier is in every release's node facts; a nested product row rebuilt alone
+			// after it would be written apart in the products above (SCORE-71 ADR-9).
+			if (ComponentType.PRODUCT == cd.getType() && !Objects.equals(supplierBefore, cd.getSupplierName())) {
+				releaseService.invalidateMergedSbomRowsOfComponent(cd);
+			}
 		}
 		return comp;
 	}
@@ -696,32 +828,22 @@ public class ComponentService {
 
 	@Transactional
 	public void handleRemoveUserFromTriggers (UUID org, UUID user, final WhoUpdated wu) {
+		// The org listing is an unlocked scan for candidates only; the removal is decided again on
+		// the row read under its lock, and that fresh copy is what gets saved.
 		var comps = listComponentDataByOrganization(org, ComponentType.ANY);
 		comps.forEach(cd -> {
-			if (null != cd.getOutputTriggers() && !cd.getOutputTriggers().isEmpty()) {
-				boolean touched = false;
-				for (var t : cd.getOutputTriggers()) {
-					if (null != t.getUsers() && t.getUsers().contains(user)) {
-						LinkedHashSet<UUID> cleanedUsers = new LinkedHashSet<>(t.getUsers());
-						cleanedUsers.remove(user);
-						t.setUsers(cleanedUsers);
-						touched = true;
-					}
-				}
-				// one save per component, however many of its actions held the user
-				if (touched) {
-					Component c = getComponentService.getComponent(cd.getUuid()).get();
-					Map<String,Object> recordData = Utils.dataToRecord(cd);
-					try {
-						saveComponent (c, recordData, wu);
-					} catch (RelizaException e) {
-						log.error("Error updating triggers on user delete for comp = " + c.getUuid(), e);
-					}
+			boolean names = null != cd.getOutputTriggers() && cd.getOutputTriggers().stream()
+					.anyMatch(t -> null != t && null != t.getUsers() && t.getUsers().contains(user));
+			if (names) {
+				try {
+					removeUserFromActions(cd.getUuid(), user, wu);
+				} catch (RelizaException e) {
+					log.error("Error updating triggers on user delete for comp = " + cd.getUuid(), e);
 				}
 			}
 		});
 	}
-	
+
 	/**
 	 * Apply the device support window patch (D7), with the clear flag idiom eos/eol already
 	 * use on releases: OMITTED leaves the stored value alone, {@code clearDeviceSupportWindow}
@@ -837,7 +959,7 @@ public class ComponentService {
 	@Transactional
 	public Component updateComponentResourceGroup (@NonNull UUID ComponentId, @NonNull UUID appId, WhoUpdated wu) throws RelizaException {
 		Component proj = null;
-		Optional<Component> op = getComponentService.getComponent(ComponentId);
+		Optional<Component> op = lockedComponentRow(ComponentId);
 		if (op.isPresent()) {
 			proj = op.get();
 			ComponentData pd = ComponentData.dataFromRecord(proj);
@@ -860,7 +982,7 @@ public class ComponentService {
 	
 	@Transactional
 	public Component setComponentVersion (UUID ComponentUuid, String versionSchema, WhoUpdated wu) throws RelizaException {
-		Component p = getComponentService.getComponent(ComponentUuid).get();
+		Component p = lockedComponentRow(ComponentUuid).get();
 		ComponentData pd = ComponentData.dataFromRecord(p);
 		pd.setVersionSchema(versionSchema);
 		return saveComponent(p, Utils.dataToRecord(pd), wu);
@@ -878,15 +1000,51 @@ public class ComponentService {
 	 */
 	@Transactional
 	public ComponentData getComponentDataWriteLocked(UUID componentUuid) throws RelizaException {
-		Component c = repository.findByIdWriteLocked(componentUuid)
-				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
 		// The lock statement locks the row; it does not refresh an instance the session already
 		// holds. A caller that scanned this row before taking the lock -- which is exactly what
 		// looking a lock up by uuid does -- would otherwise get the pre-lock copy handed back and
 		// decide from it, which is the race the lock was taken to close. Same idiom as
-		// OssReleaseService.addApprovals.
-		entityManager.refresh(c);
+		// OssReleaseService.addApprovals; lockedComponentRow does both steps.
+		Component c = lockedComponentRow(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
 		return ComponentData.dataFromRecord(c);
+	}
+
+	/**
+	 * The component row for a read-modify-write: locked, then re-read. The lock statement locks the row
+	 * but hands back an instance this persistence context already holds (open-in-view: the request's
+	 * authorization read), so the refresh is what makes the writer decide from the row as committed.
+	 * Call it inside the writer's transaction, before anything is decided from the row: outside one the
+	 * lock ends with its query and the refresh throws. A caller that wrote rows that come before the
+	 * component in the lock order (advisory locks; user, board, task, release rows; then the component;
+	 * then its branches) flushes them first.
+	 *
+	 * <p>The lock query is JPQL on Component, so Hibernate's AUTO flush writes this transaction's own
+	 * pending component changes before it runs, and the refresh re-reads a row that already holds them
+	 * (two writers of one component in one transaction, e.g. a declarative entry's update then stamp).
+	 * Plain reads are not blocked: a row lock never blocks a plain SELECT in Postgres.
+	 */
+	private Optional<Component> lockedComponentRow(UUID componentUuid) {
+		Optional<Component> c = repository.findByIdWriteLocked(componentUuid);
+		c.ifPresent(entityManager::refresh);
+		return c;
+	}
+
+	/**
+	 * TPF-61: refuse a save prepared from another revision than the stored one. {@code lockedRow} must be
+	 * the row {@link #lockAndRefresh} or {@link #lockedComponentRow} returned (both lock the same way):
+	 * every committed save adds exactly one to the revision
+	 * under that lock, so equality there means nothing changed since the caller read. Null skips the check
+	 * (declarative applies, the CLI, the Terraform provider and older pages send none).
+	 */
+	private static void assertExpectedRevision(Component lockedRow, Integer expectedRevision)
+			throws ComponentRevisionConflictException {
+		if (null == expectedRevision || expectedRevision.intValue() == lockedRow.getRevision()) return;
+		ComponentData stored = ComponentData.dataFromRecord(lockedRow);
+		Object actor = lockedRow.getRecordData().get(CommonVariables.LAST_UPDATED_ACTOR_FIELD);
+		throw new ComponentRevisionConflictException(expectedRevision, lockedRow.getRevision(),
+				stored.getLastUpdatedBy(), stored.getCreatedType(),
+				null == actor ? null : UUID.fromString(actor.toString()), lockedRow.getLastUpdatedDate());
 	}
 	
 	/**
@@ -897,15 +1055,93 @@ public class ComponentService {
 	@Transactional
 	public ComponentData setLocks(UUID componentUuid, List<ComponentLock> locks, WhoUpdated wu)
 			throws RelizaException {
-		Component c = repository.findByIdWriteLocked(componentUuid)
+		Component c = lockedComponentRow(componentUuid)
 				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
 		ComponentData cd = ComponentData.dataFromRecord(c);
 		cd.setLocks(locks == null ? new LinkedList<>() : locks);
 		return ComponentData.dataFromRecord(saveComponent(c, Utils.dataToRecord(cd), wu));
 	}
 
+	/**
+	 * The component's TEA-facing id, minted on the first call and returned unchanged after that
+	 * (task TEA-2). Its production caller is the first TEA publication of the component (task
+	 * TEA-5). Under the {@code TEA_ID_MINT} transaction lock, then the row refreshed, as
+	 * {@code OrganizationService.ensureTeaUuid}. The mint is one conditional single-key statement
+	 * (TEA-5 round 4, decision 24): no revision bump, no audit row, never the whole-record funnel,
+	 * so it neither erases nor is erased by a concurrent {@link #saveComponent}, which carries the
+	 * stored id forward under the row lock.
+	 */
+	@Transactional
+	public UUID ensureTeaUuid(UUID componentUuid, WhoUpdated wu) throws RelizaException {
+		repository.lockTeaIdMint(AdvisoryLockKey.TEA_ID_MINT.getQueryVal(), componentUuid.toString());
+		Component c = repository.findById(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		if (null != entityManager) entityManager.refresh(c);
+		UUID existing = ComponentData.dataFromRecord(c).getTeaUuid();
+		if (null != existing) return existing;
+		UUID teaUuid = UUID.randomUUID();
+		int updated;
+		try {
+			updated = repository.mintTeaUuid(componentUuid, teaUuid.toString());
+		} catch (DataIntegrityViolationException e) {
+			log.error("The TEA id of component " + componentUuid + " could not be assigned", e);
+			throw new RelizaException("the TEA id of component " + componentUuid + " could not be assigned: "
+					+ e.getMostSpecificCause().getMessage());
+		}
+		// the request's or the transaction's managed instance must read the id from here on
+		if (null != entityManager) entityManager.refresh(c);
+		if (1 == updated) {
+			log.info("TEA id minted for component " + componentUuid + ": " + teaUuid);
+			return teaUuid;
+		}
+		UUID stored = ComponentData.dataFromRecord(c).getTeaUuid();
+		if (null != stored) return stored;
+		throw new RelizaException("Component not found: " + componentUuid);
+	}
+
+	/**
+	 * Removes the user from the recipients of the component's actions, on the row locked for the
+	 * save. The one writer of an action list besides {@link #updateComponent}: it writes the
+	 * stored list it read under the lock with only the recipients changed, so it saves in
+	 * {@link WiringWrite#WRITE} mode (the stamps of TEA-7 round 5 do not cover recipients).
+	 */
+	private void removeUserFromActions(UUID componentUuid, UUID user, WhoUpdated wu) throws RelizaException {
+		Optional<Component> oc = lockAndRefresh(componentUuid);
+		if (oc.isEmpty()) return;
+		ComponentData cd = ComponentData.dataFromRecord(oc.get());
+		if (null == cd.getOutputTriggers()) return;
+		boolean changed = false;
+		for (ComponentData.ReleaseOutputEvent t : cd.getOutputTriggers()) {
+			if (null != t && null != t.getUsers() && t.getUsers().contains(user)) {
+				LinkedHashSet<UUID> cleanedUsers = new LinkedHashSet<>(t.getUsers());
+				cleanedUsers.remove(user);
+				t.setUsers(cleanedUsers);
+				changed = true;
+			}
+		}
+		if (changed) saveComponent(oc.get(), Utils.dataToRecord(cd), wu, WiringWrite.WRITE);
+	}
+
+	/**
+	 * How a whole-record save treats the five keys {@link #updateComponent} alone writes (task
+	 * TEA-7, round 5, T-13): {@code CARRY} writes the stored name, approval policy, actions, rules
+	 * and global-rule refs back over the caller's record (a stale copy restores nothing), {@code
+	 * WRITE} writes the caller's. Both carry the stored TEA id.
+	 */
+	enum WiringWrite { CARRY, WRITE }
+
+	/** The keys {@link WiringWrite#CARRY} writes back from the locked row. */
+	static final List<String> WIRING_KEYS = List.of(CommonVariables.NAME_FIELD, "approvalPolicy", "outputTriggers",
+			"releaseInputTriggers", "globalInputEventRefs");
+
 	@Transactional
 	private Component saveComponent (Component p, Map<String,Object> recordData, WhoUpdated wu) throws RelizaException {
+		return saveComponent(p, recordData, wu, WiringWrite.CARRY);
+	}
+
+	@Transactional
+	private Component saveComponent (Component p, Map<String,Object> recordData, WhoUpdated wu, WiringWrite mode)
+			throws RelizaException {
 		// let's add some validation here
 		// per schema version 0 we require that schema version 0 has name and organization
 		if (null == recordData || recordData.isEmpty() || 
@@ -917,6 +1153,7 @@ public class ComponentService {
 		
 		Optional<Component> op = getComponentService.getComponent(p.getUuid());
 		if (op.isPresent()) {
+			recordData = withStoredKeys(recordData, repository.lockRowForUpdate(p.getUuid()), mode);
 			auditService.createAndSaveAuditRecord(TableName.COMPONENTS, p);
 			p.setRevision(p.getRevision() + 1);
 			p.setLastUpdatedDate(ZonedDateTime.now());
@@ -924,6 +1161,28 @@ public class ComponentService {
 		p.setRecordData(recordData);
 		p = (Component) WhoUpdated.injectWhoUpdatedData(p, wu);
 		return repository.save(p);
+	}
+
+	/**
+	 * The caller's record with the locked row's TEA id, and in {@link WiringWrite#CARRY} mode its
+	 * five wiring keys, in place of the caller's (absent stays absent). A row that is gone leaves
+	 * the record as the caller sent it, without a TEA id.
+	 */
+	@SuppressWarnings("unchecked")
+	static Map<String, Object> withStoredKeys(Map<String, Object> recordData, Optional<String> storedJson,
+			WiringWrite mode) {
+		Map<String, Object> stored = storedJson.map(json -> (Map<String, Object>) Utils.OM.readValue(json, Map.class))
+				.orElse(Map.of());
+		Object teaUuid = stored.get(CommonVariables.TEA_UUID_FIELD);
+		Map<String, Object> out = Utils.withStoredTeaUuid(recordData,
+				Optional.ofNullable(null == teaUuid ? null : teaUuid.toString()));
+		if (WiringWrite.CARRY == mode && storedJson.isPresent()) {
+			for (String key : WIRING_KEYS) {
+				if (stored.containsKey(key)) out.put(key, stored.get(key));
+				else out.remove(key);
+			}
+		}
+		return out;
 	}
 
 	public void saveAll(List<Component> Components){
@@ -978,19 +1237,28 @@ public class ComponentService {
 		return opd;
 	}
 
-	public ComponentData updateComponentVcsRepo(ComponentData ComponentData, UUID vcsUuid, WhoUpdated wu) throws RelizaException {
+	/**
+	 * Set the component's VCS repository. Only {@code vcs} is taken from the caller: the rest of the
+	 * record is the row as committed, read under the row lock, and the fresh data is returned.
+	 */
+	@Transactional
+	public ComponentData updateComponentVcsRepo(ComponentData componentData, UUID vcsUuid, WhoUpdated wu) throws RelizaException {
 		// verify that vcs repo exists
 		Optional<VcsRepository> vcsRepo = vcsRepositoryService.getVcsRepository(vcsUuid);
 		if (vcsRepo.isPresent()) {
-			ComponentData.setVcs(vcsUuid);
-			saveComponent(getComponentService.getComponent(ComponentData.getUuid()).get(), Utils.dataToRecord(ComponentData), wu);
+			Component c = lockedComponentRow(componentData.getUuid()).get();
+			ComponentData fresh = ComponentData.dataFromRecord(c);
+			fresh.setVcs(vcsUuid);
+			saveComponent(c, Utils.dataToRecord(fresh), wu);
+			return fresh;
 		}
-		return ComponentData;
+		return componentData;
 	}
 	
+	@Transactional
 	public Boolean archiveComponent(UUID ComponentUuid, WhoUpdated wu) throws RelizaException {
 		Boolean archived = false;
-		Optional<Component> op = getComponentService.getComponent(ComponentUuid);
+		Optional<Component> op = lockedComponentRow(ComponentUuid);
 		if (op.isPresent()) {
 			ComponentData pd = ComponentData.dataFromRecord(op.get());
 			pd.setStatus(StatusEnum.ARCHIVED);
@@ -1026,17 +1294,92 @@ public class ComponentService {
 	
 	@Transactional
 	public Component setComponentVisibility (UUID ComponentUuid, VisibilitySetting visibility, WhoUpdated wu) throws RelizaException {
-		Component p = getComponentService.getComponent(ComponentUuid).get();
+		Component p = lockedComponentRow(ComponentUuid).get();
 		ComponentData pd = ComponentData.dataFromRecord(p);
 		pd.setVisibilitySetting(visibility);
 		return saveComponent(p, Utils.dataToRecord(pd), wu);
 	}
 	
+	/**
+	 * The creation form: the perspectives of a component a create-in-perspective path has just made
+	 * (ComponentDataFetcher, ReleaseDatafetcher, SaasComponentDataFetcher). Not gated: creating into a
+	 * PUBLIC perspective is accepted (TEA-9 round 2; a new component has no profile row and no
+	 * publication). No membership path of an existing component may call it: those take a
+	 * {@link TeaProfileService.TeaCaller} through the gated overloads below (task TEA-14).
+	 */
 	@Transactional
 	public Component setPerspectives (UUID componentUuid, Collection<UUID> perspectiveUuids, WhoUpdated wu) throws RelizaException {
-		Component c = getComponentService.getComponent(componentUuid).get();
+		Component c = lockedComponentRow(componentUuid).get();
+		return writePerspectives(c, perspectiveUuids, wu);
+	}
+
+	/**
+	 * Set the component's perspectives to exactly these, under the row lock: the TEA-8 sweep, then
+	 * the TEA gate on the swept set with the caller's standing (task TEA-9, moved under the lock by
+	 * TEA-14: an archived component never gains ENABLED or PUBLIC, and a change that makes the
+	 * component resolve PUBLIC needs an organization admin), then the write. The gate throws before
+	 * anything is written. Plain {@code @Transactional}: the transaction owner above is
+	 * {@code rollbackFor = RelizaException.class}.
+	 */
+	@Transactional
+	public Component setPerspectives (UUID componentUuid, Collection<UUID> perspectiveUuids,
+			TeaProfileService.TeaCaller caller, WhoUpdated wu) throws RelizaException {
+		Component c = lockedComponentRow(componentUuid)
+				.orElseThrow(() -> new RelizaException("Component not found: " + componentUuid));
+		ComponentData locked = ComponentData.dataFromRecord(c);
+		List<UUID> swept = ossPerspectiveService.assignablePerspectiveUuids(locked.getOrg(),
+				new LinkedHashSet<>(perspectiveUuids));
+		teaProfileService.requireMembershipAllowed(locked, swept, caller);
+		return writePerspectives(c, swept, wu);
+	}
+
+	/**
+	 * Add and remove perspectives on a component, the delta applied to the stored set under the row
+	 * lock: a removal or an addition another writer committed first is kept. The TEA gate judges the
+	 * set as it will be written ({@code stored + add - remove}, read under the lock) with the
+	 * caller's standing, so a concurrent add and remove, or a profile change between a check and the
+	 * write, cannot write a set the gate never saw (task TEA-14, decision 3). A missing component, or
+	 * a delta that changes nothing, writes nothing and asks no gate. A SYSTEM join that widens the
+	 * component to PUBLIC is written with a WARN line, its only trace. Plain {@code @Transactional}:
+	 * the transaction owner above is {@code rollbackFor = RelizaException.class}.
+	 */
+	@Transactional
+	public void changePerspectives (UUID componentUuid, Collection<UUID> add, Collection<UUID> remove,
+			TeaProfileService.TeaCaller caller, WhoUpdated wu) throws RelizaException {
+		Optional<Component> oc = lockedComponentRow(componentUuid);
+		if (oc.isEmpty()) return;
+		Component c = oc.get();
+		ComponentData locked = ComponentData.dataFromRecord(c);
+		Set<UUID> stored = locked.getPerspectives();
+		Set<UUID> current = new LinkedHashSet<>(null == stored ? Set.of() : stored);
+		Set<UUID> next = new LinkedHashSet<>(current);
+		if (null != add) next.addAll(add);
+		if (null != remove) next.removeAll(remove);
+		if (next.equals(current)) return;
+		TeaProfileService.TeaExposureChange x = teaProfileService.requireMembershipAllowed(locked, next, caller);
+		if (TeaProfileService.TeaCaller.SYSTEM == caller && null != x
+				&& TeaProfileService.TeaPublicPath.NONE != x.path()) {
+			log.warn("Component {} joins the perspectives of its board and resolves to the PUBLIC TEA profile of {}",
+					locked.getUuid(), teaProfileService.sourceLabelOf(x));
+		}
+		writePerspectives(c, next, wu);
+	}
+
+	private Component writePerspectives (Component c, Collection<UUID> perspectiveUuids, WhoUpdated wu) throws RelizaException {
 		ComponentData cd = ComponentData.dataFromRecord(c);
-		cd.setPerspectives(new LinkedHashSet<>(perspectiveUuids));
+		// Sweep (task TEA-8): only assignable perspectives are stored. A deleted (ARCHIVED),
+		// foreign or unknown perspective is a stale membership and is dropped on every save,
+		// whoever saves; the board writer carries the current set forward, so this is tolerant
+		// rather than a refusal (the mutation refuses before it gets here).
+		Set<UUID> wanted = new LinkedHashSet<>(perspectiveUuids);
+		List<UUID> assignable = ossPerspectiveService.assignablePerspectiveUuids(cd.getOrg(), wanted);
+		Set<UUID> stale = new LinkedHashSet<>(wanted);
+		stale.removeAll(assignable);
+		if (!stale.isEmpty()) {
+			log.warn("Component {}: dropping stale perspective memberships {} (deleted, foreign or unknown perspectives)",
+					cd.getUuid(), stale);
+		}
+		cd.setPerspectives(new LinkedHashSet<>(assignable));
 		// sidPurl collision check: perspective changes can flip resolver enablement and/or
 		// authority segments under ENABLED_FLEXIBLE, so the new perspective set has to
 		// pass the same (segments, name) uniqueness gate the create/update paths use.

@@ -74,8 +74,8 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.DeliverableDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
-import io.reliza.model.tea.Link.ContentEnum;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link.ContentEnum;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.repositories.VexStatementProposalRepository;
 import io.reliza.repositories.VulnAnalysisRepository;
 import io.reliza.service.ApiKeyService;
@@ -199,9 +199,9 @@ public class ProgrammaticArtifactOrgBindingTest {
 				null)), WU);
 		// secrets for the CLI's Basic-header path (same key rows)
 		String componentSecret = apiKeyService.setObjectApiKey(component.getUuid(), ApiTypeEnum.COMPONENT, org,
-				null, "binding test component key", WU);
+				null, "binding test component key", false, WU);
 		String orgSecret = apiKeyService.setObjectApiKey(org, ApiTypeEnum.ORGANIZATION_RW, org,
-				null, "binding test org key", WU);
+				null, "binding test org key", false, WU);
 		String freeformSecret = apiKeyService.addApiKeySecret(freeformKey.getUuid(), null, WU);
 		return new Tenant(org, component, branch, release, variant, deliverable, sce, componentKey, orgKey, freeformKey,
 				componentSecret, orgSecret, freeformSecret);
@@ -936,7 +936,7 @@ public class ProgrammaticArtifactOrgBindingTest {
 		bom.put("type", ArtifactType.BOM.name());
 		Map<String, Object> forged = externalArtifact();
 		Map<String, Object> record = new HashMap<>();
-		record.put("algo", TeaChecksumType.SHA_256.name());
+		record.put("algo", DigestAlgorithm.SHA_256.name());
 		record.put("digest", "a".repeat(64));
 		record.put("scope", DigestScope.AS_UPLOADED.name());
 		forged.put("digestRecords", new ArrayList<>(List.of(record)));

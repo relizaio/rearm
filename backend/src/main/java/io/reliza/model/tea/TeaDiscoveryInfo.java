@@ -5,7 +5,7 @@ import java.util.Objects;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonCreator;
 import com.fasterxml.jackson.annotation.JsonTypeName;
-import io.reliza.model.tea.TeaTeaServerInfo;
+import io.reliza.model.tea.TeaServerInfo;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
@@ -22,18 +22,18 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Discovery information for a TEI
+ * Discovery information for one product release matched by a TEI or PURL lookup. A successful &#x60;/discovery&#x60; response is a non-empty array of these objects, ordered by priority when more than one release matches (first entry highest). &#x60;.well-known/tea&#x60; selects where &#x60;/discovery&#x60; is called; &#x60;servers[]&#x60; lists API bases that serve this product release (same version and priority selection rules). A &#x60;rootUrl&#x60; need not appear in the well-known endpoint list. 
  */
 
-@Schema(name = "discovery-info", description = "Discovery information for a TEI")
+@Schema(name = "discovery-info", description = "Discovery information for one product release matched by a TEI or PURL lookup. A successful `/discovery` response is a non-empty array of these objects, ordered by priority when more than one release matches (first entry highest). `.well-known/tea` selects where `/discovery` is called; `servers[]` lists API bases that serve this product release (same version and priority selection rules). A `rootUrl` need not appear in the well-known endpoint list. ")
 @JsonTypeName("discovery-info")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaDiscoveryInfo {
 
   private UUID productReleaseUuid;
 
   @Valid
-  private List<@Valid TeaTeaServerInfo> servers = new ArrayList<>();
+  private List<@Valid TeaServerInfo> servers = new ArrayList<>();
 
   public TeaDiscoveryInfo() {
     super();
@@ -42,7 +42,7 @@ public class TeaDiscoveryInfo {
   /**
    * Constructor with only required parameters
    */
-  public TeaDiscoveryInfo(UUID productReleaseUuid, List<@Valid TeaTeaServerInfo> servers) {
+  public TeaDiscoveryInfo(UUID productReleaseUuid, List<@Valid TeaServerInfo> servers) {
     this.productReleaseUuid = productReleaseUuid;
     this.servers = servers;
   }
@@ -68,12 +68,12 @@ public class TeaDiscoveryInfo {
     this.productReleaseUuid = productReleaseUuid;
   }
 
-  public TeaDiscoveryInfo servers(List<@Valid TeaTeaServerInfo> servers) {
+  public TeaDiscoveryInfo servers(List<@Valid TeaServerInfo> servers) {
     this.servers = servers;
     return this;
   }
 
-  public TeaDiscoveryInfo addServersItem(TeaTeaServerInfo serversItem) {
+  public TeaDiscoveryInfo addServersItem(TeaServerInfo serversItem) {
     if (this.servers == null) {
       this.servers = new ArrayList<>();
     }
@@ -82,18 +82,18 @@ public class TeaDiscoveryInfo {
   }
 
   /**
-   * Array of TEA server information
+   * Non-empty array of TEA servers that serve this product release. Each entry has `rootUrl` (without trailing slash) and `versions`. 
    * @return servers
    */
   @NotNull @Valid @Size(min = 1) 
-  @Schema(name = "servers", description = "Array of TEA server information", requiredMode = Schema.RequiredMode.REQUIRED)
+  @Schema(name = "servers", description = "Non-empty array of TEA servers that serve this product release. Each entry has `rootUrl` (without trailing slash) and `versions`. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("servers")
-  public List<@Valid TeaTeaServerInfo> getServers() {
+  public List<@Valid TeaServerInfo> getServers() {
     return servers;
   }
 
   @JsonProperty("servers")
-  public void setServers(List<@Valid TeaTeaServerInfo> servers) {
+  public void setServers(List<@Valid TeaServerInfo> servers) {
     this.servers = servers;
   }
 

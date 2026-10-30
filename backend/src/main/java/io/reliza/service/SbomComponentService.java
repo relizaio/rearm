@@ -79,9 +79,9 @@ import io.reliza.model.SupportSource;
 import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.ParsedBom;
-import io.reliza.model.tea.Rebom.ParsedBomComponent;
-import io.reliza.model.tea.Rebom.ParsedBomDependency;
+import io.reliza.model.Rebom.ParsedBom;
+import io.reliza.model.Rebom.ParsedBomComponent;
+import io.reliza.model.Rebom.ParsedBomDependency;
 import io.reliza.repositories.ArtifactCanonicalMapRepository;
 import io.reliza.repositories.ArtifactCanonicalMapRepository.PendingCanonicalForm;
 import io.reliza.repositories.ArtifactSbomComponentRepository;
@@ -464,6 +464,13 @@ private static int currentReconcileFailureCount(Release r) {
 							releaseUuid, artifactUuid);
 					skipped++;
 				}
+				continue;
+			}
+			if (ad.getInternalBom().belongsTo() == Utils.ArtifactBelongsTo.SYNTHETIC) {
+				// A document ReARM generated belongs in ReleaseData.syntheticArtifacts, which this
+				// collector never reads; one sitting in an inventory list is not inventory either.
+				log.warn("[SYNTHETIC-IN-INVENTORY] SBOM reconcile of release {}: synthetic artifact {} is listed as inventory; not reconciled",
+						releaseUuid, artifactUuid);
 				continue;
 			}
 
@@ -2301,6 +2308,11 @@ private static int currentReconcileFailureCount(Release r) {
 	// BOM artifact collection (unchanged from V25 — same set of sources)
 	// ===================================================================
 
+	/**
+	 * The release's inventory BOM artifacts. Never ReleaseData.syntheticArtifacts: a document
+	 * ReARM generated is not inventory, so it gets no sbom_components rows and no
+	 * Dependency-Track fan-out.
+	 */
 	private Set<UUID> collectBomArtifactUuids(ReleaseData rd) {
 		Set<UUID> artifactUuids = new LinkedHashSet<>();
 

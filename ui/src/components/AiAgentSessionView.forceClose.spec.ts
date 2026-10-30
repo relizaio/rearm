@@ -76,12 +76,28 @@ describe('session force close', () => {
         })
         const w = mount(SessionView, { global: { stubs } })
         await flushPromises()
-        await w.find('.forceclose-reason input').setValue('  agent crashed ')
+        await w.find('.forceclose-reason textarea').setValue('  agent crashed ')
         await w.find('.pc__yes').trigger('click')
         await flushPromises()
         expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: 'agent crashed' })
         // The closer named once (RD2-11): the reason already says who.
         expect(w.find('.close-attribution').text()).toBe('Force-closed by pm@example.com: agent crashed')
+    })
+
+    it('sends a two-line reason with its newline, trimmed at the ends (TPF-89)', async () => {
+        asAdmin(true)
+        dispatch.mockImplementation(async (a: string) => {
+            if (a === 'fetchSession') return session('OPEN')
+            if (a === 'forceCloseAgentSession') return { uuid: 's1', status: 'CLOSED' }
+            return []
+        })
+        const w = mount(SessionView, { global: { stubs } })
+        await flushPromises()
+        expect(w.find('.forceclose-reason input').exists()).toBe(false)
+        await w.find('.forceclose-reason textarea').setValue('  agent crashed\nsee the log  ')
+        await w.find('.pc__yes').trigger('click')
+        await flushPromises()
+        expect(dispatch).toHaveBeenCalledWith('forceCloseAgentSession', { sessionUuid: 's1', reason: 'agent crashed\nsee the log' })
     })
 
     it('flags an open session the sweep has warned', async () => {

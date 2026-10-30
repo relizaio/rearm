@@ -13,170 +13,35 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
 import java.util.Map;
-import java.util.Set;
 import java.util.UUID;
 
-import org.junit.jupiter.api.AfterEach;
-import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
-import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.http.HttpHeaders;
-import org.springframework.mock.web.MockHttpServletRequest;
-import org.springframework.security.core.context.SecurityContextHolder;
-import org.springframework.web.context.request.ServletWebRequest;
-
-import com.netflix.graphql.dgs.DgsQueryExecutor;
 
 import graphql.ExecutionResult;
-import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
-import io.reliza.model.AgentData;
-import io.reliza.model.AgentIdentityCredential.IdentityType;
-import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentTaskData;
 import io.reliza.model.AgentTaskData.HoldKind;
 import io.reliza.model.AgentTaskData.HoldLevel;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.StatusChange;
 import io.reliza.model.AgentTaskData.StatusTrigger;
+import io.reliza.model.AgentTaskData.TaskReturn;
+import io.reliza.model.AgentTaskData.TaskReturnReason;
 import io.reliza.model.AgentTaskData.TaskStatus;
-import io.reliza.model.ApiKey;
-import io.reliza.model.ApiKey.ApiTypeEnum;
-import io.reliza.model.Component;
-import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.Organization;
-import io.reliza.model.UserPermission.PermissionDto;
-import io.reliza.model.UserPermission.PermissionFunction;
-import io.reliza.model.UserPermission.PermissionScope;
-import io.reliza.model.UserPermission.PermissionType;
-import io.reliza.model.WhoUpdated;
-import io.reliza.model.dto.notifications.AgentBoardEventPayload;
 import io.reliza.model.NotificationEventType;
-import io.reliza.repositories.NotificationOutboxEventRepository;
+import io.reliza.model.UserPermission.PermissionFunction;
+import io.reliza.model.dto.notifications.AgentBoardEventPayload;
 import io.reliza.service.AgentBoardRenderSupport;
-import io.reliza.service.AgentBoardService;
-import io.reliza.service.AgentIdentityService;
-import io.reliza.service.AgentService;
-import io.reliza.service.AgentSessionService;
-import io.reliza.service.AgentTaskService;
-import io.reliza.service.ApiKeyService;
-import io.reliza.service.ComponentService;
-import io.reliza.service.LicenseStatus;
-import io.reliza.ws.oss.TestInitializer;
+import io.reliza.service.AgentTaskService.WorkerAssignment;
 
 /**
  * Task RD4-5: a session holds its own hop for an operator decision, and withdraws its own registration in
- * intake. The agent's side goes through the programmatic GraphQL endpoint with the principal its filter leaves
- * on the request, so the new argument and both gates are exercised as a client meets them; the person's release
- * is the service call the operator-hold mutation makes.
+ * intake. Since TPF-66 the park ends the hop and the person's release queues the task for its role; what the
+ * ended hop leaves behind is {@link AgentParkedHopEndsTest}'s. The rig is {@link AgentSelfHoldTestBase}.
  */
-@SpringBootTest(classes = {App.class})
-public class AgentSelfHoldAndWithdrawTest {
-
-	private static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
-	private static final AgentActor COORD = AgentActor.ofSession(UUID.randomUUID());
-	private static final String QUESTION = "Which secret model do we ship: per-org or per-board?";
-
-	@Autowired private DgsQueryExecutor dgsQueryExecutor;
-	@Autowired private TestInitializer testInitializer;
-	@Autowired private AgentBoardService agentBoardService;
-	@Autowired private AgentTaskService agentTaskService;
-	@Autowired private AgentService agentService;
-	@Autowired private AgentSessionService agentSessionService;
-	@Autowired private ComponentService componentService;
-	@Autowired private LicenseStatus licenseStatus;
-	@Autowired private ApiKeyService apiKeyService;
-	@Autowired private AgentIdentityService agentIdentityService;
-	@Autowired private NotificationOutboxEventRepository outboxRepository;
-
-	private boolean wasSealed;
-	private boolean wasLicensed;
-
-	@BeforeEach
-	void operational() {
-		SecurityContextHolder.setContext(SecurityContextHolder.createEmptyContext());
-		wasSealed = licenseStatus.isSystemSealed();
-		wasLicensed = licenseStatus.isLicenseValid();
-		licenseStatus.setSystemSealed(false);
-		licenseStatus.setLicenseValid(true);
-	}
-
-	@AfterEach
-	void restore() {
-		SecurityContextHolder.clearContext();
-		licenseStatus.setSystemSealed(wasSealed);
-		licenseStatus.setLicenseValid(wasLicensed);
-	}
-
-	private ExecutionResult asKey(ApiKey key, String query, Map<String, Object> vars) {
-		SecurityContextHolder.setContext(SecurityContextHolder.createEmptyContext());
-		MockHttpServletRequest request = new MockHttpServletRequest("POST", ProgrammaticGraphQlConfig.PATH);
-		request.setAttribute(ProgrammaticAuthenticationFilter.PRINCIPAL_ATTRIBUTE,
-				AuthHeaderParse.fromVerifiedKey(key, 1, "198.51.100.45"));
-		HttpHeaders headers = new HttpHeaders();
-		headers.set(HttpHeaders.AUTHORIZATION, "Bearer verified-by-the-filter");
-		return dgsQueryExecutor.execute(query, vars, Map.of(), headers, null, new ServletWebRequest(request));
-	}
-
-	private record Caller(ApiKey key, AgentData agent, AgentSessionData session) {}
-
-	private Caller caller(Organization org, PermissionFunction... fns) throws Exception {
-		ApiKey key = apiKeyService.createObjectApiKey(org.getUuid(), ApiTypeEnum.FREEFORM, org.getUuid(),
-				UUID.randomUUID().toString(), "rd4-5", WU);
-		apiKeyService.setPermissionsOnApiKey(key.getUuid(), null, List.of(new PermissionDto(org.getUuid(),
-				PermissionScope.ORGANIZATION, org.getUuid(), PermissionType.READ_WRITE, Set.of(fns), null)), WU);
-		UUID identity = agentIdentityService.findOrRegisterByCredential(org.getUuid(), IdentityType.REARM_API_KEY,
-				key.getUuid().toString(), WU).getUuid();
-		AgentData agent = agentService.findOrRegisterRootAgent(org.getUuid(), identity, "rd4-5-" + UUID.randomUUID(),
-				null, null, null, WU);
-		AgentSessionData s = agentSessionService.initialize(org.getUuid(), agent.getUuid(), key.getUuid(),
-				"rd4-5-" + UUID.randomUUID(), "rd4-5", null, null, WU);
-		return new Caller(key, agent, s);
-	}
-
-	private record Board(Organization org, AgentBoardData board) {}
-
-	private Board board() throws Exception {
-		Organization org = testInitializer.obtainOrganization();
-		Component target = componentService.createComponent("rd45_" + UUID.randomUUID(), org.getUuid(),
-				ComponentType.PRODUCT, "semver", "Branch.Micro", null, WU);
-		AgentBoardData board = agentBoardService.createBoard(org.getUuid(), "rd45-" + UUID.randomUUID(), "self hold",
-				List.of(), "coordinate", 4, null, target.getUuid(), null, WU);
-		agentBoardService.upsertRoleConfig(board, AgentBoardService.RoleConfigSpec.ofBasics("architect", "design", 10,
-				null, false, true, null), true, WU);
-		return new Board(org, agentBoardService.getBoardData(board.getUuid()).orElseThrow());
-	}
-
-	/** A task the architect role is working, held by {@code holder}'s session. */
-	private AgentTaskData assignedTo(Board b, Caller holder) throws RelizaException {
-		AgentTaskData t = agentTaskService.register(b.board(), null, "self hold " + UUID.randomUUID(), null, null, null,
-				null, null, null, COORD, true, WU);
-		agentTaskService.authorize(t.getUuid(), b.board(), "architect", 10, null, null, null, null, COORD, WU);
-		agentTaskService.assign(t.getUuid(), b.board(), holder.agent().getUuid(), holder.session().getUuid(), WU);
-		return agentTaskService.getTaskData(t.getUuid()).orElseThrow();
-	}
-
-	private static final String HOLD = "mutation($t: ID!, $s: ID!, $r: String!, $l: AgentTaskHoldLevel) {"
-			+ " agentTaskHoldProgrammatic(taskUuid: $t, sessionUuid: $s, reason: $r, level: $l)"
-			+ " { status hold { level kind reason heldBy { kind uuid } } } }";
-
-	private ExecutionResult hold(Caller c, AgentTaskData t, String reason, String level) {
-		Map<String, Object> vars = new java.util.HashMap<>(Map.of("t", t.getUuid().toString(),
-				"s", c.session().getUuid().toString(), "r", reason));
-		if (null != level) vars.put("l", level);
-		return asKey(c.key(), HOLD, vars);
-	}
-
-	private AgentTaskData task(AgentTaskData t) {
-		return agentTaskService.getTaskData(t.getUuid()).orElseThrow();
-	}
-
-	private static StatusChange lastRow(AgentTaskData t) {
-		return t.getStatusHistory().get(t.getStatusHistory().size() - 1);
-	}
+public class AgentSelfHoldAndWithdrawTest extends AgentSelfHoldTestBase {
 
 	@Test
 	@SuppressWarnings("unchecked")
@@ -213,10 +78,19 @@ public class AgentSelfHoldAndWithdrawTest {
 		assertEquals(holder.session().getUuid().toString(), ((Map<String, Object>) h.get("heldBy")).get("uuid"));
 
 		AgentTaskData held = task(t);
-		assertTrue(held.holdParksAHop());
-		assertEquals(holder.session().getUuid(), held.getAssignment().session(), "the hop stays assigned to the holder");
-		assertTrue(agentTaskService.hasAssignmentsForSession(holder.session().getUuid()),
-				"the holder's idle window is still a holder's");
+		assertTrue(held.holdParksAHop(), "still told from the seat's park, with no assignment to read");
+		// the park ended the hop (TPF-66): nobody holds the task, and the holder's idle window is the plain one
+		assertNull(held.getAssignment(), "the hop ended at the park");
+		assertFalse(agentTaskService.hasAssignmentsForSession(holder.session().getUuid()));
+		assertEquals(1, held.getReturns().size(), held.getReturns().toString());
+		TaskReturn ended = held.getReturns().get(0);
+		assertEquals(TaskReturnReason.PARKED_FOR_OPERATOR, ended.reason());
+		assertEquals(holder.session().getUuid(), ended.session());
+		assertEquals(holder.agent().getUuid(), ended.agent());
+		assertEquals("architect", ended.role());
+		assertEquals(QUESTION, ended.description());
+		assertNotNull(ended.usage(), "the hop's usage is frozen at the park");
+		assertTrue(ended.outputs().isEmpty());
 		assertEquals(StatusTrigger.HOLD, lastRow(held).trigger());
 		assertEquals(TaskStatus.ASSIGNED, lastRow(held).from());
 		assertEquals("awaiting the operator: " + QUESTION, lastRow(held).note());
@@ -228,21 +102,22 @@ public class AgentSelfHoldAndWithdrawTest {
 		assertEquals(HoldKind.MANUAL.name(), person.get(0).holdKind());
 		assertEquals("awaiting the operator: " + QUESTION, person.get(0).message());
 		assertTrue(agentBoardService.recentEvents(b.board().getUuid()).stream()
-				.anyMatch(ev -> ev.message().contains("parked by its architect hop, awaiting the operator: " + QUESTION)),
-				"the feed says the hop is parked and on what");
+				.anyMatch(ev -> ev.message().contains("parked by its architect hop, awaiting the operator: " + QUESTION)
+						&& ev.message().contains("the hop ended")),
+				"the feed says the hop is parked, on what, and that it ended");
 
-		// the parked hop cannot sign off, and the refusal names what it waits on
+		// the session that parked cannot sign off, and the refusal names what the task waits on and that the hop ended
 		RelizaException signOff = assertThrows(RelizaException.class, () -> agentTaskService.signOff(t.getUuid(),
 				holder.session().getUuid(), SignOffOutcome.PASSED, "done", WU));
 		assertTrue(signOff.getMessage().contains("is parked, awaiting the operator: " + QUESTION), signOff.getMessage());
-		// nor park it twice
+		assertTrue(signOff.getMessage().contains("your hop ended when you parked it"), signOff.getMessage());
+		// nor park it twice: it holds no assignment any more
 		ExecutionResult again = hold(holder, t, "another question", "OPERATOR");
-		assertTrue(again.getErrors().toString().contains("Only the session holding")
-				|| again.getErrors().toString().contains("is parked"), again.getErrors().toString());
+		assertTrue(again.getErrors().toString().contains("Only the session holding"), again.getErrors().toString());
 	}
 
 	@Test
-	public void aPersonsReleaseNeedsTheAnswerAndRecordsItAndTheHopResumes() throws Exception {
+	public void aPersonsReleaseNeedsTheAnswerAndRecordsItAndQueuesTheTaskForItsRole() throws Exception {
 		Board b = board();
 		Caller holder = caller(b.org(), PermissionFunction.AGENT, PermissionFunction.BOARD_AGENT);
 		AgentTaskData t = assignedTo(b, holder);
@@ -257,17 +132,19 @@ public class AgentSelfHoldAndWithdrawTest {
 		RelizaException noNote = assertThrows(RelizaException.class, () -> agentTaskService.liftHoldOrAnswer(
 				t.getUuid(), HoldLevel.OPERATOR, person, "  ", null, WU));
 		assertTrue(noNote.getMessage().contains("with your answer as the note"), noNote.getMessage());
-		// and the hop resumes with its holder, so no role is routed to
+		// and the task is queued again for its own role, so no role is routed to
 		RelizaException withRole = assertThrows(RelizaException.class, () -> agentTaskService.liftHoldOrAnswer(
 				t.getUuid(), HoldLevel.OPERATOR, person, "per-org", "architect", WU));
+		assertTrue(withRole.getMessage().contains("queues the task for architect"), withRole.getMessage());
 		assertTrue(withRole.getMessage().contains("lift it without a role"), withRole.getMessage());
 		assertEquals(TaskStatus.ON_HOLD, task(t).getStatus());
 
 		AgentTaskData released = agentTaskService.liftHoldOrAnswer(t.getUuid(), HoldLevel.OPERATOR, person,
 				"per-org, rotated yearly", null, WU);
-		assertEquals(TaskStatus.ASSIGNED, released.getStatus());
+		assertEquals(TaskStatus.QUEUED, released.getStatus(), "queued again for its role (TPF-66)");
 		assertNull(released.getHold());
-		assertEquals(holder.session().getUuid(), released.getAssignment().session(), "the hop is the holder's again");
+		assertNull(released.getAssignment());
+		assertEquals("architect", released.getRole());
 		StatusChange row = lastRow(released);
 		assertEquals(StatusTrigger.LIFT_HOLD, row.trigger());
 		assertEquals("lifted by Pat Operator: per-org, rotated yearly", row.note());
@@ -275,17 +152,34 @@ public class AgentSelfHoldAndWithdrawTest {
 		assertTrue(agentBoardService.recentEvents(b.board().getUuid()).stream()
 				.anyMatch(ev -> AgentBoardData.BoardEventKind.INFO == ev.kind()
 						&& ev.message().contains(released.label() + " answered by Pat Operator: per-org, rotated yearly")
-						&& ev.message().contains("(the question: " + QUESTION + ")")),
-				"an INFO names the task and the answer");
+						&& ev.message().contains("(the question: " + QUESTION + ")")
+						&& ev.message().contains("queued again for architect with the answer on its record")),
+				"an INFO names the task, the answer and where the task went");
 		// the question stays on the record beside the answer
 		StatusChange asked = released.getStatusHistory().get(released.getStatusHistory().size() - 2);
+		assertEquals(StatusTrigger.HOLD, asked.trigger());
 		assertEquals("awaiting the operator: " + QUESTION, asked.note());
 
-		// the holder carries on: its sign-off is accepted again
-		AgentTaskData signed = agentTaskService.signOff(t.getUuid(), holder.session().getUuid(), SignOffOutcome.PASSED,
-				"designed with the operator's answer", WU);
-		assertNotNull(signed);
-		assertFalse(TaskStatus.ASSIGNED == signed.getStatus() && null != signed.getAssignment(), "the hop ended");
+		// the ordinary offer delivers it: the only QUEUED task on the board, no preference for the parker (3.3)
+		WorkerAssignment offer = agentTaskService.next(List.of(b.board()), holder.agent().getUuid(),
+				holder.session().getUuid()).orElseThrow();
+		assertEquals(t.getUuid(), offer.task().getUuid());
+		List<StatusChange> history = offer.task().getStatusHistory();
+		assertTrue(history.stream().anyMatch(c -> StatusTrigger.HOLD == c.trigger()
+				&& ("awaiting the operator: " + QUESTION).equals(c.note())), "the offer carries the question");
+		assertTrue(history.stream().anyMatch(c -> StatusTrigger.LIFT_HOLD == c.trigger()
+				&& "lifted by Pat Operator: per-org, rotated yearly".equals(c.note())), "and the answer");
+
+		// any session of the role takes it; the session that parked holds nothing on it any more
+		Caller next = caller(b.org(), PermissionFunction.AGENT, PermissionFunction.BOARD_AGENT);
+		agentTaskService.assign(t.getUuid(), b.board(), next.agent().getUuid(), next.session().getUuid(), WU);
+		AgentTaskData taken = task(t);
+		assertEquals(TaskStatus.ASSIGNED, taken.getStatus());
+		assertEquals(next.session().getUuid(), taken.getAssignment().session());
+		RelizaException oldHolder = assertThrows(RelizaException.class, () -> agentTaskService.signOff(t.getUuid(),
+				holder.session().getUuid(), SignOffOutcome.PASSED, "designed with the operator's answer", WU));
+		assertTrue(oldHolder.getMessage().contains("assigned to a different session"), oldHolder.getMessage());
+		assertEquals(1, task(t).getReturns().size(), "the park's return only");
 	}
 
 	@Test
@@ -300,6 +194,7 @@ public class AgentSelfHoldAndWithdrawTest {
 		assertEquals(TaskStatus.ON_HOLD, closed.getStatus(), "the question still waits on a person");
 		assertNull(closed.getAssignment());
 		assertTrue(closed.holdParksAHop());
+		assertEquals(1, closed.getReturns().size(), "the park's return; the session held nothing to close (TPF-66)");
 
 		AgentTaskData released = agentTaskService.liftHoldOrAnswer(t.getUuid(), HoldLevel.OPERATOR,
 				AgentActor.ofUser(UUID.randomUUID(), "Pat Operator"), "per-board", null, WU);

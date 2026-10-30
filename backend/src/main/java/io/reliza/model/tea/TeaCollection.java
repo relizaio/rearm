@@ -27,92 +27,108 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * A collection of security-related documents
+ * A collection of security-related documents.  Every component release and product release has a collection. If no artifacts have been published when the release first becomes retrievable, the server serves version 1 with an empty &#x60;artifacts&#x60; list and &#x60;updateReason.type: INITIAL_RELEASE&#x60;. That version is immutable like any other; the first artifacts are published as version 2. 
  */
 
-@Schema(name = "collection", description = "A collection of security-related documents")
+@Schema(name = "collection", description = "A collection of security-related documents.  Every component release and product release has a collection. If no artifacts have been published when the release first becomes retrievable, the server serves version 1 with an empty `artifacts` list and `updateReason.type: INITIAL_RELEASE`. That version is immutable like any other; the first artifacts are published as version 2. ")
 @JsonTypeName("collection")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaCollection {
 
-  private @Nullable UUID uuid;
+  private UUID uuid;
 
-  private @Nullable Integer version;
+  private Integer version;
 
   @DateTimeFormat(iso = DateTimeFormat.ISO.DATE_TIME)
-  private @Nullable OffsetDateTime date;
+  private OffsetDateTime createdDate;
 
-  private @Nullable TeaCollectionBelongsToType belongsTo;
+  private TeaCollectionBelongsToType belongsTo;
 
-  private @Nullable TeaCollectionUpdateReason updateReason;
+  private TeaCollectionUpdateReason updateReason;
 
   @Valid
   private List<@Valid TeaArtifact> artifacts = new ArrayList<>();
 
-  public TeaCollection uuid(@Nullable UUID uuid) {
+  public TeaCollection() {
+    super();
+  }
+
+  /**
+   * Constructor with only required parameters
+   */
+  public TeaCollection(UUID uuid, Integer version, OffsetDateTime createdDate, TeaCollectionBelongsToType belongsTo, TeaCollectionUpdateReason updateReason, List<@Valid TeaArtifact> artifacts) {
+    this.uuid = uuid;
+    this.version = version;
+    this.createdDate = createdDate;
+    this.belongsTo = belongsTo;
+    this.updateReason = updateReason;
+    this.artifacts = artifacts;
+  }
+
+  public TeaCollection uuid(UUID uuid) {
     this.uuid = uuid;
     return this;
   }
 
   /**
-   * UUID of the TEA Collection object. This matches the UUID of the associated TEA Component Release or TEA Product Release object. When updating a collection, only the `version` is changed. 
+   * UUID of the TEA Collection object. A TEA Collection shall use the same UUID as its parent Product Release or Component Release. Within an API base, a Product Release and a Component Release shall not share a UUID. Consequently, Collections belonging to different parent releases have different UUIDs. Versions of the same Collection retain the same UUID. See `doc/tea-uuid-scope.md`. 
    * @return uuid
    */
-  @Valid 
-  @Schema(name = "uuid", description = "UUID of the TEA Collection object. This matches the UUID of the associated TEA Component Release or TEA Product Release object. When updating a collection, only the `version` is changed. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "uuid", description = "UUID of the TEA Collection object. A TEA Collection shall use the same UUID as its parent Product Release or Component Release. Within an API base, a Product Release and a Component Release shall not share a UUID. Consequently, Collections belonging to different parent releases have different UUIDs. Versions of the same Collection retain the same UUID. See `doc/tea-uuid-scope.md`. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("uuid")
-  public @Nullable UUID getUuid() {
+  public UUID getUuid() {
     return uuid;
   }
 
   @JsonProperty("uuid")
-  public void setUuid(@Nullable UUID uuid) {
+  public void setUuid(UUID uuid) {
     this.uuid = uuid;
   }
 
-  public TeaCollection version(@Nullable Integer version) {
+  public TeaCollection version(Integer version) {
     this.version = version;
     return this;
   }
 
   /**
-   * TEA Collection version, incremented each time its content changes. Versions start with 1. 
+   * TEA Collection version, incremented by 1 each time its content changes. Versions start with 1. Content changes include replacing an embedded artifact with a newer revision (for example one published because an external `url` or `signatureUrl` changed). If a Collection adopts that new artifact revision, the server shall publish a new Collection version. Previously published Collection versions shall remain unchanged. Classification of that adoption follows `collection-update-reason-type`. 
    * @return version
    */
-  
-  @Schema(name = "version", description = "TEA Collection version, incremented each time its content changes. Versions start with 1. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull 
+  @Schema(name = "version", description = "TEA Collection version, incremented by 1 each time its content changes. Versions start with 1. Content changes include replacing an embedded artifact with a newer revision (for example one published because an external `url` or `signatureUrl` changed). If a Collection adopts that new artifact revision, the server shall publish a new Collection version. Previously published Collection versions shall remain unchanged. Classification of that adoption follows `collection-update-reason-type`. ", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("version")
-  public @Nullable Integer getVersion() {
+  public Integer getVersion() {
     return version;
   }
 
   @JsonProperty("version")
-  public void setVersion(@Nullable Integer version) {
+  public void setVersion(Integer version) {
     this.version = version;
   }
 
-  public TeaCollection date(@Nullable OffsetDateTime date) {
-    this.date = date;
+  public TeaCollection createdDate(OffsetDateTime createdDate) {
+    this.createdDate = createdDate;
     return this;
   }
 
   /**
    * The date when the TEA Collection version was created.
-   * @return date
+   * @return createdDate
    */
-  @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}Z$") 
-  @Schema(name = "date", example = "2024-03-20T15:30:00Z", description = "The date when the TEA Collection version was created.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
-  @JsonProperty("date")
-  public @Nullable OffsetDateTime getDate() {
-    return date;
+  @NotNull @Valid @Pattern(regexp = "^\\d{4}-\\d{2}-\\d{2}T\\d{2}:\\d{2}:\\d{2}(\\.\\d+)?Z$") 
+  @Schema(name = "createdDate", example = "2024-03-20T15:30:00Z", description = "The date when the TEA Collection version was created.", requiredMode = Schema.RequiredMode.REQUIRED)
+  @JsonProperty("createdDate")
+  public OffsetDateTime getCreatedDate() {
+    return createdDate;
   }
 
-  @JsonProperty("date")
-  public void setDate(@Nullable OffsetDateTime date) {
-    this.date = date;
+  @JsonProperty("createdDate")
+  public void setCreatedDate(OffsetDateTime createdDate) {
+    this.createdDate = createdDate;
   }
 
-  public TeaCollection belongsTo(@Nullable TeaCollectionBelongsToType belongsTo) {
+  public TeaCollection belongsTo(TeaCollectionBelongsToType belongsTo) {
     this.belongsTo = belongsTo;
     return this;
   }
@@ -121,19 +137,19 @@ public class TeaCollection {
    * Indicates whether this collection belongs to a Component Release or a Product Release
    * @return belongsTo
    */
-  @Valid 
-  @Schema(name = "belongsTo", description = "Indicates whether this collection belongs to a Component Release or a Product Release", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "belongsTo", description = "Indicates whether this collection belongs to a Component Release or a Product Release", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("belongsTo")
-  public @Nullable TeaCollectionBelongsToType getBelongsTo() {
+  public TeaCollectionBelongsToType getBelongsTo() {
     return belongsTo;
   }
 
   @JsonProperty("belongsTo")
-  public void setBelongsTo(@Nullable TeaCollectionBelongsToType belongsTo) {
+  public void setBelongsTo(TeaCollectionBelongsToType belongsTo) {
     this.belongsTo = belongsTo;
   }
 
-  public TeaCollection updateReason(@Nullable TeaCollectionUpdateReason updateReason) {
+  public TeaCollection updateReason(TeaCollectionUpdateReason updateReason) {
     this.updateReason = updateReason;
     return this;
   }
@@ -142,15 +158,15 @@ public class TeaCollection {
    * Reason for the update/release of the TEA Collection object.
    * @return updateReason
    */
-  @Valid 
-  @Schema(name = "updateReason", description = "Reason for the update/release of the TEA Collection object.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "updateReason", description = "Reason for the update/release of the TEA Collection object.", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("updateReason")
-  public @Nullable TeaCollectionUpdateReason getUpdateReason() {
+  public TeaCollectionUpdateReason getUpdateReason() {
     return updateReason;
   }
 
   @JsonProperty("updateReason")
-  public void setUpdateReason(@Nullable TeaCollectionUpdateReason updateReason) {
+  public void setUpdateReason(TeaCollectionUpdateReason updateReason) {
     this.updateReason = updateReason;
   }
 
@@ -168,11 +184,11 @@ public class TeaCollection {
   }
 
   /**
-   * List of TEA Artifact objects.
+   * Array of TEA Artifact objects (may be empty).
    * @return artifacts
    */
-  @Valid 
-  @Schema(name = "artifacts", description = "List of TEA Artifact objects.", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @NotNull @Valid 
+  @Schema(name = "artifacts", description = "Array of TEA Artifact objects (may be empty).", requiredMode = Schema.RequiredMode.REQUIRED)
   @JsonProperty("artifacts")
   public List<@Valid TeaArtifact> getArtifacts() {
     return artifacts;
@@ -194,7 +210,7 @@ public class TeaCollection {
     TeaCollection collection = (TeaCollection) o;
     return Objects.equals(this.uuid, collection.uuid) &&
         Objects.equals(this.version, collection.version) &&
-        Objects.equals(this.date, collection.date) &&
+        Objects.equals(this.createdDate, collection.createdDate) &&
         Objects.equals(this.belongsTo, collection.belongsTo) &&
         Objects.equals(this.updateReason, collection.updateReason) &&
         Objects.equals(this.artifacts, collection.artifacts);
@@ -202,7 +218,7 @@ public class TeaCollection {
 
   @Override
   public int hashCode() {
-    return Objects.hash(uuid, version, date, belongsTo, updateReason, artifacts);
+    return Objects.hash(uuid, version, createdDate, belongsTo, updateReason, artifacts);
   }
 
   @Override
@@ -211,7 +227,7 @@ public class TeaCollection {
     sb.append("class TeaCollection {\n");
     sb.append("    uuid: ").append(toIndentedString(uuid)).append("\n");
     sb.append("    version: ").append(toIndentedString(version)).append("\n");
-    sb.append("    date: ").append(toIndentedString(date)).append("\n");
+    sb.append("    createdDate: ").append(toIndentedString(createdDate)).append("\n");
     sb.append("    belongsTo: ").append(toIndentedString(belongsTo)).append("\n");
     sb.append("    updateReason: ").append(toIndentedString(updateReason)).append("\n");
     sb.append("    artifacts: ").append(toIndentedString(artifacts)).append("\n");

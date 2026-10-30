@@ -29,7 +29,7 @@ import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.InternalBom;
+import io.reliza.model.Rebom.InternalBom;
 import io.reliza.repositories.AcollectionRepository;
 
 /**

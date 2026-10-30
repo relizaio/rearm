@@ -44,11 +44,32 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty(CommonVariables.NOTES_FIELD)
 	private String notes;
 
+	/**
+	 * DENIED keys: the reason the administrator gave, the empty string when none was given. Every denial
+	 * stores it, so a null on a DENIED key means one denied before this field existed, whose reason sits
+	 * at the end of the notes (see {@link ApiKeyStatus}). Null on a key that was never denied; a reused
+	 * tombstone clears it.
+	 */
+	@JsonProperty
+	private String deniedReason;
+
 	/** Kill switch for the whole key id: INACTIVE refuses every secret and every token issued for the key. */
 	/** REVOKED is the delete tombstone: the row stays for the unique index, and every read path filters it out. */
 	public enum ApiKeyStatus { ACTIVE, INACTIVE, REVOKED,
 		/** a free-form key a write user asked for; visible, never usable, until an admin approves (ACTIVE) or denies (DENIED) */
-		REQUESTED, DENIED }
+		REQUESTED, DENIED;
+
+		/**
+		 * How a denial was recorded before {@code deniedReason} existed: the request's notes end in
+		 * {@code DENIED_NOTES_MARKER} (after {@code DENIED_NOTES_SEPARATOR} when the request had a note), then
+		 * {@code DENIED_NOTES_REASON_SEPARATOR + reason} when one was given. Readers split this tail off
+		 * (the UI's splitDeniedNotes) only for a DENIED key whose deniedReason is null. A denial now stores
+		 * its reason in deniedReason and leaves the notes as the requester wrote them.
+		 */
+		public static final String DENIED_NOTES_MARKER = "Denied";
+		public static final String DENIED_NOTES_SEPARATOR = " | ";
+		public static final String DENIED_NOTES_REASON_SEPARATOR = ": ";
+	}
 
 	/**
 	 * One of up to two secrets of a key id (AWS-style rotation: add the second, move clients,
@@ -92,7 +113,7 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 
 	public static final int MAX_SECRETS = 2;
 
-	@JsonProperty
+	@JsonProperty(CommonVariables.STATUS_FIELD)
 	private ApiKeyStatus status = ApiKeyStatus.ACTIVE;
 	@JsonProperty
 	private List<ApiKeySecret> secrets = new LinkedList<>();
@@ -108,6 +129,16 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	/** set when an org admin deactivated the key: the owner or holder cannot re-activate it, only an admin can */
 	@JsonProperty
 	private boolean adminDisabled;
+
+	/**
+	 * Whether an org admin's kill switch holds the key off: the mark on a key that is not ACTIVE (INACTIVE, or a
+	 * tombstone deleted while switched off). A mark on an ACTIVE key is one a re-mint left behind before the
+	 * switch was enforced there; it holds nothing, and the next status change clears it.
+	 */
+	@JsonIgnore
+	public boolean isSwitchedOffByAdmin() {
+		return adminDisabled && getStatus() != ApiKeyStatus.ACTIVE;
+	}
 
 	/**
 	 * Bounds device-login sessions approved on this key: a session ends this many minutes after its
@@ -140,6 +171,20 @@ public class ApiKeyData extends RelizaDataParent implements RelizaObject {
 	/** FEDERATED rows only: the external repository this identity stands for, with its pinned ids. */
 	@JsonProperty
 	private FederatedIdentity federation;
+
+	/**
+	 * EXTERNAL rows only (task TEA-3): the outside party that holds the key, by name. Not {@link #holder}, which is a
+	 * user of the organization; an outside party has none, and an administrator mints and hands over the secret.
+	 */
+	@JsonProperty
+	private String holderName;
+
+	/**
+	 * EXTERNAL rows only (task TEA-3): the organization's TEA id, copied at creation. It never changes once minted, and
+	 * the printed key id {@code EXTERNAL__<teaOrg>__ord__<keyOrder>} is built from it.
+	 */
+	@JsonProperty
+	private UUID teaOrg;
 
 	public ApiKeyStatus getStatus() { return status == null ? ApiKeyStatus.ACTIVE : status; }
 	public List<ApiKeySecret> getSecrets() { return secrets == null ? new LinkedList<>() : secrets; }

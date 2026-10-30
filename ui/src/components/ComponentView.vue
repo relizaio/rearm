@@ -42,7 +42,7 @@
                     </n-gi>
                 </n-grid>
             </n-gi>
-            <n-gi :span="isDocument || selectedTab === 'latest' ? 10 : 3">
+            <n-gi :span="isDocument || wideTab ? 10 : 3">
                 <div class="componentTop">
                     <div class="componentSummary">
                         <h5 v-if="componentData">
@@ -56,6 +56,9 @@
                                 style="margin-left: 8px;"
                             >{{ effectiveLifecycleLabel }}</n-tag>
                         </h5>
+                        <n-alert v-if="teaBanner" data-testid="tea-public-banner" type="error" :closable="false" style="margin: 4px 0;">
+                            {{ teaBanner }}
+                        </n-alert>
                         <div class="componentIconsAndSettings">
                             <n-space v-cloak :size="0">
                                 <n-icon v-if="componentData && componentData.type === 'COMPONENT' && isWritable && !isDocument" @click="genApiKey('rlz')" class="clickable icons" title="Generate Component API Key" size="24"><LockOpen /></n-icon>
@@ -185,12 +188,16 @@
                                 @update:show="handleComponentSettingsClose"
                             >
                                 <h3>{{ words.componentFirstUpper }} Settings for {{ componentData?.name }}</h3>
+                                <ComponentRevisionConflict v-if="revisionConflict" :conflict="revisionConflict.info" :users="users"
+                                    :can-force="isWritable" :when="commonFunctions.dateDisplay" :component-word="words.component"
+                                    @reload="reloadComponentForm" @force="forceSave" />
                                 <n-tabs
                                     type="segment"
                                     size="medium"
                                     animated
                                     style="margin: 0 -4px"
                                     pane-style="padding-left: 4px; padding-right: 4px; box-sizing: border-box;"
+                                    v-model:value="componentSettingsTab"
                                     @update:value="handleTabSwitch"
                                 >
                                     <n-tab-pane name="Core Settings">
@@ -507,7 +514,7 @@
                                         </div>
                                         <div class="coreSettingsActions" v-if="hasCoreSettingsChanges && isWritable" style="margin-top: 20px;">
                                             <n-space>
-                                                <n-button type="success" @click="save">
+                                                <n-button type="success" data-testid="component-settings-save" @click="save">
                                                     <template #icon>
                                                         <n-icon><Check /></n-icon>
                                                     </template>
@@ -521,15 +528,76 @@
                                                 </n-button>
                                             </n-space>
                                         </div>
-
-                                        <!-- SIBLING of coreSettingsActions, never a child. It
-                                             was nested INSIDE that div, whose v-if is
-                                             "hasCoreSettingsChanges && isWritable" -- the
-                                             unsaved-changes action bar. So the panel appeared
-                                             only after you had already edited some OTHER core
-                                             setting, and vanished the moment you saved. On a
-                                             freshly opened component, which is every reader
-                                             following the walkthrough, it did not exist.
+                                    </n-tab-pane>
+                                    <n-tab-pane name="licenseSupplier" tab="License & Supplier">
+                                        <!-- SCORE-42: the declared licence and the supplier ReARM writes on the
+                                             SBOM nodes it makes for this component's releases. Its own tab, apart
+                                             from Core Settings and its coreSettingsActions bar (the device panels'
+                                             lesson), with its own document, its own Save and its own baseline: the
+                                             core-settings save sends the whole component and reads the response
+                                             through COMPONENT_FULL_DATA, which must stay valid on a CE mirror that
+                                             lacks these three fields. Read on mount, like the device window, so the
+                                             tab needs no load of its own. Hidden when the read failed; the
+                                             unsupported note only when the server cannot answer (schema drift). -->
+                                        <div v-if="updatedComponent && componentData && declaredLicenseSupported && componentLicenseLoaded"
+                                            style="margin-top: 22px;" data-testid="component-license-block">
+                                            <label style="display: flex; align-items: center; gap: 6px; font-weight: bold;">
+                                                <span>Declared licence and supplier</span>
+                                                <n-tooltip trigger="hover" placement="right">
+                                                    <template #trigger>
+                                                        <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                    </template>
+                                                    <div style="max-width: 700px; white-space: pre-line;">{{ COMPONENT_TOOLTIP }}</div>
+                                                </n-tooltip>
+                                            </label>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence expression</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.expression" :readonly="!isWritable"
+                                                        :placeholder="EXPRESSION_PLACEHOLDER" data-testid="component-license"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ EXPRESSION_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Licence text URL</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.url" :readonly="!isWritable"
+                                                        :placeholder="URL_PLACEHOLDER" data-testid="component-license-url"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ URL_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <div class="versionSchemaBlock">
+                                                <label>Supplier</label>
+                                                <div style="display: flex; flex-direction: column; flex: 1; min-width: 0;">
+                                                    <n-input v-model:value="componentLicense.supplier" :readonly="!isWritable"
+                                                        :placeholder="SUPPLIER_PLACEHOLDER" data-testid="component-supplier"
+                                                        @update:value="componentLicenseError = null" />
+                                                    <span class="text-muted" style="margin-top: 4px;">{{ SUPPLIER_HINT }}</span>
+                                                </div>
+                                            </div>
+                                            <n-button v-if="isWritable" size="small" type="primary" data-testid="component-license-save"
+                                                :disabled="!declaredLicenseDiffers(componentLicense, componentLicenseBaseline) || savingComponentLicense"
+                                                :loading="savingComponentLicense"
+                                                @click="saveComponentLicense">Save licence and supplier</n-button>
+                                            <n-alert v-if="componentLicenseError" type="error" :show-icon="true" data-testid="component-license-error"
+                                                style="font-size: 12px; max-width: 720px; margin-top: 8px;">
+                                                {{ componentLicenseError }}
+                                            </n-alert>
+                                        </div>
+                                        <div v-if="updatedComponent && componentData && !declaredLicenseSupported"
+                                            class="text-muted" style="margin-top: 22px;" data-testid="component-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">
+                                        <!-- The Device tab: its own tab, apart from Core Settings. The window panel
+                                             was once nested INSIDE coreSettingsActions, whose v-if is
+                                             "hasCoreSettingsChanges && isWritable" -- the unsaved-changes action
+                                             bar. So the panel appeared only after you had already edited some OTHER
+                                             core setting, and vanished the moment you saved. On a freshly opened
+                                             component, which is every reader following the walkthrough, it did not
+                                             exist. Both panels are read on mount (loadDeviceWindow), so the tab
+                                             needs no load of its own.
                                              THE DEVICE SUPPORT WINDOW LIVES HERE NOW (D7).
                                                  It was on the product RELEASE until 2026-09-10,
                                                  which meant one physical device could be described
@@ -611,6 +679,52 @@
                                             </n-alert>
                                             </div>
                                     </n-tab-pane>
+                                    <n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">
+                                        <!-- Every edition (CE: the one `default` SBOM profile). Shown to everyone,
+                                             writable by an admin, as the Guards tab. -->
+                                        <TeaProfileEditor
+                                            ref="teaEditor"
+                                            :org-uuid="orguuid"
+                                            scope="COMPONENT"
+                                            :object-uuid="componentUuid"
+                                            :object-name="componentData?.name"
+                                            :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :object-archived="componentData?.status === 'ARCHIVED'"
+                                            :is-writable="isAdmin"
+                                            :is-org-admin="isAdmin"
+                                            :perspective-options="teaPerspectiveOptions"
+                                            :installation-type="myUser.installationType"
+                                            @saved="loadTeaBanner"
+                                            @removed="loadTeaBanner"/>
+                                    </n-tab-pane>
+                                    <n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">
+                                        <h6>SBOM profiles at this {{ words.component }}</h6>
+                                        <SbomProfileOverrides
+                                            :org-uuid="orguuid"
+                                            scope="COMPONENT"
+                                            :object-uuid="componentUuid"
+                                            :object-name="componentData?.name"
+                                            :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :is-writable="isAdmin"
+                                            :perspective-options="teaPerspectiveOptions"
+                                            :installation-type="myUser.installationType"
+                                            :names="teaPerspectiveNames()"
+                                            @changed="reloadSbomConsumers" />
+                                    </n-tab-pane>
+                                    <n-tab-pane name="regulatory" tab="Regulatory" v-if="regulatoryPackagesAvailable(myUser.installationType)">
+                                        <h6>Regulatory package settings</h6>
+                                        <PackageSettingsEditor
+                                            ref="packageEditor"
+                                            :org-uuid="orguuid"
+                                            scope="COMPONENT"
+                                            :object-uuid="componentUuid"
+                                            :object-name="componentData?.name"
+                                            :object-is-product="componentData?.type === 'PRODUCT'"
+                                            :is-writable="isAdmin"
+                                            :perspective-options="teaPerspectiveOptions"
+                                            :installation-type="myUser.installationType"
+                                            :names="teaPerspectiveNames()" />
+                                    </n-tab-pane>
                                     <n-tab-pane name="outputTriggers" tab="Actions" v-if="myUser.installationType !== 'OSS' && !isDocument">
                                         <h4 style="margin-bottom: 8px;">{{ words.componentFirstUpper }} Local Actions</h4>
                                         <n-data-table :data="updatedComponent.outputTriggers ? updatedComponent.outputTriggers : []" :columns="outputTriggerTableFields" :row-key="dataTableUuidRowKey" />
@@ -678,6 +792,7 @@
                                                         />
                                                         <strong>{{ gie.name }}</strong>
                                                         <n-tag v-if="gie.enabled === false" type="warning" size="small" round>Globally disabled</n-tag>
+                                                        <n-tag v-if="teaPolicyRuleBadgeTitle(gie.uuid)" type="error" size="small" round :title="teaPolicyRuleBadgeTitle(gie.uuid) || ''" data-testid="tea-public-badge">PUBLIC</n-tag>
                                                         <span class="text-muted" style="font-size: 0.85em;">
                                                             ({{ gie.outputEvents?.length || 0 }} default action{{ gie.outputEvents?.length !== 1 ? 's' : '' }})
                                                         </span>
@@ -862,7 +977,8 @@
                                             :org-uuid="orguuid"
                                             :component-uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane name="actionGuards" tab="Guards" v-if="myUser.installationType !== 'OSS'">
                                         <!-- Shown to everyone: what a release is held to is worth
@@ -872,7 +988,8 @@
                                             scope="COMPONENT"
                                             :uuid="componentUuid"
                                             :is-writable="isAdmin"
-                                            :component-word="words.component"/>
+                                            :component-word="words.component"
+                                            @component-written="ownComponentWrite"/>
                                     </n-tab-pane>
                                     <n-tab-pane v-if="false" name="Environment Mapping">
                                         <div v-if="isWritable" class="envBranchMapBlock">
@@ -962,7 +1079,10 @@
                                                     <n-form-item label="Type" path="type">
                                                         <n-select v-model:value="outputTrigger.type" required 
                                                             v-on:update:value="value => {if (value === 'EMAIL_NOTIFICATION') loadUsers()}"
-                                                            :options="outputTriggerTypeOptions" />
+                                                            :options="outputTriggerTypeOptionsForSelect" />
+                                                    </n-form-item>
+                                                    <n-form-item v-if="outputTrigger.type === 'TEA_PUBLISH' || outputTrigger.type === 'TEA_HIDE'" label="Settings">
+                                                        <span class="text-muted">None: the effective TEA profile at firing time decides what is published or hidden.</span>
                                                     </n-form-item>
                                                     <n-form-item v-if="outputTrigger.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                                         <n-select v-model:value="outputTrigger.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -1256,15 +1376,37 @@
                                 @selectBranch="selectBranchFromLatest" />
                         </n-tab-pane>
                         <n-tab-pane name="branches" :tab="componentData.type === 'COMPONENT' ? 'Branches' : words.branchFirstUpper + 's'">
-                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                            <div v-if="bulkArchiveMode" data-testid="bulk-archive-bar" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <n-button size="small" @click="checkedBranchKeys = selectableKeys(branches)">Select all</n-button>
+                                <n-button size="small" @click="checkedBranchKeys = []">Clear</n-button>
+                                <span>{{ checkedBranchKeys.length }} selected</span>
+                                <n-button size="small" type="error" data-testid="bulk-archive-run" :disabled="checkedBranchKeys.length === 0 || bulkArchiveRunning" @click="runBulkArchive('branches')">Archive selected ({{ checkedBranchKeys.length }})</n-button>
+                            </div>
+                            <n-data-table :data="branches" :columns="branchColumns" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" v-model:checked-row-keys="checkedBranchKeys" />
+                        </n-tab-pane>
+                        <n-tab-pane v-if="componentData?.type === 'PRODUCT' && submissionsAvailable(myUser.installationType)" name="submissions" tab="Submissions">
+                            <ProductSubmissionsPanel
+                                :org-uuid="orguuid"
+                                :component-uuid="componentUuid"
+                                :component-name="componentData?.name"
+                                :branches="branches"
+                                :is-writable="isWritable"
+                                :installation-type="myUser.installationType"
+                                :refresh-token="latestRefreshToken" />
                         </n-tab-pane>
                         <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">
-                            <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" />
+                            <div v-if="bulkArchiveMode" data-testid="bulk-archive-bar" style="display: flex; align-items: center; gap: 8px; margin-bottom: 8px;">
+                                <n-button size="small" @click="checkedTagKeys = selectableKeys(tags)">Select all</n-button>
+                                <n-button size="small" @click="checkedTagKeys = []">Clear</n-button>
+                                <span>{{ checkedTagKeys.length }} selected</span>
+                                <n-button size="small" type="error" data-testid="bulk-archive-run" :disabled="checkedTagKeys.length === 0 || bulkArchiveRunning" @click="runBulkArchive('tags')">Archive selected ({{ checkedTagKeys.length }})</n-button>
+                            </div>
+                            <n-data-table :data="tags" :columns="tagFields" :row-props="rowProps" :row-class-name="branchRowClassName" :row-key="branchTableRowKey" v-model:checked-row-keys="checkedTagKeys" />
                         </n-tab-pane>
                     </n-tabs>
                 </div>
             </n-gi>
-            <n-gi v-if="!isDocument && selectedTab !== 'latest'" span="7">
+            <n-gi v-if="!isDocument && !wideTab" span="7">
                 <div v-if="marketingVersionEnabled" class="marketingReleases">
                     <mrkt-releases-of-component :component="updatedComponent.uuid" />
                 </div>
@@ -1297,6 +1439,7 @@ import FindingsOverTimeChart from './FindingsOverTimeChart.vue'
 import DeployedToWidget from './DeployedToWidget.vue'
 import DocumentComponentPanel from './DocumentComponentPanel.vue'
 import { isDocumentComponent } from '@/utils/agentDocumentsView'
+import { BranchArchiveResult, chunk, confirmText, keepFailedSelected, rowClickAction, selectableBranch, selectableKeys, summarizeOutcomes, unsentAfter } from '@/utils/branchBulkArchive'
 import { DashboardView } from '@/utils/dashboardView'
 import FeatureSetParticipation from './FeatureSetParticipation.vue'
 import ReleasesPerDayChart from './ReleasesPerDayChart.vue'
@@ -1316,15 +1459,38 @@ import { validateInputTrigger, validateOutputTrigger } from '../utils/triggerVal
 import { withGhosts } from '@/utils/channelOptions'
 import CelExpressionBuilder from './CelExpressionBuilder.vue'
 import ActionGuards from './ActionGuards.vue'
+import TeaProfileEditor from './TeaProfileEditor.vue'
+import SbomProfileOverrides from './SbomProfileOverrides.vue'
+import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import ProductSubmissionsPanel from './ProductSubmissionsPanel.vue'
+import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
+import { submissionsAvailable } from '@/utils/submissions'
+import { teaConfirmBeforeMembership, teaMembershipDelta, teaPublicBanner, teaProfilesAvailable } from '@/utils/teaProfile'
+import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeAutoPublish, TeaEditorView, teaPublicBadgeTitle,
+    teaActionNames, teaPublishWiring, teaPublishWiringAdded } from '@/utils/teaOutputEvents'
 import ComponentLocks from './ComponentLocks.vue'
+import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
+import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
+import {
+    COMPONENT_SAVED, COMPONENT_TOOLTIP, EXPRESSION_HINT, EXPRESSION_PLACEHOLDER, SUPPLIER_HINT, SUPPLIER_PLACEHOLDER,
+    UNSUPPORTED_NOTE, UPDATE_COMPONENT_DECLARED_LICENSE, URL_HINT, URL_PLACEHOLDER,
+    componentDeclaredLicenseVariables, declaredLicenseDiffers, loadComponentDeclaredLicense,
+} from '@/utils/declaredLicense'
 import type { DeviceWindowState } from '@/utils/deviceSupportWindowInput'
 import { isSchemaDriftError } from '@/utils/graphqlDriftFallback'
-import { resolveComponentPageTab } from '@/utils/componentPageTab'
+import { resolveComponentPageTab, resolveComponentSettingsTab, SETTINGS_DEFAULT_TAB } from '@/utils/componentPageTab'
 
 const updatedComponent: Ref<any> = ref({})
 const originalComponent: Ref<any> = ref({})
+// TPF-62: the revision the settings form was read at, advanced by this page's own writes of the
+// component, and the pending refusal when a save was refused as stale. Destructured so the
+// template sees top-level refs (a ref nested in a plain object is not unwrapped there).
+const {
+    expected: formRevision, conflict: revisionConflict, baseline: revisionBaseline,
+    saved: revisionSaved, ownWrite: ownComponentWrite, refused: revisionRefused, force: forceRevision
+} = useComponentRevision()
 
 onMounted(async () => {
     await initLoad()
@@ -1332,6 +1498,9 @@ onMounted(async () => {
     deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
     deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
+    await loadTeaBanner()
+    // Never throws (it catches every read error), so the settings modal below always opens.
+    await loadComponentLicense()
     // Initialize component settings modal from URL query parameter after data is loaded
     if (route.query.componentSettingsView === 'true') {
         await openComponentSettings()
@@ -1460,6 +1629,70 @@ if (route.params.orguuid) {
 
 const componentUuid: string = route.params.compuuid.toString()
 
+// TEA profile (TEA-2): the red banner when the component's effective profile is PUBLIC, read once
+// on load and again after the TEA tab saves or removes the override. TEA-13 keeps the whole view
+// too: the PUBLIC badge on TEA_PUBLISH actions reads it.
+const teaBanner: Ref<string | null> = ref(null)
+const teaView: Ref<TeaEditorView | null> = ref(null)
+const teaPerspectiveOptions = computed(() => ((updatedComponent.value?.perspectiveDetails
+    ?? componentData.value?.perspectiveDetails) || [])
+    .filter((p: any) => p.type === 'PERSPECTIVE')
+    .map((p: any) => ({ label: p.name, value: p.uuid })))
+
+/** The perspective names the TEA texts read, by uuid. */
+function teaPerspectiveNames (): Record<string, string> {
+    const names: Record<string, string> = {}
+    for (const o of teaPerspectiveOptions.value) names[o.value] = o.label
+    return names
+}
+
+// The TEA and package editors of the TEA tab (TEA-30): an override change beside them reloads
+// their SBOM profile catalogs only, so an unsaved edit of their forms survives (design 3.3.4, D15).
+const teaEditor = ref<any>(null)
+const packageEditor = ref<any>(null)
+function reloadSbomConsumers () {
+    teaEditor.value?.reloadCatalog()
+    packageEditor.value?.reloadCatalog()
+}
+
+async function loadTeaBanner () {
+    if (!teaProfilesAvailable(myUser.installationType)) {
+        teaBanner.value = null
+        teaView.value = null
+        return
+    }
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.TeaProfileEditorViewGql,
+            variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
+            fetchPolicy: 'no-cache',
+        })
+        teaBanner.value = teaPublicBanner(resp.data.teaProfileEditorView, teaPerspectiveNames())
+        teaView.value = resp.data.teaProfileEditorView ?? null
+    } catch (err: any) {
+        // The banner is advisory; the TEA tab reports a failed read itself.
+        console.error(err)
+        teaBanner.value = null
+        teaView.value = null
+    }
+}
+
+// TEA-13: the PUBLIC badge on a TEA_PUBLISH action row, or null. Advisory; the save-time
+// confirmation reads fresh (confirmTeaPublishWiring).
+function teaActionBadgeTitle (row: any): string | null {
+    if (row?.type !== 'TEA_PUBLISH') return null
+    return teaPublicBadgeTitle(teaView.value, teaPerspectiveNames(), words.value.component)
+}
+
+// The staged TEA publish wiring (design 3.5), for the policy rule header badge of the ref editor.
+const teaStagedWiring = computed((): string[] => teaPublishWiring(updatedComponent.value,
+    policyGlobalInputEvents.value, policyGlobalOutputEvents.value))
+
+function teaPolicyRuleBadgeTitle (ruleUuid: string): string | null {
+    if (!teaStagedWiring.value.some(p => p.startsWith('policy:' + ruleUuid + ':'))) return null
+    return teaPublicBadgeTitle(teaView.value, teaPerspectiveNames(), words.value.component)
+}
+
 // A board's document series (task 36d0549e): shown as its rounds, without the software panels.
 const isDocument = computed<boolean>(() => isDocumentComponent(componentData.value))
 const baseBranchUuid = computed<string | null>(() =>
@@ -1514,21 +1747,30 @@ const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
  * possible thing to be wrong about.
  */
 async function saveDeviceClass (): Promise<void> {
+    await submitDeviceClass(formRevision.value)
+}
+
+async function submitDeviceClass (expected: number | null): Promise<void> {
     if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
     savingDeviceClass.value = true
     deviceWindowError.value = null
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: { uuid: componentUuid,
+            variables: { component: withExpectedRevision({ uuid: componentUuid,
                 name: componentData.value?.name || updatedComponent.value?.name,
-                deviceClass: deviceClassEdit.value } },
+                deviceClass: deviceClassEdit.value }, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         await initLoad()
         deviceClassBaseline.value = deviceClassEdit.value
         await loadDeviceWindow()
+        await loadComponentLicense()
     } catch (e: any) {
+        // A stale-revision refusal shows the panel and keeps the class as the user set it, so
+        // Force resends it.
+        if (revisionRefused(e, (rev) => submitDeviceClass(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
         deviceClassEdit.value = deviceClassBaseline.value
     } finally {
@@ -1555,7 +1797,82 @@ async function loadDeviceWindow (): Promise<void> {
     }
 }
 
+/**
+ * The declared licence and supplier (SCORE-42, design ADR-3). Inline rather than a composable:
+ * the view is routed per component uuid (componentUuid is fixed for the instance), so no
+ * navigation reset or request fence is needed, unlike the release page.
+ */
+const componentLicense = reactive({ expression: '', url: '', supplier: '' })
+/** What the server last confirmed; refreshed from the mutation response. */
+const componentLicenseBaseline = reactive({ expression: '', url: '', supplier: '' })
+const componentLicenseLoaded: Ref<boolean> = ref(false)
+const savingComponentLicense: Ref<boolean> = ref(false)
+const componentLicenseError: Ref<string | null> = ref(null)
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function takeComponentLicense (expression: string, url: string, supplier: string): void {
+    componentLicense.expression = expression
+    componentLicense.url = url
+    componentLicense.supplier = supplier
+    componentLicenseBaseline.expression = expression
+    componentLicenseBaseline.url = url
+    componentLicenseBaseline.supplier = supplier
+}
+
+async function loadComponentLicense (): Promise<void> {
+    if (!componentUuid) return
+    try {
+        const r = await loadComponentDeclaredLicense(graphqlClient as any, componentUuid)
+        if (!r.supported) {
+            // Schema drift: the server cannot answer. Latched for the session on every surface.
+            store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+            componentLicenseLoaded.value = false
+            return
+        }
+        takeComponentLicense(r.expression, r.url, r.supplier)
+        componentLicenseError.value = null
+        componentLicenseLoaded.value = true
+    } catch (e: any) {
+        // A failed read is not an unsupported server: hide the block, write nothing, say nothing
+        // (the device window's rule). Never rethrown, so onMounted reaches the settings modal.
+        componentLicenseLoaded.value = false
+        componentLicenseError.value = null
+    }
+}
+
+async function saveComponentLicense (): Promise<void> {
+    // name is REQUIRED: UpdateComponentInput.name is String!.
+    const variables = componentDeclaredLicenseVariables(componentUuid,
+        componentData.value?.name || updatedComponent.value?.name, componentLicense, componentLicenseBaseline)
+    if (!variables) return
+    savingComponentLicense.value = true
+    componentLicenseError.value = null
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: UPDATE_COMPONENT_DECLARED_LICENSE,
+            variables,
+            fetchPolicy: 'no-cache'
+        })
+        // The canonical form, and the URL the server cleared with the expression.
+        const saved = resp?.data?.updateComponent
+        // The save wrote the component row, which adds one to its revision (TPF-61): count it as this page's own
+        // write, or the next settings, device-class or window save would be refused as stale (TPF-62).
+        ownComponentWrite()
+        takeComponentLicense(saved?.licenseExpression || '', saved?.licenseUrl || '', saved?.supplierName || '')
+        notify('success', 'Saved', COMPONENT_SAVED)
+    } catch (e: any) {
+        componentLicenseError.value = commonFunctions.extractGraphQLErrorMessage(e)
+    } finally {
+        savingComponentLicense.value = false
+    }
+}
+
 async function saveDeviceWindow (): Promise<void> {
+    await submitDeviceWindow(formRevision.value)
+}
+
+async function submitDeviceWindow (expected: number | null): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
     const input = deviceWindowMutationInput(componentUuid,
@@ -1566,9 +1883,10 @@ async function saveDeviceWindow (): Promise<void> {
     try {
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
-            variables: { component: input },
+            variables: { component: withExpectedRevision(input, expected) },
             fetchPolicy: 'no-cache'
         })
+        revisionSaved(expected)
         // Advance the baseline from what was SENT and accepted -- the mutation deliberately does
         // not select the window back, for the CE reason above.
         deviceWindowBaseline.eos = deviceWindow.eos
@@ -1580,6 +1898,9 @@ async function saveDeviceWindow (): Promise<void> {
         // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
         // end of life", the device-class refusal the walkthrough quotes -- never reaches the
         // panel. saveDeviceClass 40 lines up already uses the right one.
+        // A stale-revision refusal shows the panel instead, and keeps the pickers as the user
+        // set them, so Force resends them.
+        if (revisionRefused(e, (rev) => submitDeviceWindow(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         savingDeviceWindow.value = false
@@ -1769,11 +2090,29 @@ async function exportComponentCle () {
 }
 
 // componentSettingsView route param is handled in onMounted after data is loaded
+// The settings modal's pane; ?componentSettingsTab= picks it on open (resolveComponentSettingsTab).
+const componentSettingsTab = ref<string>(SETTINGS_DEFAULT_TAB)
+/** The settings panes this page shows, by name: the v-if of each n-tab-pane of the settings modal. */
+function visibleSettingsTabs (): string[] {
+    const pro = myUser.installationType !== 'OSS'
+    return [SETTINGS_DEFAULT_TAB, 'licenseSupplier',
+        ...(deviceWindowSupported.value ? ['device'] : []),
+        ...(teaProfilesAvailable(myUser.installationType) ? ['tea', 'sbomProfiles'] : []),
+        ...(regulatoryPackagesAvailable(myUser.installationType) ? ['regulatory'] : []),
+        ...(pro && !isDocument.value ? ['outputTriggers', 'Input Events'] : []),
+        ...(pro ? ['locks', 'actionGuards'] : []),
+        ...(isAdmin && pro ? ['Admin Settings'] : [])]
+}
 const showCreateOutputTriggerModal: Ref<boolean> = ref(false)
 const showCreateInputTriggerModal: Ref<boolean> = ref(false)
 const branchRouteId = route.params.branchuuid ? route.params.branchuuid.toString() : ''
 const routePrnumber = route.params.prnumber ? route.params.prnumber.toString() : ''
 const selectedBranchUuid : Ref<string> = ref(branchRouteId)
+// TPF-78: the selection mode of the Branches / Feature Sets and Tags tables ("Archive selected").
+const bulkArchiveMode = ref(false)
+const checkedBranchKeys = ref<string[]>([])
+const checkedTagKeys = ref<string[]>([])
+const bulkArchiveRunning = ref(false)
 // An explicit ?tab= wins; a branch or feature-set link (a :branchuuid with no
 // tab) opens Branches / Feature Sets; a plain component link opens Latest.
 const selectedTab: Ref<string> = ref(resolveComponentPageTab({
@@ -1785,6 +2124,8 @@ const selectedTab: Ref<string> = ref(resolveComponentPageTab({
 }))
 // Bumped after branch list changes so the Latest tab refetches.
 const latestRefreshToken = ref(0)
+// The Latest and Submissions tabs take the page's width: no branch pane beside them (TEA-30).
+const wideTab = computed(() => selectedTab.value === 'latest' || selectedTab.value === 'submissions')
 const branchCollapseState: Ref<any> = ref({})
 const selectedPullRequest: Ref<string> = routePrnumber !== '' ? ref(branchRouteId + '-pr-' + routePrnumber) : ref('')
 branchCollapseState.value['branchCollapse' + branchRouteId] = true
@@ -1867,7 +2208,10 @@ const openComponentSettings = async function() {
     await Promise.all([loadUserGroups(), loadUsers().catch(() => {})])
     await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    componentSettingsTab.value = resolveComponentSettingsTab(route.query.componentSettingsTab, visibleSettingsTabs())
     showComponentSettingsModal.value = true
+    // A deep-linked pane loads what a switch to it would.
+    if (componentSettingsTab.value !== SETTINGS_DEFAULT_TAB) await handleTabSwitch(componentSettingsTab.value)
     
     // Update URL without triggering Vue Router navigation
     const newQuery = new URLSearchParams(window.location.search)
@@ -1899,9 +2243,12 @@ const handleComponentSettingsClose = async function(show: boolean) {
     }
     
     if (!show) {
+        // A refusal belongs to the edit being closed; the form revision stays.
+        revisionConflict.value = null
         // Remove componentSettingsView parameter from URL without triggering Vue Router navigation
         const newQuery = new URLSearchParams(window.location.search)
         newQuery.delete('componentSettingsView')
+        newQuery.delete('componentSettingsTab')
         const newUrl = newQuery.toString() ? `${window.location.pathname}?${newQuery.toString()}` : window.location.pathname
         window.history.replaceState({}, '', newUrl)
     }
@@ -1980,6 +2327,23 @@ async function fetchPerspectives() {
 
 async function savePerspectives() {
     try {
+        // TEA-9: a membership change that makes the component PUBLIC is confirmed first, on the
+        // server's dry-run of exactly this list. A refusal (validation, archived) shows and stops.
+        if (teaProfilesAvailable(myUser.installationType)) {
+            const exposureResp: any = await graphqlClient.query({
+                query: graphqlQueries.TeaMembershipExposureChangeGql,
+                variables: { componentUuid: componentUuid, perspectiveUuids: selectedPerspectives.value },
+                fetchPolicy: 'no-cache'
+            })
+            const delta = teaMembershipDelta(selectedPerspectives.value, updatedComponent.value?.perspectiveDetails,
+                orgPerspectives.value)
+            const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added,
+                delta.removed, delta.names, isComponent.value ? 'component' : 'product')
+            if (confirm) {
+                const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+                if (!answer?.isConfirmed) return
+            }
+        }
         const response = await graphqlClient.mutate({
             mutation: gql`
                 mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
@@ -1998,6 +2362,8 @@ async function savePerspectives() {
                 perspectiveUuids: selectedPerspectives.value
             }
         })
+        // The perspectives write saves the component row (even for an unchanged set): count it.
+        ownComponentWrite()
         
         if (response.data && response.data.setPerspectivesOnComponent) {
             updatedComponent.value.perspectiveDetails = response.data.setPerspectivesOnComponent.perspectiveDetails
@@ -2158,6 +2524,7 @@ function selectBranch (uuid: string) {
         delete cleanQuery.release
         delete cleanQuery.branchSettingsView
         delete cleanQuery.componentSettingsView
+        delete cleanQuery.componentSettingsTab
         delete cleanQuery.branchReleasePage
         delete cleanQuery.branchReleasePerPage
         
@@ -2432,6 +2799,8 @@ const outputTriggerTypeOptions = [
     {label: 'Pull Request Comment', value: 'PR_COMMENT'},
     {label: 'Lock', value: 'LOCK'}
 ]
+// TEA-13: TEA Publish and TEA Hide after VDR Snapshot Artifact, where the backend serves TEA.
+const outputTriggerTypeOptionsForSelect = computed(() => outputEventTypeOptionsForEdition(outputTriggerTypeOptions, myUser.installationType))
 
 const externalValidationConclusionOptions = [
     {label: 'Success', value: 'success'},
@@ -2666,7 +3035,43 @@ const fetchVcsRepos = async function () : Promise<any[]> {
     return vcsRepos.value
 }
 
-async function save () {
+async function save (): Promise<boolean> {
+    // Bound as a click handler, which receives the event: the revision cannot be an argument.
+    // TEA-13: the public warning on every save that carries a new TEA publish piece (design 3.5).
+    // false: nothing was sent.
+    if (!(await confirmTeaPublishWiring())) return false
+    await submitComponentSave(formRevision.value)
+    return true
+}
+
+/** The public warning. true: proceed (nothing to confirm, or confirmed); false: send nothing. */
+async function confirmTeaPublishWiring (): Promise<boolean> {
+    if (!teaProfilesAvailable(myUser.installationType)) return true
+    const rules = policyGlobalInputEvents.value
+    const globals = policyGlobalOutputEvents.value
+    const added = teaPublishWiringAdded(componentData.value, updatedComponent.value, rules, globals)
+    if (added.length === 0) return true
+    let view: TeaEditorView | null = null
+    try {
+        const resp: any = await graphqlClient.query({
+            query: graphqlQueries.TeaProfileEditorViewGql,
+            variables: { org: orguuid.value, scope: 'COMPONENT', object: componentUuid },
+            fetchPolicy: 'no-cache',
+        })
+        view = resp.data.teaProfileEditorView
+    } catch (err: any) {
+        console.error(err)
+        notify('error', 'Error', `Could not read the TEA profile of this ${words.value.component}; nothing was saved. ${err?.message || ''}`)
+        return false
+    }
+    const c = teaConfirmBeforeAutoPublish(view, teaPerspectiveNames(), words.value.component,
+        teaActionNames(added, updatedComponent.value.outputTriggers, globals))
+    if (!c) return true
+    const answer = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return Boolean(answer?.isConfirmed)
+}
+
+async function submitComponentSave (expected: number | null) {
     // approvalPolicy is sent as null both for "leave unchanged" (server
     // convention) and "clear" (UI operator hit the clearable X). We
     // disambiguate by setting an explicit clearApprovalPolicy flag when
@@ -2683,9 +3088,13 @@ async function save () {
     } else if (stagedOwnerChange.value === 'clear') {
         payload.clearOwner = true
     }
+    // TPF-62: the revision the form was read at; the server refuses the save if the component
+    // changed since.
+    if (expected !== null) payload.expectedRevision = expected
     const ownerWasStaged = stagedOwnerChange.value !== 'none'
     try {
         updatedComponent.value = commonFunctions.deepCopy(await store.dispatch('updateComponent', payload))
+        revisionSaved(expected)
         // Update originalComponent to match current state so hasComponentChanges() returns false
         originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
         // Refresh the effective-policy snapshot so the provenance card
@@ -2697,6 +3106,9 @@ async function save () {
         if (ownerWasStaged) await loadOwnership()
         notify('success', 'Success', `${words.value.componentFirstUpper} updated successfully`)
     } catch (err: any) {
+        // A stale-revision refusal: the panel is the message, so no toast. Rethrown so that
+        // saveTriggers still sees a failure.
+        if (revisionRefused(err, (rev) => submitComponentSave(rev))) throw err
         // RelizaException surfaces as BAD_REQUEST with the actual
         // domain message (e.g. "Cannot clear approval policy while
         // component references global events…"). Otherwise it's a
@@ -2778,8 +3190,12 @@ async function saveTriggers() {
     updatedComponent.value.releaseInputTriggers = stripGraphQLMetadata(updatedComponent.value.releaseInputTriggers, true)
 
     try {
-        await save()
-        componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+        const sent = await save()
+        if (sent) {
+            componentData.value = commonFunctions.deepCopy(updatedComponent.value)
+            // TEA-13: the PUBLIC badge follows what was just saved.
+            await loadTeaBanner()
+        }
     } catch (error: any) {
         // save() already surfaced the underlying error via notify; we
         // only need to handle here when CEL needs the specialised
@@ -3256,6 +3672,7 @@ const rowProps = (row: any) => {
     return {
         style: 'cursor: pointer;',
         onDblclick: () => {
+            if (bulkArchiveMode.value) return   // TPF-78 T-1: no navigation in the selection mode
             // Clear the single-click timer and prevent single-click action
             if (clickTimer) {
                 clearTimeout(clickTimer)
@@ -3275,7 +3692,17 @@ const rowProps = (row: any) => {
                 }
             })
         },
-        onClick: () => {
+        onClick: (e: MouseEvent) => {
+            // TPF-78 T-1: in the selection mode a row click toggles the row and never navigates; a
+            // click in the selection cell is naive-ui's own checkbox, which already updated the keys
+            // through v-model:checked-row-keys and bubbles here (architecture 3.7).
+            const keysRef = row.type === 'TAG' ? checkedTagKeys : checkedBranchKeys
+            const r = rowClickAction(bulkArchiveMode.value, row, e.target, keysRef.value)
+            if (r.action !== 'select') {
+                if (clickTimer) { clearTimeout(clickTimer); clickTimer = null }
+                if (r.action === 'toggle') keysRef.value = r.keys
+                return
+            }
             // Delay single-click action to detect if it's part of a double-click
             if (clickTimer) {
                 clearTimeout(clickTimer)
@@ -3348,6 +3775,17 @@ const branchFields: any[] = [
                         onClick: () => { showAddBranchModal.value = true }
                     },
                     () => h(CirclePlus)
+                ) : null,
+                (isWritable.value && myUser.installationType !== 'OSS') ? h(
+                    Icon,
+                    {
+                        class: 'clickable',
+                        size: 20,
+                        title: 'Select ' + words.value.branchFirstUpperPlural + ' to archive',
+                        'data-testid': 'bulk-archive-toggle',
+                        onClick: () => { bulkArchiveMode.value = !bulkArchiveMode.value; if (!bulkArchiveMode.value) { checkedBranchKeys.value = []; checkedTagKeys.value = [] } }
+                    },
+                    () => h(Trash)
                 ) : null
             ])
         },
@@ -3409,13 +3847,38 @@ const cloneBranchColumn = {
         ))
     }
 }
-const branchColumns = computed(() => (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields)
+// TPF-78: the one selection column of both tables, shown only in the selection mode; the base
+// branch's checkbox is disabled.
+const selectionColumn = {
+    type: 'selection',
+    disabled: (row: any) => !selectableBranch(row)
+}
+
+const branchColumns = computed(() => {
+    const base = (!isComponent.value && isWritable.value) ? [...branchFields, cloneBranchColumn] : branchFields
+    return bulkArchiveMode.value ? [selectionColumn, ...base] : base
+})
 
 const branchTableRowKey = (row: any) => row.uuid
 
-const tagFields: any[] = [
+const tagBaseFields: any[] = [
     {
-        title: 'Tag',
+        title: () => {
+            return h('div', { style: 'display: flex; align-items: center; gap: 8px;' }, [
+                h('span', 'Tag'),
+                (isWritable.value && myUser.installationType !== 'OSS') ? h(
+                    Icon,
+                    {
+                        class: 'clickable',
+                        size: 20,
+                        title: 'Select ' + words.value.branchFirstUpperPlural + ' to archive',
+                        'data-testid': 'bulk-archive-toggle',
+                        onClick: () => { bulkArchiveMode.value = !bulkArchiveMode.value; if (!bulkArchiveMode.value) { checkedBranchKeys.value = []; checkedTagKeys.value = [] } }
+                    },
+                    () => h(Trash)
+                ) : null
+            ])
+        },
         key: 'name'
     },
     {
@@ -3430,6 +3893,58 @@ const tagFields: any[] = [
         render: archiveActionCell,
     }
 ]
+
+const tagFields = computed(() => {
+    return bulkArchiveMode.value ? [selectionColumn, ...tagBaseFields] : tagBaseFields
+})
+
+// TPF-78: "Archive selected" for one pane. One confirmation, then the selection in sequential
+// calls of at most 200; one summary; what was not archived (failed, or never sent after a thrown
+// call) stays selected.
+async function runBulkArchive (which: 'branches' | 'tags') {
+    const keysRef = which === 'branches' ? checkedBranchKeys : checkedTagKeys
+    const paneRows = (): any[] => (which === 'branches' ? branches.value : tags.value) || []
+    const keys = [...keysRef.value]
+    if (!keys.length) return
+    const rows = paneRows()
+    const rowsByUuid = new Map<string, any>(rows.map((r: any) => [r.uuid, r]))
+    const keySet = new Set(keys)
+    const names = rows.filter((r: any) => keySet.has(r.uuid)).map((r: any) => r.name)
+    const answer = await Swal.fire({
+        title: 'Are you sure?',
+        text: confirmText(names, words.value),
+        icon: 'warning',
+        showCancelButton: true,
+        confirmButtonText: 'Yes, archive',
+        cancelButtonText: 'No'
+    })
+    if (!answer.isConfirmed) { notify('error', 'Cancelled', 'Archive cancelled.'); return }
+    bulkArchiveRunning.value = true
+    const batches = chunk(keys)
+    let sent = 0
+    const results: BranchArchiveResult[] = []
+    let unsent: string[] = []
+    try {
+        for (const batch of batches) {
+            const r = await store.dispatch('archiveBranches', { branchUuids: batch, componentUuid: componentUuid })
+            results.push(...r.results)
+            sent += 1
+        }
+    } catch (err: any) {
+        Swal.fire({ title: 'Error!', text: commonFunctions.parseGraphQLError(err.message), icon: 'error' })
+        unsent = unsentAfter(batches, sent)
+    } finally {
+        bulkArchiveRunning.value = false
+    }
+    if (results.length) {
+        const s = summarizeOutcomes(results, rowsByUuid, words.value)
+        notify(s.type, s.title, s.text)
+    }
+    keysRef.value = [...keepFailedSelected(results, paneRows()), ...unsent]
+    if (!checkedBranchKeys.value.length && !checkedTagKeys.value.length) bulkArchiveMode.value = false
+    const archived = results.filter((r) => r.outcome === 'ARCHIVED').map((r) => r.branchUuid)
+    if (archived.includes(selectedBranchUuid.value) && mainBranch.value) selectBranch(mainBranch.value)
+}
 
 // "+ Create new action" inside the Local Rule modal sets this before
 // opening the action-create modal so addOutputTrigger can attach the
@@ -3658,8 +4173,10 @@ const outputTriggerTableFields: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = teaActionBadgeTitle(row)
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {
@@ -3706,8 +4223,10 @@ const outputTriggerTableFieldsReadOnly: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = teaActionBadgeTitle(row)
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {
@@ -4014,10 +4533,12 @@ async function initLoad() {
     const compUuid = route.params.compuuid.toString()
     await store.dispatch('fetchBranches', compUuid)
     latestRefreshToken.value++
-    let storeComponent = store.getters.componentById(compUuid)
-    if (!storeComponent || !storeComponent.versionType) {
-        storeComponent = await store.dispatch('fetchComponentFull', compUuid)
-    }
+    // TPF-62: always a fresh read, never the store cache, so the form and the revision it is
+    // saved against come from one read.
+    const { component, revision } = await loadComponentForForm(graphqlClient as any, compUuid)
+    store.commit('ADD_UPDATE_COMPONENT', component)
+    const storeComponent = component
+    revisionBaseline(revision)
     updatedComponent.value = commonFunctions.deepCopy(storeComponent)
     marketingVersionEnabled.value = updatedComponent.value.versionType === 'MARKETING'
     isComponent.value = updatedComponent.value.type === 'COMPONENT'
@@ -4046,6 +4567,42 @@ async function initLoad() {
             branchType: selectedBranch?.type,
             isComponent: isComponent.value
         })
+    }
+}
+
+/**
+ * Reload on a revision refusal (TPF-62): a fresh read of the form and its revision (which clears
+ * the panel), and every baseline the settings modal compares against, as opening the page does.
+ * The modal stays open on the current values.
+ */
+async function reloadComponentForm () {
+    await initLoad()
+    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassBaseline.value = deviceClassEdit.value
+    await loadDeviceWindow()
+    await loadOwnership()
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
+    if (updatedComponent.value?.perspectiveDetails) {
+        selectedPerspectives.value = updatedComponent.value.perspectiveDetails.map((p: any) => p.uuid)
+        originalPerspectives.value = [...selectedPerspectives.value]
+    }
+}
+
+/**
+ * Force on a revision refusal (TPF-62): re-runs the refused save with the refusal's revision. A
+ * second refusal re-renders the panel with the newer who and when; any other error was already
+ * shown by the save it re-ran.
+ */
+let forcing = false
+async function forceSave () {
+    if (forcing) return
+    forcing = true
+    try {
+        await forceRevision()
+    } catch {
+        // shown by the save it re-ran
+    } finally {
+        forcing = false
     }
 }
 

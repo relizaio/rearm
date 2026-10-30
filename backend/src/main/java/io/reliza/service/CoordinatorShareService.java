@@ -64,7 +64,6 @@ public class CoordinatorShareService {
 
 	@Autowired private AgentBoardRepository agentBoardRepository;
 	@Autowired private AgentTaskRepository agentTaskRepository;
-	@Autowired @Lazy private AgentBoardService agentBoardService;
 	@Autowired @Lazy private AgentTaskService agentTaskService;
 
 	@PersistenceContext
@@ -130,19 +129,16 @@ public class CoordinatorShareService {
 			AgentTask lockedTask = agentTaskRepository.findByIdWriteLocked(share.getKey())
 					.orElseThrow(() -> new RelizaException("Task not found: " + share.getKey()));
 			entityManager.refresh(lockedTask);
-			AgentTaskData td = AgentTaskData.dataFromRecord(lockedTask);
-			long had = null == td.getCoordinatorEstimateMicros() ? 0 : td.getCoordinatorEstimateMicros();
-			td.setCoordinatorEstimateMicros(had + share.getValue());
-			agentTaskService.saveData(td, wu);
+			agentTaskRepository.addCoordinatorEstimate(share.getKey(), share.getValue());
+			entityManager.refresh(lockedTask);
 		}
-		if (!shares.isEmpty()) {
-			board.setCoordinatorSharesMicros(board.getCoordinatorSharesMicros() + deltaMicros);
-			board.setCoordinatorTransitions(board.getCoordinatorTransitions() + who.transitions());
-		}
-		// Advanced even when nobody got a share: the rows already count at board level, and the
-		// next delta must not be split over this window again.
-		board.setCoordinatorShareCursor(reportedAt);
-		agentBoardService.saveData(board, wu);
+		// The cursor is advanced even when nobody got a share: the rows already count at board
+		// level, and the next delta must not be split over this window again. All of it in place
+		// (TPF-71 / TPF-105): bookkeeping, not a revision of the board or the tasks.
+		boolean anyShare = !shares.isEmpty();
+		agentBoardRepository.stampCoordinatorShares(boardUuid, anyShare ? deltaMicros : 0,
+				anyShare ? who.transitions() : 0, AgentSessionService.epochSecondsOf(reportedAt));
+		entityManager.refresh(lockedBoard);
 		return shares;
 	}
 

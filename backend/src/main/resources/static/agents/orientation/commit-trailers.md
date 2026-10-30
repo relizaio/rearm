@@ -1,4 +1,4 @@
-<!-- orientation section: commit-trailers · core 2026-10-08 -->
+<!-- orientation section: commit-trailers · core 2026-10-25 -->
 ### 2.7 Commit trailers
 
 Every commit you author MUST carry two trailers in the commit

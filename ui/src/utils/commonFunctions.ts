@@ -1,6 +1,8 @@
 import gql from 'graphql-tag'
 import Swal from 'sweetalert2'
 import graphqlClient from './graphql'
+import { parseGraphQLError } from './graphqlErrorText'
+import { brandingState } from './branding'
 
 function translatePermissionName(type: string): string {
     switch (type) {
@@ -25,6 +27,8 @@ function translateFunctionName(fn: string): string {
         case 'DEVOPS_READ': return 'DevOps Read'
         case 'DEVOPS_WRITE': return 'DevOps Write'
         case 'VERSION_FEATURESET': return 'Version Feature Set'
+        case 'PUBLISH_EXTERNALLY': return 'Publish Externally (TEA)'
+        case 'TEA_READ': return 'TEA Read'
         case 'AGENT': return 'AI Agent'
         case 'DISTRIBUTION': return 'Distribution'
         case 'CONFIGURATION_READ': return 'Configuration Read'
@@ -58,6 +62,8 @@ const PERMISSION_FUNCTION_DESCRIPTIONS: Record<string, string> = {
         'Modify the DevOps surface - register instances and clusters and submit deployment state. Requires Read & Write permission to take effect.',
     VERSION_FEATURESET:
         'Create a new product feature set with selected dependency-branch overrides applied on top of the base feature set. Typically granted to a CI/CD (FREEFORM) key on the product.',
+    PUBLISH_EXTERNALLY:
+        'Publish, re-publish and hide releases on the Transparency Exchange API. Granted organization-wide or on a perspective, product or component.',
     AGENT:
         'The "I am an agent" marker - grants a key the right to act as an AI agent: register itself on first call, open / touch / close sessions, attach artifacts, and spawn sub-agents. Not needed for human users browsing the AI Agents dashboard or managing agent policies.\n\n' +
         'Carve-out: a key with this function (even Read Only) can also enrol its own SSH/GPG public signing key via "rearm agent enrollkey" - needed so an agent can sign its first commit without operator intervention. The backend enforces that the key being enrolled targets the calling key\'s own agent identity; cross-agent enrolment is rejected.',
@@ -128,16 +134,6 @@ function isAdmin (org : string, myUser : any ) : boolean {
 }
 
 
-function parseGraphQLError (err: string): string {
-    const knownPrefixes = ['BOM processing failed: ', 'BOM validation failed: ', 'Rebom error: ']
-    let cleaned = err
-    for (const prefix of knownPrefixes) {
-        if (cleaned.startsWith(prefix)) {
-            cleaned = cleaned.substring(prefix.length)
-        }
-    }
-    return cleaned
-}
 
 function extractGraphQLErrorMessage (error: any): string {
     if (!error) return 'Unknown error'
@@ -370,7 +366,7 @@ async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
     if (fetchUserResult._unauthorized) {
         await Swal.fire({
             title: 'Account Inactive',
-            text: 'Your account is inactive. Please contact your System Administrator or support at info@reliza.io',
+            text: `Your account is inactive. Please contact your System Administrator or support at ${brandingState.supportEmail}`,
             icon: 'error',
             allowOutsideClick: false,
             showConfirmButton: false,
@@ -379,7 +375,7 @@ async function handleFetchUserResult(fetchUserResult: any): Promise<void> {
     } else if (fetchUserResult._offline) {
         await Swal.fire({
             title: 'System Offline',
-            text: 'System offline. Please contact your System Administrator or support at info@reliza.io',
+            text: `System offline. Please contact your System Administrator or support at ${brandingState.supportEmail}`,
             icon: 'error',
             allowOutsideClick: false,
             showConfirmButton: false,

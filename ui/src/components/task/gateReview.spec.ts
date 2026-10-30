@@ -33,7 +33,7 @@ describe('the rejected gate', () => {
         expect(w.find('[data-review-item="F-1"]').text()).toContain('F-1 (P1)')
 
         await w.find('.gateitem__accept input').setValue(true)
-        await w.find('.gateitem__reason input').setValue('we ship with it')
+        await w.find('.gateitem__reason textarea').setValue('we ship with it')
         expect(w.find('.gate-accept').attributes('disabled')).toBeUndefined()
         expect(w.find('.gate-confirm').text()).toBe('Accepting past F-1 (P1): accepted')
 

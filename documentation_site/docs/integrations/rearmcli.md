@@ -17,6 +17,10 @@ a ReARM Pro instance after the operator hands it the FREEFORM
 `AGENT` key. See [Bootstrap an AI Agent](../workflows/agentic) for
 the operator-facing setup and the agent-side contract URL.
 
+- **`rearm bomutils score`** scores an SBOM file locally against the CISA 2026, NTIA 2021 and
+  FDA minimum elements and writes the same report the ReARM UI shows; see
+  [Scoring an SBOM for CISA 2026 and FDA Readiness](../workflows/sbom-scoring#from-the-command-line).
+
 ### Rebuilds and SBOM serial numbers
 
 A rebuild uploads a new SBOM. If your generator pins `serialNumber`, it must also increment
@@ -26,4 +30,7 @@ serial number.
 The refusal names the serial number and both versions, and applies to `rearm addrelease --rebuild`
 and to any `rearm addartifact` that re-uses an existing serial. It exists because a stored raw SBOM
 is immutable: ReARM keeps the bytes it was given as the record of what was actually uploaded and
-scanned, so a second upload claiming the same identity cannot replace them.
+scanned, so a second upload claiming the same identity cannot replace them. A higher version of
+a serialNumber that other components of the organization hold is refused unless the key can write
+to all of them. See
+[Who may upload a new version of an SBOM](../workflows/exporting-compliance-artifacts#who-may-upload-a-new-version-of-an-sbom).

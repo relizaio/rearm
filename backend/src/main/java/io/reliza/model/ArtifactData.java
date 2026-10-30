@@ -23,9 +23,9 @@ import io.reliza.common.Utils;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.VexImportSummary;
-import io.reliza.model.tea.Link;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Link;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.DigestAlgorithm;
 import lombok.AccessLevel;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
@@ -278,12 +278,12 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	}
 
 	public record DigestRecord(
-		TeaChecksumType algo, 
+		DigestAlgorithm algo, 
 		String digest, 
 		@JsonProperty(defaultValue = "ORIGINAL_FILE")
 		DigestScope scope
 	) {
-		public DigestRecord(TeaChecksumType algo, String digest){
+		public DigestRecord(DigestAlgorithm algo, String digest){
 			this(algo, digest, DigestScope.ORIGINAL_FILE);
 		}
 	}
@@ -397,6 +397,15 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * Artifact may have its own artifacts - this is for signature related artifacts, maybe there will be more use cases discovered later
 	 */
 	private List<UUID> artifacts = new ArrayList<>();
+	/**
+	 * SBOM rule B (SCORE-52 ADR-3, ADR-7): true when this BOM row was a copy, an upload of an
+	 * existing serialNumber that stored no new version, by a principal that could not then have
+	 * stored one. A copy makes its component a holder but never authorizes an update. Set by the
+	 * server on every BOM upload, never caller input or output; null (rows written before rule B)
+	 * reads as false.
+	 */
+	@JsonProperty
+	private Boolean bomCopy;
 	
 	/**
 	 * OCI repository name where this downloadable artifact is stored (e.g., "downloadable-artifacts-2026-03")
@@ -425,6 +434,15 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 	 * {@link DigestScope#RAW_OCI_STORAGE} digest record, which addresses the blob itself.
 	 */
 	private String rawOciRepositoryName;
+
+	/**
+	 * The artifact's TEA id (task TEA-5): null until a TEA publication first names this row, then
+	 * never changed. One TEA artifact per row: a replacement that creates a new row is a new TEA
+	 * artifact. Server-minted only (ArtifactService.ensureTeaUuid); no input carries it, and an
+	 * in-place re-upload carries it forward.
+	 */
+	@JsonProperty
+	private UUID teaUuid;
 
 	@Getter(AccessLevel.PUBLIC)
 	@Setter(AccessLevel.PRIVATE)
@@ -515,9 +533,16 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
 		if (null != artifactDto.getArtifacts()) {
 			ad.setArtifacts(artifactDto.getArtifacts());
 		}
+		ad.setBomCopy(artifactDto.getBomCopy());
 		return ad;
 	}
 	
+	/** Whether this BOM row is a copy under rule B ({@link #bomCopy}); null reads as false. */
+	@JsonIgnore
+	public boolean isCopyRow() {
+		return Boolean.TRUE.equals(bomCopy);
+	}
+
 	@JsonIgnore
 	public boolean isSignatureType() {
 		if (this.type == ArtifactType.SIGNATURE || this.type == ArtifactType.CERTIFICATE_PGP || this.type == ArtifactType.CERTIFICATE_X_509 

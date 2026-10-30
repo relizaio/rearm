@@ -96,6 +96,14 @@ describe('unselectable options without a backend implementation', () => {
         expect(option(eventTypeOptions, 'VEX_STATE_CHANGED')?.disabled).toBe(true)
     })
 
+    it('offers the TEA publication event types (TEA-5), flagged proOnly', () => {
+        for (const v of ['RELEASE_TEA_PUBLISHED', 'RELEASE_TEA_HIDDEN']) {
+            const o = option(eventTypeOptions, v) as { proOnly?: boolean } | undefined
+            expect(o, `${v} present in eventTypeOptions`).toBeTruthy()
+            expect(o?.proOnly, `${v} is proOnly (gated to Pro in the form)`).toBe(true)
+        }
+    })
+
     it('offers the Pro-only instance-deployment event types, flagged proOnly', () => {
         for (const v of ['INSTANCE_DEPLOYMENT_CHANGED', 'INSTANCE_DEPLOYMENT_FAILED']) {
             const o = option(eventTypeOptions, v) as { proOnly?: boolean } | undefined

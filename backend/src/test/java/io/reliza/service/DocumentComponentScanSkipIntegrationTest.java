@@ -182,8 +182,9 @@ public class DocumentComponentScanSkipIntegrationTest {
 		FlowControl fc = after.getFlowControl();
 		assertTrue(null == fc || (null == fc.metricsComputeSkipUntil() && null == fc.metricsComputeFailureCount()),
 				"the metrics fence is dropped");
-		assertFalse(releaseRepository.findReleasesForMetricsComputeByUpdate(1000).stream()
-				.anyMatch(r -> r.getUuid().equals(doc)), "the document is out of the BY_UPDATE pool");
+		// Asked of this release directly: "not among the 1000 oldest eligible" would pass here even
+		// if the document were eligible, once a shared test database holds more than 1000 of them.
+		assertFalse(releaseRepository.isEligibleForMetricsComputeByUpdate(doc), "the document is out of the BY_UPDATE pool");
 
 		// The triage path does nothing for it either.
 		assertFalse(releaseMetricsComputeService.computeReleaseMetricsOnNonRescan(row(doc)));

@@ -8,8 +8,6 @@ server:
   # terminationGracePeriodSeconds so the old replica drains after it has been
   # removed from the Service endpoints, closing the deregistration race.
   shutdown: graceful
-  error:
-    include-message: always
 
 spring:
   task:
@@ -112,6 +110,13 @@ spring:
     multipart: 
       max-file-size: ${MAX_UPLOAD_SIZE:50MB}
       max-request-size: ${MAX_UPLOAD_SIZE:50MB}
+  web:
+    error:
+      # TPF-49: an error body never carries an exception's message. The UI nginx passes the
+      # backend's error answers through as sent, and a request with a valid IdP bearer that
+      # fails renders this error page. Spring Boot 4 reads these settings under
+      # spring.web.error; server.error.* is not read any more, so do not set them there.
+      include-message: never
 
 logging:
   config: classpath:log4j2-${LOG_FORMAT_TYPE:plain}.xml
@@ -185,7 +190,9 @@ relizaprops:
   # max branches drained per 60s tick.
   findingChangeV3BackfillDrainEnabled: ${FINDING_CHANGE_V3_BACKFILL_DRAIN_ENABLED:true}
   findingChangeV3BackfillBatchPerTick: ${FINDING_CHANGE_V3_BACKFILL_BATCH_PER_TICK:5}
-  enableBetaTea: ${RELIZAPROP_ENABLE_BETA_TEA:false}
+  # Branding preset: empty or "default" is the Reliza branding. Presets are a ReARM Pro feature:
+  # on CE any other value logs a WARN and the default is used.
+  brandingPreset: ${RELIZAPROP_BRANDING_PRESET:}
 #spring.jpa.show-sql=true
 #spring.jpa.properties.hibernate.format_sql=true
 #logging.level.org.hibernate.SQL=DEBUG

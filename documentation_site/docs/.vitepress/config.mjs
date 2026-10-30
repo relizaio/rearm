@@ -28,6 +28,9 @@ function sidebar() {
           {text: 'Importing VEX', link: '/workflows/importing-vex'},
           {text: 'Supply Chain Forensics', link: '/workflows/supply-chain-forensics'},
           {text: 'Exporting Compliance Artifacts', link: '/workflows/exporting-compliance-artifacts'},
+          {text: 'Regulatory Packages and Submissions', link: '/workflows/regulatory-packages'},
+          {text: 'Scoring an SBOM', link: '/workflows/sbom-scoring'},
+          {text: 'Signing exported SBOMs', link: '/workflows/signing-exported-sboms'},
           {text: 'Pull Requests', link: '/workflows/pull-requests'},
           {text: 'Committers & Commit Signing', link: '/workflows/committers'}
         ]},
@@ -37,7 +40,8 @@ function sidebar() {
           {text: 'Programmatic Access', link: '/configure/programmatic-access'},
           {text: 'Component Ownership', link: '/configure/component-ownership'},
           {text: 'Notifications', link: '/configure/notifications'},
-          {text: 'Approval Queues', link: '/configure/approval-queues'}
+          {text: 'Approval Queues', link: '/configure/approval-queues'},
+          {text: 'Branding Presets (ReARM Pro)', link: '/configure/branding'}
         ]},
         {text: 'Transparency Exchange API', link: '/tea/' },
         {text: 'Integrations', link: '/integrations/',
@@ -49,7 +53,8 @@ function sidebar() {
                 {text: 'Build Pipelines', link: '/integrations/githubActionsBuild'},
                 {text: 'Cosign and Sigstore', link: '/integrations/githubActionsCosign'},
                 {text: 'Workflow Triggers', link: '/integrations/githubActionsTriggers'},
-                {text: 'Pull Request Validation', link: '/integrations/githubValidate'}
+                {text: 'Pull Request Validation', link: '/integrations/githubValidate'},
+                {text: 'Federated (Keyless) Login', link: '/integrations/githubActionsFederated'}
               ]
             },
             {text: 'GitLab', link: '/integrations/gitlab',

@@ -4,12 +4,14 @@
 package io.reliza.ws;
 
 import java.io.IOException;
+import java.util.Optional;
 import java.util.concurrent.Executors;
 import java.util.concurrent.ScheduledExecutorService;
 import java.util.concurrent.ThreadPoolExecutor;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.service.CliSessionService;
@@ -52,6 +54,10 @@ import org.springframework.security.web.csrf.CookieCsrfTokenRepository;
 import org.springframework.security.web.csrf.CsrfTokenRequestAttributeHandler;
 import org.springframework.transaction.annotation.EnableTransactionManagement;
 import org.springframework.web.client.RestTemplate;
+import org.springframework.http.server.PathContainer;
+import org.springframework.http.server.RequestPath;
+import org.springframework.web.util.pattern.PathPattern;
+import org.springframework.web.util.pattern.PathPatternParser;
 
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
@@ -72,6 +78,9 @@ public class App {
 
 	@Autowired
 	private CliSessionService cliSessionService;
+
+	@Autowired
+	private ApiKeyAccessService apiKeyAccessService;
 
 	@Autowired
 	private io.reliza.service.FederatedTrustRuleService federatedTrustRuleService;
@@ -196,33 +205,132 @@ public class App {
 	/**
 	 * Security for machine-to-machine paths that authenticate every request themselves:
 	 * the programmatic GraphQL endpoint ({@link ProgrammaticGraphQlConfig#PATH}, API key
-	 * checked inside the resolvers) and the webhook intake (HMAC-SHA256 via
+	 * checked inside the resolvers), the programmatic artifact downloads
+	 * ({@link ArtifactWs#PROGRAMMATIC_ARTIFACT_PATTERN}, key verified in the handler before any
+	 * lookup), the token, schema and device endpoints, and the webhook intake (HMAC-SHA256 via
 	 * X-Hub-Signature-256, verified by the controller before any state mutation; GitHub can
 	 * carry no CSRF cookie anyway). The chain is stateless: no session is created, no CSRF
 	 * token is required, and the OAuth2 resource server does not run (a key caller never sees
-	 * a bearer-token 401 page). This is also where an API-key authentication filter belongs
-	 * once programmatic authorization is reworked to put a principal in the security context.
+	 * a bearer-token 401 page).
 	 *
-	 * <p>Deliberately NOT here: the artifact download endpoints under /api/programmatic/v1,
-	 * which accept a user JWT as well as a key and therefore need the bearer-token filter of
-	 * the browser chain below. /graphql keeps that chain unchanged.
+	 * <p>{@link RateLimitingFilter} runs first on every path of this chain, in front of the
+	 * authentication filter, so a refused or flooding caller is counted before any credential is
+	 * verified (TPF-26).
+	 *
+	 * <p>{@link ProgrammaticAuthenticationFilter} runs on the GraphQL endpoint and on the artifact
+	 * downloads: it verifies a ReARM bearer access token (key exchange, CLI session, federated
+	 * exchange) and, since TPF-27, an HTTP Basic key credential too (deprecated, still admitted), so
+	 * the resolvers and the handlers on these paths only see verified keys. The artifact downloads take no IdP user JWT (they never served one, TPF-13): the
+	 * browser downloads on the manual pair /api/manual/v1/artifact/**, which stays on the browser
+	 * chain below with its bearer-token filter.
+	 *
+	 * <p>The legacy /graphql endpoint ({@link LegacyGraphqlBasicFilter#PATH}) stays on the browser chain below, where
+	 * {@link LegacyGraphqlBasicFilter} (TPF-29) runs after the limiter and verifies a Basic key credential with the same
+	 * {@link BasicKeyVerifier} as this chain, so the resolvers there see only verified keys too; the UI's IdP JWT and an
+	 * anonymous call pass it untouched.
+	 *
+	 * <p>A path under /api/programmatic/v1/ that this matcher does not name falls to the browser chain below, which has no
+	 * permit for the prefix (TPF-54): a new endpoint under the prefix needs authentication there until it is added to this
+	 * matcher.
 	 */
 	@Bean
 	@Order(1)
-	public SecurityFilterChain programmaticFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService) throws Exception {
+	public SecurityFilterChain programmaticFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService,
+			RateLimitingFilter rateLimitingFilter) throws Exception {
 		http
 			.securityMatcher(ProgrammaticGraphQlConfig.PATH, ProgrammaticTokenController.PATH, ProgrammaticSchemaController.PATH,
-					DeviceAuthorizationController.DEVICE_CODE_PATH, DeviceAuthorizationController.REVOKE_PATH, "/api/programmatic/v1/webhook/**")
+					DeviceAuthorizationController.DEVICE_CODE_PATH, DeviceAuthorizationController.REVOKE_PATH, "/api/programmatic/v1/webhook/**",
+					ArtifactWs.PROGRAMMATIC_ARTIFACT_PATTERN)
 			.csrf(c -> c.disable())
 			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
-			// bearer access tokens are verified here; Basic still passes through to the resolvers (deprecated)
-			.addFilterBefore(new ProgrammaticAuthenticationFilter(apiTokenService, apiKeyService, cliSessionService, federatedTrustRuleService), AuthorizationFilter.class)
+			// bearer access tokens and Basic key credentials are verified here (TPF-27), every other credential is a 401
+			.addFilterBefore(new ProgrammaticAuthenticationFilter(apiTokenService, apiKeyService, apiKeyAccessService, cliSessionService, federatedTrustRuleService), AuthorizationFilter.class)
+			// TPF-26: every request on this chain is counted before any credential is verified (bearers by key, Basic by its canonical key id)
+			.addFilterBefore(rateLimitingFilter, ProgrammaticAuthenticationFilter.class)
 			.authorizeHttpRequests(authz -> authz.anyRequest().permitAll()); // per-operation auth in the resolvers
 		return http.build();
 	}
 
+	/**
+	 * Security for the TEA API (task TEA-3), between the programmatic chain and the browser chain. Stateless, no
+	 * CSRF, no OAuth2 resource server: the token endpoint authenticates its own client credentials, and the TEA
+	 * authentication filter only classifies the caller (anonymous, invalid token, valid EXTERNAL key token) for the
+	 * controllers, which authorize per object. The instance discovery document /.well-known/tea is public and
+	 * served here too (task TEA-6), so a client that sends its token everywhere never fails discovery; the filter
+	 * skips it. The rate limiter runs after the filter so it can key authenticated callers by key.
+	 */
 	@Bean
-	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter) throws Exception {
+	@Order(2)
+	public SecurityFilterChain teaFilterChain(HttpSecurity http, ApiTokenService apiTokenService, ApiKeyService apiKeyService,
+			RateLimitingFilter rateLimitingFilter) throws Exception {
+		http
+			// the error dispatch of a /tea request belongs here too: a status a TEA handler sends (the 404 of an unknown
+			// path) is rendered through /error, which the browser chain would answer with the resource server's 401 for
+			// an anonymous caller -- telling a TEA client to authenticate for a missing page
+			.securityMatchers(m -> m.requestMatchers(TEA_API_PATHS, WELL_KNOWN_TEA).requestMatchers(App::isTeaErrorDispatch))
+			.csrf(c -> c.disable())
+			.sessionManagement(s -> s.sessionCreationPolicy(SessionCreationPolicy.STATELESS))
+			.addFilterBefore(new io.reliza.ws.tea.TeaAuthenticationFilter(apiTokenService, apiKeyService), AuthorizationFilter.class)
+			// the error dispatch of a TEA URI is answered with a body that is not a TEA error (task TEA-6, decision 16)
+			.addFilterBefore(new io.reliza.ws.tea.TeaErrorDispatchFilter(), io.reliza.ws.tea.TeaAuthenticationFilter.class)
+			.addFilterAfter(rateLimitingFilter, AuthorizationFilter.class)
+			// the token endpoint authenticates itself; TEA controllers authorize per object; the discovery document is public
+			.authorizeHttpRequests(authz -> authz.anyRequest().permitAll());
+		return http.build();
+	}
+
+	/** The TEA API: bare /tea and everything under /tea/ (task TEA-3). */
+	static final String TEA_API_PATHS = "/tea/**";
+	/** The instance TEA discovery document (task TEA-6). */
+	static final String WELL_KNOWN_TEA = "/.well-known/tea";
+	private static final PathPattern TEA_API_PATTERN = PathPatternParser.defaultInstance.parse(TEA_API_PATHS);
+	private static final PathPattern WELL_KNOWN_TEA_PATTERN = PathPatternParser.defaultInstance.parse(WELL_KNOWN_TEA);
+
+	/**
+	 * A request URI (getRequestURI, or the original URI of an error dispatch) read as the TEA chain's matcher and
+	 * Spring MVC read it (task TEA-6 round 4, T-5): the path within the application, each segment percent-decoded
+	 * and stripped of its path parameters, so /%74ea/x and /tea;x=1/x are both the path /tea/x. Empty when the URI
+	 * does not decode, which the container refuses before any filter runs.
+	 */
+	public static Optional<PathContainer> chainPathOf(String uri, String contextPath) {
+		if (null == uri) return Optional.empty();
+		try {
+			return Optional.of(RequestPath.parse(uri, null == contextPath ? "" : contextPath).pathWithinApplication());
+		} catch (IllegalArgumentException e) {
+			log.error("A request URI that does not decode reached the TEA path test", e);
+			return Optional.empty();
+		}
+	}
+
+	/** Whether a path read by {@link #chainPathOf} is the TEA API's, /tea/** (the discovery document is not). */
+	public static boolean isTeaApiPath(PathContainer path) {
+		return TEA_API_PATTERN.matches(path);
+	}
+
+	/**
+	 * A path the TEA chain serves: the TEA API (/tea/**, bare /tea included) or the discovery document, read as the
+	 * chain reads it ({@link #chainPathOf}). The one TEA path test: the rate limiter answers its refusal on these
+	 * paths as the chain does (task TEA-6, decision 16), their error dispatches belong to the chain, and the TEA
+	 * authentication filter classifies the API's.
+	 */
+	public static boolean isTeaUri(String uri, String contextPath) {
+		return chainPathOf(uri, contextPath).filter(p -> isTeaApiPath(p) || WELL_KNOWN_TEA_PATTERN.matches(p)).isPresent();
+	}
+
+	/** Whether a request (its own dispatch) is on a TEA path ({@link #isTeaUri(String, String)}). */
+	public static boolean isTeaUri(HttpServletRequest request) {
+		return isTeaUri(request.getRequestURI(), request.getContextPath());
+	}
+
+	/** The error dispatch of a request whose original path is a TEA path ({@link #isTeaUri(String, String)}). */
+	static boolean isTeaErrorDispatch(HttpServletRequest request) {
+		if (request.getDispatcherType() != jakarta.servlet.DispatcherType.ERROR) return false;
+		Object original = request.getAttribute(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI);
+		return original instanceof String uri && isTeaUri(uri, request.getContextPath());
+	}
+
+	@Bean
+	public SecurityFilterChain filterChain(HttpSecurity http, RateLimitingFilter rateLimitingFilter, ApiKeyService apiKeyService) throws Exception {
 	  http
 	  .csrf(c -> c
 			.csrfTokenRepository(CookieCsrfTokenRepository.withHttpOnlyFalse())
@@ -241,33 +349,18 @@ public class App {
 				}
 	        })
 	  	)
-	  	.authorizeHttpRequests(authz -> {
-	  		if ("true".equalsIgnoreCase(relizaConfigProps.getEnableBetaTea())) {
-	  			authz
-		  				// .anyRequest().permitAll()
-		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
-		  				.requestMatchers("/tea/**").permitAll() // TODO adjust with auth coming to TEA
-		  				.requestMatchers("/.well-known/tea/**").permitAll() // TODO adjust with auth coming to TEA
-		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
-						.requestMatchers("/api/healthCheck").permitAll()
-						.requestMatchers("/api/programmatic/v1/**").permitAll()
-						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
-		  				.anyRequest().authenticated();
-	  		} else {
-	  			authz
-		  				// .anyRequest().permitAll()
-		  				.requestMatchers("/graphql").permitAll() // has granular per-query auth
-		  				.requestMatchers("/tea/**").denyAll() // TODO adjust with auth coming to TEA
-		  				.requestMatchers("/.well-known/tea/**").denyAll() // TODO adjust with auth coming to TEA
-		  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
-						.requestMatchers("/api/healthCheck").permitAll()
-						.requestMatchers("/api/programmatic/v1/**").permitAll()
-						.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
-		  				.anyRequest().authenticated();
-	  		}
-	  	});
+	  	.authorizeHttpRequests(authz -> authz
+	  				.requestMatchers(LegacyGraphqlBasicFilter.PATH).permitAll() // has granular per-query auth; Basic verified by LegacyGraphqlBasicFilter
+	  				.requestMatchers("/api/manual/v1/fetchCsrf").permitAll()
+					.requestMatchers("/api/healthCheck").permitAll()
+					.requestMatchers("/api/agents/**").permitAll() // public agent-orientation discovery
+					.requestMatchers(BrandingController.PATH + "/**").permitAll() // public branding the UI reads before login
+	  				.anyRequest().authenticated());
     	// Place rate limiting after JWT auth so SecurityContext is populated
     	http.addFilterAfter(rateLimitingFilter, BearerTokenAuthenticationFilter.class);
+    	// TPF-29: a Basic key credential on /graphql is verified behind the limiter and before authorization, as on the
+    	// programmatic chain; the permitAll above and this filter's matcher read the same PATH constant
+    	http.addFilterAfter(new LegacyGraphqlBasicFilter(apiKeyService, apiKeyAccessService), RateLimitingFilter.class);
     	return http.build();
 	}
 
@@ -379,6 +472,27 @@ public class App {
 		ex.setMaxPoolSize(3);
 		ex.setQueueCapacity(2000);
 		ex.setThreadNamePrefix("auto-integrate-");
+		ex.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
+		ex.initialize();
+		return ex;
+	}
+
+	/**
+	 * Dedicated, BOUNDED executor for the TEA act queue (task TEA-7): the automatic publishes and
+	 * hides of the TEA_PUBLISH and TEA_HIDE output events, handed over after the trigger pass
+	 * commits. Bounded because an act holds one pooled connection for seconds to minutes (two
+	 * per step of a product's cascade) out of a pool of twenty, and may wait up to five minutes
+	 * on another act's lease; TEA-5 round 3 recommends four. Discarding on overflow is safe: the
+	 * request is durable on the release row and the per-minute drain runs it.
+	 */
+	@Bean(name = "teaActExecutor")
+	public org.springframework.core.task.TaskExecutor teaActExecutor() {
+		org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor ex =
+				new org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor();
+		ex.setCorePoolSize(2);
+		ex.setMaxPoolSize(4);
+		ex.setQueueCapacity(200);
+		ex.setThreadNamePrefix("tea-act-");
 		ex.setRejectedExecutionHandler(new java.util.concurrent.ThreadPoolExecutor.DiscardPolicy());
 		ex.initialize();
 		return ex;

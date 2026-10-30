@@ -204,6 +204,67 @@ public class AgentDeliverySupersedeIntegrationTest extends AgentDeliveryTestBase
 				agentBoardService.recentEvents(board(r).getUuid()).toString());
 	}
 
+	// ---------- task t20261010-033522-23606: a superseded PR's declaration stands ----------
+
+	/** {@code old} closed and superseded by {@code replacement}, and the coder's pass waiting on the replacement. */
+	private AgentTaskData supersededAndDelivering(Rig r, String old, String replacement) throws RelizaException {
+		pr(r, old, PullRequestState.CLOSED);
+		pr(r, replacement, PullRequestState.OPEN);
+		AgentTaskData t = replacing(r, old, replacement);
+		agentTaskService.supersedePullRequest(t.getUuid(), old, replacement, "replaced", PERSON, WU);
+		AgentTaskData d = agentTaskService.signOff(t.getUuid(), r.session().getUuid(), SignOffOutcome.PASSED, "done", WU);
+		assertEquals(TaskStatus.DELIVERING, d.getStatus());
+		return d;
+	}
+
+	private AgentDeliveryService.Delivery unitOf(AgentTaskData td, String url) {
+		return agentDeliveryService.pullRequestsOf(td).stream().filter(pr -> pr.url().equals(url)).findFirst()
+				.orElseThrow().unit();
+	}
+
+	/**
+	 * The rearm-saas #799 shape: "Mark abandoned" on a PR already declared superseded replaced SUPERSEDED, lost
+	 * supersededBy and sent a task whose replacement was open and passing to the coordinator. It is refused now,
+	 * writes nothing, and the replacement still delivers. The other way round stays allowed (above).
+	 */
+	@Test
+	public void anAbandonmentOfASupersededPrIsRefusedAndTheSupersedeStands() throws RelizaException {
+		Rig r = rig(false);
+		String old = newPrUrl();
+		String replacement = newPrUrl();
+		AgentTaskData d = supersededAndDelivering(r, old, replacement);
+		int declarations = d.getDeliveries().size();
+
+		RelizaException e = assertThrows(RelizaException.class, () -> declare(d, old, AgentTaskData.DeliveryOutcome.ABANDONED));
+		assertEquals(old + " is declared superseded by " + replacement + "; a superseded PR is abandoned already, and its"
+				+ " replacement is what delivery counts", e.getMessage());
+		AgentTaskData still = reload(d);
+		assertEquals(TaskStatus.DELIVERING, still.getStatus());
+		assertEquals(declarations, still.getDeliveries().size(), "a refused declaration writes nothing");
+		assertEquals(AgentDeliveryService.Delivery.SUPERSEDED, unitOf(still, old));
+		assertTrue(events(r, AgentBoardData.BoardEventKind.INFO, old + " declared abandoned").isEmpty());
+
+		pr(r, replacement, PullRequestState.MERGED);
+		assertEquals(TaskStatus.COMPLETED, reload(d).getStatus());
+	}
+
+	/** A superseded PR is never delivered: the refusal points at the replacement, which is the one to declare. */
+	@Test
+	public void aDeliveryDeclarationOfASupersededPrIsRefused() throws RelizaException {
+		Rig r = rig(false);
+		String old = newPrUrl();
+		String replacement = newPrUrl();
+		AgentTaskData d = supersededAndDelivering(r, old, replacement);
+
+		RelizaException e = assertThrows(RelizaException.class, () -> declare(d, old + "/", AgentTaskData.DeliveryOutcome.DELIVERED));
+		assertEquals(old + " is declared superseded by " + replacement + "; a superseded PR is never delivered: if "
+				+ replacement + " landed, declare that one", e.getMessage());
+		assertEquals(AgentDeliveryService.Delivery.SUPERSEDED, unitOf(reload(d), old));
+
+		assertEquals(TaskStatus.COMPLETED, declare(reload(d), replacement, AgentTaskData.DeliveryOutcome.DELIVERED).getStatus(),
+				"declaring the replacement delivers");
+	}
+
 	// ---------- task RD3-20: an unreported PR, abandoned or read from its tracker ----------
 
 	/** Runs {@code body} with {@code reader} answering tracker reads for the task service, then puts the real one back. */

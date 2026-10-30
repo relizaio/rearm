@@ -84,7 +84,7 @@ public class AgentDeliveryService {
 		DELIVERED,
 		/** A linked PR is open, or CI has not reported it yet -- never read as merged. */
 		WAITING,
-		/** A linked PR was closed without merging. */
+		/** A linked PR was closed without merging, or declared abandoned. */
 		BLOCKED,
 		/**
 		 * A linked PR declared superseded by its replacement (task RD3-13): neither pending nor blocked, as if
@@ -264,6 +264,18 @@ public class AgentDeliveryService {
 	 */
 	public Verdict deliveryOf(AgentTaskData td) {
 		AgentBoardData.DeliveryPolicy policy = policyOf(td);
+		boolean readPrs = AgentBoardData.DeliveryMode.NONE != policy.mode()
+				&& null != td.getPrUrls() && !td.getPrUrls().isEmpty();
+		return deliveryOf(td, policy, readPrs ? pullRequestsByKey(td.getOrg(), matchKeys(td)) : Map.of());
+	}
+
+	/**
+	 * {@link #deliveryOf(AgentTaskData)} from a policy and PR rows already read (task TPF-69): what the staleness
+	 * rule calls with the board's policy and one {@link #pullRequestsByKey} read over every candidate's keys, so a
+	 * board of N delivering tasks reads the board and the PR table once rather than N times each.
+	 */
+	public static Verdict deliveryOf(AgentTaskData td, AgentBoardData.DeliveryPolicy policy,
+			Map<String, PullRequestData> byKey) {
 		if (AgentBoardData.DeliveryMode.NONE == policy.mode()) {
 			if (!Boolean.TRUE.equals(policy.awaitDeclaration())) return new Verdict(Delivery.DELIVERED, List.of(), policy, null);
 			List<AgentTaskData.Delivery> all = null == td.getDeliveries() ? List.of() : td.getDeliveries();
@@ -272,7 +284,7 @@ public class AgentDeliveryService {
 					: AgentTaskData.DeliveryOutcome.ABANDONED == newest.outcome() ? Delivery.BLOCKED : Delivery.DELIVERED;
 			return new Verdict(d, List.of(), policy, newest);
 		}
-		List<TaskPullRequest> prs = pullRequestsOf(td);
+		List<TaskPullRequest> prs = pullRequestsOf(td, null == byKey ? Map.of() : byKey);
 		return new Verdict(delivery(prs), prs, policy, null);
 	}
 
@@ -491,7 +503,7 @@ public class AgentDeliveryService {
 				.filter(StringUtils::isNotBlank).orElse(null);
 	}
 
-	private static String shortSha(String sha) {
+	static String shortSha(String sha) {
 		return null == sha ? "?" : sha.substring(0, Math.min(7, sha.length()));
 	}
 

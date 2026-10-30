@@ -106,7 +106,8 @@ the PR head, not the result.
 
 Push each fix to the PR's own head branch with `rearm agent task push <key>
 --session <session>`: fast-forward only, never to the base, and it checks the
-remote head after the push. On a ReARM where CI registers your
+remote head after the push. Commit messages carry no double quote; `task push`
+refuses one before it is pushed. On a ReARM where CI registers your
 PRs, a PASSED sign-off is refused while no linked PR has moved since your
 assignment ("no linked PR moved since your assignment"); a round that changed no
 code, such as a note answering a review item, signs off with `--no-code`. A PR you

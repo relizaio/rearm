@@ -300,7 +300,7 @@ describe('path template help', () => {
     it('lists {key}, not {task}', () => {
         expect(PATH_PLACEHOLDERS).toContain('{key}')
         expect(PATH_PLACEHOLDERS).not.toContain('{task}')
-        expect(PATH_PLACEHOLDERS).toEqual(['{key}', '{round}', '{type}', '{component}'])
+        expect(PATH_PLACEHOLDERS).toEqual(['{key}', '{round}', '{type}', '{component}', '{role}'])
     })
     it('shows the documents root only when the board has one', () => {
         expect(documentsRootNote('boards/platform/')).toContain('boards/platform/')

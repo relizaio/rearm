@@ -33,21 +33,12 @@
          2.25.5 is patched). Let the BOM manage them and this cannot happen
          again: reintroduce a pin only for a CVE the BOM has not yet picked
          up, and drop it again at the next Spring Boot bump. -->
-    <!-- CVE pins over Spring Boot 4.1.1, the latest release, whose BOM still manages
-         tomcat 11.0.24 and jackson 2.21.5 / 3.1.5 (CVE sweep 2026-10-07, findings from
-         the controlling ReARM). Drop each at the next Spring Boot bump that passes it.
-         - tomcat 11.0.26: CVE-2026-65182, CVE-2026-65905, CVE-2026-68525 (critical, fixed 11.0.25)
-         - jackson 2.21.7 / 3.1.7: databind CVE-2026-68497, CVE-2026-83557, CVE-2026-19032,
-           CVE-2026-91776, CVE-2026-91777; core CVE-2026-89407, CVE-2026-89425 -->
-    <tomcat.version>11.0.26</tomcat.version>
-    <jackson-2-bom.version>2.21.7</jackson-2-bom.version>
-    <jackson-bom.version>3.1.7</jackson-bom.version>
   </properties>
 
     <parent>
         <groupId>org.springframework.boot</groupId>
         <artifactId>spring-boot-starter-parent</artifactId>
-        <version>4.1.1</version>
+        <version>4.1.2</version>
         <relativePath/> <!-- lookup parent from repository -->
     </parent>
 
@@ -291,6 +282,15 @@
         <groupId>us.springett</groupId>
         <artifactId>cvss-calculator</artifactId>
         <version>1.5.1</version>
+    </dependency>
+    <!-- RFC 8785 JSON Canonicalization Scheme: the signing input of the JSF signature on
+         merged SBOM exports (SCORE-31 ADR-2), the canonical form rearm-cli's verifier
+         recomputes. Apache-2.0, no runtime dependency; 1.1 is the last release. Used only
+         through io.reliza.service.JsfCanonicalizer, which adds the I-JSON checks it lacks. -->
+    <dependency>
+        <groupId>io.github.erdtman</groupId>
+        <artifactId>java-json-canonicalization</artifactId>
+        <version>1.1</version>
     </dependency>
     <!-- vers (package-url vers-spec) ranges and per-ecosystem version ordering: the
          library Dependency-Track 4 and 5 use to decide which versions an advisory

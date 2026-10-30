@@ -5,6 +5,7 @@
  */
 package io.reliza.ws.tea;
 
+import org.springframework.lang.Nullable;
 import io.reliza.model.tea.TeaDiscoveryInfo;
 import io.reliza.model.tea.TeaErrorResponse;
 import io.swagger.v3.oas.annotations.ExternalDocumentation;
@@ -34,7 +35,7 @@ import java.util.Map;
 import java.util.Optional;
 import jakarta.annotation.Generated;
 
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 @Validated
 @Tag(name = "TEA Discovery", description = "the TEA Discovery API")
 public interface DiscoveryApi {
@@ -43,51 +44,102 @@ public interface DiscoveryApi {
         return Optional.empty();
     }
 
-    String PATH_DISCOVERY_BY_TEI = "/discovery";
+    String PATH_DISCOVER = "/discovery";
     /**
-     * GET /discovery
-     * Discovery endpoint which resolves TEI into product release UUID.
+     * GET /discovery : Resolve an identifier to TEA Product Releases
+     * Discovery endpoint which resolves an identifier into one or more product release UUIDs.  Exactly one of the &#x60;tei&#x60; and &#x60;purl&#x60; query parameters shall be provided. A request with neither, or with both, is rejected with &#x60;400&#x60;. OpenAPI cannot express this constraint on query parameters, so both are declared optional here.  Discovery by TEI resolves the product across TEA servers, using the domain carried by the TEI (typically after DNS / &#x60;.well-known&#x60; selection of an API host). Discovery by PURL requires an already-known API base URL and resolves within that server&#39;s inventory.  A successful response is a non-empty JSON array of &#x60;discovery-info&#x60; objects, ordered by priority when multiple product releases match (first entry highest). If the server does not resolve the identifier, it responds with &#x60;404&#x60; and &#x60;error: OBJECT_UNKNOWN&#x60;, not &#x60;200&#x60; with an empty array.  Parameter values are the identifier itself (not a pre-encoded wire form). Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step. Escapes that are part of a PURL value are preserved by that single decode.  Example request lines after serialization: - &#x60;.../discovery?tei&#x3D;tei%3A%2F%2Fproducts.example.com%2Fuuid%2F47f51950-b0e2-11f1-adc2-1a52914d44b2&#x60; - &#x60;.../discovery?purl&#x3D;pkg%3Amaven%2Forg.apache.logging.log4j%2Flog4j-core%402.24.3&#x60;  Unlike &#x60;/token&#x60;, this operation is required on a conforming TEA API base for the advertised version. A conforming &#x60;404&#x60; uses the shared object-not-found response (&#x60;error-response&#x60;, typically &#x60;OBJECT_UNKNOWN&#x60;) and means this server does not resolve the identifier, not that &#x60;/discovery&#x60; is optional or unimplemented. Client recognition of that body and the terminal outcome are defined in the discovery document. 
      *
-     * @param tei Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987. (required)
-     * @return Discovery information for the requested TEI (status code 200)
-     *         or Request was Invalid (status code 400)
-     *         or Object requested by identifier not found (status code 404)
+     * @param tei Transparency Exchange Identifier (TEI) for the product being discovered, as the logical TEI string. Do not pre-encode for the schema example or client model; apply query-parameter encoding once when forming the HTTP request.  (optional)
+     * @param purl Package URL (PURL) of the product being discovered, resolved within this TEA server&#39;s inventory, as the logical PURL string. Do not pre-encode for the schema example or client model; apply query-parameter encoding once when forming the HTTP request.  (optional)
+     * @return Non-empty array of discovery results for the requested TEI or PURL. Each element is a &#x60;discovery-info&#x60; object (&#x60;productReleaseUuid&#x60; plus &#x60;servers&#x60;). An empty array is not a valid success response; use &#x60;404&#x60; with &#x60;error: OBJECT_UNKNOWN&#x60; when the server does not resolve the identifier.  (status code 200)
+     *         or Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting &#x60;pageToken&#x60; values, including conflicts with continuation parameters or path parameters (&#x60;error: INVALID_PAGE_TOKEN&#x60; when a TEA error body is present). Other malformed requests may use &#x60;error: INVALID_REQUEST&#x60;.  (status code 400)
+     *         or Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a &#x60;WWW-Authenticate&#x60; header as defined in RFC 6750 section 3. On the &#x60;invalid_token&#x60; error a client may obtain a fresh token from &#x60;/token&#x60; and retry the request once (RFC 6750 section 3.1). The &#x60;WWW-Authenticate&#x60; challenge remains the primary signal; an &#x60;error-response&#x60; body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return &#x60;401&#x60; when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer &#x60;404&#x60; solely because the client is unauthenticated: absence of a valid token yields &#x60;401&#x60;, so the client flow can discover that authentication is required.  (status code 401)
+     *         or The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering &#x60;404&#x60; (see &#x60;404-object-by-id-not-found&#x60;). Clients shall treat &#x60;403&#x60; and that concealing &#x60;404&#x60; as non-access; neither implies that retrying with the same token will succeed.  (status code 403)
+     *         or Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - &#x60;error: OBJECT_UNKNOWN&#x60; — no such object (or its existence is concealed from this   client). - &#x60;error: NOT_IMPLEMENTED&#x60; — optional capability or endpoint not provided (for CLE:   lifecycle data; for &#x60;/token&#x60;: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - &#x60;error: SIGNATURE_NOT_FOUND&#x60; — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer &#x60;OBJECT_UNKNOWN&#x60; for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive &#x60;401&#x60; (see &#x60;401-unauthorized&#x60;), not a concealing &#x60;404&#x60;. Clients shall not infer from &#x60;404&#x60; alone whether the object is absent, withheld, or lacking an optional capability or sub-resource.  (status code 404)
      */
     @Operation(
-        operationId = "discoveryByTei",
-        description = "Discovery endpoint which resolves TEI into product release UUID.",
+        operationId = "discover",
+        summary = "Resolve an identifier to TEA Product Releases",
+        description = "Discovery endpoint which resolves an identifier into one or more product release UUIDs.  Exactly one of the `tei` and `purl` query parameters shall be provided. A request with neither, or with both, is rejected with `400`. OpenAPI cannot express this constraint on query parameters, so both are declared optional here.  Discovery by TEI resolves the product across TEA servers, using the domain carried by the TEI (typically after DNS / `.well-known` selection of an API host). Discovery by PURL requires an already-known API base URL and resolves within that server's inventory.  A successful response is a non-empty JSON array of `discovery-info` objects, ordered by priority when multiple product releases match (first entry highest). If the server does not resolve the identifier, it responds with `404` and `error: OBJECT_UNKNOWN`, not `200` with an empty array.  Parameter values are the identifier itself (not a pre-encoded wire form). Clients shall apply query-parameter serialization once. Servers shall interpret the value after one query-decoding step. Escapes that are part of a PURL value are preserved by that single decode.  Example request lines after serialization: - `.../discovery?tei=tei%3A%2F%2Fproducts.example.com%2Fuuid%2F47f51950-b0e2-11f1-adc2-1a52914d44b2` - `.../discovery?purl=pkg%3Amaven%2Forg.apache.logging.log4j%2Flog4j-core%402.24.3`  Unlike `/token`, this operation is required on a conforming TEA API base for the advertised version. A conforming `404` uses the shared object-not-found response (`error-response`, typically `OBJECT_UNKNOWN`) and means this server does not resolve the identifier, not that `/discovery` is optional or unimplemented. Client recognition of that body and the terminal outcome are defined in the discovery document. ",
         tags = { "TEA Discovery" },
         responses = {
-            @ApiResponse(responseCode = "200", description = "Discovery information for the requested TEI", content = {
+            @ApiResponse(responseCode = "200", description = "Non-empty array of discovery results for the requested TEI or PURL. Each element is a `discovery-info` object (`productReleaseUuid` plus `servers`). An empty array is not a valid success response; use `404` with `error: OBJECT_UNKNOWN` when the server does not resolve the identifier. ", content = {
                 @Content(mediaType = "application/json", array = @ArraySchema(schema = @Schema(implementation = TeaDiscoveryInfo.class)))
             }),
-            @ApiResponse(responseCode = "400", description = "Request was Invalid"),
-            @ApiResponse(responseCode = "404", description = "Object requested by identifier not found", content = {
+            @ApiResponse(responseCode = "400", description = "Request was invalid. For paginated requests, this includes malformed, invalid, expired, or conflicting `pageToken` values, including conflicts with continuation parameters or path parameters (`error: INVALID_PAGE_TOKEN` when a TEA error body is present). Other malformed requests may use `error: INVALID_REQUEST`. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_REQUEST\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"INVALID_PAGE_TOKEN\"}"
+                    )
+                })
+
+            }),
+            @ApiResponse(responseCode = "401", description = "Authentication required, or the presented access token is expired, revoked, or otherwise invalid. Servers shall include a `WWW-Authenticate` header as defined in RFC 6750 section 3. On the `invalid_token` error a client may obtain a fresh token from `/token` and retry the request once (RFC 6750 section 3.1). The `WWW-Authenticate` challenge remains the primary signal; an `error-response` body is optional.  Servers that require no authentication on any endpoint shall not return this status. On a TEA server where some data is available without authentication, but not all, protected endpoints return `401` when no valid token is presented; endpoints that do not require authentication answer without requiring a Bearer token. A protected object shall not answer `404` solely because the client is unauthenticated: absence of a valid token yields `401`, so the client flow can discover that authentication is required. ", content = {
                 @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "403", description = "The client is authenticated, but is not authorized to access this resource or perform this operation. Authorization decisions are server-specific and are not constrained by this specification.  Servers may instead conceal the existence of a resource from an authenticated but unauthorized client by answering `404` (see `404-object-by-id-not-found`). Clients shall treat `403` and that concealing `404` as non-access; neither implies that retrying with the same token will succeed. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class))
+            }),
+            @ApiResponse(responseCode = "404", description = "Either the object is unknown to this server, or — where an endpoint documents it — the server does not provide an optional capability or sub-resource for that object. The cases are told apart by the TEA error body, never by the status alone:  - `error: OBJECT_UNKNOWN` — no such object (or its existence is concealed from this   client). - `error: NOT_IMPLEMENTED` — optional capability or endpoint not provided (for CLE:   lifecycle data; for `/token`: the token endpoint is not implemented). CLE is   optional in TEA; clients shall not treat this as a failure of the object itself   where the capability is optional. - `error: SIGNATURE_NOT_FOUND` — the artifact revision and format exist, but no   signature is published for that format. This reveals that the artifact exists; a   server concealing an artifact shall answer `OBJECT_UNKNOWN` for every   sub-resource of it, signatures included.  Concealment applies only after authentication. A request to a protected object with no valid access token shall receive `401` (see `401-unauthorized`), not a concealing `404`. Clients shall not infer from `404` alone whether the object is absent, withheld, or lacking an optional capability or sub-resource. ", content = {
+                @Content(mediaType = "application/json", schema = @Schema(implementation = TeaErrorResponse.class), examples = {
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"OBJECT_UNKNOWN\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"NOT_IMPLEMENTED\"}"
+                    ),
+                    @ExampleObject(
+                        name = "",
+                        value = "{\"error\":\"SIGNATURE_NOT_FOUND\"}"
+                    )
+                })
+
             })
         },
         security = {
-            @SecurityRequirement(name = "basicAuth"),
             @SecurityRequirement(name = "bearerAuth")
         }
     )
     @RequestMapping(
         method = RequestMethod.GET,
-        value = DiscoveryApi.PATH_DISCOVERY_BY_TEI,
+        value = DiscoveryApi.PATH_DISCOVER,
         produces = { "application/json" }
     )
-    default ResponseEntity<List<TeaDiscoveryInfo>> discoveryByTei(
-        @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
+    default ResponseEntity<List<TeaDiscoveryInfo>> discover(
+        @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered, as the logical TEI string. Do not pre-encode for the schema example or client model; apply query-parameter encoding once when forming the HTTP request. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = false) @Nullable String tei,
+        @Parameter(name = "purl", description = "Package URL (PURL) of the product being discovered, resolved within this TEA server's inventory, as the logical PURL string. Do not pre-encode for the schema example or client model; apply query-parameter encoding once when forming the HTTP request. ", in = ParameterIn.QUERY) @Valid @RequestParam(value = "purl", required = false) @Nullable String purl
     ) {
         getRequest().ifPresent(request -> {
             for (MediaType mediaType: MediaType.parseMediaTypes(request.getHeader("Accept"))) {
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "[ { \"servers\" : [ { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" }, { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" } ], \"productReleaseUuid\" : \"d4d9f54a-abcf-11ee-ac79-1a52914d44b\" }, { \"servers\" : [ { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" }, { \"versions\" : [ \"0.2.0-beta.2\", \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.teaexample.com\" } ], \"productReleaseUuid\" : \"d4d9f54a-abcf-11ee-ac79-1a52914d44b\" } ]";
+                    String exampleString = "[ { \"servers\" : [ { \"versions\" : [ \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.example.com\" }, { \"versions\" : [ \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.example.com\" } ], \"productReleaseUuid\" : \"d4d9f54a-abcf-11ee-ac79-1a52914d44b1\" }, { \"servers\" : [ { \"versions\" : [ \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.example.com\" }, { \"versions\" : [ \"1.0.0\" ], \"priority\" : 0.8, \"rootUrl\" : \"https://api.example.com\" } ], \"productReleaseUuid\" : \"d4d9f54a-abcf-11ee-ac79-1a52914d44b1\" } ]";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }
                 if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
-                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\" }";
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
+                    ApiUtil.setExampleResponse(request, "application/json", exampleString);
+                    break;
+                }
+                if (mediaType.isCompatibleWith(MediaType.valueOf("application/json"))) {
+                    String exampleString = "{ \"error\" : \"OBJECT_UNKNOWN\", \"message\" : \"message\" }";
                     ApiUtil.setExampleResponse(request, "application/json", exampleString);
                     break;
                 }

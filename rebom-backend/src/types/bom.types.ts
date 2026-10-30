@@ -44,6 +44,8 @@ export type BomMetaDto = {
     createdDate: Date,
     lastUpdatedDate: Date,
     ignoreDev?: boolean,
+    excludeFileComponents?: boolean,
+    mergeVersion?: number,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,
     enrichmentError?: string,
@@ -59,6 +61,55 @@ export type BomInput = {
         org: string,
         existingSerialNumber?: string,
     }
+}
+
+/** Why ReARM holds no SBOM for a component release of a product merge (SCORE-15 ADR-2). */
+export enum MissingSbomReason {
+    // the release has no SBOM artifact
+    NO_SBOM_ARTIFACT = 'NO_SBOM_ARTIFACT',
+    // every SBOM artifact it has was left out by the export's coverage filter
+    COVERAGE_EXCLUDED = 'COVERAGE_EXCLUDED'
+}
+
+/** One CycloneDX `hashes[]` entry: `alg` a CycloneDX hash algorithm name, `content` its hex value. */
+export type BomHash = {
+    alg: string,
+    content: string
+}
+
+/**
+ * What ReARM holds about the release a merged root describes (SCORE-30 ADR-7): its supplier, the
+ * organization's name, and the digests of its one deliverable. Either may be absent; ReARM sends
+ * nothing it does not hold.
+ */
+export type ReleaseNodeFacts = {
+    supplierName?: string | null,
+    hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null
+}
+
+/**
+ * A component release of a product merge that has no SBOM (SCORE-15 ADR-2), as ReARM describes
+ * it. purl is absent when ReARM records none; hashes are the digests of its one deliverable
+ * (SCORE-30 ADR-3), absent otherwise.
+ */
+export type MissingSbomComponent = {
+    releaseUuid: string,
+    name: string,
+    version: string,
+    type: string,
+    supplierName?: string | null,
+    group?: string | null,
+    purl?: string | null,
+    hashes?: BomHash[] | null,
+    /** The SPDX license expression ReARM declares for the release (SCORE-40 ADR-1), as sent. */
+    licenseExpression?: string | null,
+    /** Where the text of a single LicenseRef- license is; written only beside one (SCORE-40 ADR-2). */
+    licenseUrl?: string | null,
+    reason: MissingSbomReason
 }
 
 export enum RootComponentMergeMode {
@@ -97,6 +148,9 @@ export type RebomOptions = {
     version: string,
     belongsTo: string,
     hash?: string,
+    // The supplier ReARM names for the upload's root (SCORE-30 ADR-12): the deliverable's
+    // publisher or the organization; absent for third-party software and on older rows.
+    supplierName?: string,
     notes: string,
     tldOnly: boolean,
     structure: string,
@@ -136,6 +190,39 @@ export type RebomOptions = {
     purl?: string,
     rootComponentMergeMode?: RootComponentMergeMode,
     ignoreDev?: boolean,
+    // Merge only: components of type file were left out of the merged BOM (SCORE-11).
+    // Part of the merge options, so of the cache key ReARM matches stored merges on.
+    excludeFileComponents?: boolean,
+    // Merge only: the caller's merge rule version (SCORE-13), stored verbatim, part of the
+    // merge options ReARM matches stored merges on. rebom does not interpret it.
+    mergeVersion?: number,
+    // Merge only: the component releases of a product merge ReARM holds no SBOM for (SCORE-15).
+    // Each becomes a placeholder component with unknown dependencies. Not stored with the row.
+    missingSbomComponents?: MissingSbomComponent[],
+    // Merge only: what ReARM holds about the release the merged root describes (SCORE-30), filled
+    // into the root where it has no supplier or hashes of its own. Derived by ReARM from the
+    // release at generation time, like missingSbomComponents: not part of the options ReARM
+    // matches stored merges on.
+    releaseNode?: ReleaseNodeFacts | null,
+    // Merge only: the entries of the merge's ids whose roots describe the merged release itself (its
+    // own RELEASE-attached uploads, as ReARM's rows say, SCORE-57 ADR-11); their roots are folded
+    // into the merged root and no other. Absent or empty: nothing is folded. Derived by ReARM at
+    // generation time: not part of the options ReARM matches stored merges on, not stored.
+    releaseRootIds?: string[] | null,
+    // Merge only: the entries of ids that are the uploads attached to the merged release's own
+    // source code entry and to the deliverables it ships, as ReARM's rows say (SCORE-63 ADR-5).
+    // Their roots get the release's declared licence (releaseNode) where the upload wrote none; every
+    // other node is left as the merge made it. In a product merge they are also listed inputs for
+    // the re-key (ADR-9). Absent or empty: nothing is filled. Derived by ReARM at generation time:
+    // not part of the options ReARM matches stored merges on, not stored.
+    attachedRootIds?: string[] | null,
+    // Store-side, merge rows only (SCORE-69 ADR-3): written by rebom at the merge from the inputs it
+    // was handed, never from a request (the GraphQL input does not declare them, and the store deletes
+    // both for every origin but MERGE). nestedProductSerials: the recorded serials (meta.serialNumber)
+    // of the unlisted inputs that were product rows; listedRootKeys: the root purls and bom-refs of the
+    // listed inputs. Read by a product merge above to reserve a nested product's keys (ADR-4, ADR-5).
+    nestedProductSerials?: string[],
+    listedRootKeys?: string[],
     // Deduplication metadata
     isDuplicate?: boolean,
     duplicateOf?: string,  // UUID of the original BOM if this is a duplicate

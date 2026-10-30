@@ -10,6 +10,7 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Optional;
 import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
@@ -38,6 +39,9 @@ import lombok.Setter;
 public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 
 	public enum BoardStatus { ACTIVE, ARCHIVED }
+
+	/** How a served text was answered (task TPF-97): with its text, or as unchanged against what the caller holds. */
+	public enum ServedPromptStatus { SERVED, UNCHANGED }
 
 	/**
 	 * How strictly coordinator-set priority binds worker assignment.
@@ -542,7 +546,8 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 	 * Where each document type lands inside {@link #documentsRepo}, as path templates.
 	 *
 	 * <p>Placeholders: {@code {key}} (the task's key, RD-42), {@code {round}}, {@code {type}} (lower
-	 * case), {@code {component}} (slugged component name). {@code {task}} is gone
+	 * case), {@code {component}} (slugged component name), {@code {role}} (slugged name of the
+	 * publishing role, so two roles producing one type write apart). {@code {task}} is gone
 	 * (board-documents.md D11): a stored template still carrying it reads as {@code {key}}
 	 * ({@link #normaliseDocumentPaths}). The board's documents root goes in front of whatever a
 	 * template resolves to ({@link #documentsRoot}). Empty means the
@@ -830,5 +835,15 @@ public class AgentBoardData extends RelizaDataParent implements RelizaObject {
 		bd.setUuid(b.getUuid());
 		bd.setCreatedDate(b.getCreatedDate());
 		return bd;
+	}
+
+	/** The record with the stored task counter when that is the higher one (TPF-42): no whole-board save puts the counter back. */
+	public static Map<String, Object> keepNextTaskNumber(Map<String, Object> recordData, Optional<Integer> stored) {
+		if (null == stored || stored.isEmpty()) return recordData;
+		Object own = recordData.get("nextTaskNumber");
+		if (own instanceof Number n && n.intValue() >= stored.get()) return recordData;
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		out.put("nextTaskNumber", stored.get());
+		return out;
 	}
 }

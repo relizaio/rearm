@@ -32,8 +32,8 @@ import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
-import io.reliza.model.tea.Rebom.InternalBom;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.Rebom.InternalBom;
+import io.reliza.model.DigestAlgorithm;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 
@@ -76,12 +76,12 @@ public class SharedArtifactServiceRawDownloadTest {
         ad.setInternalBom(new InternalBom(internalBomId, ArtifactBelongsTo.RELEASE));
         Set<DigestRecord> digests = new LinkedHashSet<>();
         // ORIGINAL_FILE is always present -- retention does not remove or replace it.
-        digests.add(new DigestRecord(TeaChecksumType.SHA_256, "aa11", DigestScope.ORIGINAL_FILE));
+        digests.add(new DigestRecord(DigestAlgorithm.SHA_256, "aa11", DigestScope.ORIGINAL_FILE));
         if (withAsUploadedDigest) {
-            digests.add(new DigestRecord(TeaChecksumType.SHA_256, "cc33", DigestScope.AS_UPLOADED));
+            digests.add(new DigestRecord(DigestAlgorithm.SHA_256, "cc33", DigestScope.AS_UPLOADED));
         }
         if (withRetainedBytes) {
-            digests.add(new DigestRecord(TeaChecksumType.SHA_256, "bb22", DigestScope.RAW_OCI_STORAGE));
+            digests.add(new DigestRecord(DigestAlgorithm.SHA_256, "bb22", DigestScope.RAW_OCI_STORAGE));
             ad.setRawOciRepositoryName("downloadable-artifacts-2026-09");
         }
         ad.setDigestRecords(digests);

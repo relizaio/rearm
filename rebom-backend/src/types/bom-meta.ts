@@ -26,7 +26,12 @@ export interface BomMetaNested {
         rootComponentMergeMode?: RootComponentMergeMode;
         tldOnly: boolean;
         ignoreDev: boolean;
+        excludeFileComponents?: boolean;
+        mergeVersion?: number;
         sourceIds?: string[];
+        // Store-side records of a merge row (SCORE-69 ADR-3).
+        nestedProductSerials?: string[];
+        listedRootKeys?: string[];
     };
     spdx?: {
         // MISNAMED, kept for compatibility: the digest of the SPDX document rebom stored
@@ -78,7 +83,12 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             structure: (opts.structure?.toUpperCase() as any) || 'FLAT',
             rootComponentMergeMode: opts.rootComponentMergeMode,
             tldOnly: opts.tldOnly ?? false,
-            ignoreDev: opts.ignoreDev ?? false
+            ignoreDev: opts.ignoreDev ?? false,
+            excludeFileComponents: opts.excludeFileComponents,
+            mergeVersion: opts.mergeVersion,
+            ...(opts.nestedProductSerials !== undefined ? { nestedProductSerials: opts.nestedProductSerials } : {}),
+            ...(opts.listedRootKeys !== undefined ? { listedRootKeys: opts.listedRootKeys } : {})
+            // missingSbomComponents, releaseNode, releaseRootIds and attachedRootIds are generation-time inputs: not stored.
         };
     }
 
@@ -124,6 +134,10 @@ export function fromNestedMeta(nested: BomMetaNested): RebomOptions {
         rootComponentMergeMode: nested.merge?.rootComponentMergeMode as any,
         tldOnly: nested.merge?.tldOnly ?? false,
         ignoreDev: nested.merge?.ignoreDev,
+        excludeFileComponents: nested.merge?.excludeFileComponents,
+        mergeVersion: nested.merge?.mergeVersion,
+        ...(nested.merge?.nestedProductSerials !== undefined ? { nestedProductSerials: nested.merge.nestedProductSerials } : {}),
+        ...(nested.merge?.listedRootKeys !== undefined ? { listedRootKeys: nested.merge.listedRootKeys } : {}),
         originalFileDigest: nested.spdx?.originalFileDigest,
         originalFileSize: nested.spdx?.originalFileSize,
         originalMediaType: nested.spdx?.originalMediaType,

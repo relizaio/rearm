@@ -45,7 +45,7 @@ import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentSessionData.SessionStatus;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.repositories.AgentSessionRepository;
 import lombok.extern.slf4j.Slf4j;
 
@@ -546,7 +546,7 @@ public class AgentSessionService {
 	}
 
 	/** An instant as the numeric epoch seconds, with nanos, that Jackson writes into the session's JSONB. */
-	static BigDecimal epochSecondsOf(ZonedDateTime at) {
+	public static BigDecimal epochSecondsOf(ZonedDateTime at) {
 		return BigDecimal.valueOf(at.toEpochSecond()).add(BigDecimal.valueOf(at.getNano(), 9));
 	}
 
@@ -745,7 +745,7 @@ public class AgentSessionService {
 	 */
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentSessionData uploadAndAttachArtifacts(UUID sessionUuid,
-			List<Map<String, Object>> artifactsInput, WhoUpdated wu) throws RelizaException {
+			List<Map<String, Object>> artifactsInput, SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
 		if (artifactsInput == null || artifactsInput.isEmpty()) {
 			throw new RelizaException("artifacts is required and must be non-empty");
 		}
@@ -768,7 +768,8 @@ public class AgentSessionService {
 		// classification.
 		RebomOptions rebomOptions = new RebomOptions(null, null, null,
 				ArtifactBelongsTo.AGENT_SESSION, null, StripBom.FALSE, null);
-		List<UUID> artIds = artifactService.uploadListOfArtifacts(od, artifactsInput, rebomOptions, wu);
+		// The calling key's own rights apply (SCORE-52 ADR-5): a session is not a system path.
+		List<UUID> artIds = artifactService.uploadListOfArtifacts(od, artifactsInput, rebomOptions, authority, wu);
 		for (UUID artId : artIds) {
 			sd.addArtifact(artId);
 		}

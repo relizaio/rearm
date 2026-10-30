@@ -37,6 +37,7 @@ import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.BomComponentChange;
 import io.reliza.model.dto.notifications.ReleaseRef;
 import io.reliza.repositories.NotificationOutboxEventRepository;
+import io.reliza.service.oss.OssPerspectiveService;
 import lombok.extern.slf4j.Slf4j;
 
 /**
@@ -60,6 +61,9 @@ public class ReleaseNotificationSupport {
 
 	@Autowired
 	private GetComponentService getComponentService;
+
+	@Autowired
+	private OssPerspectiveService ossPerspectiveService;
 
 	@Autowired
 	private BranchService branchService;
@@ -147,17 +151,19 @@ public class ReleaseNotificationSupport {
 	 * because the connecting artifact metrics aren't written yet; release
 	 * events have the component + perspectives in hand at produce-time, so we
 	 * build it here from the already-resolved {@link ReleaseRef} plus one
-	 * component lookup for the perspective set.
+	 * component lookup for the perspective set, of which only the assignable
+	 * perspectives are stamped (task TEA-8).
 	 *
 	 * <p>Returns an empty list (never null) when the component can't be
 	 * resolved, so the caller can pass it straight through.
 	 */
 	public List<AffectedRelease> buildAffectedReleases(ReleaseData rd, ReleaseRef ref) {
 		if (ref == null) return List.of();
+		// Only the component's assignable perspectives are stamped (task TEA-8, D13): a deleted or
+		// foreign membership the component still stores is not written into a new outbox row.
 		Set<UUID> perspectives = getComponentService.getComponentData(rd.getComponent())
-				.map(ComponentData::getPerspectives)
-				.filter(ps -> ps != null && !ps.isEmpty())
-				.map(Set::copyOf)
+				.filter(cd -> cd.getPerspectives() != null && !cd.getPerspectives().isEmpty())
+				.map(cd -> Set.copyOf(ossPerspectiveService.assignablePerspectiveUuids(cd.getOrg(), cd.getPerspectives())))
 				.orElse(Set.of());
 		return List.of(new AffectedRelease(
 				ref.releaseUuid(),

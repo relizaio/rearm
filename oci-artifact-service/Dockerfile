@@ -1,4 +1,4 @@
-FROM golang:1.26.6-alpine3.24@sha256:3889b425f035be855a72fb4755265311293b6d414521f0a519d819df32222d83 AS build-stage
+FROM golang:1.26.10-alpine3.24@sha256:a2012b4a1d1f9f7e9f44e0d39b805a901e856b1dd80b4e6ee4338db547050308 AS build-stage
 WORKDIR /build
 ENV CGO_ENABLED=0
 COPY go.mod go.sum ./
@@ -19,7 +19,8 @@ ARG CI_ENV=noci
 ARG GIT_COMMIT=git_commit_undefined
 ARG GIT_BRANCH=git_branch_undefined
 ARG VERSION=not_versioned
-RUN apk add --no-cache ca-certificates && \
+RUN apk upgrade --no-cache ca-certificates ca-certificates-bundle && \
+    apk add --no-cache ca-certificates && \
     mkdir -p /skel/app /skel/tmp && chmod 1777 /skel/tmp && \
     echo "version=$VERSION" > /skel/app/version && \
     echo "commit=$GIT_COMMIT" >> /skel/app/version && \
@@ -27,6 +28,18 @@ RUN apk add --no-cache ca-certificates && \
     echo "apprunner:x:1000:1000:apprunner:/app:/sbin/nologin" > /skel-passwd && \
     echo "apprunner:x:1000:" > /skel-group && \
     chown -R 1000:1000 /skel/app
+# Trust-store gate self-test (ci/trust-gate/selftest.sh): hermetic, proves the
+# offline check fails on a bundle carrying the two eMudhra-chain roots.
+RUN apk add --no-cache openssl && sh ci/trust-gate/selftest.sh
+
+# Trust-store gate (October 2026 eMudhra CA compromise): the toolchain and the
+# bundle the scratch image copies must refuse the compromised chains. The
+# release stage copies the marker, so this stage always builds.
+FROM build-stage AS trust-gate
+USER root
+RUN apk add --no-cache curl openssl
+COPY ci/trust-gate/ /gate/
+RUN sh /gate/trust-gate.sh && go test -count=1 -tags trustgate -run TestTrustGate ./ci/trust-gate/ && echo "trust-gate ok $(date -u +%FT%TZ)" > /gate/ok
 
 # The binary is static (CGO_ENABLED=0) and the service shells out to nothing,
 # so the release image carries no distro: FROM scratch drops every Alpine
@@ -44,6 +57,7 @@ COPY --from=build-stage /skel-passwd /etc/passwd
 COPY --from=build-stage /skel-group /etc/group
 COPY --from=build-stage /skel/ /
 COPY --from=build-stage --chown=1000:1000 /build/reliza-oci-artifacts-client /app/app
+COPY --from=trust-gate /gate/ok /trust-gate-ok
 USER apprunner
 ENV TMPDIR=/tmp HOME=/app
 

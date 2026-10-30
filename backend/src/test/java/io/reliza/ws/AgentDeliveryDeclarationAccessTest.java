@@ -8,6 +8,7 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -28,9 +29,11 @@ import org.springframework.test.context.junit.jupiter.SpringExtension;
 import org.springframework.web.context.request.ServletWebRequest;
 
 import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
+import com.netflix.graphql.dgs.DgsQueryExecutor;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
+import graphql.ExecutionResult;
 import graphql.GraphQLContext;
 import graphql.language.OperationDefinition.Operation;
 import graphql.schema.DataFetchingEnvironmentImpl;
@@ -44,6 +47,7 @@ import io.reliza.model.AgentIdentityCredential.IdentityType;
 import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentTaskData;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
+import io.reliza.model.AgentTaskData.TaskReturnReason;
 import io.reliza.model.AgentTaskData.TaskStatus;
 import io.reliza.model.AgentTaskRoleConfigData.AgentCapability;
 import io.reliza.model.AgentTaskRoleConfigData.RoleNecessity;
@@ -83,6 +87,7 @@ public class AgentDeliveryDeclarationAccessTest {
 
 	@Autowired private TestInitializer testInitializer;
 	@Autowired private AgentTaskDataFetcher fetcher;
+	@Autowired private DgsQueryExecutor dgsQueryExecutor;
 	@Autowired private AgentService agentService;
 	@Autowired private AgentIdentityService agentIdentityService;
 	@Autowired private AgentSessionService agentSessionService;
@@ -258,6 +263,61 @@ public class AgentDeliveryDeclarationAccessTest {
 		assertTrue(registry.allows(Operation.MUTATION, "agentTaskDeclareDelivery"));
 	}
 
+	/**
+	 * Task t20261010-033523-18839: unlink has the supersede gate. The session holding the task in a CODE_PUSH role,
+	 * the seat and a session whose key holds BOARD_WRITE reach the rules (here a PR the task does not link, which
+	 * proves the gate let them through); the holder's session once it returned the task, and another organization's
+	 * key, are refused at the gate; a person needs PERSON_WRITE on the task.
+	 */
+	@Test
+	public void theHolderTheSeatAndABoardWriterUnlinkAndAReturnedCoderDoesNot() throws RelizaException {
+		Rig narrow = rig(Set.of(PermissionFunction.AGENT, PermissionFunction.BOARD_AGENT, PermissionFunction.BOARD_READ));
+		String mistaken = url();
+		String old = url();
+		String replacement = url();
+		AgentTaskData t = heldWithTwoPrs(narrow, true, old, replacement);
+		agentTaskService.linkPr(t.getUuid(), mistaken, WU);
+		AgentTaskData unlinked = fetcher.agentTaskUnlinkPrProgrammatic(t.getUuid(), narrow.coder().getUuid(), mistaken,
+				"wrong task", as(narrow.key()));
+		assertEquals(List.of(old, replacement), unlinked.getPrUrls());
+		assertEquals(AgentActor.ofSession(narrow.coder().getUuid()), unlinked.getUnlinkedPrs().get(0).by());
+
+		AgentTaskData unheld = agentTaskService.returnTask(t.getUuid(), narrow.coder().getUuid(), TaskReturnReason.OTHER,
+				"handing it back", WU);
+		assertEquals(TaskStatus.AWAITING_COORDINATOR, unheld.getStatus());
+		AccessDeniedException returned = assertThrows(AccessDeniedException.class, () -> fetcher
+				.agentTaskUnlinkPrProgrammatic(t.getUuid(), narrow.coder().getUuid(), old, null, as(narrow.key())));
+		assertTrue(returned.getMessage().contains("CODE_PUSH") && returned.getMessage().contains("coordinator seat")
+				&& returned.getMessage().contains("BOARD_WRITE"), returned.getMessage());
+		String elsewhere = url();
+		RelizaException seat = assertThrows(RelizaException.class, () -> fetcher.agentTaskUnlinkPrProgrammatic(t.getUuid(),
+				narrow.seat().getUuid(), elsewhere, null, as(narrow.key())));
+		assertTrue(seat.getMessage().contains("is not linked to task"), seat.getMessage());
+
+		Rig r = rig();
+		AgentTaskData w = heldWithTwoPrs(r, false, url(), url());
+		RelizaException writer = assertThrows(RelizaException.class, () -> fetcher.agentTaskUnlinkPrProgrammatic(w.getUuid(),
+				r.merger().getUuid(), elsewhere, null, as(r.key())));
+		assertTrue(writer.getMessage().contains("is not linked to task"), writer.getMessage());
+		Rig other = rig();
+		assertThrows(AccessDeniedException.class, () -> fetcher.agentTaskUnlinkPrProgrammatic(w.getUuid(),
+				other.seat().getUuid(), w.getPrUrls().get(0), null, as(other.key())));
+
+		assertThrows(AccessDeniedException.class, () -> fetcher.agentTaskUnlinkPr(w.getUuid(), w.getPrUrls().get(0), null,
+				as(personKey(r.org(), PermissionType.READ_ONLY))));
+		AgentTaskData byPerson = fetcher.agentTaskUnlinkPr(w.getUuid(), w.getPrUrls().get(0), "not this one",
+				as(personKey(r.org(), PermissionType.ADMIN)));
+		assertEquals(1, byPerson.getPrUrls().size());
+		assertEquals(AgentActor.ActorKind.USER, byPerson.getUnlinkedPrs().get(0).by().kind());
+	}
+
+	@Test
+	public void theEndpointServesBothUnlinkVerbs() throws Exception {
+		ProgrammaticSchemaRegistry registry = new ProgrammaticSchemaRegistry();
+		assertTrue(registry.allows(Operation.MUTATION, "agentTaskUnlinkPrProgrammatic"));
+		assertTrue(registry.allows(Operation.MUTATION, "agentTaskUnlinkPr"));
+	}
+
 	/** The rig's coder holding a new task with an old PR and its replacement linked; with {@code push}, coder has CODE_PUSH. */
 	private AgentTaskData heldWithTwoPrs(Rig r, boolean push, String old, String replacement) throws RelizaException {
 		if (push) {
@@ -334,6 +394,46 @@ public class AgentDeliveryDeclarationAccessTest {
 				noPush.getUuid(), narrow.seat().getUuid(), noPush.getPrUrls().get(0), noPush.getPrUrls().get(1), null,
 				as(narrow.key())));
 		assertTrue(seat.getMessage().contains("has not been reported by its repository's CI"), seat.getMessage());
+	}
+
+	/**
+	 * Task t20261010-033522-23606: each linked PR says how delivery counts it, read on the endpoint the tester's CLI
+	 * reads. CI never reported these PRs, so the units come from declarations: one abandoned and then superseded by
+	 * its replacement, which still waits, one abandoned, and one declared delivered.
+	 */
+	@Test
+	@SuppressWarnings("unchecked")
+	public void eachLinkedPrSaysHowDeliveryCountsIt() throws RelizaException {
+		Rig r = rig();
+		String old = url();
+		String replacement = url();
+		String abandoned = url();
+		String delivered = url();
+		AgentTaskData t = heldWithTwoPrs(r, true, old, replacement);
+		agentTaskService.linkPr(t.getUuid(), abandoned, WU);
+		agentTaskService.linkPr(t.getUuid(), delivered, WU);
+		AgentActor seat = AgentActor.ofSession(r.seat().getUuid());
+		agentTaskService.declareDelivery(t.getUuid(), old, null, AgentTaskData.DeliveryOutcome.ABANDONED, "replaced", seat, WU);
+		agentTaskService.supersedePullRequest(t.getUuid(), old, replacement, null, seat, WU);
+		agentTaskService.declareDelivery(t.getUuid(), abandoned, null, AgentTaskData.DeliveryOutcome.ABANDONED, "dropped", seat,
+				WU);
+		agentTaskService.declareDelivery(t.getUuid(), delivered, SHA, AgentTaskData.DeliveryOutcome.DELIVERED, null, seat, WU);
+
+		SecurityContextHolder.setContext(SecurityContextHolder.createEmptyContext());
+		MockHttpServletRequest request = new MockHttpServletRequest("POST", ProgrammaticGraphQlConfig.PATH);
+		request.setAttribute(ProgrammaticAuthenticationFilter.PRINCIPAL_ATTRIBUTE,
+				AuthHeaderParse.fromVerifiedKey(r.key(), 1, "198.51.100.13"));
+		HttpHeaders headers = new HttpHeaders();
+		headers.set(HttpHeaders.AUTHORIZATION, "Bearer verified-by-the-filter");
+		ExecutionResult res = dgsQueryExecutor.execute(
+				"query($t: ID!) { agentTaskProgrammatic(taskUuid: $t) { pullRequests { url unit } } }",
+				Map.of("t", t.getUuid().toString()), Map.of(), headers, null, new ServletWebRequest(request));
+		assertTrue(res.getErrors().isEmpty(), res.getErrors().toString());
+		List<Map<String, Object>> prs = (List<Map<String, Object>>) ((Map<String, Object>) ((Map<String, Object>) res
+				.getData()).get("agentTaskProgrammatic")).get("pullRequests");
+		Map<Object, Object> units = new LinkedHashMap<>();
+		for (Map<String, Object> pr : prs) units.put(pr.get("url"), pr.get("unit"));
+		assertEquals(Map.of(old, "SUPERSEDED", replacement, "WAITING", abandoned, "BLOCKED", delivered, "DELIVERED"), units);
 	}
 
 	@Test

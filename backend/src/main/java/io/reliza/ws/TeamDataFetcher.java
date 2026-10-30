@@ -19,7 +19,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaObject;
@@ -89,7 +89,7 @@ public class TeamDataFetcher {
 	@DgsData(parentType = "Mutation", field = "createTeam")
 	public TeamWebDto createTeam(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		Map<String, Object> teamInputMap = dfe.getArgument("team");
-		CreateTeamDto createDto = Utils.OM.convertValue(teamInputMap, CreateTeamDto.class);
+		CreateTeamDto createDto = InputConversion.convert(teamInputMap, CreateTeamDto.class, "team");
 		if (null == createDto.getOrg()) throw new RelizaException("Team organization is required");
 		WhoUpdated wu = authorizeOrgAdmin(createDto.getOrg());
 		return TeamData.toWebDto(teamService.createTeam(createDto, wu));
@@ -99,7 +99,7 @@ public class TeamDataFetcher {
 	@DgsData(parentType = "Mutation", field = "updateTeam")
 	public TeamWebDto updateTeam(DgsDataFetchingEnvironment dfe) throws RelizaException {
 		Map<String, Object> teamInputMap = dfe.getArgument("team");
-		UpdateTeamDto updateDto = Utils.OM.convertValue(teamInputMap, UpdateTeamDto.class);
+		UpdateTeamDto updateDto = InputConversion.convert(teamInputMap, UpdateTeamDto.class, "team");
 		if (null == updateDto.getTeamId()) throw new RelizaException("teamId is required");
 
 		// Authorize against the org of the row being edited, resolved from the

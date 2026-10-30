@@ -63,6 +63,7 @@ export function richTask (over: Record<string, any> = {}) {
         dependsOn: ['t0'], requireHumanReview: false,
         hold: { level: 'OPERATOR', kind: 'MANUAL', gateRole: null, reason: 'stopped by no progress: [F-1] stayed OPEN', heldBy: { kind: 'SYSTEM', uuid: null, name: 'routing' }, heldAt: '2026-09-24T10:00:00Z' },
         assignment: null,
+        stale: [],
         signOffs: [
             { role: 'architect', agent: 'a1', session: 's1', assignedAt: '2026-09-21T09:00:00Z', signedOffAt: '2026-09-21T10:00:00Z', outcome: 'PASSED', note: 'design', promptVersion: 'abc123', reviewedBy: null, outputs: ['a1'], usage },
             { role: 'reviewer', agent: 'a2', session: 's2', assignedAt: '2026-09-23T09:00:00Z', signedOffAt: '2026-09-23T10:00:00Z', outcome: 'REJECTED', note: 'F-1 open', promptVersion: 'def456', reviewedBy: null, outputs: ['r3'], usage },
@@ -86,6 +87,21 @@ export function richTask (over: Record<string, any> = {}) {
         createdDate: '2026-09-20T10:00:00Z', completedAt: null,
         ...over,
     }
+}
+
+/** The staleness marks AgentTask.stale carries (TPF-69): a stalled hop of 70 minutes, a delivery stuck for 3 h. */
+export const staleHopMark = { rule: 'hopNoProgress', since: '2026-10-20T10:00:00Z', minutes: 70,
+    message: 'RD3-5 stalled: assigned to coder (session 5e550001) for 70 min with no progress reported; release it with task unassign if the agent is gone' }
+export const staleDeliveryMark = { rule: 'deliveryStuck', since: '2026-10-20T08:00:00Z', minutes: 180,
+    message: 'RD3-5 delivery stuck: https://github.com/relizaio/rearm/pull/396 open for 3 h' }
+
+/** The stale variants: an ASSIGNED task with a stalled hop, and a DELIVERING one (no assignment) whose delivery is stuck. */
+export function staleTask (kind: 'assigned' | 'delivering', over: Record<string, any> = {}) {
+    return kind === 'assigned'
+        ? richTask({ status: 'ASSIGNED', hold: null,
+            assignment: { session: 's3', agent: 'a3', role: 'coder', assignedAt: '2026-10-20T10:00:00Z', promptVersion: 'pv1' },
+            stale: [staleHopMark], ...over })
+        : richTask({ status: 'DELIVERING', hold: null, assignment: null, stale: [staleDeliveryMark], ...over })
 }
 
 export const fixtureRoles = [

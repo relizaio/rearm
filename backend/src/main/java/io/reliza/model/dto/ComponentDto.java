@@ -122,6 +122,14 @@ public class ComponentDto {
 	private List<String> sidAuthoritySegments;
 	@JsonProperty
 	private BelongsToOrganization isInternal;
+	/** Declared licence (SCORE-39 ADR-1); on update null = unchanged, empty string clears. */
+	@JsonProperty
+	private String licenseExpression;
+	@JsonProperty
+	private String licenseUrl;
+	/** Supplier name (SCORE-39 ADR-3); on update null = unchanged, empty string clears. */
+	@JsonProperty
+	private String supplierName;
 	@JsonProperty
 	private Set<UUID> leads;
 	@JsonProperty
@@ -138,4 +146,10 @@ public class ComponentDto {
 	 */
 	@JsonProperty
 	private Boolean clearOwner;
+	/**
+	 * The revision the caller's copy was read at (TPF-61); null skips the check; never stored.
+	 * When set, ComponentService.updateComponent refuses the save and writes nothing unless the
+	 * stored revision, read under the row lock, is exactly this one.
+	 */
+	private Integer expectedRevision;
 }

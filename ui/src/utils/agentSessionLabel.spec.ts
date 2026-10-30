@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { agentDirectory, agentNameOf, agentOfSession, sessionLabel, sessionOf, sessionOfActor, sessionOnTask, sessionPath } from './agentSessionLabel'
+import { agentDirectory, agentDisplayLabel, agentNameIsAdminSet, agentNameOf, agentOfSession, agentOwnName, sessionLabel, sessionOf, sessionOfActor, sessionOnTask, sessionPath } from './agentSessionLabel'
 
 // Sessions and agents told apart (RD2-11).
 describe('a session\'s label', () => {
@@ -76,3 +76,31 @@ describe('the coordinator seat (RD2-11 run 2, T-3)', () => {
     })
 })
 
+describe('an agent\'s own label', () => {
+    it('names an agent by its display name, else its registration name, never its key\'s notes', () => {
+        expect(agentDisplayLabel({ uuid: '89cabc98-70fd-419b-affc-b255d393cfb4', name: 'Claude Code', effectiveDisplayName: 'CI pipeline' })).toBe('Claude Code · 89cabc98')
+        expect(agentDisplayLabel({ uuid: 'f00d6ca9-0000-0000-0000-000000000000', name: 'Reviewer', displayName: 'Coder bot', effectiveDisplayName: 'Coder bot' })).toBe('Coder bot · f00d6ca9')
+        expect(agentDisplayLabel({ uuid: '59911580-0000-0000-0000-000000000000', name: 'Claude · Code' })).toBe('Claude Code · 59911580')
+        expect(agentDisplayLabel({ uuid: '59911580-0000-0000-0000-000000000000' })).toBe('agent · 59911580')
+        expect(agentDisplayLabel({ name: 'x' })).toBe('x')
+    })
+
+    it('gives the name alone for places that show the id apart', () => {
+        expect(agentOwnName({ name: 'Reviewer', displayName: '  ' })).toBe('Reviewer')
+        expect(agentOwnName({ effectiveDisplayName: 'CI pipeline' })).toBe('agent')
+    })
+
+    it('cuts a long name in the label, never the short id', () => {
+        expect(agentDisplayLabel({ uuid: '89cabc98-0000-0000-0000-000000000000', name: 'n'.repeat(60) })).toBe('n'.repeat(47) + '… · 89cabc98')
+    })
+
+    it('marks a name as admin-set only when the display name says something', () => {
+        expect(agentNameIsAdminSet({ name: 'Reviewer', displayName: 'Coder bot' })).toBe(true)
+        expect(agentNameIsAdminSet({ name: 'Reviewer', displayName: '·' })).toBe(false)
+        expect(agentNameIsAdminSet({ name: 'Reviewer' })).toBe(false)
+    })
+
+    it('reads the same own name on the board pages as on the agent pages', () => {
+        expect(agentNameOf({ name: 'Claude · Code' }).name).toBe(agentOwnName({ name: 'Claude · Code' }))
+    })
+})

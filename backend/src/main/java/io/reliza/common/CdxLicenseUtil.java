@@ -9,6 +9,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -74,7 +75,45 @@ public final class CdxLicenseUtil {
 		}
 	}
 
+	// The SPDX exception ids (SCORE-41 ADR-2), lower-cased: the verbatim json/exceptions.json of
+	// spdx/license-list-data, bundled as spdx-exceptions.json. The CycloneDX enum above mixes them
+	// with the licence ids, and no name pattern separates the two sets (LLGPL, SHL-2.0 are
+	// exceptions; GPL-2.0-with-classpath-exception is a licence id). Refresh the file with every
+	// cyclonedx-core-java bump.
+	private static final Set<String> SPDX_EXCEPTION_IDS_LOWER = new HashSet<>();
+	static {
+		try (InputStream is = CdxLicenseUtil.class.getResourceAsStream("/spdx-exceptions.json")) {
+			if (is != null) {
+				JsonNode exceptions = new ObjectMapper().readTree(is).get("exceptions");
+				if (exceptions != null) {
+					for (JsonNode n : exceptions) {
+						String id = n.path("licenseExceptionId").asText("");
+						if (!id.isEmpty()) SPDX_EXCEPTION_IDS_LOWER.add(id.toLowerCase(Locale.ROOT));
+					}
+				}
+			}
+		} catch (Exception ignore) {
+			// same fallback as the licence list; CdxLicenseUtilTest refuses an empty set
+		}
+	}
+
 	private CdxLicenseUtil() {}
+
+	/** True when {@code id} is an SPDX exception id, matched case-insensitively. */
+	public static boolean isSpdxExceptionId(String id) {
+		return null != id && SPDX_EXCEPTION_IDS_LOWER.contains(id.toLowerCase(Locale.ROOT));
+	}
+
+	/**
+	 * {@code id} in the SPDX list's casing when it is a licence id on the list, matched
+	 * case-insensitively (SCORE-39 ADR-2); empty otherwise, and empty for an SPDX exception id,
+	 * which the CycloneDX list also holds (SCORE-41 ADR-2).
+	 */
+	public static Optional<String> canonicalSpdxId(String id) {
+		if (null == id || id.isEmpty() || isSpdxExceptionId(id)) return Optional.empty();
+		if (SPDX_IDS.contains(id)) return Optional.of(id);
+		return Optional.ofNullable(SPDX_BY_LOWER.get(id.toLowerCase(Locale.ROOT)));
+	}
 
 	/** CDX licenses array (stored shape) -> LicenseChoice; null/empty -> null. */
 	public static LicenseChoice toLicenseChoice(List<Map<String, Object>> cdxArray) {

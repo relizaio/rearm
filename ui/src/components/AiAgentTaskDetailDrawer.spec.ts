@@ -5,7 +5,7 @@
 import { describe, expect, it } from 'vitest'
 import { mount } from '@vue/test-utils'
 import Drawer from './AiAgentTaskDetailDrawer.vue'
-import { fixtureRoles, fixtureTasks, fixtureVariants, richTask } from './task/taskFixtures'
+import { fixtureRoles, fixtureTasks, fixtureVariants, richTask, staleHopMark, staleTask } from './task/taskFixtures'
 
 const stubs = {
     Drawer: { template: '<div><slot/></div>' },
@@ -13,10 +13,12 @@ const stubs = {
     RouterLink: { props: ['to'], template: '<a class="rl" :href="to"><slot/></a>' },
 }
 
-function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE']) {
+function mountDrawer (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE'], attachTo?: HTMLElement, more: Record<string, any> = {}) {
     return mount(Drawer, {
-        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: { myPermissions }, priorityLevels: 3, canReopen: true },
+        props: { task, tasks: fixtureTasks(task), agentNames: { a1: 'Arch' }, roles: fixtureRoles, board: { myPermissions }, priorityLevels: 3, canReopen: true,
+            ...more },
         global: { stubs },
+        attachTo,
     })
 }
 
@@ -67,6 +69,45 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(w.findAll('.tsum__doc')).toHaveLength(3)
     })
 
+    // A staleness mark (TPF-69) is a summary row of its own, on the marks alone.
+    it('shows a stale hop in the summary with the ALERT text as its title, the unassign link only to an operator', () => {
+        const reader = mountDrawer(staleTask('assigned'), ['BOARD_READ'])
+        const row = reader.find('[data-testid="summary-stale"]')
+        expect(row.exists()).toBe(true)
+        expect(row.text()).toContain('stale: no progress 70 min')
+        expect(row.find('.stalemark').attributes('title')).toBe(`hopNoProgress: ${staleHopMark.message}`)
+        expect(reader.find('[data-testid="summary-unassign-link"]').exists(), 'BOARD_READ only: no link').toBe(false)
+        const healthy = mountDrawer(staleTask('assigned', { stale: [] }))
+        expect(healthy.find('[data-testid="summary-stale"]').exists()).toBe(false)
+        expect(mountDrawer(richTask()).find('[data-testid="summary-stale"]').exists()).toBe(false)
+    })
+
+    it('focuses the Unassign reason input from the stale line', async () => {
+        // Attached: detached, document.activeElement stays BODY whatever is focused, and only the inner INPUT
+        // passes here, not NInput's wrapper DIV.
+        const w = mountDrawer(staleTask('assigned'), ['BOARD_READ', 'BOARD_WRITE'], document.body)
+        try {
+            const link = w.find('[data-testid="summary-unassign-link"]')
+            expect(link.exists()).toBe(true)
+            await link.trigger('click')
+            const input = w.find('[data-testid="unassign-reason"] textarea')
+            expect(input.exists()).toBe(true)
+            expect(document.activeElement).toBe(input.element)
+            expect(document.activeElement?.tagName).toBe('TEXTAREA')
+        } finally {
+            w.unmount()
+        }
+    })
+
+    it('shows a stuck delivery although the task has no assignment, and no unassign link', () => {
+        const w = mountDrawer(staleTask('delivering'))
+        const row = w.find('[data-testid="summary-stale"]')
+        expect(row.exists()).toBe(true)
+        expect(row.text()).toContain('stale: delivery stuck 3 h')
+        expect(w.find('.tsum').text(), 'no assigned row').not.toContain('since')
+        expect(w.find('[data-testid="summary-unassign-link"]').exists()).toBe(false)
+    })
+
     it('links to the task page by uuid', () => {
         const w = mountDrawer(richTask())
         const link = w.find('a.rl')
@@ -100,5 +141,28 @@ describe('AiAgentTaskDetailDrawer', () => {
         expect(desc.classes()).toContain('dhead__desc--clamped')
         expect(desc.attributes('title')).toBe(long)
         expect(mountDrawer(richTask()).find('.dhead__desc').exists()).toBe(false)
+    })
+})
+
+// The board reads its tasks card-level: the drawer opens on the card and shows the sections once the task's whole
+// read is in, a spinner until then and the refusal if it fails.
+describe('AiAgentTaskDetailDrawer: the task\'s whole read', () => {
+    it('shows the title and a spinner, no section, while the task loads', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loading: true })
+        expect(w.find('[data-testid="drawer-loading"]').text()).toContain('Loading the task…')
+        expect(w.findAll('.dsec__h')).toHaveLength(0)
+        expect(w.find('.openpage').exists()).toBe(true)
+    })
+
+    it('says a failed read in place of the sections', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loadError: 'Could not load the task: boom' })
+        expect(w.find('[data-testid="drawer-load-error"]').text()).toBe('Could not load the task: boom')
+        expect(w.findAll('.dsec__h')).toHaveLength(0)
+    })
+
+    it('shows the sections once loaded', () => {
+        const w = mountDrawer(richTask(), undefined, undefined, { loading: false, loadError: null })
+        expect(w.find('[data-testid="drawer-loading"]').exists()).toBe(false)
+        expect(w.findAll('.dsec__h').map(h => h.text())).toContain('Summary')
     })
 })

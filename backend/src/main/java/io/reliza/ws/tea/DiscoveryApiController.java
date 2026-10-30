@@ -1,79 +1,81 @@
+/**
+* Copyright Reliza Incorporated. 2019 - 2026. Licensed under the terms of AGPL-3.0-only.
+*/
 package io.reliza.ws.tea;
 
+import java.net.URI;
+import java.util.ArrayList;
+import java.util.List;
+import java.util.Optional;
+
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
-import org.springframework.lang.Nullable;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
-import org.springframework.web.bind.annotation.PathVariable;
-import org.springframework.web.bind.annotation.RequestBody;
-import org.springframework.web.bind.annotation.RequestHeader;
 import org.springframework.web.bind.annotation.RequestMapping;
-import org.springframework.web.bind.annotation.CookieValue;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestPart;
-import org.springframework.web.multipart.MultipartFile;
-
-import io.reliza.model.tea.TeaDiscoveryInfo;
-import io.reliza.model.tea.TeaErrorResponse;
-import io.reliza.model.tea.TeaUnknownErrorType;
-import io.reliza.service.tea.TeaTransformerService;
-import io.swagger.v3.oas.annotations.Parameter;
-import io.swagger.v3.oas.annotations.enums.ParameterIn;
-
 import org.springframework.web.context.request.NativeWebRequest;
 
-import jakarta.validation.constraints.*;
-import jakarta.validation.Valid;
+import io.reliza.model.tea.TeaDiscoveryInfo;
+import io.reliza.model.tea.TeaServerInfo;
+import io.reliza.service.tea.TeaSurfaceService;
+import io.reliza.service.tea.TeaSurfaceService.Decision;
+import io.reliza.service.tea.TeaSurfaceService.Head;
+import io.reliza.service.tea.TeaTei;
+import io.reliza.ws.tea.TeaRequests.TeaRequestContext;
+import lombok.extern.slf4j.Slf4j;
 
-import java.util.List;
-import java.util.Map;
-import java.util.Optional;
-import jakarta.annotation.Generated;
-
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2025-10-10T17:43:14.237244700-04:00[America/Toronto]", comments = "Generator version: 7.14.0")
+/**
+ * Discovery by TEI or by PURL (task TEA-6): the published product releases of the organization
+ * whose base is called, newest first. The parameters arrive query-decoded once by Spring and are
+ * used as they are; decoding them again would eat a literal percent sign of a purl.
+ */
+@Slf4j
 @Controller
-@RequestMapping("${openapi.transparencyExchange.base-path:/tea/v0.4.0}")
+@RequestMapping(TeaPaths.ORG_BASE)
 public class DiscoveryApiController implements DiscoveryApi {
 
-    private final NativeWebRequest request;
+	@Autowired private TeaRequests teaRequests;
+	@Autowired private TeaSurfaceService teaSurfaceService;
+
+	private final NativeWebRequest request;
 
 	@Autowired
-	private TeaTransformerService teaTransformerService;
-	
-    @Autowired
-    public DiscoveryApiController(NativeWebRequest request) {
-        this.request = request;
-    }
+	public DiscoveryApiController(NativeWebRequest request) {
+		this.request = request;
+	}
 
-    @Override
-    public Optional<NativeWebRequest> getRequest() {
-        return Optional.ofNullable(request);
-    }
-    
-    @Override
-    @SuppressWarnings("unchecked")
-    public ResponseEntity<List<TeaDiscoveryInfo>> discoveryByTei(
-            @NotNull @Parameter(name = "tei", description = "Transparency Exchange Identifier (TEI) for the product being discovered. Provide the TEI as a URL-encoded string per RFC 3986, RFC 3987.", required = true, in = ParameterIn.QUERY) @Valid @RequestParam(value = "tei", required = true) String tei
-        ) {
-            // NB: do NOT decode here. Spring already percent-decodes @RequestParam,
-            // so a second URLDecoder pass ate one level of escaping: a purl whose
-            // canonical form contains a literal '%' -- every sid PURL for a component
-            // whose name has a space, e.g.
-            // pkg:sid/example.com/My%20Product@1.0.0 -- arrived at the lookup with
-            // '%20' collapsed to a space and never matched the stored identifier.
-            // Spec-correct single escaping (what `rearm tea discovery` sends via
-            // url.QueryEscape) now resolves; only a triple-escaped URL, which was
-            // the workaround for this bug, stops working.
-            var tdiList = teaTransformerService.performTeiDiscovery(tei);
-            if (tdiList.isEmpty()) {
-            	TeaErrorResponse errorResponse = new TeaErrorResponse(TeaUnknownErrorType.OBJECT_UNKNOWN);
-            	return (ResponseEntity<List<TeaDiscoveryInfo>>) (ResponseEntity<?>) ResponseEntity.status(HttpStatus.NOT_FOUND).body(errorResponse);
-            } else {
-                return new ResponseEntity<>(tdiList, HttpStatus.OK);
-            }
+	@Override
+	public Optional<NativeWebRequest> getRequest() {
+		return Optional.ofNullable(request);
+	}
 
-        }
-
+	@Override
+	public ResponseEntity<List<TeaDiscoveryInfo>> discover(String tei, String purl) {
+		TeaRequestContext ctx = teaRequests.context(request);
+		boolean hasTei = null != tei;
+		boolean hasPurl = null != purl;
+		if (hasTei == hasPurl) throw TeaRefusal.invalidRequest("exactly one of tei and purl is required");
+		Decision<List<Head>> d;
+		if (hasTei) {
+			if (StringUtils.isBlank(tei)) throw TeaRefusal.invalidRequest("tei is empty");
+			String problem = TeaTei.problem(tei);
+			if (null != problem) throw TeaRefusal.invalidRequest(problem);
+			TeaTei parsed = TeaTei.parse(tei).orElseThrow();
+			String idProblem = parsed.identifierProblem();
+			if (null != idProblem) throw TeaRefusal.invalidRequest(idProblem);
+			d = teaSurfaceService.discover(ctx.caller(), ctx.org(), parsed);
+		} else {
+			if (StringUtils.isBlank(purl)) throw TeaRefusal.invalidRequest("purl is empty");
+			d = teaSurfaceService.discoverByPurl(ctx.caller(), ctx.org(), purl);
+		}
+		List<Head> served = TeaRendering.served(d);
+		List<TeaDiscoveryInfo> out = new ArrayList<>();
+		for (Head h : served) {
+			TeaServerInfo server = new TeaServerInfo(URI.create(ctx.org().apiBase()), new ArrayList<>(List.of(TeaPaths.API_VERSION)));
+			server.setPriority(1.0f);
+			out.add(new TeaDiscoveryInfo(h.publication().getUuid(), new ArrayList<>(List.of(server))));
+		}
+		log.debug("TEA discovery of organization {}: caller {}, {} results", ctx.org().org(), ctx.caller().state(), out.size());
+		return ResponseEntity.ok().headers(TeaResponses.headersFor(ctx)).body(out);
+	}
 }

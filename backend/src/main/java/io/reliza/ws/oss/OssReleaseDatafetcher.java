@@ -24,6 +24,7 @@ import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
@@ -136,9 +137,11 @@ public class OssReleaseDatafetcher {
 		ProgrammaticAuthContext authCtx = authorizationService.authenticateProgrammaticWithOrg(requestData.getHeaders(), servletWebRequest);
 		var ahp = authCtx.ahp();
 		if (null == ahp ) throw new AccessDeniedException("Invalid authorization type");
+		authorizationService.verifyProgrammaticKey(ahp);
+		authorizationService.validateSystemOperational(CallType.READ);
 
 		Map<String, Object> latestReleaseInput = dfe.getArgument("release");
-		GetLatestReleaseInput glri = Utils.OM.convertValue(latestReleaseInput, GetLatestReleaseInput.class);
+		GetLatestReleaseInput glri = InputConversion.convert(latestReleaseInput, GetLatestReleaseInput.class, "release");
 
 		// TODO respect tags
 
@@ -178,7 +181,7 @@ public class OssReleaseDatafetcher {
 		// (the same shape that authorises VERSION_FEATURESET) authorises
 		// the read here too. Other key types continue through the legacy
 		// supportedApiTypes path.
-		if (ahp.getType() == ApiTypeEnum.FREEFORM) {
+		if (ahp.isRbacKey()) {
 			authorizationService.isFreeformKeyAuthorizedForObjectGraphQL(
 					ahp, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 					ro.getUuid(), List.of(ro), CallType.READ);

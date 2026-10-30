@@ -8,6 +8,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import org.springframework.data.jpa.repository.Lock;
+import org.springframework.data.jpa.repository.Modifying;
 import org.springframework.data.jpa.repository.Query;
 import org.springframework.data.jpa.repository.QueryHints;
 import org.springframework.data.repository.query.Param;
@@ -66,6 +67,13 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			nativeQuery = true)
 	List<Component> findComponentsByOrganization(String orgUuidAsString);
 
+	/** TPF-100: the list projection rows (uuid, name, type, status, org, vcs, kind), every column text. */
+	@Query(value = VariableQueries.FIND_COMPONENT_REFS_BY_ORG, nativeQuery = true)
+	List<Object[]> findComponentRefsByOrganization(String orgUuidAsString);
+
+	@Query(value = VariableQueries.FIND_COMPONENT_REFS_BY_ORG_BY_TYPE, nativeQuery = true)
+	List<Object[]> findComponentRefsByOrganization(String orgUuidAsString, String componentTypeAsString);
+
 	/**
 	 * This returns components by branch, including parent components
 	 * @param branchUuidAsString
@@ -110,4 +118,71 @@ public interface ComponentRepository extends CrudRepository<Component, UUID> {
 			value = VariableQueries.FIND_COMPONENTS_BY_PERSPECTIVE,
 			nativeQuery = true)
 	List<Component> findComponentsByPerspective(String perspectiveUuidAsString);
+
+	@Query(
+			value = VariableQueries.FIND_COMPONENTS_BY_PERSPECTIVE_WITH_ARCHIVED,
+			nativeQuery = true)
+	List<Component> findComponentsByPerspectiveWithArchived(String perspectiveUuidAsString);
+
+	/** The component with this TEA-facing id (task TEA-2); the TEA request path reads through it. */
+	@Query(value = VariableQueries.FIND_COMPONENT_BY_TEA_UUID, nativeQuery = true)
+	Optional<Component> findByTeaUuid(@Param("teaUuidAsString") String teaUuidAsString);
+
+	/**
+	 * Take the transaction lock that serializes the TEA id mint of one component; released when
+	 * the transaction ends. Two-key form, {@code lockNamespace} = {@code AdvisoryLockKey.TEA_ID_MINT}.
+	 */
+	@Query(
+		value = """
+			SELECT 1 FROM (
+			  SELECT pg_advisory_xact_lock(:lockNamespace, hashtext(:componentUuidAsString))
+			) AS locked
+			""",
+		nativeQuery = true)
+	Integer lockTeaIdMint(@Param("lockNamespace") int lockNamespace, @Param("componentUuidAsString") String componentUuidAsString);
+
+	/**
+	 * The component's TEA id mint (TEA-5 round 4, decision 24): one conditional statement that sets
+	 * the one JSON key where it is null and touches no other column (no revision, no last-updated
+	 * date, no audit row). Answers the rows updated, 1 or 0.
+	 */
+	@Modifying
+	@Query(value = "UPDATE rearm.components SET record_data = jsonb_set(record_data, '{teaUuid}', "
+			+ "to_jsonb(CAST(:teaUuid AS text)), true) WHERE uuid = :uuid AND record_data->>'teaUuid' IS NULL",
+			nativeQuery = true)
+	int mintTeaUuid(@Param("uuid") UUID uuid, @Param("teaUuid") String teaUuid);
+
+	/**
+	 * Record the last declarative apply on a component (ComponentService.stampDeclarativeProvenance) in place: no
+	 * revision, no last_updated_date, no who-updated keys and no audit row -- the apply's own bookkeeping (which spec
+	 * hash was applied when, from where); the content change an apply makes is audited by its own save, whose audit
+	 * copy shows the previous provenance (TPF-71 / TPF-108). One JSON object serialised by Utils.OM, the mapper a
+	 * whole save uses. Touches no other key: teaUuid and the TEA wiring keys stay as the row holds them.
+	 *
+	 * @return the rows updated: 1, or 0 when no row has this uuid
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.components SET record_data = jsonb_set(record_data, '{declarative}', cast(:provenance as jsonb)) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampDeclarativeProvenance(@Param("uuid") UUID uuid, @Param("provenance") String provenance);
+
+	/**
+	 * The row's TEA id, or empty, with the row locked FOR UPDATE until the caller's transaction
+	 * ends: the read every whole-record save of the component makes before it writes, so that it
+	 * writes the stored id back and never erases or introduces one (TEA-5 round 4, T-10 point 4).
+	 */
+	@Query(value = "SELECT record_data->>'teaUuid' FROM rearm.components WHERE uuid = :uuid FOR UPDATE",
+			nativeQuery = true)
+	Optional<String> currentTeaUuidForUpdate(@Param("uuid") UUID uuid);
+
+	/**
+	 * The row's whole record as JSON text, or empty, with the row locked FOR UPDATE until the
+	 * caller's transaction ends (task TEA-7, round 5): the read a wiring save checks against and
+	 * the read every whole-record save carries the TEA id and the wiring keys back from, so the
+	 * check and the write see one row.
+	 */
+	@Query(value = "SELECT CAST(record_data AS text) FROM rearm.components WHERE uuid = :uuid FOR UPDATE",
+			nativeQuery = true)
+	Optional<String> lockRowForUpdate(@Param("uuid") UUID uuid);
 }

@@ -14,6 +14,9 @@ vi.mock('../../src/integrationRepository', () => ({
 import * as BomService from '../../src/bomService';
 import { pool } from '../../src/utils';
 import { TEST_ORG_UUID, loadFixture, createTestRebomOptions, generateSerialNumber, cleanupTestBoms } from '../helpers';
+import { BomValidationError, BomNotFoundError } from '../../src/types/errors';
+import { REBOM_MERGE_MOD, UPLOAD_MOD } from '../../src/services/bom/releaseNodeStamp';
+import { RootComponentMergeMode } from '../../src/types';
 
 /**
  * Integration tests for BOM CRUD operations
@@ -73,6 +76,43 @@ describe('BOM CRUD Operations', () => {
         }));
         expect(retrieved.components).toBeDefined();
         expect(retrieved.components.length).toBeGreaterThanOrEqual(2); // lodash, express (may have more after dedup)
+    });
+
+    it('keeps acknowledgement and bom-ref on a rewritten single-id license of a stored 1.7 upload (TPF-55)', async () => {
+        const serialNumber = generateSerialNumber();
+        createdSerialNumbers.push(serialNumber);
+        const bom = {
+            bomFormat: 'CycloneDX', specVersion: '1.7', serialNumber, version: 1,
+            metadata: {
+                timestamp: '2026-05-11T00:00:00Z',
+                component: { type: 'application', name: 'tpf55-app', version: '1.0.0', 'bom-ref': 'tpf55-app' }
+            },
+            components: [{
+                type: 'library', name: 'tpf55-lib', version: '1.0.0', 'bom-ref': 'pkg:npm/tpf55-lib@1.0.0',
+                purl: 'pkg:npm/tpf55-lib@1.0.0',
+                licenses: [{ expression: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' }]
+            }],
+            dependencies: [{ ref: 'tpf55-app', dependsOn: ['pkg:npm/tpf55-lib@1.0.0'] }]
+        };
+
+        const created = await BomService.addBom({
+            bomInput: {
+                format: 'CYCLONEDX' as const,
+                bom,
+                org: TEST_ORG_UUID,
+                rebomOptions: createTestRebomOptions({
+                    serialNumber,
+                    name: 'tpf55-app',
+                    group: 'com.test',
+                    version: '1.0.0'
+                })
+            }
+        });
+
+        const retrieved = await BomService.findBomObjectById(created.uuid, TEST_ORG_UUID) as any;
+        expect(retrieved.specVersion).toBe('1.6');
+        const lib = retrieved.components.find((c: any) => c.name === 'tpf55-lib');
+        expect(lib.licenses).toStrictEqual([{ license: { id: 'MIT', acknowledgement: 'concluded', 'bom-ref': 'lic-1' } }]);
     });
 
     it('should detect duplicate BOMs', async () => {
@@ -182,5 +222,119 @@ describe('BOM CRUD Operations', () => {
         expect(metaList.length).toBeGreaterThan(0);
         expect(metaList[0].serialNumber).toBe(serialNumber);
         expect(metaList[0].name).toBe('test-metadata');
+    });
+});
+
+/**
+ * SCORE-40 T-12 (ADR-6): the licence settle runs on the merge path only. An uploaded `licenses`
+ * array that mixes an expression with license entries is the generator's error and is refused at
+ * store with the CycloneDX 1.6 error; the two homogeneous shapes of the same document are stored
+ * and served as uploaded.
+ */
+describe('an uploaded mixed licenses array is refused at store', () => {
+    const createdSerialNumbers: string[] = [];
+    const MIXED = 'pkg:npm/mixed@1.0.0';
+
+    afterAll(async () => {
+        await cleanupTestBoms(pool, createdSerialNumbers);
+    });
+
+    function upload(licenses: any[]): { serialNumber: string, input: any } {
+        const serialNumber = generateSerialNumber();
+        createdSerialNumbers.push(serialNumber);
+        const bom = {
+            bomFormat: 'CycloneDX',
+            specVersion: '1.6',
+            serialNumber,
+            version: 1,
+            metadata: { component: { type: 'application', name: 'mixed-app', version: '1.0.0', 'bom-ref': 'mixed-app' } },
+            components: [{ type: 'library', name: 'mixed', version: '1.0.0', purl: MIXED, 'bom-ref': MIXED, licenses }],
+            dependencies: [{ ref: 'mixed-app', dependsOn: [MIXED] }, { ref: MIXED, dependsOn: [] }]
+        };
+        return {
+            serialNumber,
+            input: {
+                bomInput: {
+                    format: 'CYCLONEDX' as const,
+                    bom,
+                    org: TEST_ORG_UUID,
+                    rebomOptions: createTestRebomOptions({ serialNumber, name: 'mixed-app', group: 'com.test', version: '1.0.0' })
+                }
+            }
+        };
+    }
+
+    it('rejects an expression beside a license id with the 1.6 error and stores nothing (T-12)', async () => {
+        const { serialNumber, input } = upload([{ expression: 'MIT OR Apache-2.0' }, { license: { id: 'MIT' } }]);
+
+        const refused = BomService.addBom(input);
+
+        await expect(refused).rejects.toBeInstanceOf(BomValidationError);
+        await expect(refused).rejects.toThrow('/components/0/licenses');
+        await expect(refused).rejects.toThrow("must have required property 'license'");
+        const rows = await pool.query("SELECT uuid FROM rebom.boms WHERE meta->>'serialNumber' = $1", [serialNumber]);
+        expect(rows.rows).toStrictEqual([]);
+    });
+
+    const HOMOGENEOUS: [string, any[]][] = [
+        ['one expression', [{ expression: 'MIT OR Apache-2.0' }]],
+        ['license ids', [{ license: { id: 'MIT' } }, { license: { id: 'Apache-2.0' } }]]
+    ];
+    for (const [label, licenses] of HOMOGENEOUS) {
+        it(`stores and serves ${label} unchanged (T-12)`, async () => {
+            const { input } = upload(structuredClone(licenses));
+
+            const created = await BomService.addBom(input);
+            const served = await BomService.findBomObjectById(created.uuid, TEST_ORG_UUID) as any;
+
+            expect(served.components.filter((c: any) => c['bom-ref'] === MIXED).map((c: any) => c.licenses)).toStrictEqual([licenses]);
+        });
+    }
+});
+
+/** SCORE-69 T-5 (ADR-2): the document and the row's meta, read in one call. */
+describe('findBomObjectWithMetaById', () => {
+    const created: string[] = [];
+
+    afterAll(async () => {
+        if (created.length > 0) await pool.query('DELETE FROM rebom.boms WHERE uuid = ANY($1::uuid[])', [created]);
+    });
+
+    async function upload(): Promise<{ uuid: string, serialNumber: string }> {
+        const bom = loadFixture('cyclonedx-simple.json');
+        bom.serialNumber = generateSerialNumber();
+        const record = await BomService.addBom({
+            bomInput: { format: 'CYCLONEDX' as const, bom, org: TEST_ORG_UUID, rebomOptions: createTestRebomOptions({ serialNumber: bom.serialNumber, name: 'meta-app', version: '1.0.0' }) }
+        });
+        created.push(record.uuid);
+        return { uuid: record.uuid, serialNumber: bom.serialNumber };
+    }
+
+    it('returns what findBomObjectById returns beside the row meta, by uuid and by serial number', async () => {
+        const { uuid, serialNumber } = await upload();
+        // by serial number as rearm-saas names an artifact's internal BOM: the bare uuid of the serial
+        for (const id of [uuid, serialNumber.replace('urn:uuid:', '')]) {
+            const { bom, meta } = await BomService.findBomObjectWithMetaById(id, TEST_ORG_UUID);
+            expect(bom).toStrictEqual(await BomService.findBomObjectById(id, TEST_ORG_UUID));
+            expect(meta.serialNumber).toBe(serialNumber);
+            expect(meta.mod).toBe(UPLOAD_MOD);
+        }
+    });
+
+    it('throws BomNotFoundError for an unknown id', async () => {
+        await expect(BomService.findBomObjectWithMetaById('3c7e2a51-9d40-4b6e-8f21-000000006905', TEST_ORG_UUID)).rejects.toBeInstanceOf(BomNotFoundError);
+    });
+
+    it('reads a merged row as before, with mod rebom in its meta', async () => {
+        const { uuid } = await upload();
+        const record = await BomService.mergeAndStoreBoms([uuid],
+            createTestRebomOptions({ serialNumber: generateSerialNumber(), name: 'meta-product', version: '1.0.0', rootComponentMergeMode: RootComponentMergeMode.PRESERVE_UNDER_NEW_ROOT }),
+            TEST_ORG_UUID, BomService.addBom);
+        created.push(record.uuid);
+
+        const { bom, meta } = await BomService.findBomObjectWithMetaById(record.uuid, TEST_ORG_UUID);
+        expect(bom).toStrictEqual(await BomService.findBomObjectById(record.uuid, TEST_ORG_UUID));
+        expect(bom.metadata.component.name).toBe('meta-product');
+        expect(meta.mod).toBe(REBOM_MERGE_MOD);
     });
 });

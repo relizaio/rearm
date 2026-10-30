@@ -43,7 +43,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.DeliverableDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.repositories.DeliverableRepository;
 
 

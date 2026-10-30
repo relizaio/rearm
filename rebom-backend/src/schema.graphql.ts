@@ -24,6 +24,7 @@ const typeDefs = gql`
     getBearIntegration(org: ID!): BearIntegration
     getBomDigestProbe(bomContent: BomContentInput!): String!
     getEnrichedBomProbe(bomContent: BomContentInput!): EnrichedBomProbeResult!
+    scoreBomProbe(bom: String!, profiles: [String!]!): String!
     isEnrichmentConfigured(org: ID!): Boolean!
   }
 
@@ -127,6 +128,16 @@ const typeDefs = gql`
     createdDate: DateTime
     lastUpdatedDate: DateTime
     ignoreDev: Boolean
+    """
+    True on a merged BOM whose components of type file were left out (see the
+    RebomOptions input); null or false when they were kept.
+    """
+    excludeFileComponents: Boolean
+    """
+    The merge rule set a merged BOM was built with (see the RebomOptions input); null on
+    merges stored before rebom de-duplicated bom-refs.
+    """
+    mergeVersion: Int
     enrichmentStatus: EnrichmentStatus
     enrichmentTimestamp: String
     enrichmentError: String
@@ -298,8 +309,17 @@ input RebomOptions {
     name: String
     group: String
     version: String
+    # The attachment's reference: the commit of a source code entry, the digest of a deliverable.
+    # With belongsTo DELIVERABLE an upload's root without hashes gets the digest as one when it
+    # reads as a SHA-1, SHA-256 or SHA-512 value; with belongsTo SCE a root without pedigree
+    # commits gets the commit as pedigree.commits[].uid, never as a hash (a commit id addresses a
+    # commit object, not the root's bytes); any other belongsTo fills nothing from it.
     hash: String
     belongsTo: String
+    # The supplier ReARM names for the root of this upload: the deliverable's publisher or the
+    # organization for its own software; absent for third-party software. Filled into the root
+    # where it names no supplier; stored with the row.
+    supplierName: String
     tldOnly: Boolean
     structure: String
     notes: String
@@ -317,7 +337,72 @@ input RebomOptions {
     purl: String
     rootComponentMergeMode: RootComponentMergeMode
     ignoreDev: Boolean
+    # Merge only: leave components of type file out of the merged BOM. Null or false
+    # keeps them. The merged document then carries reliza:export:fileComponentsExcluded.
+    excludeFileComponents: Boolean
+    # Merge only: the caller's version of the merge rules, stored verbatim with the merged
+    # BOM so the caller can tell merges built before a rule change; rebom does not read it.
+    mergeVersion: Int
+    # Merge only: the component releases of a product merge that have no SBOM. Each becomes a
+    # placeholder component with the property reliza:sbom:missing, a direct dependency of the
+    # merged root, and the document states their dependencies unknown (compositions). Not stored.
+    missingSbomComponents: [MissingSbomComponentInput!]
+    # Merge only: what ReARM holds about the release the merged root describes. Filled into the
+    # root where it names no supplier, carries no hashes or carries no license of its own; never
+    # replaces a value.
+    # Derived by ReARM at generation time, not part of the options it matches stored merges on.
+    releaseNode: ReleaseNodeFactsInput
+    # Merge only: the entries of ids whose roots describe the merged release itself (its own
+    # RELEASE-attached uploads, as ReARM's rows say). Their roots are folded into the merged root;
+    # every other input's root is left where the merge put it. Absent or empty: nothing is folded.
+    # Not stored.
+    releaseRootIds: [ID!]
+    # Merge only: the entries of ids that are the uploads attached to the merged release's own
+    # source code entry and to the deliverables it ships, as ReARM's rows say. Their roots get the
+    # release's declared licence (releaseNode) where the upload wrote none; every other node is left
+    # as the merge made it. Absent or empty: nothing is filled. Not stored. (SCORE-63)
+    attachedRootIds: [ID!]
     bomVersion: String  # Rearm-managed version for SPDX (1, 2, 3...)
+  }
+
+  # The release a merged root describes. supplierName: the organization's name. hashes: the digest
+  # records of the release's deliverable when it has exactly one deliverable with digests, else
+  # none (several deliverables have no single set of bytes). Either may be absent.
+  input ReleaseNodeFactsInput {
+    supplierName: String
+    hashes: [BomHashInput!]
+    # The license ReARM declares for the release's software: an SPDX license expression
+    # (Apache-2.0, MIT OR GPL-2.0-only, LicenseRef-Acme-Commercial for a proprietary license),
+    # as rearm-saas canonicalised it. Written as the root's licenses where the root has none.
+    licenseExpression: String
+    # Where the text of the license is. Carried only beside a single LicenseRef- expression,
+    # in the named CycloneDX form; CycloneDX cannot carry a url beside an expression.
+    licenseUrl: String
+  }
+
+  # One CycloneDX hashes[] entry. alg: a CycloneDX hash algorithm (SHA-256, SHA-512, ...);
+  # content: the hex value. An entry the CycloneDX schema refuses is left out.
+  input BomHashInput {
+    alg: String!
+    content: String!
+  }
+
+  # A component release ReARM holds no SBOM for. reason: NO_SBOM_ARTIFACT or COVERAGE_EXCLUDED.
+  # purl only when ReARM records one; it is never made up. hashes: the digests of its one
+  # deliverable, by the rule of ReleaseNodeFactsInput.hashes.
+  input MissingSbomComponentInput {
+    releaseUuid: String!
+    name: String!
+    version: String!
+    type: String!
+    supplierName: String
+    group: String
+    purl: String
+    hashes: [BomHashInput!]
+    # licenseExpression, licenseUrl: as on ReleaseNodeFactsInput, written as the placeholder's licenses.
+    licenseExpression: String
+    licenseUrl: String
+    reason: String!
   }
 
   input BomSearch {

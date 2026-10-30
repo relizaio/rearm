@@ -70,7 +70,7 @@ import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.BranchData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.RelizaData;
-import io.reliza.model.tea.TeaChecksumType;
+import io.reliza.model.DigestAlgorithm;
 import lombok.extern.slf4j.Slf4j;
 
 
@@ -243,6 +243,22 @@ public class Utils {
 		return recordData;
 	}
 	
+	/**
+	 * The record with the row's stored TEA id in place of whatever the caller's copy carried
+	 * (TEA-5 round 4, T-10 point 4): a whole-record save is never a writer of that key, so it
+	 * cannot erase a mint that committed after the caller's read, nor introduce an id. A row
+	 * without an id leaves the key out. Used by the component, organization and artifact funnels.
+	 */
+	public static Map<String, Object> withStoredTeaUuid(Map<String, Object> recordData, Optional<String> stored) {
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		if (stored.isPresent()) {
+			out.put(CommonVariables.TEA_UUID_FIELD, stored.get());
+		} else {
+			out.remove(CommonVariables.TEA_UUID_FIELD);
+		}
+		return out;
+	}
+
 	public static LocalDateTime convertZonedDateTimeToLocalUtc (ZonedDateTime zdt) {
 		ZonedDateTime zdtUtc = zdt.withZoneSameInstant(UTC_ZONE_ID);
 		return zdtUtc.toLocalDateTime();
@@ -417,7 +433,7 @@ public class Utils {
 				String digestTypeString = digestParts[0];
 				String digestValue = digestParts[1];
 				
-				TeaChecksumType checksumType = parseDigestType(digestTypeString);
+				DigestAlgorithm checksumType = parseDigestType(digestTypeString);
 				if (null != checksumType) {
 					convertedDigest = Optional.of(new DigestRecord(checksumType, digestValue, scope));
 				}
@@ -478,7 +494,7 @@ public class Utils {
 	   * @param digestTypeString the digest type string to parse
 	   * @return the corresponding TeaArtifactChecksumType, or null if not supported
 	   */
-	  public static TeaChecksumType parseDigestType(String digestTypeString) {
+	  public static DigestAlgorithm parseDigestType(String digestTypeString) {
 	    if (digestTypeString == null || digestTypeString.trim().isEmpty()) {
 	      return null;
 	    }
@@ -487,35 +503,35 @@ public class Utils {
 	    
 	    switch (upperCaseType) {
 	      case "MD5":
-	        return TeaChecksumType.MD5;
+	        return DigestAlgorithm.MD5;
 	      case "SHA1":
-	        return TeaChecksumType.SHA_1;
+	        return DigestAlgorithm.SHA_1;
 	      case "SHA256":
-	        return TeaChecksumType.SHA_256;
+	        return DigestAlgorithm.SHA_256;
 	      case "SHA384":
-	        return TeaChecksumType.SHA_384;
+	        return DigestAlgorithm.SHA_384;
 	      case "SHA512":
-	        return TeaChecksumType.SHA_512;
+	        return DigestAlgorithm.SHA_512;
 	      case "SHA3256":
 	      case "SHA3_256":
-	        return TeaChecksumType.SHA3_256;
+	        return DigestAlgorithm.SHA3_256;
 	      case "SHA3384":
 	      case "SHA3_384":
-	        return TeaChecksumType.SHA3_384;
+	        return DigestAlgorithm.SHA3_384;
 	      case "SHA3512":
 	      case "SHA3_512":
-	        return TeaChecksumType.SHA3_512;
+	        return DigestAlgorithm.SHA3_512;
 	      case "BLAKE2B256":
 	      case "BLAKE2B_256":
-	        return TeaChecksumType.BLAKE2B_256;
+	        return DigestAlgorithm.BLAKE2B_256;
 	      case "BLAKE2B384":
 	      case "BLAKE2B_384":
-	        return TeaChecksumType.BLAKE2B_384;
+	        return DigestAlgorithm.BLAKE2B_384;
 	      case "BLAKE2B512":
 	      case "BLAKE2B_512":
-	        return TeaChecksumType.BLAKE2B_512;
+	        return DigestAlgorithm.BLAKE2B_512;
 	      case "BLAKE3":
-	        return TeaChecksumType.BLAKE3;
+	        return DigestAlgorithm.BLAKE3;
 	      default:
 	        return null; // Unsupported digest type
 	    }
@@ -977,26 +993,26 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.07.4";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.10.12";
 
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "6d17397b4a43772ce716ae65522a9b26f26e0c4ca9ce0b1ba7e2e4a2717e91ca";
-    private static final String REARM_CD_HELM_VERSION = "0.3.22";
-    private static final String REARM_CD_HELM_COMMIT = "35504f0b07bc905c3450b92318253182e7428390";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.3.22 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "be1ba3f57d46ffa092e1ea5198a6bcac814842dd17baa7f470b2d0cc79645170";
+    private static final String REARM_CD_HELM_VERSION = "0.4.5";
+    private static final String REARM_CD_HELM_COMMIT = "a8df5dee200959ee129c408d84919c651fe7655d";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.4.5 [skip ci]";
 
-    public static final String REARM_CD_CONTAINER_DIGEST = "2cb74272852a4922a52536197e1f5c8399a87fd37afa481c43396dee91073ca2";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.03.48";
-    public static final String REARM_CD_CONTAINER_COMMIT = "16184724dd87351839f0bcef53d01b181eebd852";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "rearm-cd: bump go deps, rearm-cli 26.07.2, kubectl 1.35.6, helm 4.2.3, kubeseal 0.38.4, base images (#5)";
+    public static final String REARM_CD_CONTAINER_DIGEST = "69221c7ee247a22c3c0f914b6f234d8006d73759c3b7dcd9df323c497adbc471";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.10.4";
+    public static final String REARM_CD_CONTAINER_COMMIT = "076d2862c2b25f223163ab4563d7b337c0af98b4";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): CVE sweep - bump rearm CLI, kubectl, kubeseal and helm (#16)";
 
     // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
     // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.
     public static final String REARM_WATCHER_CONTAINER_NAME = "registry.relizahub.com/library/rearm-watcher-app";
-    public static final String REARM_WATCHER_CONTAINER_DIGEST = "90606bb8920e43bdf3ebaf90e37f8235a97f9fb874efb1e4b1df8bbda1a74756";
-    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.07.0";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT = "21ec41d85f3febcd03468ed37f7c7cfce12480d1";
-    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "watcher: rearm-cli 26.07.2, kubectl 1.35.6 (#4)";
+    public static final String REARM_WATCHER_CONTAINER_DIGEST = "43e3113e55169bbf8bc602ae9dbb38cc422ad03e637437b884bad95aa8f94006";
+    public static final String REARM_WATCHER_CONTAINER_VERSION = "26.10.1";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT = "391415ebdf5552690b2cbbdc591a49f9ff54e1d1";
+    public static final String REARM_WATCHER_CONTAINER_COMMIT_MESSAGE = "fix(watcher): bump rearm CLI to 26.10.17 and kubectl to 1.36.5 (#15)";
 
     public static boolean isRearmCdDigest(String digest) {
     	return ("sha256:" + REARM_CD_HELM_DIGEST).equals(digest) || REARM_CD_HELM_DIGEST.equals(digest);
@@ -1173,7 +1189,23 @@ public class Utils {
 		}
 		return diffResults;
 	}
-	
+
+	/**
+	 * Refuses a list of uuids that carries one twice: "{what} uuid {uuid} appears more than once
+	 * on this {where}", naming the first repeat. Nulls are not counted; callers mint them first.
+	 * The rule engine resolves an action or a rule by its uuid, so a repeated uuid would make it
+	 * pick one entry by list order (task TEA-7, round 3, T-5).
+	 */
+	public static void requireDistinctUuids (Collection<UUID> ids, String what, String where) throws RelizaException {
+		if (null == ids) return;
+		Set<UUID> seen = new HashSet<>();
+		for (UUID id : ids) {
+			if (null != id && !seen.add(id)) {
+				throw new RelizaException(what + " uuid " + id + " appears more than once on this " + where);
+			}
+		}
+	}
+
 	public static PackageURL setVersionOnPurl (PackageURL origPurl, String version) throws RelizaException {
 		try {
 			var purlBuilder = PackageURLBuilder.aPackageURL()
@@ -1199,6 +1231,8 @@ public class Utils {
 		RELEASE,
 		SCE,
 		AGENT_SESSION,
+		/** A BOM ReARM generated itself; never a merge source, never inventory. */
+		SYNTHETIC,
 	}
 	public static enum StripBom {
 		TRUE,
@@ -1370,6 +1404,46 @@ public class Utils {
 			}
 		}
 		return kept.length() > 0 ? head + "?" + kept : head;
+	}
+
+	/**
+	 * The legacy key of a release-node purl (SCORE-29 ADR-4): before the fix rebom percent-encoded
+	 * a release's group and name twice, so a space reads {@code %2520} where the single-encoded
+	 * purl has {@code %20}, and {@code sbom_components.canonical_purl} rows written then carry that
+	 * form. Returns the input with every {@code %} of its namespace and name segments written as
+	 * {@code %25}, and then every {@code :} of the namespace written as {@code %253A} and every
+	 * {@code /} inside it as {@code %252F} (ADR-6: packageurl-js keeps those two raw in a namespace,
+	 * while the pre-fix rebom had already encoded them before packageurl-js encoded the {@code %}
+	 * again). The namespace is everything before the last {@code /} of the segments, the name the
+	 * part after it. The type, version, qualifiers and subpath are left byte for byte. Empty when
+	 * the input is not a {@code pkg:} purl or nothing would change (no {@code %} in the segments
+	 * and no {@code :} or {@code /} in the namespace). String surgery only, like
+	 * {@link #canonicalizePurlPreservingEncoding}: nothing is decoded or re-encoded.
+	 */
+	public static Optional<String> doubleEncodedNamespaceNameVariant(String canonicalPurl) {
+		if (canonicalPurl == null || !canonicalPurl.startsWith("pkg:")) return Optional.empty();
+		int end = canonicalPurl.length();
+		int hash = canonicalPurl.indexOf('#');
+		if (hash >= 0) end = hash;
+		int q = canonicalPurl.indexOf('?');
+		if (q >= 0 && q < end) end = q;
+		int typeSlash = canonicalPurl.indexOf('/', 4);
+		if (typeSlash < 0 || typeSlash >= end) return Optional.empty();
+		int segmentsEnd = end;
+		int at = canonicalPurl.lastIndexOf('@', end - 1);
+		if (at > typeSlash && at > canonicalPurl.lastIndexOf('/', end - 1)) segmentsEnd = at;
+		String segments = canonicalPurl.substring(typeSlash + 1, segmentsEnd);
+		int nameSlash = segments.lastIndexOf('/');
+		String legacyName = segments.substring(nameSlash + 1).replace("%", "%25");
+		String legacySegments = legacyName;
+		if (nameSlash >= 0) {
+			String legacyNamespace = segments.substring(0, nameSlash).replace("%", "%25")
+					.replace(":", "%253A").replace("/", "%252F");
+			legacySegments = legacyNamespace + "/" + legacyName;
+		}
+		if (legacySegments.equals(segments)) return Optional.empty();
+		return Optional.of(canonicalPurl.substring(0, typeSlash + 1) + legacySegments
+				+ canonicalPurl.substring(segmentsEnd));
 	}
 
 	/**

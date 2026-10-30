@@ -21,7 +21,7 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.model.BranchData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.RelizaObject;
@@ -84,7 +84,7 @@ public class AnalyticsDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
-		ActiveComponentsInput aci = Utils.OM.convertValue(aciInput, ActiveComponentsInput.class);
+		ActiveComponentsInput aci = InputConversion.convert(aciInput, ActiveComponentsInput.class, "activeComponentsInput");
 		var od = getOrganizationService.getOrganizationData(aci.organization());
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, aci.organization(), List.of(ro), CallType.READ);
@@ -98,7 +98,7 @@ public class AnalyticsDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> aciInput = dfe.getArgument("activeComponentsInput");
-		ActiveComponentsInput aci = Utils.OM.convertValue(aciInput, ActiveComponentsInput.class);
+		ActiveComponentsInput aci = InputConversion.convert(aciInput, ActiveComponentsInput.class, "activeComponentsInput");
 		var od = getOrganizationService.getOrganizationData(aci.organization());
 		RelizaObject ro = od.isPresent() ? od.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, aci.organization(), List.of(ro), CallType.READ);

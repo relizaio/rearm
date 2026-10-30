@@ -6,6 +6,9 @@ import Swal from 'sweetalert2'
 import graphqlClient from '@/utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { ApiKeyTableKind, DetailLine, fmtKeyDate as fmtDate, isSecretExpired as isExpired, keyActivityLines, secretDetailLines, secretDetailsText, showsKeyType } from '@/utils/apiKeyTable'
+import { apiKeyDeniedReason, apiKeyLabel, apiKeyName, apiKeyNotesUncut, apiKeyShortId, cleanLabelText } from '@/utils/apiKeyLabel'
+import { normalizeSearchTerm, textMatches, uuidMatches, UUID_PREFIX_MIN } from '@/utils/tableSearch'
+import { type NotifyFn, uuidCopyColumn } from '@/utils/uuidCopyColumn'
 
 /**
  * Shared API key status + secrets controls (kill switch, two-secret rotation, delete).
@@ -22,12 +25,18 @@ export interface ApiKeyControlOptions {
     canMint?: (row: any) => boolean
     /** whether the viewer acts as an org admin: only admins may re-activate a key an admin disabled; defaults to false */
     isAdmin?: () => boolean
+    /** the keys listed alongside, so a dialog's short id is unique among them, as the table's chip is */
+    siblings?: () => any[]
 }
 function usableSecrets (row: any): any[] { return (row.secrets || []).filter((s: any) => s.active && !isExpired(s)) }
-function deniedReason (row: any): string { const m = /Denied(?::\s*(.*))?$/.exec(row.notes || ''); return m ? (m[1] || '') : '' }
 
 /** A flex row that wraps onto the next line rather than overflowing a narrow column. */
 const WRAP_ROW = 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;'
+
+/** Text made safe to sit in a SweetAlert2 html string or option label (a dialog may carry a key label or a user name). */
+export function escapeHtml (s: string): string {
+    return s.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;')
+}
 
 /** local datetime-local value -> ISO instant, or null when empty */
 function toIso (local: string): string | null { return local ? new Date(local).toISOString() : null }
@@ -37,9 +46,9 @@ async function askExpiry (title: string, text: string, confirmButtonText: string
     const cur = current ? new Date(current) : null
     const curLocal = cur ? new Date(cur.getTime() - cur.getTimezoneOffset() * 60000).toISOString().slice(0, 16) : ''
     const r = await Swal.fire({
-        title, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel',
+        titleText: title, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel',
         showDenyButton: allowClear, denyButtonText: 'Clear expiry',
-        html: `<p style="text-align:left">${text}</p><label style="display:block;text-align:left;margin-top:8px">Expiry (optional, local time; the secret is refused after it and its tokens end there at the latest)</label><input id="swal-expiry" type="datetime-local" class="swal2-input" style="width: 80%" value="${curLocal}">`,
+        html: `<p style="text-align:left">${escapeHtml(text)}</p><label style="display:block;text-align:left;margin-top:8px">Expiry (optional, local time; the secret is refused after it and its tokens end there at the latest)</label><input id="swal-expiry" type="datetime-local" class="swal2-input" style="width: 80%" value="${curLocal}">`,
         preConfirm: () => {
             const v = (document.getElementById('swal-expiry') as HTMLInputElement).value
             if (v && new Date(v).getTime() <= Date.now()) { Swal.showValidationMessage('Expiry must be in the future'); return false }
@@ -52,12 +61,13 @@ async function askExpiry (title: string, text: string, confirmButtonText: string
 }
 
 async function confirmThen (title: string, text: string, confirmButtonText: string): Promise<boolean> {
-    const r = await Swal.fire({ title, text, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel' })
+    // titleText, not title: a caller may name the key by its label, which carries user text (Swal renders title as HTML)
+    const r = await Swal.fire({ titleText: title, text, icon: 'warning', showCancelButton: true, confirmButtonText, cancelButtonText: 'Cancel' })
     return !!r.value
 }
 
 export async function showMintedSecret (forUser: any, title: string) {
-    await Swal.fire({ title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
+    await Swal.fire({ titleText: title, customClass: { popup: 'swal-wide' }, html: commonFunctions.getGeneratedApiKeyHTML(forUser), icon: 'success' })
 }
 
 export function createApiKeyControls (opts: ApiKeyControlOptions) {
@@ -65,6 +75,8 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const canMint = opts.canMint || canManage
     const isAdmin = opts.isAdmin || (() => false)
     const fail = (e: any) => notify('error', 'Error', commonFunctions.parseGraphQLError(e.message))
+    // the first words of a row dialog's text, naming the key it acts on
+    const keyIntro = (row: any) => `Key ${apiKeyLabel(row, { withType: true, siblings: opts.siblings?.() })}. `
 
     async function mintSecret (apiKeyUuid: string, title: string, expiresDate: string | null = null) {
         try {
@@ -74,12 +86,12 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     }
     async function addApiKeySecret (row: any) {
         const first = !(row.secrets || []).length
-        const a = await askExpiry(first ? 'Generate the first secret?' : 'Add a second secret?', first ? 'The secret is shown once.' : 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.', first ? 'Generate' : 'Add secret')
+        const a = await askExpiry(first ? 'Generate the first secret?' : 'Add a second secret?', keyIntro(row) + (first ? 'The secret is shown once.' : 'Both secrets work until you retire or regenerate one. Move your clients to the new secret, then retire the old one.'), first ? 'Generate' : 'Add secret')
         if (!a) return
         await mintSecret(row.uuid, first ? 'Secret generated' : 'Secret added', a.expiresDate)
     }
     async function regenerateApiKeySecret (row: any, slot: number) {
-        const a = await askExpiry(`Regenerate secret #${slot}?`, 'The current secret in this slot stops working immediately, and so does every access token exchanged with it. The other secret, if any, is unaffected.', 'Regenerate')
+        const a = await askExpiry(`Regenerate secret #${slot}?`, keyIntro(row) + 'The current secret in this slot stops working immediately, and so does every access token exchanged with it. The other secret, if any, is unaffected.', 'Regenerate')
         if (!a) return
         try {
             const resp: any = await graphqlClient.mutate({ mutation: gql`mutation regenerateApiKeySecret($apiKeyUuid: ID!, $slot: Int!, $expiresDate: DateTime) { regenerateApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot, expiresDate: $expiresDate) { id apiKey authorizationHeader } }`, variables: { apiKeyUuid: row.uuid, slot, expiresDate: a.expiresDate }, fetchPolicy: 'no-cache' })
@@ -88,7 +100,7 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     }
     async function setApiKeySecretExpiry (row: any, slot: number) {
         const sec = (row.secrets || []).find((x: any) => x.slot === slot)
-        const a = await askExpiry(`Expiry of secret #${slot}`, 'Change when this secret stops working. Tokens already exchanged with it end at the new expiry at the latest.', 'Save', sec?.expiresDate, !!sec?.expiresDate)
+        const a = await askExpiry(`Expiry of secret #${slot}`, keyIntro(row) + 'Change when this secret stops working. Tokens already exchanged with it end at the new expiry at the latest.', 'Save', sec?.expiresDate, !!sec?.expiresDate)
         if (!a) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretExpiry($apiKeyUuid: ID!, $slot: Int!, $expiresDate: DateTime) { setApiKeySecretExpiry(apiKeyUuid: $apiKeyUuid, slot: $slot, expiresDate: $expiresDate) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, expiresDate: a.clear ? null : a.expiresDate }, fetchPolicy: 'no-cache' })
@@ -100,21 +112,21 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
         return usable.length === 1 && usable[0].slot === slot ? 'This is the last active secret: the key will authenticate nothing until a new secret is added. ' : ''
     }
     async function setApiKeySecretActive (row: any, slot: number, active: boolean) {
-        if (!active && !(await confirmThen(`Retire secret #${slot}?`, lastActiveWarning(row, slot) + 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
+        if (!active && !(await confirmThen(`Retire secret #${slot}?`, keyIntro(row) + lastActiveWarning(row, slot) + 'It stays on file and can be enabled again, but it is refused until then, and so are access tokens exchanged with it.', 'Retire'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeySecretActive($apiKeyUuid: ID!, $slot: Int!, $active: Boolean!) { setApiKeySecretActive(apiKeyUuid: $apiKeyUuid, slot: $slot, active: $active) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot, active }, fetchPolicy: 'no-cache' })
             notify('success', active ? 'Enabled' : 'Retired', `Secret #${slot} ${active ? 'enabled' : 'retired'}`); await reload()
         } catch (e: any) { fail(e) }
     }
     async function deleteApiKeySecret (row: any, slot: number) {
-        if (!(await confirmThen(`Delete secret #${slot}?`, lastActiveWarning(row, slot) + 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
+        if (!(await confirmThen(`Delete secret #${slot}?`, keyIntro(row) + lastActiveWarning(row, slot) + 'This cannot be undone. The secret and every access token exchanged with it stop working; the slot becomes free for a new secret.', 'Delete'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation deleteApiKeySecret($apiKeyUuid: ID!, $slot: Int!) { deleteApiKeySecret(apiKeyUuid: $apiKeyUuid, slot: $slot) { uuid } }`, variables: { apiKeyUuid: row.uuid, slot }, fetchPolicy: 'no-cache' })
             notify('success', 'Deleted', `Secret #${slot} deleted`); await reload()
         } catch (e: any) { fail(e) }
     }
     async function setApiKeyStatus (row: any, status: string) {
-        if (status === 'INACTIVE' && !(await confirmThen('Deactivate this key?', 'Every secret and every access token of this key id are refused until you activate it again. Nothing is deleted.', 'Deactivate'))) return
+        if (status === 'INACTIVE' && !(await confirmThen('Deactivate this key?', keyIntro(row) + 'Every secret and every access token of this key id are refused until you activate it again. Nothing is deleted.', 'Deactivate'))) return
         try {
             await graphqlClient.mutate({ mutation: gql`mutation setApiKeyStatus($apiKeyUuid: ID!, $status: ApiKeyStatus!) { setApiKeyStatus(apiKeyUuid: $apiKeyUuid, status: $status) { uuid status } }`, variables: { apiKeyUuid: row.uuid, status }, fetchPolicy: 'no-cache' })
             notify('success', status === 'INACTIVE' ? 'Deactivated' : 'Activated', `Key ${status.toLowerCase()}`); await reload()
@@ -131,7 +143,10 @@ export function createApiKeyControls (opts: ApiKeyControlOptions) {
     const statusCell = (row: any) => {
         if (row.status === 'REQUESTED' || row.status === 'DENIED') {
             const kids: any[] = [h(NTag, { size: 'small', type: row.status === 'REQUESTED' ? 'warning' : 'error', style: 'margin-right: 6px;' }, { default: () => row.status })]
-            if (row.status === 'DENIED') kids.push(h('span', { class: 'subtle' }, deniedReason(row) ? `reason: ${deniedReason(row)}` : 'no reason given'))
+            if (row.status === 'DENIED') {
+                const reason = apiKeyDeniedReason(row)
+                kids.push(h('span', { class: 'subtle' }, reason ? `reason: ${reason}` : 'no reason given'))
+            }
             return h('div', { style: WRAP_ROW }, kids)
         }
         const inactive = row.status === 'INACTIVE'
@@ -207,33 +222,188 @@ export function apiKeyIdsColumn (): any {
         key: 'ids', width: 60, title: 'IDs',
         render: (row: any) => h(NTooltip, { trigger: 'hover' }, {
             trigger: () => h(NIcon, { class: 'icons', size: 22 }, { default: () => h(Info20Regular) }),
-            default: () => h('div', { style: 'font-size: 12px;' }, [
-                h('div', [h('strong', 'Internal ID: '), h('code', row.uuid)]),
-                h('div', { style: 'margin-top: 4px;' }, [h('strong', 'API ID: '), h('code', { style: 'word-break: break-all;' }, apiKeyIdOf(row))])
-            ])
+            default: () => apiKeyIdsDetail(row)
         })
+    }
+}
+
+/** The internal uuid and the API id clients present, for the hover of a key's IDs or Key cell. */
+function apiKeyIdsDetail (row: any) {
+    return h('div', { style: 'font-size: 12px;' }, [
+        h('div', [h('strong', 'Internal ID: '), h('code', row.uuid)]),
+        h('div', { style: 'margin-top: 4px;' }, [h('strong', 'API ID: '), h('code', { style: 'word-break: break-all;' }, apiKeyIdOf(row))])
+    ])
+}
+
+/**
+ * "Key" column: what names the key and its short id, so two keys of one type tell apart; hover shows both ids.
+ * siblings: the table's keys, so a short id grows where two of them start the same (as the dialogs' labels do).
+ */
+export function apiKeyLabelColumn (siblings?: () => any[]): any {
+    return {
+        key: 'label', width: 240, title: 'Key',
+        sorter: apiKeySorters.name,
+        render: (row: any) => {
+            const name = apiKeyName(row)
+            const uncut = name.kind === 'notes' ? apiKeyNotesUncut(row) : ''
+            const nameProps = uncut && uncut !== name.text ? { title: uncut } : {}
+            return h(NTooltip, { trigger: 'hover' }, {
+                trigger: () => h('div', { style: WRAP_ROW + ' column-gap: 6px;' }, [
+                    h(name.kind === 'declared' ? 'code' : 'span', nameProps, name.text),
+                    // no native title on the chip: the cell's tooltip already shows the full uuid
+                    h('code', { class: 'key-id-chip' }, ['id ', apiKeyShortId(row, siblings?.())])
+                ]),
+                default: () => apiKeyIdsDetail(row)
+            })
+        }
     }
 }
 
 /** Type column: only on a table that mixes key types (see showsKeyType). */
 export const apiKeyTypeColumn = { key: 'type', width: 140, title: 'Type' }
 
-/** Left-most columns of a key table: Type where the table mixes types, then IDs. */
-export function apiKeyLeadColumns (table: ApiKeyTableKind): any[] {
-    return showsKeyType(table) ? [apiKeyTypeColumn, apiKeyIdsColumn()] : [apiKeyIdsColumn()]
+/** Left-most columns of a key table: Type where the table mixes types, then the Key label, then (when uuid is given) the full uuid with a copy button. */
+export function apiKeyLeadColumns (table: ApiKeyTableKind, siblings?: () => any[], uuid?: { testid: string, notify: NotifyFn }): any[] {
+    const cols: any[] = showsKeyType(table) ? [apiKeyTypeColumn, apiKeyLabelColumn(siblings)] : [apiKeyLabelColumn(siblings)]
+    if (uuid) cols.push({ ...uuidCopyColumn({ what: 'Key UUID', testid: uuid.testid, notify: uuid.notify }), width: 320 })
+    return cols
 }
 
-/** Created, last accessed and updated by, stacked in one column instead of three. */
-export function apiKeyActivityColumn (width: number = 200): any {
+/** Created, and under it who last updated the key when known; sortable by the raw instant, newest first by default. */
+export function apiKeyCreatedColumn (width: number = 150): any {
     return {
-        key: 'activity', width, title: 'Activity',
-        render: (row: any) => h('div', { style: 'font-size: 12px;' }, keyActivityLines(row).map(l => h('div', [h('span', { class: 'subtle' }, `${l.label} `), h('span', { style: l.label === 'Updated by' ? '' : 'white-space: nowrap;' }, l.value)])))
+        key: 'created', title: 'Created', width,
+        sorter: apiKeySorters.created,
+        defaultSortOrder: 'descend',
+        render: (row: any) => {
+            const lines = keyActivityLines(row)
+            const updatedBy = lines.find(l => l.label === 'Updated by')
+            const kids: any[] = [h('div', { style: 'white-space: nowrap;' }, lines[0].value)]
+            if (updatedBy) kids.push(h('div', [h('span', { class: 'subtle' }, `${updatedBy.label} `), h('span', updatedBy.value)]))
+            return h('div', { style: 'font-size: 12px;' }, kids)
+        }
     }
 }
 
-/** The id string a client presents for this key (Basic user name / client_id). */
+/** Last accessed ('Never' muted), sortable by the raw instant. */
+export function apiKeyLastAccessColumn (width: number = 150): any {
+    return {
+        key: 'lastAccess', title: 'Last accessed', width,
+        sorter: apiKeySorters.lastAccess,
+        render: (row: any) => {
+            const value = keyActivityLines(row)[1].value
+            return h('span', { class: value === 'Never' ? 'text-muted' : '', style: 'font-size: 12px; white-space: nowrap;' }, value)
+        }
+    }
+}
+
+/** The Created and Last accessed columns of a key table, each with its own sorter. */
+export function apiKeyActivityColumns (): any[] {
+    return [apiKeyCreatedColumn(), apiKeyLastAccessColumn()]
+}
+
+/** A sortable plain notes column; the cell prints row.notes as text. */
+export function apiKeyNotesColumn (width: number, title: string = 'Notes'): any {
+    return { key: 'notes', title, width, sorter: apiKeySorters.notes }
+}
+
+/**
+ * The id string a client presents for this key (Basic user name / client_id): the server's printed
+ * keyId when the query asked for it (an EXTERNAL key carries the organization's TEA id, not its
+ * object), else derived from the row as before.
+ */
 export function apiKeyIdOf (row: any): string {
+    if (row.keyId) return row.keyId
     let keyId = row.type + '__' + row.object
     if (row.keyOrder) keyId += '__ord__' + row.keyOrder
     return keyId
+}
+
+const counted = (n: number, one: string, many: string) => `${n} ${n === 1 ? one : many}`
+
+/** What an EXTERNAL key's grants summary says when it reads nothing. */
+export const EXTERNAL_GRANTS_NONE = 'none: reads nothing yet'
+
+/**
+ * One line for the grants of an EXTERNAL key: "organization-wide", or "2 perspectives, 1 product,
+ * 3 components" (products told from components by the org's product uuids), or
+ * EXTERNAL_GRANTS_NONE. Grants of another organization and NONE entries count for nothing.
+ */
+export function externalGrantsSummary (permissions: any[] | null | undefined, orgUuid: string,
+    productUuids: Set<string>): string {
+    const grants = (permissions || []).filter((p: any) => p && (!p.org || p.org === orgUuid) && p.type && p.type !== 'NONE')
+    if (grants.some((p: any) => p.scope === 'ORGANIZATION')) return 'organization-wide'
+    const perspectives = grants.filter((p: any) => p.scope === 'PERSPECTIVE').length
+    const comps = grants.filter((p: any) => p.scope === 'COMPONENT')
+    const products = comps.filter((p: any) => productUuids.has(p.object)).length
+    const components = comps.length - products
+    const parts: string[] = []
+    if (perspectives) parts.push(counted(perspectives, 'perspective', 'perspectives'))
+    if (products) parts.push(counted(products, 'product', 'products'))
+    if (components) parts.push(counted(components, 'component', 'components'))
+    return parts.length ? parts.join(', ') : EXTERNAL_GRANTS_NONE
+}
+
+/** The TEA token endpoint on an organization's API base, or null while the org has no TEA id. */
+export function teaTokenUrl (apiBase: string | null | undefined): string | null {
+    return apiBase ? apiBase.replace(/\/+$/, '') + '/v1.0.0/token' : null
+}
+
+export type RowCompare = (a: any, b: any) => number
+
+function byUuid (a: any, b: any): number {
+    return String(a?.uuid || '').localeCompare(String(b?.uuid || ''))
+}
+
+/** Ascending text order, case-insensitive and numeric-aware; rows whose text is empty go after every non-empty one; ties broken by uuid so the order is total. */
+export function apiKeyTextSorter (read: (row: any) => string | null | undefined): RowCompare {
+    return (a: any, b: any) => {
+        const ta = String(read(a) ?? '').trim().toLowerCase()
+        const tb = String(read(b) ?? '').trim().toLowerCase()
+        let c = 0
+        if (!ta && tb) c = 1
+        else if (ta && !tb) c = -1
+        else if (ta && tb) c = ta.localeCompare(tb, undefined, { numeric: true })
+        return c || byUuid(a, b)
+    }
+}
+
+/** Ascending instant order (oldest first); a missing or unparsable instant reads as 0, i.e. before every real date; ties broken by uuid. */
+export function apiKeyInstantSorter (read: (row: any) => string | null | undefined): RowCompare {
+    return (a: any, b: any) => ((Date.parse(read(a) || '') || 0) - (Date.parse(read(b) || '') || 0)) || byUuid(a, b)
+}
+
+/** One comparator per sortable key-table column (naive-ui reverses it on descend). */
+export const apiKeySorters = {
+    /** what the Key column prints: declared name, else notes, else the type word */
+    name: apiKeyTextSorter(row => apiKeyName(row).text),
+    declaredName: apiKeyTextSorter(row => cleanLabelText(row?.declaredName)),
+    /** the note without a legacy denial tail */
+    notes: apiKeyTextSorter(row => apiKeyNotesUncut(row)),
+    holder: apiKeyTextSorter(row => row?.holderName),
+    owner: apiKeyTextSorter(row => row?.ownerName),
+    object: apiKeyTextSorter(row => row?.object_val),
+    repository: apiKeyTextSorter(row => row?.federation?.repository),
+    created: apiKeyInstantSorter(row => row?.createdDateIso),
+    lastAccess: apiKeyInstantSorter(row => row?.accessDateIso)
+}
+
+/**
+ * Does this key row match the (already normalized) term? '' matches every row. A uuid matches by
+ * exact or prefix, the printed API id by prefix (4+ characters), the declared name, the notes and a
+ * federated identity's repository by case-insensitive substring. moreTexts adds a table's own text
+ * fields (for example an external key's holder) to the text path.
+ */
+export function apiKeySearchMatches (row: any, term: string, moreTexts?: (row: any) => Array<string | null | undefined>): boolean {
+    if (term === '') return true
+    if (uuidMatches(row?.uuid, term)) return true
+    if (term.length >= UUID_PREFIX_MIN && apiKeyIdOf(row).toLowerCase().startsWith(term)) return true
+    return textMatches([row?.declaredName, row?.notes, row?.federation?.repository, ...(moreTexts ? moreTexts(row) : [])], term)
+}
+
+/** The rows matching raw, as a new array in input order; every row for an empty or blank raw. */
+export function filterApiKeysBySearch<T> (rows: T[], raw: string | null | undefined,
+    moreTexts?: (row: T) => Array<string | null | undefined>): T[] {
+    const term = normalizeSearchTerm(raw)
+    return rows.filter(r => apiKeySearchMatches(r, term, moreTexts))
 }

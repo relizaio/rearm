@@ -32,6 +32,20 @@ extend type Query {
 	exportBoardPerspectivesProgrammatic(board: String!): [BoardPerspectiveRef!]
 	"""Export the key's organization's role presets as a presets file (CONFIGURATION_READ)."""
 	agentRolePresetsSpecProgrammatic: RolePresetsSpec
+	"""What publishing the release on TEA would do, and its publication and collections (a FREEFORM or USER key with READ on the release)."""
+	releaseTeaPublicationViewProgrammatic(release: ID!): TeaPublishPreview!
+	"""The SBOM profile rows stored at a scope of the key's organization, by name (a FREEFORM or USER key with READ on the scope's object)."""
+	sbomProfilesProgrammatic(scope: SettingsScope!, object: ID): [SbomProfile!]!
+	"""Which SBOM profile row a name resolves to at a scope of the key's organization, with no channel fallback (READ on the scope's object)."""
+	sbomProfileEffectiveProgrammatic(scope: SettingsScope!, object: ID, name: String!): SbomProfileResolution!
+	"""The regulatory submissions of a release of the key's organization, every kind (a FREEFORM or USER key with READ on the release)."""
+	submissionsOfReleaseProgrammatic(release: ID!): [Submission!]!
+	"""The regulatory submissions across a component's releases, newest act first (READ on the component)."""
+	submissionsOfComponentProgrammatic(component: ID!, kind: PackageKind, state: SubmissionState): [Submission!]!
+	"""A regulatory submission of the key's organization by its uuid (READ on its release)."""
+	submissionProgrammatic(uuid: ID!): Submission
+	"""One version of a regulatory submission of the key's organization (READ on its release)."""
+	submissionVersionProgrammatic(submission: ID!, version: Int!): SubmissionVersion
 	"""
 	Export the organization's declared API keys as an API_KEYS file (CONFIGURATION_WRITE); with keys, only
 	those names, and the file is not authoritative. No secret and no secret metadata is in it.
@@ -58,6 +72,33 @@ extend type Query {
 	and products, exactly one hit required (unknown or ambiguous names error).
 	"""
 	getReleaseByReleaseVersionProgrammatic(version: String!, componentId: ID!): String
+	"""
+	Exact head-commit lookup, the by-commit twin of getReleaseByReleaseVersionProgrammatic (task TPF-72).
+	commit is compared as stored, whole and case-sensitively (no prefix, no tag, no branch); the entry
+	is looked up in the component's organization and the match restricted to the component / product.
+	Returns the OBOM (CycloneDX 1.6, as the by-version field) of the newest release by creation date
+	whose head commit it is, or "{}" when no release of this component has that head commit, whether the
+	commit is unknown, only in a release's changelog range, or recorded by another organization.
+	componentId is resolved as for getReleaseByReleaseVersionProgrammatic. Lifecycle and approvals are
+	not consulted. Several releases on one head commit (rebuilds): getReleasesByCommitProgrammatic lists them.
+	"""
+	getReleaseByCommitProgrammatic(commit: String!, componentId: ID!): String
+	"""
+	Every release of the component / product whose head commit is exactly commit, newest by creation
+	date first; the same resolution and checks as getReleaseByCommitProgrammatic. Empty when that field
+	would answer "{}".
+	"""
+	getReleasesByCommitProgrammatic(commit: String!, componentId: ID!): [ReleaseByCommitMatch!]!
+	"""
+	Readiness score of the merged release BOM, as releaseSbomScore scores it for a signed-in user (task
+	SCORE-24). The release is named as for releaseSbomExportProgrammatic, behind the same checks; the
+	other arguments are releaseSbomScore's. A failed score is one error with extensions.code
+	SBOM_SCORE_ERROR and extensions.reason, as releaseSbomScore answers.
+	"""
+	releaseSbomScoreProgrammatic(release: ID, componentId: ID, version: String, tldOnly: Boolean, ignoreDev: Boolean,
+		structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, excludeCoverageTypes: [ArtifactCoverageType],
+		includeSupportMetadata: Boolean, includeInternalMetadata: Boolean, excludeFileComponents: Boolean,
+		profiles: [String!]!): String
 	getLatestReleaseProgrammaticCdx(release: GetLatestReleaseInput!): String
 	getLatestReleaseProgrammatic(release: GetLatestReleaseInput!): Release
 	getInstanceRevisionCycloneDxExportProg(instanceUuid: ID, instanceUri: String, revision: Int!, namespace: String, stateType: InstanceStateType): String
@@ -205,6 +246,12 @@ extend type Query {
 }
 
 extend type Mutation {
+	"""Publish the release on TEA: PUBLISH_EXTERNALLY on the release's component, on a FREEFORM or USER key. Refused when already published."""
+	publishReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublishResult!
+	"""Re-publish the release on TEA (PUBLISH_EXTERNALLY on a FREEFORM or USER key): a new collection version only when anything changed; a hidden publication becomes published again."""
+	republishReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublishResult!
+	"""Hide the release from TEA (PUBLISH_EXTERNALLY on a FREEFORM or USER key); its collections stay."""
+	hideReleaseOnTeaProgrammatic(release: ID!, comment: String): TeaPublication!
 	"""
 	Declarative apply of the Catalog slice (API key, write access on the org). Idempotent, keyed by
 	component name. dryRun computes the change set without writing.
@@ -318,6 +365,18 @@ extend type Mutation {
 	synchronizeLiveBranches(synchronizeBranchInput: SynchronizeBranchInput!): Boolean
 	probeSbomProgrammatic(sbom: String!, componentUuid: ID, branchUuid: ID): SbomProbingRun
 	releasecompletionfinalizerProgrammatic(release: ID!): Boolean
+	"""
+	The merged release SBOM as the Export Release BOM dialog downloads it (releaseSbomExport), for an
+	API key, an exchanged token or a CLI login (task SCORE-24). Name the release by release (uuid), or
+	by componentId (uuid, or with an organization-scoped key the unique name) and version; exactly one
+	of the two forms. Needs ARTIFACT_DOWNLOAD on the release; an unknown version is an error, never an
+	empty document. JSON and CSV come back as text, EXCEL as base64. Writes the merged BOM to the cache
+	on a miss and a download-log row, as the user export does.
+	"""
+	releaseSbomExportProgrammatic(release: ID, componentId: ID, version: String, tldOnly: Boolean, ignoreDev: Boolean,
+		structure: BomStructureType, belongsTo: ArtifactBelongsToEnum, mediaType: BomMediaType,
+		excludeCoverageTypes: [ArtifactCoverageType], includeSupportMetadata: Boolean,
+		includeInternalMetadata: Boolean, excludeFileComponents: Boolean): String
 	instData(instance: InstanceDataInput!): Object
 	# Report deployment failures from ReARM CD. Batched, idempotent per
 	# (namespace, deploymentName, fingerprint): a failure repeating on every
@@ -468,8 +527,8 @@ extend type Mutation {
 	  returns the task to the loop;
 	- the session holding the task's current assignment, at OPERATOR level only (task RD4-5), with the question
 	  for the person as the reason: the task shows "awaiting the operator: <question>", the board's writers are
-	  told, and the hop stays assigned to the session. A person lifts the hold with the answer as the note, which
-	  is recorded on the task, and the hop resumes with its holder.
+	  told, and the hop ends (task TPF-66). A person lifts the hold with the answer as the note, which is
+	  recorded on the task, and the task is queued again for its role.
 	- the coordinator seat, at OPERATOR level with the question as the reason (task RD4-17), on a task in
 	  PENDING_INTAKE, QUEUED, AWAITING_COORDINATOR or DELIVERING: the same record and notification. A person's
 	  release with the answer as the note, or anything else a person does on the task (answering its questions,
@@ -477,6 +536,8 @@ extend type Mutation {
 	  recorded, the task returns to the status it was parked from, and the action then runs. Until then every task
 	  verb is refused for every session, except agentTaskLinkPrProgrammatic (`task linkpr`), which is accepted,
 	  recorded on the decision (hold.linked) and posted as an INFO; it does not answer the question (task RD4-19).
+	  An unlink (agentTaskUnlinkPrProgrammatic, `task unlinkpr`, and the person's agentTaskUnlinkPr) is refused for
+	  everyone, a person included: release the hold first (task t20261010-033523-18839).
 	  The delivery sweep leaves the task alone. A DELIVERING task is parked only this way.
 	"""
 	agentTaskHoldProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: String!, level: AgentTaskHoldLevel): AgentTask
@@ -493,7 +554,8 @@ extend type Mutation {
 	URL, or on a board delivering without PRs a branch or release; commit is the merged or pushed sha
 	(required for DELIVERED). The coordinator seat, or a session that worked this task in a role that
 	merges (PR_MERGE). A DELIVERING task then settles: completed once every unit is delivered, to the
-	coordinator when one is abandoned.
+	coordinator when one is abandoned. A PR declared superseded accepts no further declaration (task
+	t20261010-033522-23606): it is abandoned already, and its replacement is the unit to declare.
 	"""
 	agentTaskDeclareDeliveryProgrammatic(taskUuid: ID!, sessionUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
 	"""
@@ -503,6 +565,14 @@ extend type Mutation {
 	board's coordinator seat, or a key holding BOARD_WRITE on the board (task RD3-18).
 	"""
 	agentTaskSupersedePullRequestProgrammatic(taskUuid: ID!, sessionUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""
+	Unlink a PR that should never have counted (task t20261010-033523-18839): removed from the task's PRs, recorded
+	on unlinkedPrs (append-only), posted as an INFO. Refused for a merged or delivered PR, for the replacement another
+	PR was superseded by, on a task parked for the operator, and, past the pass (DELIVERING, a live tested pass, or at
+	the coordinator with every required role passed), when no PR would remain to deliver or (for a session) when the
+	PR is still open. Same gate as supersede. note is at most 4000 characters, on one line.
+	"""
+	agentTaskUnlinkPrProgrammatic(taskUuid: ID!, sessionUuid: ID!, prUrl: String!, note: String): AgentTask
 	"""
 	Hand a COORDINATOR-level hold to the operator (task c0a2134c): the level becomes OPERATOR, the
 	reason keeps what the hold said with yours after it, and the board ALERTs. For a judgement call
@@ -580,7 +650,9 @@ extend type Mutation {
 	# Bind a draft split child's tracker ref once its issue exists.
 	agentTaskBindExternalRefProgrammatic(taskUuid: ID!, externalRef: String!, sourceUrl: String): AgentTask
 	"""
-	Attach a delivering pull-request URL. On a task the coordinator seat parked for the operator it is accepted too,
+	Attach a delivering pull-request URL. The reverse is agentTaskUnlinkPrProgrammatic; linking a PR the task unlinked
+	stamps its unlinkedPrs row (relinkedBy, relinkedAt), and it comes back with its newest declaration (task
+	t20261010-033523-18839). On a task the coordinator seat parked for the operator it is accepted too,
 	recorded on the decision (hold.linked: the PR, the key's agent, the time) and posted as an INFO; it does not answer
 	the question or lift the hold (task RD4-19).
 	"""
@@ -620,7 +692,8 @@ extend type Mutation {
 	agentTaskHumanReview, not here. On a lift, role optionally names an active role to route to instead of the one
 	routing would pick; lifting a no-progress or cycle-cap stop routes past that stop once (task 4c566d0d).
 	A hop its holder parked for the operator (task RD4-5) is lifted with the answer as reason, which is required
-	and recorded on the task (a status row and an INFO); it takes no role, and the hop resumes with its holder.
+	and recorded on the task (a status row and an INFO); it takes no role: the hop ended at the park, and the task
+	is queued again for its role (task TPF-66).
 	A task the coordinator seat parked for the operator (task RD4-17) is lifted the same way, and returns to the
 	status it was parked from (hold.returnTo).
 	"""
@@ -686,6 +759,11 @@ extend type Mutation {
 	agentTaskDeclareDelivery(taskUuid: ID!, unit: String!, commit: String, outcome: AgentDeliveryOutcome = DELIVERED, note: String): AgentTask
 	"""A person declares a linked PR superseded by its replacement, as agentTaskSupersedePullRequestProgrammatic (task RD3-13). BOARD_WRITE."""
 	agentTaskSupersedePullRequest(taskUuid: ID!, oldUrl: String!, byUrl: String!, note: String): AgentTask
+	"""
+	A person unlinks a PR, as agentTaskUnlinkPrProgrammatic (task t20261010-033523-18839). PERSON_WRITE on the task; a
+	person may also unlink an open PR past the pass, with an ALERT.
+	"""
+	agentTaskUnlinkPr(taskUuid: ID!, prUrl: String!, note: String): AgentTask
 	"""Cancel a task from any state but COMPLETED. An agent working it finds it gone at its next call."""
 	agentTaskCancel(taskUuid: ID!, note: String): AgentTask
 	"""
@@ -1340,6 +1418,13 @@ input ReleaseApprovalProgrammaticInput {
 	version: String
 }
 
+"""One release found by its head commit (TPF-72): enough to name it and to see why it sorted where it did."""
+type ReleaseByCommitMatch {
+	uuid: ID!
+	version: String!
+	createdDate: DateTime!
+}
+
 input ReleaseInputProg {
 	version: String!
 	lifecycle: ReleaseLifecycleEnum
@@ -1397,6 +1482,15 @@ input ReleaseInputProg {
 	VALIDATE_PR firings. Ignored on calls that do not create a release.
 	"""
 	pullRequest: PullRequestInfoInput
+	"""
+	Per-release override of the declared licence (SCORE-39), an SPDX expression: SPDX list ids
+	(any case, stored in the list's casing, a trailing + allowed), LicenseRef-[A-Za-z0-9.-]+, the
+	upper-case operators AND, OR and WITH (exception ids syntax-checked only) and parentheses; at
+	most 512 characters. NOASSERTION, NONE, DocumentRef- and free-text names are refused.
+	Omitted or empty for none: the release then inherits the component's licence, else the
+	organization default.
+	"""
+	licenseExpression: String
 }
 
 type SbomProbingResult {

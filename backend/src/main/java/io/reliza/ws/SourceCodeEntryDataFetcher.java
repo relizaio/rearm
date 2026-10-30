@@ -21,7 +21,7 @@ import com.netflix.graphql.dgs.InputArgument;
 
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
-import io.reliza.common.Utils;
+import io.reliza.common.InputConversion;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.BranchData;
@@ -94,7 +94,7 @@ public class SourceCodeEntryDataFetcher {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Map<String, Object> sourceCodeEntryInput = dfe.getArgument("sourceCodeEntry");
-		SceDto sceDto = Utils.OM.convertValue(sourceCodeEntryInput, SceDto.class);
+		SceDto sceDto = InputConversion.convert(sourceCodeEntryInput, SceDto.class, "sourceCodeEntry");
 		Optional<BranchData> obd = branchService.getBranchData(sceDto.getBranch()); 
 		RelizaObject branchRo = obd.isPresent() ? obd.get() : null;
 		Optional<VcsRepositoryData> ovrd = vcsRepositoryService.getVcsRepositoryData(sceDto.getVcs());

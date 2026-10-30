@@ -1,4 +1,4 @@
-<!-- orientation section: session-details · core 2026-10-08 -->
+<!-- orientation section: session-details · core 2026-10-25 -->
 ### 2.1 When to open a session
 
 **Open one session per cohesive piece of work.** Examples of one
@@ -157,7 +157,7 @@ none of them, leaving the server to decide; that is the honest answer,
 not a bug.
 
 > **CLI version.** `agent claude hooks` and `agent session usage` need
-> the `26.10.2` pinned in §1.2 (`rearm_cli_min`) or later.
+> the `26.10.17` pinned in §1.2 (`rearm_cli_min`) or later.
 >
 > If `rearm agent claude hooks install` reports an unknown command, do
 > not conclude anything from that alone — check what you actually have:

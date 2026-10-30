@@ -11,6 +11,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.Iterator;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -34,14 +35,16 @@ import io.reliza.common.CommonVariables.ProgrammaticType;
 import io.reliza.common.EnvironmentType;
 import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.SpdxLicenseExpressions;
 import io.reliza.common.Utils;
 import io.reliza.common.ValidationResult;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseDto;
-import io.reliza.model.tea.Rebom.RebomOptions;
+import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.versioning.Version;
 import io.reliza.versioning.VersionUtils;
 import lombok.AccessLevel;
+import tools.jackson.core.JacksonException;
 import lombok.Data;
 import lombok.EqualsAndHashCode;
 import lombok.Getter;
@@ -76,11 +79,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		TRIGGER,
 		INPUT_TRIGGER,
 		/**
-		 * Something a guard had to say about this release -- today, an automated promotion it
-		 * withheld. Deliberately NOT {@link #TRIGGER}: that scope is the record of a trigger
-		 * having fired, and {@code processRelease} reads it back to decide what has already
-		 * fired. Recording a withheld promotion there would mark the trigger as fired and it
-		 * would never be re-evaluated, which is the opposite of what a withheld promotion means.
+		 * Something a guard had to say about this release: an automated promotion it withheld,
+		 * or an automatic TEA publish or hide the publication engine refused (task TEA-7; the
+		 * newValue then starts with TEA_PUBLISH or TEA_HIDE and names the refusal). Deliberately
+		 * NOT {@link #TRIGGER}: that scope is the record of a trigger having fired, and
+		 * {@code processRelease} reads it back to decide what has already fired. Recording a
+		 * withheld promotion there would mark the trigger as fired and it would never be
+		 * re-evaluated, which is the opposite of what a withheld promotion means.
 		 */
 		GUARD,
 		APPROVED_ENVIRONMENT,
@@ -96,7 +101,32 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		 * and an auditor asking "when did the wording change" must not have to read through
 		 * date edits to find out.
 		 */
-		FDA_NARRATIVE
+		FDA_NARRATIVE,
+		/**
+		 * A generated artifact bound to or removed from the release
+		 * ({@link ReleaseData#getSyntheticArtifacts()}). Deliberately NOT {@link #ARTIFACT}:
+		 * the release page derives ARTIFACT rows from the acollection comparison, which a
+		 * generated artifact never enters, and {@code OssReleaseService.updateRelease} reads
+		 * ARTIFACT as inventory history.
+		 */
+		SYNTHETIC_ARTIFACT,
+		/**
+		 * The publication of this release on TEA (task TEA-5): ADDED on the first publish, CHANGED on
+		 * a re-publish that wrote a collection version or turned a hidden publication back to
+		 * published, REMOVED on hide. Deliberately NOT {@link #ARTIFACT} or {@link #SYNTHETIC_ARTIFACT}:
+		 * the aggregate's binding is already a SYNTHETIC_ARTIFACT event written by the writer, and this
+		 * scope records the act.
+		 */
+		TEA_PUBLICATION,
+		/**
+		 * A regulatory submission act on this release (task TEA-35): ADDED on the first version,
+		 * CHANGED on a resubmission, REMOVED on a withdrawal; {@code objectId} is the submission.
+		 * Deliberately NOT {@link #SYNTHETIC_ARTIFACT}: the bindings of the version's documents are
+		 * already SYNTHETIC_ARTIFACT events, and this scope records the act.
+		 */
+		SUBMISSION,
+		/** The per-release declared licence override (SCORE-39 ADR-1). */
+		DECLARED_LICENSE
 	}
 	
 	public enum ReleaseUpdateAction {
@@ -374,6 +404,36 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	@JsonProperty(CommonVariables.ARTIFACTS_FIELD)
 	private List<UUID> artifacts = new LinkedList<>();
 	
+	/**
+	 * Artifacts ReARM generated for this release itself (a published aggregated SBOM, a VDR
+	 * snapshot). Never inventory: no merge, collection gather, sbom_components reconcile or
+	 * Dependency-Track path reads this list, and no user flow writes it. The only writer is
+	 * {@code SyntheticArtifactService}; the getter returns a copy so no reader can fold it into
+	 * {@link #artifacts} through an alias.
+	 */
+	@JsonProperty(CommonVariables.SYNTHETIC_ARTIFACTS_FIELD)
+	private List<UUID> syntheticArtifacts = new LinkedList<>();
+	
+	public List<UUID> getSyntheticArtifacts () {
+		return new LinkedList<>(this.syntheticArtifacts);
+	}
+	
+	/**
+	 * @return true when the artifact was not bound yet and has been added
+	 */
+	public boolean addSyntheticArtifact (UUID artifactUuid) {
+		if (null == artifactUuid || this.syntheticArtifacts.contains(artifactUuid)) return false;
+		this.syntheticArtifacts.add(artifactUuid);
+		return true;
+	}
+	
+	/**
+	 * @return true when the artifact was bound and has been removed
+	 */
+	public boolean removeSyntheticArtifact (UUID artifactUuid) {
+		return null != artifactUuid && this.syntheticArtifacts.remove(artifactUuid);
+	}
+	
 	@JsonProperty
 	private List<UUID> inboundDeliverables = new LinkedList<>();
 	
@@ -466,6 +526,13 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 	 */
 	@JsonProperty
 	private String fdaAssessmentNarrative;
+
+	/**
+	 * Per-release override of the declared licence, a canonical SPDX expression (SCORE-39 ADR-1).
+	 * Null means inherit; read through {@code DeclaredLicenses.forRelease}.
+	 */
+	@JsonProperty
+	private String licenseExpression;
 
 	/**
 	 * The most recent SUPPORT_WINDOW {@link ReleaseUpdateEvent}, or null if the
@@ -813,6 +880,21 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 		this.updateEvents.add(rue);
 	}
 
+	/** The stored form of update events: each event as the map saveRelease has always written (TPF-106). */
+	@SuppressWarnings("unchecked")
+	public static List<Map<String, Object>> updateEventRecords(List<ReleaseUpdateEvent> events) {
+		return events.stream().map(e -> (Map<String, Object>) Utils.OM.convertValue(e, LinkedHashMap.class)).toList();
+	}
+
+	/** updateEventRecords as one JSON array text, for ReleaseRepository.appendUpdateEvents (TPF-106). */
+	public static String updateEventsJson(List<ReleaseUpdateEvent> events) {
+		try {
+			return Utils.OM.writeValueAsString(updateEventRecords(events));
+		} catch (JacksonException e) {
+			throw new IllegalStateException("Could not serialize " + events.size() + " release update events", e);
+		}
+	}
+
 	public void addApprovalRequest (ReleaseApprovalRequest rar) {
 		if (null == this.approvalRequests) this.approvalRequests = new LinkedList<>();
 		this.approvalRequests.add(rar);
@@ -899,6 +981,17 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			String narrative = releaseDto.getFdaAssessmentNarrative().strip();
 			rd.setFdaAssessmentNarrative(narrative.isEmpty() ? null : narrative);
 		}
+		// Blank to null and canonical form, as the narrative above; createRelease has already
+		// refused an invalid value, and validateReleaseData refuses one from any other writer.
+		if (null != releaseDto.getLicenseExpression() && !releaseDto.getLicenseExpression().isBlank()) {
+			String expression = releaseDto.getLicenseExpression().strip();
+			try {
+				expression = SpdxLicenseExpressions.canonical(expression);
+			} catch (IllegalArgumentException e) {
+				// kept as given: validateReleaseData refuses it on save
+			}
+			rd.setLicenseExpression(expression);
+		}
 		return rd;
 	}
 	
@@ -951,6 +1044,16 @@ public class ReleaseData extends RelizaDataParent implements RelizaObject, Gener
 			errors.add("Release fdaAssessmentNarrative exceeds the "
 					+ FdaProse.MAX_LENGTH + " character limit");
 			vr.setErrors(errors);
+		}
+		// The declared licence override, for every writer as the narrative bound above.
+		if (null != rd.getLicenseExpression()) {
+			try {
+				SpdxLicenseExpressions.canonical(rd.getLicenseExpression());
+			} catch (IllegalArgumentException e) {
+				List<String> errors = new ArrayList<>(vr.getErrors());
+				errors.add("Release licenseExpression invalid: " + e.getMessage());
+				vr.setErrors(errors);
+			}
 		}
 		return vr;
 	}

@@ -33,7 +33,22 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 		ORGANIZATION_RW,
 		FREEFORM, // arbitrary-permissioned key for RBAC
 		USER, // personal key owned by a user: its permissions are a ceiling, intersected with the owner's current permissions
-		FEDERATED; // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
+		FEDERATED, // identity row for one external repository trusted by the org's federated trust rules: no secret, permissions computed from the rules on every call
+		EXTERNAL; // a key handed to a party outside the organization: authenticates at the TEA token endpoint only, reads what the organization published on TEA, and nothing else
+
+		/**
+		 * Whether an id of this type must carry its key order ({@code __ord__<order>}) to name one key.
+		 * Every FREEFORM, USER and FEDERATED row is minted with an order, and the org of a presented id of
+		 * these types is resolved from the key row itself, so an id without an order (or with an empty one)
+		 * names every key of its object rather than one, and is refused before any lookup.
+		 * <p>
+		 * The set equals {@code AuthHeaderParse.isRbacKey()} today, but the two answer different questions
+		 * (the permission model versus the shape of the id) and stay separate, so a future type joins each
+		 * on its own merits.
+		 */
+		public boolean requiresKeyOrder() {
+			return this == FREEFORM || this == USER || this == FEDERATED;
+		}
 	}
 	
 	private static final long serialVersionUID = 2347342;
@@ -71,11 +86,13 @@ public class ApiKey implements Serializable, RelizaEntity, RelizaObject {
 	@Column(nullable = true)
 	private UUID createdBy;
 
-	// Denormalised "most recent authenticated use" timestamp; bumped inline
-	// from ApiKeyAccessService whenever a new audit row is written. Lets the
-	// per-org dashboard query read latest-access without scanning the
-	// api_key_access audit table (which grows unboundedly with traffic).
-	@Column(nullable = true)
+	// Denormalised "most recent verified use" timestamp. Every verified credential touches
+	// ApiKeyAccessService's in-memory accumulator, and the scheduler flushes it through the guarded
+	// native ApiKeyRepository.touchLastAccessDateIfNewer, the only writer: read-only to JPA, so a
+	// full-entity save of a key loaded earlier never puts back an older value. Lets the key lists
+	// read the latest access without scanning the api_key_access audit table (which grows
+	// unboundedly with traffic).
+	@Column(nullable = true, insertable = false, updatable = false)
 	private ZonedDateTime lastAccessDate;
 
 	@Type(JsonBinaryType.class)

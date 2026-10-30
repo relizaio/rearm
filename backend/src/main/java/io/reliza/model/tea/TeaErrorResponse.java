@@ -19,15 +19,17 @@ import java.util.*;
 import jakarta.annotation.Generated;
 
 /**
- * Error response
+ * TEA API error body. Servers shall emit exactly this shape: &#x60;error&#x60; is one of the values of &#x60;unknown-error-type&#x60;, and &#x60;message&#x60; is the only other property allowed. Clients recognize a TEA error by an &#x60;application/json&#x60; response whose body is a JSON object with a string &#x60;error&#x60; property. Other JSON 404 bodies are not TEA error responses.  Any &#x60;4xx&#x60; from a resource endpoint may carry an &#x60;error-response&#x60; body; when present, &#x60;error&#x60; is from &#x60;unknown-error-type&#x60;. Clients shall not require a body. 
  */
 
-@Schema(name = "error-response", description = "Error response")
+@Schema(name = "error-response", description = "TEA API error body. Servers shall emit exactly this shape: `error` is one of the values of `unknown-error-type`, and `message` is the only other property allowed. Clients recognize a TEA error by an `application/json` response whose body is a JSON object with a string `error` property. Other JSON 404 bodies are not TEA error responses.  Any `4xx` from a resource endpoint may carry an `error-response` body; when present, `error` is from `unknown-error-type`. Clients shall not require a body. ")
 @JsonTypeName("error-response")
-@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-03-29T10:44:15.267909500-04:00[America/Toronto]", comments = "Generator version: 7.21.0")
+@Generated(value = "org.openapitools.codegen.languages.SpringCodegen", date = "2026-10-08T02:50:49.497696677Z[Etc/UTC]", comments = "Generator version: 7.21.0")
 public class TeaErrorResponse {
 
   private TeaUnknownErrorType error;
+
+  private @Nullable String message;
 
   public TeaErrorResponse() {
     super();
@@ -61,6 +63,27 @@ public class TeaErrorResponse {
     this.error = error;
   }
 
+  public TeaErrorResponse message(@Nullable String message) {
+    this.message = message;
+    return this;
+  }
+
+  /**
+   * Optional human-readable explanation for diagnostics. Clients shall not interpret it programmatically. 
+   * @return message
+   */
+  
+  @Schema(name = "message", description = "Optional human-readable explanation for diagnostics. Clients shall not interpret it programmatically. ", requiredMode = Schema.RequiredMode.NOT_REQUIRED)
+  @JsonProperty("message")
+  public @Nullable String getMessage() {
+    return message;
+  }
+
+  @JsonProperty("message")
+  public void setMessage(@Nullable String message) {
+    this.message = message;
+  }
+
   @Override
   public boolean equals(Object o) {
     if (this == o) {
@@ -70,12 +93,13 @@ public class TeaErrorResponse {
       return false;
     }
     TeaErrorResponse errorResponse = (TeaErrorResponse) o;
-    return Objects.equals(this.error, errorResponse.error);
+    return Objects.equals(this.error, errorResponse.error) &&
+        Objects.equals(this.message, errorResponse.message);
   }
 
   @Override
   public int hashCode() {
-    return Objects.hash(error);
+    return Objects.hash(error, message);
   }
 
   @Override
@@ -83,6 +107,7 @@ public class TeaErrorResponse {
     StringBuilder sb = new StringBuilder();
     sb.append("class TeaErrorResponse {\n");
     sb.append("    error: ").append(toIndentedString(error)).append("\n");
+    sb.append("    message: ").append(toIndentedString(message)).append("\n");
     sb.append("}");
     return sb.toString();
   }

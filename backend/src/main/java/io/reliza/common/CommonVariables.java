@@ -57,6 +57,8 @@ public class CommonVariables {
 	public static final int DTRACK_VIOLATIONS_PAGE_SIZE = 2000;
 	
 	public static final String NAME_FIELD = "name";
+	/** The JSON key of the TEA-facing id in organization, component and artifact records (TEA-2, TEA-5). */
+	public static final String TEA_UUID_FIELD = "teaUuid";
 	/** Stored finding field every DTrack fetch stamps with the fetch time. */
 	public static final String ATTRIBUTED_AT_FIELD = "attributedAt";
 	public static final String DESCRIPTION_FIELD = "description";
@@ -98,6 +100,7 @@ public class CommonVariables {
 	public static final String NOTES_FIELD = "notes";
 	public static final String IDENTIFIER_FIELD = "identifier";
 	public static final String ARTIFACTS_FIELD = "artifacts";
+	public static final String SYNTHETIC_ARTIFACTS_FIELD = "syntheticArtifacts";
 	public static final String ARTIFACT_DETAILS_FIELD = "artifactDetails";
 	public static final String ARTIFACT_FIELD = "artifact";
 	public static final String DELIVERABLE_FIELD = "deliverable";
@@ -306,6 +309,10 @@ public class CommonVariables {
 	public static final String PROGRAMMATIC_VARIANT_NOT_FOUND_MESSAGE = "Variant not found in this organization";
 	/** As {@link #PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE}, for a named component. */
 	public static final String PROGRAMMATIC_COMPONENT_NOT_FOUND_MESSAGE = "Component not found in this organization";
+	/** An artifact upload's deliverable that is not the named release's own, missing or foreign alike; the id follows. */
+	public static final String DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX = "Deliverable not found in this organization: ";
+	/** As DELIVERABLE_NOT_FOUND_IN_ORG_PREFIX, for a source code entry. */
+	public static final String SCE_NOT_FOUND_IN_ORG_PREFIX = "Source code entry not found in this organization: ";
 	
 	public static final String ADDED_ON_COMPLETE = "addedOnComplete";
 	
@@ -343,6 +350,25 @@ public class CommonVariables {
 	public static final String VDR_SNAPSHOT_VALUE_TAG_KEY = "VDR_SNAPSHOT_VALUE";
 	public static final String VDR_SNAPSHOT_TRIGGER_TAG_KEY = "VDR_SNAPSHOT_TRIGGER";
 	public static final String VDR_SNAPSHOT_KEY_TAG_KEY = "VDR_SNAPSHOT_KEY";
+	/** System tag on an artifact ReARM generated itself (value {@code true}); see ReleaseData.syntheticArtifacts. */
+	public static final String SYNTHETIC_ARTIFACT_TAG_KEY = "syntheticArtifact";
+	/** System tag naming the release a synthetic artifact was generated for (value: the release uuid). */
+	public static final String SYNTHETIC_OF_RELEASE_TAG_KEY = "syntheticOfRelease";
+	/** System tag on the generated aggregated SBOM a TEA publication serves (value {@code true}; task TEA-5). */
+	public static final String TEA_AGGREGATE_TAG_KEY = "teaAggregate";
+	/** System tag naming the TEA publication a generated aggregate belongs to (value: the publication uuid). */
+	public static final String TEA_PUBLICATION_TAG_KEY = "teaPublication";
+	/**
+	 * System tag carrying the content digest of a generated TEA aggregate: the sha256 of the merged
+	 * document without serialNumber, version and metadata.timestamp, properties sorted. Equal digests
+	 * mean an unchanged aggregate, so a re-publish uploads nothing.
+	 */
+	public static final String TEA_CONTENT_DIGEST_TAG_KEY = "teaContentDigest";
+	/**
+	 * System tag naming the SBOM profile a generated TEA aggregate is the aggregate of (value: the profile
+	 * name; task TEA-28): with {@link #TEA_AGGREGATE_TAG_KEY} it identifies the release's row of that name.
+	 */
+	public static final String TEA_PROFILE_NAME_TAG_KEY = "teaProfileName";
 
 	/*** K8s Labels
 	 * refer to https://helm.sh/docs/chart_best_practices/labels/
@@ -479,6 +505,14 @@ public class CommonVariables {
 		
 		private UserGroupStatus () {}
 	}
+
+	/** Status of an API key group (TPF-91); its own enum so it never crosses with UserGroupStatus. */
+	public enum ApiKeyGroupStatus {
+		ACTIVE,
+		INACTIVE;
+
+		private ApiKeyGroupStatus () {}
+	}
 	
 	public enum TableName {
 		AGENTS("agents"),
@@ -500,6 +534,7 @@ public class CommonVariables {
 		DEVICES("devices"),
 		DEVICE_EVENTS("device_events"),
 		SIGNING_KEYS("signing_keys"),
+		SBOM_SIGNING_KEYS("sbom_signing_keys"),
 		SIGNATURE_VERIFICATIONS("signature_verifications"),
 		MODEL_ONTOLOGIES("model_ontologies"),
 		DELIVERABLES("deliverables"),
@@ -534,6 +569,8 @@ public class CommonVariables {
 		SOURCE_CODE_ENTRIES("source_code_entries"),
 		USERS("users"),
 		USER_GROUPS("user_groups"),
+		API_KEY_GROUPS("api_key_groups"),
+		PERMISSION_TEMPLATES("permission_templates"),
 		TEAMS("teams"),
 		VARIANTS("variants"),
 		VCS_REPOSITORIES("vcs_repositories"),
@@ -543,7 +580,12 @@ public class CommonVariables {
 		ATTESTATION("attestations"),
 		VULNERABILITY_RECORDS("vulnerability_records"),
 		VULN_ANALYSIS("vuln_analysis"),
+		PACKAGE_SETTINGS("package_settings"),
 		PERSPECTIVE("perspectives"),
+		SBOM_PROFILE("sbom_profiles"),
+		SUBMISSION("submissions"),
+		TEA_PROFILE("tea_profiles"),
+		TEA_PUBLICATION("tea_publications"),
 		WEBHOOKS("webhooks"),
 		WEBHOOK_DELIVERIES("webhook_deliveries")
 		;
@@ -691,6 +733,27 @@ public class CommonVariables {
 		public boolean isRbacKey() {
 			return type == ApiTypeEnum.FREEFORM || type == ApiTypeEnum.USER || type == ApiTypeEnum.FEDERATED;
 		}
+
+		/** A stored key order is a uuid text; anything else in a presented order renders as {@code __ord__?}. */
+		private static final Pattern PLAIN_KEY_ORDER = Pattern.compile("[A-Za-z0-9-]{1,64}");
+
+		/**
+		 * The identity a credential-path log line writes, and the rate limiter's bucket for a presented key: the parsed
+		 * type and object uuid (an enum name and a canonical uuid, never the client's bytes), plus {@code __ord__} and the
+		 * key order only when the order is a plain token as stored orders are, else {@code __ord__?}; nothing after the
+		 * object for a null or empty order. Empty for a parse without a type or an object, so a malformed header logs no
+		 * id at all. For a principal built from a key row ({@link #fromVerifiedKey} and its siblings) it equals {@link #getApiKeyId()} for every
+		 * type a Basic can present; a FEDERATED principal, whose stored order is {@code provider:repository}, renders
+		 * {@code __ord__?}. The presented id text ({@link #getApiKeyId()} of a parsed header) is never logged: its order
+		 * part is free text that can carry line breaks. Never log this object itself either: its {@code toString()}
+		 * prints the secret and the id text.
+		 */
+		public String canonicalId() {
+			if (type == null || objUuid == null) return "";
+			String id = type + "__" + objUuid;
+			if (keyOrder == null || keyOrder.isEmpty()) return id;
+			return id + "__ord__" + (PLAIN_KEY_ORDER.matcher(keyOrder).matches() ? keyOrder : "?");
+		}
 		/** The access token came from a federated exchange (a FEDERATED identity row, or a Free Form key a rule binds to). */
 		public boolean isFederated() {
 			return federation != null;
@@ -725,7 +788,15 @@ public class CommonVariables {
 
 			    // resolve uuids and type
 				String[] typeProj = orderParse[0].split("__", 0);
-			    ahpBuilder.type(ApiTypeEnum.valueOf(typeProj[0]));
+				ApiTypeEnum parsedType = ApiTypeEnum.valueOf(typeProj[0]);
+				if (parsedType == ApiTypeEnum.EXTERNAL) {
+					// The hard boundary of task TEA-3: an external key reaches nothing but TEA, so no Basic
+					// credential path (programmatic GraphQL, the programmatic token endpoint, the download
+					// endpoints, the rate limiter) ever sees one as a principal.
+					log.debug("EXTERNAL keys authenticate at the TEA token endpoint only; refused a Basic credential from {}", ipAddr);
+					return AuthHeaderParse.builder().build();
+				}
+			    ahpBuilder.type(parsedType);
 				ahpBuilder.objUuid(UUID.fromString(typeProj[1]));
 				if(typeProj.length > 2 && typeProj[2].startsWith("ORGANIZATION")){
 					ahpBuilder.orgUuid(UUID.fromString(typeProj[3]));
@@ -745,8 +816,9 @@ public class CommonVariables {
 				// amplifier. Return an empty AHP so the caller treats the
 				// request as unauthenticated; DEBUG keeps the cause
 				// available without filling disk.
+				// the class name only: the message of UUID.fromString or ApiTypeEnum.valueOf quotes the client's text
 				log.debug("Malformed Basic Authorization header from {} — treating as unauthenticated. Cause: {}",
-						ipAddr, e.getMessage());
+						ipAddr, e.getClass().getSimpleName());
 				return AuthHeaderParse.builder().build();
 			}
 			return ahpBuilder.build();

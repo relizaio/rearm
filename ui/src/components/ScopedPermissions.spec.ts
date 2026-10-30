@@ -4,11 +4,12 @@
 // one board, what each section offers, and a grant on a board the editor cannot list.
 import { describe, expect, it, vi } from 'vitest'
 import { mount } from '@vue/test-utils'
-import { NCheckbox, NCheckboxGroup, NRadioGroup, NSelect } from 'naive-ui'
+import { NButton, NCheckbox, NCheckboxGroup, NRadioButton, NRadioGroup, NSelect } from 'naive-ui'
 import constants from '@/utils/constants'
 
 const dispatch = vi.fn(async () => [])
-vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters: { myuser: { installationType: 'SAAS' } } }) }))
+const myuser = { installationType: 'SAAS' }
+vi.mock('vuex', () => ({ useStore: () => ({ dispatch, getters: { myuser } }) }))
 // The graphql client connects on import; the editor never calls it here (the store is mocked).
 vi.mock('@/utils/graphql', () => ({ default: {} }))
 const { default: ScopedPermissions } = await import('./ScopedPermissions.vue')
@@ -86,6 +87,25 @@ describe('ScopedPermissions: Per-Board', () => {
         const orgChecks = w.findAllComponents(NCheckbox).filter((c: any) => !cards.some((card: any) => card.element.contains(c.element)))
             .map((c: any) => c.props('value'))
         expect(orgChecks).toEqual(expect.arrayContaining(constants.BoardFunctions))
+
+        // PUBLISH_EXTERNALLY (task TEA-3): organization-wide and on a perspective, a product and a
+        // component, never on a board. TEA_READ, the EXTERNAL key function, is offered nowhere.
+        expect(orgChecks).toContain('PUBLISH_EXTERNALLY')
+        for (const n of ['Payments', 'Shop', 'api']) expect(offered(byName(n)), n).toContain('PUBLISH_EXTERNALLY')
+        expect(offered(board)).not.toContain('PUBLISH_EXTERNALLY')
+        expect(w.findAllComponents(NCheckbox).map((c: any) => c.props('value'))).not.toContain('TEA_READ')
+    })
+
+    it('offers PUBLISH_EXTERNALLY on CE too, whose backend serves TEA since the SCORE-72 sync', () => {
+        myuser.installationType = 'OSS'
+        try {
+            const w = mountEditor([grant('PERSPECTIVE', 'p1'), grant('COMPONENT', 'prod1'), grant('COMPONENT', 'c1')])
+            const values = w.findAllComponents(NCheckbox).map((c: any) => c.props('value'))
+            expect(values).toContain('ARTIFACT_DOWNLOAD')
+            expect(values).toContain('PUBLISH_EXTERNALLY')
+        } finally {
+            myuser.installationType = 'SAAS'
+        }
     })
 
     it('does not offer the board functions at Essential Read, and a key capped by its owner sees only the allowed ones', () => {
@@ -105,5 +125,104 @@ describe('ScopedPermissions: Per-Board', () => {
         expect(dispatch).toHaveBeenCalledWith('fetchAgentBoardNamesOfOrg', 'o1')
         const select = w.findAllComponents(NSelect).find((s: any) => s.attributes('data-testid') === 'board-permission-select')!
         expect(select.props('options')).toEqual([{ label: 'Read Here', value: 'b9' }])
+    })
+})
+
+describe('ScopedPermissions: externalKey (task TEA-3)', () => {
+    const allGrants = () => [grant('PERSPECTIVE', 'p1'), grant('COMPONENT', 'prod1'), grant('COMPONENT', 'c1'), grant('BOARD', 'b1')]
+    const mountExternal = (scoped: any[] = allGrants(), orgType = 'NONE') => mountEditor(scoped, orgType, {
+        externalKey: true,
+        approvalRoles: [{ id: 'qa', displayView: 'QA' }],
+        instances: [{ uuid: 'i1', uri: 'https://i1', instanceType: 'STANDALONE_INSTANCE' }],
+        clusters: [{ uuid: 'cl1', name: 'Cluster One', instanceType: 'CLUSTER', instances: [] }],
+    })
+
+    it('offers only NONE and Read Only organization-wide, and no functions or approvals there', () => {
+        const w = mountExternal([], 'READ_ONLY')
+        expect(w.findAllComponents(NRadioButton).map((r: any) => r.props('value'))).toEqual(['NONE', 'READ_ONLY'])
+        expect(w.text()).not.toContain('Organization-Wide Functions')
+        expect(w.text()).not.toContain('Organization-Wide Approval Permissions')
+        expect(w.findAllComponents(NCheckbox)).toHaveLength(0)
+    })
+
+    it('hides the board, cluster and instance sections and every function or approval row', () => {
+        const w = mountExternal()
+        expect(w.find('[data-testid="board-permissions"]').exists()).toBe(false)
+        expect(w.text()).not.toContain('Per-Board Permissions')
+        expect(w.text()).not.toContain('Per-Cluster Permissions')
+        expect(w.text()).not.toContain('Per-Instance Permissions')
+        expect(w.text()).not.toContain('Functions:')
+        expect(w.text()).not.toContain('Approvals:')
+        expect(w.findAllComponents(NCheckboxGroup)).toHaveLength(0)
+        // a normal key sees all of them with the same props
+        const normal = mountEditor(allGrants(), 'NONE', { approvalRoles: [{ id: 'qa', displayView: 'QA' }],
+            instances: [{ uuid: 'i1', uri: 'https://i1', instanceType: 'STANDALONE_INSTANCE' }],
+            clusters: [{ uuid: 'cl1', name: 'Cluster One', instanceType: 'CLUSTER', instances: [] }] })
+        for (const t of ['Per-Board Permissions', 'Per-Cluster Permissions', 'Per-Instance Permissions', 'Functions:', 'Approvals:']) {
+            expect(normal.text(), t).toContain(t)
+        }
+    })
+
+    it('shows a fixed Read Only on perspective, product and component cards, with no type radio', () => {
+        const w = mountExternal()
+        const cards = w.findAll('.n-card')
+        const byName = (n: string) => cards.find((c: any) => c.text().includes(n))!
+        for (const n of ['Payments', 'Shop', 'api']) {
+            const card = byName(n)
+            expect(card.find('[data-testid="external-key-read-only"]').text(), n).toBe('Read Only')
+            expect(card.findAllComponents(NRadioGroup), n).toHaveLength(0)
+            expect(card.findAllComponents(NCheckbox), n).toHaveLength(0)
+        }
+    })
+
+    it('adds a product as a COMPONENT grant, Read Only, with no functions or approvals', async () => {
+        const w = mountExternal([])
+        const select = w.findAllComponents(NSelect).find((s: any) => s.props('placeholder') === 'Add product...')!
+        await select.vm.$emit('update:value', 'prod1')
+        const adds = w.findAllComponents(NButton).filter((b: any) => b.text() === 'Add')
+        const add = adds.find((b: any) => !b.props('disabled'))!
+        expect(adds.filter((b: any) => !b.props('disabled'))).toHaveLength(1)
+        await add.trigger('click')
+        expect(lastModel(w).scopedPermissions).toEqual([
+            { scope: 'COMPONENT', objectId: 'prod1', objectName: 'Shop', type: 'READ_ONLY', functions: [], approvals: [] },
+        ])
+    })
+
+    it('does not read the org boards for an external key', async () => {
+        dispatch.mockClear()
+        mountEditor([], 'NONE', { externalKey: true, boards: undefined })
+        await new Promise(r => setTimeout(r, 0))
+        expect(dispatch).not.toHaveBeenCalledWith('fetchAgentBoardNamesOfOrg', 'o1')
+    })
+})
+
+// TPF-101 test 2.2 (TPF-74 child 2): the lists CliLogin, ApiKeyPermissionsModal and OrgSettings pass
+// through are ref rows now (the six componentRefs scalars, frozen as Apollo hands them out).
+describe('ScopedPermissions: ref rows from the store lists (TPF-101)', () => {
+    const REF_PRODUCT = Object.freeze({ uuid: 'prod1', name: 'Shop', type: 'PRODUCT', status: 'ACTIVE', org: 'o1', vcs: null })
+    const REF_COMPONENT = Object.freeze({ uuid: 'c1', name: 'api', type: 'COMPONENT', status: 'ACTIVE', org: 'o1', vcs: 'v1' })
+    const mountRefs = (scoped: any[]) => mountEditor(scoped, 'READ_ONLY', { products: [REF_PRODUCT], components: [REF_COMPONENT] })
+    const selectByPlaceholder = (w: any, placeholder: string) =>
+        w.findAllComponents(NSelect).find((s: any) => s.props('placeholder') === placeholder)!
+
+    it('offers the product and the component by name and uuid', () => {
+        const w = mountRefs([])
+        expect(selectByPlaceholder(w, 'Add product...').props('options')).toEqual([{ label: 'Shop', value: 'prod1' }])
+        expect(selectByPlaceholder(w, 'Add component...').props('options')).toEqual([{ label: 'api', value: 'c1' }])
+    })
+
+    it('lists a COMPONENT-scope grant on a product among the product grants, not the component grants', () => {
+        const w = mountRefs([grant('COMPONENT', 'prod1')])
+        expect(selectByPlaceholder(w, 'Add product...').props('options')).toEqual([])
+        expect(selectByPlaceholder(w, 'Add component...').props('options')).toEqual([{ label: 'api', value: 'c1' }])
+        const text = w.text()
+        const productHeader = text.indexOf('Per-Product Permissions:')
+        const componentHeader = text.indexOf('Per-Component Permissions:')
+        const shop = text.indexOf('Shop')
+        expect(productHeader).toBeGreaterThan(-1)
+        expect(componentHeader).toBeGreaterThan(productHeader)
+        expect(shop).toBeGreaterThan(productHeader)
+        expect(shop).toBeLessThan(componentHeader)
+        expect(text.indexOf('Shop', componentHeader)).toBe(-1)
     })
 })

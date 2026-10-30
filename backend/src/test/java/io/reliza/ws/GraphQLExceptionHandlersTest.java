@@ -8,9 +8,16 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.ZonedDateTime;
+import java.util.Map;
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 
 import graphql.GraphQLError;
+import io.reliza.common.CommonVariables.ProgrammaticType;
+import io.reliza.exceptions.ComponentRevisionConflictException;
+import io.reliza.exceptions.RebomResponseTooLargeException;
 import io.reliza.exceptions.RelizaException;
 
 /**
@@ -48,6 +55,43 @@ public class GraphQLExceptionHandlersTest {
 		assertTrue(err.getMessage().matches("Internal server error \\(ref [0-9a-f]{8}\\)"), err.getMessage());
 		assertFalse(err.getMessage().contains("blank"),
 				"the generic handler must not leak the underlying exception message");
+	}
+
+	/**
+	 * T-7 (SCORE-19, ADR-3): an export whose answer from rebom is over the read limit is a named
+	 * error with no extensions, never the opaque server error.
+	 */
+	@Test
+	public void rebomResponseTooLarge_isNamedExportError() {
+		GraphQLError err = handlers.handleRebomResponseTooLarge(
+				new RebomResponseTooLargeException(new IllegalStateException("cause text")));
+		assertEquals("Release SBOM export is too large to serve (limit 64 MB); "
+				+ "export with fewer components (top-level only)", err.getMessage());
+		assertEquals("BAD_REQUEST", String.valueOf(err.getErrorType()));
+		assertTrue(null == err.getExtensions() || err.getExtensions().isEmpty(), "no extensions");
+	}
+
+	/** TPF-61 row 20a: a stale component save carries the code, the revision and who changed it when. */
+	@Test
+	public void componentRevisionConflict_carriesCodeRevisionAndLastChange() {
+		UUID u = UUID.randomUUID();
+		ZonedDateTime d = ZonedDateTime.parse("2026-10-13T10:00:00Z");
+		GraphQLError err = handlers.handleComponentRevisionConflict(
+				new ComponentRevisionConflictException(4, 5, u, ProgrammaticType.MANUAL, null, d));
+		assertEquals("Component was changed since it was read: expected revision 4, current revision 5", err.getMessage());
+		assertEquals("BAD_REQUEST", String.valueOf(err.getErrorType()));
+		assertEquals(Map.of("code", "COMPONENT_REVISION_CONFLICT", "revision", 5, "lastUpdatedDate", "2026-10-13T10:00:00Z",
+				"lastUpdatedBy", u.toString(), "lastUpdatedType", "MANUAL"), err.getExtensions());
+	}
+
+	/** TPF-61 row 20b: unknown values are left out, never sent as null. */
+	@Test
+	public void componentRevisionConflict_leavesUnknownValuesOut() {
+		ZonedDateTime d = ZonedDateTime.parse("2026-10-13T10:00:00Z");
+		GraphQLError err = handlers.handleComponentRevisionConflict(
+				new ComponentRevisionConflictException(4, 5, null, null, null, d));
+		assertEquals(Map.of("code", "COMPONENT_REVISION_CONFLICT", "revision", 5, "lastUpdatedDate", "2026-10-13T10:00:00Z"),
+				err.getExtensions());
 	}
 
 	/**

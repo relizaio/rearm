@@ -58,6 +58,7 @@ import GqlQueries from '@/utils/graphqlQueries'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
 import { renderVulnerabilityCells, renderViolationCells } from '@/utils/releaseScanCells'
+import { lifecycleLabel } from '@/utils/lifecycle'
 import VulnerabilityModal from './VulnerabilityModal.vue'
 
 const props = withDefaults(defineProps<{
@@ -163,7 +164,7 @@ const columns: DataTableColumns<any> = [
         title: 'Lifecycle',
         key: 'lifecycle',
         width: 200,
-        render: (row: any) => row.lifecycle
+        render: (row: any) => lifecycleLabel(row.lifecycle)
     },
     {
         title: 'Created',

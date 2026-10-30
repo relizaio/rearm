@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { createMemoryHistory, createRouter } from 'vue-router'
-import { BRANCHES_TAB, LATEST_TAB, TAGS_TAB, resolveComponentPageTab } from './componentPageTab'
+import { BRANCHES_TAB, LATEST_TAB, SETTINGS_DEFAULT_TAB, TAGS_TAB, resolveComponentPageTab, resolveComponentSettingsTab } from './componentPageTab'
 
 // Branch and feature-set links opened the component / product page on the
 // Latest tab, which has no branch pane, since Latest became the default tab.
@@ -122,7 +122,7 @@ describe('links into the component / product page, resolved by the app routes', 
 
 describe('ComponentView takes its tab from resolveComponentPageTab', () => {
     it('on mount, on a query-only tab change, and once the branch list loads', () => {
-        expect(viewSrc).toContain("import { resolveComponentPageTab } from '@/utils/componentPageTab'")
+        expect(viewSrc).toContain("import { resolveComponentPageTab, resolveComponentSettingsTab, SETTINGS_DEFAULT_TAB } from '@/utils/componentPageTab'")
         expect(viewSrc.match(/resolveComponentPageTab\(/g)?.length).toBe(3)
         expect(viewSrc).toMatch(/const selectedTab: Ref<string> = ref\(resolveComponentPageTab\(/)
     })
@@ -134,5 +134,58 @@ describe('ComponentView takes its tab from resolveComponentPageTab', () => {
 
     it('still names its tab panes latest, branches and tags', () => {
         for (const t of [LATEST_TAB, BRANCHES_TAB, TAGS_TAB]) expect(viewSrc).toContain(`<n-tab-pane ${t === 'tags' ? 'v-if="componentData.type === \'COMPONENT\'" ' : ''}name="${t}"`)
+    })
+})
+
+// The organization's TEA overrides table links a component to its settings on the TEA tab:
+// ?componentSettingsView=true&componentSettingsTab=tea.
+describe('resolveComponentSettingsTab', () => {
+    const VISIBLE = [SETTINGS_DEFAULT_TAB, 'licenseSupplier', 'tea', 'sbomProfiles', 'regulatory']
+
+    it('opens the pane the query names when the page shows it', () => {
+        expect(resolveComponentSettingsTab('tea', VISIBLE)).toBe('tea')
+        expect(resolveComponentSettingsTab('regulatory', VISIBLE)).toBe('regulatory')
+        expect(resolveComponentSettingsTab(['tea', 'regulatory'], VISIBLE)).toBe('tea')
+    })
+
+    it('opens Core Settings for no pane, an unknown one, or one this page hides', () => {
+        expect(SETTINGS_DEFAULT_TAB).toBe('Core Settings')
+        for (const q of [undefined, null, '', '  ', 5, 'nope', 'locks']) {
+            expect(resolveComponentSettingsTab(q, VISIBLE), String(q)).toBe(SETTINGS_DEFAULT_TAB)
+        }
+    })
+})
+
+describe('ComponentView opens its settings modal on ?componentSettingsTab=', () => {
+    const modalTabs = viewSrc.slice(viewSrc.indexOf('<n-tabs', viewSrc.indexOf('Settings for {{ componentData?.name }}')))
+    const tabsTag = modalTabs.slice(0, modalTabs.indexOf('>'))
+    const open = viewSrc.slice(viewSrc.indexOf('const openComponentSettings = async function'),
+        viewSrc.indexOf('const hasComponentChanges'))
+    const close = viewSrc.slice(viewSrc.indexOf('const handleComponentSettingsClose'), viewSrc.indexOf('// Perspectives management'))
+
+    it('holds the modal pane in componentSettingsTab and keeps the switch handler', () => {
+        expect(tabsTag).toContain('v-model:value="componentSettingsTab"')
+        expect(tabsTag).toContain('@update:value="handleTabSwitch"')
+        expect(viewSrc).toContain('const componentSettingsTab = ref<string>(SETTINGS_DEFAULT_TAB)')
+    })
+
+    it('resolves the pane from the query against the visible panes before showing the modal', () => {
+        const at = open.indexOf('componentSettingsTab.value = resolveComponentSettingsTab(route.query.componentSettingsTab, visibleSettingsTabs())')
+        expect(at).toBeGreaterThan(-1)
+        expect(at).toBeLessThan(open.indexOf('showComponentSettingsModal.value = true'))
+        expect(open).toContain('if (componentSettingsTab.value !== SETTINGS_DEFAULT_TAB) await handleTabSwitch(componentSettingsTab.value)')
+    })
+
+    it('lists every pane the modal renders as visible, the TEA tab under the TEA gate', () => {
+        const fn = viewSrc.slice(viewSrc.indexOf('function visibleSettingsTabs'), viewSrc.indexOf('const showCreateOutputTriggerModal'))
+        const panes = [...modalTabs.slice(0, modalTabs.indexOf('</n-tabs>')).matchAll(/<n-tab-pane([^>]*)>/g)]
+            .map(m => m[1]).filter(a => !a.includes('v-if="false"')).map(a => a.match(/name="([^"]+)"/)![1])
+        for (const name of panes) expect(fn, name).toContain(name === 'Core Settings' ? 'SETTINGS_DEFAULT_TAB' : "'" + name + "'")
+        expect(fn).toContain("...(teaProfilesAvailable(myUser.installationType) ? ['tea', 'sbomProfiles'] : [])")
+    })
+
+    it('drops the parameter with componentSettingsView on close and on a branch switch', () => {
+        expect(close).toContain("newQuery.delete('componentSettingsTab')")
+        expect(viewSrc).toContain('delete cleanQuery.componentSettingsTab')
     })
 })

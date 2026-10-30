@@ -17,6 +17,7 @@ import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import graphql.language.OperationDefinition.Operation;
@@ -53,6 +54,7 @@ public class AgentTaskKeyIntegrationTest {
 	@Autowired private OrganizationService organizationService;
 	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private AgentBoardRepository boardRepository;
+	@Autowired private JdbcTemplate jdbcTemplate;
 
 	private AgentBoardData board(Organization org, String name, String prefix) throws RelizaException {
 		Component target = componentService.createComponent("keys_" + UUID.randomUUID(), org.getUuid(),
@@ -202,10 +204,10 @@ public class AgentTaskKeyIntegrationTest {
 		}
 		AgentBoardData raw = reload(bd);
 		raw.setTasksNumbered(false);
-		raw.setNextTaskNumber(0);
 		raw.setTaskPrefix(null);
 		raw.setTaskPrefixHistory(new java.util.ArrayList<>());
 		agentBoardService.saveData(raw, WU);
+		jdbcTemplate.update("UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{nextTaskNumber}', '0') WHERE uuid = ?", bd.getUuid());
 		assertNull(reload(tasks.get(0)).getKey());
 		assertEquals("oldest", reload(tasks.get(0)).label(), "an unnumbered task is named as before");
 
@@ -281,10 +283,10 @@ public class AgentTaskKeyIntegrationTest {
 		}
 		AgentBoardData raw = reload(bd);
 		raw.setTasksNumbered(false);
-		raw.setNextTaskNumber(0);
 		raw.setTaskPrefix(null);
 		raw.setTaskPrefixHistory(new java.util.ArrayList<>());
 		agentBoardService.saveData(raw, WU);
+		jdbcTemplate.update("UPDATE rearm.agent_boards SET record_data = jsonb_set(record_data, '{nextTaskNumber}', '0') WHERE uuid = ?", bd.getUuid());
 		int revision = revision(bd);
 
 		AgentTaskData after = task(bd, "three");

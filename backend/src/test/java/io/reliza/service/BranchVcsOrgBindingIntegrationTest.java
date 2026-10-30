@@ -179,7 +179,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 	/** getversion as the CI datafetcher calls it, reserving a PENDING release. */
 	private String getversion(UUID component, SceDto sce) throws Exception {
 		return releaseVersionService.getNewVersionWrapper(new GetNewVersionDto(component, "main", null, null, null, null,
-				ReleaseLifecycle.PENDING, false, sce, null, VersionTypeEnum.DEV, null), WU).version();
+				ReleaseLifecycle.PENDING, false, sce, null, VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU).version();
 	}
 
 		// ----- updateBranch -----
@@ -691,7 +691,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 		List<SceDto> commits = List.of(SceDto.builder().commit(first).build(), SceDto.builder().commit(second).build());
 		RelizaException refused = assertThrows(RelizaException.class, () -> releaseVersionService.getNewVersionWrapper(
 				new GetNewVersionDto(b.component(), "main", null, null, null, null, ReleaseLifecycle.PENDING, false,
-						head, commits, VersionTypeEnum.DEV, null), WU));
+						head, commits, VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU));
 
 		assertEquals(CommonVariables.SCE_NOT_RESOLVABLE_MESSAGE, refused.getMessage());
 		assertTrue(sceUuidsOn(b.vcs(), first).isEmpty(), "the first commit must not be recorded either");
@@ -701,7 +701,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 		// no version was taken for the first commit: building it alone now succeeds
 		String version = releaseVersionService.getNewVersionWrapper(new GetNewVersionDto(b.component(), "main", null, null,
 				null, null, ReleaseLifecycle.PENDING, false, SceDto.builder().commit(first).build(), null,
-				VersionTypeEnum.DEV, null), WU).version();
+				VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU).version();
 		assertTrue(sharedReleaseService.findReleaseByComponentAndVersion(b.component(), version).isPresent());
 		assertEquals(1, sceUuidsOn(b.vcs(), first).size());
 	}
@@ -722,7 +722,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 		assertEquals(CommonVariables.BRANCH_VCS_UNUSABLE_MESSAGE, refused.getMessage());
 		RelizaException viaGetversion = assertThrows(RelizaException.class, () -> releaseVersionService.getNewVersionWrapper(
 				new GetNewVersionDto(b.component(), "main", null, null, null, null, ReleaseLifecycle.PENDING, false,
-						null, commits, VersionTypeEnum.DEV, null), WU));
+						null, commits, VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU));
 		assertEquals(CommonVariables.BRANCH_VCS_UNUSABLE_MESSAGE, viaGetversion.getMessage());
 		assertEquals(branchBefore, branchRow(b.branch()));
 		assertTrue(sceUuidsOn(b.vcs(), first).isEmpty());
@@ -730,7 +730,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 		// with the uri and type on the first commit the same build goes through
 		SceDto relinking = SceDto.builder().commit(first).uri(b.vcsUri()).type(VcsType.GIT).build();
 		releaseVersionService.getNewVersionWrapper(new GetNewVersionDto(b.component(), "main", null, null, null, null,
-				ReleaseLifecycle.PENDING, false, null, List.of(relinking, commits.get(1)), VersionTypeEnum.DEV, null), WU);
+				ReleaseLifecycle.PENDING, false, null, List.of(relinking, commits.get(1)), VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU);
 		assertEquals(b.vcs(), branchService.getBranchData(b.branch()).orElseThrow().getVcs());
 		assertEquals(1, sceUuidsOn(b.vcs(), first).size());
 	}
@@ -758,7 +758,7 @@ public class BranchVcsOrgBindingIntegrationTest {
 
 		RelizaException viaGetversion = assertThrows(RelizaException.class, () -> releaseVersionService.getNewVersionWrapper(
 				new GetNewVersionDto(b.component(), "main", null, null, null, null, ReleaseLifecycle.PENDING, false,
-						null, commits, VersionTypeEnum.DEV, null), WU));
+						null, commits, VersionTypeEnum.DEV, null), SbomWriteAuthority.NO_PRINCIPAL, WU));
 		assertEquals(CommonVariables.SCE_NOT_RESOLVABLE_MESSAGE, viaGetversion.getMessage());
 		assertEquals(branchBefore, branchRow(b.branch()), "the branch must not be relinked");
 		assertTrue(sceUuidsOn(b.vcs(), first).isEmpty(), "the first commit must not be recorded");

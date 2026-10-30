@@ -66,7 +66,10 @@
                                         <n-input v-model:value="globalOutputEvent.name" required placeholder="Enter name" />
                                     </n-form-item>
                                     <n-form-item label="Type" path="type">
-                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptions" />
+                                        <n-select v-model:value="globalOutputEvent.type" required :options="outputTriggerTypeOptionsForSelect" />
+                                    </n-form-item>
+                                    <n-form-item v-if="globalOutputEvent.type === 'TEA_PUBLISH' || globalOutputEvent.type === 'TEA_HIDE'" label="Settings">
+                                        <span class="text-muted">None: the effective TEA profile at firing time decides what is published or hidden.</span>
                                     </n-form-item>
                                     <n-form-item v-if="globalOutputEvent.type === 'RELEASE_LIFECYCLE_CHANGE'" label="Lifecycle To Change To" path="toReleaseLifecycle">
                                         <n-select v-model:value="globalOutputEvent.toReleaseLifecycle" required :options="outputTriggerLifecycleOptions" />
@@ -483,8 +486,11 @@
 
             <n-tab-pane name="users" tab="Users" v-if="isOrgAdmin">
                 <div class="userBlock mt-4">
+                    <n-input v-model:value="usersSearch" clearable class="mb-2" style="max-width: 420px"
+                             placeholder="Search by uuid, name or email" data-testid="users-search" />
                     <h5>Users ({{ activeUsers.length }})</h5>
-                    <n-data-table :columns="userFields" :data="activeUsers" class="table-hover">
+                    <n-data-table :columns="userFields" :data="shownActiveUsers" class="table-hover">
+                        <template #empty><n-empty data-testid="users-empty" :description="usersEmptyText" /></template>
                     </n-data-table>
                     <n-modal
                         v-model:show="showOrgRegistryTokenModal"
@@ -559,7 +565,8 @@
                     </div>
                     <div class="mt-4">
                         <h5>Inactive Users ({{ inactiveUsers.length }})</h5>
-                        <n-data-table :columns="inactiveUserFields" :data="inactiveUsers" class="table-hover">
+                        <n-data-table :columns="inactiveUserFields" :data="shownInactiveUsers" class="table-hover">
+                            <template #empty><n-empty data-testid="users-empty" :description="usersEmptyText" /></template>
                         </n-data-table>
                     </div>
                 </div>
@@ -684,6 +691,24 @@
                 </div>
             </n-tab-pane>
 
+            <n-tab-pane v-if="isOrgAdmin" name="apiKeyGroups" tab="API Key Groups">
+                <ApiKeyGroupsOfOrg
+                    :orguuid="orgResolved"
+                    :isWritable="isWritable"
+                    :groups="apiKeyGroups"
+                    :supported="apiKeyGroupsSupported"
+                    :keys="programmaticAccessKeys"
+                    :approval-roles="myorg.approvalRoles || []"
+                    :perspectives="perspectives"
+                    :products="orgProducts"
+                    :components="orgComponents"
+                    :instances="orgInstances"
+                    :clusters="orgClusters"
+                    :boards="orgBoards"
+                    :notify="notify"
+                    @changed="loadApiKeyGroupsOfOrg" />
+            </n-tab-pane>
+
             <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
                 <TeamsOfOrg
                     :orguuid="orgResolved"
@@ -694,37 +719,47 @@
             <n-tab-pane name="programmaticAccess" tab="Programmatic Access" v-if="isOrgAdmin">
                 <n-tabs type="segment" v-model:value="programmaticSubTab" size="medium" animated style="margin-bottom: 16px;">
                     <n-tab-pane name="freeFormKeys" tab="Free Form Keys">
+                        <n-input v-model:value="freeFormKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-freeFormKeys" />
                         <div v-if="computedKeyRequests.length" class="programmaticAccessBlock mt-4">
                             <h5>Key Requests</h5>
                             <p class="subtle">Free Form keys members asked for. Review the proposed permissions, then approve or deny. Once approved, only the requester (the holder) can generate its secrets.</p>
-                            <n-data-table :columns="keyRequestFields" :data="computedKeyRequests" :scroll-x="1020"
+                            <n-data-table :columns="keyRequestFields" :data="shownKeyRequests" :scroll-x="1520"
                                 :row-key="dataTableRowKey" :pagination="keyRequestsPagination" class="table-hover" data-testid="key-requests-table">
+                                <template #empty><n-empty data-testid="keys-empty-keyRequests" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Free Form Keys</h5>
-                            <n-data-table :columns="freeFormKeyFields" :data="computedFreeFormKeys" :scroll-x="1240"
+                            <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="2000"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-freeFormKeys" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
                             <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
                                 title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="userKeys" tab="User Keys">
+                        <n-input v-model:value="userKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-userKeys" />
                         <div class="programmaticAccessBlock mt-4">
                             <h5>User Keys</h5>
                             <p class="subtle">Personal keys that members create for themselves on their profile page. The permissions on a key are a ceiling: every call is also checked against the owner's own permissions at that moment, and the lower of the two wins.</p>
-                            <n-data-table :columns="userKeyFields" :data="computedUserKeys" :scroll-x="1130"
+                            <n-data-table :columns="userKeyFields" :data="shownUserKeys" :scroll-x="1730"
                                 :row-key="dataTableRowKey" :pagination="userKeysPagination" class="table-hover" data-testid="user-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-userKeys" :description="keysEmptyText(userKeysSearch)" /></template>
                             </n-data-table>
                         </div>
                     </n-tab-pane>
                     <n-tab-pane name="scopedKeys" tab="Scoped Keys">
+                        <n-input v-model:value="scopedKeysSearch" clearable class="mt-4" style="max-width: 460px"
+                                 placeholder="Search keys by uuid, API id, declared name or notes" data-testid="keys-search-scopedKeys" />
                         <div class="programmaticAccessBlock mt-4">
                             <h5>Scoped Keys</h5>
                             <p class="subtle">Keys bound to one object: component, instance, cluster, organization-wide and approval keys.</p>
-                            <n-data-table :columns="programmaticAccessFields" :data="computedProgrammaticAccessKeys" :scroll-x="1220"
+                            <n-data-table :columns="programmaticAccessFields" :data="shownScopedKeys" :scroll-x="1820"
                                 :row-key="dataTableRowKey" :pagination="scopedKeysPagination" class="table-hover" data-testid="scoped-keys-table">
+                                <template #empty><n-empty data-testid="keys-empty-scopedKeys" :description="keysEmptyText(scopedKeysSearch)" /></template>
                             </n-data-table>
                             <n-modal
                                 preset="dialog"
@@ -732,7 +767,7 @@
                                 style="width: 90%;"
                                 v-model:show="showOrgSettingsProgPermissionsModal">
                                 <n-card size="huge"
-                                    :title="'Set approval permissions for key: ' + selectedKey.uuid" :bordered="false" role="dialog"
+                                    :title="'Set approval permissions for key: ' + apiKeyLabelOf(selectedKey.uuid, programmaticAccessKeys)" :bordered="false" role="dialog"
                                     aria-modal="true">
 
                                     <n-form>
@@ -759,35 +794,17 @@
                         <FederatedTrustRulesPanel ref="federatedPanel" :org-uuid="orgResolved" :notify="notify" :identities="computedFederatedIdentities"
                             :free-form-keys="computedFreeFormKeys" :can-manage="isOrgAdmin" :api-key-controls="apiKeyControls" @changed="loadProgrammaticAccessKeys(false)" />
                     </n-tab-pane>
+                    <n-tab-pane name="externalKeys" tab="External Keys" v-if="teaProfilesAvailable(myUser?.installationType)">
+                        <ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />
+                    </n-tab-pane>
                 </n-tabs>
-                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :org-uuid="orgResolved" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
-                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyPermissionsModal v-model:show="showKeyEditModal" :api-key="selectedEditKey" :sibling-keys="programmaticAccessKeys" :org-uuid="orgResolved" :notify="notify" :api-key-groups="apiKeyGroupsOfKey(apiKeyGroups, selectedEditKey?.uuid)" @saved="loadProgrammaticAccessKeys(false)" />
+                <ApiKeyDeclareModal v-model:show="showDeclareModal" :api-key="declareKey" :sibling-keys="programmaticAccessKeys" :notify="notify" @saved="loadProgrammaticAccessKeys(false)" />
                 <n-modal preset="dialog" :show-icon="false" style="width: 70%;" :show="showKeySessionsModal" @update:show="(v: boolean) => { if (!v) showKeySessionsModal = false }">
-                    <template #header>CLI sessions on key {{ keySessionsKey?.uuid }}</template>
+                    <template #header>CLI sessions on key {{ keySessionsKey ? keyLabelOf(keySessionsKey) : '' }}</template>
                     <p class="subtle">Active <code>rearm login</code> sessions acting as this key. Revoking signs that CLI out at once.</p>
                     <n-data-table :columns="keySessionFields" :data="keySessions" class="table-hover"></n-data-table>
                 </n-modal>
-            </n-tab-pane>
-
-            <n-tab-pane name="terminology" tab="Terminology" v-if="isOrgAdmin">
-                <div class="terminologyBlock mt-4">
-                    <h5>Custom Terminology</h5>
-                    <p class="text-muted">Customize the labels used throughout the application for your organization.</p>
-                    <n-form :model="terminologyForm" label-placement="left" label-width="200px" style="max-width: 500px;">
-                        <n-form-item label="Feature Set Label" path="featureSetLabel">
-                            <n-input 
-                                v-model:value="terminologyForm.featureSetLabel" 
-                                placeholder="Feature Set"
-                                maxlength="50"
-                                show-count
-                            />
-                        </n-form-item>
-                        <n-space>
-                            <n-button type="success" @click="saveTerminology" :loading="savingTerminology">Save</n-button>
-                            <n-button type="warning" @click="resetTerminology">Reset to Default</n-button>
-                        </n-space>
-                    </n-form>
-                </div>
             </n-tab-pane>
 
             <n-tab-pane name="perspectives" tab="Perspectives" v-if="myUser.installationType !== 'OSS'">
@@ -833,6 +850,56 @@
                                 :uuid="selectedPerspectiveUuid"
                                 :org-uuid="orgResolved"
                                 :is-writable="isOrgAdmin"/>
+                        </n-card>
+                    </n-modal>
+                    <n-modal
+                        preset="dialog"
+                        :show-icon="false"
+                        v-model:show="showPerspectiveTeaModal"
+                        style="width: 900px;">
+                        <n-card size="huge" :bordered="false" role="dialog" aria-modal="true"
+                            :title="'TEA profile of perspective: ' + selectedPerspectiveName">
+                            <!-- A product-derived perspective is the product: its TEA profile is the
+                                 product component's COMPONENT-scope row (TEA-2 design 3.2). -->
+                            <TeaProfileEditor
+                                v-if="showPerspectiveTeaModal"
+                                ref="perspectiveTeaEditor"
+                                :org-uuid="orgResolved"
+                                :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                :object-uuid="selectedPerspectiveUuid"
+                                :object-name="selectedPerspectiveName"
+                                :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                :is-writable="isOrgAdmin"
+                                :is-org-admin="isOrgAdmin"
+                                :installation-type="myUser.installationType"/>
+                            <!-- TEA-30: the perspective's SBOM profile overrides and package settings. -->
+                            <n-collapse v-if="showPerspectiveTeaModal" class="mt-3">
+                                <n-collapse-item title="SBOM profiles of this perspective" name="sbom-profiles">
+                                    <SbomProfileOverrides
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap"
+                                        @changed="reloadPerspectiveSbomConsumers" />
+                                </n-collapse-item>
+                                <n-collapse-item v-if="regulatoryPackagesAvailable(myUser.installationType)"
+                                    title="Package settings of this perspective" name="package-settings">
+                                    <PackageSettingsEditor
+                                        ref="perspectivePackageEditor"
+                                        :org-uuid="orgResolved"
+                                        :scope="selectedPerspectiveType === 'PRODUCT' ? 'COMPONENT' : 'PERSPECTIVE'"
+                                        :object-uuid="selectedPerspectiveUuid"
+                                        :object-name="selectedPerspectiveName"
+                                        :object-is-product="selectedPerspectiveType === 'PRODUCT'"
+                                        :is-writable="isOrgAdmin"
+                                        :installation-type="myUser.installationType"
+                                        :names="perspectiveNamesMap" />
+                                </n-collapse-item>
+                            </n-collapse>
                         </n-card>
                     </n-modal>
                     <n-modal
@@ -962,333 +1029,405 @@
                 </div>
             </n-tab-pane>
             <n-tab-pane name="adminSettings" tab="Admin Settings" v-if="isOrgAdmin">
-                <div class="adminSettingsBlock mt-4">
-                    <h5>Violation Ignore Regexes</h5>
-                    <p class="text-muted">Configure regex patterns to ignore specific violations. Matching violations will be excluded from reports.</p>
+                <!-- The organization-wide settings, one sub-tab per area (?adminTab=, like the Audit sub-tabs).
+                     SBOM Profiles and Transparency Exchange API show on every edition (CE: the single
+                     `default` SBOM profile); Regulatory is Pro only. -->
+                <n-tabs type="segment" :value="adminSubTab" @update:value="handleAdminSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
+                    <n-tab-pane name="general" tab="General">
+                        <div class="adminSettingsBlock mt-4">
+                            <h5>Violation Ignore Regexes</h5>
+                            <p class="text-muted">Configure regex patterns to ignore specific violations. Matching violations will be excluded from reports.</p>
                     
-                    <n-form>
-                        <n-form-item label="License Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.licenseViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                            <n-form>
+                                <n-form-item label="License Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.licenseViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-form-item label="Security Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.securityViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                                <n-form-item label="Security Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.securityViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-form-item label="Operational Violation Ignore Patterns">
-                            <n-dynamic-input
-                                v-model:value="ignoreViolation.operationalViolationRegexIgnore"
-                                placeholder="Enter regex pattern"
-                                :min="0"
-                            />
-                        </n-form-item>
+                                <n-form-item label="Operational Violation Ignore Patterns">
+                                    <n-dynamic-input
+                                        v-model:value="ignoreViolation.operationalViolationRegexIgnore"
+                                        placeholder="Enter regex pattern"
+                                        :min="0"
+                                    />
+                                </n-form-item>
                         
-                        <n-space>
-                            <n-button type="primary" @click="saveIgnoreViolation" :loading="savingIgnoreViolation">
-                                Save Ignore Patterns
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
-                    <h5>Agent Review Items</h5>
-                    <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
-                    <n-form>
-                        <n-form-item label="Priority levels">
-                            <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
-                                            :min="1" :max="10" style="width: 120px;"/>
-                            <span class="ml-2 text-muted">
-                                1 is highest. Validated when a document is published, so lowering
-                                this leaves older rounds carrying higher numbers — they are still
-                                shown rather than hidden.
-                            </span>
-                        </n-form-item>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
-                    <h5>Agent Sessions</h5>
-                    <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
-                    <n-form>
-                        <n-form-item label="Idle close (hours)">
-                            <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
-                                            :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
-                            <span class="ml-2 text-muted">
-                                Any call with a session's id counts as activity. The session is warned two hours
-                                before it closes (half the window when shorter); one that holds a task or a
-                                coordinator seat is given twice the window. Its tasks go back to the queue.
-                            </span>
-                        </n-form-item>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4">
-                    <h5>Finding Analysis Settings</h5>
-                    <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
-
-                    <n-form>
-                        <n-form-item label="Justification Mandatory">
-                            <n-switch v-model:value="orgSettings.justificationMandatory" />
-                            <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
-                        </n-form-item>
-
-                        <!-- FDA-Readiness-1 7f. These four are rendered into the generated
-                             submission and labeling documents. No default text ships: they
-                             are the manufacturer's own commitments, and words nobody here
-                             wrote going out over their name is the failure the whole
-                             feature exists to avoid. -->
-                        <n-divider />
-                        <h6 style="display: inline-flex; align-items: center;">
-                            Submission and labeling text
-                            <!-- The heading no longer says FDA; the tooltip does. "FDA" on
-                                 the heading made a general-purpose settings section look
-                                 like a regulator-specific one to every operator who is not
-                                 preparing a submission, while the text itself -- support
-                                 commitments and risk statements -- is ordinary product
-                                 labeling. What it is FOR still has to be discoverable, so it
-                                 moved one hover away rather than disappearing. -->
-                            <n-tooltip trigger="hover" style="max-width: 380px;">
-                                <template #trigger>
-                                    <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
-                                        <QuestionMark />
-                                    </n-icon>
-                                </template>
-                                Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
-                            </n-tooltip>
-                        </h6>
-                        <p class="text-muted" style="max-width: 760px;">
-                            Written once here, rendered into every generated document. A
-                            document whose required text is missing is <strong>not
-                            generated</strong> rather than generated with the section
-                            blank &mdash; on a submission a reviewer expects gaps, but on a
-                            patient-facing statement a silent gap is itself misleading.
-                            To remove text, clear the box and save &mdash; an emptied field
-                            is recorded as deliberately blank, and a field you do not touch
-                            is left exactly as it was.
-                        </p>
-
-                        <n-form-item label="Assessment justification (submission)">
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                    type="textarea" :rows="5" style="max-width: 760px;"
-                                    placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
-                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
-                                    What the guidance asks for literally: the justification
-                                    for why per-component support information cannot be
-                                    included. Most components in a real SBOM have no
-                                    published upstream date, so this is the centre of the
-                                    submission, not a footnote.
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item label="Patches may cease at end of support (labeling)">
-                            <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                type="textarea" :rows="3" style="max-width: 760px;"
-                                placeholder="After end of support, security patches and software updates may no longer be provided." />
-                        </n-form-item>
-
-                        <n-form-item label="Risk-transfer process reference (labeling)">
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                    style="max-width: 760px;"
-                                    placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
-                                <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
-                                    A <strong>reference</strong>, not the process itself.
-                                    Pasting the process here creates a second, unversioned
-                                    copy that will drift from the controlled original.
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item label="Risk increases over time (labeling)">
-                            <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
-                                    :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
-                                type="textarea" :rows="3" style="max-width: 760px;"
-                                placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
-                        </n-form-item>
-
-                        <!-- ITS OWN SECTION, AFTER all three labeling slots.
-                             It previously sat between slot 2 and slot 3, which read as a
-                             fourth piece of labeling text and broke the three apart -- an
-                             operator working down the FDA labeling statements met a switch
-                             about export behaviour in the middle of them. The three slots are
-                             prose that ships INSIDE documents; this decides whether a
-                             document carries attestations at all. Related, not the same kind
-                             of thing, and the ordering now says so. Reported by an operator
-                             running the walkthrough, board t20260909-061338-23148. -->
-                        <!-- Hidden entirely on a backend that does not declare the field --
-                             a CE mirror before the deferred sync. Offering a switch whose
-                             write the server would reject is worse than not offering it. -->
-                        <div v-if="supportInjectionSupported" style="margin-top: 18px;">
-                            <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
-                            <!-- The switch is ADJACENT to the words it controls, not in a
-                                 form-item label column that pushed it to the far right with
-                                 760px of whitespace between the two. A control that far from
-                                 its label is one an operator has to aim at. -->
-                            <n-space align="center" :size="10" style="margin: 8px 0 4px;">
-                                <n-switch v-model:value="supportInjectionEnabled"
-                                    :disabled="savingOrgSettings" />
-                                <span>Carry support attestations in BOM exports</span>
-                            </n-space>
-                            <span class="text-muted" style="display: block; max-width: 760px;">
-                                Off by default. When on, BOM exports carry this
-                                organization's support attestations &mdash; the artifact
-                                download, the SPDX-augmented download and the release SBOM
-                                export. The raw artifact download never carries them.
-                                <strong>Forged support properties are always removed,
-                                whatever this is set to</strong>; this controls only
-                                whether our own attestations are added.
-                            </span>
+                                <n-space>
+                                    <n-button type="primary" @click="saveIgnoreViolation" :loading="savingIgnoreViolation">
+                                        Save Ignore Patterns
+                                    </n-button>
+                                </n-space>
+                            </n-form>
                         </div>
-
-                        <n-divider style="margin: 22px 0 10px;" />
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>VEX Compliance Framework</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">CycloneDX is always the baseline data model. A compliance framework layers extra validation rules on vulnerability analysis create/update:
-- None: no extra rules (pure CycloneDX baseline).
-- CISA: CISA VEX minimum requirements — NOT_AFFECTED requires a Justification or Details (impact statement); EXPLOITABLE requires a Response or Recommendation.
-
-Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.vexComplianceFramework"
-                                    :options="vexComplianceFrameworkOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    {{ orgSettings.vexComplianceFramework === 'CISA'
-                                        ? 'CISA VEX rules enforced on create/update.'
-                                        : 'No framework rules enforced (CycloneDX baseline).' }}
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>Branch Suffix Mode</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.branchSuffixMode"
-                                    :options="orgBranchSuffixModeOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">Current: {{ branchSuffixModeLabels[orgSettings.branchSuffixMode] }}</span>
-                            </div>
-                        </n-form-item>
-
-                        <n-divider style="margin: 12px 0;" />
-                        <h6 style="margin-bottom: 8px;">Software Identification (sid PURL)</h6>
-                        <p class="text-muted" style="margin-bottom: 12px;">
-                            sid is a CPE-successor PURL type for vendor-asserted software identity.
-                            <strong>Enabling sid is forward-only</strong> — releases created before the
-                            toggle keep their existing identifiers unchanged. EXTERNAL components
-                            never receive a platform-stamped sid PURL.
-                        </p>
-
-                        <n-form-item>
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>sid PURL Mode</span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlModeTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%;">
-                                <n-select
-                                    v-model:value="orgSettings.sidPurlMode"
-                                    :options="sidPurlModeOptions"
-                                    style="max-width: 480px;" />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    Current: {{ sidPurlModeLabels[orgSettings.sidPurlMode] }}
-                                </span>
-                            </div>
-                        </n-form-item>
-
-                        <n-form-item v-if="sidPurlIsEnabled">
-                            <template #label>
-                                <span style="display: inline-flex; align-items: center; gap: 6px;">
-                                    <span>
-                                        Authority Segments
-                                        <span v-if="sidPurlSegmentsRequired" style="color: #d03050;">*</span>
+                        <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                            <h5>Agent Review Items</h5>
+                            <p class="text-muted">How many priority levels the review item index of a review or test round may use.</p>
+                            <n-form>
+                                <n-form-item label="Priority levels">
+                                    <n-input-number v-model:value="orgSettings.reviewItemPriorityLevels"
+                                                    :min="1" :max="10" style="width: 120px;"/>
+                                    <span class="ml-2 text-muted">
+                                        1 is highest. Validated when a document is published, so lowering
+                                        this leaves older rounds carrying higher numbers — they are still
+                                        shown rather than hidden.
                                     </span>
-                                    <n-tooltip trigger="hover" placement="right">
-                                        <template #trigger>
-                                            <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
-                                        </template>
-                                        <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlAuthorityTooltip }}</div>
-                                    </n-tooltip>
-                                </span>
-                            </template>
-                            <div style="display: flex; flex-direction: column; width: 100%; max-width: 600px;">
-                                <n-dynamic-input
-                                    v-model:value="orgSettings.sidAuthoritySegments"
-                                    :on-create="() => ''"
-                                    placeholder='e.g. "reliza.io" or "Acme Robotics"' />
-                                <span class="text-muted" style="margin-top: 4px;">
-                                    First segment is the authority; subsequent segments are publisher / business unit / product line.
-                                </span>
-                                <span v-if="sidPurlAuthorityRegistryWarning" class="text-warning" style="margin-top: 4px; color: #f0a020;">
-                                    The first segment has no dot — the upstream sid spec requires registry-form authorities to be registered in the PURL registry. Domain-form authorities (e.g. <code>reliza.io</code>) are self-asserted and don't need registration.
-                                </span>
-                            </div>
-                        </n-form-item>
+                                </n-form-item>
+                            </n-form>
+                        </div>
+                        <div class="adminSettingsBlock mt-4" v-if="isOrgAdmin">
+                            <h5>Agent Sessions</h5>
+                            <p class="text-muted">How long an agent session may make no calls before it is closed.</p>
+                            <n-form>
+                                <n-form-item label="Idle close (hours)">
+                                    <n-input-number v-model:value="orgSettings.agentSessionIdleCloseHours"
+                                                    :min="IDLE_CLOSE_HOURS_MIN" :max="IDLE_CLOSE_HOURS_MAX" style="width: 120px;"/>
+                                    <span class="ml-2 text-muted">
+                                        Any call with a session's id counts as activity. The session is warned two hours
+                                        before it closes (half the window when shorter); one that holds a task or a
+                                        coordinator seat is given twice the window. Its tasks go back to the queue.
+                                    </span>
+                                </n-form-item>
+                            </n-form>
+                        </div>
+                        <div class="adminSettingsBlock mt-4">
+                            <h5>Finding Analysis Settings</h5>
+                            <p class="text-muted">Configure requirements for vulnerability finding analysis creation.</p>
 
-                        <n-space>
-                            <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
-                                Save Settings
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
-                <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
-                    <h5>Default View</h5>
-                    <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
-                    <n-form>
-                        <n-form-item label="Default View">
-                            <n-select
-                                v-model:value="orgDefaultView"
-                                :options="defaultViewOptions"
-                                style="max-width: 240px;"
-                                data-testid="org-default-view-select" />
-                        </n-form-item>
-                        <n-space>
-                            <n-button type="primary" @click="saveOrgDefaultView" :loading="savingOrgDefaultView" data-testid="org-default-view-save">
-                                Save Default View
-                            </n-button>
-                        </n-space>
-                    </n-form>
-                </div>
+                            <n-form>
+                                <n-form-item label="Justification Mandatory">
+                                    <n-switch v-model:value="orgSettings.justificationMandatory" />
+                                    <span class="ml-2 text-muted">{{ orgSettings.justificationMandatory ? 'Justification is required when creating finding analysis' : 'Justification is optional when creating finding analysis' }}</span>
+                                </n-form-item>
+
+                                <!-- FDA-Readiness-1 7f. These four are rendered into the generated
+                                     submission and labeling documents. No default text ships: they
+                                     are the manufacturer's own commitments, and words nobody here
+                                     wrote going out over their name is the failure the whole
+                                     feature exists to avoid. -->
+                                <n-divider />
+                                <h6 style="display: inline-flex; align-items: center;">
+                                    Submission and labeling text
+                                    <!-- The heading no longer says FDA; the tooltip does. "FDA" on
+                                         the heading made a general-purpose settings section look
+                                         like a regulator-specific one to every operator who is not
+                                         preparing a submission, while the text itself -- support
+                                         commitments and risk statements -- is ordinary product
+                                         labeling. What it is FOR still has to be discoverable, so it
+                                         moved one hover away rather than disappearing. -->
+                                    <n-tooltip trigger="hover" style="max-width: 380px;">
+                                        <template #trigger>
+                                            <n-icon size="14" style="margin-left: 6px; vertical-align: middle; cursor: help; color: #8a8a8a;">
+                                                <QuestionMark />
+                                            </n-icon>
+                                        </template>
+                                        Used in the documents ReARM generates for FDA premarket cybersecurity submissions and device labeling
+                                    </n-tooltip>
+                                </h6>
+                                <p class="text-muted" style="max-width: 760px;">
+                                    Written once here, rendered into every generated document. A
+                                    document whose required text is missing is <strong>not
+                                    generated</strong> rather than generated with the section
+                                    blank &mdash; on a submission a reviewer expects gaps, but on a
+                                    patient-facing statement a silent gap is itself misleading.
+                                    To remove text, clear the box and save &mdash; an emptied field
+                                    is recorded as deliberately blank, and a field you do not touch
+                                    is left exactly as it was.
+                                </p>
+
+                                <n-form-item label="Assessment justification (submission)">
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-input v-model:value="orgSettings.fdaAssessmentNarrative"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                            type="textarea" :rows="5" style="max-width: 760px;"
+                                            placeholder="How components were assessed, and why an upstream end-of-support date is unavailable for most of them." />
+                                        <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                            What the guidance asks for literally: the justification
+                                            for why per-component support information cannot be
+                                            included. Most components in a real SBOM have no
+                                            published upstream date, so this is the centre of the
+                                            submission, not a footnote.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item label="Patches may cease at end of support (labeling)">
+                                    <n-input v-model:value="orgSettings.fdaPatchesMayCeaseStatement"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                        type="textarea" :rows="3" style="max-width: 760px;"
+                                        placeholder="After end of support, security patches and software updates may no longer be provided." />
+                                </n-form-item>
+
+                                <n-form-item label="Risk-transfer process reference (labeling)">
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-input v-model:value="orgSettings.fdaRiskTransferProcessRef"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                            style="max-width: 760px;"
+                                            placeholder="e.g. DHF-PROC-4471 rev C, or a URL to the controlled document" />
+                                        <span class="text-muted" style="margin-top: 4px; max-width: 760px;">
+                                            A <strong>reference</strong>, not the process itself.
+                                            Pasting the process here creates a second, unversioned
+                                            copy that will drift from the controlled original.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item label="Risk increases over time (labeling)">
+                                    <n-input v-model:value="orgSettings.fdaRiskIncreasesNotice"
+                                            :disabled="savingOrgSettings" :maxlength="FDA_PROSE_MAX_LENGTH" show-count
+                                        type="textarea" :rows="3" style="max-width: 760px;"
+                                        placeholder="Cybersecurity risk to users can be expected to increase after end of support." />
+                                </n-form-item>
+
+                                <!-- ITS OWN SECTION, AFTER all three labeling slots.
+                                     It previously sat between slot 2 and slot 3, which read as a
+                                     fourth piece of labeling text and broke the three apart -- an
+                                     operator working down the FDA labeling statements met a switch
+                                     about export behaviour in the middle of them. The three slots are
+                                     prose that ships INSIDE documents; this decides whether a
+                                     document carries attestations at all. Related, not the same kind
+                                     of thing, and the ordering now says so. Reported by an operator
+                                     running the walkthrough, board t20260909-061338-23148. -->
+                                <!-- Hidden entirely on a backend that does not declare the field --
+                                     a CE mirror before the deferred sync. Offering a switch whose
+                                     write the server would reject is worse than not offering it. -->
+                                <div v-if="supportInjectionSupported" style="margin-top: 18px;">
+                                    <h4 style="margin-bottom: 2px;">Support disclosure export</h4>
+                                    <!-- The switch is ADJACENT to the words it controls, not in a
+                                         form-item label column that pushed it to the far right with
+                                         760px of whitespace between the two. A control that far from
+                                         its label is one an operator has to aim at. -->
+                                    <n-space align="center" :size="10" style="margin: 8px 0 4px;">
+                                        <n-switch v-model:value="supportInjectionEnabled"
+                                            :disabled="savingOrgSettings" />
+                                        <span>Carry support attestations in BOM exports</span>
+                                    </n-space>
+                                    <span class="text-muted" style="display: block; max-width: 760px;">
+                                        Off by default. When on, BOM exports carry this
+                                        organization's support attestations &mdash; the artifact
+                                        download, the SPDX-augmented download and the release SBOM
+                                        export. The raw artifact download never carries them.
+                                        <strong>Forged support properties are always removed,
+                                        whatever this is set to</strong>; this controls only
+                                        whether our own attestations are added.
+                                    </span>
+                                </div>
+
+                                <n-divider style="margin: 22px 0 10px;" />
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>VEX Compliance Framework</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">CycloneDX is always the baseline data model. A compliance framework layers extra validation rules on vulnerability analysis create/update:
+        - None: no extra rules (pure CycloneDX baseline).
+        - CISA: CISA VEX minimum requirements — NOT_AFFECTED requires a Justification or Details (impact statement); EXPLOITABLE requires a Response or Recommendation.
+
+        Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-vex-508c.pdf</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.vexComplianceFramework"
+                                            :options="vexComplianceFrameworkOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            {{ orgSettings.vexComplianceFramework === 'CISA'
+                                                ? 'CISA VEX rules enforced on create/update.'
+                                                : 'No framework rules enforced (CycloneDX baseline).' }}
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>Branch Suffix Mode</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ branchSuffixModeTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.branchSuffixMode"
+                                            :options="orgBranchSuffixModeOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">Current: {{ branchSuffixModeLabels[orgSettings.branchSuffixMode] }}</span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-divider style="margin: 12px 0;" />
+                                <h6 style="margin-bottom: 8px;">Software Identification (sid PURL)</h6>
+                                <p class="text-muted" style="margin-bottom: 12px;">
+                                    sid is a CPE-successor PURL type for vendor-asserted software identity.
+                                    <strong>Enabling sid is forward-only</strong> — releases created before the
+                                    toggle keep their existing identifiers unchanged. EXTERNAL components
+                                    never receive a platform-stamped sid PURL.
+                                </p>
+
+                                <n-form-item>
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>sid PURL Mode</span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlModeTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%;">
+                                        <n-select
+                                            v-model:value="orgSettings.sidPurlMode"
+                                            :options="sidPurlModeOptions"
+                                            style="max-width: 480px;" />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            Current: {{ sidPurlModeLabels[orgSettings.sidPurlMode] }}
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-form-item v-if="sidPurlIsEnabled">
+                                    <template #label>
+                                        <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                            <span>
+                                                Authority Segments
+                                                <span v-if="sidPurlSegmentsRequired" style="color: #d03050;">*</span>
+                                            </span>
+                                            <n-tooltip trigger="hover" placement="right">
+                                                <template #trigger>
+                                                    <n-icon size="16" style="cursor: help;"><QuestionMark /></n-icon>
+                                                </template>
+                                                <div style="max-width: 700px; white-space: pre-line;">{{ sidPurlAuthorityTooltip }}</div>
+                                            </n-tooltip>
+                                        </span>
+                                    </template>
+                                    <div style="display: flex; flex-direction: column; width: 100%; max-width: 600px;">
+                                        <n-dynamic-input
+                                            v-model:value="orgSettings.sidAuthoritySegments"
+                                            :on-create="() => ''"
+                                            placeholder='e.g. "reliza.io" or "Acme Robotics"' />
+                                        <span class="text-muted" style="margin-top: 4px;">
+                                            First segment is the authority; subsequent segments are publisher / business unit / product line.
+                                        </span>
+                                        <span v-if="sidPurlAuthorityRegistryWarning" class="text-warning" style="margin-top: 4px; color: #f0a020;">
+                                            The first segment has no dot — the upstream sid spec requires registry-form authorities to be registered in the PURL registry. Domain-form authorities (e.g. <code>reliza.io</code>) are self-asserted and don't need registration.
+                                        </span>
+                                    </div>
+                                </n-form-item>
+
+                                <n-space>
+                                    <n-button type="primary" @click="saveOrgSettings" :loading="savingOrgSettings">
+                                        Save Settings
+                                    </n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                        <!-- SCORE-42: the organization's default declared licence, written on the SBOM nodes
+                             ReARM makes. Its own block and its own documents, not fields of the form above:
+                             the CE mirror lacks them, and the form's mutation response must stay valid there.
+                             Hidden for the session once the panel's read is refused as schema drift. -->
+                        <div v-if="declaredLicenseSupported" class="adminSettingsBlock mt-4" data-testid="org-default-license-block">
+                            <OrgDeclaredLicensePanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markDeclaredLicenseUnsupported" />
+                        </div>
+                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="org-default-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
+                        <!-- SCORE-35: the organization's SBOM signing key, beside the support disclosure
+                             because both decide what an export carries. Its own block, not a field of the
+                             form above: four mutations of its own and no Save. Hidden for the session once
+                             the panel's list query is refused as schema drift (a CE mirror before its sync). -->
+                        <div v-if="sbomSigningSupported" class="adminSettingsBlock mt-4" data-testid="sbom-signing-block">
+                            <SbomSigningKeysPanel :org-uuid="orgResolved" :can-manage="isOrgAdmin" :notify="notify" @unsupported="markSbomSigningUnsupported" />
+                        </div>
+                        <div v-else class="adminSettingsBlock mt-4 text-muted" data-testid="sbom-signing-unsupported">
+                            This server does not offer SBOM export signing yet. A ReARM CE installation gains it at its next sync.
+                        </div>
+                        <div class="adminSettingsBlock mt-4" data-testid="org-default-view-block">
+                            <h5>Default View</h5>
+                            <p class="text-muted">The view (Security or DevOps) users of this organization land on. A user's own choice in the header, remembered in their browser, overrides this.</p>
+                            <n-form>
+                                <n-form-item label="Default View">
+                                    <n-select
+                                        v-model:value="orgDefaultView"
+                                        :options="defaultViewOptions"
+                                        style="max-width: 240px;"
+                                        data-testid="org-default-view-select" />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button type="primary" @click="saveOrgDefaultView" :loading="savingOrgDefaultView" data-testid="org-default-view-save">
+                                        Save Default View
+                                    </n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="terminology" tab="Terminology">
+                        <div class="terminologyBlock mt-4">
+                            <h5>Custom Terminology</h5>
+                            <p class="text-muted">Customize the labels used throughout the application for your organization.</p>
+                            <n-form :model="terminologyForm" label-placement="left" label-width="200px" style="max-width: 500px;">
+                                <n-form-item label="Feature Set Label" path="featureSetLabel">
+                                    <n-input 
+                                        v-model:value="terminologyForm.featureSetLabel" 
+                                        placeholder="Feature Set"
+                                        maxlength="50"
+                                        show-count
+                                    />
+                                </n-form-item>
+                                <n-space>
+                                    <n-button type="success" @click="saveTerminology" :loading="savingTerminology">Save</n-button>
+                                    <n-button type="warning" @click="resetTerminology">Reset to Default</n-button>
+                                </n-space>
+                            </n-form>
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="sbomProfiles" tab="SBOM Profiles" v-if="teaProfilesAvailable(myUser.installationType)">
+                        <SbomProfilesPanel
+                            :org-uuid="orgResolved"
+                            :is-org-admin="isOrgAdmin"
+                            :installation-type="myUser.installationType"
+                            :perspectives="perspectives"
+                            :components="teaNamedObjects" />
+                    </n-tab-pane>
+                    <n-tab-pane name="regulatory" tab="Regulatory" v-if="regulatoryPackagesAvailable(myUser.installationType)">
+                        <div class="mt-4" data-testid="org-regulatory-block">
+                            <h5>Regulatory package settings</h5>
+                            <PackageSettingsEditor
+                                :org-uuid="orgResolved"
+                                scope="ORGANIZATION"
+                                :is-writable="isOrgAdmin"
+                                :installation-type="myUser.installationType"
+                                :names="perspectiveNamesMap" />
+                        </div>
+                    </n-tab-pane>
+                    <n-tab-pane name="tea" tab="Transparency Exchange API" v-if="teaProfilesAvailable(myUser.installationType)">
+                        <TeaOrgPanel
+                            :org-uuid="orgResolved"
+                            :is-org-admin="isOrgAdmin"
+                            :installation-type="myUser.installationType"
+                            :perspectives="perspectives"
+                            :components="teaNamedObjects" />
+                    </n-tab-pane>
+                </n-tabs>
             </n-tab-pane>
             <n-tab-pane name="audit" tab="Audit" v-if="isOrgAdmin">
                 <n-tabs type="segment" :value="auditSubTab" @update:value="handleAuditSubTabSwitch" size="medium" animated style="margin-bottom: 16px;">
@@ -1361,17 +1500,18 @@ Spec: https://www.cisa.gov/sites/default/files/2023-04/minimum-requirements-for-
 </template>
   
 <script lang="ts" setup>
-import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag } from 'naive-ui'
+import { NSpace, NIcon, NCheckbox, NCheckboxGroup, NDropdown, NInput, NModal, NCard, NDataTable, NForm, NInputGroup, NButton, NFormItem, NSelect, NRadioGroup, NRadioButton, NTabs, NTabPane, NTooltip, NotificationType, useNotification, NFlex, NH5, NText, NGrid, NGi, DataTableColumns, NDynamicInput, NSwitch, NInputNumber, NAlert, NRadio, NDivider, NPopconfirm, NTag, NCollapse, NCollapseItem, NEmpty } from 'naive-ui'
 import { ComputedRef, h, ref, Ref, computed, onMounted, reactive, watch } from 'vue'
 import type { SelectOption } from 'naive-ui'
 import { useStore } from 'vuex'
 import { useRoute, useRouter, RouterLink } from 'vue-router'
-import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon } from '@vicons/tabler'
+import { Edit as EditIcon, Trash, CirclePlus, Eye, QuestionMark, Search, FolderPlus, Package, Clipboard, User as UserIcon, Terminal2 as TerminalIcon, Shield as ShieldIcon, World as WorldIcon } from '@vicons/tabler'
 import { Info20Regular, Power20Regular } from '@vicons/fluent'
 import { Icon } from '@vicons/utils'
-import commonFunctions, { SwalData } from '@/utils/commonFunctions'
+import commonFunctions from '@/utils/commonFunctions'
 import { FDA_PROSE_FIELDS, FDA_PROSE_MAX_LENGTH, proseDiff, proseBaselineFrom } from '@/utils/fdaProseInput'
 import { organizationToCommit, supportInjectionFromSettings } from '@/utils/orgSettingsCommit'
+import { addPerspectiveToComponent } from '@/utils/perspectiveMembership'
 import Swal, { SweetAlertOptions } from 'sweetalert2'
 import { Marked } from '@ts-stack/markdown'
 import gql from 'graphql-tag'
@@ -1395,19 +1535,41 @@ import ApiKeyPermissionsModal from './ApiKeyPermissionsModal.vue'
 import ApiKeyDeclareModal from './ApiKeyDeclareModal.vue'
 import { canDeclareKey, canReleaseKeyName, declaredSourceDetail, declaredSourceLabel, releasePayload, secretExpiresLabel } from '@/utils/apiKeyDeclaration'
 import FederatedTrustRulesPanel from './FederatedTrustRulesPanel.vue'
-import { createApiKeyControls, apiKeyIdOf, apiKeyActivityColumn, apiKeyLeadColumns } from '../utils/apiKeyControls'
-import { apiKeyPagination, fmtKeyDate } from '@/utils/apiKeyTable'
+import ExternalKeysPanel from './ExternalKeysPanel.vue'
+import SbomSigningKeysPanel from './SbomSigningKeysPanel.vue'
+import OrgDeclaredLicensePanel from './OrgDeclaredLicensePanel.vue'
+import { UNSUPPORTED_NOTE } from '@/utils/declaredLicense'
+import { createApiKeyControls, apiKeyIdOf, apiKeyIdsColumn, apiKeyTypeColumn, apiKeyActivityColumns, apiKeyLeadColumns, apiKeyNotesColumn, apiKeySorters, escapeHtml, filterApiKeysBySearch } from '../utils/apiKeyControls'
+import { uuidCopyColumn } from '../utils/uuidCopyColumn'
+import { apiKeyPagination, byNewestKey, fmtKeyDate } from '@/utils/apiKeyTable'
+import { normalizeSearchTerm } from '@/utils/tableSearch'
+import { filterUsersBySearch } from '@/utils/orgUsersSearch'
 import OrgIntegrations from './OrgIntegrations.vue'
 import OrgGlobalApprovalPolicyRules from './OrgGlobalApprovalPolicyRules.vue'
 import ActionGuards from './ActionGuards.vue'
+import TeaOrgPanel from './TeaOrgPanel.vue'
+import SbomProfilesPanel from './SbomProfilesPanel.vue'
+import SbomProfileOverrides from './SbomProfileOverrides.vue'
+import PackageSettingsEditor from './PackageSettingsEditor.vue'
+import { regulatoryPackagesAvailable } from '@/utils/packageSettings'
+import { teaConfirmBeforeMembership, teaMembershipDelta, teaProfilesAvailable } from '@/utils/teaProfile'
+import { outputEventTypeLabel, outputEventTypeOptionsForEdition, teaConfirmBeforeGlobalAutoPublish, TeaEditorView,
+    teaOrgPublicBadgeTitle, teaOrgPublicSources, TeaOrgPublicSources, TeaProfileRow } from '@/utils/teaOutputEvents'
+import TeaProfileEditor from './TeaProfileEditor.vue'
 import IntegrityInbox from './IntegrityInbox.vue'
 import AiModelCatalogueOfOrg from './AiModelCatalogueOfOrg.vue'
 import TeamsOfOrg from './TeamsOfOrg.vue'
+import ApiKeyGroupsOfOrg from './ApiKeyGroupsOfOrg.vue'
 import AiAgentPoliciesOfOrg from './AiAgentPoliciesOfOrg.vue'
 import CommittersOfOrg from './CommittersOfOrg.vue'
 import { FetchPolicy } from '@apollo/client'
 import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTypes'
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
+import { agentDisplayLabel } from '@/utils/agentSessionLabel'
+import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
+import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
+import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
+import { extractError } from '@/utils/notificationsCommon'
 
 const route = useRoute()
 const router = useRouter()
@@ -1457,6 +1619,19 @@ async function loadTabSpecificData (tabName: string) {
         await loadUsers()
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
+    } else if (tabName === "apiKeyGroups") {
+        // the editor's pickers (ScopedPermissions) and the member picker (FREEFORM keys)
+        await loadUsers()
+        await Promise.all([
+            loadPerspectives(),
+            loadBoardNames(),
+            store.dispatch('fetchComponents', orgResolved.value),
+            store.dispatch('fetchProducts', orgResolved.value),
+            ...(myUser.value.installationType !== 'OSS' ? [store.dispatch('fetchInstances', orgResolved.value)] : [])
+        ])
+        loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
     } else if (tabName === "freeFormKeys") {
         // Same as programmaticAccess — formatValuesForApiKeys() resolves
         // the Updated By column against users.value, so the user list
@@ -1467,6 +1642,7 @@ async function loadTabSpecificData (tabName: string) {
         await loadUsers()
         if (myUser.value.installationType !== 'OSS') store.dispatch('fetchInstances', orgResolved.value)
         loadProgrammaticAccessKeys(true)
+        loadApiKeyGroupsOfOrg()
     } else if (tabName === "policies") {
         fetchApprovalEntries()
         fetchApprovalPolicies()
@@ -1480,6 +1656,21 @@ async function loadTabSpecificData (tabName: string) {
     } else if (tabName === "adminSettings") {
         loadIgnoreViolation()
         loadOrgSettings()
+        loadAdminSubTabData(adminSubTab.value)
+    }
+}
+
+/** The data an Admin Settings sub-tab needs beyond what the tab itself loads. */
+async function loadAdminSubTabData (subTab: string) {
+    if (subTab === "sbomProfiles" || subTab === "regulatory" || subTab === "tea") {
+        // The SBOM Profiles and Transparency Exchange API tables name their rows from the
+        // perspectives list (Pro) and the products store, and the Regulatory editor names perspectives;
+        // load both here so each sub-tab reads the same when it is opened directly. Components come
+        // from onMounted.
+        await Promise.all([
+            ...(myUser.value.installationType !== 'OSS' ? [loadPerspectives()] : []),
+            store.dispatch('fetchProducts', orgResolved.value)
+        ])
     }
 }
 
@@ -1491,7 +1682,17 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
-const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities'>('freeFormKeys')
+const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities' | 'externalKeys'>('freeFormKeys')
+// one search box per key sub-tab (the Free Form box filters its Key Requests table too); the terms stay in the page, never in the URL
+const freeFormKeysSearch = ref('')
+const userKeysSearch = ref('')
+const scopedKeysSearch = ref('')
+const shownKeyRequests = computed(() => filterApiKeysBySearch(computedKeyRequests.value, freeFormKeysSearch.value))
+const shownFreeFormKeys = computed(() => filterApiKeysBySearch(computedFreeFormKeys.value, freeFormKeysSearch.value))
+const shownUserKeys = computed(() => filterApiKeysBySearch(computedUserKeys.value, userKeysSearch.value))
+const shownScopedKeys = computed(() => filterApiKeysBySearch(computedProgrammaticAccessKeys.value, scopedKeysSearch.value))
+/** The empty-table text: names the term when one is set, naive-ui's "No Data" otherwise. */
+function keysEmptyText (raw: string): string { const t = normalizeSearchTerm(raw); return t ? `No keys match "${t}"` : 'No Data' }
 const federatedPanel = ref<any>(null)
 function editRbacKey(row: any) {
     selectedEditKey.value = commonFunctions.deepCopy(row)
@@ -1718,7 +1919,9 @@ const defaultTab = isOrgAdmin.value ? 'integrations' : 'policies'
 // n-tabs body. (The retired /notificationsOfOrg route now redirects to
 // ?tab=integrations, and it was previously reachable by non-admin members.)
 // Clamp an inaccessible requested tab back to the user's accessible default.
-const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'freeFormKeys', 'terminology', 'adminSettings']
+// Terminology, SBOM Profiles, Regulatory and Transparency Exchange API are sub-tabs of Admin Settings
+// (?adminTab=), gated per sub-tab by isAdminSubTabAccessible below.
+const adminOnlyTabs = ['integrations', 'audit', 'users', 'programmaticAccess', 'apiKeyGroups', 'freeFormKeys', 'adminSettings']
 const proOnlyTabs = ['policies', 'committers', 'perspectives']
 function isTabAccessible (t: string): boolean {
     if (adminOnlyTabs.includes(t) && !isOrgAdmin.value) return false
@@ -1735,9 +1938,23 @@ if (currentTab.value === 'freeFormKeys') currentTab.value = 'programmaticAccess'
 // watch below so the fallbacks stay in one place.
 const DEFAULT_POLICY_SUBTAB = 'approvalPoliciesInner'
 const DEFAULT_AUDIT_SUBTAB = 'downloadLog'
+const DEFAULT_ADMIN_SUBTAB = 'general'
 const policySubTab = ref(route.query.policyTab as string || DEFAULT_POLICY_SUBTAB)
 // Audit sub-tab: Download Log + Delivery History, both on all editions.
 const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
+// Admin Settings sub-tab. SBOM Profiles and Transparency Exchange API show on every edition,
+// Regulatory on Pro only; an unknown or hidden one falls back to General rather than a blank body.
+const ADMIN_SUBTABS = ['general', 'terminology', 'sbomProfiles', 'regulatory', 'tea']
+function isAdminSubTabAccessible (t: string): boolean {
+    if (!ADMIN_SUBTABS.includes(t)) return false
+    if (t === 'regulatory') return regulatoryPackagesAvailable(myUser.value?.installationType)
+    if (t === 'sbomProfiles' || t === 'tea') return teaProfilesAvailable(myUser.value?.installationType)
+    return true
+}
+function resolveAdminSubTab (t: string | undefined | null): string {
+    return t && isAdminSubTabAccessible(t) ? t : DEFAULT_ADMIN_SUBTAB
+}
+const adminSubTab = ref(resolveAdminSubTab(route.query.adminTab as string))
 
 // Keep the tab selection in sync when the URL query changes while OrgSettings
 // stays mounted -- e.g. an in-app "View delivery log" deep-link pushing
@@ -1746,11 +1963,17 @@ const auditSubTab = ref(route.query.auditTab as string || DEFAULT_AUDIT_SUBTAB)
 // which the setup-time reads would otherwise miss. Idempotent: each branch
 // no-ops when the value is unchanged, so a user's own handleTabSwitch push
 // doesn't double-load.
-watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab], () => {
+watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab, route.query.adminTab], () => {
+    // The admin sub-tab first: switching to Admin Settings loads the data of its sub-tab.
+    const adt = resolveAdminSubTab(route.query.adminTab as string)
+    const adminSubTabChanged = adt !== adminSubTab.value
+    if (adminSubTabChanged) adminSubTab.value = adt
     const t = (route.query.tab as string) || defaultTab
     if (isTabAccessible(t) && t !== currentTab.value) {
         currentTab.value = t
         loadTabSpecificData(t)
+    } else if (adminSubTabChanged && currentTab.value === 'adminSettings') {
+        loadAdminSubTabData(adt)
     }
     const at = (route.query.auditTab as string) || DEFAULT_AUDIT_SUBTAB
     if (at !== auditSubTab.value) auditSubTab.value = at
@@ -1889,7 +2112,7 @@ const permissionTypeswAdmin: string[] = constants.PermissionTypesWithAdmin
 
 
 // ---- API key status and secrets (kill switch + AWS-style two-secret rotation): shared controls ----
-const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value })
+const apiKeyControls = createApiKeyControls({ notify, reload: () => loadProgrammaticAccessKeys(false), canManage: () => isOrgAdmin.value, canMint: (row: any) => isOrgAdmin.value && !row.holder && row.type !== 'USER', isAdmin: () => isOrgAdmin.value, siblings: () => programmaticAccessKeys.value })
 const apiKeyStatusColumn = { key: 'status', title: 'Status', width: 110, render: apiKeyControls.statusCell }
 const apiKeySecretsColumn = { key: 'secrets', title: 'Secrets', width: 280, render: apiKeyControls.secretsCell }
 // one client-side pager per key table, so each keeps its own page across reloads
@@ -1914,6 +2137,7 @@ async function releaseKeyName (row: any) {
 }
 const apiKeyDeclaredColumn = {
     key: 'declaredName', width: 170, title: 'Declared As',
+    sorter: apiKeySorters.declaredName,
     render: (row: any) => {
         const lines: any[] = [row.declaredName ? h('code', row.declaredName) : h('span', { class: 'text-muted' }, '—')]
         if (row.declarative) {
@@ -1946,19 +2170,20 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
         created = resp.data.createOrgApiKey
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
     loadProgrammaticAccessKeys(false)
-    const r = await Swal.fire({ title: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    const r = await Swal.fire({ titleText: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
     if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
 }
 
 const programmaticAccessFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('scoped'),
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('scoped', () => programmaticAccessKeys.value, { testid: 'scopedKeys-key-uuid', notify }),
+    ...apiKeyActivityColumns(),
     {
         key: 'object',
         width: 140,
         title: 'Object',
+        sorter: apiKeySorters.object,
         render: (row: any) => {
-            let el = h('div')
+            let el = h('span', row.object_val || '')
             if (row.type === 'COMPONENT') {
                 el = h(
                     RouterLink,
@@ -1994,11 +2219,7 @@ const programmaticAccessFields: Ref<any> = ref([
     },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
-    {
-        key: 'notes',
-        width: 120,
-        title: 'Notes'
-    },
+    apiKeyNotesColumn(120),
     {
         key: 'controls',
         title: 'Manage',
@@ -2025,7 +2246,7 @@ const programmaticAccessFields: Ref<any> = ref([
                         title: 'Delete Key',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => deleteKey(row.uuid)
+                        onClick: () => deleteKey(row)
                     }, { default: () => h(Trash) }
                 ))
             }
@@ -2038,10 +2259,11 @@ const programmaticAccessFields: Ref<any> = ref([
     }
 ])
 const freeFormKeyFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('freeForm'),
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('freeForm', () => programmaticAccessKeys.value, { testid: 'freeFormKeys-key-uuid', notify }),
+    ...apiKeyActivityColumns(),
     {
         key: 'holderName', width: 110, title: 'Holder',
+        sorter: apiKeySorters.holder,
         render: (row: any) => {
             if (!row.holder) return h('span', { class: 'text-muted' }, '—')
             const kids: any[] = [h('span', row.holderName)]
@@ -2051,12 +2273,15 @@ const freeFormKeyFields: Ref<any> = ref([
     },
     apiKeyStatusColumn,
     apiKeySecretsColumn,
-    {
-        key: 'notes',
-        width: 110,
-        title: 'Notes'
-    },
+    apiKeyNotesColumn(110),
     apiKeyDeclaredColumn,
+    {
+        key: 'apiKeyGroups', width: 160, title: 'Groups',
+        render: (row: any) => {
+            const names = apiKeyGroupsOfKey(apiKeyGroups.value, row.uuid).map(g => g.name)
+            return names.length ? h('div', names.join(', ')) : h('span', { class: 'text-muted' }, '—')
+        }
+    },
     {
         key: 'boundAgents',
         width: 130,
@@ -2071,8 +2296,8 @@ const freeFormKeyFields: Ref<any> = ref([
                 if (idx > 0) links.push(h('span', ', '))
                 links.push(h(
                     RouterLink,
-                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } } },
-                    { default: () => a.effectiveDisplayName || a.name || a.uuid }
+                    { to: { name: 'AiAgentView', params: { uuid: a.uuid } }, title: row.declaredName ? 'key: ' + cleanLabelText(row.declaredName) : undefined },
+                    { default: () => agentDisplayLabel(a) }
                 ))
             })
             return h('div', links)
@@ -2103,7 +2328,7 @@ const freeFormKeyFields: Ref<any> = ref([
                         title: 'Delete Key',
                         class: 'icons clickable',
                         size: 25,
-                        onClick: () => deleteKey(row.uuid)
+                        onClick: () => deleteKey(row)
                     }, { default: () => h(Trash) }
                 ))
             }
@@ -2112,9 +2337,9 @@ const freeFormKeyFields: Ref<any> = ref([
     }
 ])
 const userKeyFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('user'),
-    { key: 'ownerName', width: 140, title: 'Owner' },
-    apiKeyActivityColumn(),
+    ...apiKeyLeadColumns('user', () => programmaticAccessKeys.value, { testid: 'userKeys-key-uuid', notify }),
+    { key: 'ownerName', width: 140, title: 'Owner', sorter: apiKeySorters.owner },
+    ...apiKeyActivityColumns(),
     apiKeyStatusColumn,
     apiKeySecretsColumn,
     {
@@ -2124,7 +2349,7 @@ const userKeyFields: Ref<any> = ref([
             return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none (key is inert)')
         }
     },
-    { key: 'notes', width: 130, title: 'Notes' },
+    apiKeyNotesColumn(130),
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -2132,7 +2357,7 @@ const userKeyFields: Ref<any> = ref([
             if (isOrgAdmin.value) {
                 els.push(h(NIcon, { title: 'Set Permission Ceiling For Key', class: 'icons clickable', size: 25, onClick: () => editRbacKey(row) }, { default: () => h(EditIcon) }))
                 els.push(h(NIcon, { title: 'CLI sessions on this key', class: 'icons clickable', size: 25, onClick: () => showKeySessions(row) }, { default: () => h(TerminalIcon) }))
-                els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
+                els.push(h(NIcon, { title: 'Delete Key', class: 'icons clickable', size: 25, onClick: () => deleteKey(row) }, { default: () => h(Trash) }))
             }
             return h('div', els)
         }
@@ -2161,6 +2386,12 @@ async function loadUsers() {
 const activeUsers = computed(() => users.value.filter((u: any) => u.status !== 'INACTIVE'))
 const inactiveUsers = computed(() => users.value.filter((u: any) => u.status === 'INACTIVE'))
 
+const usersSearch = ref('')
+const usersSearchTerm = computed(() => normalizeSearchTerm(usersSearch.value))
+const shownActiveUsers = computed(() => filterUsersBySearch(activeUsers.value, usersSearch.value))
+const shownInactiveUsers = computed(() => filterUsersBySearch(inactiveUsers.value, usersSearch.value))
+const usersEmptyText = computed(() => usersSearchTerm.value ? `No users match "${usersSearch.value.trim()}"` : 'No Data')
+
 const canInactivateUsers = computed(() => {
     return isGlobalAdmin.value || (isOrgAdmin.value && myorg.value?.type === 'DEFAULT')
 })
@@ -2168,6 +2399,22 @@ const canInactivateUsers = computed(() => {
 // User Groups
 const showInactiveGroups = ref(false)
 const userGroups: Ref<any[]> = ref([])
+
+// API key groups (TPF-92 decision 1): one list for the API Key Groups tab, the Free Form Keys
+// Groups column and the key modal's groups line; false once the server proves it has no groups.
+const apiKeyGroups: Ref<any[]> = ref([])
+const apiKeyGroupsSupported = ref(true)
+async function loadApiKeyGroupsOfOrg () {
+    try {
+        const r = await loadApiKeyGroups(graphqlClient, orgResolved.value)
+        apiKeyGroups.value = r.groups
+        apiKeyGroupsSupported.value = r.supported
+    } catch (error: any) {
+        console.error('Error loading API key groups:', error)
+        notify('error', 'Error', 'Failed to load API key groups: ' + extractError(error))
+    }
+}
+
 const filteredUserGroups = computed(() => {
     const groups = showInactiveGroups.value
         ? userGroups.value
@@ -2232,6 +2479,8 @@ const userGroupPermissionsDirty = computed(() => {
 })
 
 const orgComponents = computed(() => store.getters.componentsOfOrg(orgResolved.value) || [])
+// Names for the TEA profile rows of the organization: components and products.
+const teaNamedObjects = computed(() => [...orgComponents.value, ...(store.getters.productsOfOrg(orgResolved.value) || [])])
 const orgProducts = computed(() => store.getters.productsOfOrg(orgResolved.value) || [])
 const allComponents = computed(() => [...orgComponents.value, ...orgProducts.value])
 
@@ -2338,6 +2587,19 @@ const newPerspective: Ref<any> = ref({
 })
 const showPerspectiveComponentsModal = ref(false)
 const showPerspectiveGuardsModal: Ref<boolean> = ref(false)
+const showPerspectiveTeaModal: Ref<boolean> = ref(false)
+// The perspective TEA dialog's editors (TEA-30): an override change reloads their SBOM profile catalogs only.
+const perspectiveTeaEditor = ref<any>(null)
+const perspectivePackageEditor = ref<any>(null)
+function reloadPerspectiveSbomConsumers () {
+    perspectiveTeaEditor.value?.reloadCatalog()
+    perspectivePackageEditor.value?.reloadCatalog()
+}
+const perspectiveNamesMap = computed((): Record<string, string> => {
+    const out: Record<string, string> = {}
+    for (const p of perspectives.value) if (p?.uuid) out[p.uuid] = p.name
+    return out
+})
 const selectedPerspectiveUuid: Ref<string> = ref('')
 const selectedPerspectiveName: Ref<string> = ref('')
 const selectedPerspectiveType: Ref<string> = ref('')
@@ -2429,11 +2691,14 @@ const perspectiveComponentColumns = [
     }
 ]
 
+const perspectiveUuidColumn = uuidCopyColumn({ what: 'Perspective UUID', testid: 'perspective-uuid', notify })
+
 const perspectiveFields = [
     {
         key: 'name',
         title: 'Perspective Name'
     },
+    perspectiveUuidColumn,
     {
         key: 'createdDate',
         title: 'Created Date',
@@ -2484,6 +2749,22 @@ const perspectiveFields = [
                     () => h(Eye)
                 )
             ]
+
+            // The TEA profile of every row: a real perspective's own, a product's as its
+            // COMPONENT-scope profile (TEA-2).
+            actions.push(
+                h(
+                    NIcon,
+                    {
+                        title: 'TEA profile',
+                        class: 'icons clickable',
+                        size: 25,
+                        'data-testid': 'perspective-tea-action',
+                        onClick: () => showPerspectiveTeaModalFn(row.uuid, row.name, row.type)
+                    },
+                    () => h(WorldIcon)
+                )
+            )
 
             // Guards are readable on every real perspective; product-derived ones are not
             // editable at all, so they carry none.
@@ -2607,6 +2888,13 @@ function resetCreatePerspective() {
     showCreatePerspectiveModal.value = false
 }
 
+function showPerspectiveTeaModalFn(perspectiveUuid: string, perspectiveName: string, perspectiveType: string) {
+    selectedPerspectiveUuid.value = perspectiveUuid
+    selectedPerspectiveName.value = perspectiveName
+    selectedPerspectiveType.value = perspectiveType
+    showPerspectiveTeaModal.value = true
+}
+
 function showPerspectiveGuardsModalFn(perspectiveUuid: string, perspectiveName: string) {
     selectedPerspectiveUuid.value = perspectiveUuid
     selectedPerspectiveName.value = perspectiveName
@@ -2691,6 +2979,31 @@ const availableProductsOptions: ComputedRef<SelectOption[]> = computed(() => {
         }))
 })
 
+// TEA-9's PUBLIC confirmation on main's one-membership add (TEA-16): the dry-run asks about the list
+// the add produces, the component's stored perspectives plus the one being added, which is the list
+// the server gate evaluates. The stored perspectives are read here: the dialog fills the store with
+// ComponentShortData, which carries none. true when the add may go ahead.
+async function confirmTeaMembershipAdd (componentUuid: string, scopeWord: 'component' | 'product'): Promise<boolean> {
+    if (!teaProfilesAvailable(myUser.value.installationType)) return true
+    const storedResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaComponentPerspectivesGql,
+        variables: { componentUuid },
+        fetchPolicy: 'no-cache'
+    })
+    const current: any[] = storedResp.data.component?.perspectiveDetails ?? []
+    const afterAdd: string[] = [...current.map((p: any) => p.uuid).filter((u: string) => u !== selectedPerspectiveUuid.value), selectedPerspectiveUuid.value]
+    const exposureResp: any = await graphqlClient.query({
+        query: graphqlQueries.TeaMembershipExposureChangeGql,
+        variables: { componentUuid, perspectiveUuids: afterAdd },
+        fetchPolicy: 'no-cache'
+    })
+    const delta = teaMembershipDelta(afterAdd, current, perspectives.value)
+    const confirm = teaConfirmBeforeMembership(exposureResp.data.teaMembershipExposureChange, delta.added, delta.removed, delta.names, scopeWord)
+    if (!confirm) return true
+    const answer: any = await Swal.fire({ ...confirm, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+    return !!answer?.isConfirmed
+}
+
 async function addComponentToPerspective() {
     if (!selectedComponentToAdd.value) {
         notify('error', 'Error', 'Please select a component')
@@ -2699,26 +3012,10 @@ async function addComponentToPerspective() {
     
     processingMode.value = true
     try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedComponentToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
-            }
-        })
+        if (!(await confirmTeaMembershipAdd(selectedComponentToAdd.value, 'component'))) return
+        const added = await addPerspectiveToComponent(graphqlClient, selectedComponentToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Component added to perspective successfully')
             showAddComponentToPerspectiveModal.value = false
             selectedComponentToAdd.value = ''
@@ -2741,26 +3038,10 @@ async function addProductToPerspective() {
     
     processingMode.value = true
     try {
-        const response = await graphqlClient.mutate({
-            mutation: gql`
-                mutation setPerspectivesOnComponent($componentUuid: ID!, $perspectiveUuids: [ID!]!) {
-                    setPerspectivesOnComponent(componentUuid: $componentUuid, perspectiveUuids: $perspectiveUuids) {
-                        uuid
-                        perspectiveDetails {
-                            uuid
-                            name
-                            org
-                            createdDate
-                        }
-                    }
-                }`,
-            variables: {
-                componentUuid: selectedProductToAdd.value,
-                perspectiveUuids: [selectedPerspectiveUuid.value]
-            }
-        })
+        if (!(await confirmTeaMembershipAdd(selectedProductToAdd.value, 'product'))) return
+        const added = await addPerspectiveToComponent(graphqlClient, selectedProductToAdd.value, selectedPerspectiveUuid.value)
         
-        if (response.data && response.data.setPerspectivesOnComponent) {
+        if (added) {
             notify('success', 'Success', 'Product added to perspective successfully')
             showAddProductToPerspectiveModal.value = false
             selectedProductToAdd.value = ''
@@ -2890,7 +3171,7 @@ function cancelEditPerspective() {
 
 async function deletePerspective(perspective: any) {
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to archive perspective "${perspective.name}"?`,
+        titleText: `Are you sure you want to archive perspective "${perspective.name}"?`,
         text: 'If you proceed, the perspective will be archived.',
         icon: 'warning',
         showCancelButton: true,
@@ -2942,12 +3223,14 @@ const userEmailColumn =
     }
 const userEmailColumnReactive = reactive(userEmailColumn)
 
+const userUuidColumn = uuidCopyColumn({ what: 'User UUID', testid: 'user-uuid', notify })
 const userFields = [
     userEmailColumn,
     {
         key: 'name',
         title: 'Name'
     },
+    userUuidColumn,
     {
         key: 'permission',
         title: 'Permissions',
@@ -3042,6 +3325,7 @@ const userFields = [
         }
     }
 ]
+const inactiveUserUuidColumn = uuidCopyColumn({ what: 'User UUID', testid: 'inactive-user-uuid', notify })
 const inactiveUserFields = [
     {
         key: 'email',
@@ -3051,6 +3335,7 @@ const inactiveUserFields = [
         key: 'name',
         title: 'Name'
     },
+    inactiveUserUuidColumn,
     {
         key: 'controls',
         title: 'Manage',
@@ -3815,6 +4100,30 @@ const proseBaseline: Record<string, string> = {}
 const supportInjectionSupported: ComputedRef<boolean> = computed((): boolean =>
     store.state.supportInjectionSupported !== false)
 
+/**
+ * Whether this backend offers SBOM export signing (SCORE-35). The "SBOM export signing" panel
+ * probes it with its own list query and reports a schema-drift refusal through `unsupported`;
+ * the store keeps the answer for the session, as it does supportInjectionSupported.
+ */
+const sbomSigningSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.sbomSigningSupported !== false)
+
+function markSbomSigningUnsupported () {
+    store.commit('SET_SBOM_SIGNING_SUPPORTED', false)
+}
+
+/**
+ * Whether this backend offers the declared licence (SCORE-42). Any of the three surfaces
+ * (this panel, a component's settings, a release's Meta tab) latches it false for the session
+ * when its own read is refused as schema drift; a failed request does not.
+ */
+const declaredLicenseSupported: ComputedRef<boolean> = computed((): boolean =>
+    store.state.declaredLicenseSupported !== false)
+
+function markDeclaredLicenseUnsupported () {
+    store.commit('SET_DECLARED_LICENSE_SUPPORTED', false)
+}
+
 const supportInjectionEnabled: Ref<boolean> = ref(false)
 const supportInjectionBaseline: Ref<boolean> = ref(false)
 
@@ -3986,39 +4295,8 @@ async function saveOrgSettings() {
 // D-Track / base-integration / BEAR / CI-integration mutations all moved to
 // OrgIntegrations.vue (the Integrations tab owns its own data layer now).
 
-async function deleteKey(uuid: string) {
-    const onSwalConfirm = async function () {
-        let isSuccess = false
-        try {
-            const resp = await graphqlClient.mutate({
-                mutation: gql`
-                        mutation deleteApiKey($apiKeyUuid: ID!) {
-                            deleteApiKey(apiKeyUuid: $apiKeyUuid)
-                        }`,
-                variables: {
-                    'apiKeyUuid': uuid
-                }
-            })
-            if (resp.data && resp.data.deleteApiKey) isSuccess = true
-        } catch (error: any) {
-            console.error(error)
-        }
-        if (!isSuccess) {
-            Swal.fire(
-                'Error!',
-                'Error when deleting api key.',
-                'error'
-            )
-        }
-        loadProgrammaticAccessKeys(false)
-    }
-    const swalData: SwalData = {
-        questionText: `Are you sure you want to delete the API Key with Internal ID ${uuid}?`,
-        successTitle: 'Deleted!',
-        successText: `The API Key with Internal ID ${uuid} has been deleted.`,
-        dismissText: 'The API Key remains active.'
-    }
-    await commonFunctions.swalWrapper(onSwalConfirm, swalData, notify)
+function deleteKey (row: any) {
+    return apiKeyControls.deleteApiKey(row, (row.status === 'REQUESTED' || row.status === 'DENIED' ? 'the request ' : 'the key ') + keyLabelOf(row))
 }
 function editKey(uuid: string) {
     const key = programmaticAccessKeys.value.filter((k: any) => (k.uuid === uuid))
@@ -4651,6 +4929,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     accessDate
                                     createdDate
                                     notes
+                                    deniedReason
                                     status
                                     holder
                                     adminDisabled
@@ -4663,7 +4942,7 @@ async function loadProgrammaticAccessKeys(useCache: boolean) {
                                     boundAgents {
                                         uuid
                                         name
-                                        effectiveDisplayName
+                                        displayName
                                     }
                                     permissions {
                                         permissions {
@@ -4720,6 +4999,14 @@ async function handleAuditSubTabSwitch(tabName: string) {
     })
 }
 
+async function handleAdminSubTabSwitch(tabName: string) {
+    adminSubTab.value = tabName
+    await router.push({
+        query: { ...route.query, adminTab: tabName }
+    })
+    loadAdminSubTabData(tabName)
+}
+
 async function loadInvitedUsers(useCache: boolean) {
     let cachePolicy: FetchPolicy = "network-only"
     if (useCache) cachePolicy = "cache-first"
@@ -4745,8 +5032,12 @@ async function loadInvitedUsers(useCache: boolean) {
 
 function formatValuesForApiKeys (apiKeyEntry: any) {
     const updEntry = Object.assign({}, apiKeyEntry)
+    // the raw instant, kept for sorting newest first (createdDate below becomes display text)
+    updEntry['createdDateIso'] = apiKeyEntry['createdDate'] || ''
     // to the minute in 24h form (2026-10-06, 13:55): short enough to sit on one line of the Activity column
     updEntry['createdDate'] = fmtKeyDate(apiKeyEntry['createdDate'])
+    // the raw instant too, so the Last accessed column sorts by time, not by display text ('' when never accessed)
+    updEntry['accessDateIso'] = apiKeyEntry['accessDate'] || ''
     updEntry['accessDate'] = apiKeyEntry['accessDate'] ? fmtKeyDate(apiKeyEntry['accessDate']) : 'Never'
     if (apiKeyEntry['lastUpdatedBy'] && users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])) {
         const updater = users.value.find((user) => user.uuid === apiKeyEntry['lastUpdatedBy'])
@@ -4761,7 +5052,7 @@ async function removeUser(userUuid: string) {
     let userDisplay = users.value.find(u => (u.uuid === userUuid)).name
     if (!userDisplay) userDisplay = users.value.find(u => (u.uuid === userUuid)).email
     const swalResult = await Swal.fire({
-        title: 'Are you sure you want to remove the user ' + userDisplay + '?',
+        titleText: 'Are you sure you want to remove the user ' + userDisplay + '?',
         text: 'If you proceed, this user will not be able to access this organization, until reinvited.',
         icon: 'warning',
         showCancelButton: true,
@@ -4800,7 +5091,7 @@ async function inactivateUser(userUuid: string) {
     const user = users.value.find(u => u.uuid === userUuid)
     const userDisplay = user?.name || user?.email || userUuid
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to inactivate the user ${userDisplay}?`,
+        titleText: `Are you sure you want to inactivate the user ${userDisplay}?`,
         text: 'If you proceed, this user will be inactivated and will no longer be able to access the system.',
         icon: 'warning',
         showCancelButton: true,
@@ -4834,7 +5125,7 @@ async function reactivateUser(userUuid: string) {
     const user = users.value.find(u => u.uuid === userUuid)
     const userDisplay = user?.name || user?.email || userUuid
     const swalResult = await Swal.fire({
-        title: `Are you sure you want to reactivate the user ${userDisplay}?`,
+        titleText: `Are you sure you want to reactivate the user ${userDisplay}?`,
         text: 'If you proceed, this user will be reactivated and will regain access to the system.',
         icon: 'warning',
         showCancelButton: true,
@@ -4946,15 +5237,8 @@ async function updateKeyPermissions() {
             fetchPolicy: 'no-cache'
         })
 
-        const updatedApiKey = response.data.setApprovalsOnApiKey
-        formatValuesForApiKeys(updatedApiKey)
-        let updated: boolean = false
-        for (let i = 0; i < programmaticAccessKeys.value.length && !updated; i++) {
-            if (programmaticAccessKeys.value[i].uuid === updatedApiKey.uuid) {
-                programmaticAccessKeys.value[i] = updatedApiKey
-                updated = true
-            }
-        }
+        // reload rather than splice the mutation's row in: it carries a subset of the fields, unformatted
+        await loadProgrammaticAccessKeys(false)
         showOrgSettingsProgPermissionsModal.value = false
         notify('success', 'Created', 'Saved key permissions successfully!')
     } catch (e: any) {
@@ -5203,9 +5487,10 @@ const jiraIntegrationData: ComputedRef<any> = computed((): any => {
 })
 const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
     // scoped keys: everything that is not an RBAC key (FREEFORM, USER and FEDERATED have their own sub-tabs)
-    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED').map((accesKey: any) => {
+    // nor an EXTERNAL key (the External Keys sub-tab, which reads them itself)
+    return programmaticAccessKeys.value.filter((k: any) => k.type !== 'FREEFORM' && k.type !== 'USER' && k.type !== 'FEDERATED' && k.type !== 'EXTERNAL').map((accesKey: any) => {
         if (accesKey.type === 'ORGANIZATION_RW' || accesKey.type === 'ORGANIZATION') {
-            accesKey.object_val = store.getters.orgById(accesKey.object).name
+            accesKey.object_val = store.getters.orgById(accesKey.object)?.name || 'Organization'
         } else if (accesKey.type === 'COMPONENT') {
             var proj = store.getters.componentById(accesKey.object)
             if (proj) {
@@ -5223,11 +5508,16 @@ const computedProgrammaticAccessKeys: ComputedRef<any> = computed((): any => {
             } else {
                 accesKey.object_val = 'Archived Instance'
             }
+        } else if (accesKey.type === 'CLUSTER') {
+            const cluster = store.getters.instanceById(accesKey.object, -1)
+            accesKey.object_val = cluster ? (cluster.name || cluster.uri) : 'Archived Cluster'
+        } else if (accesKey.type === 'APPROVAL') {
+            accesKey.object_val = store.getters.orgById(accesKey.object)?.name || 'Organization'
         } else if (accesKey.type === 'USER' || accesKey.type === 'REGISTRY_USER') {
             accesKey.object_val = accesKey.updatedByName
         }
         return accesKey
-    })
+    }).sort(byNewestKey)
 })
 const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // Don't re-run formatValuesForApiKeys — load-time format already
@@ -5237,8 +5527,12 @@ const computedFreeFormKeys: ComputedRef<any> = computed((): any => {
     // updatedByName is also already resolved at load time. The
     // computed exists only so the table re-renders if the underlying
     // ref mutates (post-edit reload).
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder)
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && k.status !== 'REQUESTED' && k.status !== 'DENIED').map(withHolder).sort(byNewestKey)
 })
+/** A key named in a dialog or modal header: type word, name and short id, unique among the org's keys. */
+function keyLabelOf (row: any): string {
+    return apiKeyLabel(row, { withType: true, siblings: programmaticAccessKeys.value })
+}
 function withHolder (k: any) {
     if (!k.holder) return Object.assign({}, k, { holderName: '', holderLeft: false })
     const u = users.value.find((x: any) => x.uuid === k.holder)
@@ -5248,15 +5542,18 @@ const computedFederatedIdentities: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'FEDERATED')
 })
 const computedKeyRequests: ComputedRef<any> = computed((): any => {
-    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder)
+    return programmaticAccessKeys.value.filter((k: any) => k.type === 'FREEFORM' && (k.status === 'REQUESTED' || k.status === 'DENIED')).map(withHolder).sort(byNewestKey)
 })
 async function resolveKeyRequest (row: any, approve: boolean) {
+    // every request is for a Free Form key, so the request is named without the type word
+    const request = apiKeyLabel(row, { siblings: programmaticAccessKeys.value })
+    const from = row.holderLeft ? ' from a former member' : (row.holderName ? ` from ${row.holderName}` : '')
     let reason: string | null = null
     if (approve) {
-        const r = await Swal.fire({ title: 'Approve this request?', text: 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
+        const r = await Swal.fire({ title: 'Approve this request?', text: `Request ${request}${from}. ` + 'The key becomes active with the permissions shown. The requester generates its secrets; you will not see them.', icon: 'question', showCancelButton: true, confirmButtonText: 'Approve' })
         if (!r.value) return
     } else {
-        const r = await Swal.fire({ title: 'Deny this request?', input: 'text', inputPlaceholder: 'Reason (shown to the requester)', showCancelButton: true, confirmButtonText: 'Deny' })
+        const r = await Swal.fire({ title: 'Deny this request?', text: `Request ${request}${from}.`, input: 'text', inputPlaceholder: 'Reason (shown to the requester)', inputAttributes: { maxlength: '256' }, showCancelButton: true, confirmButtonText: 'Deny' })
         if (!r.isConfirmed) return
         reason = r.value || null
     }
@@ -5267,8 +5564,9 @@ async function resolveKeyRequest (row: any, approve: boolean) {
 }
 async function reassignHolder (row: any) {
     const options: Record<string, string> = { '': '(no holder: admins mint the secrets)' }
-    for (const u of users.value) options[u.uuid] = u.name ? `${u.name} (${u.email})` : u.email
-    const r = await Swal.fire({ title: 'Holder of this key', text: 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
+    // SweetAlert2 renders select option labels as HTML; names and emails are user text
+    for (const u of users.value) options[u.uuid] = escapeHtml(u.name ? `${u.name} (${u.email})` : u.email)
+    const r = await Swal.fire({ title: 'Holder of this key', text: `Key ${keyLabelOf(row)}. ` + 'The holder is the only one who can generate or regenerate its secrets.', input: 'select', inputOptions: options, inputValue: row.holder || '', showCancelButton: true, confirmButtonText: 'Save' })
     if (!r.isConfirmed) return
     try {
         await graphqlClient.mutate({ mutation: gql`mutation setApiKeyHolder($apiKeyUuid: ID!, $holder: ID) { setApiKeyHolder(apiKeyUuid: $apiKeyUuid, holder: $holder) { uuid holder } }`, variables: { apiKeyUuid: row.uuid, holder: r.value || null }, fetchPolicy: 'no-cache' })
@@ -5276,12 +5574,12 @@ async function reassignHolder (row: any) {
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)) }
 }
 const keyRequestFields: Ref<any> = ref([
-    ...apiKeyLeadColumns('keyRequests'),
-    { key: 'holderName', width: 150, title: 'Requested By' },
-    { key: 'createdDate', width: 130, title: 'Requested' },
+    ...apiKeyLeadColumns('keyRequests', () => programmaticAccessKeys.value, { testid: 'keyRequests-key-uuid', notify }),
+    { key: 'holderName', width: 150, title: 'Requested By', sorter: apiKeySorters.holder },
+    { key: 'createdDate', width: 130, title: 'Requested', sorter: apiKeySorters.created, defaultSortOrder: 'descend' },
     { key: 'status', width: 140, title: 'Status', render: apiKeyControls.statusCell },
     { key: 'proposed', width: 120, title: 'Proposed', render: (row: any) => { const n = (row.permissions?.permissions || []).length; return h('span', { class: n ? '' : 'text-muted' }, n ? `${n} permission${n === 1 ? '' : 's'}` : 'none proposed') } },
-    { key: 'notes', width: 220, title: 'Purpose / Notes' },
+    apiKeyNotesColumn(220, 'Purpose / Notes'),
     {
         key: 'controls', title: 'Manage',
         render: (row: any) => {
@@ -5290,7 +5588,7 @@ const keyRequestFields: Ref<any> = ref([
                 els.push(h(NButton, { size: 'tiny', type: 'primary', style: 'margin: 0 4px;', onClick: () => resolveKeyRequest(row, true) }, { default: () => 'Approve' }))
                 els.push(h(NButton, { size: 'tiny', type: 'warning', style: 'margin-right: 4px;', onClick: () => resolveKeyRequest(row, false) }, { default: () => 'Deny' }))
             }
-            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row.uuid) }, { default: () => h(Trash) }))
+            els.push(h(NIcon, { title: 'Delete', class: 'icons clickable', size: 25, onClick: () => deleteKey(row) }, { default: () => h(Trash) }))
             return h('div', { style: 'display: flex; flex-wrap: wrap; align-items: center; row-gap: 3px;' }, els)
         }
     }
@@ -5299,7 +5597,7 @@ const computedUserKeys: ComputedRef<any> = computed((): any => {
     return programmaticAccessKeys.value.filter((k: any) => k.type === 'USER').map((k: any) => {
         const owner = users.value.find((u: any) => u.uuid === k.object)
         return Object.assign({}, k, { ownerName: owner ? (owner.name || owner.email) : 'Unknown user' })
-    })
+    }).sort(byNewestKey)
 })
 const imageRegistry: ComputedRef<any> = computed((): any => {
     let content = '### OCI Container Images (Suitable for Docker and Helm):\n'
@@ -5601,6 +5899,41 @@ const outputTriggerTypeOptions = [
     {label: 'Pull Request Comment', value: 'PR_COMMENT'},
     {label: 'Lock', value: 'LOCK'}
 ]
+// TEA-13: TEA Publish and TEA Hide after VDR Snapshot Artifact, where the backend serves TEA.
+const outputTriggerTypeOptionsForSelect = computed(() => outputEventTypeOptionsForEdition(outputTriggerTypeOptions, myUser.value?.installationType))
+
+// TEA-13: what resolves PUBLIC in this organization, for the badge on policy-wide TEA_PUBLISH rows.
+// Read for writers only (the warning is for the person who can save); advisory, the confirmation in
+// addGlobalOutputEvent reads fresh.
+const teaOrgSources: Ref<TeaOrgPublicSources | null> = ref(null)
+
+/** The two organization reads of design 3.4: the organization's own effective profile and every profile row. */
+interface TeaOrgExposureRead { view: TeaEditorView | null, rows: TeaProfileRow[] }
+
+/**
+ * Reads the organization's TEA view and profile rows fresh and sets the badge's sources from them.
+ * Answers the read, or null when it was not sent (CE, not a writer) or failed (logged; the badge is
+ * then left off).
+ */
+async function loadTeaOrgExposure (): Promise<TeaOrgExposureRead | null> {
+    if (!teaProfilesAvailable(myUser.value?.installationType) || !isWritable.value) {
+        teaOrgSources.value = null
+        return null
+    }
+    try {
+        const [viewResp, rowsResp]: any[] = await Promise.all([
+            graphqlClient.query({ query: graphqlQueries.TeaProfileEditorViewGql, variables: { org: orgResolved.value, scope: 'ORGANIZATION', object: null }, fetchPolicy: 'no-cache' }),
+            graphqlClient.query({ query: graphqlQueries.TeaProfilesOfOrgGql, variables: { org: orgResolved.value }, fetchPolicy: 'no-cache' }),
+        ])
+        const read: TeaOrgExposureRead = { view: viewResp.data.teaProfileEditorView ?? null, rows: rowsResp.data.teaProfilesOfOrg ?? [] }
+        teaOrgSources.value = teaOrgPublicSources(read.view, read.rows)
+        return read
+    } catch (err: any) {
+        console.error(err)
+        teaOrgSources.value = null
+        return null
+    }
+}
 
 const externalValidationConclusionOptions = [
     {label: 'Success', value: 'success'},
@@ -5676,6 +6009,7 @@ function selectPolicyForGlobalEvents(policyUuid: string) {
         globalOutputEvents.value = policy.globalOutputEvents || []
         globalInputEvents.value = policy.globalInputEvents || []
     }
+    loadTeaOrgExposure()
 }
 
 function approvalPolicyRowProps (row: any) {
@@ -5770,6 +6104,7 @@ async function fetchApprovalPolicies () {
                 globalOutputEvents.value = policy.globalOutputEvents || []
                 globalInputEvents.value = policy.globalInputEvents || []
             }
+            loadTeaOrgExposure()
         }
     } else {
         approvalPolicyTableData.value = []
@@ -5836,6 +6171,8 @@ async function saveGlobalOutputEvents () {
             if (policyIndex > -1) {
                 approvalPoliciesFullData.value[policyIndex].globalOutputEvents = globalOutputEvents.value
             }
+            // TEA-13: the PUBLIC badge follows what was just saved.
+            loadTeaOrgExposure()
         }
         notify('success', 'Success', 'Policy-wide actions saved.')
     } catch (err: any) {
@@ -5907,7 +6244,7 @@ function openCreateActionFromRule (branch: 'true' | 'false') {
     showCreateGlobalOutputEventModal.value = true
 }
 
-function addGlobalOutputEvent () {
+async function addGlobalOutputEvent () {
     // The four lock fields are only meaningful on a LOCK action, and the draft carries defaults
     // for them the whole time a form is open. Sending them regardless would persist a scope, a
     // level and a requirement on every rejection and notification -- noise in the stored JSONB
@@ -5942,6 +6279,22 @@ function addGlobalOutputEvent () {
     if (!validation.valid) {
         notify('error', 'Validation Error', validation.error!)
         return
+    }
+    // TEA-13: the public warning when a new policy-wide TEA_PUBLISH is configured (a new entry, or
+    // one whose stored type was not TEA_PUBLISH; design 3.5). Reads fresh and fails closed: nothing
+    // is pushed or saved on a failed read or a cancel, and the modal stays open.
+    const storedType = eventToPush.uuid ? globalOutputEvents.value.find((e: any) => e.uuid === eventToPush.uuid)?.type : null
+    if (eventToPush.type === 'TEA_PUBLISH' && storedType !== 'TEA_PUBLISH' && teaProfilesAvailable(myUser.value?.installationType)) {
+        const read = await loadTeaOrgExposure()
+        if (!read) {
+            notify('error', 'Error', 'Could not read the TEA profiles of this organization; nothing was saved.')
+            return
+        }
+        const c = teaConfirmBeforeGlobalAutoPublish(teaOrgPublicSources(read.view, read.rows), eventToPush.name)
+        if (c) {
+            const answer: any = await Swal.fire({ ...c, icon: 'warning', showCancelButton: true, cancelButtonText: 'Cancel' })
+            if (!answer?.isConfirmed) return
+        }
     }
     if (eventToPush.uuid) {
         const existingIndex = globalOutputEvents.value.findIndex((e: any) => e.uuid === eventToPush.uuid)
@@ -6086,8 +6439,10 @@ const globalOutputEventTableFields: DataTableColumns<any> = [
         key: 'type',
         title: 'Type',
         render: (row: any) => {
-            const option = outputTriggerTypeOptions.find(opt => opt.value === row.type)
-            return option ? option.label : row.type
+            const label = outputEventTypeLabel(outputTriggerTypeOptions, row.type)
+            const title = row.type === 'TEA_PUBLISH' ? teaOrgPublicBadgeTitle(teaOrgSources.value) : null
+            if (!title) return label
+            return h('span', [label, ' ', h(NTag, { size: 'small', type: 'error', bordered: false, title, 'data-testid': 'tea-public-badge' }, () => 'PUBLIC')])
         }
     },
     {
