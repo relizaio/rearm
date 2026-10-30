@@ -114,16 +114,18 @@ spec:
               protocol: TCP
           # /api/healthCheck runs a real DB query (fetches the external-proj
           # org), so it returns OK only once Spring is up AND the DB is
-          # reachable — exactly what startup/readiness should mean.
-          # startupProbe covers slow boot (Flyway etc.); while it runs both
-          # readiness and liveness are suppressed.
+          # reachable -- exactly what startup/readiness should mean.
+          # startupProbe covers slow boot (Flyway migrations, index builds
+          # included); its budget is startupPeriodSeconds x
+          # startupFailureThreshold, explained in values.yaml. While it runs
+          # both readiness and liveness are suppressed.
           startupProbe:
             httpGet:
               path: /api/healthCheck
               port: http
             periodSeconds: {{ .Values.backend.startupPeriodSeconds | default 5 }}
             timeoutSeconds: 3
-            failureThreshold: {{ .Values.backend.startupFailureThreshold | default 60 }}
+            failureThreshold: {{ .Values.backend.startupFailureThreshold | default 240 }}
           # Liveness is intentionally a tcpSocket check, NOT the DB-backed
           # /api/healthCheck: liveness should only answer "is the JVM wedged?"
           # A DB-coupled liveness probe would restart every replica on a
