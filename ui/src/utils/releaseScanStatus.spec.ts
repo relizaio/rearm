@@ -10,6 +10,9 @@ import {
     hasCompleteScanInputs, releaseBomScanState, scanBadgeBackground, ownNotScannableNote, NOT_SCANNABLE_GREY
 } from './releaseScanStatus'
 import { notScannableTitle, notScannableReleaseTitle, reasonLabel } from './artifactScanStatus'
+import { BOM_SCAN_STATES } from './celConditionBuilder'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 /** A minimal unscanned BOM artifact — the shape isBomDtrackPending flags. */
 function pendingBom (componentUuid?: string) {
@@ -258,5 +261,21 @@ describe('ownNotScannableNote (TPF-127, round 5)', () => {
 
     it('uses the kind grey', () => {
         expect(NOT_SCANNABLE_GREY).toBe(scanBadgeBackground({ kind: 'not-scannable', label: '', title: '' }))
+    })
+})
+
+// TPF-133 (test 8): the four BOM scan state names come from celConditionBuilder.ts alone.
+describe('the BOM scan state names have one source (TPF-133)', () => {
+    it('releaseScanStatus.ts imports BOM_SCAN_STATES from celConditionBuilder and declares no copy', () => {
+        const text = readFileSync(fileURLToPath(new URL('./releaseScanStatus.ts', import.meta.url)), 'utf8')
+        const importLine = text.split('\n').find((l) => l.includes("from './celConditionBuilder'")) || ''
+        expect(importLine).toContain('BOM_SCAN_STATES')
+        expect(text).not.toContain('const BOM_SCAN_STATES')
+        expect(text).not.toContain('export type BomScanState =')
+    })
+
+    it.each([...BOM_SCAN_STATES])('a served %s is read as the server state', (state) => {
+        const served = { metrics: { bomScan: { state, scannableBoms: 0, notScannableBoms: 0, reasons: [] } } }
+        expect(releaseBomScanState(served)).toMatchObject({ state, source: 'server' })
     })
 })

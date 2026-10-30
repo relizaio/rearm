@@ -120,7 +120,7 @@ import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification 
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import { Refresh, CalendarTime } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
-import { artifactScanStateLatch, sendWithLatchedFallback } from '@/utils/graphqlDriftFallback'
+import { artifactScanStateLatch, releaseBomScanLatch, sendWithLatchedTiers } from '@/utils/graphqlDriftFallback'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
@@ -230,11 +230,13 @@ async function fetchReleases() {
                 componentType: effectiveComponentType.value,
                 componentKinds: recentReleasesKinds(props.includeDocuments)
             }
-            const { data: response } = await sendWithLatchedFallback<any>({
-                preferred: GqlQueries.ReleasesByDateRangeAndPerspectiveGql,
-                fallback: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlCore,
-                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' }),
-                latch: artifactScanStateLatch(store)
+            const { data: response } = await sendWithLatchedTiers<any>({
+                tiers: [
+                    { doc: GqlQueries.ReleasesByDateRangeAndPerspectiveGql, latch: releaseBomScanLatch(store) },
+                    { doc: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+                ],
+                core: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlCore,
+                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
             })
             rawReleases = (response.data as any).releasesByDateRangeAndPerspective || []
         } else {
@@ -246,11 +248,13 @@ async function fetchReleases() {
                 componentType: effectiveComponentType.value,
                 componentKinds: recentReleasesKinds(props.includeDocuments)
             }
-            const { data: response } = await sendWithLatchedFallback<any>({
-                preferred: GqlQueries.ReleasesByDateRangeGql,
-                fallback: GqlQueries.ReleasesByDateRangeGqlCore,
-                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' }),
-                latch: artifactScanStateLatch(store)
+            const { data: response } = await sendWithLatchedTiers<any>({
+                tiers: [
+                    { doc: GqlQueries.ReleasesByDateRangeGql, latch: releaseBomScanLatch(store) },
+                    { doc: GqlQueries.ReleasesByDateRangeGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+                ],
+                core: GqlQueries.ReleasesByDateRangeGqlCore,
+                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
             })
             rawReleases = (response.data as any).releasesByDateRange || []
         }

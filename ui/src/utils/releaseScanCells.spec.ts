@@ -10,8 +10,8 @@ import { readFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 
 import { renderVulnerabilityCells, renderViolationCells, renderPendingBadge, renderNotScannableNote } from './releaseScanCells'
-import type { ReleaseScanStatus } from './releaseScanStatus'
-import { notScannableTitle } from './artifactScanStatus'
+import { getReleaseScanStatus, type ReleaseScanStatus } from './releaseScanStatus'
+import { notScannableTitle, reasonLabel } from './artifactScanStatus'
 
 const open = vi.fn()
 const metrics = { lastScanned: '2026-09-29T00:00:00Z', critical: 1, high: 0, medium: 0, low: 0, unassigned: 0,
@@ -128,5 +128,87 @@ describe('release scan cells: not scannable (TPF-127)', () => {
         expect(note.type).toBe('span')
         expect(note.children).toBe('x')
         expect(note.props.title).toBe('y')
+    })
+})
+
+// TPF-133 (test 7): the branch list and the Latest tab cells, with the status from the real reader over
+// rows that carry the served BOM scan tally (metrics.bomScan) the list documents now select.
+const ANCHORED = { firstScanned: '2026-10-29T08:00:00Z', lastScanned: '2026-10-29T08:00:00Z', critical: 0, high: 0, medium: 0, low: 0,
+    unassigned: 0, policyViolationsLicenseTotal: 0, policyViolationsSecurityTotal: 0, policyViolationsOperationalTotal: 0 }
+const SERVED_ALL = { state: 'ALL_NOT_SCANNABLE', scannableBoms: 0, notScannableBoms: 2, reasons: ['ONLY_ROOT', 'NO_COMPONENTS'] }
+/** The FetchReleases row shape: own artifacts without type, componentDetails { type }. */
+const branchRow = (bomScan: any, opts: { type?: string, firstScanned?: string | null, omit?: boolean } = {}) => {
+    const metrics: any = { ...ANCHORED, firstScanned: opts.firstScanned === undefined ? ANCHORED.firstScanned : opts.firstScanned }
+    if (!opts.omit) metrics.bomScan = bomScan
+    return { uuid: 'r1', lifecycle: 'ASSEMBLED', componentDetails: { type: opts.type ?? 'COMPONENT' }, metrics,
+        artifactDetails: [{ enrichmentStatus: 'COMPLETED', metrics: { dtrackSubmissionFailed: false, dependencyTrackFullUri: null, firstScanned: null } }] }
+}
+const cellsOf = (row: any) => {
+    const s = getReleaseScanStatus(row, true)
+    return { vuln: renderVulnerabilityCells(row, s, open) as VNode[], viol: renderViolationCells(row, s, open) as VNode[] }
+}
+function expectGreyBadge (cells: VNode[], notScannableBoms: number) {
+    expect(cells).toHaveLength(1)
+    const span = cells[0] as any
+    expect(span.type).toBe('span')
+    expect(String(span.props.style)).toContain('#9e9e9e')
+    expect(span.children).toBe('No scannable components')
+    expect(String(span.props.title).startsWith(`Nothing to scan in ${notScannableBoms} BOMs: `)).toBe(true)
+    expect(String(span.props.title)).toContain(reasonLabel('ONLY_ROOT'))
+    expect(span.props['data-testid']).toBeUndefined()
+}
+function expectCircles (cells: { vuln: VNode[], viol: VNode[] }) {
+    const v = slotOf(cells.vuln[0])
+    expect(circlesOf(v)).toHaveLength(5)
+    expect(circlesOf(slotOf(cells.viol[0]))).toHaveLength(3)
+    return v
+}
+
+describe('release scan cells over a served BOM scan tally (TPF-133)', () => {
+    it('(a) a branch row served ALL_NOT_SCANNABLE: one grey badge per column, no circle, no note', () => {
+        const { vuln, viol } = cellsOf(branchRow(SERVED_ALL))
+        expectGreyBadge(vuln, 2)
+        expectGreyBadge(viol, 2)
+    })
+
+    it('(b) a product branch row served ALL_NOT_SCANNABLE keeps its circles (the guard reads componentDetails.type)', () => {
+        const v = expectCircles(cellsOf(branchRow(SERVED_ALL, { type: 'PRODUCT' })))
+        expect(notesOf(v)).toHaveLength(0)
+    })
+
+    it('(c) a branch row served SOME_NOT_SCANNABLE: circles, no badge, no note (untyped artifacts)', () => {
+        const v = expectCircles(cellsOf(branchRow({ ...SERVED_ALL, state: 'SOME_NOT_SCANNABLE', scannableBoms: 1 })))
+        expect(notesOf(v)).toHaveLength(0)
+    })
+
+    it.each([['NO_BOMS'], ['ALL_SCANNABLE']])('(d) a branch row served %s: circles', (state) => {
+        expectCircles(cellsOf(branchRow({ state, scannableBoms: state === 'NO_BOMS' ? 0 : 1, notScannableBoms: 0, reasons: [] })))
+    })
+
+    it('(e) a null tally and an absent key: circles as today; unanchored besides: the yellow Scan pending badge', () => {
+        expectCircles(cellsOf(branchRow(null)))
+        expectCircles(cellsOf(branchRow(undefined, { omit: true })))
+        for (const row of [branchRow(null, { firstScanned: null }), branchRow(undefined, { omit: true, firstScanned: null })]) {
+            const { vuln } = cellsOf(row)
+            expect(vuln).toHaveLength(1)
+            expect((vuln[0] as any).type).toBe('span')
+            expect(String((vuln[0] as any).props.style)).toContain('#ffc107')
+            expect((vuln[0] as any).children).toBe('Scan pending')
+        }
+    })
+
+    it('(f) a Latest-tab row with one marked own BOM: served ALL_NOT_SCANNABLE gives the grey badge, no note; SOME_NOT_SCANNABLE five circles and the note', () => {
+        const latestRow = (bomScan: any) => ({ uuid: 'r1', lifecycle: 'ASSEMBLED', componentDetails: { type: 'COMPONENT', kind: 'GENERIC' },
+            metrics: { ...ANCHORED, bomScan },
+            artifactDetails: [{ type: 'BOM', enrichmentStatus: 'COMPLETED', metrics: { dtrackSubmissionFailed: false, dependencyTrackFullUri: null, firstScanned: null, notScannable: m } }] })
+        const all = cellsOf(latestRow({ ...SERVED_ALL, notScannableBoms: 1, reasons: ['ONLY_ROOT'] }))
+        expect(all.vuln).toHaveLength(1)
+        expect((all.vuln[0] as any).type).toBe('span')
+        expect(String((all.vuln[0] as any).props.style)).toContain('#9e9e9e')
+        expect((all.vuln[0] as any).children).toBe('No scannable components')
+        const some = cellsOf(latestRow({ state: 'SOME_NOT_SCANNABLE', scannableBoms: 1, notScannableBoms: 1, reasons: ['ONLY_ROOT'] }))
+        const v = expectCircles(some)
+        expect(notesOf(v)).toHaveLength(1)
+        expect((notesOf(v)[0] as any).children).toBe('1 BOM not scannable')
     })
 })
