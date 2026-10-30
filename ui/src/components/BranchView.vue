@@ -259,6 +259,11 @@
                         <ListSearch />
                     </n-icon>
                 </p>
+                <!-- The preview sits under the Dependencies heading whose icon opened it, above the table it explains. -->
+                <AutoIntegratePreviewPanel v-if="autoIntegratePanelVisible && autoIntegrateEvaluation"
+                    :evaluation="autoIntegrateEvaluation" :words="words"
+                    :component-href="autoIntegrateComponentHref" :release-href="autoIntegrateReleaseHref"
+                    @close="autoIntegratePreview.closePanel()" />
                 <div v-if="modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length">
                     <n-data-table :data="dependencyGroups.software" :columns="effectiveDepTableFields" :row-key="(row: any) => row.component?.uuid" :row-class-name="getRowClassName" />
                     <!-- A board's document components, which a target's base branch carries from before the board
@@ -286,10 +291,6 @@
                         </span>
                     </p>
                 </div>
-                <AutoIntegratePreviewPanel v-if="autoIntegratePanelVisible && autoIntegrateEvaluation"
-                    :evaluation="autoIntegrateEvaluation" :words="words"
-                    :component-href="autoIntegrateComponentHref" :release-href="autoIntegrateReleaseHref"
-                    @close="autoIntegratePreview.closePanel()" />
             </div>
             <n-modal
                 v-model:show="showAddComponentModal"
