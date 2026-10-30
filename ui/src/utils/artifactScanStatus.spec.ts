@@ -2,9 +2,10 @@ import { beforeEach, describe, expect, it } from 'vitest'
 import {
     ARTIFACT_SCAN_STATUS_QUERY, ENRICHMENT_FACT_TEXT, ageText, blockerRows, candidateLine, dateCell, enrichmentCell,
     enrichmentFactOf, enrichmentGatedText, enrichmentNote, factRows, formatInstant, loadArtifactScanStatus, reasonLabel,
-    resetScanStatusSupportForTests, scanStatusSupported, stateLine, truncatedNote
+    resetScanStatusSupportForTests, scanStatusSupported, stateLine, truncatedNote,
+    notScannableTitle, notScannableReleaseTitle, notScannableCountLabel
 } from './artifactScanStatus'
-import type { ArtifactScanStatus, ScanBlocker } from './artifactScanStatus'
+import type { ArtifactNotScannable, ArtifactScanStatus, ScanBlocker } from './artifactScanStatus'
 import { isDriftRejected } from './graphqlDriftFallback'
 
 // TPF-122 (architecture-3 section 5, rows 19 and 20): the probing loader and the pure helpers.
@@ -295,5 +296,50 @@ describe('pure helpers (row 20)', () => {
         const fifty = Array.from({ length: 50 }, (_, i) => ({ ...rowA, purl: `pkg:npm/p${i}@1` }))
         expect(truncatedNote({ ...base, blockers: fifty, blockerTotal: 73, blockersTruncated: true })).toBe('showing 50 of 73 blocking components')
         expect(truncatedNote({ ...base, blockers: [rowA], blockerTotal: 1, blockersTruncated: false })).toBeNull()
+    })
+})
+
+// TPF-127: the title of the No scannable components pill, facts line, badge and note, and the note's label.
+describe('not-scannable titles and the count label (TPF-127)', () => {
+    const AT = '2026-10-29T08:00:00Z'
+    const marker = (reason: string, at: string | null = AT, counts = { components: 1, root: 1, terminal: 0, unmatchable: 0 }): ArtifactNotScannable =>
+        ({ reason, at, ...counts })
+
+    it('says the reason, the counts, the advice and when it was evaluated', () => {
+        expect(notScannableTitle(marker('ONLY_ROOT'))).toBe("Nothing to scan: only the BOM's own root component (1 component rows: 1 root, 0 enrichment-terminal, 0 without purl or cpe); components without a purl or cpe are not inventoried, so re-generate the SBOM with package coordinates; evaluated " + formatInstant(AT))
+        const noPurl = notScannableTitle(marker('NO_PURL_OR_CPE', AT, { components: 3, root: 1, terminal: 0, unmatchable: 2 }))
+        expect(noPurl).toContain('components carry no purl or cpe (3 component rows: 1 root, 0 enrichment-terminal, 2 without purl or cpe)')
+        expect(noPurl).toContain('re-generate the SBOM with package coordinates')
+        const terminal = notScannableTitle(marker('ALL_TERMINAL', AT, { components: 2, root: 1, terminal: 1, unmatchable: 0 }))
+        expect(terminal).toContain('every dependency is enrichment-terminal')
+        expect(terminal).not.toContain('re-generate')
+        const empty = notScannableTitle(marker('NO_COMPONENTS', AT, { components: 0, root: 0, terminal: 0, unmatchable: 0 }))
+        expect(empty).toContain('Nothing to scan: no components (0 component rows')
+        expect(empty).toContain('; an empty SBOM, or one whose parse has not landed yet')
+    })
+
+    it('adds no evaluated suffix without a date, and renders an unknown reason raw', () => {
+        expect(notScannableTitle(marker('ONLY_ROOT', null))).not.toContain('evaluated')
+        expect(notScannableTitle(marker('SOMETHING_NEW', null))).toContain('Nothing to scan: SOMETHING_NEW (')
+    })
+
+    it('a release-level title: one marker, several, or the server tally', () => {
+        const m = marker('ONLY_ROOT')
+        expect(notScannableReleaseTitle([m], 1, ['ONLY_ROOT'])).toBe(notScannableTitle(m))
+        const same = notScannableReleaseTitle([m, marker('ONLY_ROOT')], 2, ['ONLY_ROOT'])
+        expect(same.startsWith('Nothing to scan in 2 BOMs: ')).toBe(true)
+        expect(same.split(reasonLabel('ONLY_ROOT')).length - 1).toBe(1)
+        expect(notScannableReleaseTitle([m, marker('NO_COMPONENTS')], 2, ['ONLY_ROOT', 'NO_COMPONENTS']))
+            .toBe(`Nothing to scan in 2 BOMs: ${reasonLabel('ONLY_ROOT')}; ${reasonLabel('NO_COMPONENTS')}`)
+        expect(notScannableReleaseTitle([], 2, ['ONLY_ROOT', 'NO_COMPONENTS']))
+            .toBe(`Nothing to scan in 2 BOMs: ${reasonLabel('ONLY_ROOT')}; ${reasonLabel('NO_COMPONENTS')}`)
+        expect(notScannableReleaseTitle([], 1, ['ALL_TERMINAL'])).toBe(`Nothing to scan: ${reasonLabel('ALL_TERMINAL')}`)
+        expect(notScannableReleaseTitle([], 1, [])).toBe('Nothing to scan')
+        expect(notScannableReleaseTitle([], 2, ['SOMETHING_NEW'])).toBe('Nothing to scan in 2 BOMs: SOMETHING_NEW')
+    })
+
+    it('counts BOMs in the note label', () => {
+        expect(notScannableCountLabel(1)).toBe('1 BOM not scannable')
+        expect(notScannableCountLabel(2)).toBe('2 BOMs not scannable')
     })
 })

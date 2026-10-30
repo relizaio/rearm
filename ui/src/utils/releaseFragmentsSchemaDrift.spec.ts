@@ -5,11 +5,13 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // These release selection sets are interpolated into `gql` templates at
 // runtime (store.fetchReleasesByOrgUuids and friends). scripts/validate-graphql
-// only parses statically-analysable documents, so it skips every template
-// containing ${...} -- which is exactly where CHILD_RELEASE_GQL_DATA lived
-// when it shipped asking for a DigestRecord.value field that has never
-// existed. The whole query fails validation at runtime, so a single wrong
-// field name blanks the view rather than degrading it.
+// resolves ${NAME} interpolations of template-literal constants, but it never
+// sees a document built at runtime: the core twins (TPF-127, the documents
+// without their #additive-field lines, withoutAdditiveFields) are such
+// documents, so they are covered here. CHILD_RELEASE_GQL_DATA once shipped
+// asking for a DigestRecord.value field that has never existed. The whole
+// query fails validation at runtime, so a single wrong field name blanks the
+// view rather than degrading it.
 //
 // Checked against the CE schema, which ships in this repo, so the path always
 // resolves and there is nothing to skip; and against Pro when a sibling
@@ -50,8 +52,16 @@ const SINGLE_RELEASE_DOCUMENTS: Array<[string, any]> = [
     ['SingleReleaseProductGql', graphqlQueries.SingleReleaseProductGql]
 ]
 
+// TPF-127: what a server without Artifact.metrics.notScannable (the CE mirror) is sent: the documents
+// above without their #additive-field lines. CE validity is asserted on these; the preferred documents
+// are checked against Pro, and are refused by CE for notScannable only (releaseScanStateDocuments.spec.ts).
+const SINGLE_RELEASE_CORE_DOCUMENTS: Array<[string, any]> = [
+    ['SingleReleaseGqlCore', graphqlQueries.SingleReleaseGqlCore],
+    ['SingleReleaseProductGqlCore', graphqlQueries.SingleReleaseProductGqlCore]
+]
+
 describe('single-release documents vs the CE schema', () => {
-    it.each(SINGLE_RELEASE_DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
+    it.each(SINGLE_RELEASE_CORE_DOCUMENTS)('%s is valid against the CE schema', (_name, doc) => {
         expect(validate(ceSchema, doc).map(e => e.message)).toEqual([])
     })
 
@@ -60,7 +70,7 @@ describe('single-release documents vs the CE schema', () => {
      * field Pro gains first shows up here before the mirror (the release header's
      * kevCount / riskSummary were such fields until the CE sync).
      */
-    it.runIf(proSchema).each(SINGLE_RELEASE_DOCUMENTS)(
+    it.runIf(proSchema).each([...SINGLE_RELEASE_DOCUMENTS, ...SINGLE_RELEASE_CORE_DOCUMENTS])(
         '%s is valid against the Pro schema', (_name, doc) => {
             expect(validate(proSchema as any, doc).map(e => e.message)).toEqual([])
         })

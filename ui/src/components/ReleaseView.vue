@@ -1261,7 +1261,7 @@
                         <span
                             v-if="showsScanBadge(releaseScanStatus)"
                             :title="releaseScanStatus.title"
-                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: releaseScanStatus.kind === 'rejected' ? '#d03050' : releaseScanStatus.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', background: scanBadgeBackground(releaseScanStatus) }"
                         >{{ releaseScanStatus.label }}</span>
                         <n-space :size="1" v-else-if="releaseScanStatus.kind === 'ready'">
                             <span title="Criticial Severity Vulnerabilities" class="circle" :style="{background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer'}" @click="viewDetailedVulnerabilitiesForRelease(releaseUuid, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ updatedRelease.metrics.critical }}</span>
@@ -2372,7 +2372,7 @@ import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSel
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
 import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
-import { loadArtifactScanStatus, scanStatusSupported } from '@/utils/artifactScanStatus'
+import { loadArtifactScanStatus, scanStatusSupported, notScannableTitle } from '@/utils/artifactScanStatus'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText } from '@/utils/generatedArtifacts'
@@ -2423,7 +2423,7 @@ import { DownloadLink} from '@/utils/commonTypes'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import type { FindingSortKey } from '@/utils/metrics'
 import { cvssBandOf, cvssPillOf, epssPillOf } from '@/utils/vulnScoreDisplay'
-import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus, showsScanBadge } from '@/utils/releaseScanStatus'
+import { getReleaseScanStatus, isDtrackConfiguredForOrg, collectArtifactsForStatus, showsScanBadge, scanBadgeBackground, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
 import { resolveApprovalRoles } from '@/utils/approvalRoles'
 import { isLockedByOwnVote, isVotingClosed, myVotes, othersVoteCounts, VOTING_CLOSED_TITLE } from '@/utils/approvalMatrix'
 import { exportFindingsToPdf } from '@/utils/pdfExport'
@@ -5637,7 +5637,7 @@ function hasPendingStatuses (): boolean {
     return allArtifacts.some((a: any) => {
         if (!a) return false
         if (a.enrichmentStatus === 'PENDING') return true
-        if (a.type === 'BOM' && dtrackConfigured.value && !a.metrics?.dependencyTrackFullUri && !a.metrics?.dtrackSubmissionFailed) return true
+        if (a.type === 'BOM' && dtrackConfigured.value && !a.metrics?.dependencyTrackFullUri && !a.metrics?.dtrackSubmissionFailed && !a.metrics?.notScannable) return true
         return false
     })
 }
@@ -8017,6 +8017,7 @@ function renderArtifactFactsColumn (row: any) {
     if (row.notes && row.notes.length) factContent.push(h('li', `notes: ${row.notes}`))
     if (row.metrics && row.metrics.firstScanned) factContent.push(h('li', `first scanned: ${new Date(row.metrics.firstScanned).toLocaleString('en-Ca')}`))
     if (row.metrics && row.metrics.lastScanned) factContent.push(h('li', `last scanned: ${new Date(row.metrics.lastScanned).toLocaleString('en-Ca')}`))
+    if (row.metrics && row.metrics.notScannable) factContent.push(h('li', { 'data-testid': 'artifact-not-scannable-fact' }, `No scannable components: ${notScannableTitle(row.metrics.notScannable)}`))
     if (row.metrics && row.metrics.dtrackSubmissionFailed) factContent.push(h('li', { style: 'color: red;' }, 'DependencyTrack submission failed'))
     if (row.metrics && row.metrics.dtrackSubmissionFailed && row.metrics.dtrackSubmissionFailureReason) factContent.push(h('li', { style: 'color: red;' }, `DependencyTrack failure reason: ${row.metrics.dtrackSubmissionFailureReason}`))
     if (row.metrics && row.metrics.dtrackSubmissionAttempts > 0) factContent.push(h('li', `DependencyTrack submission attempts: ${row.metrics.dtrackSubmissionAttempts}`))
@@ -8058,7 +8059,8 @@ function renderArtifactVulnerabilitiesColumn (row: any) {
     // 7fe729c7) have lastScanned set with firstScanned null — the badge
     // says "Scanning…" while the circles rendered zeros, which read as
     // "scan complete, no findings" instead of "scan not yet complete".
-    if (row.metrics && row.metrics.firstScanned) {
+    // A not-scannable marker (TPF-127) also gates them off: such an artifact has no findings because nothing was scanned.
+    if (row.metrics && row.metrics.firstScanned && !row.metrics.notScannable) {
         const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
         const criticalEl = h('div', {title: 'Criticial Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.CRITICAL}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'CRITICAL', ['Vulnerability', 'Weakness'])}, row.metrics.critical)
         const highEl = h('div', {title: 'High Severity Vulnerabilities', class: 'circle', style: `background: ${constants.VulnerabilityColors.HIGH}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, 'HIGH', ['Vulnerability', 'Weakness'])}, row.metrics.high)
@@ -8074,7 +8076,7 @@ function renderArtifactVulnerabilitiesColumn (row: any) {
 function renderArtifactViolationsColumn (row: any) {
     let els: any[] = []
     // Same gate as renderArtifactVulnerabilitiesColumn — see comment there.
-    if (row.metrics && row.metrics.firstScanned) {
+    if (row.metrics && row.metrics.firstScanned && !row.metrics.notScannable) {
         const dependencyTrackProject = row.metrics.dependencyTrackFullUri ? row.metrics.dependencyTrackFullUri.split('/').pop() : undefined
         const licenseEl = h('div', {title: 'Licensing Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.LICENSE}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsLicenseTotal)
         const securityEl = h('div', {title: 'Security Policy Violations', class: 'circle', style: `background: ${constants.ViolationColors.SECURITY}; cursor: pointer;`, onClick: () => viewDetailedVulnerabilities(row.uuid, dependencyTrackProject, '', 'Violation')}, row.metrics.policyViolationsSecurityTotal)
@@ -8143,13 +8145,14 @@ function renderEnrichmentPill (row: any): any {
     return h(NTag, { type, size: 'small', round: true, title }, () => label)
 }
 
-function renderChildScanStatusBadge (status: { label: string, title: string, kind: string }): any {
+function renderChildScanStatusBadge (status: ReleaseScanStatus): any {
     // Same color rule as the home-page widgets and BranchView: red for a
     // rejected release whose scan will never run, orange for the
-    // BOM-enrichment stage, yellow for everything else (DTrack-pending,
+    // BOM-enrichment stage, grey for a release with nothing to scan,
+    // yellow for everything else (DTrack-pending,
     // scan-pending). Keeps the parent-release table's pre-scan child rows in
     // sync with the rest of the UI instead of falling back to zeroed circles.
-    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    const bg = scanBadgeBackground(status)
     return h('span', {
         title: status.title,
         style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
@@ -8184,6 +8187,9 @@ function renderDtrackPill (row: any): any {
             : ''
         const label = m.firstScanned ? 'Scan refresh failed' : 'Scan fetch failed'
         return h(NTag, { type: 'error', size: 'small', round: true, title: `DependencyTrack fetch failed${reason}${retryAt}${stale}` }, () => label)
+    }
+    if (m.notScannable) {
+        return h(NTag, { type: 'default', size: 'small', round: true, title: notScannableTitle(m.notScannable), 'data-testid': 'artifact-not-scannable' }, () => 'No scannable components')
     }
     if (m.firstScanned) {
         return h(NTag, { type: 'success', size: 'small', round: true, title: 'Dependency-Track scan complete' }, () => 'Scan done')

@@ -8,8 +8,14 @@ import {
     loadRichestServed,
     loadWithSchemaDriftFallback,
     type DriftFallbackClient,
+    stripAdditiveFields,
+    withoutAdditiveFields,
+    sendWithLatchedFallback,
+    artifactScanStateLatch,
 } from './graphqlDriftFallback'
-import { parse, type DocumentNode } from 'graphql'
+import { parse, print, type DocumentNode } from 'graphql'
+import { readFileSync } from 'node:fs'
+import { fileURLToPath } from 'node:url'
 
 const FULL = gql`query q { thing { a b enrichment } }`
 const CORE = gql`query q { thing { a b } }`
@@ -228,5 +234,137 @@ describe('loadRichestServed', () => {
         await expect(load(clientFor(docs, [wafStripped400(), wafStripped400(), serverError()]), docs)).rejects.toBeTruthy()
         const client = clientFor(docs, [{ a: 1, b: 2, c: 3 }, { a: 1, b: 2 }, { a: 1 }])
         expect((await load(client, docs)).served).toBe(0)
+    })
+})
+
+// --- TPF-127: the additive-field primitive, the latched fallback and the artifact scan state latch ---
+
+describe('stripAdditiveFields / withoutAdditiveFields (TPF-127)', () => {
+    it('drops every line carrying #additive-field and keeps the others byte for byte', () => {
+        const text = 'query q {\n  a\n  b #additive-field\n\t c  \n  d { e } #additive-field trailing\n}'
+        expect(stripAdditiveFields(text)).toBe('query q {\n  a\n\t c  \n}')
+        expect(stripAdditiveFields('query q { a }')).toBe('query q { a }')
+    })
+
+    it('derives the document without its tagged lines from the parsed source', () => {
+        // The tagged line holds field b alone (a tagged selection is self-contained on its line).
+        const doc = gql`query q { thing {
+ a
+ b #additive-field
+ c } }`
+        expect(print(withoutAdditiveFields(doc))).toBe(print(parse('query q { thing { a c } }')))
+        const plain = gql`query q { thing { a b c } }`
+        expect(print(withoutAdditiveFields(plain))).toBe(print(plain))
+    })
+
+    it('refuses a document without a parsed source', () => {
+        const noLoc: any = { kind: 'Document', definitions: [] }
+        expect(() => withoutAdditiveFields(noLoc)).toThrow()
+    })
+})
+
+describe('sendWithLatchedFallback (TPF-127, the TPF-101 state machine)', () => {
+    const PREFERRED = gql`query p { thing { a b } }`
+    const FALLBACK = gql`query f { thing { a } }`
+    const latchOf = (supported: boolean) => ({ supported: vi.fn(() => supported), markUnsupported: vi.fn() })
+
+    it('row 1: the preferred document is served; nothing else is sent and the latch stays', async () => {
+        const send = vi.fn(async (_doc: DocumentNode) => 'P')
+        const latch = latchOf(true)
+        await expect(sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch }))
+            .resolves.toEqual({ data: 'P', served: 'preferred' })
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(send.mock.calls[0][0]).toBe(PREFERRED)
+        expect(latch.markUnsupported).not.toHaveBeenCalled()
+    })
+
+    it.each([['a validation verdict', () => validationError('notScannable')], ['a WAF-stripped 400', () => wafStripped400()]])(
+        'row 2: on %s the fallback is sent and the latch is set only after it was served', async (_n, make) => {
+            const driftErr = make()
+            let resolveFallback: (v: string) => void = () => {}
+            const send = vi.fn((doc: DocumentNode) => doc === PREFERRED
+                ? Promise.reject(driftErr)
+                : new Promise<string>((resolve) => { resolveFallback = resolve }))
+            const latch = latchOf(true)
+            const pending = sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch })
+            await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
+            expect(send.mock.calls[0][0]).toBe(PREFERRED)
+            expect(send.mock.calls[1][0]).toBe(FALLBACK)
+            expect(latch.markUnsupported).not.toHaveBeenCalled()
+            resolveFallback('F')
+            await expect(pending).resolves.toEqual({ data: 'F', served: 'fallback' })
+            expect(latch.markUnsupported).toHaveBeenCalledTimes(1)
+            expect(latch.markUnsupported).toHaveBeenCalledWith(driftErr)
+        })
+
+    it('row 3: drift then a failing fallback rejects with the fallback error and leaves the latch', async () => {
+        const fallbackErr = serverError()
+        const send = vi.fn((doc: DocumentNode) => Promise.reject(doc === PREFERRED ? validationError('notScannable') : fallbackErr))
+        const latch = latchOf(true)
+        await expect(sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch })).rejects.toBe(fallbackErr)
+        expect(send).toHaveBeenCalledTimes(2)
+        expect(latch.markUnsupported).not.toHaveBeenCalled()
+    })
+
+    function dataFetchingError (): any {
+        const err: any = new Error('Exception while fetching data (/release/metrics) : boom')
+        err.errors = [{ message: 'Exception while fetching data (/release/metrics) : boom', extensions: { classification: 'DataFetchingException' } }]
+        return err
+    }
+
+    it.each([['401', authError], ['500', serverError], ['transport', transportError], ['DataFetchingException', dataFetchingError]])(
+        'row 4: %s on the preferred document is rethrown unchanged with nothing else sent', async (_n, make) => {
+            const err = make()
+            const send = vi.fn(async (_doc: DocumentNode) => { throw err })
+            const latch = latchOf(true)
+            await expect(sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch })).rejects.toBe(err)
+            expect(send).toHaveBeenCalledTimes(1)
+            expect(latch.markUnsupported).not.toHaveBeenCalled()
+        })
+
+    it('row 5: a latched session sends the fallback once and leaves the latch', async () => {
+        const send = vi.fn(async (_doc: DocumentNode) => 'F')
+        const latch = latchOf(false)
+        await expect(sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch }))
+            .resolves.toEqual({ data: 'F', served: 'fallback' })
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(send.mock.calls[0][0]).toBe(FALLBACK)
+        expect(latch.markUnsupported).not.toHaveBeenCalled()
+    })
+
+    it('row 6: a latched session whose fallback fails rejects unchanged', async () => {
+        const err = serverError()
+        const send = vi.fn(async (_doc: DocumentNode) => { throw err })
+        const latch = latchOf(false)
+        await expect(sendWithLatchedFallback({ preferred: PREFERRED, fallback: FALLBACK, send, latch })).rejects.toBe(err)
+        expect(send).toHaveBeenCalledTimes(1)
+        expect(send.mock.calls[0][0]).toBe(FALLBACK)
+        expect(latch.markUnsupported).not.toHaveBeenCalled()
+    })
+})
+
+describe('artifactScanStateLatch (TPF-127)', () => {
+    afterEach(() => vi.restoreAllMocks())
+
+    it('reads the store flag and commits the mutation once with one console.error', () => {
+        const stub = { state: { artifactScanStateSupported: true }, commit: vi.fn() }
+        const errSpy = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const latch = artifactScanStateLatch(stub)
+        expect(latch.supported()).toBe(true)
+        const err = validationError('notScannable')
+        latch.markUnsupported(err)
+        expect(stub.commit).toHaveBeenCalledTimes(1)
+        expect(stub.commit).toHaveBeenCalledWith('SET_ARTIFACT_SCAN_STATE_SUPPORTED', false)
+        expect(errSpy).toHaveBeenCalledTimes(1)
+        expect(String(errSpy.mock.calls[0][0])).toContain('notScannable')
+        expect(errSpy.mock.calls[0][1]).toBe(err)
+        expect(artifactScanStateLatch({ state: { artifactScanStateSupported: false }, commit: vi.fn() }).supported()).toBe(false)
+    })
+
+    it('lives in a module that imports no store', () => {
+        const text = readFileSync(fileURLToPath(new URL('./graphqlDriftFallback.ts', import.meta.url)), 'utf8')
+        expect(text).not.toContain("from '@/store'")
+        expect(text).not.toContain("from 'vuex'")
+        expect(text).not.toContain("from './store'")
     })
 })

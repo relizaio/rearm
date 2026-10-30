@@ -1,4 +1,26 @@
 import gql from 'graphql-tag'
+import { withoutAdditiveFields } from './graphqlDriftFallback'
+
+// TPF-127 (TPF-125 part 2): the fan-out's not-scannable marker on a BOM artifact. One line, tagged
+// #additive-field, so a server without the field (a CE mirror before its sync) is served the same
+// document with this line stripped (withoutAdditiveFields and artifactScanStateLatch, both in graphqlDriftFallback.ts). RULE
+// (changelogQueryTexts.ts): a tagged selection is self-contained on its one line.
+export const ARTIFACT_NOT_SCANNABLE_LINE = `notScannable { reason at components root terminal unmatchable } #additive-field`
+// TPF-127: the same six fields beside MULTI_RELEASE_GQL_DATA in the three list documents (GraphQL merges
+// this artifactDetails selection with the fragment's own), so the instance documents that embed the
+// fragment never select the field.
+export const ARTIFACT_NOT_SCANNABLE_LIST_LINE = `artifactDetails { metrics { notScannable { reason at components root terminal unmatchable } } } #additive-field`
+
+// TPF-127 (round 4): what getReleaseScanStatus reads on a child row of the product release page: the
+// child's whole scan-input set (own artifacts, its source code entry's, its variants' outbound
+// deliverables': what ArtifactGatherService gathers), the list-row artifact shape plus the marker, on
+// three tagged lines. A release-level state is derived from the whole set only (D17). A server without
+// the field is served the product document without these lines and the child rows read as today; the
+// same reads the page performs on "load artifacts", bounded by the product's children.
+export const CHILD_SCAN_INPUT_ARTIFACT_FIELDS = `type componentUuid enrichmentStatus metrics { dependencyTrackFullUri dtrackSubmissionFailed firstScanned notScannable { reason at components root terminal unmatchable } }`
+export const CHILD_RELEASE_SCAN_INPUTS_LINE = `artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } #additive-field`
+export const CHILD_RELEASE_SCE_SCAN_INPUTS_LINE = `sourceCodeEntryDetails { uuid artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } } #additive-field`
+export const CHILD_RELEASE_DELIVERABLE_SCAN_INPUTS_LINE = `variantDetails { uuid outboundDeliverableDetails { uuid artifactDetails { ${CHILD_SCAN_INPUT_ARTIFACT_FIELDS} } } } #additive-field`
 
 const MULTI_RELEASE_GQL_DATA = `
     createdDate
@@ -1022,6 +1044,7 @@ const ARTIFACT_DETAIL_DATA = `
         dtrackFetchSkipUntil
         lastScanned
         firstScanned
+        ${ARTIFACT_NOT_SCANNABLE_LINE}
         critical
         high
         medium
@@ -1721,6 +1744,7 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
         ${SINGLE_RELEASE_GQL_DATA}
     }
 }`
+const SINGLE_RELEASE_GQL_CORE = withoutAdditiveFields(SINGLE_RELEASE_GQL)
 
 const SINGLE_RELEASE_GQL_LIGHT = gql`
 query FetchRelease($releaseID: ID!, $orgID: ID) {
@@ -1938,6 +1962,9 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                 value
                 removable
             }
+            ${CHILD_RELEASE_SCAN_INPUTS_LINE}
+            ${CHILD_RELEASE_SCE_SCAN_INPUTS_LINE}
+            ${CHILD_RELEASE_DELIVERABLE_SCAN_INPUTS_LINE}
             parentReleases {
                 release
                 releaseDetails {
@@ -1975,6 +2002,9 @@ const SINGLE_RELEASE_PRODUCT_GQL_DATA = `
                         value
                         removable
                     }
+                    ${CHILD_RELEASE_SCAN_INPUTS_LINE}
+                    ${CHILD_RELEASE_SCE_SCAN_INPUTS_LINE}
+                    ${CHILD_RELEASE_DELIVERABLE_SCAN_INPUTS_LINE}
                 }
             }
         }
@@ -1999,6 +2029,7 @@ query FetchRelease($releaseID: ID!, $orgID: ID) {
         ${SINGLE_RELEASE_PRODUCT_GQL_DATA}
     }
 }`
+const SINGLE_RELEASE_PRODUCT_GQL_CORE = withoutAdditiveFields(SINGLE_RELEASE_PRODUCT_GQL)
 
 const BRANCHES_GQL = gql`
 query FetchBranches($componentUuid: ID!) {
@@ -2053,6 +2084,7 @@ mutation updateRelease($rel: ReleaseInput!) {
         ${SINGLE_RELEASE_GQL_DATA}
     }
 }`
+const RELEASE_GQL_MUTATE_CORE = withoutAdditiveFields(RELEASE_GQL_MUTATE)
 
 const RELEASE_TAGS_META_GQL_MUTATE = gql`
 mutation updateReleaseTagsMeta($rel: ReleaseInput!) {
@@ -2060,6 +2092,7 @@ mutation updateReleaseTagsMeta($rel: ReleaseInput!) {
         ${SINGLE_RELEASE_GQL_DATA}
     }
 }`
+const RELEASE_TAGS_META_GQL_MUTATE_CORE = withoutAdditiveFields(RELEASE_TAGS_META_GQL_MUTATE)
 
 const UPDATE_ARTIFACT_TAGS_GQL_MUTATE = gql`
 mutation updateArtifactTags($artifact: ID!, $tags: [TagRecordInput]!) {
@@ -2079,6 +2112,7 @@ mutation approveReleaseManual($release: ID!, $approvals: [ReleaseApprovalInput!]
         ${SINGLE_RELEASE_GQL_DATA}
     }
 }`
+const APPROVE_RELEASE_GQL_MUTATE_CORE = withoutAdditiveFields(APPROVE_RELEASE_GQL_MUTATE)
 
 // Pro-only surface (like the notification inbox queries): the mutation and
 // the approvalRequests field are absent from the OSS schema, so callers must
@@ -2109,12 +2143,14 @@ query releaseApprovalRequests($releaseID: ID!, $orgID: ID) {
     }
 }`
 
-// TEA-4: the documents ReARM generated for a release (aggregated SBOMs, VDR snapshots). A Pro-only
-// schema surface: the CE backend has no Release.syntheticArtifactDetails (the 2026-10 TEA work ships
-// no CE backend sync), so it rides this separate query, sent only where syntheticArtifactsAvailable
-// says the backend serves it, instead of the shared release fragments whose failure would blank the
-// whole release page on CE. generatedArtifactsSchemaDrift.spec.ts pins both schemas.
-const RELEASE_SYNTHETIC_ARTIFACTS_GQL = gql`
+// TEA-4: the documents ReARM generated for a release (aggregated SBOMs, VDR snapshots). Its own query
+// (not the shared release fragments) so a failure never blanks the release page; both editions serve
+// Release.syntheticArtifactDetails. generatedArtifactsSchemaDrift.spec.ts pins both schemas.
+// TPF-127: the generated-artifacts table renders no scan state (its Status column is a fixed tag) and
+// this document is sent directly, without the latched fallback, on every edition, so the
+// #additive-field line ARTIFACT_DETAIL_DATA carries is stripped here, at the definition: the document
+// never selects notScannable, on no server, and needs no fallback.
+const RELEASE_SYNTHETIC_ARTIFACTS_GQL = withoutAdditiveFields(gql`
 query releaseSyntheticArtifacts($releaseID: ID!, $orgID: ID) {
     release(releaseUuid: $releaseID, orgUuid: $orgID) {
         uuid
@@ -2122,7 +2158,7 @@ query releaseSyntheticArtifacts($releaseID: ID!, $orgID: ID) {
             ${ARTIFACT_DETAIL_DATA}
         }
     }
-}`
+}`)
 
 const COMPONENT_SHORT_DATA = `
     uuid
@@ -2263,8 +2299,10 @@ const RELEASES_BY_DATE_RANGE_GQL = gql`
 query releasesByDateRange($org: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
     releasesByDateRange(org: $org, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
+        ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
     }
 }`
+const RELEASES_BY_DATE_RANGE_GQL_CORE = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_GQL)
 
 // Most recent releases of a component across all its branches, for the
 // component page's Latest tab. branchDetails is widened beyond the shared
@@ -2273,6 +2311,7 @@ const LATEST_RELEASES_OF_COMPONENT_GQL = gql`
 query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
     latestReleasesOfComponent(componentUuid: $componentUuid, limit: $limit) {
         ${MULTI_RELEASE_GQL_DATA}
+        ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
         branchDetails {
             uuid
             name
@@ -2281,12 +2320,15 @@ query latestReleasesOfComponent($componentUuid: ID!, $limit: Int) {
         }
     }
 }`
+const LATEST_RELEASES_OF_COMPONENT_GQL_CORE = withoutAdditiveFields(LATEST_RELEASES_OF_COMPONENT_GQL)
 const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL = gql`
 query releasesByDateRangeAndPerspective($perspectiveUuid: ID!, $startDate: DateTime!, $endDate: DateTime!, $limit: Int, $componentType: ComponentType, $componentKinds: [ComponentKind]) {
     releasesByDateRangeAndPerspective(perspectiveUuid: $perspectiveUuid, startDate: $startDate, endDate: $endDate, limit: $limit, componentType: $componentType, componentKinds: $componentKinds) {
         ${MULTI_RELEASE_GQL_DATA}
+        ${ARTIFACT_NOT_SCANNABLE_LIST_LINE}
     }
 }`
+const RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL_CORE = withoutAdditiveFields(RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL)
 
 export default {
     BranchGql: BRANCH_GQL_DATA,
@@ -2355,4 +2397,12 @@ export default {
     FeatureSetsUsingBranchGql: FEATURE_SETS_USING_BRANCH_GQL,
     ReleaseSbomScoreGql: RELEASE_SBOM_SCORE_GQL,
     ArtifactSbomScoreGql: ARTIFACT_SBOM_SCORE_GQL,
+    SingleReleaseGqlCore: SINGLE_RELEASE_GQL_CORE,
+    SingleReleaseProductGqlCore: SINGLE_RELEASE_PRODUCT_GQL_CORE,
+    ReleasesByDateRangeGqlCore: RELEASES_BY_DATE_RANGE_GQL_CORE,
+    ReleasesByDateRangeAndPerspectiveGqlCore: RELEASES_BY_DATE_RANGE_AND_PERSPECTIVE_GQL_CORE,
+    LatestReleasesOfComponentGqlCore: LATEST_RELEASES_OF_COMPONENT_GQL_CORE,
+    ReleaseGqlMutateCore: RELEASE_GQL_MUTATE_CORE,
+    ReleaseTagsMetaGqlMutateCore: RELEASE_TAGS_META_GQL_MUTATE_CORE,
+    ApproveReleaseGqlMutateCore: APPROVE_RELEASE_GQL_MUTATE_CORE,
 }

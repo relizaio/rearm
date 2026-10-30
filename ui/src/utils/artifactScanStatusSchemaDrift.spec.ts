@@ -41,7 +41,11 @@ describe('artifactScanStatus document shape', () => {
         for (const f of [...fields, ...blockerFields]) {
             expect(printed, f).toMatch(new RegExp(`\\b${f}\\b`))
         }
-        // Case U (architecture-3 D4): notScannableAt is not selected until the server serves it.
+        // Case M (TPF-122 architecture-3 D4, folded into TPF-127): the server serves notScannableAt, so it is
+        // selected between noMatchableComponentsReason and blockerTotal (TPF-122 row 23 (d)).
+        expect(printed).toContain('notScannableAt')
+        expect(printed.indexOf('noMatchableComponentsReason')).toBeLessThan(printed.indexOf('notScannableAt'))
+        expect(printed.indexOf('notScannableAt')).toBeLessThan(printed.indexOf('blockerTotal'))
         expect(printed).not.toMatch(/dtrackProjectUuid/)
         expect(printed).not.toMatch(/blockersVisible/)
     })

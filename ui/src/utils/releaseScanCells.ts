@@ -6,16 +6,21 @@
 import { h } from 'vue'
 import { NSpace } from 'naive-ui'
 import constants from '@/utils/constants'
-import type { ReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { scanBadgeBackground, ownNotScannableNote, NOT_SCANNABLE_GREY, type ReleaseScanStatus, type ReleaseNotScannableNote } from '@/utils/releaseScanStatus'
 
 export type OpenVulnDetails = (row: any, severityFilter: string, typeFilter: string | string[]) => void
 
 export function renderPendingBadge (status: ReleaseScanStatus) {
-    const bg = status.kind === 'rejected' ? '#d03050' : status.kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107'
+    const bg = scanBadgeBackground(status)
     return h('span', {
         title: status.title,
         style: `display: inline-block; padding: 2px 10px; border-radius: 12px; background: ${bg}; color: white; font-size: 0.8em; white-space: nowrap;`
     }, status.label)
+}
+
+/** The grey note beside the circles (TPF-127): the row's own BOMs that carry the marker; a text node and a title. */
+export function renderNotScannableNote (note: ReleaseNotScannableNote) {
+    return h('span', { title: note.title, 'data-testid': 'release-not-scannable-note', style: `color: ${NOT_SCANNABLE_GREY}; font-size: 0.8em; white-space: nowrap; align-self: center; margin-left: 4px;` }, note.label)
 }
 
 function circle (title: string, color: string, value: any, onClick: () => void) {
@@ -24,19 +29,22 @@ function circle (title: string, color: string, value: any, onClick: () => void) 
 
 /**
  * Vulnerabilities cell: nothing for a release that is never scanned (a board's document, RD4-11), a badge
- * when the scan is not ready, five severity circles otherwise, 'N/A' without metrics.
+ * when the scan is not ready, five severity circles otherwise, 'N/A' without metrics. Beside the circles,
+ * the grey note when the row's own BOMs carry the not-scannable marker (TPF-127; one note per row, here).
  */
 export function renderVulnerabilityCells (row: any, status: ReleaseScanStatus, open: OpenVulnDetails) {
     if (status.kind === 'not-applicable') return []
     if (status.kind !== 'ready') return [renderPendingBadge(status)]
     if (!(row.metrics && row.metrics.lastScanned)) return [h('div'), 'N/A']
     const m = row.metrics
+    const note = ownNotScannableNote(row)
     return [h(NSpace, { size: 1 }, () => [
         circle('Critical Severity Vulnerabilities', constants.VulnerabilityColors.CRITICAL, m.critical, () => open(row, 'CRITICAL', ['Vulnerability', 'Weakness'])),
         circle('High Severity Vulnerabilities', constants.VulnerabilityColors.HIGH, m.high, () => open(row, 'HIGH', ['Vulnerability', 'Weakness'])),
         circle('Medium Severity Vulnerabilities', constants.VulnerabilityColors.MEDIUM, m.medium, () => open(row, 'MEDIUM', ['Vulnerability', 'Weakness'])),
         circle('Low Severity Vulnerabilities', constants.VulnerabilityColors.LOW, m.low, () => open(row, 'LOW', ['Vulnerability', 'Weakness'])),
-        circle('Vulnerabilities with Unassigned Severity', constants.VulnerabilityColors.UNASSIGNED, m.unassigned, () => open(row, 'UNASSIGNED', ['Vulnerability', 'Weakness']))
+        circle('Vulnerabilities with Unassigned Severity', constants.VulnerabilityColors.UNASSIGNED, m.unassigned, () => open(row, 'UNASSIGNED', ['Vulnerability', 'Weakness'])),
+        ...(note ? [renderNotScannableNote(note)] : [])
     ])]
 }
 
