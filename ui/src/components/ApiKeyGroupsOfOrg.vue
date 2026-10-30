@@ -102,7 +102,7 @@
 
 <script lang="ts" setup>
 /**
- * TPF-92 (architecture 4.4): the API Key Groups tab of Organization Settings, beside User Groups.
+ * TPF-92 (architecture 4.4): the API Key Groups sub-tab of Organization Settings' Programmatic Access, after Free Form Keys.
  * OrgSettings owns the group list (decision 1) and passes it in; this pane creates, edits,
  * deactivates and restores groups, then emits changed so OrgSettings reloads. Every refusal goes
  * to notify with the server's text, and nothing is emitted on a failure.
