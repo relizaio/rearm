@@ -171,3 +171,85 @@ describe('PermissionTemplatesPanel (row 12)', () => {
         expect(notify.mock.calls[0][2]).toContain('Not authorized')
     })
 })
+
+// New template from the profile: the same editor opened empty, saved through createPermissionTemplate with the
+// picker's Save as template bounds; the list refreshes after a save, a refusal goes to notify, and nothing shows on CE.
+describe('PermissionTemplatesPanel: New template', () => {
+    beforeEach(() => {
+        query.mockReset(); mutate.mockReset(); dialogWarning.mockClear()
+        query.mockImplementation(async (q: any) => q.query.loc?.source.body.includes('perspectives(')
+            ? { data: { perspectives: [{ uuid: 'p1', name: 'prod' }] } }
+            : { data: { myPermissionTemplates: [T1, T2] } })
+        mutate.mockImplementation(async () => ({ data: { createPermissionTemplate: { uuid: 't3' } } }))
+    })
+    async function openNew (w: any) {
+        await w.find('[data-testid="new-permission-template"]').trigger('click')
+        await flushPromises()
+    }
+
+    it('opens the editor empty, with the same bounds as Save as template', async () => {
+        const { w } = await open()
+        await openNew(w)
+        expect(w.find('[data-testid="permission-template-editor"]').exists()).toBe(true)
+        expect((w.find('[data-testid="permission-template-name"] input').element as HTMLInputElement).value).toBe('')
+        expect(descriptionInput(w).props('value')).toBe('')
+        expect(descriptionInput(w).props('maxlength')).toBe('512')
+        expect(descriptionInput(w).props('countGraphemes')).toBeTypeOf('function')
+        const name = w.findAllComponents(NInput).find((c: any) => c.attributes('data-testid') === 'permission-template-name')!
+        expect(name.props('maxlength')).toBe('128')
+        const model = w.findComponent(ScopedPermissions).props('modelValue')
+        expect(model).toEqual({ orgPermission: { type: 'NONE', functions: [], approvals: [] }, scopedPermissions: [] })
+        expect(w.find('[data-testid="permission-template-save"]').exists()).toBe(false)
+        const create = () => w.find('[data-testid="permission-template-create"]')
+        expect(create().attributes('disabled')).toBeDefined()
+        await w.find('[data-testid="permission-template-name"] input').setValue('   ')
+        expect(create().attributes('disabled')).toBeDefined()
+        await w.find('[data-testid="permission-template-name"] input').setValue('ci')
+        expect(create().attributes('disabled')).toBeUndefined()
+    })
+
+    it('saves through createPermissionTemplate with the org and the model, and refreshes the list', async () => {
+        const { w, notify } = await open()
+        await openNew(w)
+        const before = templateQueries()
+        await w.find('[data-testid="permission-template-name"] input').setValue(' ci read ')
+        await w.find('[data-testid="permission-template-description"] input').setValue('for CI')
+        w.findComponent(ScopedPermissions).vm.$emit('update:modelValue', {
+            orgPermission: { type: 'READ_ONLY', functions: [], approvals: [] },
+            scopedPermissions: [{ scope: 'COMPONENT', objectId: 'c1', objectName: 'api', type: 'READ_WRITE', functions: [], approvals: [] }],
+        })
+        await flushPromises()
+        await w.find('[data-testid="permission-template-create"]').trigger('click')
+        await flushPromises()
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(mutate.mock.calls[0][0].mutation.loc.source.body).toContain('createPermissionTemplate(')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ template: {
+            org: ORG, name: 'ci read', description: 'for CI',
+            permissions: [
+                { scope: 'ORGANIZATION', objectId: ORG, type: 'READ_ONLY', functions: [], approvals: [] },
+                { scope: 'COMPONENT', objectId: 'c1', type: 'READ_WRITE', functions: [], approvals: [] },
+            ],
+        } })
+        expect(notify).toHaveBeenCalledWith('success', 'Saved', 'Saved template "ci read"')
+        expect(templateQueries()).toBe(before + 1)
+        expect(w.find('[data-testid="permission-template-editor"]').exists()).toBe(false)
+    })
+
+    it('a refusal goes to notify with the server text and keeps the editor open', async () => {
+        mutate.mockImplementation(async () => { throw new Error('Not authorized: too many templates') })
+        const { w, notify } = await open()
+        await openNew(w)
+        await w.find('[data-testid="permission-template-name"] input').setValue('ci')
+        await w.find('[data-testid="permission-template-create"]').trigger('click')
+        await flushPromises()
+        expect(notify.mock.calls.at(-1)?.[0]).toBe('error')
+        expect(notify.mock.calls.at(-1)?.[2]).toContain('too many templates')
+        expect(w.find('[data-testid="permission-template-editor"]').exists()).toBe(true)
+    })
+
+    it('shows no New template control on a server without templates (CE)', async () => {
+        query.mockImplementation(async () => { throw validationError() })
+        const { w } = await open()
+        expect(w.find('[data-testid="new-permission-template"]').exists()).toBe(false)
+    })
+})

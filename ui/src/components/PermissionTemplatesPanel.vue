@@ -1,5 +1,8 @@
 <template>
     <div v-if="supported" class="permission-templates-panel">
+        <n-space justify="end" style="margin-bottom: 8px;">
+            <n-button size="small" :disabled="!orgUuid" data-testid="new-permission-template" @click="openNew">New template</n-button>
+        </n-space>
         <n-data-table
             data-testid="permission-templates-table"
             :columns="columns"
@@ -11,7 +14,7 @@
             :show-icon="false"
             style="width: 90%;"
             :show="showEditor"
-            :title="'Permission template ' + (editing?.name || '')"
+            :title="editing ? 'Permission template ' + (editing.name || '') : 'New permission template'"
             @update:show="(v: boolean) => { showEditor = v }"
         >
             <div data-testid="permission-template-editor" style="max-height: 700px; overflow-y: auto; padding-right: 8px;">
@@ -37,7 +40,8 @@
                     />
                 </n-spin>
                 <n-space style="margin-top: 20px;">
-                    <n-button type="success" :disabled="!form.name.trim() || !dirty || saving" data-testid="permission-template-save" @click="save">Save changes</n-button>
+                    <n-button v-if="editing" type="success" :disabled="!form.name.trim() || !dirty || saving" data-testid="permission-template-save" @click="save">Save changes</n-button>
+                    <n-button v-else type="success" :disabled="!form.name.trim() || saving || loadingLists" data-testid="permission-template-create" @click="save">Save template</n-button>
                     <n-button @click="showEditor = false">Cancel</n-button>
                 </n-space>
             </div>
@@ -48,10 +52,13 @@
 <script lang="ts" setup>
 /**
  * TPF-113 (TPF-87 part 2, architecture 4.3 item 3, 4.4): the profile's list of the user's own
- * permission templates in one organization, with edit and delete. Templates are created from the
- * device-login page or the key request (PermissionTemplatePicker). Renders nothing on a server
- * without templates (CE); every refusal goes to notify with the server's text. The editor's object
- * lists are loaded here as ApiKeyPermissionsModal loads its own, since the profile page has none.
+ * permission templates in one organization, with New template, edit and delete. New template opens
+ * the same editor empty and saves through createPermissionTemplate, the mutation and bounds of the
+ * picker's Save as template (name required, 128 / 512, the description counted in code points);
+ * templates are also saved from the device-login page or the key request (PermissionTemplatePicker).
+ * Renders nothing on a server without templates (CE); every refusal goes to notify with the server's
+ * text. The editor's object lists are loaded here as ApiKeyPermissionsModal loads its own, since the
+ * profile page has none.
  */
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { NButton, NDataTable, NFormItem, NIcon, NInput, NModal, NSpace, NSpin, NTooltip, useDialog } from 'naive-ui'
@@ -66,8 +73,8 @@ import { extractError } from '@/utils/notificationsCommon'
 import { boardNameOf } from '@/utils/boardPermissions'
 import { scopedModelFromPermissions } from '@/utils/apiKeyGroupInput'
 import {
-    DELETE_PERMISSION_TEMPLATE_MUTATION, UPDATE_PERMISSION_TEMPLATE_MUTATION, countCodePoints, grantsText,
-    loadMyPermissionTemplates, templateGrantCount, templateOrgType, templateUpdateInput
+    CREATE_PERMISSION_TEMPLATE_MUTATION, DELETE_PERMISSION_TEMPLATE_MUTATION, UPDATE_PERMISSION_TEMPLATE_MUTATION, countCodePoints,
+    grantsText, loadMyPermissionTemplates, templateGrantCount, templateInputFromModel, templateOrgType, templateUpdateInput
 } from '@/utils/permissionTemplates'
 import ScopedPermissions from './ScopedPermissions.vue'
 
@@ -156,6 +163,8 @@ const deepCopy = (v: any) => JSON.parse(JSON.stringify(v))
 const showEditor = ref(false)
 const saving = ref(false)
 const editing = ref<any | null>(null)
+// New template: the editor was opened empty by New template (editing stays null)
+const creating = ref(false)
 const form = ref<{ name: string, description: string }>({ name: '', description: '' })
 const scoped = ref<any>(emptyScoped())
 const original = ref<string>('')
@@ -166,6 +175,7 @@ async function openEdit (template: any) {
     const org = props.orgUuid
     if (!org) return
     editing.value = template
+    creating.value = false
     form.value = { name: template.name || '', description: template.description || '' }
     scoped.value = emptyScoped()
     original.value = ''
@@ -178,21 +188,48 @@ async function openEdit (template: any) {
     } finally { loadingLists.value = false }
 }
 
+/** New template: the same editor, empty, for the selected organization (editing stays null). */
+async function openNew () {
+    const org = props.orgUuid
+    if (!org) return
+    editing.value = null
+    creating.value = true
+    form.value = { name: '', description: '' }
+    scoped.value = emptyScoped()
+    original.value = ''
+    showEditor.value = true
+    loadingLists.value = true
+    try {
+        await loadOrgObjects(org)
+    } finally { loadingLists.value = false }
+}
+
+/** Saves the editor: an update of the template being edited, or a new one through createPermissionTemplate. */
 async function save () {
     const org = props.orgUuid
     const name = form.value.name.trim()
-    if (!org || !name || !editing.value) return
+    const template = editing.value
+    // an update needs the template being edited; a create needs the editor opened by New template
+    if (!org || !name || (!template && !creating.value)) return
     saving.value = true
     try {
-        await graphqlClient.mutate({
-            mutation: UPDATE_PERMISSION_TEMPLATE_MUTATION,
-            variables: { template: templateUpdateInput(editing.value.uuid, name, form.value.description, deepCopy(scoped.value), org) }
-        })
+        if (template) {
+            await graphqlClient.mutate({
+                mutation: UPDATE_PERMISSION_TEMPLATE_MUTATION,
+                variables: { template: templateUpdateInput(template.uuid, name, form.value.description, deepCopy(scoped.value), org) }
+            })
+        } else {
+            await graphqlClient.mutate({
+                mutation: CREATE_PERMISSION_TEMPLATE_MUTATION,
+                variables: { template: templateInputFromModel(name, form.value.description, org, deepCopy(scoped.value)) }
+            })
+        }
         props.notify('success', 'Saved', `Saved template "${name}"`)
         showEditor.value = false
+        creating.value = false
         await reload()
     } catch (e: any) {
-        console.error('updating a permission template failed', e)
+        console.error(template ? 'updating a permission template failed' : 'creating a permission template failed', e)
         props.notify('error', 'Error', extractError(e))
     } finally { saving.value = false }
 }
