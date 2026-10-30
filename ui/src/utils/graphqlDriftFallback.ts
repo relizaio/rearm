@@ -17,7 +17,24 @@
 // stop asking for a rejected one for a while, uses `loadRichestServed`
 // instead (the findings modal, the vulnerability details panel).
 
+import gql from 'graphql-tag'
 import type { DocumentNode } from 'graphql'
+
+// A selection the UI needs only where the backend has it is declared on one line tagged with this
+// GraphQL comment; the document without those lines is the one every backend serves.
+export const ADDITIVE_FIELD_MARKER = '#additive-field'
+
+/** The text without its #additive-field lines. */
+export function stripAdditiveFields (queryText: string): string {
+    return queryText.split('\n').filter((line) => !line.includes(ADDITIVE_FIELD_MARKER)).join('\n')
+}
+
+/** The document without its #additive-field lines: parsed once from the full document's own source. */
+export function withoutAdditiveFields (doc: DocumentNode): DocumentNode {
+    const body = doc.loc?.source?.body
+    if (!body) throw new Error('withoutAdditiveFields needs a document parsed from source')
+    return gql(stripAdditiveFields(body))
+}
 
 export type GraphqlErrorKind = 'validation' | 'network' | 'other'
 
@@ -165,6 +182,63 @@ export async function loadWithSchemaDriftFallback (
         // The narrower query failed too. If we had a FULL error, surface THAT
         // (it reflects the real first failure); otherwise surface this one.
         throw fullError ?? err
+    }
+}
+
+/** A session verdict on whether the backend serves a preferred document (store.ts flags). */
+export interface LatchedFallbackLatch {
+    /** true until the session proved the preferred document unsupported */
+    supported: () => boolean
+    /** called once, after the fallback was SERVED following a drift refusal of the preferred document */
+    markUnsupported: (driftError: any) => void
+}
+
+export interface LatchedFallbackOptions<T> {
+    preferred: DocumentNode
+    fallback: DocumentNode
+    /** sends one document: graphqlClient.query({ query: doc, ... }) or graphqlClient.mutate({ mutation: doc, ... }) */
+    send: (doc: DocumentNode) => Promise<T>
+    latch: LatchedFallbackLatch
+}
+
+export interface LatchedFallbackResult<T> { data: T, served: 'preferred' | 'fallback' }
+
+// The preferred document goes out while the latch holds. A schema-drift refusal (isSchemaDriftError)
+// sends the fallback with the same variables and policy, and only when THAT was served is the latch set,
+// so the refused document is not sent again until a reload (the loadRichestServed rule: nothing served,
+// nothing remembered). Any other error of the preferred document is rethrown unchanged and nothing else
+// is sent; an error of the fallback is rethrown unchanged and the latch is untouched. (TPF-101's
+// loadComponentRows, generalised for TPF-127.)
+export async function sendWithLatchedFallback<T> (opts: LatchedFallbackOptions<T>): Promise<LatchedFallbackResult<T>> {
+    const { preferred, fallback, send, latch } = opts
+    let driftError: any = null
+    if (latch.supported()) {
+        try {
+            return { data: await send(preferred), served: 'preferred' }
+        } catch (err: any) {
+            if (!isSchemaDriftError(err)) throw err
+            driftError = err
+        }
+    }
+    const data = await send(fallback)
+    if (driftError) latch.markUnsupported(driftError)
+    return { data, served: 'fallback' }
+}
+
+/**
+ * The session latch of the artifact scan state (TPF-127): the two sides sendWithLatchedFallback needs,
+ * defined once for a store action's context and for a component's useStore() instance. The flag and the
+ * mutation it names are declared in store.ts (state artifactScanStateSupported, mutation
+ * SET_ARTIFACT_SCAN_STATE_SUPPORTED); defined here, in a module that imports no store, so a component
+ * shares the definition without importing the store module (component specs mock vuex as { useStore }).
+ */
+export function artifactScanStateLatch (store: { state: any, commit: (type: string, payload?: any) => void }): LatchedFallbackLatch {
+    return {
+        supported: () => store.state.artifactScanStateSupported,
+        markUnsupported: (err: any) => {
+            console.error('Artifact.metrics.notScannable not available on this backend; release documents are sent without it', err)
+            store.commit('SET_ARTIFACT_SCAN_STATE_SUPPORTED', false)
+        }
     }
 }
 

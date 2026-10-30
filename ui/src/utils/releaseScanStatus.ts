@@ -1,6 +1,7 @@
 import gql from 'graphql-tag'
 import graphqlClient from './graphql'
 import { isDocumentComponent } from './agentDocumentsView'
+import { notScannableReleaseTitle, notScannableCountLabel, type ArtifactNotScannable } from './artifactScanStatus'
 
 /**
  * Per-org cache of configuredBaseIntegrations. The list is keyed by org uuid;
@@ -35,12 +36,76 @@ export async function isDtrackConfiguredForOrg (orgUuid: string): Promise<boolea
     }
 }
 
-export type ReleaseScanStatusKind = 'not-applicable' | 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'rejected' | 'ready'
+export type ReleaseScanStatusKind = 'not-applicable' | 'enrichment-pending' | 'dtrack-pending' | 'scan-pending' | 'rejected' | 'not-scannable' | 'ready'
 
 export interface ReleaseScanStatus {
     kind: ReleaseScanStatusKind
     label: string
     title: string
+}
+
+/** TPF-129's four states of a release's gathered BOMs, as the server names them. */
+export type BomScanState = 'NO_BOMS' | 'ALL_SCANNABLE' | 'SOME_NOT_SCANNABLE' | 'ALL_NOT_SCANNABLE'
+const BOM_SCAN_STATES: readonly BomScanState[] = ['NO_BOMS', 'ALL_SCANNABLE', 'SOME_NOT_SCANNABLE', 'ALL_NOT_SCANNABLE']
+
+/** The release's BOM scan state as the UI knows it: the server's statement, or a derivation from the whole set. */
+export interface ReleaseBomScan {
+    state: BomScanState
+    /** gathered BOMs carrying the marker: the server's count, or the markers' length */
+    notScannableBoms: number
+    /** the distinct reasons in first-seen order: the server's list, or the markers' */
+    reasons: string[]
+    /** the markers themselves when derived; empty when the server stated the tally */
+    markers: ArtifactNotScannable[]
+    source: 'server' | 'derived'
+}
+
+/**
+ * Whether a release row carries the release's whole scan-input set, the set the backend gathers for
+ * its metrics (own artifacts, the source code entry's, the variants' outbound deliverables'): the
+ * shape the full single-release document selects, and the product page's child rows (TPF-127). A
+ * list row (own artifacts only, no variantDetails), the product document's own row (variantDetails
+ * without deliverables) and a child row served without the field (no artifactDetails) do not. A
+ * release-level state may be derived from the whole set only (D17): a row proves what is true of
+ * that row, never what is true of every BOM the release has.
+ */
+export function hasCompleteScanInputs (release: any): boolean {
+    if (!Array.isArray(release?.artifactDetails)) return false
+    if (release.sourceCodeEntryDetails === undefined) return false
+    if (release.sourceCodeEntryDetails !== null && !Array.isArray(release.sourceCodeEntryDetails.artifactDetails)) return false
+    if (!Array.isArray(release.variantDetails)) return false
+    return release.variantDetails.every((v: any) => Array.isArray(v?.outboundDeliverableDetails))
+}
+
+/**
+ * The partition of a release's gathered BOMs by the not-scannable marker (TPF-127), named as TPF-129's
+ * BomScanState names it. The server's statement wins whenever a document selects it
+ * (release.metrics.bomScan, exposed by a later task from the tally TPF-129 persists); otherwise the
+ * partition is derived from the rows, and only when the row holds the whole scan-input set
+ * (hasCompleteScanInputs). Null means "not known from this row": the caller renders as today. A BOM
+ * is scannable unless it carries the marker: an absent key (a server without the field, or the core
+ * document) and null both count as scannable.
+ */
+export function releaseBomScanState (release: any): ReleaseBomScan | null {
+    const served = release?.metrics?.bomScan
+    if (served && BOM_SCAN_STATES.includes(served.state)) {
+        return {
+            state: served.state,
+            notScannableBoms: typeof served.notScannableBoms === 'number' ? served.notScannableBoms : 0,
+            reasons: Array.isArray(served.reasons) ? served.reasons.map((r: any) => String(r)) : [],
+            markers: [],
+            source: 'server'
+        }
+    }
+    if (!hasCompleteScanInputs(release)) return null
+    const boms = collectArtifactsForStatus(release).filter((a) => a?.type === 'BOM')
+    const markers: ArtifactNotScannable[] = boms.map((a) => a?.metrics?.notScannable).filter((m) => !!m)
+    const reasons = [...new Set(markers.map((m) => String(m.reason)))]
+    const base = { notScannableBoms: markers.length, reasons, markers, source: 'derived' as const }
+    if (boms.length === 0) return { state: 'NO_BOMS', ...base }
+    if (markers.length === 0) return { state: 'ALL_SCANNABLE', ...base }
+    if (markers.length === boms.length) return { state: 'ALL_NOT_SCANNABLE', ...base }
+    return { state: 'SOME_NOT_SCANNABLE', ...base }
 }
 
 /**
@@ -59,6 +124,9 @@ export interface ReleaseScanStatus {
  *                      "pending" badge would wait forever. Enrichment-pending
  *                      is NOT remapped: rebom enrichment is artifact-level and
  *                      still finishes regardless of release lifecycle.
+ *  not-scannable       every gathered BOM carries the fan-out's not-scannable marker (TPF-127): nothing to scan, said before firstScanned,
+ *                      because the backend anchors such a release as scan complete with zero counts; only from the server's
+ *                      statement or a document holding the whole scan-input set
  *  ready               firstScanned is set — caller renders the existing circles
  *  not-applicable      a board's document round (task RD4-11): never scanned, so
  *                      the caller shows no scan state at all — no badge and no
@@ -89,6 +157,17 @@ export function getReleaseScanStatus (release: any, dtrackConfigured: boolean): 
             }
         }
     }
+    // TPF-127: every gathered BOM carries the fan-out's not-scannable marker: nothing to scan. Said
+    // before the firstScanned test, because the backend anchors such a release as scan complete
+    // (firstScanned, lastScanned, zero counts) and the circles would read as a clean scan. Known only
+    // from the server's statement or from a document that holds the whole scan-input set (null
+    // otherwise: today's test decides, D17). Never for a product: its counts are its children's rollup.
+    if (release?.componentDetails?.type !== 'PRODUCT') {
+        const scan = releaseBomScanState(release)
+        if (scan?.state === 'ALL_NOT_SCANNABLE') {
+            return { kind: 'not-scannable', label: 'No scannable components', title: notScannableReleaseTitle(scan.markers, scan.notScannableBoms, scan.reasons) }
+        }
+    }
     if (!release?.metrics?.firstScanned) {
         if (rejected) return rejectedStatus()
         return {
@@ -113,6 +192,33 @@ export function isScanNotApplicable (release: any): boolean {
 /** Whether a status is drawn as a badge: every pending or rejected state, not ready or not-applicable. */
 export function showsScanBadge (status: ReleaseScanStatus): boolean {
     return status.kind !== 'ready' && status.kind !== 'not-applicable'
+}
+
+export const NOT_SCANNABLE_GREY = '#9e9e9e'
+
+/** The badge colour per kind: red for rejected, orange for enrichment, grey for nothing to scan, yellow for the pending states. */
+export function scanBadgeBackground (status: ReleaseScanStatus): string {
+    if (status.kind === 'rejected') return '#d03050'
+    if (status.kind === 'enrichment-pending') return '#fd8c00'
+    if (status.kind === 'not-scannable') return NOT_SCANNABLE_GREY
+    return '#ffc107'
+}
+
+/** What a list row may say beside its circles about the BOMs it holds (TPF-127, round 5). */
+export interface ReleaseNotScannableNote { count: number, label: string, title: string }
+
+/**
+ * The note beside a row's circles when the row's own BOM artifacts carry the fan-out's marker: a count
+ * of what the row holds, never a release-level verdict (D17: that needs the whole set or the server's
+ * tally). Own artifacts only (the list documents select no other); typed BOMs only (an untyped row,
+ * the branch list's, holds no marker a reader can read, D18). Null when no held BOM is marked.
+ */
+export function ownNotScannableNote (release: any): ReleaseNotScannableNote | null {
+    const own: any[] = Array.isArray(release?.artifactDetails) ? release.artifactDetails : []
+    const markers: ArtifactNotScannable[] = own.filter((a) => a?.type === 'BOM' && a?.metrics?.notScannable).map((a) => a.metrics.notScannable)
+    if (markers.length === 0) return null
+    const reasons = [...new Set(markers.map((m) => String(m.reason)))]
+    return { count: markers.length, label: notScannableCountLabel(markers.length), title: notScannableReleaseTitle(markers, markers.length, reasons) }
 }
 
 function rejectedStatus (): ReleaseScanStatus {
@@ -168,6 +274,10 @@ function isBomDtrackPending (a: any): boolean {
     const m = a.metrics || {}
     if (m.dtrackSubmissionFailed) return false
     if (m.dependencyTrackFullUri) return false
+    // A BOM the fan-out marked not scannable (metrics.notScannable, TPF-127) is not awaiting submission:
+    // nothing will be submitted. The release-level kind decides next (releaseBomScanState); a list row
+    // says what it holds beside its circles (ownNotScannableNote).
+    if (m.notScannable) return false
     // Synthetic-DTrack artifacts are scanned via a shared bucket project and so
     // never carry their own dependencyTrackFullUri; once firstScanned is set the
     // artifact has been scanned and is no longer awaiting submission.

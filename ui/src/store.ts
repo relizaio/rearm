@@ -5,7 +5,7 @@ import constants from './utils/constants'
 import graphqlClient from './utils/graphql'
 import graphqlQueries from './utils/graphqlQueries'
 import { SOFTWARE_KINDS } from './utils/agentDocumentsView'
-import { loadWithSchemaDriftFallback, isSchemaDriftError } from './utils/graphqlDriftFallback'
+import { loadWithSchemaDriftFallback, sendWithLatchedFallback, withoutAdditiveFields, artifactScanStateLatch } from './utils/graphqlDriftFallback'
 import { ORGANIZATIONS_CORE, ORGANIZATIONS_FULL } from './utils/organizationsQuery'
 import { DashboardView, isDashboardView, dashboardViewFromWire } from '@/utils/dashboardView'
 import { classifyGraphqlError } from '@/utils/graphqlDriftFallback'
@@ -260,30 +260,51 @@ const AGENT_TASK_CARD_SELECTION = `
 
 // TPF-101 (TPF-74 child 2): the organization's component and product lists read the componentRefs
 // projection (six scalars, no component document, no effectiveLifecycle). A backend without the field
-// refuses the document as schema drift (a validation verdict or an HTTP 400, isSchemaDriftError); the
-// call then sends the caller's full components document, and only when THAT was served is the session
-// latched onto it, so the refused document is not sent again until a reload (the loadRichestServed
-// rule: nothing served, nothing remembered). Any other error of the refs document (401, 403, 5xx,
-// transport) is rethrown unchanged; an error of the full document is rethrown unchanged.
+// is served the caller's full components document instead, latched for the session through
+// sendWithLatchedFallback (graphqlDriftFallback.ts), which states the rules.
 async function loadComponentRows (context: any, fullQuery: any, variables: any,
     fetchPolicy: 'network-only' | 'cache-first'): Promise<any[]> {
-    let refsError: any = null
-    if (context.state.componentRefsSupported) {
-        try {
-            const response = await graphqlClient.query({ query: graphqlQueries.ComponentRefsGql, variables, fetchPolicy })
-            return response.data.componentRefs || []
-        } catch (err: any) {
-            if (!isSchemaDriftError(err)) throw err
-            refsError = err
+    const { data, served } = await sendWithLatchedFallback<any>({
+        preferred: graphqlQueries.ComponentRefsGql,
+        fallback: fullQuery,
+        send: (query) => graphqlClient.query({ query, variables, fetchPolicy }),
+        latch: {
+            supported: () => context.state.componentRefsSupported,
+            markUnsupported: (err) => {
+                console.error('componentRefs not available on this backend; the lists read components instead', err)
+                context.commit('SET_COMPONENT_REFS_SUPPORTED', false)
+            }
         }
-    }
-    const response = await graphqlClient.query({ query: fullQuery, variables, fetchPolicy })
-    if (refsError) {
-        console.error('componentRefs not available on this backend; the lists read components instead', refsError)
-        context.commit('SET_COMPONENT_REFS_SUPPORTED', false)
-    }
-    return response.data.components || []
+    })
+    return (served === 'preferred' ? data.data.componentRefs : data.data.components) || []
 }
+
+// TPF-127: the three release mutations whose documents were inline in their actions, hoisted (text
+// unchanged) so each has a core twin. They carry the #additive-field line of graphqlQueries through
+// SingleReleaseGqlData; the core twin is the same document without it, sent through
+// sendWithLatchedFallback with the artifact scan state latch.
+const ADD_RELEASE_GQL = gql`
+                    mutation AddRelease($rel: ReleaseInput!) {
+                        addReleaseManual(release: $rel) {
+                            ${graphqlQueries.SingleReleaseGqlData}
+                        }
+                    }`
+const ADD_RELEASE_GQL_CORE = withoutAdditiveFields(ADD_RELEASE_GQL)
+const UPDATE_RELEASE_LIFECYCLE_GQL = gql`
+                    mutation updateReleaseLifecycle($release: ID!, $newLifecycle: ReleaseLifecycleEnum!) {
+                        updateReleaseLifecycle(release: $release, newLifecycle: $newLifecycle) {
+                            ${graphqlQueries.SingleReleaseGqlData}
+                        }
+                    }
+                `
+const UPDATE_RELEASE_LIFECYCLE_GQL_CORE = withoutAdditiveFields(UPDATE_RELEASE_LIFECYCLE_GQL)
+const REEVALUATE_RELEASE_TRIGGERS_GQL = gql`
+                    mutation reevaluateReleaseTriggers($release: ID!) {
+                        reevaluateReleaseTriggers(release: $release) {
+                            ${graphqlQueries.SingleReleaseGqlData}
+                        }
+                    }`
+const REEVALUATE_RELEASE_TRIGGERS_GQL_CORE = withoutAdditiveFields(REEVALUATE_RELEASE_TRIGGERS_GQL)
 
 const storeObject : any = {
     state () {
@@ -321,6 +342,15 @@ const storeObject : any = {
              * from an edge proxy must not hide the refs document after it clears).
              */
             componentRefsSupported: true,
+            /**
+             * False once a release document carrying the artifact scan state (the #additive-field line
+             * of graphqlQueries, TPF-127) was refused as schema drift AND the same document without it
+             * was then served: a backend without Artifact.metrics.notScannable (a CE mirror before its
+             * sync). Every release loader and mutation then sends the core document for the session; a
+             * reload clears it. A refusal of another kind does not set it, and neither does a drift
+             * refusal whose fallback failed too.
+             */
+            artifactScanStateSupported: true,
             components: [],
             branches: [],
             releases: [],
@@ -572,6 +602,9 @@ const storeObject : any = {
         SET_COMPONENT_REFS_SUPPORTED (state : any, supported : boolean) {
             state.componentRefsSupported = supported
         },
+        SET_ARTIFACT_SCAN_STATE_SUPPORTED (state : any, supported : boolean) {
+            state.artifactScanStateSupported = supported
+        },
         SET_RESOURCE_GROUPS (state : any, resourceGroups : any[]) {
             state.resourceGroups = resourceGroups
         },
@@ -784,16 +817,11 @@ const storeObject : any = {
         },
         async createRelease (context: any, release: any) {
             delete release.namespace
-            const data = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation AddRelease($rel: ReleaseInput!) {
-                        addReleaseManual(release: $rel) {
-                            ${graphqlQueries.SingleReleaseGqlData}
-                        }
-                    }`,
-                variables: {
-                    'rel': release
-                }
+            const { data } = await sendWithLatchedFallback<any>({
+                preferred: ADD_RELEASE_GQL,
+                fallback: ADD_RELEASE_GQL_CORE,
+                send: (mutation) => graphqlClient.mutate({ mutation, variables: { 'rel': release } }),
+                latch: artifactScanStateLatch(context)
             })
             context.commit('ADD_RELEASE', data.data.addReleaseManual)
             return data.data.addReleaseManual
@@ -1146,14 +1174,24 @@ const storeObject : any = {
             }
         },   
         async fetchReleaseById (context : any, params : any) {
-            let gqlQ = graphqlQueries.SingleReleaseGql
-            if (params.light) gqlQ = graphqlQueries.SingleReleaseGqlLight
-            else if (params.product) gqlQ = graphqlQueries.SingleReleaseProductGql
-            const response = await graphqlClient.query({
-                query: gqlQ,
-                variables: { releaseID: params.release, orgID: params.org },
-                fetchPolicy: 'no-cache'
-            })
+            const variables = { releaseID: params.release, orgID: params.org }
+            let response: any
+            if (params.light) {
+                response = await graphqlClient.query({
+                    query: graphqlQueries.SingleReleaseGqlLight,
+                    variables,
+                    fetchPolicy: 'no-cache'
+                })
+            } else {
+                const product = !!params.product
+                const sent = await sendWithLatchedFallback<any>({
+                    preferred: product ? graphqlQueries.SingleReleaseProductGql : graphqlQueries.SingleReleaseGql,
+                    fallback: product ? graphqlQueries.SingleReleaseProductGqlCore : graphqlQueries.SingleReleaseGqlCore,
+                    send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' }),
+                    latch: artifactScanStateLatch(context)
+                })
+                response = sent.data
+            }
             context.commit('ADD_RELEASE', response.data.release)
             return response.data.release
         },
@@ -2454,11 +2492,11 @@ const storeObject : any = {
             } else {
                 rlzUpdObject.tags = []
             }
-            const data = await graphqlClient.mutate({
-                mutation: graphqlQueries.ReleaseGqlMutate,
-                variables: {
-                    'rel': rlzUpdObject
-                }
+            const { data } = await sendWithLatchedFallback<any>({
+                preferred: graphqlQueries.ReleaseGqlMutate,
+                fallback: graphqlQueries.ReleaseGqlMutateCore,
+                send: (mutation) => graphqlClient.mutate({ mutation, variables: { 'rel': rlzUpdObject } }),
+                latch: artifactScanStateLatch(context)
             })
             context.commit('ADD_RELEASE', data.data.updateRelease)
             if(data.errors){
@@ -2477,11 +2515,11 @@ const storeObject : any = {
             } else {
                 rlzUpdObject.tags = []
             }
-            const data = await graphqlClient.mutate({
-                mutation: graphqlQueries.ReleaseTagsMetaGqlMutate,
-                variables: {
-                    'rel': rlzUpdObject
-                }
+            const { data } = await sendWithLatchedFallback<any>({
+                preferred: graphqlQueries.ReleaseTagsMetaGqlMutate,
+                fallback: graphqlQueries.ReleaseTagsMetaGqlMutateCore,
+                send: (mutation) => graphqlClient.mutate({ mutation, variables: { 'rel': rlzUpdObject } }),
+                latch: artifactScanStateLatch(context)
             })
             context.commit('ADD_RELEASE', data.data.updateReleaseTagsMeta)
             if(data.errors){
@@ -2504,18 +2542,17 @@ const storeObject : any = {
             return data.data.updateArtifactTags
         },
         async updateReleaseLifecycle (context: any, release: any) {
-            const data = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation updateReleaseLifecycle($release: ID!, $newLifecycle: ReleaseLifecycleEnum!) {
-                        updateReleaseLifecycle(release: $release, newLifecycle: $newLifecycle) {
-                            ${graphqlQueries.SingleReleaseGqlData}
-                        }
+            const { data } = await sendWithLatchedFallback<any>({
+                preferred: UPDATE_RELEASE_LIFECYCLE_GQL,
+                fallback: UPDATE_RELEASE_LIFECYCLE_GQL_CORE,
+                send: (mutation) => graphqlClient.mutate({
+                    mutation,
+                    variables: {
+                        release: release.uuid,
+                        newLifecycle: release.lifecycle
                     }
-                `,
-                variables: {
-                    release: release.uuid,
-                    newLifecycle: release.lifecycle
-                }
+                }),
+                latch: artifactScanStateLatch(context)
             })
             context.commit('ADD_RELEASE', data.data.updateReleaseLifecycle)
             if(data.errors){
@@ -2612,13 +2649,18 @@ const storeObject : any = {
         },
         async approveRelease (context: any, approveProps: any) {
             return new Promise((resolve, reject) => {
-                graphqlClient.mutate({
-                    mutation: graphqlQueries.ApproveReleaseGqlMutate,
-                    variables: {
-                        'release': approveProps.release,
-                        'approvals': approveProps.approvals
-                    }
-                }).then(data => {
+                sendWithLatchedFallback<any>({
+                    preferred: graphqlQueries.ApproveReleaseGqlMutate,
+                    fallback: graphqlQueries.ApproveReleaseGqlMutateCore,
+                    send: (mutation) => graphqlClient.mutate({
+                        mutation,
+                        variables: {
+                            'release': approveProps.release,
+                            'approvals': approveProps.approvals
+                        }
+                    }),
+                    latch: artifactScanStateLatch(context)
+                }).then(({ data }) => {
                     context.commit('ADD_RELEASE', data.data.approveReleaseManual)
                     resolve(data)
                 }).catch(err => {
@@ -2634,15 +2676,13 @@ const storeObject : any = {
          * this release changed, so nothing re-evaluates it.
          */
         async reevaluateReleaseTriggers (context: any, releaseUuid: string) {
-            const { data } = await graphqlClient.mutate({
-                mutation: gql`
-                    mutation reevaluateReleaseTriggers($release: ID!) {
-                        reevaluateReleaseTriggers(release: $release) {
-                            ${graphqlQueries.SingleReleaseGqlData}
-                        }
-                    }`,
-                variables: { release: releaseUuid }
+            const { data: response } = await sendWithLatchedFallback<any>({
+                preferred: REEVALUATE_RELEASE_TRIGGERS_GQL,
+                fallback: REEVALUATE_RELEASE_TRIGGERS_GQL_CORE,
+                send: (mutation) => graphqlClient.mutate({ mutation, variables: { release: releaseUuid } }),
+                latch: artifactScanStateLatch(context)
             })
+            const { data } = response
             context.commit('ADD_RELEASE', data.reevaluateReleaseTriggers)
             return data.reevaluateReleaseTriggers
         },
@@ -2659,14 +2699,19 @@ const storeObject : any = {
                     approvals: constructedApprovals,
                     productsForDisapproval: approveProps.productsForDisapproval
                 }
-                graphqlClient.mutate({
-                    mutation: graphqlQueries.ApproveReleaseGqlMutate,
-                    variables: {
-                        'rel': approvePropsCopy.uuid,
-                        'appr': approvePropsCopy.approvals,
-                        'productFilter': approvePropsCopy.productsForDisapproval
-                    }
-                }).then(data => {
+                sendWithLatchedFallback<any>({
+                    preferred: graphqlQueries.ApproveReleaseGqlMutate,
+                    fallback: graphqlQueries.ApproveReleaseGqlMutateCore,
+                    send: (mutation) => graphqlClient.mutate({
+                        mutation,
+                        variables: {
+                            'rel': approvePropsCopy.uuid,
+                            'appr': approvePropsCopy.approvals,
+                            'productFilter': approvePropsCopy.productsForDisapproval
+                        }
+                    }),
+                    latch: artifactScanStateLatch(context)
+                }).then(({ data }) => {
                     context.commit('ADD_RELEASE', data.data.approveReleaseManual)
                     resolve(data)
                 }).catch(err => {
@@ -4481,6 +4526,16 @@ const storeObject : any = {
 
 
 const store = createStore(storeObject)
+
+// TPF-127: the hoisted release mutation documents and their core twins, for releaseScanStateDocuments.spec.ts only.
+export const releaseScanStateDocumentsForTests = {
+    ADD_RELEASE_GQL,
+    ADD_RELEASE_GQL_CORE,
+    UPDATE_RELEASE_LIFECYCLE_GQL,
+    UPDATE_RELEASE_LIFECYCLE_GQL_CORE,
+    REEVALUATE_RELEASE_TRIGGERS_GQL,
+    REEVALUATE_RELEASE_TRIGGERS_GQL_CORE
+}
 
 export default {
     name: 'Store',

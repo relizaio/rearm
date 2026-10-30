@@ -18,6 +18,7 @@ export const ARTIFACT_SCAN_STATUS_QUERY = gql`
             enrichmentGated inCandidateSet candidateRule
             matchableComponentCount rootComponentCount terminalComponentCount unmatchableComponentCount
             noMatchableComponentsReason
+            notScannableAt
             blockerTotal blockersTruncated
             blockers { purl enrichment terminalReason bucketIndex bucketIngestState bucketLastUpdatedDate reason }
         }
@@ -58,11 +59,21 @@ export interface ArtifactScanStatus {
     terminalComponentCount: number
     unmatchableComponentCount: number
     noMatchableComponentsReason: NoMatchableComponentsReason | string | null
-    /** The stored not-scannable marker; not selected until the server serves it (rendered when present). */
+    /** When the fan-out marked this artifact not scannable (Artifact.metrics.notScannable.at); null when unmarked. */
     notScannableAt?: string | null
     blockerTotal: number
     blockersTruncated: boolean
     blockers: ScanBlocker[]
+}
+
+/** Artifact.metrics.notScannable as served: the fan-out's marker on a BOM with no matchable component. */
+export interface ArtifactNotScannable {
+    reason: NoMatchableComponentsReason | string
+    at: string | null
+    components: number
+    root: number
+    terminal: number
+    unmatchable: number
 }
 
 export interface ScanStatusLoadResult { status: ArtifactScanStatus | null, supported: boolean }
@@ -138,6 +149,38 @@ const REASON_LABELS: Record<NoMatchableComponentsReason, string> = {
 export function reasonLabel (reason: NoMatchableComponentsReason | string | null | undefined): string {
     if (reason == null) return ''
     return REASON_LABELS[reason as NoMatchableComponentsReason] ?? reason
+}
+
+/**
+ * The title of the "No scannable components" pill and the facts line (TPF-127): the reason in the
+ * explainer's words, the gate's counts, what to do, and when the fan-out decided.
+ */
+export function notScannableTitle (marker: ArtifactNotScannable): string {
+    const counts = `${marker.components} component rows: ${marker.root} root, ${marker.terminal} enrichment-terminal, ${marker.unmatchable} without purl or cpe`
+    let text = `Nothing to scan: ${reasonLabel(marker.reason) || String(marker.reason)} (${counts})`
+    if (marker.reason === 'ONLY_ROOT' || marker.reason === 'NO_PURL_OR_CPE') {
+        text += '; components without a purl or cpe are not inventoried, so re-generate the SBOM with package coordinates'
+    }
+    if (marker.reason === 'NO_COMPONENTS') text += '; an empty SBOM, or one whose parse has not landed yet'
+    const when = formatInstant(marker.at)
+    if (when) text += `; evaluated ${when}`
+    return text
+}
+
+/**
+ * The title of a release-level "No scannable components" badge or note (TPF-127): the one marker's
+ * title when there is exactly one, else the distinct reasons in order, with the count of marked BOMs.
+ */
+export function notScannableReleaseTitle (markers: ArtifactNotScannable[], notScannableBoms: number, reasons: string[]): string {
+    if (markers.length === 1) return notScannableTitle(markers[0])
+    const labels = reasons.map((r) => reasonLabel(r) || r).join('; ')
+    const head = notScannableBoms === 1 ? 'Nothing to scan' : `Nothing to scan in ${notScannableBoms} BOMs`
+    return labels ? `${head}: ${labels}` : 'Nothing to scan'
+}
+
+/** The grey note beside a list row's circles (TPF-127): how many of the BOMs the row holds carry the marker. */
+export function notScannableCountLabel (count: number): string {
+    return `${count} BOM${count === 1 ? '' : 's'} not scannable`
 }
 
 export function candidateFlagText (inCandidateSet: boolean): string {
