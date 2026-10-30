@@ -551,9 +551,12 @@ describe('the role form: coordinator checkpoint', () => {
         expect(template.slice(tag, field)).toContain('v-model:checked="editingRole.coordinatorCheckpoint"')
         const space = template.lastIndexOf('<n-space :size="18" v-if="editingRole.kind !== \'HUMAN\'">', field)
         expect(space).toBeGreaterThan(-1)
-        expect(template.indexOf('</n-space>', space)).toBeGreaterThan(field)
+        const end = template.indexOf('</n-space>', space)
+        expect(end).toBeGreaterThan(field)
         expect(template.indexOf('editingRole.blindReview', space)).toBeLessThan(field)
-        expect(template.indexOf('editingRole.active', space)).toBeGreaterThan(field)
+        const active = template.indexOf('editingRole.active', space)
+        expect(active).toBeGreaterThan(field)
+        expect(active).toBeLessThan(end)
     })
 
     it('seeds a new role false and sends the flag, null for a HUMAN role', () => {

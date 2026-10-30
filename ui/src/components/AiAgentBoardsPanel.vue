@@ -770,7 +770,7 @@
                             The session in this role reads its task without the earlier hops' notes, sessions and
                             agents: it reviews the work, not the worker's account of it.
                         </n-tooltip>
-                        <!-- The design checkpoint (task SPLIT-5): the operator's, one role per board; the server refuses a second. -->
+                        <!-- The design checkpoint (task SPLIT-5, this form in SPLIT-8): the operator's, one role per board; the server refuses a second. -->
                         <n-tooltip trigger="hover">
                             <template #trigger>
                                 <n-checkbox v-model:checked="editingRole.coordinatorCheckpoint" data-testid="role-coordinator-checkpoint">coordinator checkpoint</n-checkbox>
