@@ -537,7 +537,23 @@ describe('the kanban: more-lanes hint', () => {
         expect(hint).toBeGreaterThan(-1)
         expect(hint).toBeLessThan(strip)
         expect(template.slice(strip).indexOf('data-testid="more-lanes"')).toBe(-1, 'not under the strip too')
-        expect(source).toContain('const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)')
+        expect(source).toContain('const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge, stripScrolled)')
+    })
+
+    it('is a keyboard-reachable button that scrolls the strip to its end, and back once there', () => {
+        const more = template.indexOf('data-testid="more-lanes"')
+        const moreTag = template.slice(template.lastIndexOf('<button', more), template.indexOf('</button>', more))
+        expect(moreTag).toContain('type="button"')
+        expect(moreTag).toContain('v-if="laneHint(lane.key)?.toward === \'end\'"')
+        expect(moreTag).toContain('@click="scrollStrip(lane.key, \'end\')"')
+        const back = template.indexOf('data-testid="lanes-back"')
+        expect(back).toBeGreaterThan(more)
+        const backTag = template.slice(template.lastIndexOf('<button', back), template.indexOf('</button>', back))
+        expect(backTag).toContain('type="button"')
+        expect(backTag).toContain('v-else')
+        expect(backTag).toContain('@click="scrollStrip(lane.key, \'start\')"')
+        expect(source).toContain('return stripHint(pastEdge.value[key] ?? 0, stripScrolled.value[key] ?? false)')
+        expect(source).toContain('const scrollStrip = strips.scrollStrip')
     })
 })
 
@@ -589,12 +605,16 @@ describe('the board load: card-level tasks', () => {
         for (const f of fields) expect(card.includes(f), f).toBe(true)
     })
 
-    it('serves the card selection to the board and the whole one on request', () => {
-        expect(fetchBoard).toContain('payload: { boardUuid: string, status?: string, full?: boolean }')
-        expect(fetchBoard).toMatch(/const selection = payload\.full\s+\? `\$\{AGENT_TASK_SELECTION\}/)
-        expect(fetchBoard).toContain(': AGENT_TASK_CARD_SELECTION')
-        expect(fetchBoard).toContain('${selection}')
+    // The task page reads the board's other tasks at card level too: its consumers read only their key, title,
+    // status and links. A task's whole read is fetchAgentTask.
+    it('serves the card selection, and only it, to the board and the task page', () => {
+        expect(fetchBoard).toContain('payload: { boardUuid: string, status?: string }')
+        expect(fetchBoard).toContain('${AGENT_TASK_CARD_SELECTION}')
+        expect(fetchBoard).not.toContain('AGENT_TASK_SELECTION}')
+        expect(fetchBoard).not.toContain('full')
         expect(source).toContain("store.dispatch('fetchAgentTasksOfBoard', { boardUuid: board })")
+        const page = readFileSync(fileURLToPath(new URL('./AiAgentTaskPage.vue', import.meta.url)), 'utf8')
+        expect(page).toContain("store.dispatch('fetchAgentTasksOfBoard', { boardUuid: t.board })")
     })
 
     it('reads the drawer\'s task whole when it opens, and merges it over the card', () => {

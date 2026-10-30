@@ -1569,6 +1569,7 @@ import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTy
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
+import { FREEFORM_CREATE_CONFIRM, keyCreatedFollowUp } from '@/utils/apiKeyCreated'
 import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
 import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
 import { loadCombinedApiKeyOrgPermissions } from '@/utils/apiKeyGroupMembership'
@@ -2176,7 +2177,10 @@ const apiKeyDeclaredColumn = {
         return h('div', lines)
     }
 }
-/** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
+/**
+ * Key ids are created without a secret; minting the first one is its own step, offered right after creation,
+ * except for a Free Form key, whose permissions are set first (keyCreatedFollowUp).
+ */
 async function createOrgKey (apiType: string, notes: string | null, label: string) {
     let created: any
     try {
@@ -2184,7 +2188,13 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
         created = resp.data.createOrgApiKey
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
     loadProgrammaticAccessKeys(false)
-    const r = await Swal.fire({ titleText: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    const next = keyCreatedFollowUp(apiType, label)
+    if (next.kind === 'notice') {
+        notify('success', next.title, next.content)
+        return
+    }
+    const r = await Swal.fire({ titleText: next.titleText, text: next.text, icon: 'success', showCancelButton: true,
+        confirmButtonText: next.confirmButtonText, cancelButtonText: next.cancelButtonText })
     if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
 }
 
@@ -4501,7 +4511,7 @@ async function editUser(email: string) {
 async function genFreeFormApiKey() {
     const swalResult = await Swal.fire({
         title: 'Are you sure?',
-        text: 'A new Free Form API Key id will be created. Its first secret is generated as a separate step.',
+        text: FREEFORM_CREATE_CONFIRM,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, create it!',

@@ -187,9 +187,13 @@
                      ? { borderLeft: `4px solid ${groupColour(lane.key)}`, paddingLeft: '6px' } : undefined">{{ lane.label }}</div>
             <!-- Columns at a laptop's width (RD2-13): each head counts its cards, an empty column folds to
                  its head until opened, and a strip still too wide says how many columns sit past the edge. -->
-            <!-- Above the strip, where it shows without scrolling the page (RD2-13 run 1, T-2). -->
-            <div v-if="moreLanesHint(pastEdge[lane.key] ?? 0)" class="board__more" data-testid="more-lanes">
-                {{ moreLanesHint(pastEdge[lane.key] ?? 0) }}
+            <!-- Above the strip, where it shows without scrolling the page (RD2-13 run 1, T-2). A click scrolls the
+                 strip to its end; once there, the back hint scrolls it to its start. -->
+            <div v-if="laneHint(lane.key)" class="board__more">
+                <button v-if="laneHint(lane.key)?.toward === 'end'" type="button" class="board__more-btn" data-testid="more-lanes"
+                        @click="scrollStrip(lane.key, 'end')">{{ laneHint(lane.key)?.label }}</button>
+                <button v-else type="button" class="board__more-btn" data-testid="lanes-back"
+                        @click="scrollStrip(lane.key, 'start')">{{ laneHint(lane.key)?.label }}</button>
             </div>
             <div class="board" :ref="(el: any) => boardEl(lane.key, el)" @scroll="measureBoards">
                 <div class="col" :class="{ 'col--folded': folded('intake', byStatus('PENDING_INTAKE', lane.tasks)) }" data-col="intake">
@@ -998,8 +1002,8 @@ import { budgetChip, hopBudgetInput, microsToDollars, settingsDraftOf, settingsP
 import { STALENESS_FIELDS, stalenessDraftOf, stalenessPatch, stalenessProblem } from '@/utils/agentStaleness'
 import { actorLabel } from '@/utils/agentActors'
 import { refLabel, roleTagFor, subtaskProgress, subtaskTag, waitsOnLabel } from '@/utils/agentTaskLabels'
-import { CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, columnFolded, columnKey, EMPTY_BOARD_HINT, moreCardsLabel, moreLanesHint,
-    shownCards, stripMeasure } from '@/utils/agentKanban'
+import { CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, columnFolded, columnKey, EMPTY_BOARD_HINT, moreCardsLabel,
+    shownCards, stripHint, stripMeasure } from '@/utils/agentKanban'
 import { initialBoard, readLastBoard, writeLastBoard } from '@/utils/agentLastBoard'
 import { CAPABILITIES, COORDINATOR_CAPABILITIES, toOptions } from '@/utils/agentCapabilities'
 import { documentsRootNote, PATH_PLACEHOLDERS, templateRows } from '@/utils/agentDocuments'
@@ -1428,10 +1432,16 @@ function openColumn (key: string) {
     openedColumns.value = new Set([...openedColumns.value, key])
 }
 const pastEdge = ref<Record<string, number>>({})
+const stripScrolled = ref<Record<string, boolean>>({})
 // Each lane's strip, measured when it mounts and whenever the tasks, the open columns or the window change (RD2-13).
-const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge)
+const strips = stripMeasure(fn => { nextTick(fn) }, pastEdge, stripScrolled)
 const boardEl = strips.boardEl
 const measureBoards = strips.measure
+const scrollStrip = strips.scrollStrip
+/** The lane's hint above its strip: more lanes past the edge, or back to the start once scrolled to the end. */
+function laneHint (key: string) {
+    return stripHint(pastEdge.value[key] ?? 0, stripScrolled.value[key] ?? false)
+}
 onMounted(() => window.addEventListener('resize', measureBoards))
 onBeforeUnmount(() => window.removeEventListener('resize', measureBoards))
 watch([tasks, openedColumns], () => nextTick(measureBoards))
@@ -2327,6 +2337,8 @@ async function operatorPause (pause: boolean, reason?: string) {
     .col--folded .col__head { cursor: pointer; opacity: 0.6; white-space: nowrap; }
     .col__count { margin-left: 6px; font-weight: 500; color: #888; }
     .board__more { text-align: right; font-size: 12px; color: #888; margin-bottom: 2px; }
+    .board__more-btn { background: none; border: none; padding: 0 2px; font: inherit; color: inherit; cursor: pointer; }
+    .board__more-btn:hover, .board__more-btn:focus-visible { color: #555; text-decoration: underline; }
     .board__empty { color: #888; font-size: 13px; padding: 12px 0; }
     .board__loading { display: flex; align-items: center; gap: 8px; color: #888; font-size: 13px; padding: 12px 0; }
     .col__more { margin-bottom: 10px; color: #888; }

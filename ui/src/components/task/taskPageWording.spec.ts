@@ -28,7 +28,11 @@ describe('task page wording', () => {
         expect(hops.find('.dsec__h').text()).toBe('Hops')
         expect(hops.findAll('.hist__row .n-tag').map(t => t.text())).toEqual(expect.arrayContaining(['passed', 'rejected', 'returned']))
         expect(hops.text()).not.toContain('PASSED')
-        const revs = mount(AiAgentRevisionHistory, { props: { kind: 'task', uuid: 't1' } })
+        // On the task page the revisions are their own tab, "Revisions"; elsewhere a collapse of that name.
+        const page = readFileSync(join(process.cwd(), 'src/components/AiAgentTaskPage.vue'), 'utf8')
+        expect(page).toContain('name="revisions" tab="Revisions"')
+        expect(page).toContain('<AiAgentRevisionHistory kind="task" :uuid="task.uuid" :current="task" open/>')
+        const revs = mount(AiAgentRevisionHistory, { props: { kind: 'role', uuid: 'r1' } })
         expect(revs.find('.n-collapse-item__header-main').text()).toBe('Revisions')
     })
 
@@ -91,8 +95,9 @@ describe('task page wording', () => {
 
     it('opens a revision with its time in the one format', async () => {
         dispatch.mockResolvedValue([{ revision: 1, at: '2026-09-25T09:00:00Z', task: { uuid: 't1', status: 'QUEUED' } }])
-        const w = mount(AiAgentRevisionHistory, { props: { kind: 'task', uuid: 't1' } })
-        await w.find('.n-collapse-item__header-main').trigger('click')
+        // The task page's Revisions tab mounts the list open, with no collapse to click.
+        const w = mount(AiAgentRevisionHistory, { props: { kind: 'task', uuid: 't1', open: true } })
+        expect(w.find('.n-collapse-item__header-main').exists()).toBe(false)
         await flushPromises()
         const at = w.find('.revhist__at')
         expect(at.text()).toBe(ts('2026-09-25T09:00:00Z'))
