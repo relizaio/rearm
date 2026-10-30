@@ -5,7 +5,7 @@
 // completed client-side.
 import { afterEach, describe, expect, it } from 'vitest'
 import { mount, type VueWrapper } from '@vue/test-utils'
-import { NAlert, NTag } from 'naive-ui'
+import { NAlert, NDataTable, NTag } from 'naive-ui'
 import AutoIntegratePreviewPanel from './AutoIntegratePreviewPanel.vue'
 import {
     FOREIGN_RELEASE_NOTE, NOT_READABLE_NOTE, type AutoIntegrateDependencyRow, type AutoIntegrateEvaluation
@@ -110,7 +110,9 @@ describe('AutoIntegratePreviewPanel (row 21)', () => {
         expect(line.textContent).toBe(`Not created: a matching product release already exists: ${a.text()}.`)
         const alert = w.get('[data-testid="auto-integrate-preview-outcome"]')
         expect(alert.text()).not.toContain('Existing release:')
-        expect(alert.text().split('1.0.0 (Assembled')).toHaveLength(2, 'the release is named once')
+        // the table now sits inside the alert and names c1's release in its row; the explanation names it once
+        const explanation = alert.text().replace(w.get('[data-testid="auto-integrate-preview-table"]').text(), '')
+        expect(explanation.split('1.0.0 (Assembled')).toHaveLength(2, 'the release is named once')
         expect(w.findAll('[data-testid="auto-integrate-preview-existing-release"]')).toHaveLength(1)
         expect(alertType(w)).toBe('info')
         expect(w.find('[data-testid="auto-integrate-preview-projected-version"]').exists()).toBe(false)
@@ -158,6 +160,36 @@ describe('AutoIntegratePreviewPanel (row 21)', () => {
         const line = a.element.parentElement as HTMLElement
         expect(line.textContent?.trim().startsWith('Existing release:')).toBe(true)
         expect(w.findAll('[data-testid="auto-integrate-preview-existing-release"]')).toHaveLength(1)
+    })
+
+    it('(j2) closes from an X icon in the top-right corner, not a Close button under the table', async () => {
+        const w = open(evReq)
+        const x = w.get('[data-testid="auto-integrate-preview-close"]')
+        expect(x.element.tagName).toBe('BUTTON')
+        expect(x.attributes('title')).toBe('Close')
+        expect(x.attributes('aria-label')).toBe('Close preview')
+        expect(x.text()).toBe('')
+        expect(x.find('.n-icon svg').exists()).toBe(true)
+        expect(x.classes()).toContain('autoIntegratePreviewClose')
+        expect(w.findAll('button').filter((b) => b.text() === 'Close')).toHaveLength(0)
+        expect(w.find('.autoIntegratePreviewFooter').exists()).toBe(false)
+        // the corner of the block: its first child, before the alert
+        expect(w.get('[data-testid="auto-integrate-preview-panel"]').element.firstElementChild).toBe(x.element)
+        await x.trigger('click')
+        expect(w.emitted('close')).toHaveLength(1)
+    })
+
+    it('(k) one block in the outcome\'s color: the table sits inside the alert, with no fill of its own', () => {
+        for (const [outcome, type] of [['WOULD_CREATE', 'success'], ['MATCHING_PRODUCT_RELEASE_EXISTS', 'info'],
+            ['REQUIRED_DEPENDENCY_WITHOUT_RELEASE', 'warning'], ['CREATE_FAILED', 'error']] as const) {
+            const w = open(ev({ outcome, existingRelease: outcome === 'MATCHING_PRODUCT_RELEASE_EXISTS' ? relA : null, dependencies: [c1] }))
+            expect(w.get('[data-testid="auto-integrate-preview-panel"]').classes(), outcome).toContain('autoIntegratePreview--' + type)
+            expect(alertType(w)).toBe(type)
+            const alert = w.get('[data-testid="auto-integrate-preview-outcome"]')
+            expect(alert.find('[data-testid="auto-integrate-preview-table"]').exists(), outcome).toBe(true)
+        }
+        const table = open(evReq).findComponent(NDataTable)
+        expect(table.props('themeOverrides')).toMatchObject({ tdColor: 'transparent', thColor: 'transparent', tdColorStriped: 'transparent' })
     })
 
     it('(j) Close emits close once', async () => {

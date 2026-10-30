@@ -1,6 +1,12 @@
 <template>
-    <div class="autoIntegratePreviewPanel mt-3" data-testid="auto-integrate-preview-panel">
-        <n-alert :type="alertTypeFor(evaluation.outcome)" :title="'Auto Integrate preview'" data-testid="auto-integrate-preview-outcome">
+    <!-- One block: the alert of the outcome's type carries the explanation and the table inside it, so its color
+         and border (naive-ui's alert theme for that type) cover both; the X closes it from the top-right corner. -->
+    <div class="autoIntegratePreviewPanel mt-3" :class="'autoIntegratePreview--' + blockType" data-testid="auto-integrate-preview-panel">
+        <button type="button" class="autoIntegratePreviewClose" title="Close" aria-label="Close preview"
+            data-testid="auto-integrate-preview-close" @click="emit('close')">
+            <n-icon size="18"><X /></n-icon>
+        </button>
+        <n-alert :type="blockType" :title="'Auto Integrate preview'" data-testid="auto-integrate-preview-outcome">
             <!-- The matching outcome names its release once, as the link inside the sentence (text interpolation only). -->
             <div>{{ outcome.before }}<template v-if="outcome.release"><a v-if="existingReleaseHref" :href="existingReleaseHref"
                 target="_blank" rel="noopener noreferrer" data-testid="auto-integrate-preview-existing-release">{{
@@ -16,18 +22,18 @@
                 Projected version: <strong data-testid="auto-integrate-preview-projected-version">{{ evaluation.projectedVersion }}</strong>
                 (advisory: a version reserved or minted in between takes it first)
             </div>
+            <!-- Transparent cells and header over the alert's color, not the default white table. -->
+            <n-data-table size="small" class="mt-2" :data="evaluation.dependencies" :columns="columns" :row-key="rowKey"
+                :row-class-name="rowClass" :row-props="rowProps" :theme-overrides="BLOCK_TABLE_THEME"
+                data-testid="auto-integrate-preview-table" />
         </n-alert>
-        <n-data-table size="small" :data="evaluation.dependencies" :columns="columns" :row-key="rowKey"
-            :row-class-name="rowClass" :row-props="rowProps" data-testid="auto-integrate-preview-table" />
-        <div class="autoIntegratePreviewFooter mt-2">
-            <n-button size="small" quaternary data-testid="auto-integrate-preview-close" @click="emit('close')">Close</n-button>
-        </div>
     </div>
 </template>
 
 <script setup lang="ts">
 import { computed, h } from 'vue'
-import { NAlert, NButton, NDataTable, NTag, DataTableColumns } from 'naive-ui'
+import { NAlert, NDataTable, NIcon, NTag, DataTableColumns } from 'naive-ui'
+import { X } from '@vicons/tabler'
 import {
     alertTypeFor, outcomeParts, refLabel, releaseCellText, releaseText, rowKind, showsExistingReleaseLine, sourceLabel,
     type AutoIntegrateDependencyRow, type AutoIntegrateEvaluation, type AutoIntegrateReleaseRef, type AutoIntegrateWords, type RowKind
@@ -45,6 +51,14 @@ const props = defineProps<{
     releaseHref?: (uuid: string) => string | null
 }>()
 const emit = defineEmits<{ (e: 'close'): void }>()
+
+/** The block's alert type, which colors and borders the whole block (alert and table). */
+const blockType = computed(() => alertTypeFor(props.evaluation.outcome))
+/** The table inside the alert: no fill of its own, so the alert's color shows through; neutral lines that read on any. */
+const BLOCK_TABLE_THEME = {
+    tdColor: 'transparent', thColor: 'transparent', tdColorHover: 'rgba(128, 128, 128, 0.08)',
+    tdColorStriped: 'transparent', borderColor: 'rgba(128, 128, 128, 0.25)'
+}
 
 const outcome = computed(() => outcomeParts(props.evaluation, props.words))
 const existingReleaseHref = computed((): string | null => {
@@ -118,6 +132,12 @@ const columns: DataTableColumns<AutoIntegrateDependencyRow> = [
 
 <style scoped lang="scss">
 .autoIntegratePreviewPanel {
+    position: relative;
+    .autoIntegratePreviewClose {
+        position: absolute; top: 10px; right: 10px; z-index: 1;
+        background: none; border: none; padding: 2px; line-height: 0; cursor: pointer; color: inherit; opacity: 0.65;
+        &:hover, &:focus-visible { opacity: 1; }
+    }
     :deep(.autoIntegrateRedacted td) {
         font-style: italic;
         color: #8a8a8a;
