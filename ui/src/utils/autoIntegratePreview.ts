@@ -216,6 +216,27 @@ export function outcomeLine (ev: AutoIntegrateEvaluation, words: AutoIntegrateWo
     }
 }
 
+/**
+ * The outcome sentence as the panel shows it: the text before the release, the release the sentence names (the
+ * panel renders it as the link), and the text after. Only MATCHING_PRODUCT_RELEASE_EXISTS names its release in
+ * the sentence; every other outcome is the whole of outcomeLine, with no release.
+ */
+export function outcomeParts (ev: AutoIntegrateEvaluation, words: AutoIntegrateWords):
+        { before: string, release: AutoIntegrateReleaseRef | null, after: string } {
+    if (ev.outcome === 'MATCHING_PRODUCT_RELEASE_EXISTS' && ev.existingRelease) {
+        return { before: 'Not created: a matching product release already exists: ', release: ev.existingRelease, after: '.' }
+    }
+    return { before: outcomeLine(ev, words), release: null, after: '' }
+}
+
+/**
+ * Whether the panel names the existing release on a line of its own: when the evaluation carries one the outcome
+ * sentence does not name (a CREATE_FAILED keeps the release it found), never for the matching outcome itself.
+ */
+export function showsExistingReleaseLine (ev: AutoIntegrateEvaluation): boolean {
+    return !!ev.existingRelease && ev.outcome !== 'MATCHING_PRODUCT_RELEASE_EXISTS'
+}
+
 /** The trigger's info or success notice text, from what the mutation returned. */
 export function triggerNotice (result: { release?: { version?: string | null } | null }, ev: AutoIntegrateEvaluation | null,
     words: AutoIntegrateWords): { created: boolean, notice: string } {

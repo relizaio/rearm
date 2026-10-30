@@ -79,12 +79,33 @@ const tabBranch = (code: string, tab: string): string => {
 }
 
 describe('OrgSettings: the API Key Groups tab (TPF-92 row 16)', () => {
-    it('(a) is an admin-only pane between User Groups and Teams', () => {
-        const pane = onePane('apiKeyGroups')
+    it('(a) is an admin-only sub-tab of Programmatic Access, right after Free Form Keys', () => {
+        const paths = find(org.ast, isPane('apiKeyGroups'))
+        expect(paths).toHaveLength(1)
+        const pane = last(paths[0])
         expect(directive(pane, 'if')).toBe('isOrgAdmin')
         expect(attribute(pane, 'tab')).toBe('API Key Groups')
-        expect(offset(pane)).toBeGreaterThan(offset(onePane('userGroups')))
-        expect(offset(pane)).toBeLessThan(offset(onePane('teams')))
+        // nested in Programmatic Access (itself admin-only), not a top-level tab any more
+        const parentPane = [...paths[0]].reverse().find((n: any) => n !== pane && n.tag === 'n-tab-pane')
+        expect(attribute(parentPane, 'name')).toBe('programmaticAccess')
+        expect(directive(parentPane, 'if')).toBe('isOrgAdmin')
+        const siblings = last(paths[0].slice(0, -1)).children.filter((n: any) => n.tag === 'n-tab-pane').map((n: any) => attribute(n, 'name'))
+        expect(siblings).toEqual(['freeFormKeys', 'apiKeyGroups', 'userKeys', 'scopedKeys', 'federatedIdentities', 'externalKeys'])
+    })
+
+    it('(a2) loads the groups and their pickers when the sub-tab opens, and lands an old link on it', () => {
+        expect(org.code).toContain("watch(programmaticSubTab, (sub) => { if (sub === 'apiKeyGroups') loadTabSpecificData('apiKeyGroups') })")
+        expect(org.code).toContain('const programmaticSubTab = ref<ProgrammaticSubTab>(\'freeFormKeys\')')
+        const landing = definition(org.code, 'const landing = resolveOrgSettingsTab(currentTab.value)')
+        expect(landing).toContain('currentTab.value = landing.tab')
+        expect(landing).toContain('if (landing.programmaticSubTab) programmaticSubTab.value = landing.programmaticSubTab')
+        // the sub-tab watch is set up after the landing, so a link to it does not load twice
+        expect(org.code.indexOf('const landing = resolveOrgSettingsTab')).toBeLessThan(org.code.indexOf('watch(programmaticSubTab,'))
+        // a same-page push of an old link resolves the same way
+        const sync = org.code.slice(org.code.indexOf('watch(() => [route.query.tab,'))
+        expect(sync).toContain('const resolved = resolveOrgSettingsTab(requested)')
+        expect(sync).toContain('if (isTabAccessible(requested) && resolved.programmaticSubTab) programmaticSubTab.value = resolved.programmaticSubTab')
+        expect(org.code).not.toContain("if (currentTab.value === 'freeFormKeys') currentTab.value = 'programmaticAccess'")
     })
 
     it('(b) mounts ApiKeyGroupsOfOrg with the list, the probe flag, the keys, notify and the picker lists', () => {

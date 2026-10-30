@@ -691,24 +691,6 @@
                 </div>
             </n-tab-pane>
 
-            <n-tab-pane v-if="isOrgAdmin" name="apiKeyGroups" tab="API Key Groups">
-                <ApiKeyGroupsOfOrg
-                    :orguuid="orgResolved"
-                    :isWritable="isWritable"
-                    :groups="apiKeyGroups"
-                    :supported="apiKeyGroupsSupported"
-                    :keys="programmaticAccessKeys"
-                    :approval-roles="myorg.approvalRoles || []"
-                    :perspectives="perspectives"
-                    :products="orgProducts"
-                    :components="orgComponents"
-                    :instances="orgInstances"
-                    :clusters="orgClusters"
-                    :boards="orgBoards"
-                    :notify="notify"
-                    @changed="loadApiKeyGroupsOfOrg" />
-            </n-tab-pane>
-
             <n-tab-pane v-if="isOrgAdmin" name="teams" tab="Teams">
                 <TeamsOfOrg
                     :orguuid="orgResolved"
@@ -730,14 +712,35 @@
                             </n-data-table>
                         </div>
                         <div class="programmaticAccessBlock mt-4">
-                            <h5>Free Form Keys</h5>
+                            <!-- The create icon right of the heading, as the component view's Branch heading has it. -->
+                            <h5 class="listHead" style="display: flex; align-items: center; gap: 8px;">
+                                <span>Free Form Keys</span>
+                                <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
+                                    title="Create Free Form Key" size="20"><CirclePlus /></n-icon>
+                            </h5>
                             <n-data-table :columns="freeFormKeyFields" :data="shownFreeFormKeys" :scroll-x="2000"
                                 :row-key="dataTableRowKey" :pagination="freeFormKeysPagination" class="table-hover" data-testid="free-form-keys-table">
                                 <template #empty><n-empty data-testid="keys-empty-freeFormKeys" :description="keysEmptyText(freeFormKeysSearch)" /></template>
                             </n-data-table>
-                            <n-icon v-if="isOrgAdmin" class="clickable" @click="genFreeFormApiKey"
-                                title="Create Free Form Key" size="24"><CirclePlus /></n-icon>
                         </div>
+                    </n-tab-pane>
+                    <!-- Groups hold Free Form keys, so they sit beside them (formerly a top-level tab; old links land here). -->
+                    <n-tab-pane v-if="isOrgAdmin" name="apiKeyGroups" tab="API Key Groups">
+                        <ApiKeyGroupsOfOrg
+                            :orguuid="orgResolved"
+                            :isWritable="isWritable"
+                            :groups="apiKeyGroups"
+                            :supported="apiKeyGroupsSupported"
+                            :keys="programmaticAccessKeys"
+                            :approval-roles="myorg.approvalRoles || []"
+                            :perspectives="perspectives"
+                            :products="orgProducts"
+                            :components="orgComponents"
+                            :instances="orgInstances"
+                            :clusters="orgClusters"
+                            :boards="orgBoards"
+                            :notify="notify"
+                            @changed="loadApiKeyGroupsOfOrg" />
                     </n-tab-pane>
                     <n-tab-pane name="userKeys" tab="User Keys">
                         <n-input v-model:value="userKeysSearch" clearable class="mt-4" style="max-width: 460px"
@@ -1569,6 +1572,8 @@ import {ApprovalEntry, ApprovalRole, ApprovalRequirement} from '@/utils/commonTy
 import { idleCloseHoursOf, IDLE_CLOSE_HOURS_DEFAULT, IDLE_CLOSE_HOURS_MAX, IDLE_CLOSE_HOURS_MIN } from '@/utils/agentSessionIdle'
 import { agentDisplayLabel } from '@/utils/agentSessionLabel'
 import { apiKeyLabel, apiKeyLabelOf, cleanLabelText } from '@/utils/apiKeyLabel'
+import { FREEFORM_CREATE_CONFIRM, keyCreatedFollowUp } from '@/utils/apiKeyCreated'
+import { resolveOrgSettingsTab, type ProgrammaticSubTab } from '@/utils/orgSettingsTabs'
 import { loadApiKeyGroups } from '@/utils/apiKeyGroupsQuery'
 import { apiKeyGroupsOfKey } from '@/utils/apiKeyGroupInput'
 import { loadCombinedApiKeyOrgPermissions } from '@/utils/apiKeyGroupMembership'
@@ -1696,7 +1701,7 @@ const showOrgSettingsUserPermissionsModal = ref(false)
 
 const showKeyEditModal = ref(false)
 const selectedEditKey = ref<any>({})
-const programmaticSubTab = ref<'freeFormKeys' | 'userKeys' | 'scopedKeys' | 'federatedIdentities' | 'externalKeys'>('freeFormKeys')
+const programmaticSubTab = ref<ProgrammaticSubTab>('freeFormKeys')
 // one search box per key sub-tab (the Free Form box filters its Key Requests table too); the terms stay in the page, never in the URL
 const freeFormKeysSearch = ref('')
 const userKeysSearch = ref('')
@@ -1944,7 +1949,13 @@ function isTabAccessible (t: string): boolean {
 }
 const requestedTab = (route.query.tab as string) || defaultTab
 const currentTab = ref(isTabAccessible(requestedTab) ? requestedTab : defaultTab)
-if (currentTab.value === 'freeFormKeys') currentTab.value = 'programmaticAccess'
+// Free Form Keys and API Key Groups are Programmatic Access sub-tabs; an old link to either lands there.
+const landing = resolveOrgSettingsTab(currentTab.value)
+currentTab.value = landing.tab
+if (landing.programmaticSubTab) programmaticSubTab.value = landing.programmaticSubTab
+// API Key Groups loads its pickers and the groups when its sub-tab opens, as it did as a top-level tab. Set up after
+// the landing above: a link to it already loads them through the Programmatic Access tab.
+watch(programmaticSubTab, (sub) => { if (sub === 'apiKeyGroups') loadTabSpecificData('apiKeyGroups') })
 // Default Policies sub-tab is approvalPoliciesInner (Approval Policies) — the
 // most common entry point. Approval Roles / Entries are configuration of
 // vocabulary used inside the policies.
@@ -1982,8 +1993,11 @@ watch(() => [route.query.tab, route.query.auditTab, route.query.policyTab, route
     const adt = resolveAdminSubTab(route.query.adminTab as string)
     const adminSubTabChanged = adt !== adminSubTab.value
     if (adminSubTabChanged) adminSubTab.value = adt
-    const t = (route.query.tab as string) || defaultTab
-    if (isTabAccessible(t) && t !== currentTab.value) {
+    const requested = (route.query.tab as string) || defaultTab
+    const resolved = resolveOrgSettingsTab(requested)
+    const t = resolved.tab
+    if (isTabAccessible(requested) && resolved.programmaticSubTab) programmaticSubTab.value = resolved.programmaticSubTab
+    if (isTabAccessible(requested) && t !== currentTab.value) {
         currentTab.value = t
         loadTabSpecificData(t)
     } else if (adminSubTabChanged && currentTab.value === 'adminSettings') {
@@ -2176,7 +2190,10 @@ const apiKeyDeclaredColumn = {
         return h('div', lines)
     }
 }
-/** Key ids are created without a secret; minting the first one is its own step, offered right after creation. */
+/**
+ * Key ids are created without a secret; minting the first one is its own step, offered right after creation,
+ * except for a Free Form key, whose permissions are set first (keyCreatedFollowUp).
+ */
 async function createOrgKey (apiType: string, notes: string | null, label: string) {
     let created: any
     try {
@@ -2184,7 +2201,13 @@ async function createOrgKey (apiType: string, notes: string | null, label: strin
         created = resp.data.createOrgApiKey
     } catch (e: any) { notify('error', 'Error', commonFunctions.parseGraphQLError(e.message)); return }
     loadProgrammaticAccessKeys(false)
-    const r = await Swal.fire({ titleText: `${label} created`, text: 'The key id exists but has no secret yet. Generate its first secret now? You can also do it later from the Secrets column.', icon: 'success', showCancelButton: true, confirmButtonText: 'Generate secret', cancelButtonText: 'Later' })
+    const next = keyCreatedFollowUp(apiType, label)
+    if (next.kind === 'notice') {
+        notify('success', next.title, next.content)
+        return
+    }
+    const r = await Swal.fire({ titleText: next.titleText, text: next.text, icon: 'success', showCancelButton: true,
+        confirmButtonText: next.confirmButtonText, cancelButtonText: next.cancelButtonText })
     if (r.value) await apiKeyControls.mintSecret(created.uuid, 'Secret generated')
 }
 
@@ -4501,7 +4524,7 @@ async function editUser(email: string) {
 async function genFreeFormApiKey() {
     const swalResult = await Swal.fire({
         title: 'Are you sure?',
-        text: 'A new Free Form API Key id will be created. Its first secret is generated as a separate step.',
+        text: FREEFORM_CREATE_CONFIRM,
         icon: 'warning',
         showCancelButton: true,
         confirmButtonText: 'Yes, create it!',

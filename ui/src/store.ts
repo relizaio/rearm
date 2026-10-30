@@ -3065,20 +3065,15 @@ const storeObject : any = {
             return response.data.agentSessionForceClose
         },
         /**
-         * A board's tasks: the card-level fields the board's views read (AGENT_TASK_CARD_SELECTION), or with
-         * full every task's whole read, for a page that shows the tasks beyond their cards.
+         * A board's tasks, the card-level fields the board's views and the task page read
+         * (AGENT_TASK_CARD_SELECTION). A task's whole read is fetchAgentTask.
          */
-        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string, full?: boolean }) {
-            const selection = payload.full
-                ? `${AGENT_TASK_SELECTION}
-                            testedHeads { pr head }
-                            pullRequests { url head }`
-                : AGENT_TASK_CARD_SELECTION
+        async fetchAgentTasksOfBoard (context: any, payload: { boardUuid: string, status?: string }) {
             const response = await graphqlClient.query({
                 query: gql`
                     query agentTasksOfBoard($boardUuid: ID!, $status: AgentTaskStatus) {
                         agentTasksOfBoard(boardUuid: $boardUuid, status: $status) {
-                            ${selection}
+                            ${AGENT_TASK_CARD_SELECTION}
                         }
                     }`,
                 variables: { boardUuid: payload.boardUuid, status: payload.status ?? null },

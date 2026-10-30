@@ -4,7 +4,7 @@ import { print } from 'graphql'
 import {
     AUTO_INTEGRATE_EXPLAINED_MUTATION, AUTO_INTEGRATE_LEGACY_MUTATION, AUTO_INTEGRATE_PREVIEW_QUERY,
     FOREIGN_RELEASE_NOTE, NOT_READABLE_NOTE,
-    alertTypeFor, blockingRows, hiddenRequiredRows, isRedactedRow, loadAutoIntegratePreview, outcomeLine, refLabel,
+    alertTypeFor, blockingRows, hiddenRequiredRows, isRedactedRow, loadAutoIntegratePreview, outcomeLine, outcomeParts, refLabel, showsExistingReleaseLine,
     releaseCellText, releaseText, rowKind, runAutoIntegrateExplained, runAutoIntegrateLegacy, sourceLabel, triggerNotice,
     useAutoIntegratePreview,
     type AutoIntegrateDependencyRow, type AutoIntegrateEvaluation
@@ -185,6 +185,16 @@ describe('pure helpers (row 16)', () => {
             .toBe(`Not created: a matching product release already exists: 1.0.0 (Assembled, ${relADate}).`)
         expect(outcomeLine(ev({ outcome: 'MATCHING_PRODUCT_RELEASE_EXISTS' }), words))
             .toBe('Not created: a matching product release already exists.')
+        // the panel's split of the same sentence: the matching outcome names its release once, as the link
+        expect(outcomeParts(evMatching, words)).toEqual({ before: 'Not created: a matching product release already exists: ',
+            release: relA, after: '.' })
+        expect(outcomeParts(ev({ outcome: 'MATCHING_PRODUCT_RELEASE_EXISTS' }), words))
+            .toEqual({ before: 'Not created: a matching product release already exists.', release: null, after: '' })
+        expect(outcomeParts(ev({ outcome: 'CREATE_FAILED', existingRelease: relA, note: 'x' }), words))
+            .toEqual({ before: 'Not created: x', release: null, after: '' })
+        expect(showsExistingReleaseLine(evMatching)).toBe(false)
+        expect(showsExistingReleaseLine(ev({ outcome: 'CREATE_FAILED', existingRelease: relA }))).toBe(true)
+        expect(showsExistingReleaseLine(ev({ outcome: 'CREATE_FAILED' }))).toBe(false)
         const lock = 'Component P is locked, so ReARM will not assign a version: frozen. Or ask an administrator to release lock L'
         expect(outcomeLine(ev({ outcome: 'CREATE_FAILED', note: lock }), words)).toBe('Not created: ' + lock)
         expect(outcomeLine(ev({ outcome: 'CREATE_FAILED', note: FOREIGN_RELEASE_NOTE }), words))

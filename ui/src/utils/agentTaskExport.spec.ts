@@ -49,9 +49,18 @@ describe('the task JSON export', () => {
         for (const f of ['statusHistory {', 'signOffs {', 'returns {', 'reopens {']) expect(sel, f).toContain(f)
     })
 
-    it('the task page offers Export JSON, reading the task afresh and saving the file', () => {
+    it('the task page offers the export as the download icon, reading the task afresh and saving the file', () => {
         const page = read('../components/AiAgentTaskPage.vue')
-        expect(page).toContain('<n-button size="tiny" secondary data-testid="task-export" :loading="exporting" @click="exportTask">Export JSON</n-button>')
+        const at = page.indexOf('data-testid="task-export"')
+        const tip = page.slice(page.lastIndexOf('<n-tooltip>', at), page.indexOf('</n-tooltip>', at))
+        expect(tip).toContain('<n-button size="tiny" quaternary circle data-testid="task-export" aria-label="Export task as JSON"')
+        expect(tip).toContain(':loading="exporting" :disabled="exporting" @click="exportTask">')
+        expect(tip).toContain('<template #icon><n-icon><Download/></n-icon></template>')
+        expect(tip).toMatch(/<\/template>\s+Export task as JSON\s*$/)
+        expect(page).not.toContain('Export JSON</n-button>')
+        // the icon the release view downloads an SBOM with
+        expect(page).toContain("import { Download } from '@vicons/tabler'")
+        expect(read('../components/ReleaseView.vue')).toContain("title: 'Download Artifact', class: 'icons clickable', size: 25, onClick: () => openDownloadArtifactModal(row) }, () => h(Download))")
         expect(page).toContain("const full = await store.dispatch('exportAgentTask', task.value.uuid)")
         expect(page).toContain('downloadJson(taskExportFileName(full), taskExportDocument(full))')
         expect(page).toContain("exportError.value = 'Export failed: ' + (e?.message ?? String(e))")

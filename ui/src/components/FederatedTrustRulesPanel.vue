@@ -1,7 +1,11 @@
 <template>
     <div>
         <div class="programmaticAccessBlock mt-4">
-            <h5>Trust Rules</h5>
+            <!-- The create icon right of the heading, as the component view's Branch heading has it. -->
+            <h5 class="listHead" style="display: flex; align-items: center; gap: 8px;">
+                <span>Trust Rules</span>
+                <n-icon v-if="canManage" class="clickable" @click="openCreate" title="Add Trust Rule" size="20"><CirclePlus /></n-icon>
+            </h5>
             <p class="subtle">
                 Identity tokens from an external CI (GitHub Actions) act as credentials when they match a rule: no secret is stored anywhere.
                 A rule covers a whole owner (organization) on the provider side, narrowed by repositories, refs, environments, workflows or events.
@@ -11,7 +15,6 @@
             <n-spin :show="loading">
                 <n-data-table :columns="ruleFields" :data="rules" :scroll-x="2000" class="table-hover"></n-data-table>
             </n-spin>
-            <n-icon v-if="canManage" class="clickable" @click="openCreate" title="Add Trust Rule" size="24"><CirclePlus /></n-icon>
         </div>
         <div class="programmaticAccessBlock mt-4">
             <h5>Federated Identities</h5>

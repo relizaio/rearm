@@ -84,6 +84,22 @@ describe('BranchView: the auto-integrate Preview control and panel (template)', 
         expect(hasDirective(panel, 'on', 'close')).toBe(true)
         expect(panels[0].some((n: any) => n.tag === 'div' && (attribute(n, 'class') || '').split(/\s+/).includes('effectiveDependenciesBlock'))).toBe(true)
     })
+
+    it('(b2) the panel sits between the Dependencies heading row and the dependencies table', () => {
+        const panelPath = find((n) => n.tag === 'AutoIntegratePreviewPanel')[0]
+        const block = panelPath[panelPath.length - 2]
+        expect((attribute(block, 'class') || '').split(/\s+/)).toContain('effectiveDependenciesBlock')
+        const kids = block.children.filter((n: any) => n.type === ELEMENT)
+        const at = kids.indexOf(last(panelPath))
+        // the heading row with the help, add, trigger and preview icons comes right before it
+        expect(kids[at - 1].tag).toBe('p')
+        expect(find((n) => attribute(n, 'data-testid') === 'auto-integrate-preview-trigger', kids[at - 1])).toHaveLength(1)
+        // the dependencies table (or its empty state) right after it, and nothing after the empty state
+        expect(directive(kids[at + 1], 'if')).toBe('modifiedBranch.effectiveDependencies && modifiedBranch.effectiveDependencies.length')
+        expect(find((n) => n.tag === 'n-data-table', kids[at + 1]).length).toBeGreaterThan(0)
+        expect(hasDirective(kids[at + 2], 'else')).toBe(true)
+        expect(kids).toHaveLength(at + 3)
+    })
 })
 
 describe('BranchView: the auto-integrate wiring (script)', () => {
