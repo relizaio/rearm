@@ -42,9 +42,9 @@ the number of SBOM profiles a TEA publishing settings row may name, which differ
 | Federated trust rules, extra static permissions | Scopes `Component / Product`, `Perspective` and `Instance / Cluster` | `Instance / Cluster` is hidden. `Perspective` is listed, but there is nothing to select in it, because CE has no perspectives |
 | Creating a component into a perspective (`perspective` input, `--perspective`) | Supported | Not applicable: CE has no perspectives |
 | A federated exchange that no trust rule admits (an unknown issuer, an identity token that does not verify, no rule matching the identity) | One answer, `invalid_grant` `assertion not accepted: ...`; the cause is in the server log | The answer names the cause, for example `no trust rule matches this identity` |
-| External keys (the **External Keys** tab and the TEA token endpoint) | Supported | Not offered: external keys are Pro only, and CE shows no External Keys tab |
-| SBOM profiles and TEA publishing (the programmatic reads `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, the publish preview `releaseTeaPublicationViewProgrammatic`, and the publish, re-publish and hide operations; no programmatic operation reads or writes TEA publishing settings) | Organization, perspective and component scope; a TEA publishing settings row names up to 10 SBOM profiles | Reaches a CE installation at its next sync from Pro (today a CE server has none of these operations); there, organization and component scope, and a TEA publishing settings row names exactly one SBOM profile |
-| Regulatory submissions (the programmatic reads `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic`, `submissionVersionProgrammatic`, and the part downloads) | Supported for FREEFORM and USER keys with read access; no key can create, resubmit or withdraw | Not offered: today a CE server has none of these operations; once the shared code reaches it at a sync from Pro, these reads answer an empty list or nothing, and no key can act on any edition |
+| External keys (the **External Keys** tab and the TEA token endpoint) | Supported | Supported, with grants on the organization, products and components (CE has no perspectives; a perspective grant is refused) |
+| SBOM profiles and TEA publishing (the programmatic reads `sbomProfilesProgrammatic` and `sbomProfileEffectiveProgrammatic`, the publish preview `releaseTeaPublicationViewProgrammatic`, and the publish, re-publish and hide operations; no programmatic operation reads or writes TEA publishing settings) | Organization, perspective and component scope; a TEA publishing settings row names up to 10 SBOM profiles | Organization and component scope (CE has no perspectives), the one SBOM profile `default`, and a TEA publishing settings row names exactly one SBOM profile |
+| Regulatory submissions (the programmatic reads `submissionsOfReleaseProgrammatic`, `submissionsOfComponentProgrammatic`, `submissionProgrammatic`, `submissionVersionProgrammatic`, and the part downloads) | Supported for FREEFORM and USER keys with read access; no key can create, resubmit or withdraw | Not offered: on CE these reads answer an empty list (by release or by component) or nothing (by submission), there is no part to download, and no key can act on any edition |
 
 ## Managing keys in the UI
 
@@ -161,8 +161,8 @@ endpoint of your organization and nowhere else:
 - it reads only what its grants cover, and only objects the organization published on TEA;
 - the TEA endpoints accept tokens of external keys only, so no other key reaches TEA either.
 
-::: tip ReARM Pro
-External keys are a ReARM Pro feature for now. ReARM Community Edition shows no External Keys tab.
+::: tip Both editions
+External keys work on ReARM Pro and ReARM Community Edition. On Community Edition a key's grants name the organization, products and components, since CE has no perspectives.
 :::
 
 ### Creating an external key
@@ -197,7 +197,8 @@ whatever the calling key's permissions.
 ### Exchanging an external key for a token
 
 The token endpoint sits on the organization's TEA API base, which is
-`<your ReARM URL>/tea/<organization TEA id>`:
+`<your ReARM URL>/tea/<organization TEA id>`, or `https://<domain>/tea` when the organization is
+served on a [custom domain](../tea/#custom-domains-rearm-pro) (ReARM Pro):
 
 ```bash
 curl -s -u "$KEY_ID:$KEY_SECRET" \
