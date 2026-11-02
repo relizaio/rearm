@@ -25,6 +25,11 @@ const DOMAIN_API = 'https://' + HOST + '/tea'
 const DOMAIN_HOSTED = { org: '44444444-4444-4444-8444-444444444444', teaUuid: '55555555-5555-4555-8555-555555555555',
     apiBase: DOMAIN_API, wellKnownDocument: '{"schemaVersion":1,"endpoints":[{"url":"' + DOMAIN_API + '","versions":["1.0.0"],"priority":1}]}',
     assignedHost: HOST, teaServing: 'DOMAIN', teaWellKnownHosting: 'DOMAIN', wellKnownUrl: 'https://' + HOST + '/.well-known/tea' }
+// Task TPF-151: the answer after the server minted the TEA id on the legacy path (TeaOrgPanelServing.spec.ts LEGACY_MINTED).
+const LEGACY_API = 'https://rearm.example.com/tea/55555555-5555-4555-8555-555555555555'
+const LEGACY_MINTED = { org: '44444444-4444-4444-8444-444444444444', teaUuid: '55555555-5555-4555-8555-555555555555',
+    apiBase: LEGACY_API, wellKnownDocument: '{"schemaVersion":1,"endpoints":[{"url":"' + LEGACY_API + '","versions":["1.0.0"],"priority":1}]}',
+    assignedHost: null, teaServing: 'LEGACY_UUID', teaWellKnownHosting: 'NONE', wellKnownUrl: null }
 
 async function run (doc: any, rootValue: any, variableValues: Record<string, any> = {}) {
     const r: any = await execute({ schema: proSchema!, document: doc, rootValue, variableValues })
@@ -62,6 +67,10 @@ describe('TEA custom domain documents on the Pro schema', () => {
             { org: DOMAIN_HOSTED.org, teaServing: 'DOMAIN', teaWellKnownHosting: 'DOMAIN' })
         expect(r.errors).toBeUndefined()
         expect(r.data).toEqual({ setTeaOrgServing: DOMAIN_HOSTED })
+        r = await run(graphqlQueries.SetTeaOrgServingGql, { setTeaOrgServing: () => LEGACY_MINTED },
+            { org: LEGACY_MINTED.org, teaServing: 'LEGACY_UUID', teaWellKnownHosting: 'NONE' })
+        expect(r.errors).toBeUndefined()
+        expect(r.data).toEqual({ setTeaOrgServing: LEGACY_MINTED })
     })
 
     it.runIf(proSchema)('N4: the serving and hosting lists are the schema enums', () => {
