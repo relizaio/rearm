@@ -109,6 +109,7 @@
                     </n-form>
                 </n-modal>
             </div>
+            <TeaDomainAssignments v-if="myUser && myUser.installationType !== 'OSS'" />
             <div class="finalizeAllReleasesBlock">
                 <h4 class="mt-4">Finalize All Releases: </h4>
                 <p>Recalculate BOM changelogs for all active component releases.</p>
@@ -129,6 +130,8 @@ import commonFunctions from '@/utils/commonFunctions'
 import Swal, { SweetAlertResult } from 'sweetalert2'
 import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
+import graphqlQueries from '@/utils/graphqlQueries'
+import TeaDomainAssignments from './TeaDomainAssignments.vue'
 
 
 const store = useStore()
@@ -230,14 +233,7 @@ const allOrganizations: Ref<any[]> = ref([])
 
 async function fetchAllOrganizations () {
     const gqlResp = await graphqlClient.query({
-        query: gql`
-            query allOrganizations {
-                allOrganizations {
-                    uuid
-                    name
-                }
-            }
-            `
+        query: graphqlQueries.AllOrganizationsGql
     })
     allOrganizations.value = gqlResp.data.allOrganizations.map((x: any) => { return {value: x.uuid, label: x.name}})
 }
