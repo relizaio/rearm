@@ -1,5 +1,6 @@
 // The words a task card, the task drawer and the table view say about a task (task 562ac668),
 // in one place so the three agree. Pure, so each rule has a spec.
+import { actorLabel } from './agentActors'
 
 const TERMINAL = ['COMPLETED', 'CANCELLED']
 const HISTORY = ['AWAITING_COORDINATOR', 'ON_HOLD', 'DELIVERING', 'COMPLETED', 'CANCELLED']
@@ -114,4 +115,89 @@ export function waitsOn (task: any, tasks: any[] | null | undefined): string[] {
 export function waitsOnLabel (task: any, tasks: any[] | null | undefined): string | null {
     const on = waitsOn(task, tasks)
     return on.length ? `waits on ${on.join(', ')}` : null
+}
+
+/** Where a task's design checkpoint record stands, read beside the task (task SPLIT-8, design 3.2). */
+export type CheckpointPhase = 'waiting' | 'ahead' | 'lapsed' | 'closed' | 'sent_on' | 'split'
+
+/** The role the task is with now: the assignment's, else the task's (the source {@link roleTagFor} reads). */
+export function roleAhead (task: any): string | null {
+    return task?.assignment?.role ?? task?.role ?? null
+}
+
+/**
+ * The order of the hop log's times (agentTaskFormat's hopHistory) and of "newer" here: by string, never by
+ * Date, so the two cannot disagree on server times whose fractional digits differ.
+ */
+export function compareHopTimes (a: string | null | undefined, b: string | null | undefined): number {
+    return String(a ?? '').localeCompare(String(b ?? ''))
+}
+
+const isNewer = (a: string | null | undefined, b: string | null | undefined) => compareHopTimes(a, b) > 0
+
+/**
+ * Whether the task has reached the role its PENDING checkpoint precedes: it is with that role now, or that
+ * role signed off or returned it after the checkpoint was reached. Then the checkpoint is behind it -- the
+ * flag was cleared, deactivated or moved while the record was PENDING, and nothing will settle it.
+ * Role names compare lower-cased, as missingRequiredRoles compares them.
+ */
+function reachedBeforeRole (task: any, rec: any): boolean {
+    const before = String(rec?.beforeRole ?? '').toLowerCase()
+    if (!before) return false
+    if (String(roleAhead(task) ?? '').toLowerCase() === before) return true
+    const by = (h: any) => String(h?.role ?? '').toLowerCase() === before
+    return (task?.signOffs ?? []).some((s: any) => by(s) && isNewer(s.signedOffAt, rec.reachedAt)) ||
+        (task?.returns ?? []).some((r: any) => by(r) && isNewer(r.returnedAt, rec.reachedAt))
+}
+
+/**
+ * The phase of a task's design checkpoint, or null without a record. SENT_ON and SPLIT are settled whatever
+ * the status. A PENDING record is at the checkpoint only while the task is AWAITING_COORDINATOR; on a
+ * COMPLETED or CANCELLED task it was closed from there; on any other status the checkpoint is ahead until
+ * the task reaches the role it precedes, and lapsed after.
+ */
+export function checkpointPhase (task: any): CheckpointPhase | null {
+    const rec = task?.designCheckpoint
+    if (!rec) return null
+    if (rec.state === 'SENT_ON') return 'sent_on'
+    if (rec.state === 'SPLIT') return 'split'
+    if (task.status === 'AWAITING_COORDINATOR') return 'waiting'
+    if (TERMINAL.includes(task.status)) return 'closed'
+    return reachedBeforeRole(task, rec) ? 'lapsed' : 'ahead'
+}
+
+/**
+ * The task header's checkpoint chip, or null. None for a closed or lapsed record: the status tag says the
+ * one, the other is history, and the hop log keeps both.
+ */
+export function checkpointTag (task: any): { text: string, type: 'warning' | 'default' } | null {
+    switch (checkpointPhase(task)) {
+    case 'waiting': return { text: 'at the design checkpoint', type: 'warning' }
+    case 'ahead': return { text: 'design checkpoint ahead', type: 'default' }
+    case 'sent_on': {
+        const by = actorLabel(task.designCheckpoint.settledBy)
+        return { text: by ? `sent on by ${by}` : 'sent on', type: 'default' }
+    }
+    case 'split': return { text: `split into ${task.childTasks?.length ?? 0}`, type: 'default' }
+    default: return null
+    }
+}
+
+/** The chip's tooltip: where the checkpoint is, and the phase's tail. '' without a record. */
+export function checkpointTooltip (task: any): string {
+    const phase = checkpointPhase(task)
+    if (!phase) return ''
+    const rec = task.designCheckpoint
+    const head = `design checkpoint before ${rec.beforeRole}, reached after ${rec.afterRole ?? 'the design'} ${rec.reachedAt}`
+    switch (phase) {
+    case 'waiting': return `${head}; waiting for the coordinator`
+    case 'ahead': return `${head}; now with ${roleAhead(task)}; the task stops at the checkpoint again before ${rec.beforeRole}`
+    case 'closed': return `${head}; closed from the checkpoint, not settled`
+    case 'lapsed': return `${head}; not settled; the task went on to ${roleAhead(task)}`
+    default: {
+        const by = actorLabel(rec.settledBy)
+        const verb = phase === 'split' ? 'split' : 'sent on'
+        return `${head}; ${verb}${by ? ' by ' + by : ''}${rec.settledAt ? ' ' + rec.settledAt : ''}${rec.note ? ': ' + rec.note : ''}`
+    }
+    }
 }

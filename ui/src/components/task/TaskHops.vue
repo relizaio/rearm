@@ -38,6 +38,20 @@
                     </div>
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
+                <!-- The design checkpoint's one row (task SPLIT-8), in the words of its phase. The tag, role and time are the
+                     row's own children, as in the branches above, so the row's flex gap spaces them (T-40). -->
+                <template v-else-if="e.kind === 'checkpoint'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-checkpoint" :type="e.phase === 'waiting' ? 'warning' : 'default'">design checkpoint</n-tag>
+                    <span class="hist__role">before {{ e.rec.beforeRole }}</span>
+                    <span class="hist__time"><agent-time :at="e.rec.reachedAt"/> · <template
+                        v-if="e.phase === 'waiting'">waiting for the coordinator</template><template
+                        v-else-if="e.phase === 'ahead'">now with {{ roleAhead(task) }}</template><template
+                        v-else-if="e.phase === 'closed'">closed from the checkpoint</template><template
+                        v-else-if="e.phase === 'lapsed'">not settled; the task went on to {{ roleAhead(task) }}</template><template
+                        v-else>{{ e.phase === 'split' ? 'split' : 'sent on' }}<template v-if="e.rec.settledBy"> by <actor-ref
+                        :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template></span>
+                    <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
+                </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
                     <span v-if="!e.rec.session" class="hist__role">{{ e.rec.role }}</span>
@@ -73,6 +87,7 @@ import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory } from '@/utils/agentTaskFormat'
+import { roleAhead } from '@/utils/agentTaskLabels'
 import { enumWord, outcomeWord } from '@/utils/agentWords'
 import { reviewedChips } from '@/utils/agentReviewed'
 
