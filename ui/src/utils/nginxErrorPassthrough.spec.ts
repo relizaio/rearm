@@ -13,7 +13,7 @@ interface Directive { name: string, args: string, block: string[] }
 
 // A line reader for the template: comments dropped (the template has no # inside a quoted value),
 // a stack of block names (upstream, server, location <prefix>), and each `<name> <args>;` line taken
-// as a directive of the innermost block. The ${...} placeholder lines carry no ; and are skipped.
+// as a directive of the innermost block. The ${KEYCLOAK_...} placeholder lines carry no ; and are skipped.
 function directivesOf (text: string): { directives: Directive[], locations: string[] } {
     const directives: Directive[] = []
     const locations: string[] = []
@@ -44,11 +44,13 @@ const { directives, locations } = directivesOf(template)
 const innermost = (d: Directive) => d.block[d.block.length - 1]
 const inLocation = (d: Directive) => d.block.some(b => b.startsWith('location '))
 
-// The twelve locations that proxy (architecture 3.3), in file order.
+// The fourteen locations that proxy, in file order: the main server's twelve (architecture 3.3), then
+// the TEA-only server's two for custom domains (TPF-148).
 const PROXIED = [
     '/v1', '/api', '/tea', '/.well-known/tea', '/graphql',
     '/kauth', '/kauth/admin/Reliza', '/kauth/admin/realms/Reliza', '/kauth/admin/serverinfo',
     '/kauth/realms/Reliza', '/kauth/resources', '/kauth/js',
+    '^~ /tea/', '= /.well-known/tea',
 ]
 
 describe('the UI nginx template passes upstream answers through (TPF-49)', () => {
@@ -60,7 +62,7 @@ describe('the UI nginx template passes upstream answers through (TPF-49)', () =>
         expect(found[0].args).toBe('off')
     })
 
-    it('proxies from exactly the twelve locations, none with its own intercept switch or error_page', () => {
+    it('proxies from exactly the fourteen locations, none with its own intercept switch or error_page', () => {
         const proxied = directives.filter(d => d.name === 'proxy_pass').map(d => innermost(d))
         expect(proxied).toEqual(PROXIED.map(p => `location ${p}`))
         for (const location of locations) {
@@ -85,5 +87,28 @@ describe('the UI nginx template passes upstream answers through (TPF-49)', () =>
     it('serves the SPA for any unknown UI route', () => {
         const tryFiles = directives.filter(d => d.name === 'try_files' && innermost(d) === 'location /')
         expect(tryFiles.map(d => d.args)).toEqual(['$uri $uri/ /index.html'])
+    })
+})
+
+describe('the TEA-only server block for custom domains (TPF-148)', () => {
+    it('sizes the server name hash for hosts of up to 239 characters, once, at the top level', () => {
+        const bucket = directives.filter(d => d.name === 'server_names_hash_bucket_size')
+        expect(bucket.map(d => [d.block.length, d.args])).toEqual([[0, '512']])
+        expect(read('../../nginx/nginx.conf')).not.toMatch(/server_names_hash_bucket_size/)
+    })
+
+    it('names the custom hosts from TEA_CUSTOM_DOMAINS and keeps the main server the default', () => {
+        expect(directives.filter(d => d.name === 'server_name').map(d => d.args))
+            .toEqual(['localhost', '${TEA_CUSTOM_DOMAINS}'])
+        expect(directives.filter(d => d.name === 'listen').map(d => d.args)).toEqual(['80 default_server', '80'])
+    })
+
+    it('proxies only /tea/ and /.well-known/tea to the backend and answers 404 to everything else', () => {
+        expect(locations.slice(-4)).toEqual(['^~ /tea/', '= /.well-known/tea', '= /tea', '/'])
+        const teaProxies = directives.filter(d => d.name === 'proxy_pass'
+            && ['location ^~ /tea/', 'location = /.well-known/tea'].includes(innermost(d)))
+        expect(teaProxies.map(d => d.args)).toEqual(['http://backend', 'http://backend'])
+        expect(directives.filter(d => d.name === 'return').map(d => [innermost(d), d.args]))
+            .toEqual([['location = /tea', '404'], ['location /', '404']])
     })
 })
