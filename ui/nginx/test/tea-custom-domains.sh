@@ -2,8 +2,9 @@
 # TPF-148: runs the UI nginx template through the nginx image ui/Dockerfile ships and through the
 # real nginx_start.sh, in front of an echoing upstream stand-in (tea-echo-upstream.conf), and checks
 # the TEA-only server block for TEA custom domains: on a listed host only /tea/... and
-# /.well-known/tea reach the backend (with the custom host, the raw URI and the client's forwarded
-# headers), every other path and every encoded or dot-segment escape is nginx's 404; the ReARM host,
+# /.well-known/tea reach the backend (with the custom host as Host and as X-Forwarded-Host whatever
+# the client sent, the raw URI and the client's X-Forwarded-Proto), every other path and every
+# encoded or dot-segment escape is nginx's 404; the ReARM host,
 # localhost and unlisted hosts keep the main server block exactly as before.
 #
 #   bash ui/nginx/test/tea-custom-domains.sh
@@ -177,7 +178,7 @@ probe() {
 
 UUID=0a8b9a3e-7c1f-4b0e-9d2a-5f6e7d8c9b0a
 FORM=(-H 'Content-Type: application/x-www-form-urlencoded' --data 'grant_type=client_credentials')
-XF=(-H 'X-Forwarded-Host: tea-a.test' -H 'X-Forwarded-Proto: https')
+XF=(-H 'X-Forwarded-Host: tea-b.test' -H 'X-Forwarded-Proto: https')
 
 echo "-- custom host tea-a.test on the two-host render (C rows)"
 C="$UI_TWO"
@@ -225,7 +226,19 @@ for v in TEA-A.TEST tea-a.test:443 tea-a.test. tea-b.test; do
 done
 probe F1 "$C" $H GET /tea/v1.0.0/products backend host=$H xfh=$H xfp=https uri=/tea/v1.0.0/products -- "${XF[@]}"
 probe F2 "$C" $H GET /.well-known/tea backend host=$H xfh=$H xfp=https uri=/.well-known/tea -- "${XF[@]}"
-probe F3 "$C" $H GET /tea/v1.0.0/products backend host=$H xfh= xfp= uri=/tea/v1.0.0/products
+probe F3 "$C" $H GET /tea/v1.0.0/products backend host=$H xfh=$H xfp= uri=/tea/v1.0.0/products
+for v in TEA-A.TEST tea-a.test:443 tea-a.test.; do
+    probe F4 "$C" "$v" GET /tea/v1.0.0/products backend host=$H xfh=$H xfp=https uri=/tea/v1.0.0/products -- "${XF[@]}"
+done
+probe F5 "$C" $H GET /tea/v1.0.0/products backend host=$H xfh=$H uri=/tea/v1.0.0/products \
+    -- -H 'X-Forwarded-Host: tea-b.test' -H 'X-Forwarded-Host: evil.example:8443'
+probe F5 "$C" tea-b.test GET /.well-known/tea backend host=tea-b.test xfh=tea-b.test uri=/.well-known/tea \
+    -- -H 'X-Forwarded-Host: tea-a.test'
+probe F6 "$C" rearm.test GET /tea/v1.0.0/products backend host=rearm.test xfh=tea-b.test xfp=https \
+    uri=/tea/v1.0.0/products -- "${XF[@]}"
+probe F6 "$C" rearm.test GET /.well-known/tea backend host=rearm.test xfh= xfp= uri=/.well-known/tea
+probe F6 "$UI_ABSENT" tea-a.test GET /tea/v1.0.0/products backend host=tea-a.test xfh=tea-b.test xfp=https \
+    uri=/tea/v1.0.0/products -- "${XF[@]}"
 
 echo "-- a listed host of 239 characters beside a short one (G rows)"
 C="$UI_LONG"
@@ -240,6 +253,8 @@ else
 fi
 probe G2 "$C" "$H239" GET / nginx404
 probe G3 "$C" "$H239" GET /tea/v1.0.0/products backend "host=$H239" uri=/tea/v1.0.0/products
+probe F7 "$C" "$H239" GET /tea/v1.0.0/products backend "host=$H239" "xfh=$H239" uri=/tea/v1.0.0/products \
+    -- -H 'X-Forwarded-Host: tea-a.test'
 probe G4 "$C" "$H239" GET /tea/..%2findex.html nginx404
 probe G5 "$C" tea-a.test GET /.well-known/tea backend host=tea-a.test uri=/.well-known/tea
 probe G5 "$C" tea-a.test GET /index.html nginx404

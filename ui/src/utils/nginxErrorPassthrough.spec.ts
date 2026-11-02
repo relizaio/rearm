@@ -111,4 +111,10 @@ describe('the TEA-only server block for custom domains (TPF-148)', () => {
         expect(directives.filter(d => d.name === 'return').map(d => [innermost(d), d.args]))
             .toEqual([['location = /tea', '404'], ['location /', '404']])
     })
+
+    it('pins X-Forwarded-Host to the routed host in its two TEA locations, and nowhere else (TPF-150)', () => {
+        const xfh = directives.filter(d => d.name === 'proxy_set_header' && /^X-Forwarded-Host\s/i.test(d.args))
+        expect(xfh.map(d => [innermost(d), d.args.replace(/\s+/g, ' ')]))
+            .toEqual([['location ^~ /tea/', 'X-Forwarded-Host $host'], ['location = /.well-known/tea', 'X-Forwarded-Host $host']])
+    })
 })
