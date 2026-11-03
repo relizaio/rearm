@@ -26,6 +26,7 @@ vi.mock('./TeaProfileEditor.vue', () => ({ default: { name: 'TeaProfileEditor', 
 const { default: Panel } = await import('./TeaOrgPanel.vue')
 const store = (await import('@/store')).default.store
 const graphqlQueries = (await import('@/utils/graphqlQueries')).default
+const { TEA_SERVING_DESCRIPTIONS } = await import('@/utils/teaProfile')
 
 const ORG = '44444444-4444-4444-8444-444444444444'
 const TEA = '55555555-5555-4555-8555-555555555555'
@@ -59,7 +60,7 @@ const TEA_DOMAIN_LOST = 'Not served: this organization has no assignable TEA dom
 const TEA_HOSTING_NEEDS_DOMAIN = 'The instance hosts /.well-known/tea on the domain only while the serving mode is On the assigned domain.'
 const TEA_SERVING_PUBLIC_NOTE = "Choosing a serving mode makes this organization's public TEA content reachable at the API base below at once."
 const NO_DOMAIN_REFUSAL = 'No TEA domain is assigned to this organization; a global administrator assigns one'
-const PRO_NOT_MINTED = 'Organization TEA id: not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.'
+const PRO_NOT_MINTED = 'Not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.'
 const CE_NOT_MINTED = 'Organization TEA id: not minted yet: enable publishing on a profile to mint it.'
 
 // TeaOrgPanel.vue lines 6-16 at 76021180, the Discovery block before TPF-144 (the CE branch keeps it).
@@ -181,6 +182,18 @@ describe('TeaOrgPanel serving choices', () => {
         expect(domainHosting.findComponent(NRadio).props('disabled')).toBe(true)
         expect(domainHosting.text()).toBe('Hosted on tea.acme.example')
         expect(byId(w, 'tea-hosting-help').text()).toBe(TEA_HOSTING_NEEDS_DOMAIN)
+        expect(errors).not.toHaveBeenCalled()
+    })
+
+    it('2b: every offered serving mode carries a help icon with its description', async () => {
+        const w = await mountWith(NONE_DOMAIN)
+        for (const m of ['NONE', 'LEGACY_UUID', 'DOMAIN'] as const) {
+            const help = byId(byId(w, 'tea-serving-option-' + m) as any, 'tea-serving-help-' + m)
+            expect(help.exists()).toBe(true)
+            expect(help.attributes('aria-label')).toBe(TEA_SERVING_DESCRIPTIONS[m])
+        }
+        const w2 = await mountWith(NONE_NO_DOMAIN)
+        expect(byId(w2, 'tea-serving-help-DOMAIN').exists()).toBe(false)
         expect(errors).not.toHaveBeenCalled()
     })
 
