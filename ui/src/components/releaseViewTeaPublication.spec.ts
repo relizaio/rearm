@@ -133,7 +133,18 @@ describe('ReleaseView TEA publication', () => {
         }
         const start = code.indexOf('async function withTeaProgress')
         const body = code.slice(start, code.indexOf('\n}\n', start))
-        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\} finally \{\s*teaActing\.value = null\s*\}\s*await loadTeaPublication\(\)/)
+        expect(body).toMatch(/catch \(err: any\) \{\s*await Swal\.fire\('Error!', teaActErrorText\(err\), 'error'\)\s*\} finally \{\s*teaActing\.value = null\s*\}\s*await refreshAfterTeaAct\(\)/)
+    })
+
+    it('after a TEA act the whole release is refetched (generated artifacts and identifiers too), the publication as the fallback', () => {
+        const start = code.indexOf('async function refreshAfterTeaAct')
+        expect(start).toBeGreaterThan(0)
+        const body = code.slice(start, code.indexOf('\n}\n', start))
+        expect(body).toMatch(/try \{\s*await fetchRelease\(\)\s*\} catch \(e\) \{[\s\S]*await loadTeaPublication\(\)\s*\}/)
+        const fetch = code.slice(code.indexOf('async function fetchRelease ()'))
+        const fetchBody = fetch.slice(0, fetch.indexOf('\n}\n'))
+        expect(fetchBody).toContain('loadSyntheticArtifacts()')
+        expect(fetchBody).toContain('loadTeaPublication()')
     })
 
     it('has a TEA_PUBLICATION branch in the History renderer', () => {
@@ -177,7 +188,7 @@ describe('the TEA view rides its own gated query, never the shared release fragm
         }
         {
             const body = code.slice(code.indexOf('async function withTeaProgress'))
-            expect(body.slice(0, body.indexOf('\n}\n'))).toContain('await loadTeaPublication()')
+            expect(body.slice(0, body.indexOf('\n}\n'))).toContain('await refreshAfterTeaAct()')
         }
     })
 
