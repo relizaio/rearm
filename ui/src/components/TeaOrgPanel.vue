@@ -21,7 +21,7 @@
                 <!-- Pro (task TPF-144): the assigned domain, the serving mode and the /.well-known/tea hosting, as the server holds them -->
                 <div v-if="discovery?.teaUuid"><strong>Organization TEA id:</strong> <code data-testid="tea-org-uuid">{{ discovery.teaUuid }}</code></div>
                 <div v-else data-testid="tea-org-uuid-missing" class="text-muted">
-                    Organization TEA id: not minted yet: enable publishing on a profile to mint it.
+                    Organization TEA id: not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.
                 </div>
                 <template v-if="discovery">
                     <div v-if="discovery.assignedHost" data-testid="tea-assigned-domain"><strong>Assigned TEA domain:</strong> <code>{{ discovery.assignedHost }}</code></div>
@@ -36,7 +36,7 @@
 
                     <div v-if="discovery.apiBase" data-testid="tea-effective-base"><strong>TEA API base:</strong> <code data-testid="tea-api-base">{{ discovery.apiBase }}</code></div>
                     <div v-else-if="discovery.teaServing === 'NONE'" data-testid="tea-not-served" class="text-warning">{{ TEA_NOT_SERVED }}</div>
-                    <div v-else-if="!discovery.teaUuid" data-testid="tea-not-served-no-id" class="text-warning">{{ TEA_NOT_SERVED_NO_ID }}</div>
+                    <div v-else-if="!discovery.teaUuid && discovery.assignedHost" data-testid="tea-not-served-no-id" class="text-warning">{{ TEA_NOT_SERVED_NO_ID }}</div>
                     <div v-else data-testid="tea-domain-lost" class="text-warning">{{ TEA_DOMAIN_LOST }}</div>
 
                     <div v-if="discovery.assignedHost" data-testid="tea-well-known-hosting" class="mt-2"><strong>/.well-known/tea:</strong>
@@ -136,16 +136,16 @@ const objects = computed((): Record<string, TeaNamedObject> => {
 const TEA_OVERRIDES_EMPTY = 'No component or perspective overrides the organization profile.'
 const TEA_NO_DOMAIN_NOTICE = 'No TEA domain is assigned to this organization. A global administrator can assign one in System Settings.'
 const TEA_NOT_SERVED = 'Not served: the TEA API of this organization answers nothing. Choose a serving mode above to enable it.'
-const TEA_NOT_SERVED_NO_ID = 'Not served yet: the organization has no TEA id. Enable publishing on a TEA profile to mint one.'
+const TEA_NOT_SERVED_NO_ID = 'Not served yet: this organization has no TEA id. Choosing Not served and then this serving mode again mints one, as does choosing the Legacy path with the organization TEA id.'
 const TEA_DOMAIN_LOST = 'Not served: this organization has no assignable TEA domain any more. A global administrator can assign one in System Settings, or choose another serving mode.'
 const TEA_HOSTING_NEEDS_DOMAIN = 'The instance hosts /.well-known/tea on the domain only while the serving mode is On the assigned domain.'
 const TEA_SERVING_PUBLIC_NOTE = "Choosing a serving mode makes this organization's public TEA content reachable at the API base below at once."
 
-/** The serving modes offered: DOMAIN only with an assigned host, or while it is the stored mode; LEGACY_UUID needs a TEA id. */
+/** The serving modes offered: DOMAIN only with an assigned host, or while it is the stored mode; NONE and LEGACY_UUID always (the server mints the TEA id on a mode other than NONE). */
 const servingOptions = computed(() => {
     const out: { value: TeaServing, label: string, disabled?: boolean }[] = [
         { value: 'NONE', label: TEA_SERVING_LABELS.NONE },
-        { value: 'LEGACY_UUID', label: TEA_SERVING_LABELS.LEGACY_UUID, disabled: !discovery.value?.teaUuid },
+        { value: 'LEGACY_UUID', label: TEA_SERVING_LABELS.LEGACY_UUID },
     ]
     if (discovery.value?.assignedHost || discovery.value?.teaServing === 'DOMAIN') {
         out.push({ value: 'DOMAIN', label: TEA_SERVING_LABELS.DOMAIN })
