@@ -278,7 +278,18 @@ public class TeaProfileGraphqlIntegrationTest extends TeaProfileGraphqlIntegrati
 		assertNull(before.get("wellKnownDocument"));
 
 		ok(save(admin, org, "ORGANIZATION", null, profile("publishing", "ENABLED")), "saveTeaProfile");
+		// TPF-142 (F-6, row 14): minted, no serving mode stored: the upgrade state is dark
+		Map<String, Object> dark = ok(exec(admin, DISCOVERY, "o", org.getUuid().toString()), "teaOrgDiscovery");
+		assertNotNull(dark.get("teaUuid"));
+		assertEquals("NONE", dark.get("teaServing"));
+		assertEquals("NONE", dark.get("teaWellKnownHosting"));
+		assertNull(dark.get("apiBase"));
+		assertNull(dark.get("wellKnownDocument"));
+		assertNull(dark.get("wellKnownUrl"));
+		assertNull(dark.get("assignedHost"));
+		ok(exec(admin, SET_SERVING, "o", org.getUuid().toString(), "s", "LEGACY_UUID", "h", "NONE"), "setTeaOrgServing");
 		Map<String, Object> after = ok(exec(admin, DISCOVERY, "o", org.getUuid().toString()), "teaOrgDiscovery");
+		assertEquals("LEGACY_UUID", after.get("teaServing"));
 		String base = StringUtils.stripEnd(relizaConfigProps.getBaseuri(), "/") + "/tea/" + after.get("teaUuid");
 		assertEquals(base, after.get("apiBase"));
 		assertEquals(Utils.OM.readTree("{\"schemaVersion\":1,\"endpoints\":[{\"url\":\"" + base

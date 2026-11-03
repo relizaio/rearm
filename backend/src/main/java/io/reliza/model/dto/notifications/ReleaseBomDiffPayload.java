@@ -14,9 +14,8 @@ import io.reliza.model.NotificationOutboxEvent;
  * when {@code eventType == RELEASE_BOM_DIFF}.
  *
  * <p>{@code added} / {@code removed} are the component deltas captured by
- * the once-per-release reconcile. The legacy alert only fired when both
- * lists were non-empty; the producer preserves that gate, so a payload
- * that reaches a formatter always has content on both sides.
+ * the once-per-release reconcile. At least one of {@code added} /
+ * {@code removed} is non-empty; an empty side is an empty list (TPF-147).
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ReleaseBomDiffPayload(

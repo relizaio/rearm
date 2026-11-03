@@ -11,6 +11,7 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.stream.IntStream;
 
 import org.junit.jupiter.api.Test;
 
@@ -23,6 +24,12 @@ import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /**
  * Covers the canonical inbox rendering: each event type produces a
@@ -246,5 +253,50 @@ class NotificationInboxFormatterTest {
         e.setEventType(type);
         e.setRecordData(Utils.OM.convertValue(payload, Map.class));
         return e;
+    }
+
+    // ---------- TPF-147: one-sided BOM diffs ----------
+
+    private static final ReleaseRef BOM_DIFF_RELEASE =
+            new ReleaseRef(UUID.randomUUID(), "v2.0", UUID.randomUUID(), "myapp", ComponentType.COMPONENT,
+                UUID.randomUUID(), "main", ReleaseLifecycle.ASSEMBLED, null, null, null, "alice",
+                "alice@example.com");
+
+    private static List<BomComponentChange> bomChanges(String name, int n) {
+        return IntStream.rangeClosed(1, n)
+                .mapToObj(i -> new BomComponentChange("pkg:npm/" + name + "@" + i + ".0", i + ".0"))
+                .toList();
+    }
+
+    private NotificationInboxFormatter.InboxRendering renderBomDiff(int added, int removed) {
+        return formatter.format(outboxOf(NotificationEventType.RELEASE_BOM_DIFF, new ReleaseBomDiffPayload(
+                BOM_DIFF_RELEASE, bomChanges("added", added), bomChanges("removed", removed))));
+    }
+
+    /** The title as the formatter builds it: "BOM diff on " + noun + ": " + releaseTitle(r). */
+    private static String bomDiffTitle() {
+        return "BOM diff on " + new NotificationLabelProvider().componentNoun(BOM_DIFF_RELEASE.componentType())
+                + ": " + BOM_DIFF_RELEASE.componentName() + " " + BOM_DIFF_RELEASE.version();
+    }
+
+    @Test
+    void releaseBomDiffAddOnlyDropsTheZeroRemovedFact() {
+        NotificationInboxFormatter.InboxRendering r = renderBomDiff(3, 0);
+        assertEquals(bomDiffTitle(), r.title());
+        assertEquals("3 added", r.description());
+    }
+
+    @Test
+    void releaseBomDiffRemoveOnlyDropsTheZeroAddedFact() {
+        NotificationInboxFormatter.InboxRendering r = renderBomDiff(0, 2);
+        assertEquals(bomDiffTitle(), r.title());
+        assertEquals("2 removed", r.description());
+    }
+
+    @Test
+    void releaseBomDiffBothSidesKeepsTodaysBytes() {
+        NotificationInboxFormatter.InboxRendering r = renderBomDiff(1, 1);
+        assertEquals(bomDiffTitle(), r.title());
+        assertEquals("1 added \u00b7 1 removed", r.description());
     }
 }

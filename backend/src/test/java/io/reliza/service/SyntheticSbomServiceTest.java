@@ -6,13 +6,14 @@ package io.reliza.service;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.AdditionalMatchers.aryEq;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyDouble;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doReturn;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -24,6 +25,8 @@ import static org.mockito.Mockito.when;
 import java.math.BigDecimal;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -36,6 +39,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
@@ -47,6 +51,7 @@ import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactCanonicalMap;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.ArtifactSbomComponent;
+import io.reliza.model.BucketFlowControl;
 import io.reliza.model.ComponentIdentity;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SyntheticDtrackBucket;
@@ -58,6 +63,8 @@ import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.repositories.ArtifactCanonicalMapRepository;
 import io.reliza.repositories.ArtifactSbomComponentRepository;
+import io.reliza.repositories.FanOutWalkRepository;
+import io.reliza.repositories.ReleaseRepository;
 import io.reliza.repositories.SbomComponentRepository;
 import io.reliza.repositories.SyntheticDtrackBucketRepository;
 import io.reliza.service.DTrackService.SyntheticFindings;
@@ -72,7 +79,7 @@ class SyntheticSbomServiceTest {
 	@Mock private SyntheticDtrackBucketRepository bucketRepository;
 	@Mock private ArtifactSbomComponentRepository artifactSbomComponentRepository;
 	@Mock private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
-	@Mock private io.reliza.repositories.ArtifactRepository artifactRepository;
+	@Mock private SystemInfoService systemInfoService;
 	@Mock private SharedArtifactService sharedArtifactService;
 	@Mock private DTrackService dTrackService;
 	@Mock private RebomService rebomService;
@@ -80,6 +87,8 @@ class SyntheticSbomServiceTest {
 	@Mock private VulnAnalysisService vulnAnalysisService;
 	@Mock private SbomComponentService sbomComponentService;
 	@Mock private SyntheticOrgLock syntheticOrgLock;
+	@Mock private FanOutWalkRepository fanOutWalkRepository;
+	@Mock private ReleaseRepository releaseRepository;
 
 	@InjectMocks private SyntheticSbomService service;
 
@@ -92,6 +101,15 @@ class SyntheticSbomServiceTest {
 			m.computeMetricsFromFacts();
 			return null;
 		}).when(vulnAnalysisService).processReleaseMetricsDto(any(), any(), any(), any());
+		// The pass start read from the database clock (TPF-114), a fixed instant here.
+		lenient().when(artifactCanonicalMapRepository.dbClockTimestamp()).thenReturn(P0);
+	}
+
+	/** The stubbed database clock of every fan-out pass (TPF-114). */
+	private static final ZonedDateTime P0 = ZonedDateTime.of(2026, 10, 29, 0, 0, 0, 0, ZoneOffset.UTC);
+
+	private static String iso(ZonedDateTime t) {
+		return DateTimeFormatter.ISO_INSTANT.format(t.toInstant());
 	}
 
 	private final UUID ORG = UUID.randomUUID();
@@ -506,7 +524,8 @@ class SyntheticSbomServiceTest {
 		assertFalse(service.resyncOrg(ORG, ZonedDateTime.now().minusDays(1)),
 				"a skipped cycle must be reported, so the daily run keeps its sync time");
 
-		verifyNoInteractions(rebomService, bucketRepository, integrationService, dTrackService, artifactRepository);
+		verifyNoInteractions(rebomService, bucketRepository, integrationService, dTrackService,
+				artifactCanonicalMapRepository);
 	}
 
 	@Test
@@ -627,15 +646,8 @@ class SyntheticSbomServiceTest {
 		SbomComponent scomp = new SbomComponent();
 		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
-		UUID poolArtifactcano = UUID.randomUUID();
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
-				.thenReturn(List.of(poolArtifactcano));
-		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
-		poolMapcano.setOrg(ORG);
-		poolMapcano.setArtifactUuid(poolArtifactcano);
-		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
-		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(poolMapcano));
+		when(artifactCanonicalMapRepository.findNeverFannedOutCanonicals(ORG, 2000))
+				.thenReturn(List.of(canonicalArtifact));
 		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
 		when(asc.getSbomComponentUuid()).thenReturn(sc);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
@@ -655,6 +667,7 @@ class SyntheticSbomServiceTest {
 		assertEquals(canonical, applied.purl());
 		// source stamped with the target artifact so "Sources" is populated
 		assertEquals(artifact, applied.sources().iterator().next().artifact());
+		verify(artifactCanonicalMapRepository).stampFanOutPass(eq(ORG), eq(canonicalArtifact), any(), eq(P0));
 	}
 
 	@Test
@@ -667,15 +680,8 @@ class SyntheticSbomServiceTest {
 		SbomComponent scomp = new SbomComponent();
 		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
-		UUID poolArtifactcano = UUID.randomUUID();
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
-				.thenReturn(List.of(poolArtifactcano));
-		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
-		poolMapcano.setOrg(ORG);
-		poolMapcano.setArtifactUuid(poolArtifactcano);
-		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
-		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(poolMapcano));
+		when(artifactCanonicalMapRepository.findNeverFannedOutCanonicals(ORG, 2000))
+				.thenReturn(List.of(canonicalArtifact));
 		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
 		when(asc.getSbomComponentUuid()).thenReturn(sc);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(asc));
@@ -691,34 +697,58 @@ class SyntheticSbomServiceTest {
 		// no findings, but lastScanned is set -> updateArtifactDti will stamp firstScanned ("Scan done")
 		assertTrue(dti.getValue().getVulnerabilityDetails().isEmpty());
 		assertEquals(true, dti.getValue().getLastScanned() != null);
+		verify(artifactCanonicalMapRepository).stampFanOutPass(eq(ORG), eq(canonicalArtifact), any(), eq(P0));
 	}
 
+	/**
+	 * TPF-114 architecture 4.2: a coverage-gate skip writes nothing to the artifact but IS
+	 * stamped (the canonical rotates out), and the covering bucket's later ingest brings it
+	 * back through the change-driven query, where it is applied, writes first, stamp last.
+	 */
 	@Test
-	void fanOutSkipsArtifactWithUncoveredComponent() throws Exception {
-		// Artifact has two matchable components but only one is covered (ingested);
-		// the other is still gated -> the artifact must NOT be marked scanned yet.
-		UUID covered = UUID.randomUUID(), uncovered = UUID.randomUUID(), canonicalArtifact = UUID.randomUUID();
-		String coveredPurl = "pkg:npm/covered@1.0", uncoveredPurl = "pkg:npm/uncovered@1.0";
-		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(ingestedBucket(new HashMap<>(), coveredPurl)));
-		SbomComponent c1 = new SbomComponent(); c1.setUuid(covered); c1.setOrg(ORG); c1.setCanonicalPurl(coveredPurl);
-		SbomComponent c2 = new SbomComponent(); c2.setUuid(uncovered); c2.setOrg(ORG); c2.setCanonicalPurl(uncoveredPurl);
-		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(c1, c2));
-		UUID poolArtifactcano = UUID.randomUUID();
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
-				.thenReturn(List.of(poolArtifactcano));
-		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
-		poolMapcano.setOrg(ORG);
-		poolMapcano.setArtifactUuid(poolArtifactcano);
-		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
-		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(poolMapcano));
-		ArtifactSbomComponent a1 = mock(ArtifactSbomComponent.class); when(a1.getSbomComponentUuid()).thenReturn(covered);
-		ArtifactSbomComponent a2 = mock(ArtifactSbomComponent.class); when(a2.getSbomComponentUuid()).thenReturn(uncovered);
-		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(a1, a2));
+	void fanOutGateSkipIsStampedAndTheCoveringIngestRetriesIt() throws Exception {
+		UUID a = UUID.randomUUID(), b = UUID.randomUUID(), canonical = UUID.randomUUID(),
+				artifact = UUID.randomUUID();
+		String aPurl = "pkg:npm/a@1", bPurl = "pkg:npm/b@1";
+		ZonedDateTime t1 = ZonedDateTime.now(ZoneOffset.UTC).minusMinutes(3);
+		SyntheticDtrackBucket bucket = ingestedBucket(new HashMap<>(), aPurl);
+		bucket.setBucketIndex(0);
+		bucket.setLastUpdatedDate(t1);
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(bucket));
+		SbomComponent ca = new SbomComponent(); ca.setUuid(a); ca.setOrg(ORG); ca.setCanonicalPurl(aPurl);
+		SbomComponent cb = new SbomComponent(); cb.setUuid(b); cb.setOrg(ORG); cb.setCanonicalPurl(bPurl);
+		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(ca, cb));
+		when(artifactCanonicalMapRepository.findNeverFannedOutCanonicals(ORG, 2000))
+				.thenReturn(List.of(canonical)).thenReturn(List.of());
+		ArtifactSbomComponent a1 = mock(ArtifactSbomComponent.class); when(a1.getSbomComponentUuid()).thenReturn(a);
+		ArtifactSbomComponent a2 = mock(ArtifactSbomComponent.class); when(a2.getSbomComponentUuid()).thenReturn(b);
+		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonical)).thenReturn(List.of(a1, a2));
 
 		service.fanOutOrg(ORG);
 
 		verify(sharedArtifactService, never()).updateArtifactDti(any(), any(), any());
+		verify(artifactCanonicalMapRepository, times(1)).stampFanOutPass(ORG, canonical, iso(t1), P0);
+
+		// The bucket now covers b@1 too and moved to T2 with b pending (TPF-137: the ingest records it);
+		// (A) is empty, the walk returns the canonical from the first slice and the stamp check keeps it.
+		ZonedDateTime t2 = t1.plusMinutes(1).truncatedTo(ChronoUnit.MICROS);
+		bucket.getRefMap().put(bPurl, bPurl);
+		bucket.setLastUpdatedDate(t2);
+		bucket.setFlowControl(new BucketFlowControl(Map.of(b.toString(), iso(t2)), iso(t2)));
+		when(fanOutWalkRepository.findChangedCanonicalsInSlice(eq(ORG), eq(FanOutWalkSlice.START),
+				eq(FanOutWalkSlice.endOf(0)), aryEq(new UUID[] {b}), eq(500))).thenReturn(List.of(canonical));
+		when(artifactCanonicalMapRepository.findCanonicalsStampedBefore(ORG, List.of(canonical), t2))
+				.thenReturn(List.of(canonical));
+		ArtifactCanonicalMap acm = mock(ArtifactCanonicalMap.class);
+		when(acm.getArtifactUuid()).thenReturn(artifact);
+		when(artifactCanonicalMapRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonical)).thenReturn(List.of(acm));
+		when(sharedArtifactService.getArtifact(artifact)).thenReturn(Optional.of(mock(Artifact.class)));
+
+		service.fanOutOrg(ORG);
+
+		InOrder order = inOrder(sharedArtifactService, artifactCanonicalMapRepository);
+		order.verify(sharedArtifactService, times(1)).updateArtifactDti(any(), any(), any());
+		order.verify(artifactCanonicalMapRepository, times(1)).stampFanOutPass(ORG, canonical, iso(t2), P0);
 	}
 
 	@Test
@@ -735,15 +765,8 @@ class SyntheticSbomServiceTest {
 		SbomComponent rootC = new SbomComponent(); rootC.setUuid(root); rootC.setOrg(ORG); rootC.setCanonicalPurl(rootPurl);
 		Map<String, Object> rootRd = new HashMap<>(); rootRd.put("isRoot", true); rootC.setRecordData(rootRd);
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(depC, rootC));
-		UUID poolArtifactcano = UUID.randomUUID();
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), anyDouble(), anyInt()))
-				.thenReturn(List.of(poolArtifactcano));
-		io.reliza.model.ArtifactCanonicalMap poolMapcano = new io.reliza.model.ArtifactCanonicalMap();
-		poolMapcano.setOrg(ORG);
-		poolMapcano.setArtifactUuid(poolArtifactcano);
-		poolMapcano.setCanonicalArtifactUuid(canonicalArtifact);
-		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(poolMapcano));
+		when(artifactCanonicalMapRepository.findNeverFannedOutCanonicals(ORG, 2000))
+				.thenReturn(List.of(canonicalArtifact));
 		ArtifactSbomComponent aDep = mock(ArtifactSbomComponent.class); when(aDep.getSbomComponentUuid()).thenReturn(dep);
 		ArtifactSbomComponent aRoot = mock(ArtifactSbomComponent.class); when(aRoot.getSbomComponentUuid()).thenReturn(root);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact)).thenReturn(List.of(aDep, aRoot));
@@ -755,6 +778,7 @@ class SyntheticSbomServiceTest {
 
 		// root excluded from coverage -> the single real dep is covered -> marked scanned
 		verify(sharedArtifactService).updateArtifactDti(any(), any(), any());
+		verify(artifactCanonicalMapRepository).stampFanOutPass(eq(ORG), eq(canonicalArtifact), any(), eq(P0));
 	}
 
 	@Test
@@ -827,8 +851,8 @@ class SyntheticSbomServiceTest {
 		ZonedDateTime storedAt = ZonedDateTime.now().minusDays(3);
 		b.setLastUpdatedDate(storedAt);
 		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
-		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
-		wireSingleArtifactPool(ZLIB, cutoff);
+		ArgumentCaptor<String> fanOutAt = ArgumentCaptor.forClass(String.class);
+		wireSingleCanonical(ZLIB, fanOutAt);
 
 		service.fanOutOrg(ORG);
 
@@ -838,11 +862,13 @@ class SyntheticSbomServiceTest {
 				"the stored finding must reach the artifact once re-keyed");
 		assertEquals(ZLIB, dti.getValue().getVulnerabilityDetails().get(0).purl());
 		// The repaired map is persisted and the bucket's update time moves, so the
-		// cutoff lets already-scanned artifacts back into the fan-out pool.
+		// cutoff (and the stamp) move with it and the bucket's canonicals re-qualify.
 		ArgumentCaptor<SyntheticDtrackBucket> saved = ArgumentCaptor.forClass(SyntheticDtrackBucket.class);
 		verify(bucketRepository).save(saved.capture());
 		assertEquals(Set.of(ZLIB), saved.getValue().getFindings().keySet());
-		assertTrue(cutoff.getValue() > storedAt.toInstant().getEpochSecond());
+		assertTrue(saved.getValue().getLastUpdatedDate().isAfter(storedAt));
+		assertEquals(iso(saved.getValue().getLastUpdatedDate()), fanOutAt.getValue(),
+				"the stamp is the re-keyed bucket's new update time (TPF-114 4.3)");
 	}
 
 	@Test
@@ -855,16 +881,16 @@ class SyntheticSbomServiceTest {
 		b.setLastUpdatedDate(storedAt);
 		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
 		when(bucketRepository.save(any())).thenThrow(new RuntimeException("stale revision"));
-		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
-		wireSingleArtifactPool(ZLIB, cutoff);
+		ArgumentCaptor<String> fanOutAt = ArgumentCaptor.forClass(String.class);
+		wireSingleCanonical(ZLIB, fanOutAt);
 
 		service.fanOutOrg(ORG);
 
 		ArgumentCaptor<DependencyTrackIntegration> dti = ArgumentCaptor.forClass(DependencyTrackIntegration.class);
 		verify(sharedArtifactService).updateArtifactDti(any(), dti.capture(), any());
 		assertEquals(1, dti.getValue().getVulnerabilityDetails().size());
-		// Not persisted, so the cutoff must not move on the strength of it.
-		assertEquals(Utils.toFractionalEpochSecond(storedAt), cutoff.getValue());
+		// Not persisted, so the cutoff (and the stamp) must not move on the strength of it.
+		assertEquals(iso(storedAt), fanOutAt.getValue());
 	}
 
 	@Test
@@ -876,31 +902,42 @@ class SyntheticSbomServiceTest {
 		ZonedDateTime storedAt = ZonedDateTime.now().minusDays(3);
 		b.setLastUpdatedDate(storedAt);
 		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
-		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt())).thenReturn(List.of());
+		ArgumentCaptor<String> fanOutAt = ArgumentCaptor.forClass(String.class);
+		wireSingleCanonical(ZLIB, fanOutAt);
 
 		service.fanOutOrg(ORG);
 
 		verify(bucketRepository, never()).save(any());
 		assertEquals(Set.of(otherVersion), b.getFindings().keySet());
-		assertEquals(Utils.toFractionalEpochSecond(storedAt), cutoff.getValue());
+		assertEquals(iso(storedAt), fanOutAt.getValue(), "the stamp is the stored date, not a later instant");
 	}
 
+	/**
+	 * TPF-114 architecture 4.3: the stamp is the newest INGESTED bucket date with its fraction
+	 * kept (microseconds survive ISO_INSTANT), and a newer bucket that is not INGESTED does not
+	 * count.
+	 */
 	@Test
-	void fanOutCutoffKeepsTheFractionOfTheNewestBucketUpdate() {
-		// lastScanned is stored as fractional epoch seconds. A cutoff truncated to
-		// whole seconds treats an artifact stamped earlier in the same second as
-		// the bucket update as already current, and it keeps its old findings.
-		SyntheticDtrackBucket b = ingestedBucket(new HashMap<>(), ZLIB);
-		ZonedDateTime storedAt = ZonedDateTime.of(2026, 9, 25, 10, 45, 52, 700_000_000, ZoneOffset.UTC);
-		b.setLastUpdatedDate(storedAt);
-		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b));
-		ArgumentCaptor<Double> cutoff = ArgumentCaptor.forClass(Double.class);
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt())).thenReturn(List.of());
+	void fanOutStampIsTheNewestIngestedBucketDateWithItsFraction() {
+		ZonedDateTime t1 = ZonedDateTime.of(2026, 10, 28, 10, 0, 0, 123_456_000, ZoneOffset.UTC);
+		ZonedDateTime t2 = t1.plusNanos(250_000_000);
+		SyntheticDtrackBucket b1 = ingestedBucket(new HashMap<>(), ZLIB);
+		b1.setBucketIndex(0);
+		b1.setLastUpdatedDate(t1);
+		SyntheticDtrackBucket b2 = ingestedBucket(new HashMap<>(), GLIBC);
+		b2.setBucketIndex(1);
+		b2.setLastUpdatedDate(t2);
+		SyntheticDtrackBucket submitted = ingestedBucket(new HashMap<>(), BABEL);
+		submitted.setBucketIndex(2);
+		submitted.setIngestState(IngestState.SUBMITTED);
+		submitted.setLastUpdatedDate(t2.plusMinutes(5));
+		when(bucketRepository.findByOrg(ORG)).thenReturn(List.of(b1, b2, submitted));
+		ArgumentCaptor<String> fanOutAt = ArgumentCaptor.forClass(String.class);
+		wireSingleCanonical(ZLIB, fanOutAt);
 
 		service.fanOutOrg(ORG);
 
-		assertEquals(storedAt.toEpochSecond() + 0.7, cutoff.getValue(), 1e-6);
+		assertEquals("2026-10-28T10:00:00.373456Z", fanOutAt.getValue());
 	}
 
 	@Test
@@ -926,23 +963,16 @@ class SyntheticSbomServiceTest {
 	}
 
 	/**
-	 * Wire one canonical artifact whose single component has the given canonical,
-	 * reachable through the fan-out pool.
+	 * Wire one canonical artifact whose single component has the given canonical, offered by
+	 * the never-stamped query (A), and capture the fanOutAt its stamp carries (TPF-114).
 	 */
-	private void wireSingleArtifactPool(String canonical, ArgumentCaptor<Double> cutoff) {
+	private void wireSingleCanonical(String canonical, ArgumentCaptor<String> fanOutAt) {
 		UUID sc = UUID.randomUUID(), canonicalArtifact = UUID.randomUUID(), artifact = UUID.randomUUID();
 		SbomComponent scomp = new SbomComponent();
 		scomp.setUuid(sc); scomp.setOrg(ORG); scomp.setCanonicalPurl(canonical);
 		when(sbomComponentRepository.findAllById(any())).thenReturn(List.of(scomp));
-		UUID poolArtifact = UUID.randomUUID();
-		when(artifactRepository.findFanOutPoolSlice(eq(ORG), cutoff.capture(), anyInt()))
-				.thenReturn(List.of(poolArtifact));
-		ArtifactCanonicalMap poolMap = new ArtifactCanonicalMap();
-		poolMap.setOrg(ORG);
-		poolMap.setArtifactUuid(poolArtifact);
-		poolMap.setCanonicalArtifactUuid(canonicalArtifact);
-		when(artifactCanonicalMapRepository.findByOrgAndArtifactUuidIn(eq(ORG), any()))
-				.thenReturn(List.of(poolMap));
+		when(artifactCanonicalMapRepository.findNeverFannedOutCanonicals(ORG, 2000))
+				.thenReturn(List.of(canonicalArtifact));
 		ArtifactSbomComponent asc = mock(ArtifactSbomComponent.class);
 		when(asc.getSbomComponentUuid()).thenReturn(sc);
 		when(artifactSbomComponentRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
@@ -952,6 +982,8 @@ class SyntheticSbomServiceTest {
 		when(artifactCanonicalMapRepository.findByOrgAndCanonicalArtifactUuid(ORG, canonicalArtifact))
 				.thenReturn(List.of(acm));
 		when(sharedArtifactService.getArtifact(artifact)).thenReturn(Optional.of(mock(Artifact.class)));
+		when(artifactCanonicalMapRepository.stampFanOutPass(eq(ORG), eq(canonicalArtifact), fanOutAt.capture(), eq(P0)))
+				.thenReturn(1);
 	}
 
 	/** A bucket in INGESTED state whose ref_map covers the given canonical purls. */

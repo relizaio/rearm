@@ -906,8 +906,14 @@ public class AgentTaskService {
 			AgentBudgetService.Projection p = budgetService.project(td, board, rc);
 			if (!p.fits()) throw new RelizaException(budgetService.refusal(p, rc));
 		}
+		// The coordinator's own authorize is its look at the design (task SPLIT-5, D4): it settles a checkpoint
+		// that does not stand, in the actor's name. Posted after the commit, board after task.
+		BoardEffects effects = new BoardEffects(td.getBoard());
+		routingService.settleCheckpoint(td, board, rc, actor, "authorized for " + rc.getName(), effects);
 		td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.AUTHORIZE, actor);
-		return saveData(td, wu);
+		AgentTaskData saved = saveData(td, wu);
+		if (!effects.isEmpty()) boardEffectsApplier.applyAfterCommit(effects, wu);
+		return saved;
 	}
 
 	private void validateDependencies(AgentTaskData td, List<UUID> dependsOn) throws RelizaException {
@@ -1210,13 +1216,13 @@ public class AgentTaskService {
 		}
 		if (td.holdParksAHop()) return answerParkedHop(td, actor, note, role, wu);
 		if (td.seatParkedForOperator()) return answerSeatQuestion(td, actor, note, role, wu);
-		UUID toRole = null;
+		AgentTaskRoleConfigData named = null;
 		if (StringUtils.isNotBlank(role)) {
-			toRole = agentBoardService.getRoleConfig(td.getBoard(), role.trim())
+			named = agentBoardService.getRoleConfig(td.getBoard(), role.trim())
 					.filter(AgentTaskRoleConfigData::isActive)
-					.map(AgentTaskRoleConfigData::getUuid)
 					.orElseThrow(() -> new RelizaException("Role " + role.trim() + " is not active on this board"));
 		}
+		UUID toRole = null == named ? null : named.getUuid();
 		boolean overridesStop = isLoopStop(h);
 		// One lift per stop kind per task whoever gives it (task c0a2134c): the next stop of this
 		// kind is the operator's.
@@ -1230,7 +1236,14 @@ public class AgentTaskService {
 		// dealt with, and the last hop still says what happens next.
 		AgentRoutingService.RouteOverride override = overridesStop || null != toRole
 				? new AgentRoutingService.RouteOverride(overridesStop, toRole) : null;
-		AgentTaskData routed = routeAfterHop(td, lastSignOff(td), override, wu);
+		// A lift that names a role is the lifter sending the task there (task SPLIT-5, 3.4): it settles a design
+		// checkpoint that does not stand before routing, which then finds it standing. The named override returns
+		// from routing before the forward path, so this is the only place that records the lifter.
+		BoardEffects effects = new BoardEffects(td.getBoard());
+		if (null != named) {
+			routingService.settleCheckpoint(td, boardOf(td), named, actor, "hold lifted to " + named.getName(), effects);
+		}
+		AgentTaskData routed = routeAfterHop(td, lastSignOff(td), override, effects, wu);
 		if (StringUtils.isNotBlank(note) || null != override) {
 			postReleaseNote(routed, note, actor, released, wu);
 		}
@@ -1592,6 +1605,9 @@ public class AgentTaskService {
 		AgentBoardData lockedBoard = agentBoardService.lockBoard(board.getUuid());
 		AgentTaskData td = lockedTask(taskUuid);
 		requireStatus(td, taskUuid, TaskStatus.PENDING_INTAKE, TaskStatus.QUEUED, TaskStatus.AWAITING_COORDINATOR);
+		// A split at the design checkpoint pins the reviewed design on every child (task SPLIT-5, D7).
+		boolean atCheckpoint = td.checkpointPending();
+		List<RequiredInput> carried = atCheckpoint ? carriedDesign(td.getDesignCheckpoint().design()) : null;
 		// A child names its own group and tags or inherits the parent's (task-groups-and-tags.md D9).
 		String parentGroup = lockedBoard.groupByUuid(td.getGroup()).map(AgentBoardData.TaskGroup::key).orElse(null);
 		List<AgentTaskData> created = new ArrayList<>();
@@ -1601,7 +1617,7 @@ public class AgentTaskService {
 			Integer childLevel = null != c.workLevel() ? c.workLevel() : td.getWorkLevel();
 			AgentTaskData child = register(lockedBoard, c.externalRef(), c.title(), c.description(),
 					c.sourceUrl(), td.getRegisteredBySession(), td.getUuid(),
-					c.producesComponent(), childLevel, null,
+					c.producesComponent(), childLevel, carried,
 					null != td.getRegisteredBySession() ? AgentActor.ofSession(td.getRegisteredBySession()) : null,
 					false, StringUtils.isNotBlank(c.group()) ? c.group() : parentGroup,
 					null != c.tags() ? c.tags() : td.getTags(), wu);
@@ -1627,11 +1643,33 @@ public class AgentTaskService {
 			child.setDependsOn(deps);
 			created.set(i, saveData(child, wu));
 		}
+		if (atCheckpoint) {
+			td.setDesignCheckpoint(td.getDesignCheckpoint().withSettled(AgentTaskData.DesignCheckpointState.SPLIT, actor,
+					created.size() + " children: "
+							+ created.stream().map(AgentTaskData::keyOrUuid).collect(Collectors.joining(", "))));
+		}
 		// Written even when the task already waits on the coordinator (a task returned as too big): SPLIT is a
 		// recording trigger, so the split stays in the history (RD3-16 architecture-2 §1).
 		td.transitionStatus(TaskStatus.AWAITING_COORDINATOR, StatusTrigger.SPLIT, actor);
 		saveData(td, wu);
 		return created;
+	}
+
+	/**
+	 * What each child of a split at the design checkpoint carries (task SPLIT-5, D7): every release of the record's
+	 * design, pinned at floor ASSEMBLED. Null when none of them is a document any more.
+	 */
+	private List<RequiredInput> carriedDesign(List<UUID> design) {
+		List<RequiredInput> carried = new ArrayList<>();
+		for (UUID release : design) {
+			DocumentRef doc = sharedReleaseService.getReleaseData(release).map(ReleaseData::getDocument).orElse(null);
+			// The canonical constructor: RequiredInput.pinned sets no floor.
+			if (null != doc) {
+				carried.add(new RequiredInput(InputKind.DOCUMENT, doc.specification(), null, null,
+						ReleaseLifecycle.ASSEMBLED, null, release));
+			}
+		}
+		return carried.isEmpty() ? null : carried;
 	}
 
 	/**
@@ -2488,6 +2526,12 @@ public class AgentTaskService {
 				: null != actor && null != actor.uuid() ? String.valueOf(actor.uuid()).substring(0, 8) : "someone";
 		String info = "Task " + label(td) + " reopened to " + rc.getName() + " by " + who + ": " + reason.strip()
 				+ (skipped.isEmpty() ? "" : " (required again: " + skipped + ")");
+		// After the commit, board row after task row: the order the publish path depends on.
+		BoardEffects effects = new BoardEffects(td.getBoard());
+		effects.info(info);
+		// A reopen to the checkpoint's role or a later one is the actor's own look at the design (task SPLIT-5,
+		// 3.4); a reopen to a design role writes nothing: the checkpoint reads the Reopen row.
+		routingService.settleCheckpoint(td, board, rc, actor, "reopened to " + rc.getName(), effects);
 		String alert = null;
 		if (AgentBudgetService.budgetApplies(td, board)) {
 			AgentBudgetService.Projection p = budgetService.project(td, board, rc);
@@ -2500,9 +2544,6 @@ public class AgentTaskService {
 			}
 		}
 		AgentTaskData saved = saveData(td, wu);
-		// After the commit, board row after task row: the order the publish path depends on.
-		BoardEffects effects = new BoardEffects(td.getBoard());
-		effects.info(info);
 		if (null != alert) effects.alert(alert);
 		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
@@ -3719,7 +3760,7 @@ public class AgentTaskService {
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		AgentTaskData out = td;
 		if (plan.addsBlocking()) {
-			AgentRoutingService.Routed routed = routingService.routeDecided(td, board, round);
+			AgentRoutingService.Routed routed = routingService.routeDecided(td, board, round, by);
 			merge(effects, routed.effects());
 			out = routed.task();
 		} else if ((td.getStatus() == TaskStatus.QUEUED || td.getStatus() == TaskStatus.AWAITING_COORDINATOR)

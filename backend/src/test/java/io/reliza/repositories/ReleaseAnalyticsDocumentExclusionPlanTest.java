@@ -47,7 +47,11 @@ import tools.jackson.databind.JsonNode;
  * {@code enable_seqscan = off} (the {@code OrgTotalsIndexTest} shape) each plans it as an anti join
  * whose inner side, the fragment's alias {@code dc}, is a lookup on {@code components_pkey} (an Index
  * Scan or a Bitmap Heap Scan over a Bitmap Index Scan, whichever the statistics favour),
- * with the releases side on {@code releases_org_status_idx} and no SubPlan. Each named parameter
+ * with every access to {@code releases} through an index (no Seq Scan) and no SubPlan. Which
+ * releases index the planner picks ({@code releases_org_status_idx} or
+ * {@code releases_component_marketing_version}) is left to it: on near-empty tables the two cost
+ * the same, and under the two-fork suite the statistics depend on the tests that ran before
+ * (main's CI build of #957 planned the second). Each named parameter
  * is bound from a map of typed literals; the pattern skips {@code ::text} casts, and a name not
  * in the map fails the test.
  */
@@ -106,6 +110,9 @@ class ReleaseAnalyticsDocumentExclusionPlanTest {
 		ossReleaseService.createRelease(ReleaseDto.builder().component(c.getUuid()).org(org.getUuid())
 				.branch(branch.getUuid()).version("1.0.0").status(ReleaseStatus.ACTIVE)
 				.lifecycle(ReleaseLifecycle.ASSEMBLED).build(), WU);
+		// Fresh statistics for the tables the statements read, so the plan does not depend on what
+		// earlier tests in this fork's database left behind.
+		jdbc.execute("ANALYZE rearm.releases, rearm.components, rearm.branches");
 	}
 
 	/** {@code query} with every named parameter replaced by its typed literal; an unmapped name fails. */
@@ -151,7 +158,12 @@ class ReleaseAnalyticsDocumentExclusionPlanTest {
 		STATEMENTS.forEach((name, constant) -> {
 			String plan = plan(constant);
 			assertTrue(plan.contains("\"Join Type\": \"Anti\""), name + " has no anti join: " + plan);
-			assertTrue(plan.contains("releases_org_status_idx"), name + " misses releases_org_status_idx: " + plan);
+			List<JsonNode> releases = new ArrayList<>();
+			collectRelation(Utils.OM.readTree(plan), "releases", releases);
+			assertFalse(releases.isEmpty(), name + " reads no releases: " + plan);
+			for (JsonNode r : releases) {
+				assertFalse("Seq Scan".equals(r.path("Node Type").asString()), name + " scans releases sequentially: " + plan);
+			}
 			assertFalse(plan.contains("SubPlan"), name + " has a SubPlan: " + plan);
 			List<JsonNode> dc = new ArrayList<>();
 			collectAlias(Utils.OM.readTree(plan), "dc", dc);
@@ -180,6 +192,29 @@ class ReleaseAnalyticsDocumentExclusionPlanTest {
 			}
 		}
 		return "unexpected node type " + type;
+	}
+
+	/** Every plan node whose {@code Relation Name} is {@code relation}. */
+	private static void collectRelation(JsonNode node, String relation, List<JsonNode> into) {
+		if (node.isArray()) {
+			for (JsonNode child : node) {
+				collectRelation(child, relation, into);
+			}
+			return;
+		}
+		if (!node.isObject()) {
+			return;
+		}
+		JsonNode r = node.get("Relation Name");
+		if (null != r && relation.equals(r.asString())) {
+			into.add(node);
+		}
+		for (String key : List.of("Plan", "Plans")) {
+			JsonNode child = node.get(key);
+			if (null != child) {
+				collectRelation(child, relation, into);
+			}
+		}
 	}
 
 	/** Every plan node whose {@code Alias} is {@code alias}. */

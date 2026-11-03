@@ -11,6 +11,7 @@ import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.HashSet;
 import java.util.List;
@@ -53,6 +54,20 @@ class TeaSurfaceSourceTest {
 		String app = Files.readString(MAIN.resolve("ws/App.java"), StandardCharsets.UTF_8);
 		assertEquals(1, app.split(Pattern.quote("/.well-known/tea\""), -1).length - 1, "the discovery document is named once, for the TEA chain");
 		assertFalse(app.contains("getEnableBetaTea"));
+	}
+
+	// TPF-142 row 22 (architecture D11): the request host is getServerName() only; no TEA or host-routing file reads the
+	// Host or X-Forwarded-Host header itself
+	@Test
+	void noTeaFileReadsTheHostHeaders() throws IOException {
+		List<Path> files = new ArrayList<>(javaFiles(MAIN.resolve("ws/tea")));
+		files.addAll(javaFiles(MAIN.resolve("service/tea")));
+		files.add(MAIN.resolve("service/TeaHostAssignmentService.java"));
+		Pattern header = Pattern.compile("getHeaders?\\(\\s*(\"(?i:host|x-forwarded-host)\"|HttpHeaders\\.HOST)");
+		for (Path f : files) {
+			String s = Files.readString(f, StandardCharsets.UTF_8);
+			assertFalse(header.matcher(s).find(), f + " reads a host header directly");
+		}
 	}
 
 	@Test

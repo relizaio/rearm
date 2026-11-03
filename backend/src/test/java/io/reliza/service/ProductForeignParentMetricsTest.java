@@ -44,6 +44,7 @@ import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.repositories.ReleaseRepository.MetricsComputeCandidate;
 import io.reliza.ws.App;
 import io.reliza.ws.SchedulingConfig;
 import io.reliza.ws.oss.TestInitializer;
@@ -106,7 +107,7 @@ public class ProductForeignParentMetricsTest {
 		seedPoisonPillFence(product.getUuid());
 
 		assertDoesNotThrow(() -> releaseMetricsComputeService.computeReleaseMetricsOnRescan(
-				releaseRepository.findById(product.getUuid()).orElseThrow()),
+				releaseRepository.findById(product.getUuid()).orElseThrow().getUuid()),
 				"a parent of another organization must be skipped, not thrown on");
 
 		Release after = releaseRepository.findById(product.getUuid()).orElseThrow();
@@ -129,7 +130,7 @@ public class ProductForeignParentMetricsTest {
 		seedPoisonPillFence(product.getUuid());
 
 		assertDoesNotThrow(() -> releaseMetricsComputeService.computeReleaseMetricsOnRescan(
-				releaseRepository.findById(product.getUuid()).orElseThrow()));
+				releaseRepository.findById(product.getUuid()).orElseThrow().getUuid()));
 
 		Release after = releaseRepository.findById(product.getUuid()).orElseThrow();
 		ReleaseMetricsDto m = metricsOf(after);
@@ -153,7 +154,7 @@ public class ProductForeignParentMetricsTest {
 		seedPoisonPillFence(product.getUuid());
 
 		assertDoesNotThrow(() -> releaseMetricsComputeService.computeReleaseMetricsOnRescan(
-				releaseRepository.findById(product.getUuid()).orElseThrow()),
+				releaseRepository.findById(product.getUuid()).orElseThrow().getUuid()),
 				"a parent that does not exist must be skipped, not thrown on");
 
 		Release after = releaseRepository.findById(product.getUuid()).orElseThrow();
@@ -174,7 +175,7 @@ public class ProductForeignParentMetricsTest {
 				parentReleasesOf(childA.getUuid(), childC.getUuid()));
 
 		releaseMetricsComputeService.computeReleaseMetricsOnRescan(
-				releaseRepository.findById(product.getUuid()).orElseThrow());
+				releaseRepository.findById(product.getUuid()).orElseThrow().getUuid());
 
 		Release after = releaseRepository.findById(product.getUuid()).orElseThrow();
 		ReleaseMetricsDto m = metricsOf(after);
@@ -232,7 +233,7 @@ public class ProductForeignParentMetricsTest {
 
 	private Set<UUID> byUpdateFinderUuids() {
 		return releaseRepository.findReleasesForMetricsComputeByUpdate(1000)
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
+				.stream().map(MetricsComputeCandidate::getUuid).collect(Collectors.toSet());
 	}
 
 	private static ReleaseMetricsDto metricsOf(Release r) {

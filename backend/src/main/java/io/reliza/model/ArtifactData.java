@@ -15,6 +15,7 @@ import java.util.UUID;
 
 import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 
 import io.reliza.common.CommonVariables.StatusEnum;
@@ -63,11 +64,11 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         CERTIFICATE_X_509,
         CERTIFICATE_PGP,
 		RISK_ASSESSMENT,
-        // AI-agent self-reported artifact attached to an AgentSession —
+        // AI-agent self-reported artifact attached to an AgentSession --
         // orientation briefs, mid-session checkpoints, end-of-session
         // summaries, etc. Used as the data source for agentic policies
         // ("session must carry an orientation report before the first
-        // commit is accepted"). Free-form contents — the policy CEL
+        // commit is accepted"). Free-form contents -- the policy CEL
         // inspects type + display identifier / tags / bom data.
         AGENTIC_REPORT,
         OTHER
@@ -314,6 +315,9 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
     	private String dtrackFetchFailureReason;
     	private String dtrackFetchSkipUntil;
     	private ZonedDateTime uploadDate;
+    	/** TPF-125: the not-scannable marker; null (and no JSON key) on every scannable artifact. */
+    	@JsonInclude(JsonInclude.Include.NON_NULL)
+    	private ArtifactNotScannable notScannable;
     	
     	public static DependencyTrackIntegration fromReleaseMetricsDto(ReleaseMetricsDto rmd) {
     		DependencyTrackIntegration dti = new DependencyTrackIntegration();

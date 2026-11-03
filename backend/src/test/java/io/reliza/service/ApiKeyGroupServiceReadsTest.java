@@ -75,6 +75,23 @@ public class ApiKeyGroupServiceReadsTest {
 		assertEquals(Set.of("good"), tags(sets));
 	}
 
+	/** TPF-123 row 2: the sources of the combined read are the groups the union takes its sets from. */
+	@Test
+	public void theGroupsHoldingTheKeyAreTheRowsThePermissionSetsComeFrom() {
+		when(repository.findByApiKeyAndOrg(anyString(), anyString())).thenReturn(List.of(
+				row(ORG, ApiKeyGroupStatus.ACTIVE, "good", KEY),
+				row(ORG, ApiKeyGroupStatus.INACTIVE, "inactive", KEY),
+				row(UUID.randomUUID(), ApiKeyGroupStatus.ACTIVE, "foreign", KEY),
+				row(ORG, ApiKeyGroupStatus.ACTIVE, "notmember", UUID.randomUUID())));
+
+		List<ApiKeyGroupData> groups = service().activeGroupsHoldingKey(KEY, ORG);
+		assertEquals(1, groups.size(), groups.toString());
+		assertEquals(Set.of("good"), tags(List.of(groups.get(0).getOrgPermissions(ORG))));
+		assertEquals(groups.stream().map(g -> g.getOrgPermissions(ORG)).toList(), service().permissionSetsForKey(KEY, ORG));
+		assertTrue(service().activeGroupsHoldingKey(null, ORG).isEmpty());
+		assertTrue(service().activeGroupsHoldingKey(KEY, null).isEmpty());
+	}
+
 	@Test
 	public void noKeyOrNoOrganizationAddsNothingAndReadsNothing() {
 		assertTrue(service().permissionSetsForKey(null, ORG).isEmpty());

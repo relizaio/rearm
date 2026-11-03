@@ -102,8 +102,9 @@ public class ApiKeyGroupData extends RelizaDataParent implements RelizaObject {
 		return this.apiKeys.contains(keyUuid);
 	}
 
-	public void addApiKey(UUID keyUuid) {
-		this.apiKeys.add(keyUuid);
+	/** @return true when the key was not a member before (the {@link #removeApiKey} twin, TPF-123) */
+	public boolean addApiKey(UUID keyUuid) {
+		return this.apiKeys.add(keyUuid);
 	}
 
 	public boolean removeApiKey(UUID keyUuid) {

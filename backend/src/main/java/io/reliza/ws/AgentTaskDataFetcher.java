@@ -2548,7 +2548,8 @@ public class AgentTaskDataFetcher {
 				strengthSpecFromInput(input),
 				hopBudgetFromInput(input),
 				(Boolean) input.get("blindReview"),
-				commissionsFromInput(input));
+				commissionsFromInput(input),
+				(Boolean) input.get("coordinatorCheckpoint"));
 	}
 
 	/**

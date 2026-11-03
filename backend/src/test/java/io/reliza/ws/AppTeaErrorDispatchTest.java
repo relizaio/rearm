@@ -6,6 +6,8 @@ package io.reliza.ws;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.util.UUID;
+
 import org.junit.jupiter.api.Test;
 import org.springframework.mock.web.MockHttpServletRequest;
 
@@ -69,5 +71,32 @@ class AppTeaErrorDispatchTest {
 		}
 		assertFalse(App.isTeaErrorDispatch(dispatch(DispatcherType.ERROR, null)), "no original uri");
 		assertFalse(App.isTeaErrorDispatch(dispatch(DispatcherType.REQUEST, "/tea")), "not an error dispatch");
+	}
+
+	// TPF-142 row 19: the host-routed base is a TEA path, its error dispatch a TEA error dispatch
+	@Test
+	void theHostRoutedBaseIsATeaPath() {
+		for (String uri : new String[] { "/tea/v1.0.0/products", "/tea/v1.0.0/token", "/%74ea/v1.0.0/products", "/tea/v1.0.0/t%6Fken" }) {
+			assertTrue(App.isTeaUri(uri, ""), uri);
+		}
+		assertTrue(App.isTeaErrorDispatch(dispatch(DispatcherType.ERROR, "/tea/v1.0.0/nothing")));
+	}
+
+	// TPF-142 row 16 (F-11): the custom-host gate's own test refuses a dot segment; isTeaUri is unchanged
+	@Test
+	void theGatesNormalisedTeaPathTestRefusesDotSegments() {
+		for (String uri : new String[] { "/tea/x", "/%74ea/x", "/tea;x=1/x", "/.well-known/tea", "/tea/v1.0.0/products",
+				"/tea/" + UUID.randomUUID() + "/v1.0.0/products" }) {
+			assertTrue(App.isNormalizedTeaUri(uri, ""), uri);
+		}
+		for (String uri : new String[] { "/tea/../graphql", "/tea/%2e%2e/graphql", "/tea/..;/api/programmatic/token",
+				"/tea/v1.0.0/./products", "/tea/x%2f..%2f..%2fgraphql", "/graphql", "/teapot", "/.well-known/tea/x" }) {
+			assertFalse(App.isNormalizedTeaUri(uri, ""), uri);
+		}
+		assertTrue(App.isTeaUri("/tea/../x", ""), "isTeaUri is unchanged: the firewall is ahead of the chain matcher");
+		assertTrue(App.isNormalizedTeaErrorDispatch(dispatch(DispatcherType.ERROR, "/tea/v1.0.0/nothing")));
+		assertFalse(App.isNormalizedTeaErrorDispatch(dispatch(DispatcherType.ERROR, "/tea/../graphql")));
+		assertFalse(App.isNormalizedTeaErrorDispatch(dispatch(DispatcherType.ERROR, "/graphql")));
+		assertFalse(App.isNormalizedTeaErrorDispatch(dispatch(DispatcherType.REQUEST, "/tea")), "not an error dispatch");
 	}
 }

@@ -147,7 +147,7 @@ public class DocumentReleaseMetricsGraphqlIntegrationTest {
 				null, null));
 		// Software: its stored metrics, as before.
 		UUID software = release(org, generic, null);
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(sharedReleaseService.getRelease(software).orElseThrow());
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(sharedReleaseService.getRelease(software).orElseThrow().getUuid());
 
 		Map<String, Map<String, Object>> m = metricsAs(admin(org), org, byKind, byDocument, software);
 		for (UUID doc : List.of(byKind, byDocument)) {

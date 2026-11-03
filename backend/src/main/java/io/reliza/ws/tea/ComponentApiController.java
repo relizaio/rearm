@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 /** A TEA component, its releases and its CLE (task TEA-6), from published releases only. */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class ComponentApiController implements ComponentApi {
 
 	@Autowired private TeaRequests teaRequests;

@@ -32,7 +32,7 @@ import io.reliza.ws.SchedulingConfig;
 /**
  * What a product at the backoff cap nudges and what it leaves alone (TPF-68, mutation round, the mutant
  * tester's T-2 to T-6): every stuck child and not only the first, nothing for a product that is not
- * scannable, nothing of another organization, a child of the external-components organization, and a child
+ * scannable, nothing of another organization (the zero organization included), and a child
  * whose lastScanned is strictly after its last update. Built on the rig of
  * {@link ProductChildNudgeIntegrationTest}; scheduling is off so no tick computes a fixture mid-case.
  */
@@ -67,7 +67,7 @@ public class ProductChildNudgeCoverageTest extends ReleaseScanSelfHealTestBase {
 	}
 
 	private void compute(UUID release) {
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(releaseRepository.findById(release).orElseThrow());
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(releaseRepository.findById(release).orElseThrow().getUuid());
 	}
 
 	private long nudges() {
@@ -133,14 +133,20 @@ public class ProductChildNudgeCoverageTest extends ReleaseScanSelfHealTestBase {
 	}
 
 	@Test
-	public void aChildOfTheExternalComponentsOrganizationIsNudged() {
+	public void aChildOfTheZeroOrganizationIsNeverTouched() {
+		// The zero (former shared external-components) organization is no longer read next to the
+		// product's own: its child is left alone like another organization's.
 		Organization org = testInitializer.obtainOrganization();
-		UUID external = settledUnscanned(new UUID(0, 0));
-		UUID p = product(org.getUuid(), 11, external);
+		UUID ownChild = settledUnscanned(org.getUuid());
+		UUID zeroOrgChild = settledUnscanned(new UUID(0, 0));
+		Instant zeroOrgBefore = updated(zeroOrgChild);
+		UUID p = product(org.getUuid(), 11, ownChild, zeroOrgChild);
 		long before = nudges();
 
 		compute(p);
-		assertTrue(eligibleByUpdate(external), "the shared external-components child is nudged too");
+		assertTrue(eligibleByUpdate(ownChild), "the own child is nudged");
+		assertEquals(zeroOrgBefore, updated(zeroOrgChild), "the zero-org release is not touched");
+		assertFalse(eligibleByUpdate(zeroOrgChild));
 		assertEquals(before + 1, nudges());
 	}
 

@@ -191,7 +191,8 @@ extend type Query {
 	Agent-key auth: tasks of a board, optionally by status. With changedSince, only the tasks that
 	changed at or after it (updatedAt), oldest change first: take the last one's updatedAt as the next
 	changedSince. The board's events carry what needs a person; this is how a follower sees every
-	other movement -- forward hand-overs, authorizes and assignments post no event (task 9540d3b6).
+	other movement -- forward hand-overs, authorizes and assignments post no event (task 9540d3b6), except the
+	design checkpoint, which alerts the coordinator (task SPLIT-5).
 	"""
 	agentTasksProgrammatic(boardUuid: ID!, status: AgentTaskStatus, changedSince: DateTime, group: String, tag: [String]): [AgentTask]
 	"""

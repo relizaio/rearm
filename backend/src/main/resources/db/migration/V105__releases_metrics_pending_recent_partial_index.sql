@@ -1,0 +1,34 @@
+-- Partial index for the RECENT lane of the metrics tick (TPF-138): the eligible releases created
+-- in the last hour, oldest-created first.
+--
+-- The recent-lane finder (VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_RECENT) asks for the
+-- eligible releases whose created_date lies inside the window, ORDER BY created_date ASC LIMIT 51.
+-- V73's releases_metrics_pending_idx holds the same rows keyed by last_updated_date, so it can find
+-- them but not in created order: the planner would read the whole pending set and sort it on every
+-- tick. This index holds the same pending set keyed by created_date, so the finder is one forward
+-- index scan from the window's lower bound that stops at the limit.
+--
+-- The predicate is spelled BYTE-FOR-BYTE as V73's and as the first condition of
+-- VariableQueries.METRICS_COMPUTE_BY_UPDATE_ELIGIBLE: the planner's implication proof needs the
+-- identical expression, and a reworded copy would silently leave this index unused. The fence
+-- condition (metricsComputeSkipUntil) is excluded as in V73: now() is not immutable; the finder
+-- applies it to the rows the index returns. to_timestamp(double precision) is IMMUTABLE.
+--
+-- Rows enter the index when a release is created or touched past its lastScanned and leave it when
+-- a compute stamps lastScanned, so it holds exactly the pending set (V73 measured 16 kB at 2M rows
+-- for the same set), whatever the release count.
+--
+-- Deliberately a PLAIN (blocking) build, not CONCURRENTLY, for the reason V73 and V103 record:
+-- CONCURRENTLY self-deadlocks under community Flyway (the schema-history connection holds its lock
+-- idle-in-transaction while the script runs on a second connection, and CREATE INDEX CONCURRENTLY
+-- waits on that virtualxid forever). The build is one heap scan that evaluates the predicate per
+-- row, the same scan V73 ran (384 ms at 2M rows, perf lab 2026-07-25); it holds SHARE on
+-- rearm.releases for its duration (reads continue, release writes wait). Operator decision
+-- 2026-10-31: the build cost is accepted; one statement; no .conf; no ANALYZE (a btree on a plain
+-- column adds no expression the planner lacks statistics for; V73 ran none).
+-- IF NOT EXISTS: an operator may hand-apply this index before upgrading (safe on a running
+-- instance); the migration tolerates that rather than failing boot. A plain CREATE INDEX that fails
+-- leaves no index behind, so IF NOT EXISTS cannot adopt a broken one.
+CREATE INDEX IF NOT EXISTS releases_metrics_pending_recent_idx
+    ON rearm.releases (created_date)
+    WHERE last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0));

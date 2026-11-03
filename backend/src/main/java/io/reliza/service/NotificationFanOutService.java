@@ -22,10 +22,13 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.TransactionDefinition;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.github.packageurl.MalformedPackageURLException;
 import com.github.packageurl.PackageURL;
@@ -206,6 +209,14 @@ public class NotificationFanOutService {
     @Autowired
     @Lazy
     private NotificationFanOutService self;
+
+    // TPF-131: the enrichment reads run in their own read-only transaction
+    // (inOwnReadTransaction), so a failed read cannot poison the per-event one.
+    @Autowired
+    private PlatformTransactionManager transactionManager;
+
+    /** Artifacts per batched gather in {@link #resolveAffectedReleases} (TPF-131). */
+    private static final int GATHER_CHUNK = 500;
 
     /**
      * Drain one batch of pending events. Returns the number of events
@@ -1614,13 +1625,15 @@ public class NotificationFanOutService {
      * vulnerability notification on a transient DB error would be worse than
      * the empty payload. Only a definitive empty resolve is suppressed.
      *
-     * <p>Caveat worth knowing: a throw raised INSIDE a Spring Data repository
-     * call (e.g. a statement timeout on the org-wide scan) marks the
-     * surrounding transaction rollback-only, so the deferral written by this
-     * pass cannot commit and the drain's catch terminates the event as FAILED
-     * instead. That trap predates this guard -- it applied equally to the old
-     * "log and ship anyway" behaviour -- but it does mean the UNRESOLVED path
-     * covers in-memory enrichment faults more reliably than DB-level ones.
+     * <p>Database faults included: the three enrichment reads (the affected
+     * releases, the component, the fix version) each run in their own
+     * read-only transaction ({@link #inOwnReadTransaction}). A statement that
+     * fails inside one (the client's query cancel, a statement timeout, any
+     * database error) aborts and rolls back only that transaction, so the
+     * per-event transaction stays usable and the UNRESOLVED deferral written
+     * by this pass commits (TPF-131). Before, such a throw marked the
+     * per-event transaction rollback-only and the drain's catch terminated
+     * the event as FAILED.
      *
      * <p>Mutating {@code event.getRecordData()} in place is the persistence
      * mechanism: the mutated {@code @Type(JsonBinaryType)} column is
@@ -1631,20 +1644,10 @@ public class NotificationFanOutService {
      * {@code save} is a merge rather than dirty-tracking on a managed
      * instance; the outcome is the same, but the mechanism is the merge.
      *
-     * <p><b>v1 perf note (known limitation):</b> the loop in
-     * {@link #resolveAffectedReleases} calls
-     * {@link SharedReleaseService#gatherReleasesForArtifact} per artifact,
-     * which is N+1 over the artifacts that carry the vuln. A widely-
-     * deployed CVE (log4shell class) attached to hundreds of artifacts
-     * in one org will fan out hundreds of DB round-trips inside the
-     * advisory-lock-held tx. The S-3 component fill adds a second org-wide
-     * {@code vulnerabilityDetails} scan per NEW_VULN event on top of that,
-     * and the fix version one keyed record read.
-     * Acceptable in v1 because vuln events are sparse and the advisory
-     * lock lets us finish the batch before the next tick. A batched query
-     * that joins {@code metrics->vulnerabilityDetails} straight to
-     * releases (and carries the purls along) is the follow-up if customer
-     * scale starts showing tail-latency pain.
+     * <p>Cost: the artifact and purl lookups ride the V103 GIN on
+     * {@code rearm.vuln_ids(metrics)}, and the releases are gathered with the
+     * batched {@link SharedReleaseService#gatherReleaseIdsForArtifacts}, four
+     * statements per {@value #GATHER_CHUNK} artifacts (TPF-131).
      */
     private EnrichmentResult enrichVulnEventIfNeeded(NotificationOutboxEvent event,
             boolean forChannelTest) {
@@ -1669,7 +1672,8 @@ public class NotificationFanOutService {
             result = EnrichmentResult.NOT_APPLICABLE;
         } else {
             try {
-                List<AffectedRelease> resolved = resolveAffectedReleases(event.getOrg(), vulnPrimaryId);
+                List<AffectedRelease> resolved = inOwnReadTransaction(
+                        () -> resolveAffectedReleases(event.getOrg(), vulnPrimaryId));
                 recordData.put("affectedReleases", Utils.OM.convertValue(resolved, List.class));
                 result = resolved.isEmpty()
                         ? EnrichmentResult.RESOLVED_EMPTY
@@ -1703,7 +1707,8 @@ public class NotificationFanOutService {
                 && (willDeliverNow || forChannelTest)
                 && recordData.get("affectedComponent") == null) {
             try {
-                AffectedComponent ac = resolveAffectedComponent(event.getOrg(), vulnPrimaryId);
+                AffectedComponent ac = inOwnReadTransaction(
+                        () -> resolveAffectedComponent(event.getOrg(), vulnPrimaryId));
                 if (ac != null) {
                     recordData.put("affectedComponent", Utils.OM.convertValue(ac, Map.class));
                 }
@@ -1722,7 +1727,8 @@ public class NotificationFanOutService {
             String purl = affectedComponentPurl(recordData.get("affectedComponent"));
             if (purl != null) {
                 try {
-                    String fixVersion = resolveFixVersion(event.getOrg(), vulnPrimaryId, purl);
+                    String fixVersion = inOwnReadTransaction(
+                            () -> resolveFixVersion(event.getOrg(), vulnPrimaryId, purl));
                     if (fixVersion != null) recordData.put("fixVersion", fixVersion);
                 } catch (RuntimeException e) {
                     log.warn("Failed to enrich vuln event {} with fixVersion for {}: {}",
@@ -1748,10 +1754,10 @@ public class NotificationFanOutService {
      * before this runs, but only up to
      * {@code IntegrationService.INLINE_AFFECTED_RANGES_LIMIT} new records a
      * run; a vuln past that cap gets its ranges from the nightly sweep and
-     * ships without a fix version. The record read shares the caveat in
-     * {@link #enrichVulnEventIfNeeded}: a DB-level failure inside it marks the
-     * per-event transaction rollback-only, so the catch at the call site
-     * rescues in-memory faults only.
+     * ships without a fix version. The caller runs it in its own read-only
+     * transaction ({@link #inOwnReadTransaction}), so a DB-level failure
+     * inside it reaches the catch at the call site without aborting the
+     * per-event transaction.
      */
     private String resolveFixVersion(UUID orgUuid, String vulnPrimaryId, String purl) {
         VulnerabilityRecordData record = vulnerabilityRecordService
@@ -1790,13 +1796,32 @@ public class NotificationFanOutService {
     }
 
     /**
-     * Build the {@link AffectedRelease} list for a vuln by walking every
-     * artifact in the org whose {@code metrics.vulnerabilityDetails}
-     * array carries the id, then collecting all releases that point at
-     * those artifacts. Branch + component names are looked up via the
-     * usual services and memoized inside this call so a CVE in 50
-     * artifacts of the same component doesn't issue 50 component
-     * lookups.
+     * Runs an enrichment read in its own read-only transaction (REQUIRES_NEW). A statement that fails
+     * inside it (the client's query cancel, a statement timeout, any database error) aborts and rolls
+     * back only that transaction, so the per-event transaction of {@link #fanOutOneEvent} stays usable
+     * and the UNRESOLVED deferral this pass writes can commit. Without it, the error aborted the
+     * per-event transaction itself and the drain terminated the event as FAILED (TPF-131). Costs a
+     * second pooled connection for the duration of the read, as every REQUIRES_NEW boundary in this
+     * class does (see {@link #fanOutOneEvent}).
+     */
+    private <T> T inOwnReadTransaction(Supplier<T> read) {
+        TransactionTemplate tx = new TransactionTemplate(transactionManager);
+        tx.setPropagationBehavior(TransactionDefinition.PROPAGATION_REQUIRES_NEW);
+        tx.setReadOnly(true);
+        return tx.execute(status -> read.get());
+    }
+
+    /**
+     * Build the {@link AffectedRelease} list for a vuln: every artifact in the
+     * org whose {@code metrics.vulnerabilityDetails} carries the id as a
+     * finding's primary id, then every release that reaches one of those
+     * artifacts directly, through an SCE, through a deliverable (product
+     * releases) or as a generated artifact, gathered in batches of
+     * {@value #GATHER_CHUNK} artifacts (TPF-131; the same set the per-artifact
+     * gather produced). Releases are listed newest first. Branch + component
+     * names are looked up via the usual services and memoized inside this
+     * call so a CVE in 50 artifacts of the same component doesn't issue 50
+     * component lookups.
      */
     private List<AffectedRelease> resolveAffectedReleases(UUID orgUuid, String vulnPrimaryId) {
         List<UUID> artifactUuids = artifactRepo.findArtifactsWithVulnId(
@@ -1804,6 +1829,15 @@ public class NotificationFanOutService {
         if (artifactUuids == null || artifactUuids.isEmpty()) {
             return Collections.emptyList();
         }
+        Set<UUID> releaseUuids = new LinkedHashSet<>();
+        for (int i = 0; i < artifactUuids.size(); i += GATHER_CHUNK) {
+            releaseUuids.addAll(sharedReleaseService.gatherReleaseIdsForArtifacts(
+                    artifactUuids.subList(i, Math.min(i + GATHER_CHUNK, artifactUuids.size())), orgUuid));
+        }
+        // The SCE and deliverable statements carry no org predicate; the
+        // org-scoped hydration drops any release of another org.
+        List<ReleaseData> releases = new ArrayList<>(sharedReleaseService.getReleaseDataListLight(releaseUuids, orgUuid));
+        releases.sort(new ReleaseData.ReleaseDateComparator());
         Map<UUID, String> branchNames = new HashMap<>();
         Map<UUID, Optional<ComponentData>> componentCache = new HashMap<>();
         // Per-component perspective copy cache: a single CVE in 50 artifacts
@@ -1813,31 +1847,24 @@ public class NotificationFanOutService {
         Map<UUID, Set<UUID>> perspectiveCache = new HashMap<>();
         Set<UUID> seenReleaseUuids = new HashSet<>();
         List<AffectedRelease> out = new ArrayList<>();
-        for (UUID artifactUuid : artifactUuids) {
-            // gatherReleasesForArtifact resolves both directly-attached releases
-            // and product releases that pull this artifact transitively through
-            // a deliverable — matches the "affects N releases" UX intent.
-            List<ReleaseData> releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, orgUuid);
-            if (releases == null) continue;
-            for (ReleaseData rd : releases) {
-                if (rd == null || !seenReleaseUuids.add(rd.getUuid())) continue;
-                String branchName = resolveBranchName(rd.getBranch(), branchNames);
-                ComponentData component = resolveComponent(rd.getComponent(), componentCache);
-                String componentName = component != null ? component.getName() : null;
-                Set<UUID> perspectives = resolveComponentPerspectives(
-                        rd.getComponent(), component, perspectiveCache);
-                out.add(new AffectedRelease(
-                        rd.getUuid(),
-                        rd.getComponent(),
-                        componentName,
-                        rd.getVersion(),
-                        branchName,
-                        rd.getLifecycle(),
-                        // deployedEnvs not on ReleaseData — left empty for v1;
-                        // a future enhancement can join through environments.
-                        Collections.emptyList(),
-                        perspectives));
-            }
+        for (ReleaseData rd : releases) {
+            if (rd == null || !seenReleaseUuids.add(rd.getUuid())) continue;
+            String branchName = resolveBranchName(rd.getBranch(), branchNames);
+            ComponentData component = resolveComponent(rd.getComponent(), componentCache);
+            String componentName = component != null ? component.getName() : null;
+            Set<UUID> perspectives = resolveComponentPerspectives(
+                    rd.getComponent(), component, perspectiveCache);
+            out.add(new AffectedRelease(
+                    rd.getUuid(),
+                    rd.getComponent(),
+                    componentName,
+                    rd.getVersion(),
+                    branchName,
+                    rd.getLifecycle(),
+                    // deployedEnvs not on ReleaseData -- left empty for v1;
+                    // a future enhancement can join through environments.
+                    Collections.emptyList(),
+                    perspectives));
         }
         return out;
     }

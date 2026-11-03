@@ -8,6 +8,7 @@ import java.util.LinkedList;
 import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Function;
 import java.util.stream.Stream;
 
 import org.apache.commons.lang3.StringUtils;
@@ -332,17 +333,7 @@ public class VersionAssignmentService {
 		if(openOva.isPresent()){
 			va = openOva.get();
 		} else { // Normal flow of RESERVED version
-			String followedVersion = null;
-			var followedComponent = obd.get().getFollowedVersionComponent();
-			if (followedComponent.isPresent()) {
-				if (null != followedComponent.get().getRelease()) {
-					var rd = sharedReleaseService.getReleaseData(followedComponent.get().getRelease()).get();
-					followedVersion = rd.getVersion();
-				} else {
-					var ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), followedComponent.get().getBranch(), ReleaseLifecycle.ASSEMBLED);
-					if (ord.isPresent()) followedVersion = ord.get().getVersion();
-				}
-			}
+			String followedVersion = followedVersionForMint(bd);
 			String versionString = getVersionBumpOnLatestForBranch(obd.get(), pd, bumpAction, modifier, metadata, followedVersion, versionType);
 			assertNotBelowBranchLatest(bd, pd, versionString, versionType, followedVersion);
 			va.setVersion(versionString);
@@ -770,30 +761,73 @@ public class VersionAssignmentService {
 		return repository.findOPENVersionAssignmentByBranch(branchUuid, versionType.name());
 	}
 
-	@Transactional
-	public String getCurrentNextVersion(UUID branchUuid, VersionTypeEnum versionType){
-		String currentNextVersion = "";
-		log.info("versionType: {}", versionType);
-		Optional<VersionAssignment> openOva = repository.findOPENVersionAssignmentByBranch(branchUuid, versionType.name());
-
-		// if OPEN version is found
-		if(openOva.isPresent())
-		{
-			currentNextVersion = openOva.get().getVersion();
-			return currentNextVersion;
-		}
-		
-		BranchData bd = branchService.getBranchData(branchUuid).get();
-		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
-		
+	/**
+	 * The mint's followed-version rule: the followed dependency's pinned release, else the latest
+	 * ASSEMBLED release of the followed dependency's branch. Shared by getSetNewVersion and the
+	 * three-argument getCurrentNextVersion so the projected version and the minted one cannot drift.
+	 */
+	private String followedVersionForMint(BranchData bd) {
 		String followedVersion = null;
 		var followedComponent = bd.getFollowedVersionComponent();
 		if (followedComponent.isPresent()) {
+			if (null != followedComponent.get().getRelease()) {
+				var rd = sharedReleaseService.getReleaseData(followedComponent.get().getRelease()).get();
+				followedVersion = rd.getVersion();
+			} else {
+				var ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), followedComponent.get().getBranch(), ReleaseLifecycle.ASSEMBLED);
+				if (ord.isPresent()) followedVersion = ord.get().getVersion();
+			}
+		}
+		return followedVersion;
+	}
+
+	/** The getNextVersion query's followed-version rule: the feature set's own latest release of any lifecycle. */
+	private String followedVersionForPeek(BranchData bd) {
+		String followedVersion = null;
+		if (bd.getFollowedVersionComponent().isPresent()) {
 			// we just pick latest release of this same branch and base on that
-			var ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), branchUuid, ReleaseLifecycle.CANCELLED);
+			var ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), bd.getUuid(), ReleaseLifecycle.CANCELLED);
 			if (ord.isPresent()) followedVersion = ord.get().getVersion();
 		}
-		return getVersionBumpOnLatestForBranch(bd, cd, ActionEnum.BUMP, null, null, followedVersion, versionType);
+		return followedVersion;
+	}
+
+	/**
+	 * Shared core of both getCurrentNextVersion methods: the OPEN assignment when one exists, else the
+	 * bump of the branch's latest version. Finds and computes only, never saves. lockOpenAssignment
+	 * picks the PESSIMISTIC_WRITE finder (today's behaviour) or its non-locking twin, which is the only
+	 * one legal inside a read-only transaction.
+	 */
+	private String currentNextVersion(UUID branchUuid, ActionEnum bumpAction, VersionTypeEnum versionType,
+			Function<BranchData, String> followedVersionOf, boolean lockOpenAssignment) {
+		log.info("versionType: {}", versionType);
+		Optional<VersionAssignment> openOva = lockOpenAssignment
+				? repository.findOPENVersionAssignmentByBranch(branchUuid, versionType.name())
+				: repository.findOPENVersionAssignmentByBranchNoLock(branchUuid, versionType.name());
+
+		// if OPEN version is found
+		if (openOva.isPresent()) {
+			return openOva.get().getVersion();
+		}
+
+		BranchData bd = branchService.getBranchData(branchUuid).get();
+		ComponentData cd = getComponentService.getComponentData(bd.getComponent()).get();
+		return getVersionBumpOnLatestForBranch(bd, cd, bumpAction, null, null, followedVersionOf.apply(bd), versionType);
+	}
+
+	@Transactional
+	public String getCurrentNextVersion(UUID branchUuid, VersionTypeEnum versionType){
+		return currentNextVersion(branchUuid, ActionEnum.BUMP, versionType, this::followedVersionForPeek, true);
+	}
+
+	/**
+	 * The auto-integrate dry run's peek: the version the next product-release create would mint,
+	 * with the given action and the mint's followed-version rule. Reads the OPEN assignment without
+	 * a row lock, so it runs inside a read-only transaction; advisory, a concurrent mint can take it.
+	 */
+	@Transactional
+	public String getCurrentNextVersion(UUID branchUuid, ActionEnum bumpAction, VersionTypeEnum versionType){
+		return currentNextVersion(branchUuid, bumpAction, versionType, this::followedVersionForMint, false);
 	}
 
 

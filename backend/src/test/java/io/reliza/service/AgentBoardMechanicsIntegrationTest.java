@@ -884,15 +884,22 @@ public class AgentBoardMechanicsIntegrationTest {
 		java.util.regex.Matcher bash = java.util.regex.Pattern.compile("```bash\n(.*?)```", java.util.regex.Pattern.DOTALL)
 				.matcher(orientation);
 		int commands = 0;
+		int seatCommands = 0;
 		while (bash.find()) {
 			for (String cmd : bash.group(1).replaceAll("\\\\\n\\s*", " ").split("\n")) {
 				if (cmd.contains("rearm agent doc publish") || cmd.contains("rearm agent task signoff")) {
 					commands++;
 					assertTrue(cmd.contains("--session <session-uuid>"), "no --session: " + cmd);
 				}
+				// The seat's verbs at the design checkpoint (task SPLIT-5) carry the seat's session.
+				if (cmd.contains("rearm agent task split") || cmd.contains("rearm agent task authorize")) {
+					seatCommands++;
+					assertTrue(cmd.contains("--session <seat-session-uuid>"), "no --session: " + cmd);
+				}
 			}
 		}
 		assertTrue(commands >= 4, "the publish and sign-off commands were found: " + commands);
+		assertEquals(2, seatCommands, "the checkpoint's split and authorize were found");
 		assertFalse(section.contains("--spec"), "rearm-cli has no --spec flag");
 		int json = section.indexOf("```json");
 		String example = section.substring(section.indexOf('\n', json) + 1, section.indexOf("```", json + 7))

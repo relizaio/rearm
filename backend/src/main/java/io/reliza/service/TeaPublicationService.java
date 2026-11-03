@@ -1981,7 +1981,7 @@ public class TeaPublicationService {
 				null == resolved || null == resolved.profile() ? null : resolved.profile().getPublishing());
 	}
 
-	/** The organization's TEA API base, null while it has no TEA id. */
+	/** The organization's TEA API base, null while it is not served (TPF-142: NONE, no TEA id, or a DOMAIN host not assigned). */
 	public String apiBaseOf(UUID org) {
 		try {
 			TeaOrgDiscovery d = teaProfileService.orgDiscovery(org);

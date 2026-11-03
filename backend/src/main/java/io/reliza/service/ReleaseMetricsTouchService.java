@@ -27,11 +27,13 @@ public class ReleaseMetricsTouchService {
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void touchByDeliverableArtifact(String artifactUuid) {
+		releaseRepository.disableJitForTransaction();
 		releaseRepository.touchReleasesByScannedDeliverableArtifact(artifactUuid);
 	}
 
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public void touchBySceArtifact(String artifactUuid) {
+		releaseRepository.disableJitForTransaction();
 		releaseRepository.touchReleasesByScannedSceArtifact(artifactUuid);
 	}
 }

@@ -94,6 +94,7 @@ abstract class TeaProfileServiceTestBase {
 	protected final Map<String, SbomProfileResolution> names = new java.util.HashMap<>();
 
 	protected final UUID org = UUID.randomUUID();
+	protected TeaHostAssignmentService teaHosts;
 	protected final List<TeaProfile> stored = new ArrayList<>();
 	protected OrganizationData od;
 	protected ComponentData cd;
@@ -120,6 +121,10 @@ abstract class TeaProfileServiceTestBase {
 		ReflectionTestUtils.setField(service, "getOrganizationService", orgs);
 		ReflectionTestUtils.setField(service, "organizationService", organizationService);
 		ReflectionTestUtils.setField(service, "auditService", auditService);
+		// TPF-142 (architecture section 4): the collaborator orgDiscovery reads the assigned host from; none assigned
+		teaHosts = mock(TeaHostAssignmentService.class);
+		lenient().when(teaHosts.hostOfOrg(any(UUID.class))).thenReturn(Optional.empty());
+		ReflectionTestUtils.setField(service, "teaHostAssignmentService", teaHosts);
 		sbomResolver = mock(SbomProfileResolver.class);
 		lenient().when(sbomResolver.resolveForComponent(any(), anyString())).thenAnswer(inv -> nameAnswer(inv.getArgument(1)));
 		lenient().when(sbomResolver.resolveForComponent(any(), anyString(), any(), any()))

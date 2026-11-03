@@ -3,7 +3,6 @@
 */
 package io.reliza.repositories;
 
-import java.math.BigInteger;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -23,10 +22,16 @@ public interface OrganizationRepository extends CrudRepository<Organization, UUI
 	@Override
 	List<Organization> findAll();
 
+	/**
+	 * TPF-139: the five Statistics totals that stay live (components, products, vcs, branches,
+	 * feature sets); run only through OrganizationService.inTotalsReadTransaction. The four counts
+	 * of the tables that grow with release volume come from the organization's record data
+	 * (OrganizationData.totals).
+	 */
 	@Query(
-			value = VariableQueries.GET_NUMERIC_ANALYTICS_FOR_ORG,
+			value = VariableQueries.GET_NUMERIC_ANALYTICS_LIVE_FOR_ORG,
 			nativeQuery = true)
-	Map<String,BigInteger> getNumericAnalytics(String orgUuidAsString);
+	Map<String,Object> getLiveNumericAnalytics(String orgUuidAsString);
 
 	/**
 	 * Organizations with NO BRANCH-GRAIN v3 backfill watermark and NO {@code metrics_audit} rows of the
@@ -125,6 +130,40 @@ public interface OrganizationRepository extends CrudRepository<Organization, UUI
 	Optional<String> currentTeaUuidForUpdate(@Param("uuid") UUID uuid);
 
 	/**
+	 * TPF-141: the nightly stamp of one Statistics total (OrgTotalsCacheService): writes the cell of
+	 * one table under the totals key and nothing else. No revision, no last-updated date, no audit
+	 * row (bookkeeping; the mintTeaUuid / recordTaskPrefixClaim shape). The jsonb_typeof guard is the
+	 * one certifyFindingChangeV3Backfill documents: an absent totals key or a JSON null starts from
+	 * '{}' (jsonb_set cannot create a nested path whose parent is missing, and || on a JSON null
+	 * builds an array); || replaces the table's cell whole and leaves the other cells as they are.
+	 *
+	 * @param table the cell key, OrgTotalsTable.getMapKey() (server-held, never user input)
+	 * @param countedAt the UTC instant as an ISO-8601 string with a trailing Z (section 10 of TPF-139)
+	 * @return rows updated: 1, or 0 when the organization row does not exist
+	 */
+	@Transactional
+	@Modifying(flushAutomatically = true, clearAutomatically = true)
+	@Query(value = "UPDATE rearm.organizations SET record_data = jsonb_set(record_data, '{totals}', "
+			+ "(CASE WHEN jsonb_typeof(record_data->'totals') = 'object' "
+			+ "THEN record_data->'totals' ELSE '{}'::jsonb END) "
+			+ "|| jsonb_build_object(CAST(:table AS text), jsonb_build_object("
+			+ "'count', CAST(:count AS bigint), 'countedAt', CAST(:countedAt AS text))), true) "
+			+ "WHERE uuid = :uuid",
+			nativeQuery = true)
+	int stampTotal(@Param("uuid") UUID uuid, @Param("table") String table,
+			@Param("count") long count, @Param("countedAt") String countedAt);
+
+	/**
+	 * The row's stored totals as JSON text, or empty when the key is absent or JSON null, with the
+	 * row locked FOR UPDATE until the caller's transaction ends: the read every whole-record save of
+	 * the organization makes before it writes, so that it writes the stored cells back and never
+	 * erases, reverts or introduces one (the currentTeaUuidForUpdate rule).
+	 */
+	@Query(value = "SELECT record_data->>'totals' FROM rearm.organizations WHERE uuid = :uuid FOR UPDATE",
+			nativeQuery = true)
+	Optional<String> currentTotalsForUpdate(@Param("uuid") UUID uuid);
+
+	/**
 	 * Record one task-key prefix claim (board-documents.md D9, TPF-35): one statement on the one
 	 * {@code agentTaskPrefixes} key, NOT a whole-record save, so a concurrent organization save keeps
 	 * its fields and a committed claim is never erased. Put-if-absent: jsonb {@code ||} takes the
@@ -160,4 +199,14 @@ public interface OrganizationRepository extends CrudRepository<Organization, UUI
 	 *  whole-record save reads it so that none writes an archived organization back as live. */
 	@Query(value = "SELECT record_data->>'status' FROM rearm.organizations WHERE uuid = :uuid FOR UPDATE", nativeQuery = true)
 	Optional<String> currentStatusForUpdate(@Param("uuid") UUID uuid);
+
+	/** The stored TEA serving mode (TPF-142), or empty, the row locked FOR UPDATE until the caller's transaction
+	 *  ends: every whole-record save carries it forward, and unassign reads the holder's mode from here, never
+	 *  from a copy (the currentTeaUuidForUpdate rule). */
+	@Query(value = "SELECT record_data->>'teaServing' FROM rearm.organizations WHERE uuid = :uuid FOR UPDATE", nativeQuery = true)
+	Optional<String> currentTeaServingForUpdate(@Param("uuid") UUID uuid);
+
+	/** The stored TEA well-known hosting (TPF-142), or empty, locked as {@link #currentTeaServingForUpdate}. */
+	@Query(value = "SELECT record_data->>'teaWellKnownHosting' FROM rearm.organizations WHERE uuid = :uuid FOR UPDATE", nativeQuery = true)
+	Optional<String> currentTeaWellKnownHostingForUpdate(@Param("uuid") UUID uuid);
 }

@@ -294,6 +294,7 @@ abstract class TeaSurfaceIntegrationTestBase extends TeaPublicationIntegrationTe
 		teaProfileService.saveProfile(org.getUuid(), TeaProfileScope.ORGANIZATION, null,
 				profileInput(TeaPublishing.ENABLED, visibility, TeaRawArtifacts.NONE, TeaProductComponents.PUBLISH_WITH_PRODUCT)
 						.tei(tei).teiDomain(teiDomain).build(), TeaCaller.ORG_ADMIN, WU);
+		serveOnUuidBase(org.getUuid());
 	}
 
 	static String tag() {
@@ -334,6 +335,7 @@ abstract class TeaSurfaceIntegrationTestBase extends TeaPublicationIntegrationTe
 		teaProfileService.saveProfile(foreign.getUuid(), TeaProfileScope.ORGANIZATION, null,
 				profileInput(TeaPublishing.ENABLED, TeaVisibility.PUBLIC, TeaRawArtifacts.NONE,
 						TeaProductComponents.PUBLISH_WITH_PRODUCT).build(), TeaCaller.ORG_ADMIN, WU);
+		serveOnUuidBase(foreign.getUuid());
 		World far = componentReleaseWithPurl(foreign, "pkg:generic/tea6-foreign-" + t + "@1.0.0", List.of());
 		publish(far.release(), TeaPublishMode.PUBLISH);
 		UUID foreignHead = teaPublicationService.getPublicationOfRelease(far.release()).orElseThrow().getUuid();

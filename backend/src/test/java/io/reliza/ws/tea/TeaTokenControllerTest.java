@@ -8,7 +8,6 @@ import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -43,16 +42,16 @@ import io.reliza.model.ApiKey;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ApiKeyData.ApiKeySecret;
-import io.reliza.model.Organization;
 import io.reliza.model.tea.TeaErrorResponse;
 import io.reliza.model.tea.TeaUnknownErrorType;
-import io.reliza.repositories.OrganizationRepository;
 import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.service.ApiTokenServiceTestSupport;
 import io.reliza.service.ExternalApiKeyService;
 import io.reliza.service.ExternalApiKeyService.ExternalKeyMatch;
+import io.reliza.service.tea.TeaSurfaceService;
+import io.reliza.service.tea.TeaSurfaceService.TeaOrg;
 
 /**
  * Task TEA-3, design 4.4: the TEA token endpoint, driven through the controller method. Task TEA-24: the request shape
@@ -61,10 +60,10 @@ import io.reliza.service.ExternalApiKeyService.ExternalKeyMatch;
 class TeaTokenControllerTest {
 
 	private final ExternalApiKeyService external = mock(ExternalApiKeyService.class);
-	private final OrganizationRepository orgs = mock(OrganizationRepository.class);
+	private final TeaSurfaceService surface = mock(TeaSurfaceService.class);
 	private final ApiKeyAccessService access = mock(ApiKeyAccessService.class);
 	private final ApiTokenService tokens = ApiTokenServiceTestSupport.create();
-	private final TeaTokenController controller = new TeaTokenController(external, orgs, tokens, access);
+	private final TeaTokenController controller = new TeaTokenController(external, surface, tokens, access);
 
 	private final UUID org = UUID.randomUUID();
 	private final UUID teaOrg = UUID.randomUUID();
@@ -74,10 +73,8 @@ class TeaTokenControllerTest {
 	private final String keyId;
 
 	TeaTokenControllerTest() {
-		Organization o = new Organization();
-		o.setUuid(org);
-		when(orgs.findByTeaUuid(anyString())).thenReturn(Optional.empty());
-		when(orgs.findByTeaUuid(teaOrg.toString())).thenReturn(Optional.of(o));
+		when(surface.orgOfRequest(any(), any())).thenReturn(Optional.empty());
+		when(surface.orgOfRequest(eq(teaOrg.toString()), any())).thenReturn(Optional.of(new TeaOrg(org, teaOrg, "https://x.example.com/tea/" + teaOrg)));
 		key.setObjectType(ApiTypeEnum.EXTERNAL);
 		key.setObjectUuid(org);
 		key.setOrg(org);
@@ -203,7 +200,7 @@ class TeaTokenControllerTest {
 	@Test
 	void aRefusedKeyIsInvalidClientAndNothingIsIssued() {
 		ApiTokenService spyTokens = spy(tokens);
-		TeaTokenController c = new TeaTokenController(external, orgs, spyTokens, access);
+		TeaTokenController c = new TeaTokenController(external, surface, spyTokens, access);
 		ResponseEntity<?> r = c.token(request(basic(keyId + ":wrong"), "client_credentials", null, null), teaOrg.toString());
 		assertInvalidClient(r);
 		assertEquals("unknown API key or wrong secret", body(r).get("error_description"));
@@ -237,7 +234,7 @@ class TeaTokenControllerTest {
 	@Test
 	void aTokenParameterInTheQueryIsInvalidRequestBeforeAnythingElse() {
 		ApiTokenService spyTokens = spy(tokens);
-		TeaTokenController c = new TeaTokenController(external, orgs, spyTokens, access);
+		TeaTokenController c = new TeaTokenController(external, surface, spyTokens, access);
 		MockHttpServletRequest req = request(basic(keyId + ":good-secret"), "client_credentials", null, null);
 		req.setQueryString("client_secret=s");
 		ResponseEntity<?> r = c.token(req, teaOrg.toString());
@@ -275,7 +272,7 @@ class TeaTokenControllerTest {
 	@Test
 	void aRepeatedClientIdIsInvalidRequestBeforeAnySecretCheck() {
 		ApiTokenService spyTokens = spy(tokens);
-		TeaTokenController c = new TeaTokenController(external, orgs, spyTokens, access);
+		TeaTokenController c = new TeaTokenController(external, surface, spyTokens, access);
 		MockHttpServletRequest req = request(null, "client_credentials", null, "good-secret");
 		req.setParameter("client_id", keyId, "other");
 		ResponseEntity<?> r = c.token(req, teaOrg.toString());
@@ -444,6 +441,33 @@ class TeaTokenControllerTest {
 		assertFalse(isTokenPath("/tea/" + teaOrg + "/v1.0.0/token/"), "not the path the controller serves");
 		assertFalse(isTokenPath("/api/programmatic/token"));
 		assertFalse(TeaTokenController.isTokenPath(null));
+		// TPF-142: the host-routed token path is the token endpoint too
+		assertTrue(isTokenPath("/tea/v1.0.0/token"));
+		assertTrue(isTokenPath("/%74ea/v1.0.0/t%6Fken"));
+		assertFalse(isTokenPath("/tea/v1.0.0/products"));
+	}
+
+	// TPF-142 row 21: step 1 is orgOfRequest(segment, host); the host token path has no segment, and the organization
+	// it names is the one the key is authenticated against (no OrganizationRepository is consulted: the constructor
+	// takes TeaSurfaceService in its place)
+	@Test
+	void theHostTokenPathResolvesTheOrganizationFromTheRequestHost() {
+		UUID other = UUID.randomUUID();
+		when(surface.orgOfRequest(eq(null), eq("tea-b.test"))).thenReturn(Optional.of(new TeaOrg(org, teaOrg, "https://tea-b.test/tea")));
+		when(surface.orgOfRequest(eq(null), eq("tea-a.test"))).thenReturn(Optional.of(new TeaOrg(other, UUID.randomUUID(), "https://tea-a.test/tea")));
+		MockHttpServletRequest onB = request(basic(keyId + ":good-secret"), "client_credentials", null, null);
+		onB.setServerName("TEA-B.test");
+		assertEquals(200, controller.token(onB, null).getStatusCode().value());
+		verify(surface, times(1)).orgOfRequest(null, "tea-b.test");
+		MockHttpServletRequest onA = request(basic(keyId + ":good-secret"), "client_credentials", null, null);
+		onA.setServerName("tea-a.test");
+		assertInvalidClient(controller.token(onA, null));
+		verify(external, times(1)).authenticate(eq(keyId), eq("good-secret"), eq(other), any());
+		MockHttpServletRequest onX = request(basic(keyId + ":good-secret"), "client_credentials", null, null);
+		onX.setServerName("tea-x.test");
+		ResponseEntity<?> unknown = controller.token(onX, null);
+		assertEquals(404, unknown.getStatusCode().value());
+		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, ((TeaErrorResponse) unknown.getBody()).getError());
 	}
 
 	private static boolean isTokenPath(String uri) {

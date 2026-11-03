@@ -31,6 +31,13 @@ import io.reliza.model.NotificationOutboxStatus;
 import io.reliza.model.WebhookAuthScheme;
 import io.reliza.model.WebhookChannelSecret;
 import io.reliza.service.EncryptionService;
+import java.util.List;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.ReleaseData.ReleaseLifecycle;
+import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
+import java.lang.reflect.Method;
 
 /**
  * Unit-tests the parts of {@link WebhookChannelDispatcher} that don't
@@ -195,5 +202,58 @@ class WebhookChannelDispatcherTest {
         payload.put("severity", "CRITICAL");
         event.setRecordData(payload);
         return event;
+    }
+
+    // ---------- TPF-147: one-sided BOM diffs ----------
+
+    @Test
+    void envelopeCarriesOneSidedBomDiff() throws Exception {
+        Map<String, Object> envelope = bomDiffEnvelope(
+                List.of(new BomComponentChange("pkg:npm/added@1.0", "1.0")), List.of());
+
+        assertEquals(1, envelope.get("schemaVersion"));
+        assertEquals("RELEASE_BOM_DIFF", envelope.get("eventType"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
+        List<?> added = (List<?>) payload.get("added");
+        assertEquals(1, added.size());
+        assertEquals("pkg:npm/added@1.0", ((Map<?, ?>) added.get(0)).get("purl"));
+        assertEquals(List.of(), payload.get("removed"));
+        String json = Utils.OM.writeValueAsString(envelope);
+        assertTrue(json.contains("\"removed\":[]"), json);
+    }
+
+    @Test
+    void envelopeCarriesOneSidedBomDiffRemoveOnly() throws Exception {
+        Map<String, Object> envelope = bomDiffEnvelope(
+                List.of(), List.of(new BomComponentChange("pkg:npm/removed@0.9", "0.9")));
+
+        assertEquals(1, envelope.get("schemaVersion"));
+        assertEquals("RELEASE_BOM_DIFF", envelope.get("eventType"));
+        @SuppressWarnings("unchecked")
+        Map<String, Object> payload = (Map<String, Object>) envelope.get("payload");
+        List<?> removed = (List<?>) payload.get("removed");
+        assertEquals(1, removed.size());
+        assertEquals("pkg:npm/removed@0.9", ((Map<?, ?>) removed.get(0)).get("purl"));
+        assertEquals(List.of(), payload.get("added"));
+        String json = Utils.OM.writeValueAsString(envelope);
+        assertTrue(json.contains("\"added\":[]"), json);
+    }
+
+    /** buildEnvelope over a RELEASE_BOM_DIFF event, converted the way the producer does. */
+    @SuppressWarnings("unchecked")
+    private static Map<String, Object> bomDiffEnvelope(List<BomComponentChange> added,
+            List<BomComponentChange> removed) throws Exception {
+        Method m = WebhookChannelDispatcher.class.getDeclaredMethod("buildEnvelope", NotificationOutboxEvent.class);
+        m.setAccessible(true);
+        ReleaseRef ref =
+                new ReleaseRef(UUID.randomUUID(), "v2.0", UUID.randomUUID(), "myapp", ComponentType.COMPONENT,
+                        UUID.randomUUID(), "main", ReleaseLifecycle.ASSEMBLED, null, null, null, "alice",
+                        "alice@example.com");
+        ReleaseBomDiffPayload payload = new ReleaseBomDiffPayload(ref, added, removed);
+        NotificationOutboxEvent event = synthEvent();
+        event.setEventType(NotificationEventType.RELEASE_BOM_DIFF);
+        event.setRecordData(Utils.OM.convertValue(payload, Map.class));
+        return (Map<String, Object>) m.invoke(null, event);
     }
 }

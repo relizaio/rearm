@@ -24,6 +24,8 @@ import io.reliza.common.Utils;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.TeaProfileData;
@@ -33,11 +35,13 @@ import io.reliza.model.tea.TeaIdentifierType;
 import io.reliza.model.tea.TeaUnknownErrorType;
 import io.reliza.repositories.ComponentRepository;
 import io.reliza.repositories.OrganizationRepository;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.TeaAuthorizationService;
 import io.reliza.service.TeaAuthorizationService.TeaAccess;
 import io.reliza.service.TeaAuthorizationService.TeaAuthState;
 import io.reliza.service.TeaAuthorizationService.TeaCaller;
+import io.reliza.service.TeaHostAssignmentService;
 import io.reliza.service.TeaProfileService;
 import io.reliza.service.TeaProfileService.WellKnownEndpoint;
 import io.reliza.service.TeaProfileService.WellKnownTea;
@@ -98,10 +102,44 @@ public class TeaSurfaceService {
 	@Autowired private ComponentRepository componentRepository;
 	@Autowired private SharedReleaseService sharedReleaseService;
 	@Autowired private UserService userService;
+	@Autowired private TeaHostAssignmentService teaHostAssignmentService;
+	@Autowired private GetOrganizationService getOrganizationService;
 
 	// ------------------------------------------------------------------ the base
 
-	/** The organization of a base segment: a TEA id of an organization that is not archived. */
+	/**
+	 * The one resolution of every TEA request, data paths and the token path alike (TPF-142,
+	 * architecture D9). On a custom host the host alone names the organization, so the uuid base is
+	 * an unknown base there: letting the segment win would serve every LEGACY_UUID organization of the
+	 * install on a customer's domain. Elsewhere the {org} segment when the template carries one, else
+	 * the host (the baseuri host, when assigned).
+	 */
+	public Optional<TeaOrg> orgOfRequest(String segment, String host) {
+		if (teaHostAssignmentService.isCustomHost(host)) {
+			return null == segment ? orgOfHost(host) : Optional.empty();
+		}
+		return null != segment ? orgOfBase(segment) : orgOfHost(host);
+	}
+
+	/**
+	 * The organization of an assigned host (TPF-142, architecture D10): assignable and assigned, not
+	 * archived, holding a TEA id and serving on DOMAIN. Its apiBase is the mode-aware one, which for a
+	 * DOMAIN organization is https://<the assigned host>/tea, the request host by construction.
+	 */
+	public Optional<TeaOrg> orgOfHost(String host) {
+		return domainOrgOfHost(host).map(od -> new TeaOrg(od.getUuid(), od.getTeaUuid(), teaPublicationService.apiBaseOf(od.getUuid())));
+	}
+
+	private Optional<OrganizationData> domainOrgOfHost(String host) {
+		return teaHostAssignmentService.orgOfHost(host).flatMap(getOrganizationService::getOrganizationData)
+				.filter(od -> StatusEnum.ARCHIVED != od.getStatus() && null != od.getTeaUuid()
+						&& TeaServing.DOMAIN == od.effectiveTeaServing());
+	}
+
+	/**
+	 * The organization of a base segment: a TEA id of an organization that is not archived and is
+	 * served on the uuid base (TPF-142: LEGACY_UUID; a NONE or DOMAIN organization is an unknown base).
+	 */
 	public Optional<TeaOrg> orgOfBase(String segment) {
 		if (null == segment) return Optional.empty();
 		UUID tea;
@@ -112,7 +150,8 @@ public class TeaSurfaceService {
 		}
 		if (!tea.toString().equalsIgnoreCase(segment)) return Optional.empty();
 		return organizationRepository.findByTeaUuid(tea.toString()).map(OrganizationData::orgDataFromDbRecord)
-				.filter(od -> StatusEnum.ARCHIVED != od.getStatus() && null != od.getTeaUuid())
+				.filter(od -> StatusEnum.ARCHIVED != od.getStatus() && null != od.getTeaUuid()
+						&& TeaServing.LEGACY_UUID == od.effectiveTeaServing())
 				.map(od -> new TeaOrg(od.getUuid(), od.getTeaUuid(), teaPublicationService.apiBaseOf(od.getUuid())));
 	}
 
@@ -376,10 +415,23 @@ public class TeaSurfaceService {
 	// ------------------------------------------------------------------ the instance discovery document
 
 	/**
-	 * The instance /.well-known/tea document. On OSS, one endpoint per organization with a TEA id
-	 * that is not archived, ordered by url; elsewhere each organization hosts its own document.
+	 * The /.well-known/tea document of the request host (TPF-142, architecture D13). (1) An assigned
+	 * host whose organization serves on DOMAIN with hosting DOMAIN: the document naming that
+	 * organization's base. (2) Any other custom host: NOT_IMPLEMENTED, never the OSS listing, which
+	 * would name other organizations' bases on a customer's domain. (3) Elsewhere, as before: on OSS
+	 * one endpoint per serving organization with a TEA id that is not archived, ordered by url;
+	 * elsewhere each organization hosts its own document.
 	 */
-	public WellKnownAnswer wellKnown() {
+	public WellKnownAnswer wellKnown(String host) {
+		String hostedBase = domainOrgOfHost(host).filter(od -> TeaWellKnownHosting.DOMAIN == od.effectiveTeaWellKnownHosting())
+				.map(od -> teaPublicationService.apiBaseOf(od.getUuid())).orElse(null);
+		if (null != hostedBase) {
+			return new WellKnownAnswer(Utils.OM.writeValueAsString(new WellKnownTea(1, List.of(new WellKnownEndpoint(
+					hostedBase, List.of(TeaProfileService.TEA_API_VERSION), 1)))), null, null);
+		}
+		if (teaHostAssignmentService.isCustomHost(host)) {
+			return new WellKnownAnswer(null, TeaUnknownErrorType.NOT_IMPLEMENTED, NOT_HOSTED_MESSAGE);
+		}
 		if (InstallationType.OSS != userService.getInstallationType()) {
 			return new WellKnownAnswer(null, TeaUnknownErrorType.NOT_IMPLEMENTED, NOT_HOSTED_MESSAGE);
 		}

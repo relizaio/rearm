@@ -328,6 +328,7 @@ abstract class TeaSurfaceArtifactIntegrationTestBase extends TeaSurfaceArtifactR
 		teaProfileService.saveProfile(foreign.getUuid(), TeaProfileScope.ORGANIZATION, null,
 				profileInput(TeaPublishing.ENABLED, TeaVisibility.PUBLIC, TeaRawArtifacts.NONE,
 						TeaProductComponents.PUBLISH_WITH_PRODUCT).build(), TeaCaller.ORG_ADMIN, WU);
+		serveOnUuidBase(foreign.getUuid());
 		World far = componentReleaseWithPurl(foreign, "pkg:generic/tea10-foreign-" + tag() + "@1.0.0", List.of());
 		publish(far.release(), TeaPublishMode.PUBLISH);
 		UUID foreignHead = teaPublicationService.getPublicationOfRelease(far.release()).orElseThrow().getUuid();

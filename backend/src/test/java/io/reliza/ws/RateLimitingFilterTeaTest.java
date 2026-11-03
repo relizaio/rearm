@@ -85,6 +85,27 @@ class RateLimitingFilterTeaTest {
 		throw new AssertionError("the bucket never refused");
 	}
 
+	// TPF-142 row 19: the host-routed base is on the TEA chain: its refusal is the chain's, and an authenticated caller
+	// there has a bucket of its own (keyed by the key, not the address)
+	@Test
+	void theHostRoutedBaseIsLimitedAsTheTeaChain() throws Exception {
+		RateLimitingFilter f = filter(mock(AuthorizationService.class));
+		String[][] cases = { { "/tea/v1.0.0/products", "198.51.100.30" }, { "/tea/v1.0.0/token", "198.51.100.31" },
+				{ "/%74ea/v1.0.0/products", "198.51.100.32" } };
+		for (String[] c : cases) {
+			MockHttpServletResponse r = untilRefused(f, c[0], c[1]);
+			assertEquals("{\"message\":\"Rate limit exceeded\"}", r.getContentAsString(), c[0]);
+			assertEquals("application/json", r.getContentType(), c[0]);
+			assertEquals("no-store", r.getHeader("Cache-Control"), c[0]);
+		}
+		String ip = "198.51.100.33";
+		assertEquals(String.valueOf(RateLimitingFilter.REQUESTS_PER_WINDOW - 1), remaining(f, req("/tea/v1.0.0/products", ip)));
+		MockHttpServletRequest authed = req("/tea/v1.0.0/products", ip);
+		authed.setAttribute(TeaAuthenticationFilter.CALLER_ATTRIBUTE,
+				TeaCaller.authenticated(new TeaPrincipal(UUID.randomUUID(), UUID.randomUUID(), "EXTERNAL__t__ord__" + UUID.randomUUID(), 1, ip)));
+		assertEquals(String.valueOf(RateLimitingFilter.REQUESTS_PER_WINDOW - 1), remaining(f, authed), "keyed by the key, not the address");
+	}
+
 	// task TEA-6, design round 2 case 39: the refusal on the TEA chain is not a TEA error-response
 	@Test
 	void theTeaRefusalCarriesNoErrorKey() throws Exception {

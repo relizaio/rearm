@@ -140,6 +140,8 @@ class SbomComponentEnrichmentPullerTest {
 		// Already-enriched co-resident untouched (no save, original licenses kept).
 		org.junit.jupiter.api.Assertions.assertEquals(licenses("Apache-2.0"), alreadyEnriched.getLicenses());
 		verify(sbomComponentRepository, never()).save(alreadyEnriched);
+		// Nothing marked terminal, so no fan-out requeue (TPF-114).
+		verify(artifactCanonicalMapRepository, never()).requeueFanOutForComponents(any(), any());
 	}
 
 	@Test
@@ -167,6 +169,7 @@ class SbomComponentEnrichmentPullerTest {
 		verify(rebomService, times(1)).parseBom(readyBom, ORG);
 		assertNotNull(readyComp.getEnrichedAt());
 		assertNull(pendingComp.getEnrichedAt());
+		verify(artifactCanonicalMapRepository, never()).requeueFanOutForComponents(any(), any());
 	}
 
 	private static RebomService.BomMeta meta(RebomService.EnrichmentStatus status) {
@@ -208,6 +211,7 @@ class SbomComponentEnrichmentPullerTest {
 
 		org.junit.jupiter.api.Assertions.assertNotNull(strippedStored.getEnrichedAt(),
 				"a stripped-era stored row must be stamped from the qualifier-bearing fresh parse");
+		verify(artifactCanonicalMapRepository, never()).requeueFanOutForComponents(any(), any());
 		org.junit.jupiter.api.Assertions.assertEquals(licenses("MIT"), strippedStored.getLicenses());
 		verify(sbomComponentRepository).save(strippedStored);
 	}

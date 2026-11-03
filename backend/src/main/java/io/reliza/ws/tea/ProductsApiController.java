@@ -29,7 +29,7 @@ import lombok.extern.slf4j.Slf4j;
 /** The products of the organization that have a published release the caller may see (task TEA-6). */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class ProductsApiController implements ProductsApi {
 
 	static final Set<TeaSortField> SORT_FIELDS = EnumSet.of(TeaSortField.NAME);

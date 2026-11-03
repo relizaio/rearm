@@ -59,6 +59,8 @@ public class CommonVariables {
 	public static final String NAME_FIELD = "name";
 	/** The JSON key of the TEA-facing id in organization, component and artifact records (TEA-2, TEA-5). */
 	public static final String TEA_UUID_FIELD = "teaUuid";
+	/** The JSON key of the nightly Statistics totals in the organization record (TPF-141). */
+	public static final String TOTALS_FIELD = "totals";
 	/** Stored finding field every DTrack fetch stamps with the fetch time. */
 	public static final String ATTRIBUTED_AT_FIELD = "attributedAt";
 	public static final String DESCRIPTION_FIELD = "description";
@@ -176,7 +178,7 @@ public class CommonVariables {
 	public static final String NAMESPACE_FIELD = "namespace";
 	public static final String CLUSTER_WIDE_NAMESPACE = "CLUSTER--WIDE";
 	public static final String DEFAULT_NAMESPACE = "default";
-	// Sentinel namespace for the embedded ReARM CD runtime — when a CLUSTER
+	// Sentinel namespace for the embedded ReARM CD runtime -- when a CLUSTER
 	// api key sends data or asks for a BOM scoped to this namespace and we
 	// can't resolve a child instance for it, we fall back to the
 	// hard-coded ReARM CD BOM in Utils.getHardCodedRearmCdBomJson().
@@ -446,7 +448,7 @@ public class CommonVariables {
 		// Schedule-driven workload (k8s Job / CronJob etc.). The
 		// dep is included in the instance plan CDX (operator wants
 		// to see the version that last ran) but it does NOT
-		// participate in product-release matching at all — the
+		// participate in product-release matching at all -- the
 		// actual deployed version legitimately lags the target
 		// until the job next runs. Behaviour differs from TRANSIENT
 		// (which still requires versions to agree when both sides
@@ -807,7 +809,7 @@ public class CommonVariables {
 			} catch (RuntimeException e) {
 				// Malformed Basic Authorization header. Most commonly an
 				// unsubstituted CI/CD template variable (e.g. "$(ReARM-ApiKeyId)")
-				// or a scanner probe — i.e. an external client sending
+				// or a scanner probe -- i.e. an external client sending
 				// garbage at the HTTP boundary, not an internal bug.
 				// Without this catch the unchecked exception propagates up
 				// through the filter chain and Spring logs a full stack
@@ -817,7 +819,7 @@ public class CommonVariables {
 				// request as unauthenticated; DEBUG keeps the cause
 				// available without filling disk.
 				// the class name only: the message of UUID.fromString or ApiTypeEnum.valueOf quotes the client's text
-				log.debug("Malformed Basic Authorization header from {} — treating as unauthenticated. Cause: {}",
+				log.debug("Malformed Basic Authorization header from {} -- treating as unauthenticated. Cause: {}",
 						ipAddr, e.getClass().getSimpleName());
 				return AuthHeaderParse.builder().build();
 			}
@@ -982,7 +984,7 @@ public class CommonVariables {
 
 	/**
 	 * Component- and perspective-level sid override.
-	 * Only meaningful — and only writeable — when the org is in ENABLED_FLEXIBLE mode.
+	 * Only meaningful -- and only writeable -- when the org is in ENABLED_FLEXIBLE mode.
 	 * INHERIT: defer to higher level; ENABLE: opt-in for this component/perspective;
 	 * DISABLE: opt-out for this component/perspective.
 	 */

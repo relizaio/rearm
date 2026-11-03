@@ -23,6 +23,8 @@ import io.reliza.common.InputConversion;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.TeaProfileData;
@@ -35,6 +37,7 @@ import io.reliza.model.dto.TeaProfileInputDto;
 import io.reliza.service.AuthorizationService;
 import io.reliza.service.GetComponentService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrganizationService;
 import io.reliza.service.TeaProfileResolver;
 import io.reliza.service.TeaProfileResolver.TeaResolvedProfile;
 import io.reliza.service.TeaProfileService;
@@ -58,6 +61,7 @@ public class TeaProfileDataFetcher {
 	@Autowired private UserService userService;
 	@Autowired private AuthorizationService authorizationService;
 	@Autowired private GetOrganizationService getOrganizationService;
+	@Autowired private OrganizationService organizationService;
 	@Autowired private GetComponentService getComponentService;
 	@Autowired private OssPerspectiveService ossPerspectiveService;
 	@Autowired private TeaProfileService teaProfileService;
@@ -124,6 +128,21 @@ public class TeaProfileDataFetcher {
 		authorize(ud, org, scope, object, CallType.ADMIN);
 		return teaProfileService.saveProfile(org, scope, object, input(profile), caller(ud, org),
 				WhoUpdated.getWhoUpdated(ud));
+	}
+
+	/**
+	 * How the organization is served and whether the instance hosts its .well-known/tea (TPF-142,
+	 * architecture D16): organization ADMIN, the gate of saveTeaProfile; answers the discovery after
+	 * the write.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setTeaOrgServing")
+	public TeaOrgDiscovery setTeaOrgServing(@InputArgument("org") UUID org, @InputArgument("teaServing") TeaServing teaServing,
+			@InputArgument("teaWellKnownHosting") TeaWellKnownHosting teaWellKnownHosting) throws RelizaException {
+		UserData ud = currentUser();
+		authorize(ud, org, TeaProfileScope.ORGANIZATION, null, CallType.ADMIN);
+		organizationService.setTeaServing(org, teaServing, teaWellKnownHosting, WhoUpdated.getWhoUpdated(ud));
+		return teaProfileService.orgDiscovery(org);
 	}
 
 	@PreAuthorize("isAuthenticated()")

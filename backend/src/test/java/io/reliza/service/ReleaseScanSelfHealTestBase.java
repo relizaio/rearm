@@ -23,7 +23,9 @@ import io.reliza.common.Utils;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
 import io.reliza.model.FlowControl;
+import io.reliza.model.NoMatchableComponentsReason;
 import io.reliza.model.Release;
+import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
 import io.reliza.repositories.ArtifactRepository;
@@ -99,6 +101,15 @@ public abstract class ReleaseScanSelfHealTestBase {
 		return releaseRepository.save(r);
 	}
 
+	/**
+	 * Run the rescan compute on the current row (TPF-129): computeReleaseMetricsOnRescan is
+	 * package-private to io.reliza.service, so subclasses in other packages compute through this.
+	 */
+	protected boolean computeOnRescan(UUID releaseUuid) {
+		return releaseMetricsComputeService.computeReleaseMetricsOnRescan(
+				releaseRepository.findById(releaseUuid).orElseThrow().getUuid());
+	}
+
 	protected void markScanned(UUID releaseUuid, double firstScannedEpoch) {
 		Release r = releaseRepository.findById(releaseUuid).orElseThrow();
 		Map<String, Object> metrics = r.getMetrics() != null ? r.getMetrics() : new HashMap<>();
@@ -152,6 +163,55 @@ public abstract class ReleaseScanSelfHealTestBase {
 		recordData.put("artifacts", artifacts);
 		r.setRecordData(recordData);
 		releaseRepository.save(r);
+	}
+
+	/**
+	 * A release whose metrics ALREADY carry {@code findings} and a PAST scan stamp -- a
+	 * previously-scanned release, so a fresh compute's "now is after lastScanned" guard fires. No
+	 * artifacts are attached, so it gathers NOTHING: the dereferenced ALL_ARTIFACTS_GONE shape.
+	 * {@code parentReleases} makes it a product/aggregate.
+	 */
+	protected Release saveReleaseWithFindings(UUID orgUuid, String lifecycle,
+			List<Map<String, Object>> parentReleases, int findings) {
+		Release r = new Release();
+		r.setUuid(UUID.randomUUID());
+		r.setCreatedDate(ZonedDateTime.now().minusHours(2));
+		r.setLastUpdatedDate(ZonedDateTime.now());
+		r.setSchemaVersion(0);
+		Map<String, Object> recordData = new HashMap<>();
+		recordData.put("org", orgUuid.toString());
+		recordData.put("lifecycle", lifecycle);
+		recordData.put("artifacts", new ArrayList<String>());
+		if (parentReleases != null) {
+			recordData.put("parentReleases", parentReleases);
+		}
+		r.setRecordData(recordData);
+		ReleaseMetricsDto m = new ReleaseMetricsDto();
+		m.setVulnerabilityDetails(buildVulns(findings, "REL"));
+		ZonedDateTime scanned = ZonedDateTime.now().minusHours(1);
+		m.setFirstScanned(scanned);
+		m.setLastScanned(scanned);
+		r.setMetrics(Utils.OM.convertValue(m, LinkedHashMap.class));
+		return releaseRepository.save(r);
+	}
+
+	/**
+	 * Mark a BOM artifact not scannable (TPF-125): metrics hold the marker and nothing else, as the
+	 * fan-out's in-place stamp leaves a never-scanned artifact.
+	 */
+	protected void markBomNotScannable(UUID bomUuid, NoMatchableComponentsReason reason) {
+		Artifact a = artifactRepository.findById(bomUuid).orElseThrow();
+		Map<String, Object> marker = new LinkedHashMap<>();
+		marker.put("reason", reason.name());
+		marker.put("at", Utils.toFractionalEpochSecond(ZonedDateTime.now()));
+		marker.put("components", 1);
+		marker.put("root", 0);
+		marker.put("terminal", 0);
+		marker.put("unmatchable", 1);
+		Map<String, Object> metrics = new LinkedHashMap<>();
+		metrics.put("notScannable", marker);
+		a.setMetrics(metrics);
+		artifactRepository.save(a);
 	}
 
 	/** Turn a previously-unscanned BOM into a scanned one carrying {@code findings} -- the swap's own

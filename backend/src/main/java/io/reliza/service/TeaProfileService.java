@@ -4,6 +4,7 @@
 
 package io.reliza.service;
 
+import java.net.URI;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.Collection;
@@ -33,6 +34,8 @@ import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.SbomProfileData;
 import io.reliza.model.ScopedResolutionStatus;
@@ -92,6 +95,7 @@ public class TeaProfileService implements SbomProfileConsumer {
 	@Autowired private GetComponentService getComponentService;
 	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private OrganizationService organizationService;
+	@Autowired private TeaHostAssignmentService teaHostAssignmentService;
 	/** The catalog the names of a row must resolve in (task TEA-27); lazy like the TEA resolver. */
 	@Autowired @Lazy private SbomProfileResolver sbomProfileResolver;
 	/** Lazy: the publication service depends on the resolver, which depends on this service. */
@@ -107,10 +111,14 @@ public class TeaProfileService implements SbomProfileConsumer {
 	}
 
 	/**
-	 * Where the organization's TEA API lives and the {@code .well-known/tea} document it hosts on
-	 * its own domain. Both are null until the organization's TEA id is minted.
+	 * Where the organization's TEA API lives and the {@code .well-known/tea} document naming it
+	 * (TPF-142: mode-aware). apiBase is the effective base: the uuid base under LEGACY_UUID,
+	 * https://<assignedHost>/tea under DOMAIN, null under NONE and while the base is not served;
+	 * assignedHost is the host a global administrator assigned, whatever the mode; wellKnownUrl is set
+	 * while the instance hosts the document on the domain.
 	 */
-	public record TeaOrgDiscovery(UUID org, UUID teaUuid, String apiBase, String wellKnownDocument) {}
+	public record TeaOrgDiscovery(UUID org, UUID teaUuid, String apiBase, String wellKnownDocument,
+			String assignedHost, TeaServing teaServing, TeaWellKnownHosting teaWellKnownHosting, String wellKnownUrl) {}
 
 	/** The TEA 1.0.0 discovery shape: schemaVersion, endpoints with url, versions, priority. */
 	public record WellKnownTea(int schemaVersion, List<WellKnownEndpoint> endpoints) {}
@@ -845,15 +853,48 @@ public class TeaProfileService implements SbomProfileConsumer {
 		return null == teaPublicationService ? 0 : teaPublicationService.countPublishedResolvingTo(org, scope, object);
 	}
 
+	/**
+	 * The organization's discovery (TPF-142, architecture D15): the one source of every TEA URL the
+	 * instance advertises (TeaPublicationService.apiBaseOf reads apiBase from here). A NONE
+	 * organization advertises nothing; a DOMAIN organization whose host left the allow-list, or that
+	 * has no TEA id yet, advertises nothing either, since neither is served.
+	 */
 	public TeaOrgDiscovery orgDiscovery(UUID org) throws RelizaException {
 		OrganizationData od = getOrganizationService.getOrganizationData(org)
 				.orElseThrow(() -> new RelizaException("Organization not found: " + org));
 		UUID teaUuid = od.getTeaUuid();
-		if (null == teaUuid) return new TeaOrgDiscovery(org, null, null, null);
-		String base = StringUtils.stripEnd(null == relizaConfigProps ? "" : relizaConfigProps.getBaseuri(), "/");
-		String apiBase = base + "/tea/" + teaUuid;
-		String document = Utils.OM.writeValueAsString(new WellKnownTea(1,
+		TeaServing serving = od.effectiveTeaServing();
+		TeaWellKnownHosting hosting = od.effectiveTeaWellKnownHosting();
+		String assignedHost = null == teaHostAssignmentService ? null : teaHostAssignmentService.hostOfOrg(org).orElse(null);
+		String baseuri = StringUtils.stripEnd(null == relizaConfigProps ? "" : relizaConfigProps.getBaseuri(), "/");
+		String apiBase = null;
+		String wellKnownUrl = null;
+		if (null != teaUuid && TeaServing.LEGACY_UUID == serving) {
+			apiBase = baseuri + "/tea/" + teaUuid;
+		} else if (null != teaUuid && TeaServing.DOMAIN == serving && null != assignedHost) {
+			String origin = schemeOf(assignedHost, baseuri) + "://" + assignedHost;
+			apiBase = origin + "/tea";
+			if (TeaWellKnownHosting.DOMAIN == hosting) wellKnownUrl = origin + "/.well-known/tea";
+		}
+		String document = null == apiBase ? null : Utils.OM.writeValueAsString(new WellKnownTea(1,
 				List.of(new WellKnownEndpoint(apiBase, List.of(TEA_API_VERSION), 1))));
-		return new TeaOrgDiscovery(org, teaUuid, apiBase, document);
+		return new TeaOrgDiscovery(org, teaUuid, apiBase, document, assignedHost, serving, hosting, wellKnownUrl);
+	}
+
+	/**
+	 * https for every custom host (TPF-143 serves them on TLS only); the baseuri's own scheme when the
+	 * assigned host is the instance host, so a plain-http install assigning its own host advertises
+	 * what it serves.
+	 */
+	private String schemeOf(String assignedHost, String baseuri) {
+		if (null != teaHostAssignmentService && teaHostAssignmentService.isBaseuriHost(assignedHost)) {
+			try {
+				String scheme = URI.create(baseuri).getScheme();
+				if (null != scheme) return scheme;
+			} catch (IllegalArgumentException e) {
+				log.error("relizaprops.baseuri is not a URI; https assumed for the TEA base of the instance host", e);
+			}
+		}
+		return "https";
 	}
 }

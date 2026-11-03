@@ -1165,6 +1165,54 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 	@JsonProperty
 	private List<UUID> childTasks = new ArrayList<>();
 
+	/** Where a design checkpoint stands: waiting on the coordinator, or settled one way or the other (task SPLIT-5). */
+	public enum DesignCheckpointState { PENDING, SENT_ON, SPLIT }
+
+	/**
+	 * The stop before a role that carries {@code coordinatorCheckpoint} (task SPLIT-5, D3): the task's design was
+	 * reviewed and the coordinator reads it before that role is queued. One record, rewritten each time the
+	 * checkpoint is reached; the history is in the status history and the board's events. Only the server writes it.
+	 *
+	 * @param reachedAt when routing first stopped the task here; kept while the record stays PENDING
+	 * @param afterRole the role of the task's last hop when it was reached; null when there was none
+	 * @param beforeRole the flagged role the checkpoint precedes
+	 * @param design the newest live round of each design document the roles before {@code beforeRole} produce, in
+	 *        role order: what the ALERT names and what a split pins on every child
+	 * @param settledBy who sent it on or split it; null while PENDING
+	 * @param note why it was settled ("authorized for coder", "2 children: ..."); null while PENDING
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record DesignCheckpoint(ZonedDateTime reachedAt, String afterRole, String beforeRole,
+			UUID beforeRoleUuid, List<UUID> design, DesignCheckpointState state, AgentActor settledBy,
+			ZonedDateTime settledAt, String note) implements Serializable {
+		private static final long serialVersionUID = 20261016L;
+
+		public DesignCheckpoint {
+			if (null == design) design = List.of();
+		}
+
+		/** Whether it still waits on the coordinator. */
+		public boolean pending() {
+			return DesignCheckpointState.PENDING == state;
+		}
+
+		/** The same record, settled by {@code by} now. */
+		public DesignCheckpoint withSettled(DesignCheckpointState settled, AgentActor by, String why) {
+			return new DesignCheckpoint(reachedAt, afterRole, beforeRole, beforeRoleUuid, design, settled, by,
+					ZonedDateTime.now(), why);
+		}
+	}
+
+	/** The design checkpoint this task last reached (task SPLIT-5); null when it never reached one. */
+	@JsonProperty
+	private DesignCheckpoint designCheckpoint;
+
+	/** Whether the task waits at a design checkpoint the coordinator has not settled. */
+	@JsonIgnore
+	public boolean checkpointPending() {
+		return null != designCheckpoint && designCheckpoint.pending();
+	}
+
 	/** Every session that ever held the assignment (accumulates; boards link to sessions through this). */
 	@JsonProperty
 	private List<UUID> sessions = new ArrayList<>();

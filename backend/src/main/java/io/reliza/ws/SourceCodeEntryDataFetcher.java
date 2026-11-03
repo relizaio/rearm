@@ -169,11 +169,8 @@ public class SourceCodeEntryDataFetcher {
 	 * the entry, and the Release, IntermediateFailedRelease and PullRequest
 	 * commit fields read through GetSourceCodeEntryService
 	 * .getReferenceableSceDataList, which returns only entries of the
-	 * parent's own org or of the shared external-components org. So the
-	 * entry's org here is either one the caller reached legitimately or the
-	 * external org -- whose releases are public by design (the org-scoped
-	 * release lookup admits them for every org) -- and never another
-	 * customer's org to pivot into.
+	 * parent's own org. So the entry's org here is one the caller reached
+	 * legitimately and never another customer's org to pivot into.
 	 */
 	@DgsData(parentType = "SourceCodeEntry", field = "releases")
 	public List<ReleaseData> releasesOfSourceCodeEntry(DgsDataFetchingEnvironment dfe) {

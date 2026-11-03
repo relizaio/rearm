@@ -48,6 +48,20 @@ class OrientationTakingATaskContractTest {
 				"--base");
 	}
 
+	/** Task SPLIT-5 (3.9): the design checkpoint is the one forward hand-over that raises an ALERT, and what to do. */
+	@Test
+	void theDesignCheckpointStopsAtTheCoordinator() throws IOException {
+		String doc = section("taking-a-task").replaceAll("\\s+", " ");
+		assertTrue(doc.contains("but not a first forward hand-over (\"X passed, queued for Y\") (except the design"
+				+ " checkpoint, which raises an ALERT)"), "the exception on the feed");
+		assertTrue(doc.contains("**The design checkpoint.**"), "the paragraph");
+		assertTrue(doc.contains("`task show <key>` has the rounds"), "where the rounds are");
+		assertTrue(doc.contains("rearm agent task split <key> --session <seat-session-uuid> \\ --children-json"), "the split");
+		assertTrue(doc.contains("each child carries the design as pinned inputs"), "the carried design");
+		assertTrue(doc.contains("rearm agent task authorize <key> --session <seat-session-uuid> --role coder"), "send it on");
+		assertTrue(doc.contains("Authorizing a design role instead sends the task round again"), "the design role");
+	}
+
 	@Test
 	void aCoordinatorFollowsTheBoardWithTwoReads() throws IOException {
 		// task 9540d3b6: the feed does not carry forward hand-overs, authorizes or assignments

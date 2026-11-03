@@ -1030,12 +1030,12 @@ public class ProgrammaticArtifactOrgBindingTest {
 		assertEquals(before, snapshot(a, a, a.release(), a.deliverable(), a.sce(), a.variant()));
 	}
 
-	// ---------------- fix round: the shared external org, and the write rule for source code entries ----------------
+	// ---------------- fix round: the zero org, and the write rule for source code entries ----------------
 
 	@Test
 	public void aReleaseAndAVariantOfTheExternalOrgAreNotFound() throws RelizaException {
-		// The org-scoped release lookup admits the shared external org next to the key's own; the
-		// component check is what keeps it from being written.
+		// The org-scoped release lookup sees the key's own org only, so a release of the zero
+		// (former shared external) org is not found, like any other organization's.
 		Tenant a = tenant();
 		Tenant external = tenantIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		Snapshot before = snapshot(a, external, external.release(), external.deliverable(), external.sce(),
@@ -1061,12 +1061,14 @@ public class ProgrammaticArtifactOrgBindingTest {
 
 	@Test
 	public void anExternalOrgEntryAmongTheReleasesCommitsIsNotWritable() throws RelizaException {
-		// A release may reference an entry of the shared external org (the read rule); attaching
-		// artifacts to it is a write, and writes are own-org only.
+		// A legacy release may still list an entry of the zero (former shared external) org;
+		// attaching artifacts to it is a write, and writes are own-org only.
 		Tenant a = tenant();
 		Tenant external = tenantIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
-		ossReleaseService.updateRelease(ReleaseDto.builder().uuid(a.release())
-				.commits(List.of(a.sce(), external.sce())).build(), WU);
+		Release r = sharedReleaseService.getRelease(a.release()).orElseThrow();
+		ReleaseData rd = ReleaseData.dataFromRecord(r);
+		rd.setCommits(List.of(a.sce(), external.sce()));
+		ossReleaseService.saveRelease(r, rd, WU);
 		assertTrue(sharedReleaseService.getReleaseData(a.release()).orElseThrow().getAllCommits()
 				.contains(external.sce()), "fixture: the external entry is one of the release's commits");
 		Snapshot ownBefore = snapshot(a, external, a.release(), a.deliverable(), a.sce(), a.variant());

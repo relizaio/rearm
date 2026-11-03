@@ -249,12 +249,13 @@ public class SchedulerIsolationTest {
 
 		List<UUID> attempted = new LinkedList<>();
 		doAnswer(inv -> {
-			Release r = inv.getArgument(0);
-			synchronized (attempted) { attempted.add(r.getUuid()); }
-			throw new StackOverflowError("simulated cyclic component graph for release " + r.getUuid());
-		}).when(releaseMetricsComputeService).computeReleaseMetricsOnRescan(any(Release.class));
+			UUID r = inv.getArgument(0);
+			synchronized (attempted) { attempted.add(r); }
+			throw new StackOverflowError("simulated cyclic component graph for release " + r);
+		}).when(releaseMetricsComputeService).computeReleaseMetricsOnRescan(any(UUID.class));
 
-		releaseService.computeMetricsForAllUnprocessedReleases(50);
+		releaseService.computeMetricsForAllUnprocessedReleases(50,
+				SchedulingService.METRICS_RECENT_BATCH_LIMIT, SchedulingService.METRICS_RECENT_WINDOW_MINUTES);
 
 		// Snapshot under the lock. The batch runs a parallel pass, so a worker still finishing as
 		// the assertions start would otherwise throw ConcurrentModificationException out of the

@@ -32,7 +32,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class ProductReleaseApiController implements ProductReleaseApi {
 
 	static final Set<TeaSortField> COLLECTION_SORT_FIELDS = EnumSet.of(TeaSortField.VERSION);

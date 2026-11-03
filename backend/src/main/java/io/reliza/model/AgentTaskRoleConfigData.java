@@ -193,6 +193,14 @@ public class AgentTaskRoleConfigData extends RelizaDataParent implements RelizaO
 	private boolean blindReview;
 
 	/**
+	 * Before this role is queued on a task's design, the task stops at the coordinator, which reads the reviewed
+	 * design and splits the task or sends it on (task SPLIT-5, D1). At most one active role per board carries it;
+	 * set on the coder. Operator-only, default off.
+	 */
+	@JsonProperty
+	private boolean coordinatorCheckpoint;
+
+	/**
 	 * Model strength this role needs, on the catalogue's scale; null admits every model.
 	 * A capability floor, not a preference: a model below it is ineligible, never merely sorted last.
 	 * Compared through {@link StrengthScale}, so within its tolerance counts as meeting it.

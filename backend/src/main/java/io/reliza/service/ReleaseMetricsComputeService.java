@@ -7,7 +7,9 @@ import java.time.Duration;
 import java.time.Instant;
 import java.time.ZonedDateTime;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Collections;
+import java.util.EnumSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Optional;
@@ -24,14 +26,17 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
+import io.reliza.common.Utils;
 import io.reliza.model.AnalysisScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.FlowControl;
+import io.reliza.model.NoMatchableComponentsReason;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.dto.ReleaseMetricsDto;
+import io.reliza.model.dto.ReleaseMetricsDto.BomScanTally;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityAliasDto;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilityDto;
 import io.reliza.repositories.ReleaseRepository;
@@ -78,15 +83,64 @@ public class ReleaseMetricsComputeService {
 		return repository.findByIdWriteLocked(uuid);
 	}
 
+	/** TPF-125: a BOM the synthetic pipeline can scan: BOM-typed and not marked not scannable. */
+	static boolean isScanInput(ArtifactData ad) {
+		return ad.getType() == ArtifactType.BOM
+				&& (ad.getMetrics() == null || ad.getMetrics().getNotScannable() == null);
+	}
+
+	/**
+	 * TPF-129: count a release's gathered artifacts as the scan pipeline sees them. The same predicate
+	 * as the compute's two flags (isScanInput), over the same artifacts (gatherReleaseArtifacts), so
+	 * release.bomScanState and the counts can never say something the release's firstScanned did not
+	 * rest on. Non-BOM artifacts count nothing; a marked BOM counts as not scannable whatever its own
+	 * firstScanned says (a legacy row of TPF-126 3.8 carries both; the marker wins, as it does for the
+	 * pill and the explainer).
+	 */
+	static BomScanTally tallyBomScan(Collection<ArtifactData> artifacts) {
+		int scannable = 0;
+		int notScannable = 0;
+		EnumSet<NoMatchableComponentsReason> reasons = EnumSet.noneOf(NoMatchableComponentsReason.class);
+		for (ArtifactData ad : artifacts) {
+			if (ad.getType() != ArtifactType.BOM) continue;
+			if (isScanInput(ad)) {
+				scannable++;
+				continue;
+			}
+			notScannable++;
+			NoMatchableComponentsReason reason = ad.getMetrics().getNotScannable().reason();
+			if (null != reason) reasons.add(reason);
+		}
+		// EnumSet iterates in ordinal order, so two tallies of the same rows are equal.
+		return new BomScanTally(scannable, notScannable, List.copyOf(reasons));
+	}
+
+	/**
+	 * TPF-129: the tally from a fresh gather and one light read; the activation map's fallback.
+	 *
+	 * <p>A release that has not been saved yet (no uuid: the creation guards evaluate the release
+	 * createRelease is about to write) answers the empty tally, NO_BOMS. It has never been computed,
+	 * so it reads what every other metrics key reads on it (firstScanned false, the counters 0), and
+	 * its gather cannot be taken: the variants that carry its outbound deliverables are created after
+	 * the save, and the variant lookup is by the release's uuid.
+	 */
+	public BomScanTally tallyBomScanInputs(ReleaseData rd) {
+		if (null == rd.getUuid()) return BomScanTally.EMPTY;
+		Set<UUID> ids = artifactGatherService.gatherReleaseArtifacts(rd);
+		if (ids.isEmpty()) return BomScanTally.EMPTY;
+		return tallyBomScan(artifactService.getArtifactDataListLight(ids));
+	}
+
 	@Transactional
-	protected boolean computeReleaseMetricsOnRescan(Release r) {
-		// Acquire write lock to prevent concurrent modifications
-		Optional<Release> lockedRelease = getReleaseWriteLocked(r.getUuid());
+	protected boolean computeReleaseMetricsOnRescan(UUID releaseUuid) {
+		// Acquire write lock to prevent concurrent modifications. Takes the uuid: the caller never
+		// needs to have loaded the row, and the metrics tick does not.
+		Optional<Release> lockedRelease = getReleaseWriteLocked(releaseUuid);
 		if (lockedRelease.isEmpty()) {
-			log.warn("Release {} no longer exists, skipping metrics computation", r.getUuid());
+			log.warn("Release {} no longer exists, skipping metrics computation", releaseUuid);
 			return false;
 		}
-		r = lockedRelease.get();
+		Release r = lockedRelease.get();
 		ZonedDateTime lastScanned = ZonedDateTime.now();
 		var rd = ReleaseData.dataFromRecord(r);
 		if (!componentKindPolicy.isScannableRelease(rd)) {
@@ -98,8 +152,9 @@ public class ReleaseMetricsComputeService {
 			ReleaseMetricsDto rmd = new ReleaseMetricsDto();
 			var allReleaseArts = artifactGatherService.gatherReleaseArtifacts(rd);
 			final ZonedDateTime[] releaseFirstScanned = { null };
-			final boolean[] hasAnyBomArtifact = { false };
-			// All-or-nothing flag for every BOM gathered for this release —
+			// TPF-129: every resolved artifact, for the BOM tally after the loop.
+			final List<ArtifactData> resolvedArts = new ArrayList<>();
+			// All-or-nothing flag for every BOM gathered for this release --
 			// release-direct, SCE-attached, and outbound-deliverable BOMs all
 			// flow through the same `gatherReleaseArtifacts` set. As soon as
 			// any one of them lacks firstScanned (still in flight, or never
@@ -123,9 +178,7 @@ public class ReleaseMetricsComputeService {
 				if (ad.isPresent()) {
 					artsResolved[0]++;
 					ArtifactData artifactData = ad.get();
-					if (artifactData.getType() == ArtifactType.BOM) {
-						hasAnyBomArtifact[0] = true;
-					}
+					resolvedArts.add(artifactData);
 					ReleaseMetricsDto artifactMetrics = artifactData.getMetrics();
 					if (artifactMetrics != null) {
 						artsFindings[0] += countFindings(artifactMetrics);
@@ -134,14 +187,15 @@ public class ReleaseMetricsComputeService {
 						rmd.mergeWithByContent(artifactMetrics);
 					}
 					// Compute release firstScanned as max of artifact firstScanned values.
-					// Only the real artifact-level firstScanned counts — set by the
+					// Only the real artifact-level firstScanned counts -- set by the
 					// scan-data ingestion path (SharedArtifactService) when the
 					// scanner actually returns findings. No createdDate-based
 					// fallback: synthesizing a firstScanned for an artifact that
 					// has been submitted but not yet scanned would surface stale
 					// "ready" circles in the UI before the initial scan completes.
 					ZonedDateTime artFs = (artifactData.getMetrics() != null) ? artifactData.getMetrics().getFirstScanned() : null;
-					if (artifactData.getType() == ArtifactType.BOM && artFs == null) {
+					// A not-scannable BOM (TPF-125) never blocks firstScanned: no scan will come.
+					if (isScanInput(artifactData) && artFs == null) {
 						anyBomUnscanned[0] = true;
 					}
 					if (artFs != null && (releaseFirstScanned[0] == null || artFs.isAfter(releaseFirstScanned[0]))) {
@@ -149,6 +203,11 @@ public class ReleaseMetricsComputeService {
 					}
 				}
 			});
+			// TPF-129: the BOM tally, one classifier with the anchor. A not-scannable BOM (TPF-125) is
+			// no scan input: a release whose BOMs are all not scannable takes the no-BOM anchor below.
+			final BomScanTally tally = tallyBomScan(resolvedArts);
+			rmd.setBomScan(tally);
+			final boolean hasAnyBomArtifact = tally.scannableBoms() > 0;
 			// RELEASE-LEVEL HOLD. A release whose gathered artifacts contribute ZERO findings, but which
 			// previously HAD findings, has not remediated -- its inputs are pending or missing. Two shapes,
 			// one rule:
@@ -246,7 +305,7 @@ public class ReleaseMetricsComputeService {
 			// BOM on this release, or a child release, still lacks firstScanned. Recording
 			// a lastScanned in that state advances it past last_updated_date, which evicts
 			// the release from the BY_UPDATE self-heal finder
-			// (ReleaseService.computeMetricsForAllUnprocessedReleases) — and nothing would
+			// (ReleaseService.computeMetricsForAllUnprocessedReleases) -- and nothing would
 			// ever re-derive it: the lagging input's own scan-completion recomputes that
 			// input, not this parent. Leaving lastScanned null keeps the release "dirty" so
 			// the every-minute sweep re-picks it until firstScanned can actually be set.
@@ -255,8 +314,8 @@ public class ReleaseMetricsComputeService {
 			//
 			// Lifecycle gate: only *scannable* (ASSEMBLED+) releases wait. A CANCELLED /
 			// REJECTED / PENDING / DRAFT release with unscanned inputs has nothing to
-			// wait for — its BOM will never be scanned (rejectPendingReleases
-			// auto-cancels abandoned CI runs every tick, minting exactly these rows) —
+			// wait for -- its BOM will never be scanned (rejectPendingReleases
+			// auto-cancels abandoned CI runs every tick, minting exactly these rows) --
 			// so it settles (stamps lastScanned, leaves the finders) instead of
 			// squatting at the head of the finders' ASC order forever. If it's ever
 			// revived, the lifecycle transition bumps last_updated_date and it
@@ -269,7 +328,7 @@ public class ReleaseMetricsComputeService {
 			// No-BOM anchor: a release that has reached a scannable lifecycle
 			// (ASSEMBLED or beyond) but has no BOM artifacts attached anywhere
 			// (release-direct, SCE, or outbound deliverables) is trivially
-			// "scan complete" — there is nothing for DTrack to scan.
+			// "scan complete" -- there is nothing for DTrack to scan.
 			// Without this, releases with no scannable inputs would surface
 			// "Scan pending" indefinitely, and product releases that depend
 			// on them could never aggregate firstScanned under the
@@ -283,7 +342,7 @@ public class ReleaseMetricsComputeService {
 			// an unscanned-child signal with a synthetic anchor.
 			if (rmd.getFirstScanned() == null
 					&& !childrenIncomplete
-					&& !hasAnyBomArtifact[0]
+					&& !hasAnyBomArtifact
 					&& isScannableLifecycle(rd.getLifecycle())
 					&& rd.getCreatedDate() != null) {
 				rmd.setFirstScanned(rd.getCreatedDate());
@@ -294,7 +353,7 @@ public class ReleaseMetricsComputeService {
 			// value rather than reverting it to null. Without this, a release
 			// that's since transitioned to a non-scannable lifecycle (e.g.
 			// CANCELLED) loses its firstScanned on the next scheduler tick
-			// because isScannableLifecycle gates the no-BOM anchor — and the
+			// because isScannableLifecycle gates the no-BOM anchor -- and the
 			// V34 backfill is silently undone on rows it just fixed.
 			if (rmd.getFirstScanned() == null
 					&& originalMetrics != null
@@ -306,11 +365,11 @@ public class ReleaseMetricsComputeService {
 			// Backoff fence: an incomplete compute is waiting on an external event
 			// (DTrack scan, child release completion). Fence the release out of the
 			// metrics finders for an escalating interval so it stops consuming one of
-			// the per-tick finder slots every minute — without a fence, permanently
+			// the per-tick finder slots every minute -- without a fence, permanently
 			// waiting rows are the oldest entries in every finder's ASC order and
 			// starve younger rows behind them. The first attempts are free (grace
-			// window, fence of 0s) so the healthy path — DTrack returns within a few
-			// minutes — keeps today's per-minute retry latency. A complete compute
+			// window, fence of 0s) so the healthy path -- DTrack returns within a few
+			// minutes -- keeps today's per-minute retry latency. A complete compute
 			// drops the fence so any future wait starts fresh.
 			//
 			// Child nudge (TPF-68): once a product waiting on its children has climbed to the hourly cap,
@@ -330,7 +389,7 @@ public class ReleaseMetricsComputeService {
 			// containing products, not just the firstScanned transition. Products
 			// re-derive their aggregate from children only when a finder selects
 			// them, and a settled product (lastScanned stamped, row untouched) is
-			// outside every finder pool — so without this push a product's
+			// outside every finder pool -- so without this push a product's
 			// aggregate freezes at whatever its children looked like when it last
 			// computed, silently ignoring later child rescans that add or resolve
 			// findings. touchForMetricsRecompute bumps the product row back into
@@ -429,20 +488,32 @@ public class ReleaseMetricsComputeService {
 							hadFindings, nowFindings,
 							anyBomUnscanned[0], childrenIncomplete, scanIncomplete,
 							allReleaseArts.size(), artsResolved[0], artsFindings[0],
-							rollupFindings, hasAnyBomArtifact[0]);
+							rollupFindings, hasAnyBomArtifact);
 					logLossProvenance(r, rd, originalMetrics, allReleaseArts);
 				}
 				sharedReleaseService.saveReleaseMetrics(r, rmd);
 				markContainingProductsStale(rd);
 				return true;
-			} else if (!scanIncomplete) {
+			}
+			// TPF-129: the findings and firstScanned are as persisted; the BOM tally may still have moved
+			// (a marker landed on or left a BOM of an already anchored release, a BOM was attached or
+			// removed). Write it in place: no revision, no audit row, no product push (products do not
+			// read it). Absent on a legacy row is a backfill, not a change: stamped, but no trigger pass
+			// for it. originalMetrics is non-null here: rmd.equals(null) is false.
+			BomScanTally stored = originalMetrics.getBomScan();
+			boolean tallyChanged = stored != null && !tally.equals(stored);
+			if (stored == null || tallyChanged) {
+				repository.stampBomScanTally(r.getUuid(), Utils.OM.writeValueAsString(tally));
+			}
+			if (!scanIncomplete) {
 				// Complete + unchanged: settle by stamping lastScanned so the release
 				// leaves the BY_UPDATE finder. While the scan is still incomplete we skip
-				// the touch entirely — touchReleaseLastScanned bumps last_updated_date and
+				// the touch entirely -- touchReleaseLastScanned bumps last_updated_date and
 				// lastScanned together, which would evict the release before the pending
 				// child/BOM finishes and strand it in "Scan pending".
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
 			}
+			return tallyChanged;
 		}
 		return false;
 	}
@@ -468,7 +539,7 @@ public class ReleaseMetricsComputeService {
 	private static final Duration LOSS_GAUGE_INTERVAL = Duration.ofHours(1);
 
 	// Per-window budget for the PER-RELEASE loss pair ([METRICS-LOSS] + [METRICS-LOSS-PROVENANCE]).
-	// Without it the pair is bounded only by the compute batch -- METRICS_COMPUTE_BATCH_LIMIT per
+	// Without it the pair is bounded only by the compute batch -- relizaprops.metricsComputeBatch (default 102) per
 	// per-minute tick, i.e. thousands of releases an hour -- so a mass event (a Dependency-Track outage,
 	// a sweep returning empty) would flood the ONLY alerting channel during exactly the incident the
 	// probe exists to diagnose. Past the budget the releases are still counted and reported in aggregate
@@ -888,7 +959,7 @@ public class ReleaseMetricsComputeService {
 				// Settle only releases whose initial scan has completed. Touching a
 				// still-scan-pending release stamps lastScanned + last_updated_date
 				// together, which evicts it from the BY_UPDATE finder before its BOM /
-				// children finish — and the rescan path (which owns firstScanned)
+				// children finish -- and the rescan path (which owns firstScanned)
 				// would never see it again. This non-rescan path runs on analysis
 				// (triage) updates, which can land while the initial scan is pending.
 				sharedReleaseService.touchReleaseLastScanned(r.getUuid());
@@ -910,7 +981,7 @@ public class ReleaseMetricsComputeService {
 	 * rebuild the list via {@link VulnerabilityDto#withKnownExploited}.
 	 *
 	 * <p>Guard: if no finding carries a CVE-shaped candidate id (e.g. a release
-	 * with only GHSA/OSV findings), the probe is skipped entirely — every
+	 * with only GHSA/OSV findings), the probe is skipped entirely -- every
 	 * finding is stamped {@code FALSE} without a DB call.
 	 */
 	private void stampKnownExploited(UUID orgUuid, ReleaseMetricsDto rmd) {
@@ -1022,7 +1093,7 @@ public class ReleaseMetricsComputeService {
 
 	// Escalating fence for incomplete metrics computes; mirrors the SBOM
 	// reconcile backoff in SbomComponentService. The first GRACE attempts are
-	// free (0s fence — per-minute retries) so the healthy path, where DTrack
+	// free (0s fence -- per-minute retries) so the healthy path, where DTrack
 	// returns within a few minutes, keeps today's latency. After the grace
 	// window the fence doubles from BASE up to MAX, so a release waiting on
 	// something that never arrives retries forever without occupying finder
@@ -1032,14 +1103,20 @@ public class ReleaseMetricsComputeService {
 	private static final int METRICS_BACKOFF_MAX_SECONDS = 3600;
 
 	/**
-	 * Next fence interval given the release's current flow_control. Package
-	 * visible so the poison-pill catch in
-	 * {@code ReleaseService.computeMetricsForReleaseList} escalates on the
-	 * same schedule.
+	 * Next fence interval given the release's current flow_control.
 	 */
 	static int nextMetricsComputeBackoffSeconds(FlowControl fc) {
-		int priorAttempts = (fc != null && fc.metricsComputeFailureCount() != null)
-				? fc.metricsComputeFailureCount() : 0;
+		return nextMetricsComputeBackoffSecondsAfter(null != fc ? fc.metricsComputeFailureCount() : null);
+	}
+
+	/**
+	 * The same schedule from the failure count alone ({@code flow_control.metricsComputeFailureCount},
+	 * null when unset). Package visible so the poison-pill catch in
+	 * {@code ReleaseService.computeMetricsForReleaseList}, which reads only that key of the
+	 * flow_control, escalates on the same schedule.
+	 */
+	static int nextMetricsComputeBackoffSecondsAfter(Integer metricsComputeFailureCount) {
+		int priorAttempts = null != metricsComputeFailureCount ? metricsComputeFailureCount : 0;
 		if (priorAttempts < METRICS_BACKOFF_GRACE_ATTEMPTS) return 0;
 		int escalation = priorAttempts - METRICS_BACKOFF_GRACE_ATTEMPTS;
 		return Math.min(METRICS_BACKOFF_BASE_SECONDS << Math.min(escalation, 7),
@@ -1065,7 +1142,11 @@ public class ReleaseMetricsComputeService {
 	 * pushing this product, so the cost is one guarded touch per such child per hour. One query keeps
 	 * the candidates that are settled and unfenced, and each is touched back into the BY_UPDATE pool
 	 * with the statement a manual re-queue uses. The {@link #markContainingProductsStale} idiom in the
-	 * other direction: uuid order, inside the compute transaction, best-effort.
+	 * other direction: uuid order, inside the compute transaction, best-effort. Unlike the other
+	 * metrics pushes, the candidates are deliberately NOT filtered by lifecycle or archived state
+	 * (VariableQueries.METRICS_PUSH_ELIGIBLE): those pushes skip such a child, so this nudge is the
+	 * only way a scanned BOM on, say, a CANCELLED child of an active product ever reaches that
+	 * product, and the cost stays one guarded touch per stuck child per hour.
 	 */
 	private void nudgeSettledUnscannedChildren(ReleaseData product, List<ReleaseData> scannedChildren) {
 		try {
@@ -1094,20 +1175,27 @@ public class ReleaseMetricsComputeService {
 	 * which (a) fired only on the firstScanned transition and (b) did not
 	 * touch {@code last_updated_date}, so a settled product stayed outside
 	 * every finder and its aggregate went permanently stale. Best-effort: a
-	 * failure here only delays the parent, never strands it — the next child
+	 * failure here only delays the parent, never strands it -- the next child
 	 * change retries.
 	 */
 	private void markContainingProductsStale(ReleaseData rd) {
 		try {
-			List<Release> products = repository.findProductsByRelease(
-					rd.getOrg().toString(), rd.getUuid().toString());
+			// Uuids only: the touch needs nothing else, and loading the product rows (the
+			// biggest metrics there are) into the compute transaction kept them alive until it
+			// committed. Products that never need a refresh (PENDING, CANCELLED or REJECTED,
+			// or on an archived branch or of an archived component) are not selected: one
+			// product with a release per CI build otherwise re-queues its whole history.
+			// The skip test's cost estimate would otherwise pull the read over the JIT threshold.
+			repository.disableJitForTransaction();
+			List<UUID> products = new ArrayList<>(repository.findProductUuidsToRequeueByRelease(
+					rd.getOrg().toString(), rd.getUuid().toString()));
 			// UUID order: these touches run inside the caller's open compute
 			// transaction, and the parallel metrics workers can touch
 			// overlapping product sets concurrently -- a consistent lock
 			// acquisition order across workers makes deadlock impossible.
-			products.sort(java.util.Comparator.comparing(Release::getUuid));
-			for (Release p : products) {
-				repository.touchForMetricsRecompute(p.getUuid());
+			Collections.sort(products);
+			for (UUID p : products) {
+				repository.touchForMetricsRecompute(p);
 			}
 		} catch (Exception e) {
 			log.error("Failed to mark containing products stale for release {}",
@@ -1123,7 +1211,7 @@ public class ReleaseMetricsComputeService {
 	 * A child that does not resolve in the product's organization (another org's release on a
 	 * legacy row, or a deleted one; task TPF-6) is left out of the rollup and named in one WARN,
 	 * instead of throwing out of the metrics pass on every attempt. The lookup is the same
-	 * org-scoped read as before (own org or the external-components org), so no row of another
+	 * org-scoped read as before (own org only), so no row of another
 	 * organization is read.
 	 */
 	private List<ReleaseData> scannedChildrenOf(ReleaseData rd) {
@@ -1195,7 +1283,7 @@ public class ReleaseMetricsComputeService {
 		// which is wrong for the rollup contract. Override with all-or-nothing.
 		//
 		// Plus a lifecycle gate: a product release that hasn't reached
-		// scannable lifecycle (PENDING / DRAFT) is still being assembled —
+		// scannable lifecycle (PENDING / DRAFT) is still being assembled --
 		// surfacing firstScanned while the release is in flight would fire
 		// scan-complete triggers (PR_COMMENT etc.) before the release is
 		// officially formed. Until the product release itself transitions to

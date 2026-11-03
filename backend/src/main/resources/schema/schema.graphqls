@@ -159,9 +159,9 @@ type Component {
 	"""
 	Synthetic component-level lifecycle derived from the lifecycles of the
 	component's releases:
-	- if every release lifecycle is ≤ GENERAL_AVAILABILITY, returns the
+	- if every release lifecycle is <= GENERAL_AVAILABILITY, returns the
 	  most-advanced of those (i.e. max-pre-or-at-GA);
-	- otherwise returns the smallest lifecycle ≥ GENERAL_AVAILABILITY
+	- otherwise returns the smallest lifecycle >= GENERAL_AVAILABILITY
 	  observed across releases (i.e. min-post-GA).
 	Null when the component has no releases.
 	"""
@@ -199,7 +199,7 @@ type Component {
 	"""Locks raised on this component, active and recently released."""
 	locks: [Lock!]
 	"""
-	For a BOARD_DOCUMENT component, the board whose document series it is (board-documents.md §5); null for
+	For a BOARD_DOCUMENT component, the board whose document series it is (board-documents.md section 5); null for
 	every other kind and for a document no board owns. The board page checks the board's permissions.
 	"""
 	agentBoard: AgentBoardRef
@@ -895,7 +895,7 @@ type VcsRepository {
 	createdDate: DateTime
 	"""
 	Pull-request-level output triggers for this VCS repository. Currently
-	constrained to ≤1 entry of type EXTERNAL_VALIDATION -- used by the PR
+	constrained to <=1 entry of type EXTERNAL_VALIDATION -- used by the PR
 	aggregator to dispatch the aggregated check-run verdict to the SCM.
 	"""
 	outputTriggers: [ReleaseOutputEvent]
@@ -995,7 +995,7 @@ type PullRequest {
 	currentValidationState: ValidationState
 	"""
 	Distinct ROOT agents that contributed to this PR -- walks
-	`commits → SCE.agent → resolveRoot`. One PR can be attributed to
+	`commits -> SCE.agent -> resolveRoot`. One PR can be attributed to
 	multiple agents (different commits from different sessions / keys).
 	Empty when no commits carry agentic attribution. Order is by first
 	appearance in `commits`.
@@ -1503,6 +1503,27 @@ type DependencyTrackMetrics {
 	dtrackFetchSkipUntil: String
 	lastScanned: DateTime
 	firstScanned: DateTime
+	"""
+	Set when the synthetic Dependency-Track pipeline found nothing to scan in this BOM artifact:
+	no component carries a pkg: or cpe: purl, only the BOM's own root is listed, or every
+	dependency is enrichment-terminal. Null on every scannable artifact and on release metrics.
+	Takes precedence over firstScanned/lastScanned for the scan state shown.
+	"""
+	notScannable: ArtifactNotScannable
+	"""
+	TPF-129: the tally of this release's gathered BOM artifacts as the last metrics compute counted
+	them, persisted at metrics.bomScan: how many are scan inputs (scannable, scanned or still pending),
+	how many carry the not-scannable marker, and the distinct marker reasons. The same record the
+	release policy inputs release.bomScanState, release.scannableBoms, release.notScannableBoms and
+	release.notScannableReasons read. Served wherever a release's stored metrics are served: on
+	Release.metrics, and on Query.findingsPerDayForBranch, whose answer is the stored metrics of the
+	branch's latest assembled release up to the date. Null on artifact metrics, on the analytics
+	metrics that are merged or rebuilt from several releases or from stored counts (findingsPerDay,
+	findingsPerDayForComponent, findingsPerDayByPerspective, computeAnalyticsMetricsForDate,
+	MostVulnerableComponent.metrics), on a release that is not scanned (NOT_APPLICABLE metrics) and on
+	a release never computed since the tally landed (the next compute backfills it in place).
+	"""
+	bomScan: ReleaseBomScan
 	"Open CRITICAL vulnerabilities plus open CRITICAL weaknesses"
 	critical: Int
 	"Open HIGH vulnerabilities plus open HIGH weaknesses"
@@ -1549,6 +1570,45 @@ type DependencyTrackMetrics {
 	"Read-time, per component of vulnerabilityDetails: the fix versions its findings' advisories name, and which findings each one fixes; never stored. Components with none are left out. Null when these metrics were not reached through a Release or an Artifact, or a vulnerability record read failed"
 	fixTargets: [ComponentFixTargets!]
 }
+
+"Why a BOM artifact is not scannable, with the gate classification it was derived from (TPF-125)"
+type ArtifactNotScannable {
+	reason: NoMatchableComponentsReason!
+	"The fan-out pass that derived it"
+	at: DateTime
+	"Component rows of the canonical, and how the gate classified them"
+	components: Int!
+	root: Int!
+	terminal: Int!
+	unmatchable: Int!
+}
+
+"The persisted BOM scan tally of a release (TPF-129), as Release.metrics.bomScan serves it"
+type ReleaseBomScan {
+	"The partition of the two counts: both zero NO_BOMS, no marked BOM ALL_SCANNABLE, no scannable BOM ALL_NOT_SCANNABLE, else SOME_NOT_SCANNABLE"
+	state: BomScanState!
+	"Gathered BOM artifacts that are scan inputs: BOM-typed and not marked not scannable, scanned or still pending alike"
+	scannableBoms: Int!
+	"Gathered BOM artifacts carrying metrics.notScannable"
+	notScannableBoms: Int!
+	"The distinct reasons of those markers, in NoMatchableComponentsReason order; empty when none"
+	reasons: [NoMatchableComponentsReason!]!
+}
+
+"How a release's gathered BOMs stand with the synthetic scan pipeline (TPF-129; the values of release.bomScanState)"
+enum BomScanState {
+	"No BOM artifact gathered at all (the no-BOM anchor's own case)"
+	NO_BOMS
+	"Every gathered BOM is a scan input: scanned, or pending a scan that will come"
+	ALL_SCANNABLE
+	"Some gathered BOMs carry the not-scannable marker, at least one does not"
+	SOME_NOT_SCANNABLE
+	"Every gathered BOM carries the marker: the release anchored with nothing to scan"
+	ALL_NOT_SCANNABLE
+}
+
+"Why a mapped BOM has no gate-matchable component (shared by Artifact.metrics.notScannable and artifactScanStatus)"
+enum NoMatchableComponentsReason { NO_COMPONENTS ONLY_ROOT ALL_TERMINAL NO_PURL_OR_CPE }
 
 # The versions a component could move to, among those the advisories of its
 # findings name as fixes. A version fixes a finding when it is out of the
@@ -2314,12 +2374,48 @@ type TeaWidenedComponent {
 	afterSourceObject: ID
 }
 
-"""Where the organization's TEA API lives, and the .well-known/tea document it hosts on its own domain."""
+"""Where the organization's TEA API lives (extended by TPF-142: the host, the mode, the effective base)."""
 type TeaOrgDiscovery {
 	org: ID!
 	teaUuid: ID
+	"""The effective API base: <baseuri>/tea/<teaUuid> under LEGACY_UUID, https://<assignedHost>/tea under DOMAIN, null under NONE."""
 	apiBase: String
+	"""The .well-known/tea document naming apiBase; null under NONE."""
 	wellKnownDocument: String
+	"""The host a global administrator assigned to this organization; null when none, whatever the mode."""
+	assignedHost: String
+	teaServing: TeaServing!
+	teaWellKnownHosting: TeaWellKnownHosting!
+	"""https://<assignedHost>/.well-known/tea while the instance hosts it (DOMAIN and DOMAIN); else null."""
+	wellKnownUrl: String
+}
+
+"""How an organization's TEA surface is served (TPF-142). NONE: not served on either shape."""
+enum TeaServing {
+	NONE
+	LEGACY_UUID
+	DOMAIN
+}
+
+"""Where the instance hosts the organization's /.well-known/tea: nowhere (the organization hosts it on its TEI domain) or on its assigned domain."""
+enum TeaWellKnownHosting {
+	NONE
+	DOMAIN
+}
+
+"""One assignable host of the instance (global administrators only)."""
+type TeaHostAssignment {
+	"""The host, lowercase, no port."""
+	host: String!
+	"""The organization the host is assigned to; null while unassigned."""
+	org: ID
+	orgName: String
+	"""True for the instance's own host (relizaprops.baseuri), which is assignable without being in the allow-list."""
+	isBaseuriHost: Boolean!
+	"""False when the host is assigned but no longer in relizaprops.teaCustomDomains: it is not served until listed again, and may be unassigned."""
+	inAllowList: Boolean!
+	"""The assigned organization's serving mode; null while unassigned."""
+	teaServing: TeaServing
 }
 
 """What a TEA publication is now: PUBLISHED is served on TEA, HIDDEN is not; nothing is ever deleted."""
@@ -2660,7 +2756,9 @@ type ReleaseInputEvent {
 	with {@link #outputEventsOnFalse} populated because the false
 	branch would otherwise fire on releases with missing data --
 	canonical example: gate metrics-based rules on
-	{@code release.firstScanned == true}.
+	{@code release.firstScanned == true}. A release with no scannable
+	BOM also reads firstScanned true (it is anchored as having nothing
+	to scan); {@code release.scannableBoms >= 1} requires one.
 	"""
 	preconditionCelExpression: String
 }
@@ -3733,7 +3831,7 @@ enum SpecificationType {
 	"""
 	BOARD_QUESTIONS
 	"""
-	What the element checks found on one document of one task (gaps §2.A). Task-scoped and always
+	What the element checks found on one document of one task (gaps section 2.A). Task-scoped and always
 	index-only: the board cuts it, no agent publishes it, and it has no path.
 	"""
 	BOARD_ELEMENT_CHECK_REPORT
@@ -4243,7 +4341,7 @@ open ids, which lifting any other hold must never do.
 """
 enum AgentTaskHoldKind { MANUAL HUMAN_GATE QUESTION }
 
-"""The routing stop that placed a hold (board-mechanics §6.2)."""
+"""The routing stop that placed a hold (board-mechanics section 6.2)."""
 enum AgentTaskHoldStop { CYCLE_CAP NO_PROGRESS BUDGET }
 
 type AgentTaskHold {
@@ -4450,7 +4548,7 @@ type BoardSpec {
 	"""How the board names its documents; absent means after the board (board-documents.md D2)."""
 	documents: BoardDocumentsSpec
 	"""
-	Perspectives, product: marking a PRODUCT component (board-permissions.md §3): by name when exactly
+	Perspectives, product: marking a PRODUCT component (board-permissions.md section 3): by name when exactly
 	one of the organization carries it, else by uuid.
 	"""
 	perspectives: [String]
@@ -4622,11 +4720,11 @@ input BoardSpecInput {
 	documentPaths: Object
 	"""
 	Element id families over the defaults; declared null restores the defaults, absent leaves them. An entry is a
-	family name, or {family, definedIn} (grammar 1.2, elements.md §1.1): definedIn lists the specification types that
+	family name, or {family, definedIn} (grammar 1.2, elements.md section 1.1): definedIn lists the specification types that
 	define the prefix's ids, in order of precedence; absent takes the family's default, [] means references only.
 	"""
 	elementFamilies: Object
-	"""The element checks (elements.md §7); declared null restores the defaults, absent leaves them."""
+	"""The element checks (elements.md section 7); declared null restores the defaults, absent leaves them."""
 	elementChecks: ElementCheckPolicyInput
 	"""How a task proves it was delivered; declared null restores the default, PR_ROWS."""
 	delivery: AgentDeliveryPolicyInput
@@ -4705,6 +4803,8 @@ input BoardRoleSpecInput {
 	requireDistinctAgent: Boolean
 	"""Operator-only. The role reads its task without earlier hops' notes, sessions and agents (task 0192a587)."""
 	blindReview: Boolean
+	"""Operator-only: changed only from a person's apply (the UI, or a personal key). Before this role is queued on a task's design the task stops at the coordinator (task SPLIT-5). Absent: unchanged; null: false. Not on a preset."""
+	coordinatorCheckpoint: Boolean
 	"""Absent: true -- declaring a role is what reactivates it."""
 	active: Boolean
 	kind: AgentRoleKind
@@ -4763,6 +4863,7 @@ type BoardRoleSpec {
 	wipLimit: Int
 	requireDistinctAgent: Boolean
 	blindReview: Boolean
+	coordinatorCheckpoint: Boolean
 	active: Boolean
 	kind: AgentRoleKind
 	necessity: AgentRoleNecessity
@@ -4841,18 +4942,18 @@ type AgentBoard {
 	"""Every prefix the board has held, oldest first; tasks keep the key they were given."""
 	taskPrefixHistory: [String]
 	"""
-	The board's task groups (task-groups-and-tags.md §2, task RD2-29), in display order: each with its
+	The board's task groups (task-groups-and-tags.md section 2, task RD2-29), in display order: each with its
 	progress over its tasks and what they spent. A task belongs to one group or none; a group that
 	depends on another holds its tasks back from offers until that group has nothing open.
 	"""
 	groups: [TaskGroup]
 	"""
-	The perspectives the board hangs off (board-permissions.md §3): real perspectives or PRODUCT
+	The perspectives the board hangs off (board-permissions.md section 3): real perspectives or PRODUCT
 	components used as perspectives. A PERSPECTIVE grant on any of them covers the board.
 	"""
 	perspectives: [ID]
 	"""
-	What the caller may do on this board (board-permissions.md §4): the subset of BOARD_READ,
+	What the caller may do on this board (board-permissions.md section 4): the subset of BOARD_READ,
 	BOARD_AGENT, BOARD_WRITE, CONFIGURATION_READ and CONFIGURATION_WRITE held on it, for the person
 	signed in or the key calling. The UI shows only the controls these allow.
 	"""
@@ -4881,14 +4982,14 @@ type AgentBoard {
 	definedIn} for a prefix with its own definedIn (grammar 1.2); null when it uses the defaults alone.
 	"""
 	elementFamilies: Object
-	"""The defaults with this board's entries over them, prefix to family name: what the CLI parses documents against (gaps §2.A)."""
+	"""The defaults with this board's entries over them, prefix to family name: what the CLI parses documents against (gaps section 2.A)."""
 	effectiveElementFamilies: Object
 	"""
 	Every effective family prefix with the specification types that define its ids, in order of precedence
-	(grammar 1.2, elements.md §1.1): the board's own list where it sets one, else the family's default.
+	(grammar 1.2, elements.md section 1.1): the board's own list where it sets one, else the family's default.
 	"""
 	effectiveElementFamilyEntries: [ElementFamilyEntry!]
-	"""The element check policy as this board declared it; null when it uses the defaults (elements.md §7)."""
+	"""The element check policy as this board declared it; null when it uses the defaults (elements.md section 7)."""
 	elementCheckPolicy: ElementCheckPolicy
 	"""The policy in force: the declared one, or the defaults (report only, test and requirement orphans)."""
 	effectiveElementCheckPolicy: ElementCheckPolicy
@@ -4931,7 +5032,7 @@ type AgentBoard {
 	softAlertPercent: Int
 	"""
 	The board's average coordinator share per coordinator-caused transition, in
-	micros (board-mechanics §5.3): coordinatorSharesMicros / coordinatorTransitions,
+	micros (board-mechanics section 5.3): coordinatorSharesMicros / coordinatorTransitions,
 	0 before any. Added to every projected round, and named in a refusal.
 	"""
 	coordinatorOverheadMicros: Long
@@ -5097,6 +5198,8 @@ type AgentTaskRoleConfig {
 	requireDistinctAgent: Boolean
 	"""A session assigned in this role reads its task without earlier hops' note, session, agent and return description; documents are untouched."""
 	blindReview: Boolean
+	"""Before this role is queued on a task's design the task stops at the coordinator, which splits it or sends it on (task SPLIT-5). At most one active role per board."""
+	coordinatorCheckpoint: Boolean!
 	active: Boolean
 	"""Capabilities an assignee of this role must hold (declared, unverified in v1)."""
 	requiredCapabilities: [AgentCapability]
@@ -5465,6 +5568,30 @@ type AgentTaskUnassignment {
 	usage: HopUsage
 }
 
+"""Where a task's design checkpoint stands (task SPLIT-5): waiting on the coordinator, sent on, or split."""
+enum AgentTaskDesignCheckpointState { PENDING SENT_ON SPLIT }
+
+"""
+The stop before a role that carries coordinatorCheckpoint (task SPLIT-5): the task's design was reviewed and the
+coordinator reads it before that role is queued. Rewritten each time the checkpoint is reached; only the server writes it.
+"""
+type AgentTaskDesignCheckpoint {
+	"""When routing first stopped the task here; kept while the record stays PENDING."""
+	reachedAt: DateTime!
+	"""The role of the task's last hop when it was reached."""
+	afterRole: String
+	"""The flagged role the checkpoint precedes."""
+	beforeRole: String!
+	"""The design rounds the checkpoint is about, in role order: what the ALERT names and what a split pins on every child."""
+	design: [ID!]!
+	state: AgentTaskDesignCheckpointState!
+	"""Who sent it on or split it; null while PENDING."""
+	settledBy: AgentActor
+	settledAt: DateTime
+	"""Why it was settled, e.g. "authorized for coder" or "2 children: SPLIT-7, SPLIT-8"."""
+	note: String
+}
+
 type AgentTaskReturn {
 	role: String
 	"""The role config row `role` named at the time. Null on hops recorded before this field existed."""
@@ -5505,9 +5632,9 @@ type DocumentRef {
 	round: Int
 	"""The review item index for BOARD_REVIEW_ITEMS and BOARD_TEST_REPORT; absent otherwise."""
 	reviewItems: BoardReviewItemIndex
-	"""The element index of a prose document, as the CLI parsed it and the server checked it (gaps §2.A); absent when none was published."""
+	"""The element index of a prose document, as the CLI parsed it and the server checked it (gaps section 2.A); absent when none was published."""
 	elements: ElementIndex
-	"""On a BOARD_ELEMENT_CHECK_REPORT round: what the element checks found (elements.md §7)."""
+	"""On a BOARD_ELEMENT_CHECK_REPORT round: what the element checks found (elements.md section 7)."""
 	elementChecks: ElementCheckReport
 	"""
 	A round a role published on a task it did not hold (task e97fde56): assembled at publish, never
@@ -5525,7 +5652,7 @@ type DocumentRef {
 }
 
 """
-What the named element checks found on one document (elements.md §7). Deterministic: the same
+What the named element checks found on one document (elements.md section 7). Deterministic: the same
 scope gives the same report, and the digest is its identity.
 """
 type ElementCheckReport {
@@ -5582,7 +5709,7 @@ type ElementCheckOffence {
 	message: String
 }
 
-"""What a board does with the element checks (elements.md §7)."""
+"""What a board does with the element checks (elements.md section 7)."""
 type ElementCheckPolicy {
 	"""Checks whose failure refuses the sign-off that hands the document over; empty means report only."""
 	blocking: [String]
@@ -5590,7 +5717,7 @@ type ElementCheckPolicy {
 	mandatoryFields: Object
 	"""Families that must take part in verification: test, requirement."""
 	orphans: [String]
-	"""The board's coverage gates by name, each {select, require, description}: the check coverage.<name> (elements.md §7.5)."""
+	"""The board's coverage gates by name, each {select, require, description}: the check coverage.<name> (elements.md section 7.5)."""
 	coverage: Object
 }
 
@@ -5857,7 +5984,7 @@ type BoardReviewItemLocation {
 	line: Int
 	ref: String
 	"""
-	The id of the element the review item is about (elements.md §8). With it, path and line are filled
+	The id of the element the review item is about (elements.md section 8). With it, path and line are filled
 	in from the index when the author left them out; the rework point is about.release + element.
 	"""
 	element: String
@@ -5883,7 +6010,7 @@ type AgentTask {
 	number: Int
 	"""<prefix>-<number>, e.g. RD-42: how people and agents name the task. Immutable; a prefix rename keeps it."""
 	key: String
-	"""What the task is, beyond its one-line title (board-documents.md §4.5); set at registration, null on older tasks."""
+	"""What the task is, beyond its one-line title (board-documents.md section 4.5); set at registration, null on older tasks."""
 	description: String
 	"""What this task may spend, in USD micros; null means only the board's limit applies."""
 	budgetMicros: Long
@@ -5907,12 +6034,12 @@ type AgentTask {
 	budget or a PR link. The cursor of agentTasksProgrammatic(changedSince:) (task 9540d3b6).
 	"""
 	updatedAt: DateTime
-	"""The elements of the task's documents: the union over its latest release per specification (gaps §2.A)."""
+	"""The elements of the task's documents: the union over its latest release per specification (gaps section 2.A)."""
 	elements: [AgentTaskElement]
-	"""The newest element check report for each of the task's element-bearing documents (elements.md §7)."""
+	"""The newest element check report for each of the task's element-bearing documents (elements.md section 7)."""
 	elementChecks: [ElementCheckReport]
 	"""
-	What depends on an element, transitively, nearest first (elements.md §8): over the task's
+	What depends on an element, transitively, nearest first (elements.md section 8): over the task's
 	documents, its bound inputs and the latest release of each document series under the board's
 	target. depth defaults to 8; truncated says the bound was hit.
 	"""
@@ -5985,6 +6112,8 @@ type AgentTask {
 	stale: [BoardAgentStaleMark]
 	signOffs: [AgentTaskSignOff]
 	returns: [AgentTaskReturn]
+	"""The design checkpoint the task last reached (task SPLIT-5); null when it never reached one."""
+	designCheckpoint: AgentTaskDesignCheckpoint
 	"""Assignments a person ended by unassigning the task, oldest first (task RD3-4)."""
 	unassignments: [AgentTaskUnassignment]
 	parentTask: ID
@@ -6120,7 +6249,7 @@ type AgentBoardRef {
 	readable: Boolean
 }
 
-"""One of a board's document series, as the board page lists it (board-documents.md §5)."""
+"""One of a board's document series, as the board page lists it (board-documents.md section 5)."""
 type AgentBoardDocumentSeries {
 	specification: SpecificationType!
 	component: AgentBoardDocumentSeriesComponent!
@@ -6216,7 +6345,7 @@ input AgentBoardInput {
 	restores the defaults, absent leaves them.
 	"""
 	elementFamilies: Object
-	"""The element check policy; null restores the defaults, absent leaves it (elements.md §7)."""
+	"""The element check policy; null restores the defaults, absent leaves it (elements.md section 7)."""
 	elementCheckPolicy: ElementCheckPolicyInput
 	"""How a task proves it was delivered (task 18c5c293); null restores PR_ROWS, absent leaves it."""
 	deliveryPolicy: AgentDeliveryPolicyInput
@@ -6291,6 +6420,8 @@ input AgentTaskRoleConfigInput {
 	requireDistinctAgent: Boolean
 	"""Operator-only; rejected on the coordinator-seat path."""
 	blindReview: Boolean
+	"""Operator-only; rejected on the coordinator-seat path. Before this role is queued on a task's design the task stops at the coordinator (task SPLIT-5). Null leaves it; at most one active role per board."""
+	coordinatorCheckpoint: Boolean
 	active: Boolean
 	requiredCapabilities: [AgentCapability!]
 	"""Operator-only; rejected on the coordinator-seat path."""
@@ -6426,9 +6557,9 @@ SAAS-only AI-Agent policy. CEL expression evaluates against the
 session context -- {@code session.*}, {@code agent.*},
 {@code model.*}. **Match-to-block semantics** (same as component-level
 CEL gates): the CEL describes the *failure* condition. Returns true
-when the failure matches → the verdict on the session goes to FAILED
+when the failure matches -> the verdict on the session goes to FAILED
 / WARNING / PENDING per {@link #severity} + {@link #kind}. Returns
-false → PASSED.
+false -> PASSED.
 """
 type AgentPolicy {
 	uuid: ID
@@ -6723,13 +6854,13 @@ type Session {
 	policyEvents: [PolicyEvent]
 	"""
 	Releases produced from this session's commits. Computed at read
-	time by walking `commits → Release.sourceCodeEntry` (and
+	time by walking `commits -> Release.sourceCodeEntry` (and
 	`commits[]` for multi-commit releases). Distinct on release uuid.
 	"""
 	releases: [Release]
 	"""
 	Pull requests touched by this session's commits. Computed at read
-	time by walking `commits → PullRequest.commits[]`. Distinct on
+	time by walking `commits -> PullRequest.commits[]`. Distinct on
 	PR uuid.
 	"""
 	pullRequests: [PullRequest]
@@ -6952,7 +7083,7 @@ type ModelOntology {
 
 # ============================================================
 # Signature verification -- commit-level signatures (v1: SSH, GPG).
-# Image / SBOM / X.509 land in v2. See backend/ai-plans/agentic/README §11.4.
+# Image / SBOM / X.509 land in v2. See backend/ai-plans/agentic/README section 11.4.
 # ============================================================
 
 
@@ -7816,7 +7947,7 @@ type BoardSessionSpend {
 	costMicros: Long
 }
 
-"""A batch of a board's tasks (task-groups-and-tags.md §2.1, task RD2-29)."""
+"""A batch of a board's tasks (task-groups-and-tags.md section 2.1, task RD2-29)."""
 type TaskGroup {
 	uuid: ID
 	"""The handle people type: lower case, 2 to 24 characters, unique on the board; fixed once a task names it."""

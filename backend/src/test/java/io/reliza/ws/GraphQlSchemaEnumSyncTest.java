@@ -155,6 +155,7 @@ class GraphQlSchemaEnumSyncTest {
 			entry("AgentRoleNecessity", AgentTaskRoleConfigData.RoleNecessity.class),
 			entry("AgentSignOffOutcome", AgentTaskData.SignOffOutcome.class),
 			entry("AgentStatusTrigger", AgentTaskData.StatusTrigger.class),
+			entry("AgentTaskDesignCheckpointState", AgentTaskData.DesignCheckpointState.class),
 			entry("AgentTaskGroupStatus", AgentBoardData.GroupStatus.class),
 			entry("AgentTaskHoldKind", AgentTaskData.HoldKind.class),
 			entry("AgentTaskHoldLevel", AgentTaskData.HoldLevel.class),

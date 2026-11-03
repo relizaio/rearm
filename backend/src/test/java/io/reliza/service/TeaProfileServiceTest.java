@@ -41,6 +41,8 @@ import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.RelizaObject;
 import io.reliza.model.TeaProfile;
@@ -274,6 +276,17 @@ class TeaProfileServiceTest extends TeaProfileServiceTestBase {
 
 		UUID tea = UUID.randomUUID();
 		od.setTeaUuid(tea);
+		// TPF-142 (F-6): minted but no serving mode stored: NONE, dark, no base and no document
+		TeaProfileService.TeaOrgDiscovery dark = service.orgDiscovery(org);
+		assertEquals(tea, dark.teaUuid());
+		assertEquals(TeaServing.NONE, dark.teaServing());
+		assertEquals(TeaWellKnownHosting.NONE, dark.teaWellKnownHosting());
+		assertNull(dark.apiBase());
+		assertNull(dark.wellKnownDocument());
+		assertNull(dark.wellKnownUrl());
+		assertNull(dark.assignedHost());
+
+		od.setTeaServing(TeaServing.LEGACY_UUID);
 		TeaProfileService.TeaOrgDiscovery after = service.orgDiscovery(org);
 		String base = "https://rearm.example.com/tea/" + tea;
 		assertEquals(tea, after.teaUuid());

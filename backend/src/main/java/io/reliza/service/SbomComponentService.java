@@ -34,6 +34,7 @@ import org.springframework.orm.ObjectOptimisticLockingFailureException;
 import org.springframework.transaction.annotation.Propagation;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.util.CollectionUtils;
 
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.OptimisticLockException;
@@ -51,6 +52,7 @@ import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactSbomComponent;
+import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.ComponentIdentity;
 import io.reliza.model.DeliverableData;
@@ -60,6 +62,8 @@ import io.reliza.model.Release;
 import io.reliza.model.ReleaseArtifactIndex;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentData;
@@ -490,7 +494,13 @@ private static int currentReconcileFailureCount(Release r) {
 			// proxy. The local ParsedBom + aggregation Maps inside the call are
 			// fully GC-eligible the moment that transaction commits — they don't
 			// have to wait for the whole release reconcile to finish.
-			if (!self.parseAndUpsertArtifactSbomComponents(ad, canonicalArtifactUuid, orgUuid)) {
+			if (self.parseAndUpsertArtifactSbomComponents(ad, canonicalArtifactUuid, orgUuid)) {
+				// TPF-114 W4: the map row was committed before these component rows,
+				// so a fan-out pass in between may have stamped the canonical against
+				// an empty inventory. Requeue it after the parse committed (on a
+				// still-pending row this only writes fanOutRequeuedAt).
+				requeueFanOutForParsedCanonical(orgUuid, canonicalArtifactUuid);
+			} else {
 				// rebom couldn't serve the parsed BOM this pass (already
 				// warn-logged inside) — count as a skip so the pass retries.
 				skipped++;
@@ -503,6 +513,16 @@ private static int currentReconcileFailureCount(Release r) {
 		// stamping over skips would make the gap permanent.
 		self.rebuildReleaseArtifactIndex(releaseUuid, orgUuid, canonicalArtifactSet, skipped == 0);
 		return skipped;
+	}
+
+	/** TPF-114 W4, see the call site; a failure is logged and does not fail the reconcile. */
+	private void requeueFanOutForParsedCanonical(UUID orgUuid, UUID canonicalArtifactUuid) {
+		try {
+			artifactCanonicalMapRepository.requeueFanOutForCanonical(orgUuid, canonicalArtifactUuid);
+		} catch (Exception e) {
+			log.error("Fan-out requeue after the parse of canonical artifact {} failed (org {})",
+					canonicalArtifactUuid, orgUuid, e);
+		}
 	}
 
 	/**
@@ -666,12 +686,19 @@ private static int currentReconcileFailureCount(Release r) {
 				// (candidate window, buckets, fan-out gate, stall counts) -- see
 				// V75 / SbomComponentFlowControl.
 				int terminal = 0;
+				List<UUID> markedUuids = new ArrayList<>();
 				for (SbomComponent cand : candidatesByBom.getOrDefault(bomId, List.of())) {
 					SbomComponent fresh = sbomComponentRepository.findById(cand.getUuid()).orElse(null);
 					if (fresh == null || fresh.getEnrichedAt() != null || fresh.isEnrichmentTerminal()) continue;
-					terminal += sbomComponentRepository.markEnrichmentTerminal(
+					int marked = sbomComponentRepository.markEnrichmentTerminal(
 							fresh.getUuid(), "OWN_BOM_PULLED_UNMATCHED");
+					terminal += marked;
+					if (marked > 0) markedUuids.add(fresh.getUuid());
 				}
+				// TPF-114 W1: a terminal mark can clear a canonical's coverage gate without
+				// moving any bucket date, so the canonicals holding the marked rows are
+				// requeued for fan-out, after the marks committed.
+				if (terminal > 0) requeueFanOutForMarkedComponents(orgUuid, markedUuids);
 				t.strikeMatched += terminal;
 				if (terminal > 0) {
 					log.warn("Enrichment terminal: {} component(s) of bom {} (org {}) marked "
@@ -721,17 +748,39 @@ private static int currentReconcileFailureCount(Release r) {
 			return 0;
 		}
 		int terminal = 0;
+		List<UUID> markedUuids = new ArrayList<>();
 		for (SbomComponent cand : candidatesByBom.getOrDefault(bomId, List.of())) {
 			SbomComponent fresh = sbomComponentRepository.findById(cand.getUuid()).orElse(null);
 			if (fresh == null || fresh.getEnrichedAt() != null || fresh.isEnrichmentTerminal()) continue;
-			terminal += sbomComponentRepository.markEnrichmentTerminal(
+			int marked = sbomComponentRepository.markEnrichmentTerminal(
 					fresh.getUuid(), "OWN_BOM_UNPULLABLE");
+			terminal += marked;
+			if (marked > 0) markedUuids.add(fresh.getUuid());
 		}
+		// TPF-114 W2: same requeue as the pulled-unmatched marks.
+		if (terminal > 0) requeueFanOutForMarkedComponents(orgUuid, markedUuids);
 		pullFailureCounts.remove(bomId);
 		log.warn("Enrichment terminal: {} component(s) of UNPULLABLE bom {} (org {}) marked "
 				+ "unenrichable after {} consecutive failed pulls ({})",
 				terminal, bomId, orgUuid, PULL_FAILURES_BEFORE_TERMINAL, cause);
 		return terminal;
+	}
+
+	/**
+	 * Requeue for fan-out the canonicals holding components this tick marked
+	 * enrichment-terminal (TPF-114 W1/W2,
+	 * ArtifactCanonicalMapRepository.requeueFanOutForComponents). Bounded by the
+	 * window: at most ENRICHMENT_CANDIDATE_WINDOW uuids. A failure is logged and
+	 * does not undo the marks; the canonical then waits for a covering bucket move
+	 * or the operator's force re-upload.
+	 */
+	private void requeueFanOutForMarkedComponents(UUID orgUuid, List<UUID> markedUuids) {
+		if (markedUuids.isEmpty()) return;
+		try {
+			artifactCanonicalMapRepository.requeueFanOutForComponents(orgUuid, markedUuids);
+		} catch (Exception e) {
+			log.error("Fan-out requeue after enrichment-terminal marks failed for org {}", orgUuid, e);
+		}
 	}
 
 	/**
@@ -1373,6 +1422,13 @@ private static int currentReconcileFailureCount(Release r) {
 			try {
 				int repaired = self.repointCanonicalArtifactQualifiers(
 						p.getOrg(), p.getCanonicalArtifactUuid());
+				// TPF-114 W3: a repoint moves mappings onto other components (other
+				// buckets' findings, maybe another gate) without moving a bucket date,
+				// so the canonical is requeued for fan-out after the repoint committed.
+				if (repaired > 0) {
+					artifactCanonicalMapRepository.requeueFanOutForCanonical(
+							p.getOrg(), p.getCanonicalArtifactUuid());
+				}
 				// Stamped only after a clean pass - on failure the marker stays below
 				// the current version so the next tick retries this canonical.
 				artifactCanonicalMapRepository.markCanonicalFormVerified(
@@ -1693,13 +1749,16 @@ private static int currentReconcileFailureCount(Release r) {
 	 * selfDiff} (non-null — i.e. a populated baseline was available) is
 	 * required, so we don't burn the one-shot claim before a comparable
 	 * predecessor inventory exists; a later reconcile retries. The atomic
-	 * claim then fires {@link ReleaseChangeHook#onReleaseBomDiff} (whose
-	 * SAAS impl no-ops unless the diff has both additions and removals).
+	 * claim then fires {@link ReleaseChangeHook#onReleaseBomDiff}. An empty
+	 * diff returns before the claim (TPF-147), so it never spends it.
 	 */
 	private void maybeFireBomDiffNotification(ReleaseData rd, ArtifactChangelog selfDiff) {
 		if (selfDiff == null) return;
 		ReleaseLifecycle lifecycle = rd.getLifecycle();
 		if (lifecycle == null || lifecycle.ordinal() < ReleaseLifecycle.ASSEMBLED.ordinal()) return;
+		// An empty diff is no notification and must not spend the one-shot claim (TPF-147): a later
+		// reconcile that finds a real change still notifies once.
+		if (CollectionUtils.isEmpty(selfDiff.added()) && CollectionUtils.isEmpty(selfDiff.removed())) return;
 		// Atomic one-shot claim: 0 rows affected => a prior reconcile already notified.
 		if (releaseRepository.claimBomDiffNotification(rd.getUuid()) == 0) return;
 		if (releaseChangeHook != null) releaseChangeHook.onReleaseBomDiff(rd, selfDiff);
@@ -1734,6 +1793,14 @@ private static int currentReconcileFailureCount(Release r) {
 	 * per-component participation/parent synthesis of
 	 * {@link #listReleaseSbomComponents}; resolution mirrors that method
 	 * (product releases fold in their transitive dependency inventories).
+	 *
+	 * <p>Besides the components flagged root, the release's own identities are
+	 * left out at every version (TPF-146): the versionless key
+	 * ({@link Utils#purlVersionlessKey}) of the root of each of the release's
+	 * own canonical artifacts (the single flagged row without an in-edge from
+	 * another component of that canonical artifact) and of each PURL identifier
+	 * declared on the release's component. For a PRODUCT the set is the union
+	 * over the release and every release of its dependency unwind.
 	 */
 	public Map<String, DiffComponent> collectReleaseInventory(UUID releaseUuid) {
 		// Light read: only org / component-type / dependency record-data fields are
@@ -1744,15 +1811,18 @@ private static int currentReconcileFailureCount(Release r) {
 		UUID orgUuid = rd.getOrg();
 		if (orgUuid == null) return Map.of();
 
-		boolean isProduct = getComponentService.getComponentData(rd.getComponent())
+		Optional<ComponentData> ownComponent = getComponentService.getComponentData(rd.getComponent());
+		boolean isProduct = ownComponent
 				.map(cd -> cd.getType() == ComponentType.PRODUCT)
 				.orElse(false);
 
 		Set<UUID> sourceReleaseUuids = new LinkedHashSet<>();
 		sourceReleaseUuids.add(releaseUuid);
+		Set<UUID> depComponentUuids = new LinkedHashSet<>();
 		if (isProduct) {
 			for (ReleaseData dep : sharedReleaseService.unwindReleaseDependencies(rd)) {
 				sourceReleaseUuids.add(dep.getUuid());
+				if (dep.getComponent() != null) depComponentUuids.add(dep.getComponent());
 			}
 		}
 
@@ -1771,18 +1841,94 @@ private static int currentReconcileFailureCount(Release r) {
 		for (ArtifactSbomComponent r : rows) componentIds.add(r.getSbomComponentUuid());
 
 		Map<UUID, SbomComponent> comps = findSbomComponentsByIds(componentIds, orgUuid);
+
+		// The release's own identities (TPF-146): roots of its own canonical artifacts
+		// and the PURL identifiers of its component(s), as versionless keys.
+		List<ComponentData> ownComponents = new ArrayList<>();
+		ownComponent.ifPresent(ownComponents::add);
+		if (rd.getComponent() != null) depComponentUuids.remove(rd.getComponent());
+		if (!depComponentUuids.isEmpty()) {
+			ownComponents.addAll(getComponentService.getListOfComponentData(depComponentUuids));
+		}
+		Set<String> selfKeys = new HashSet<>(rootSelfKeys(rows, comps));
+		selfKeys.addAll(identifierSelfKeys(ownComponents, orgUuid));
+
 		Map<String, DiffComponent> out = new LinkedHashMap<>();
+		int selfSkipped = 0;
 		for (SbomComponent sc : comps.values()) {
 			// Root components are the release's own top-level identity (the BOM's
-			// metadata.component), not consumed dependencies — exclude them so a
+			// metadata.component), not consumed dependencies -- exclude them so a
 			// release's own purl doesn't surface as an added/removed component.
 			if (isMarkedRoot(sc)) continue;
 			String canonicalPurl = sc.getCanonicalPurl();
 			if (canonicalPurl == null) continue;
+			// The release's own package at a version no document flagged root
+			// (an image-carried app jar, a deduplicated source SBOM).
+			String key = Utils.purlVersionlessKey(canonicalPurl);
+			if (key != null && selfKeys.contains(key)) {
+				selfSkipped++;
+				continue;
+			}
 			String version = SbomComponentData.dataFromRecord(sc).version();
 			out.put(canonicalPurl, new DiffComponent(canonicalPurl, version));
 		}
+		log.debug("BOM-diff inventory of release {}: {} self keys {}, {} components skipped as self",
+				releaseUuid, selfKeys.size(), selfKeys, selfSkipped);
 		return out;
+	}
+
+	/**
+	 * Versionless keys of the roots of the given canonical artifacts (TPF-146). Per canonical
+	 * artifact, a root candidate is a row whose component is flagged root and that has no in-edge
+	 * from another component of that canonical artifact (a self-loop or no parents pass). A
+	 * canonical artifact contributes a key only when it has exactly one candidate; a flagged CPE
+	 * row counts as a candidate although its key is null. Zero or several candidates: no key.
+	 */
+	static Set<String> rootSelfKeys(List<ArtifactSbomComponent> rows, Map<UUID, SbomComponent> comps) {
+		Map<UUID, List<SbomComponent>> candidatesByCanonical = new LinkedHashMap<>();
+		for (ArtifactSbomComponent r : rows) {
+			SbomComponent sc = comps.get(r.getSbomComponentUuid());
+			if (sc == null || !sc.isRoot()) continue;
+			if (hasInEdgeFromOther(r)) continue;
+			candidatesByCanonical.computeIfAbsent(r.getCanonicalArtifactUuid(), k -> new ArrayList<>()).add(sc);
+		}
+		Set<String> keys = new HashSet<>();
+		for (List<SbomComponent> candidates : candidatesByCanonical.values()) {
+			if (candidates.size() != 1) continue;
+			String key = Utils.purlVersionlessKey(candidates.get(0).getCanonicalPurl());
+			if (key != null) keys.add(key);
+		}
+		return keys;
+	}
+
+	private static boolean hasInEdgeFromOther(ArtifactSbomComponent r) {
+		List<Map<String, Object>> parents = r.getParents();
+		if (parents == null || parents.isEmpty()) return false;
+		String self = String.valueOf(r.getSbomComponentUuid());
+		for (Map<String, Object> parent : parents) {
+			if (parent == null) continue;
+			Object source = parent.get("sourceSbomComponentUuid");
+			if (source != null && !self.equals(source.toString())) return true;
+		}
+		return false;
+	}
+
+	/**
+	 * Versionless keys of the PURL identifiers declared on the given components (TPF-146). Only
+	 * components of {@code orgUuid} count; other identifier types and unparseable values add
+	 * nothing.
+	 */
+	static Set<String> identifierSelfKeys(Collection<ComponentData> components, UUID orgUuid) {
+		Set<String> keys = new HashSet<>();
+		for (ComponentData cd : components) {
+			if (cd == null || !orgUuid.equals(cd.getOrg())) continue;
+			for (RearmIdentifier ri : cd.getIdentifiers()) {
+				if (ri == null || ri.getIdType() != RearmIdentifierType.PURL || ri.getIdValue() == null) continue;
+				String key = Utils.purlVersionlessKey(ri.getIdValue());
+				if (key != null) keys.add(key);
+			}
+		}
+		return keys;
 	}
 
 	// ===================================================================
@@ -2017,7 +2163,7 @@ private static int currentReconcileFailureCount(Release r) {
 					if (p == null) continue;
 					String sourceCanonicalPurl = String.valueOf(p.get("sourceCanonicalPurl"));
 					String relationshipType = String.valueOf(p.get("relationshipType"));
-					String key = sourceCanonicalPurl + " " + relationshipType;
+					String key = parentEdgeKey(sourceCanonicalPurl, relationshipType);
 					Map<String, Object> publicEntry = parentsByKey.computeIfAbsent(key, k -> {
 						Map<String, Object> m = new LinkedHashMap<>();
 						m.put("sourceSbomComponentUuid", p.get("sourceSbomComponentUuid"));
@@ -2079,10 +2225,15 @@ private static int currentReconcileFailureCount(Release r) {
 		return UUID.nameUUIDFromBytes(key.getBytes(StandardCharsets.UTF_8));
 	}
 
-	private static String declarationKey(Map<String, Object> declaration) {
+	static String declarationKey(Map<String, Object> declaration) {
 		return String.valueOf(declaration.get("artifact"))
-				+ " " + String.valueOf(declaration.get("sourceExactPurl"))
-				+ " " + String.valueOf(declaration.get("targetExactPurl"));
+				+ "\u0000" + String.valueOf(declaration.get("sourceExactPurl"))
+				+ "\u0000" + String.valueOf(declaration.get("targetExactPurl"));
+	}
+
+	/** Key of one logical parent edge; U+0000 separates the two parts (never occurs in a purl or an enum name). */
+	static String parentEdgeKey(String sourceCanonicalPurl, String relationshipType) {
+		return sourceCanonicalPurl + "\u0000" + relationshipType;
 	}
 
 	private static UUID parseUuid(Object value) {

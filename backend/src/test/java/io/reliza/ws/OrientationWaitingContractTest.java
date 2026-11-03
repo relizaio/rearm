@@ -100,6 +100,14 @@ class OrientationWaitingContractTest {
 				"the whole-set rule is gone");
 	}
 
+	/** Task SPLIT-5 (3.9): the design checkpoint is an ALERT, so it wakes the coordinator on a task already waiting. */
+	@Test
+	void theDesignCheckpointWakesTheCoordinator() throws IOException {
+		String doc = section("waiting").replaceAll("[ \\t]*\\n[ \\t]*", " ");
+		assertTrue(doc.contains("and when an `ALERT` is posted, the design checkpoint (an ALERT) included, which wakes it"
+				+ " even when the task was already `AWAITING_COORDINATOR`."), doc);
+	}
+
 	/** Task RD4-3: a worker's wait with --watch, one paragraph in the waiting section after the coordinator's wake rules. */
 	@Test
 	void aWorkerWatchWakesOnWhatHappensToItsWork() throws IOException {

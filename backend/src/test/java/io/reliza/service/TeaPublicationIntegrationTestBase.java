@@ -121,6 +121,8 @@ import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.model.Rebom.RebomResponse;
 import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.Link;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.repositories.ArtifactRepository;
 import io.reliza.repositories.ReleaseArtifactIndexRepository;
 import io.reliza.repositories.TeaPublicationRepository;
@@ -183,6 +185,7 @@ abstract class TeaPublicationIntegrationTestBase {
 	@Autowired EntityManagerFactory emf;
 	@Autowired GetComponentService getComponentService;
 	@Autowired GetOrganizationService getOrganizationService;
+	@Autowired OrganizationService organizationService;
 
 	boolean wasSealed;
 	boolean wasLicensed;
@@ -353,6 +356,16 @@ abstract class TeaPublicationIntegrationTestBase {
 		saveOrgRecipe();
 		teaProfileService.saveProfile(org.getUuid(), TeaProfileScope.ORGANIZATION, null,
 				profileInput(TeaPublishing.ENABLED, visibility, raw, productComponents).build(), TeaCaller.ORG_ADMIN, WU);
+		serveOnUuidBase(org.getUuid());
+	}
+
+	/**
+	 * TPF-142 (architecture section 4, F-6): an organization without a stored serving mode is NONE and served on
+	 * neither shape, so every fixture that mints a TEA id and then reaches the uuid base sets LEGACY_UUID right after
+	 * the mint, through the product's own writer, committed in its own transaction.
+	 */
+	void serveOnUuidBase(UUID orgUuid) throws Exception {
+		organizationService.setTeaServing(orgUuid, TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE, WU);
 	}
 
 	/** Task TEA-28: the organization's ENABLED TEA row naming {@code names}, with the org fixture's {@code default}. */
@@ -361,6 +374,7 @@ abstract class TeaPublicationIntegrationTestBase {
 		teaProfileService.saveProfile(org.getUuid(), TeaProfileScope.ORGANIZATION, null,
 				profileInput(TeaPublishing.ENABLED, visibility, raw, TeaProductComponents.PUBLISH_WITH_PRODUCT)
 						.profiles(List.of(names)).build(), TeaCaller.ORG_ADMIN, WU);
+		serveOnUuidBase(org.getUuid());
 	}
 
 	/**

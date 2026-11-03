@@ -56,6 +56,7 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.DeviceSupportRisk;
 import io.reliza.model.LevelOfSupport;
+import io.reliza.model.ReleaseBranchScope;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseSbomComponent;
 import io.reliza.model.RelizaObject;
@@ -523,7 +524,8 @@ public class SbomComponentDataFetcher {
 	public List<ComponentWithBranches> releasesBySbomComponents(
 			@InputArgument("orgUuid") UUID orgUuid,
 			@InputArgument("sbomComponentUuids") List<UUID> sbomComponentUuids,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("branchScope") ReleaseBranchScope branchScope) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -541,7 +543,8 @@ public class SbomComponentDataFetcher {
 		}
 
 		Set<UUID> releaseIds = sbomComponentService.findReleaseUuidsBySbomComponents(sbomComponentUuids, orgUuid);
-		List<ComponentWithBranches> ret = sharedReleaseService.findReleaseDatasByReleaseIds(releaseIds, orgUuid);
+		List<ComponentWithBranches> ret = sharedReleaseService.findReleaseDatasByReleaseIds(releaseIds, orgUuid,
+				ReleaseBranchScope.orDefault(branchScope));
 		if (null != perspectiveComponentUuids) {
 			ret = ret.stream()
 					.filter(cwb -> perspectiveComponentUuids.contains(cwb.uuid()))

@@ -100,8 +100,9 @@ public class ReleaseChangeHookImpl implements ReleaseChangeHook {
 		if (rd == null || changelog == null || support.isExternalOrIncomplete(rd)) return;
 		List<BomComponentChange> added = ReleaseNotificationSupport.mapDiff(changelog.added());
 		List<BomComponentChange> removed = ReleaseNotificationSupport.mapDiff(changelog.removed());
-		// Mirror the legacy gate: only notify when there is something on both sides.
-		if (added.isEmpty() || removed.isEmpty()) return;
+		// Notify on any non-empty diff (TPF-147, operator decision 2): an add-only diff is a
+		// newly introduced dependency, a remove-only diff a dropped one.
+		if (added.isEmpty() && removed.isEmpty()) return;
 		ReleaseRef ref = support.buildReleaseRef(rd);
 		if (ref == null) return;
 		ReleaseBomDiffPayload payload = new ReleaseBomDiffPayload(ref, added, removed);

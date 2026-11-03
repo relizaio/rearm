@@ -5,10 +5,11 @@ package io.reliza.service.kev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyCollection;
 import static org.mockito.ArgumentMatchers.anyString;
-import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -16,16 +17,17 @@ import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.lang.reflect.Field;
-import java.util.Collection;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.InOrder;
 import org.springframework.transaction.PlatformTransactionManager;
 
 import io.reliza.model.Integration;
@@ -170,6 +172,20 @@ class KevCatalogSyncServiceTest {
 	}
 
 	@Test
+	void syncCatalogRelaunchesQueuedReGateRetriesBeforeReadingAnyIntegrationRow() {
+		UUID orgA = UUID.randomUUID();
+		when(vulnAnalysisUpdateService.drainKevReGateRetries())
+				.thenReturn(Map.of(orgA, Set.of("CVE-1")));
+
+		assertEquals(0, service.syncCatalog());
+
+		InOrder order = inOrder(vulnAnalysisUpdateService, integrationRepository);
+		order.verify(vulnAnalysisUpdateService).drainKevReGateRetries();
+		order.verify(vulnAnalysisUpdateService).recomputeReleasesForNewlyKev(Set.of("CVE-1"), orgA);
+		order.verify(integrationRepository, times(2)).listEnabledIntegrationsByType(anyString());
+	}
+
+	@Test
 	void firstSyncForOrgSkipsKevAddedAndReGate() {
 		UUID orgA = UUID.randomUUID();
 		when(integrationRepository.listEnabledIntegrationsByType(IntegrationType.CISA_KEV.name()))
@@ -186,7 +202,7 @@ class KevCatalogSyncServiceTest {
 		verify(vulnerabilityRecordRepository, never()).findAllOrgsByVulnIdOrAlias(anyString());
 		verify(hook, never()).onKevAdded(any(), anyString(), any());
 		verify(vulnAnalysisUpdateService, never())
-				.recomputeReleasesForNewlyKev(anyString(), any());
+				.recomputeReleasesForNewlyKev(anyCollection(), any());
 	}
 
 	@Test
@@ -212,9 +228,9 @@ class KevCatalogSyncServiceTest {
 		verify(hook).onKevAdded(eq(orgA), eq("CVE-2026-0001"), any(VulnerabilityRecordData.class));
 		verify(hook, never()).onKevAdded(eq(orgB), anyString(), any());
 		// Re-gate fan-out fires for orgA's affected releases only.
-		verify(vulnAnalysisUpdateService).recomputeReleasesForNewlyKev(
-				eq("CVE-2026-0001"),
-				argThat((Collection<UUID> orgs) -> orgs.size() == 1 && orgs.contains(orgA)));
+		// TPF-131: ONE call for the org with the list of the newly-KEV ids it has a record of.
+		verify(vulnAnalysisUpdateService, times(1)).recomputeReleasesForNewlyKev(
+				eq(List.of("CVE-2026-0001")), eq(orgA));
 	}
 
 	@Test
@@ -230,7 +246,7 @@ class KevCatalogSyncServiceTest {
 
 		assertEquals(1, service.syncCatalog());
 
-		verify(vulnAnalysisUpdateService, never()).recomputeReleasesForNewlyKev(anyString(), any());
+		verify(vulnAnalysisUpdateService, never()).recomputeReleasesForNewlyKev(anyCollection(), any());
 		verify(hook, never()).onKevAdded(any(), anyString(), any());
 	}
 
@@ -252,7 +268,7 @@ class KevCatalogSyncServiceTest {
 		verify(kevAssertionService).applyCatalog(eq(orgA), eq(KevSource.CISA), any());
 		// Hook is null in CE — KEV_ADDED no-ops cleanly. Re-gate still runs.
 		verify(hook, never()).onKevAdded(any(), anyString(), any());
-		verify(vulnAnalysisUpdateService).recomputeReleasesForNewlyKev(eq("CVE-2026-0001"), any());
+		verify(vulnAnalysisUpdateService).recomputeReleasesForNewlyKev(eq(List.of("CVE-2026-0001")), any());
 	}
 
 	@Test
@@ -386,7 +402,7 @@ class KevCatalogSyncServiceTest {
 		verify(kevAssertionService).applyCatalog(eq(orgA), eq(KevSource.VULNCHECK), any());
 		// First sync — KEV_ADDED + re-gate skipped.
 		verify(hook, never()).onKevAdded(any(), anyString(), any());
-		verify(vulnAnalysisUpdateService, never()).recomputeReleasesForNewlyKev(anyString(), any());
+		verify(vulnAnalysisUpdateService, never()).recomputeReleasesForNewlyKev(anyCollection(), any());
 	}
 
 	@Test

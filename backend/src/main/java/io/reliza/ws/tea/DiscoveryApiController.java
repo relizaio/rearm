@@ -31,7 +31,7 @@ import lombok.extern.slf4j.Slf4j;
  */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class DiscoveryApiController implements DiscoveryApi {
 
 	@Autowired private TeaRequests teaRequests;

@@ -80,6 +80,7 @@ import io.reliza.model.Deliverable;
 import io.reliza.model.DeliverableData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.PullRequestData;
+import io.reliza.model.ReleaseBranchScope;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.model.ReleaseData.ReleaseDateComparator;
@@ -2953,7 +2954,8 @@ public class ReleaseDatafetcher {
 	public CveSearchResultDto.CveSearchResult searchReleasesByCveId(
 			@InputArgument("org") UUID orgUuid,
 			@InputArgument("cveId") String cveId,
-			@InputArgument("perspectiveUuid") UUID perspectiveUuid) throws RelizaException {
+			@InputArgument("perspectiveUuid") UUID perspectiveUuid,
+			@InputArgument("branchScope") ReleaseBranchScope branchScope) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		var od = getOrganizationService.getOrganizationData(orgUuid);
@@ -2964,7 +2966,8 @@ public class ReleaseDatafetcher {
 			var pd = ossPerspectiveService.getPerspectiveData(perspectiveUuid).get();
 			authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.PERSPECTIVE, perspectiveUuid, List.of(ro, pd), CallType.READ);
 		}
-		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId, perspectiveUuid);
+		return sharedReleaseService.findReleasesByCveId(orgUuid, cveId, perspectiveUuid,
+				ReleaseBranchScope.orDefault(branchScope));
 	}
 	
 	@PreAuthorize("isAuthenticated()")

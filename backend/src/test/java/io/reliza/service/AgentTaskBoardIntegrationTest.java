@@ -1494,6 +1494,14 @@ public class AgentTaskBoardIntegrationTest {
 		List<AgentTaskData> children = agentTaskService.split(t.getUuid(), board(r),
 				List.of(child("part 1"), child("part 2")), COORD, WU);
 		assertEquals(2, children.size());
+		// With no design checkpoint on the task, nothing is pinned on the children (task SPLIT-5, T-7).
+		assertNull(agentTaskService.getTaskData(t.getUuid()).orElseThrow().getDesignCheckpoint());
+		for (AgentTaskData c : children) {
+			AgentTaskData child = agentTaskService.getTaskData(c.getUuid()).orElseThrow();
+			assertTrue(null == child.getRequiredInputs()
+					|| child.getRequiredInputs().stream().noneMatch(ri -> null != ri.release()),
+					String.valueOf(child.getRequiredInputs()));
+		}
 		AgentTaskData parent = agentTaskService.getTaskData(t.getUuid()).orElseThrow();
 		assertEquals(TaskStatus.AWAITING_COORDINATOR, parent.getStatus());
 		assertEquals(2, parent.getChildTasks().size());

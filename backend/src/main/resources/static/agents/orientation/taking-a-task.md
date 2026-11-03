@@ -65,9 +65,29 @@ needed per poll: `board events --after <seq>` for what needs a person and
 what routing said, and `task list --changed-since <last updatedAt>` for every
 movement, including hand-overs and assignments. The feed carries completions,
 stops, returns to a reviewer, decisions and answers, but not a first forward
-hand-over ("X passed, queued for Y"), an authorize or an assign: those are
-most transitions, and an event each would drown what needs attention. So a
-quiet feed is not a still board; read the tasks that moved.
+hand-over ("X passed, queued for Y") (except the design checkpoint, which
+raises an ALERT), an authorize or an assign: those are most transitions, and an
+event each would drown what needs attention. So a quiet feed is not a still
+board; read the tasks that moved.
+
+**The design checkpoint.** A board may put a coordinator checkpoint before a
+role, usually the coder: once the design is reviewed, the task stops at the
+coordinator with an ALERT instead of going to that role, and its
+`designCheckpoint` reads `PENDING`. The ALERT names the design rounds and the
+architect's sign-off note; `task show <key>` has the rounds. Read the design,
+then split the task (each child carries the design as pinned inputs) or send it
+on:
+
+```bash
+rearm agent task split <key> --session <seat-session-uuid> \
+  --children-json '[{"title":"..."},{"title":"...","dependsOnSiblingIndexes":[0]}]'
+rearm agent task authorize <key> --session <seat-session-uuid> --role coder
+```
+
+Either is recorded on the task as the decision. Authorizing a design role
+instead sends the task round again, and it comes back to the checkpoint. A new
+ARCHITECTURE round after the task was sent on, an advisory one included, stops
+it here again before the role's next hop.
 
 A board's events are a log with a cursor (`seq`). Read what happened since
 your last poll with

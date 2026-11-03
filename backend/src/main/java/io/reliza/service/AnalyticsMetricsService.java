@@ -74,6 +74,47 @@ public class AnalyticsMetricsService {
 	    this.repository = repository;
 	}
 	
+	/**
+	 * Whether a branch takes part in findings analytics (the org, perspective and product daily
+	 * rows, the component rows behind the most-vulnerable-components widget, the component chart
+	 * and the component drill-down): the branch is not archived, its component is not archived,
+	 * and the branch is not EXCLUDED from finding analytics. A component that could not be loaded
+	 * (null) does not exclude the branch, as before. The single-branch drill-down and chart do
+	 * not apply this rule: they show the branch that was asked for.
+	 */
+	public static boolean isAnalyticsEligible(BranchData b, ComponentData c) {
+		return b.getStatus() != StatusEnum.ARCHIVED
+				&& (null == c || c.getStatus() != StatusEnum.ARCHIVED)
+				&& b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED;
+	}
+
+	/** The analytics-eligible branches of an org and the components they belong to. */
+	private record EligibleBranches(List<BranchData> branches, Map<UUID, ComponentData> componentByUuid) {}
+
+	/**
+	 * The org's branches that pass {@link #isAnalyticsEligible}, optionally restricted to
+	 * {@code onlyComponents}, with their components keyed by uuid (only the components of
+	 * eligible branches). One branch query and one component query.
+	 */
+	private EligibleBranches eligibleBranchesOfOrg(UUID org, Set<UUID> onlyComponents) {
+		List<BranchData> candidates = branchService.listBranchesOfOrg(org).stream()
+				.map(BranchData::branchDataFromDbRecord)
+				.filter(b -> onlyComponents == null || onlyComponents.contains(b.getComponent()))
+				.collect(Collectors.toList());
+		Set<UUID> componentUuids = candidates.stream().map(BranchData::getComponent).collect(Collectors.toSet());
+		Map<UUID, ComponentData> allComponents = getComponentService.getListOfComponentData(componentUuids).stream()
+				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+		List<BranchData> eligible = candidates.stream()
+				.filter(b -> isAnalyticsEligible(b, allComponents.get(b.getComponent())))
+				.collect(Collectors.toList());
+		Map<UUID, ComponentData> componentByUuid = new HashMap<>();
+		for (BranchData b : eligible) {
+			ComponentData cd = allComponents.get(b.getComponent());
+			if (null != cd) componentByUuid.put(cd.getUuid(), cd);
+		}
+		return new EligibleBranches(eligible, componentByUuid);
+	}
+
 	public List<VulnViolationsChartDto> listChartDataByOrgDates(UUID org, ZonedDateTime dateFrom,
 			ZonedDateTime dateTo) {
 		String dateKeyFrom = AnalyticsMetricsData.obtainAnalyticsDateKey(dateFrom);
@@ -177,9 +218,10 @@ public class AnalyticsMetricsService {
 		log.info("FINDINGS_COMPARISON: getFindingsPerDayForComponent - component: {}, dateKey: {}, upToDate: {}", 
 			componentUuid, dateKey, upToDate);
 		
-		// Get all active branches of the component, excluding branches with EXCLUDED findingAnalyticsParticipation
+		// Active branches of the component that pass the findings-analytics rule
+		ComponentData component = getComponentService.getComponentData(componentUuid).orElse(null);
 		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
-				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
+				.filter(b -> isAnalyticsEligible(b, component))
 				.collect(Collectors.toList());
 		if (branches.isEmpty()) {
 			log.warn("FINDINGS_COMPARISON: No active branches found for component {}", componentUuid);
@@ -223,6 +265,11 @@ public class AnalyticsMetricsService {
 		return Optional.of(rmd);
 	}
 	
+	/**
+	 * Findings of one branch on one day: an explicit single-branch drill-down. It does not apply
+	 * {@link #isAnalyticsEligible}: an archived branch, a branch of an archived component and an
+	 * EXCLUDED branch still show their own findings here, as EXCLUDED branches always have.
+	 */
 	public Optional<ReleaseMetricsDto> getFindingsPerDayForBranch(UUID branchUuid, String dateKey) {
 		java.time.LocalDate requestedDate = java.time.LocalDate.parse(dateKey);
 		ZonedDateTime upToDate = requestedDate.plusDays(1).atStartOfDay(java.time.ZoneOffset.UTC);
@@ -264,75 +311,8 @@ public class AnalyticsMetricsService {
 		// worth it for non-home-page charts.
 		return new LinkedList<>(listChartDataByOrgDates(org, dateFrom, dateTo));
 	}
-	
-	
-	public List<VulnViolationsChartDto> getVulnViolationByComponentChartData(UUID componentUuid, 
-			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
-		ZonedDateTime today = ZonedDateTime.now();
-		if (dateTo.isAfter(today)) dateTo = today;
-		
-		// Get all active branches of the component
-		List<BranchData> branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE);
-		if (branches.isEmpty()) {
-			return new LinkedList<>();
-		}
 
-		// Collect all releases from all branches within the date range
-		List<ReleaseData> allReleasesInRange = new LinkedList<>();
-		for (BranchData branch : branches) {
-			List<ReleaseData> branchReleases = sharedReleaseService.listReleaseDataOfBranchBetweenDates(
-					branch.getUuid(), dateFrom, dateTo, ReleaseLifecycle.ASSEMBLED);
-			allReleasesInRange.addAll(branchReleases);
-		}
-		
-		if (allReleasesInRange.isEmpty()) {
-			return new LinkedList<>();
-		}
-		
-		// Group releases by date and branch, pick the latest release per branch per day
-		// Then merge all branch metrics for each day
-		Map<LocalDate, Map<UUID, ReleaseData>> latestReleasePerBranchPerDay = new HashMap<>();
-		for (ReleaseData rd : allReleasesInRange) {
-			// Retired releases (END_OF_SUPPORT or later) leave the findings-over-time chart.
-			if (ReleaseLifecycle.isSupportEnded(rd.getLifecycle())) continue;
-			LocalDate releaseDate = rd.getCreatedDate().toLocalDate();
-			UUID branchUuid = rd.getBranch();
-			latestReleasePerBranchPerDay.computeIfAbsent(releaseDate, k -> new HashMap<>());
-			Map<UUID, ReleaseData> branchMap = latestReleasePerBranchPerDay.get(releaseDate);
-			ReleaseData existing = branchMap.get(branchUuid);
-			if (existing == null ||
-				(rd.getCreatedDate().isAfter(existing.getCreatedDate()) && 
-					rd.getLifecycle() != ReleaseLifecycle.CANCELLED && 
-					rd.getLifecycle() != ReleaseLifecycle.REJECTED &&
-					rd.getLifecycle() != ReleaseLifecycle.PENDING
-				))  {
-				branchMap.put(branchUuid, rd);
-			}
-		}
-		
-		// Convert each day's merged metrics to chart data
-		List<VulnViolationsChartDto> chartData = new LinkedList<>();
-		for (Map.Entry<LocalDate, Map<UUID, ReleaseData>> dayEntry : latestReleasePerBranchPerDay.entrySet()) {
-			ReleaseMetricsDto mergedRmd = new ReleaseMetricsDto();
-			ZonedDateTime dateForChart = null;
-			for (ReleaseData rd : dayEntry.getValue().values()) {
-				ReleaseMetricsDto rmd = rd.getMetrics();
-				if (rmd != null) {
-					rmd.enrichSourcesWithRelease(rd.getUuid());
-					mergedRmd.mergeWithByContent(rmd);
-				}
-				if (dateForChart == null) {
-					dateForChart = dayEntry.getKey().atStartOfDay(rd.getCreatedDate().getZone());
-				}
-			}
-			if (dateForChart != null) {
-				chartData.addAll(mergedRmd.convertToChartDto(dateForChart));
-			}
-		}
-		
-		return chartData;
-	}
-	
+	/** The chart of one branch: like {@link #getFindingsPerDayForBranch}, it shows the branch asked for. */
 	public List<VulnViolationsChartDto> getVulnViolationByBranchChartData(UUID branchUuid, 
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		ZonedDateTime today = ZonedDateTime.now();
@@ -399,13 +379,9 @@ public class AnalyticsMetricsService {
 
 	private AnalyticsMetricsData computeAnalyticsMetricsDataInternal (UUID org, ZonedDateTime createdDate) {
 		ZonedDateTime upToDate = createdDate.toLocalDate().plusDays(1).atStartOfDay(createdDate.getZone());
-		var activeBranches = branchService.listBranchesOfOrg(org).stream()
-				.map(BranchData::branchDataFromDbRecord)
-				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
-				.collect(Collectors.toList());
-		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
-		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
-				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+		EligibleBranches eligible = eligibleBranchesOfOrg(org, null);
+		List<BranchData> activeBranches = eligible.branches();
+		Map<UUID, ComponentData> componentByUuid = eligible.componentByUuid();
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() -> 
@@ -484,15 +460,10 @@ public class AnalyticsMetricsService {
 	 */
 	public void computeAndRecordComponentAnalyticsForOrg(UUID org, ZonedDateTime targetDate, Set<UUID> onlyComponents) {
 		ZonedDateTime upToDate = targetDate.toLocalDate().plusDays(1).atStartOfDay(targetDate.getZone());
-		var activeBranches = branchService.listBranchesOfOrg(org).stream()
-				.map(BranchData::branchDataFromDbRecord)
-				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
-				.filter(b -> onlyComponents == null || onlyComponents.contains(b.getComponent()))
-				.collect(Collectors.toList());
+		EligibleBranches eligible = eligibleBranchesOfOrg(org, onlyComponents);
+		List<BranchData> activeBranches = eligible.branches();
 		if (activeBranches.isEmpty()) return;
-		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
-		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
-				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+		Map<UUID, ComponentData> componentByUuid = eligible.componentByUuid();
 		List<ReleaseData> latestReleasesOfBranches;
 		try (ForkJoinPool customPool = new ForkJoinPool(4)) {
 			latestReleasesOfBranches = customPool.submit(() ->
@@ -599,14 +570,9 @@ public class AnalyticsMetricsService {
 	 * components/products as they appear.
 	 */
 	public void seedComponentAnalyticsIfMissing(UUID org, int productBackfillDays) {
-		var activeBranches = branchService.listBranchesOfOrg(org).stream()
-				.map(BranchData::branchDataFromDbRecord)
-				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
-				.collect(Collectors.toList());
-		if (activeBranches.isEmpty()) return;
-		Set<UUID> componentUuids = activeBranches.stream().map(BranchData::getComponent).collect(Collectors.toSet());
-		Map<UUID, ComponentData> componentByUuid = getComponentService.getListOfComponentData(componentUuids).stream()
-				.collect(Collectors.toMap(ComponentData::getUuid, c -> c));
+		EligibleBranches eligible = eligibleBranchesOfOrg(org, null);
+		if (eligible.branches().isEmpty()) return;
+		Map<UUID, ComponentData> componentByUuid = eligible.componentByUuid();
 
 		ZonedDateTime yesterday = ZonedDateTime.now().minusDays(1);
 		String yesterdayKey = AnalyticsMetricsData.obtainAnalyticsDateKey(yesterday);
@@ -662,8 +628,9 @@ public class AnalyticsMetricsService {
 			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		ZonedDateTime now = ZonedDateTime.now();
 		if (dateTo.isAfter(now)) dateTo = now;
+		ComponentData component = getComponentService.getComponentData(componentUuid).orElse(null);
 		var branches = branchService.listBranchDataOfComponent(componentUuid, StatusEnum.ACTIVE).stream()
-				.filter(b -> b.getFindingAnalyticsParticipation() != BranchData.FindingAnalyticsParticipation.EXCLUDED)
+				.filter(b -> isAnalyticsEligible(b, component))
 				.collect(Collectors.toList());
 		if (branches.isEmpty()) return new LinkedList<>();
 		UUID org = branches.get(0).getOrg();
@@ -690,7 +657,7 @@ public class AnalyticsMetricsService {
 			if (firstRelease != null
 					&& AnalyticsMetricsData.obtainAnalyticsDateKey(firstRelease).compareTo(gapEndKey) <= 0) {
 				ZonedDateTime gapFrom = firstRelease.isAfter(dateFrom) ? firstRelease : dateFrom;
-				backfillComponentAnalyticsRange(org, componentUuid, branches, gapFrom,
+				backfillComponentAnalyticsRange(org, componentUuid, component, branches, gapFrom,
 						LocalDate.parse(gapEndKey).atStartOfDay(dateFrom.getZone()));
 				rows = componentAnalyticsMetricsRepository.findByComponentAndDateRange(componentUuid, fromKey, histToKey);
 			}
@@ -722,11 +689,12 @@ public class AnalyticsMetricsService {
 	 * Days before the component's first release produce no row (matching the
 	 * as-of walk semantics); days after it always do, so the lazy trigger
 	 * (zero rows in window) fires at most once per component per window.
+	 * {@code branches} are the component's analytics-eligible branches and
+	 * {@code cd} the component the caller already loaded.
 	 */
-	private void backfillComponentAnalyticsRange(UUID org, UUID componentUuid, List<BranchData> branches,
-			ZonedDateTime dateFrom, ZonedDateTime dateTo) {
+	private void backfillComponentAnalyticsRange(UUID org, UUID componentUuid, ComponentData cd,
+			List<BranchData> branches, ZonedDateTime dateFrom, ZonedDateTime dateTo) {
 		if (dateTo.isBefore(dateFrom)) return;
-		ComponentData cd = getComponentService.getComponentData(componentUuid).orElse(null);
 		if (cd == null || cd.getType() == null) return;
 		LocalDate fromDay = dateFrom.toLocalDate();
 		LocalDate toDay = dateTo.toLocalDate();

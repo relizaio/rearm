@@ -130,12 +130,17 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	 * condition in the UPDATE's own WHERE makes the database the arbiter, so the scan wins
 	 * deterministically rather than by timing.
 	 *
-	 * @return rows affected: 1 if the seed landed, 0 if a scan got there first
+	 * <p>And not while the row carries the not-scannable marker (TPF-125): a verdict of the fan-out is
+	 * as authoritative as a scan, and a seed landing under it would show findings on an artifact
+	 * nothing will ever scan.
+	 *
+	 * @return rows affected: 1 if the seed landed, 0 if a scan or a not-scannable verdict got there first
 	 */
 	@Transactional
 	@Modifying
 	@Query(value = "UPDATE rearm.artifacts SET metrics = CAST(:metrics AS jsonb), metrics_revision = metrics_revision + 1 "
-			+ "WHERE uuid = :uuid AND (metrics->>'firstScanned') IS NULL", nativeQuery = true)
+			+ "WHERE uuid = :uuid AND (metrics->>'firstScanned') IS NULL "
+			+ "AND jsonb_typeof(metrics->'notScannable') IS DISTINCT FROM 'object'", nativeQuery = true)
 	int updateMetricsIfStillUnscanned(@Param("uuid") UUID uuid, @Param("metrics") String metrics);
 
 	/**
@@ -170,63 +175,56 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	void advanceLastScannedOnly(@Param("uuid") UUID uuid, @Param("scannedAtEpoch") double scannedAtEpoch);
 
 	/**
-	 * Fan-out candidate pool slice: artifacts of the org whose scan stamp is
-	 * absent or predates {@code cutoffEpoch} (the newest INGESTED-bucket update,
-	 * computed by the caller from the buckets it already iterates).
+	 * Mark an artifact not scannable (TPF-125): metrics.notScannable = {reason, components, root,
+	 * terminal, unmatchable, at}, written in place. Only when the stored marker's content (everything
+	 * but at) differs, so a pass over an unchanged canonical writes nothing and keeps the stored at;
+	 * a changed reason or count re-stamps at. Tolerates a NULL column and a JSON null at the key
+	 * (jsonb_typeof). No revision bump, no audit row: no content changed, a scheduler derived a
+	 * state. The caller touches the releases carrying the artifact when this returns 1, because the
+	 * release metrics compute reads the marker (ReleaseMetricsComputeService.isScanInput).
 	 *
-	 * <p>This is one half of the two-query candidate resolution that replaced
-	 * the single joined query, which timed out on large instances: every joined
-	 * formulation (plain, CTE-fenced, LATERAL, LIMIT-bounded) left the planner
-	 * at least one estate-sized scan to pick -- measured at 500k artifacts, the
-	 * join hashed all of artifact_canonical_map and the EXISTS hashed all of
-	 * artifact_sbom_components (99-268ms and estate-shaped either way), while
-	 * this split resolves in ~1ms total. No join, no EXISTS: nothing to
-	 * misplan.
-	 *
-	 * <p>The scan stamp is compared as {@code coalesce(..., -1)} rather than
-	 * {@code IS NULL OR ... < cutoff}, and ordered by that same expression, so
-	 * that predicate and ORDER BY are a single range over one index key. The OR
-	 * form could not be an index condition, so it stayed a Filter with the sort
-	 * on top: the LIMIT got no stop key and every tick paid for the whole org
-	 * rather than the slice it takes. That is what timed out in production
-	 * (QueryTimeoutException on this statement, 2026-08-14). The two shapes have
-	 * to be checked together -- a backlog org fills the LIMIT and exits early
-	 * even on a bad plan, so it is the STEADY-STATE org, where nothing
-	 * qualifies and the scan runs to the end of the org, that exposes the
-	 * missing stop key. On an ordered index the OR form measured 57ms against a
-	 * 120k steady-state org and 0.9ms against a 96k backlog org; this form
-	 * measures 0.06ms and 0.7ms on the same two. Full numbers in V80.
-	 *
-	 * <p>{@code -1} is the sentinel and not the {@code 0} used elsewhere for
-	 * this field because {@code cutoffEpoch} itself floors at 0 (the caller
-	 * seeds it to 0 and only raises it): at {@code cutoff == 0} a 0 sentinel
-	 * makes never-scanned artifacts stop qualifying, silently draining nothing
-	 * for exactly the orgs this query exists to serve. Any sentinel below the
-	 * cutoff floor keeps the rewrite equivalent to the OR form -- verified
-	 * across every org at cutoffs {0, 1, now, future} with an empty symmetric
-	 * difference, and NULLS FIRST ordering is reproduced because the sentinel
-	 * sorts below every real epoch. V80 indexes this exact expression; the
-	 * spelling must stay identical to it or the planner loses the match.
-	 *
-	 * <p>Ordering: never-scanned first (the artifacts a user is actively
-	 * waiting on), newest upload first within them, then stalest stamp -- the
-	 * caller preserves this order when deduplicating to canonicals. Artifacts
-	 * with no matchable components (out of the scanning universe, see the #345
-	 * stall-counter scoping) also surface here and are skipped un-stamped by
-	 * the caller's gate; the created_date tiebreak keeps such legacy debris
-	 * behind every fresh upload, so it cannot starve real candidates.
+	 * @param reason the NoMatchableComponentsReason name
+	 * @param atEpoch the pass instant as fractional epoch seconds (the form Jackson writes for the field)
+	 * @return 1 when the marker landed or changed, 0 when it was already stored
 	 */
+	@Transactional
+	@Modifying
 	@Query(value = """
-			SELECT a.uuid
-			FROM rearm.artifacts a
-			WHERE a.record_data->>'org' = cast(:org as text)
-			  AND coalesce(cast(a.metrics->>'lastScanned' as float), -1) < :cutoffEpoch
-			ORDER BY coalesce(cast(a.metrics->>'lastScanned' as float), -1) ASC,
-			         a.created_date DESC
-			LIMIT :lim
+			UPDATE rearm.artifacts
+			SET metrics = coalesce(metrics, '{}'::jsonb) || jsonb_build_object('notScannable',
+			        jsonb_build_object('reason', cast(:reason as text),
+			            'components', cast(:components as int), 'root', cast(:root as int),
+			            'terminal', cast(:terminal as int), 'unmatchable', cast(:unmatchable as int),
+			            'at', cast(:atEpoch as float8)))
+			WHERE uuid = :uuid
+			  AND (CASE WHEN jsonb_typeof(metrics->'notScannable') = 'object'
+			            THEN (metrics->'notScannable') - 'at' END)
+			      IS DISTINCT FROM jsonb_build_object('reason', cast(:reason as text),
+			            'components', cast(:components as int), 'root', cast(:root as int),
+			            'terminal', cast(:terminal as int), 'unmatchable', cast(:unmatchable as int))
 			""", nativeQuery = true)
-	List<UUID> findFanOutPoolSlice(
-			@Param("org") UUID org, @Param("cutoffEpoch") double cutoffEpoch, @Param("lim") int lim);
+	int stampNotScannable(@Param("uuid") UUID uuid, @Param("reason") String reason,
+			@Param("components") int components, @Param("root") int root,
+			@Param("terminal") int terminal, @Param("unmatchable") int unmatchable,
+			@Param("atEpoch") double atEpoch);
+
+	/**
+	 * Remove the not-scannable marker (TPF-125): the artifact's canonical has a matchable component
+	 * again (a gate skip, or a scan after a parse, a repoint or a re-reconcile). In place, no
+	 * revision, no audit row; a no-op on a row without the key. The caller
+	 * (SharedArtifactService.clearArtifactNotScannable) touches the releases carrying the artifact
+	 * when this returns 1 on an artifact without firstScanned, because the release metrics compute
+	 * reads the marker (ReleaseMetricsComputeService.isScanInput). The predicate is written as
+	 * "-> IS NOT NULL" (true for a JSON null too, which it also removes) rather than the jsonb "?"
+	 * operator, which Spring Data would read as a positional parameter.
+	 *
+	 * @return rows updated, 1 or 0
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.artifacts SET metrics = metrics - 'notScannable' "
+			+ "WHERE uuid = :uuid AND metrics->'notScannable' IS NOT NULL", nativeQuery = true)
+	int clearNotScannable(@Param("uuid") UUID uuid);
 
 	@Transactional
 	@Modifying
@@ -240,7 +238,7 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 	 * orphans heal ahead of fresh ones.
 	 *
 	 * WINDOWED [fromTs, toTs): the unwindowed predecessor walked the entire
-	 * BOM history behind the V67 partial index every tick — in steady state
+	 * BOM history behind the V67 partial index every tick -- in steady state
 	 * (everything mapped) the LIMIT never fills, so each tick heap-fetched
 	 * and detoasted record_data for every BOM artifact ever created and
 	 * anti-join-probed each one, which outgrew the 120s query timeout in
@@ -252,7 +250,7 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 			+ "WHERE a.record_data->>'type' = 'BOM' "
 			+ "AND (a.record_data->'internalBom'->>'id') IS NOT NULL "
 			// org-less rows are unhealable by construction (the heal loop
-			// requires an org) — returning one would pin the watermark on a
+			// requires an org) -- returning one would pin the watermark on a
 			// row that can never leave the result set.
 			+ "AND a.record_data->>'org' IS NOT NULL "
 			+ "AND a.created_date >= :fromTs AND a.created_date < :toTs "
@@ -264,7 +262,7 @@ public interface ArtifactRepository extends CrudRepository<Artifact, UUID> {
 
 	/**
 	 * Watermark bootstrap: the creation date of the oldest BOM artifact.
-	 * First index entry of the V67 partial index — cheap. Instant, not
+	 * First index entry of the V67 partial index -- cheap. Instant, not
 	 * ZonedDateTime: Hibernate maps a bare native timestamptz aggregate to
 	 * Instant.
 	 */

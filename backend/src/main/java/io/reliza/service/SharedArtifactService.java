@@ -31,6 +31,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
+import io.reliza.model.ArtifactNotScannable;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CarryForwardArm;
@@ -136,8 +137,8 @@ public class SharedArtifactService {
 		try {
 			String metricsJson = Utils.OM.writeValueAsString(metrics);
 			if (0 == repository.updateMetricsIfStillUnscanned(a.getUuid(), metricsJson)) {
-				log.info("[CARRY-FORWARD] artifact {} NOT seeded: a real scan landed first and its own "
-						+ "result is authoritative", a.getUuid());
+				log.info("[CARRY-FORWARD] artifact {} NOT seeded: a real scan or a not-scannable verdict "
+						+ "landed first and is authoritative", a.getUuid());
 				return SeedWriteResult.RACE_LOST;
 			}
 			writeMetricsAuditRow(a);
@@ -221,6 +222,9 @@ public class SharedArtifactService {
 	 * visible to BY_UPDATE.
 	 */
 	private void touchReleasesCarrying (Artifact a) {
+		// The pushes skip releases that never need a refresh; that test's cost estimate would
+		// otherwise pull the statements over the JIT threshold (see disableJitForTransaction).
+		releaseRepository.disableJitForTransaction();
 		releaseRepository.touchReleasesByScannedDeliverableArtifact(a.getUuid().toString());
 		releaseRepository.touchReleasesByScannedSceArtifact(a.getUuid().toString());
 		releaseRepository.touchReleasesByScannedArtifactDirect(a.getUuid().toString());
@@ -233,7 +237,7 @@ public class SharedArtifactService {
 	/**
 	 * Find artifact by stored digest (REARM scope)
 	 * Used for BOM deduplication. Picks the OLDEST matching artifact so the
-	 * choice is deterministic as same-digest artifacts accumulate — the
+	 * choice is deterministic as same-digest artifacts accumulate -- the
 	 * previous first-row pick depended on unspecified row order, which made
 	 * the canonical-artifact selection wander between reconciles and
 	 * fragment dedup across several "canonical" roots.
@@ -632,6 +636,82 @@ public class SharedArtifactService {
 		return fetchAndValidateOciBlob(ad, repositoryName, rawBlob.digest(), expectedDigest, mediaType, fileName);
 	}
 
+	/** Outcome of markArtifactNotScannable, returned so tests pin it instead of a log line. */
+	enum NotScannableWrite { STAMPED, UNCHANGED, FINDINGS_WIPED }
+
+	/**
+	 * TPF-125: record that the artifact's canonical has no matchable component (the marker's reason
+	 * and counts come from SyntheticSbomService.classifyForGate). Two cases:
+	 *  (a) the artifact holds no vulnerability and no violation rows: one in-place stamp
+	 *      (ArtifactRepository.stampNotScannable); when it lands or changes (1), the releases carrying
+	 *      the artifact are touched (touchReleasesCarrying) so their compute re-reads the marker and
+	 *      settles; no audit row. STAMPED, or UNCHANGED when the statement wrote nothing.
+	 *  (b) the artifact holds vulnerability or violation rows it did not earn by a scan of this
+	 *      canonical -- the carry-forward seed (findings present, firstScanned null) or a scan of a
+	 *      canonical that has since lost its matchable rows (a repoint): both detail lists are
+	 *      emptied, the marker set on the same DependencyTrackIntegration and the whole object saved
+	 *      through saveArtifactMetrics (audit row, revision bump, release touches), because the
+	 *      artifact's findings content changed. Weakness rows are left alone (SARIF, not DTrack;
+	 *      findingsSignature ignores them, and so does today's vacuous pass). FINDINGS_WIPED, with
+	 *      one INFO line naming the artifact uuid, the reason and the two row counts (integers and
+	 *      an enum name only).
+	 * firstScanned and lastScanned are never written here: this is not a scan. Idempotent: a repeat
+	 * of (a) with the same reason is UNCHANGED; (b) becomes (a) once cleared.
+	 */
+	@Transactional
+	protected NotScannableWrite markArtifactNotScannable(Artifact a, ArtifactNotScannable marker) {
+		DependencyTrackIntegration existingDti = ArtifactData.dataFromRecord(a).getMetrics();
+		int vulns = null == existingDti || null == existingDti.getVulnerabilityDetails() ? 0
+				: existingDti.getVulnerabilityDetails().size();
+		int violations = null == existingDti || null == existingDti.getViolationDetails() ? 0
+				: existingDti.getViolationDetails().size();
+		if (vulns == 0 && violations == 0) {
+			int n = repository.stampNotScannable(a.getUuid(), marker.reason().name(), marker.components(),
+					marker.root(), marker.terminal(), marker.unmatchable(),
+					Utils.toFractionalEpochSecond(marker.at()));
+			if (n == 0) return NotScannableWrite.UNCHANGED;
+			touchReleasesCarrying(a);
+			return NotScannableWrite.STAMPED;
+		}
+		existingDti.setVulnerabilityDetails(new LinkedList<>());
+		existingDti.setViolationDetails(new LinkedList<>());
+		existingDti.setNotScannable(marker);
+		saveArtifactMetrics(a, existingDti);
+		log.info("Artifact {} marked not scannable ({}): wiped {} vulnerability and {} violation row(s) "
+				+ "nothing will scan", a.getUuid(), marker.reason(), vulns, violations);
+		return NotScannableWrite.FINDINGS_WIPED;
+	}
+
+	/** Outcome of clearArtifactNotScannable, returned so tests pin it instead of a log line. */
+	enum NotScannableClear { CLEARED, CLEARED_STAMPED, UNCHANGED }
+
+	/**
+	 * TPF-125: the artifact's canonical has a matchable component again (the gate skip of
+	 * SyntheticSbomService.fanOutOrg). One in-place clear (ArtifactRepository.clearNotScannable);
+	 * when it lands (1) on an artifact without firstScanned, the releases carrying the artifact are
+	 * touched (touchReleasesCarrying) so their compute stops treating the BOM as not scannable:
+	 * while the marker stood such a release anchored as scan complete, and it must read scan
+	 * pending again from the first pass that clears the marker, not from the real scan that may
+	 * never come (TPF-126 F-1). CLEARED. When it lands on an artifact that has firstScanned (a
+	 * legacy row of the catch-up) the touch is skipped, because the artifact's firstScanned
+	 * keeps the release's value as it is (the firstScanned max is unchanged and the BOM is not an
+	 * unscanned one either way): CLEARED_STAMPED. UNCHANGED when the row carried no marker (the
+	 * steady-state gate skip) or the artifact does not exist. No audit row, no revision, no write
+	 * of firstScanned or lastScanned.
+	 */
+	@Transactional
+	protected NotScannableClear clearArtifactNotScannable(UUID artifactUuid) {
+		int n = repository.clearNotScannable(artifactUuid);
+		if (n == 0) return NotScannableClear.UNCHANGED;
+		// Read AFTER the clear, so the firstScanned test sees the row as the release compute will.
+		Artifact a = repository.findById(artifactUuid).orElse(null);
+		if (a == null) return NotScannableClear.UNCHANGED;
+		DependencyTrackIntegration m = ArtifactData.dataFromRecord(a).getMetrics();
+		if (m != null && m.getFirstScanned() != null) return NotScannableClear.CLEARED_STAMPED;
+		touchReleasesCarrying(a);
+		return NotScannableClear.CLEARED;
+	}
+
 	@Transactional
 	protected Artifact updateArtifactDti(Artifact a, DependencyTrackIntegration dti, WhoUpdated wu) {
 		ArtifactData ad = ArtifactData.dataFromRecord(a);
@@ -641,7 +721,7 @@ public class SharedArtifactService {
 		// match what's stored, skip the write entirely. The synthetic fan-out runs
 		// every minute over all covered artifacts; without this guard each tick
 		// re-saved every artifact's metrics (bumping lastScanned) and triggered a
-		// release metrics recompute — effectively rewriting everything every minute.
+		// release metrics recompute -- effectively rewriting everything every minute.
 		// Now we write only when findings actually change (or on first scan).
 		if (existingDti != null && existingDti.getFirstScanned() != null
 				&& findingsSignature(existingDti).equals(findingsSignature(dti))) {
@@ -657,6 +737,10 @@ public class SharedArtifactService {
 			// row is written -- findings did not change, which is exactly the
 			// churn this guard exists to prevent.
 			repository.advanceLastScannedOnly(a.getUuid(), Utils.toFractionalEpochSecond(ZonedDateTime.now()));
+			// TPF-125: a scan of this canonical clears the not-scannable marker. The repository
+			// statement directly, no release touch: this branch requires firstScanned, so the
+			// releases' value cannot change (the CLEARED_STAMPED case of clearArtifactNotScannable).
+			if (existingDti.getNotScannable() != null) repository.clearNotScannable(a.getUuid());
 			return a;
 		}
 
@@ -748,6 +832,8 @@ public class SharedArtifactService {
 			existingDti.setProjectName(dti.getProjectName());
 			existingDti.setProjectVersion(dti.getProjectVersion());
 			existingDti.setDependencyTrackFullUri(dti.getDependencyTrackFullUri());
+			// TPF-125: a scan clears the not-scannable marker; the whole save below omits the key.
+			existingDti.setNotScannable(null);
 			existingDti.setLastScanned(dti.getLastScanned());
 			if (existingDti.getFirstScanned() == null && dti.getLastScanned() != null) {
 				existingDti.setFirstScanned(dti.getLastScanned());
@@ -767,7 +853,7 @@ public class SharedArtifactService {
 	}
 
 	/**
-	 * Stable identity signature of a DTI's findings — the set of vulnerability
+	 * Stable identity signature of a DTI's findings -- the set of vulnerability
 	 * (vulnId/severity/purl) and violation (purl/type) keys, order-independent and
 	 * excluding volatile fields (attributedAt, analysisDate). Two DTIs with the
 	 * same signature carry the same findings; used by {@link #updateArtifactDti}
@@ -839,7 +925,7 @@ public class SharedArtifactService {
 	 * the failure counter, pushes {@code dtrackFetchSkipUntil} forward by an
 	 * exponential backoff window, and sets status to {@link DtrackFetchStatus#FAILED}.
 	 * The previously-good vulnerabilityDetails list on the artifact is left
-	 * untouched — the contract is "fetch failed, don't overwrite, retry later."
+	 * untouched -- the contract is "fetch failed, don't overwrite, retry later."
 	 *
 	 * <p>Distinct from {@link #markArtifactDtrackFailed} which is the SUBMISSION-side
 	 * marker (uploads to DT). Both can coexist on the same artifact, e.g. an
@@ -847,7 +933,7 @@ public class SharedArtifactService {
 	 * fetching metrics also failed.
 	 *
 	 * <p>If a concurrent scheduler tick races and the JPA optimistic-lock
-	 * {@code @Version} on Artifact fires, the exception propagates — the next
+	 * {@code @Version} on Artifact fires, the exception propagates -- the next
 	 * tick will pick the artifact up again, so no retry loop here.
 	 */
 	@Transactional
@@ -1263,6 +1349,7 @@ public class SharedArtifactService {
 				}
 				if (null != newArtifact.getMetrics()
 						&& (null != newArtifact.getMetrics().getFirstScanned()
+								|| null != newArtifact.getMetrics().getNotScannable()
 								|| countInheritedFindings(newArtifact.getMetrics()) > 0)) {
 					return CarryForwardOutcome.ALREADY_SCANNED;
 				}
@@ -1340,6 +1427,11 @@ public class SharedArtifactService {
 		// the upload and the fan-out are independent, so a scan CAN land first; that result is
 		// authoritative and inheriting over it would resurrect findings the scan just cleared.
 		if (null != successorMetrics && null != successorMetrics.getFirstScanned()) {
+			return null;
+		}
+		// Never seed a not-scannable artifact (TPF-125): the fan-out's verdict is as
+		// authoritative as a scan, and the clone below would carry the marker alongside the findings.
+		if (null != successorMetrics && null != successorMetrics.getNotScannable()) {
 			return null;
 		}
 		// Never overwrite findings the successor already carries, stamped or not.

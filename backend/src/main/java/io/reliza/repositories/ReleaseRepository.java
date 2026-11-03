@@ -137,6 +137,12 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Release> findReleasesByReleaseArtifact(String artifactUuidAsString, String orgUuidAsString);
 
+	/** Uuid-only {@link #findReleasesByReleaseArtifact}, for the affected-release gather. */
+	@Query(
+			value = VariableQueries.FIND_RELEASE_UUIDS_BY_ARTIFACT_AND_ORG,
+			nativeQuery = true)
+	List<UUID> findReleaseUuidsByReleaseArtifact(String artifactUuidAsString, String orgUuidAsString);
+
 	/**
 	 * Every release listing the artifact directly, in any organization: rule B's holder read
 	 * (SCORE-52 ADR-8), which must see a listing of another organization to fail closed on it.
@@ -150,6 +156,12 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG,
 			nativeQuery = true)
 	List<Release> findReleasesBySyntheticArtifact(String artifactUuidAsString, String orgUuidAsString);
+
+	/** Uuid-only {@link #findReleasesBySyntheticArtifact}, for the affected-release gather. */
+	@Query(
+			value = VariableQueries.FIND_RELEASE_UUIDS_BY_SYNTHETIC_ARTIFACT_AND_ORG,
+			nativeQuery = true)
+	List<UUID> findReleaseUuidsBySyntheticArtifact(String artifactUuidAsString, String orgUuidAsString);
 
 	@Query(
 			value = VariableQueries.FIND_PENDING_RELEASES_AFTER_CUTOFF,
@@ -205,6 +217,26 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_PRODUCTS_THAT_HAVE_THIS_RELEASE,
 			nativeQuery = true)
 	List<Release> findProductsByRelease(String orgUuidAsString, String releaseUuidAsString);	
+
+	/**
+	 * The uuids of {@link #findProductsByRelease} a metrics push may re-queue, without loading the
+	 * rows: products that are PENDING, CANCELLED or REJECTED, or on an archived branch or of an
+	 * archived component, are left out (VariableQueries.METRICS_PUSH_ELIGIBLE).
+	 */
+	@Query(
+			value = VariableQueries.FIND_PRODUCT_UUIDS_TO_REQUEUE_THAT_HAVE_THIS_RELEASE,
+			nativeQuery = true)
+	List<UUID> findProductUuidsToRequeueByRelease(String orgUuidAsString, String releaseUuidAsString);
+
+	/** The products of {@link #findProductsByRelease} as metrics candidates, for the tick's product cascade. */
+	@Query(
+			value = VariableQueries.FIND_PRODUCT_METRICS_CANDIDATES_THAT_HAVE_THIS_RELEASE,
+			nativeQuery = true)
+	List<MetricsComputeCandidate> findProductMetricsCandidatesByRelease(String orgUuidAsString, String releaseUuidAsString);
+
+	/** The organization of one release, read from its record without loading the row. */
+	@Query(value = VariableQueries.FIND_ORG_OF_RELEASE, nativeQuery = true)
+	Optional<String> findOrgOfRelease(@Param("uuid") UUID uuid);
 
 	@Query(
 			value = VariableQueries.FIND_PRODUCTS_THAT_HAVE_THESE_RELEASES,
@@ -289,15 +321,33 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			nativeQuery = true)
 	List<Object[]> findOrgMetricsSignals();
 	
-	@Query(
-			value = VariableQueries.FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE,
-			nativeQuery = true)
-	List<Release> findProductReleasesForMetricsCompute(int limit);
+	/**
+	 * What the metrics tick reads of a release it picked: its uuid, the failure count the
+	 * poison-pill fence escalates on ({@code flow_control.metricsComputeFailureCount}, null when
+	 * unset) and whether it is a product (a non-empty {@code parentReleases}, for drain mode). The
+	 * compute itself locks and reloads the row, so the tick never needs the entity.
+	 */
+	interface MetricsComputeCandidate {
+		UUID getUuid();
+		Integer getMetricsComputeFailureCount();
+		Boolean getProduct();
+	}
 
+	/** The BY_UPDATE metrics finder: the oldest {@code limit} eligible releases, as candidates (no entity). */
 	@Query(
 			value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE,
 			nativeQuery = true)
-	List<Release> findReleasesForMetricsComputeByUpdate(int limit);
+	List<MetricsComputeCandidate> findReleasesForMetricsComputeByUpdate(int limit);
+
+	/**
+	 * The RECENT lane of the metrics tick (TPF-138): the eligible releases created in the last
+	 * {@code recentWindowMinutes}, oldest-created first, at most {@code limit}, as candidates (no entity).
+	 * Same eligibility as {@link #findReleasesForMetricsComputeByUpdate}; served by the V105 partial
+	 * index on created_date.
+	 */
+	@Query(value = VariableQueries.FIND_RELEASES_FOR_METRICS_COMPUTE_RECENT, nativeQuery = true)
+	List<MetricsComputeCandidate> findReleasesForMetricsComputeRecent(
+			@Param("recentWindowMinutes") int recentWindowMinutes, @Param("limit") int limit);
 
 	/**
 	 * Backlog gauge for the hourly [METRICS-BACKLOG] log line: releases
@@ -336,29 +386,49 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 
 	
 	@Query(
-		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACT,
+		value = VariableQueries.FIND_RELEASE_UUIDS_SHARING_SCE_ARTIFACT,
 		nativeQuery = true)
-		List<Release> findReleasesSharingSceArtifact(String artUuidAsString);
+	List<UUID> findReleaseUuidsSharingSceArtifact(String artUuidAsString);
 
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT,
 		nativeQuery = true)
 		List<Release> findReleasesSharingDeliverableArtifact(String artUuidAsString);
 
+	/** Uuid-only {@link #findReleasesSharingDeliverableArtifact}, for the affected-release gather. */
+	@Query(
+		value = VariableQueries.FIND_RELEASE_UUIDS_SHARING_DELIVERABLE_ARTIFACT,
+		nativeQuery = true)
+	List<UUID> findReleaseUuidsSharingDeliverableArtifact(String artUuidAsString);
+
 	@Query(
 		value = VariableQueries.FIND_RELEASES_BY_ARTIFACTS_AND_ORG,
 		nativeQuery = true)
-	List<Release> findReleasesByReleaseArtifacts(Collection<String> artifactUuidsAsStrings, String orgUuidAsString);
+	List<UUID> findReleasesByReleaseArtifacts(Collection<String> artifactUuidsAsStrings, String orgUuidAsString);
 
+	/**
+	 * Batched twin of {@link #findReleasesBySyntheticArtifact}: the uuids of the releases binding any of the
+	 * artifacts as generated (TPF-131). This and the three other batched gather reads return uuids only.
+	 */
+	@Query(
+		value = VariableQueries.FIND_RELEASES_BY_SYNTHETIC_ARTIFACTS_AND_ORG,
+		nativeQuery = true)
+	List<UUID> findReleasesBySyntheticArtifacts(Collection<String> artifactUuidsAsStrings, String orgUuidAsString);
+
+	/**
+	 * The releases of the source code entries carrying any of the artifacts, component-matched as
+	 * {@link #findReleaseUuidsSharingSceArtifact}. The list is one text[] parameter: one GIN probe per
+	 * artifact. This and {@link #findReleasesSharingDeliverableArtifacts} carry no org predicate.
+	 */
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_SCE_ARTIFACTS,
 		nativeQuery = true)
-	List<Release> findReleasesSharingSceArtifacts(Collection<String> artifactUuidsAsStrings);
+	List<UUID> findReleasesSharingSceArtifacts(@Param("artifactUuidsAsStrings") String[] artifactUuidsAsStrings);
 
 	@Query(
 		value = VariableQueries.FIND_RELEASES_SHARING_DELIVERABLE_ARTIFACTS,
 		nativeQuery = true)
-	List<Release> findReleasesSharingDeliverableArtifacts(Collection<String> artifactUuidsAsStrings);
+	List<UUID> findReleasesSharingDeliverableArtifacts(@Param("artifactUuidsAsStrings") String[] artifactUuidsAsStrings);
 
 	@Query(
 		value = VariableQueries.FIND_RELEASES_BY_ORG_AND_IDENTIFIER,
@@ -374,6 +444,13 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			value = VariableQueries.FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION,
 			nativeQuery = true)
 	List<UUID> findReleasesWithVulnerabilityAnyLocation(String orgUuidAsString, String findingId);
+
+	/** Releases of the org carrying any of the ids as a primary id or an alias, one statement for the list (TPF-131, the KEV re-gate). */
+	@Query(
+			value = VariableQueries.FIND_RELEASES_WITH_ANY_VULNERABILITY_ANY_LOCATION,
+			nativeQuery = true)
+	List<UUID> findReleasesWithAnyVulnerabilityAnyLocation(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("findingIds") String[] findingIds);
 
 	@Query(
 			value = VariableQueries.EXISTS_RELEASE_WITH_VULNERABILITY_ANY_LOCATION,
@@ -432,11 +509,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			""", nativeQuery = true)
 	java.time.Instant findEarliestReleaseDateOfComponent(@Param("componentUuidAsString") String componentUuidAsString);
 
-	/** Rows are (uuid, total_matches) — capped uuid page + window count. */
+	/** Rows are (uuid, total_matches) -- capped uuid page + window count. */
 	@Query(
 			value = VariableQueries.FIND_RELEASES_BY_CVE_ID,
 			nativeQuery = true)
-	List<Object[]> findReleasesByCveId(String orgUuidAsString, String cveId, int limit);
+	List<Object[]> findReleasesByCveId(String orgUuidAsString, String cveId, String branchScope, int limit);
 
 	@Transactional
 	@Modifying
@@ -453,6 +530,16 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	@Modifying
 	@Query(value = "UPDATE rearm.releases SET metrics = jsonb_set(coalesce(metrics, '{}'), '{lastScanned}', to_jsonb(extract(epoch from now()))), last_updated_date = now() WHERE uuid = :uuid", nativeQuery = true)
 	void touchLastScanned(@Param("uuid") UUID uuid);
+
+	/**
+	 * TPF-129: write the BOM tally (ReleaseMetricsDto.BomScanTally, as Utils.OM writes it) at
+	 * metrics.bomScan in place: no metrics_revision bump, no audit row, last_updated_date untouched.
+	 * The compute calls it when only the tally changed; the whole save carries the same key.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "UPDATE rearm.releases SET metrics = jsonb_set(coalesce(metrics, '{}'), '{bomScan}', CAST(:tally AS jsonb)) WHERE uuid = :uuid", nativeQuery = true)
+	void stampBomScanTally(@Param("uuid") UUID uuid, @Param("tally") String tally);
 
 	/**
 	 * What decides whether a release is scanned at all (task RD4-11), in one row: its component's
@@ -527,7 +614,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * resident in the persistence context at any moment. Loading full
 	 * {@link Release} rows up front would trigger Hibernate dirty-checking
 	 * snapshots that deep-copy every JSONB column via
-	 * serialize→bytes→deserialize ({@code hypersistence-utils} {@code JsonType}),
+	 * serialize->bytes->deserialize ({@code hypersistence-utils} {@code JsonType}),
 	 * which was large enough to OOM the scheduler thread before the
 	 * per-iteration heap guard fired.
 	 */
@@ -576,7 +663,7 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * Record an incomplete (or throwing) metrics compute: bump the counter and
 	 * fence the release out of the metrics finders for {@code skipSeconds}.
 	 * The release stays finder-eligible (an incomplete compute stamps no
-	 * lastScanned) — the fence only spaces retries, so a release waiting on an
+	 * lastScanned) -- the fence only spaces retries, so a release waiting on an
 	 * unscanned BOM / child doesn't occupy one of the per-tick finder slots
 	 * every minute and starve younger rows behind it in the ORDER BY.
 	 */
@@ -615,10 +702,26 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	void clearMetricsComputeBackoff(@Param("uuid") UUID uuid);
 
 	/**
+	 * Turn JIT off for the rest of the caller's transaction; SET LOCAL reverts at commit, so the
+	 * pooled connection is unaffected. Called before the metrics pushes: their skip test
+	 * (VariableQueries.METRICS_PUSH_ELIGIBLE) is two primary-key subqueries per candidate row,
+	 * cheap in fact, but the planner prices them against the jsonb probes' inflated row estimates
+	 * (about 100k rows for a product read that returns a few thousand), and the plan cost then
+	 * crosses jit_above_cost: measured 140-230ms of LLVM compile per execution on a seeded
+	 * database, for statements that run in well under a millisecond without it. The metrics
+	 * finders do the same (ReleaseService.findForMetricsComputeJitOff). Joins the caller's
+	 * transaction; every push runs in one.
+	 */
+	@Transactional
+	@Modifying
+	@Query(value = "SET LOCAL jit = off", nativeQuery = true)
+	void disableJitForTransaction();
+
+	/**
 	 * Force a release back into the {@code BY_UPDATE} metrics finder pool:
 	 * bump {@code last_updated_date} past {@code metrics.lastScanned} and drop
 	 * any compute fence in the same statement. Used to propagate a CHILD
-	 * release's metrics change to its containing PRODUCT releases — a settled
+	 * release's metrics change to its containing PRODUCT releases -- a settled
 	 * product (lastScanned stamped, row untouched since) is invisible to every
 	 * finder, so without this touch its aggregate freezes at whatever its
 	 * children looked like when it last computed (observed in prod: a product
@@ -647,11 +750,11 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * {@link #touchForMetricsRecompute}'s no-op guard on purpose: that guard
 	 * no-ops exactly the eligible rows this method must reorder, while this one
 	 * refuses to bump a settled row (which would newly ENQUEUE it rather than
-	 * reorder it). Fences are left alone — a fenced row isn't being fetched in
+	 * reorder it). Fences are left alone -- a fenced row isn't being fetched in
 	 * the first place.
 	 *
 	 * @return 1 if the row was reordered, 0 if it was not eligible (settled
-	 *   concurrently — caller should just move on)
+	 *   concurrently -- caller should just move on)
 	 */
 	@Transactional
 	@Modifying
@@ -666,17 +769,18 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * Event-driven replacement for the BY_OUTBOUND_DELIVERABLES poll: when an
 	 * artifact's metrics land (scan result), push every release that carries
 	 * it as an outbound-deliverable artifact back into the {@code BY_UPDATE}
-	 * metrics finder pool — same touch semantics as
+	 * metrics finder pool -- same touch semantics as
 	 * {@link #touchForMetricsRecompute} (bump past lastScanned + drop the
 	 * fence, which exists precisely to wait for this scan event). Resolved
 	 * via the V68 GIN indexes in two containment probes (~2.5ms at 300k
-	 * deliverables, measured) — the polling finder at that scale costs 1.7s
+	 * deliverables, measured) -- the polling finder at that scale costs 1.7s
 	 * per tick and times out on large instances. No-op (empty IN-set) for
-	 * artifacts not attached to any deliverable.
+	 * artifacts not attached to any deliverable. Like every scan push, it skips
+	 * releases that never need a refresh (VariableQueries.METRICS_PUSH_ELIGIBLE).
 	 */
 	@Transactional
 	@Modifying
-	@Query(value = "UPDATE rearm.releases "
+	@Query(value = "UPDATE rearm.releases r "
 			+ "SET last_updated_date = now(), "
 			+ "    flow_control = NULLIF("
 			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
@@ -688,7 +792,8 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "      ON var.record_data->'outboundDeliverables' @> to_jsonb(del.uuid::text) "
 			+ "    WHERE del.record_data->'artifacts' @> to_jsonb(cast(:artifactUuidAsString as text))) "
 			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
-			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL) "
+			+ "AND " + VariableQueries.METRICS_PUSH_ELIGIBLE,
 			nativeQuery = true)
 	void touchReleasesByScannedDeliverableArtifact(@Param("artifactUuidAsString") String artifactUuidAsString);
 
@@ -703,32 +808,34 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * uuid. Touching on artifact identity alone would wake every sibling
 	 * component's release on a monorepo commit -- exactly the over-reach the
 	 * artifact-table filter (#206) was added to prevent on the read side. The
-	 * component match mirrors {@code FIND_RELEASES_SHARING_SCE_ARTIFACT}.
+	 * component match mirrors {@code FIND_RELEASE_UUIDS_SHARING_SCE_ARTIFACT}.
 	 *
 	 * <p>The containment predicate is index-friendly (V71 GIN on
 	 * {@code record_data->'artifacts'}); the componentUuid is then extracted by
-	 * expanding only the handful of SCE rows that matched.
+	 * expanding only the handful of SCE rows that matched. Releases that never
+	 * need a refresh are skipped (VariableQueries.METRICS_PUSH_ELIGIBLE).
 	 */
 	@Transactional
 	@Modifying
-	@Query(value = "UPDATE rearm.releases "
+	@Query(value = "UPDATE rearm.releases r "
 			+ "SET last_updated_date = now(), "
 			+ "    flow_control = NULLIF("
 			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
 			+ "    '{}'::jsonb) "
 			+ "WHERE uuid IN ("
-			+ "    SELECT r.uuid "
+			+ "    SELECT sr.uuid "
 			+ "    FROM rearm.source_code_entries sce "
 			+ "    CROSS JOIN LATERAL jsonb_array_elements(sce.record_data->'artifacts') AS art "
-			+ "    JOIN rearm.releases r "
-			+ "      ON r.record_data->>'sourceCodeEntry' = sce.uuid::text "
+			+ "    JOIN rearm.releases sr "
+			+ "      ON sr.record_data->>'sourceCodeEntry' = sce.uuid::text "
 			+ "     AND ((art->>'componentUuid') IS NULL "
-			+ "          OR (r.record_data->>'component')::uuid = (art->>'componentUuid')::uuid) "
+			+ "          OR (sr.record_data->>'component')::uuid = (art->>'componentUuid')::uuid) "
 			+ "    WHERE sce.record_data->'artifacts' @> jsonb_build_array("
 			+ "              jsonb_build_object('artifactUuid', cast(:artifactUuidAsString as text))) "
 			+ "      AND art->>'artifactUuid' = cast(:artifactUuidAsString as text)) "
 			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
-			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL) "
+			+ "AND " + VariableQueries.METRICS_PUSH_ELIGIBLE,
 			nativeQuery = true)
 	void touchReleasesByScannedSceArtifact(@Param("artifactUuidAsString") String artifactUuidAsString);
 
@@ -740,11 +847,12 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 	 * (V61, jsonb_path_ops). Unlike the deliverable/SCE cases there is no
 	 * attach-time counterpart call: attaching an artifact directly to a release
 	 * modifies the release row itself, so the ordinary save already bumps
-	 * {@code last_updated_date} and BY_UPDATE sees it.
+	 * {@code last_updated_date} and BY_UPDATE sees it. Releases that never need a
+	 * refresh are skipped (VariableQueries.METRICS_PUSH_ELIGIBLE).
 	 */
 	@Transactional
 	@Modifying
-	@Query(value = "UPDATE rearm.releases "
+	@Query(value = "UPDATE rearm.releases r "
 			+ "SET last_updated_date = now(), "
 			+ "    flow_control = NULLIF("
 			+ "    coalesce(flow_control, '{}'::jsonb) - 'metricsComputeSkipUntil' - 'metricsComputeFailureCount', "
@@ -752,7 +860,8 @@ public interface ReleaseRepository extends CrudRepository<Release, UUID> {
 			+ "WHERE record_data @> jsonb_build_object("
 			+ "          'artifacts', jsonb_build_array(cast(:artifactUuidAsString as text))) "
 			+ "AND (last_updated_date <= to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0)) "
-			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL)",
+			+ "     OR flow_control->>'metricsComputeSkipUntil' IS NOT NULL) "
+			+ "AND " + VariableQueries.METRICS_PUSH_ELIGIBLE,
 			nativeQuery = true)
 	void touchReleasesByScannedArtifactDirect(@Param("artifactUuidAsString") String artifactUuidAsString);
 

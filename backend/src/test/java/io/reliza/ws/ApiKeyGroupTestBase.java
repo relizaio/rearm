@@ -88,6 +88,13 @@ abstract class ApiKeyGroupTestBase {
 			+ " { uuid name status apiKeys apiKeyDetails { uuid keyOrder type status notes declaredName } } }";
 	static final String DELETE = "mutation($u: ID!) { deleteApiKeyGroup(groupUuid: $u) { uuid status apiKeys } }";
 	static final String LIST = "query($o: ID!) { apiKeyGroupsOfOrg(org: $o) { uuid name status apiKeys } }";
+	/** The key-side read (TPF-123). */
+	static final String COMBINED = "query($o: ID!, $k: ID!) { combinedApiKeyOrgPermissions(orgUuid: $o, apiKeyUuid: $k)"
+			+ " { apiKeyUuid org permissions { org scope object type functions meta approvals"
+			+ " sources { kind groupUuid groupName type functions approvals } } } }";
+	/** The key-side membership mutation (TPF-123). */
+	static final String SET_GROUPS = "mutation($o: ID!, $k: ID!, $g: [ID!]!) { setApiKeyGroupsOfKey(orgUuid: $o, apiKeyUuid: $k, groupUuids: $g)"
+			+ " { uuid name status apiKeys } }";
 
 	@MockitoSpyBean UserService userService;
 	@Autowired DgsQueryExecutor dgsQueryExecutor;
@@ -264,6 +271,15 @@ abstract class ApiKeyGroupTestBase {
 
 	ExecutionResult gqlList(Organization org) {
 		return dgsQueryExecutor.execute(LIST, Map.of("o", org.getUuid().toString()));
+	}
+
+	ExecutionResult gqlCombined(UUID org, UUID key) {
+		return dgsQueryExecutor.execute(COMBINED, Map.of("o", org.toString(), "k", key.toString()));
+	}
+
+	ExecutionResult gqlSetGroups(UUID org, UUID key, UUID... groups) {
+		return dgsQueryExecutor.execute(SET_GROUPS, Map.of("o", org.toString(), "k", key.toString(),
+				"g", Arrays.stream(groups).map(UUID::toString).toList()));
 	}
 
 	/** The programmatic executor with the principal the filter leaves after it verified the key's bearer token. */

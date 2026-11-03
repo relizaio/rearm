@@ -18,6 +18,7 @@ import java.util.LinkedList;
 import java.util.Map;
 import java.util.Locale;
 import java.util.HashSet;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -1166,7 +1167,20 @@ public class AgentBoardService {
 			StrengthSpec strength,
 			Long hopBudgetMicros,
 			Boolean blindReview,
-			AgentTaskRoleConfigData.Commissions commissions) {
+			AgentTaskRoleConfigData.Commissions commissions,
+			Boolean coordinatorCheckpoint) {
+
+		/** Pre-checkpoint constructor (task SPLIT-5), so existing call sites read unchanged. */
+		public RoleConfigSpec(String name, String prompt, Integer orderIndex, Integer wipLimit,
+				Boolean requireDistinctAgent, Boolean active, List<AgentCapability> requiredCapabilities,
+				AgentTaskRoleConfigData.RoleKind kind, AgentTaskRoleConfigData.RoleNecessity necessity,
+				AgentTaskRoleConfigData.HumanGate humanGate, List<RequiredInput> requiredInputs,
+				List<ProducedOutput> producesOutputs, StrengthSpec strength, Long hopBudgetMicros, Boolean blindReview,
+				AgentTaskRoleConfigData.Commissions commissions) {
+			this(name, prompt, orderIndex, wipLimit, requireDistinctAgent, active, requiredCapabilities,
+					kind, necessity, humanGate, requiredInputs, producesOutputs, strength, hopBudgetMicros, blindReview,
+					commissions, null);
+		}
 
 		/** Pre-commissions constructor (task RD4-12), so existing call sites read unchanged. */
 		public RoleConfigSpec(String name, String prompt, Integer orderIndex, Integer wipLimit,
@@ -1229,7 +1243,7 @@ public class AgentBoardService {
 				Integer wipLimit, Boolean requireDistinctAgent, Boolean active,
 				List<AgentCapability> requiredCapabilities) {
 			return new RoleConfigSpec(name, prompt, orderIndex, wipLimit, requireDistinctAgent,
-					active, requiredCapabilities, null, null, null, null, null, null, null, null);
+					active, requiredCapabilities, null, null, null, null, null, null, null, null, null, null);
 		}
 	}
 
@@ -1336,13 +1350,13 @@ public class AgentBoardService {
 					|| spec.necessity() != null || spec.humanGate() != null
 					|| spec.requiredInputs() != null || spec.producesOutputs() != null
 					|| spec.strength() != null || spec.hopBudgetMicros() != null || spec.blindReview() != null
-					|| spec.commissions() != null)) {
+					|| spec.coordinatorCheckpoint() != null || spec.commissions() != null)) {
 				// Produced outputs belong here with the rest: they are the board's routing graph,
 				// and a coordinator that could edit them could decide who answers its own
-				// questions. Strength is the org's judgment of its models, not the coordinator's.
-				throw new RelizaException("Capabilities, role kind, necessity, human gate, required"
-						+ " inputs, produced outputs, model strength, blind review, commissions and the hop allowance"
-						+ " are operator-only");
+				// questions. Strength is the org's judgment of its models, not the coordinator's. The
+				// coordinator checkpoint is the stop that makes the seat read the design (task SPLIT-5):
+				// a seat that could clear it could switch off its own check.
+				throw new RelizaException(ROUTING_GRAPH_OPERATOR_ONLY);
 			}
 		} else {
 			if (!allowPromptEdit) {
@@ -1358,7 +1372,54 @@ public class AgentBoardService {
 		List<String> before = commissionProblems(roles, "board " + board.getName());
 		applySpec(rcd, spec);
 		refuseNewCommissionProblems(before, roles, rcd, "board " + board.getName());
+		String twoCheckpoints = checkpointProblem(board, withChanged(roles, rcd), rcd.getName());
+		if (null != twoCheckpoints) throw new RelizaException(twoCheckpoints);
 		return saveRoleConfigData(rcd, wu);
+	}
+
+	/** The refusal of a routing-graph field to a caller that may not change it (the seat's upsert, a FREEFORM apply). */
+	static final String ROUTING_GRAPH_OPERATOR_ONLY = "Capabilities, role kind, necessity, human gate, required"
+			+ " inputs, produced outputs, model strength, blind review, coordinator checkpoint, commissions and the hop"
+			+ " allowance are operator-only";
+
+	/** The refusal of the flag on a preset (task SPLIT-5, 3.5): a preset seeds many boards, the flag is one board's. */
+	static final String CHECKPOINT_NOT_ON_PRESET = "coordinatorCheckpoint is set on a board's own role, not on a preset";
+
+	/** {@code set} with {@code changed} in place of the role of the same uuid or name, or added. */
+	private static List<AgentTaskRoleConfigData> withChanged(List<AgentTaskRoleConfigData> set,
+			AgentTaskRoleConfigData changed) {
+		List<AgentTaskRoleConfigData> after = new ArrayList<>();
+		boolean replaced = false;
+		for (AgentTaskRoleConfigData rc : set) {
+			boolean same = null != changed.getUuid() ? changed.getUuid().equals(rc.getUuid())
+					: rc.getName().equalsIgnoreCase(changed.getName());
+			after.add(same ? changed : rc);
+			replaced |= same;
+		}
+		if (!replaced) after.add(changed);
+		return after;
+	}
+
+	/**
+	 * Null when at most one active role of {@code roles} carries {@code coordinatorCheckpoint} (task SPLIT-5, 3.5);
+	 * else the refusal, naming a role that already carries it -- one other than {@code changed}, the role being
+	 * written, when there is one. Checked on the resulting set, so a write that moves the flag from one role to
+	 * another is accepted.
+	 */
+	static String checkpointProblem(AgentBoardData board, Collection<AgentTaskRoleConfigData> roles,
+			String changed) {
+		List<AgentTaskRoleConfigData> flagged = roles.stream()
+				.filter(rc -> rc.isActive() && rc.isCoordinatorCheckpoint()).toList();
+		if (flagged.size() <= 1) return null;
+		String other = flagged.stream().map(AgentTaskRoleConfigData::getName).filter(n -> !n.equalsIgnoreCase(changed))
+				.findFirst().orElse(flagged.get(0).getName());
+		return "Board " + board.getName() + " already has a coordinator checkpoint before " + other + "; clear it first";
+	}
+
+	/** The name of the one active role of {@code roles} that carries {@code coordinatorCheckpoint}; null when none. */
+	static String checkpointRole(Collection<AgentTaskRoleConfigData> roles) {
+		return roles.stream().filter(rc -> rc.isActive() && rc.isCoordinatorCheckpoint())
+				.map(AgentTaskRoleConfigData::getName).findFirst().orElse(null);
 	}
 
 	/**
@@ -1448,6 +1509,7 @@ public class AgentBoardService {
 		if (spec.wipLimit() != null) rcd.setWipLimit(spec.wipLimit() > 0 ? spec.wipLimit() : null);
 		if (spec.requireDistinctAgent() != null) rcd.setRequireDistinctAgent(spec.requireDistinctAgent());
 		if (spec.blindReview() != null) rcd.setBlindReview(spec.blindReview());
+		if (spec.coordinatorCheckpoint() != null) rcd.setCoordinatorCheckpoint(spec.coordinatorCheckpoint());
 		if (spec.commissions() != null) rcd.setCommissions(checkedCommissions(spec.commissions()));
 		if (spec.requiredCapabilities() != null) rcd.setRequiredCapabilities(spec.requiredCapabilities());
 		if (spec.kind() != null) rcd.setKind(spec.kind());
@@ -1564,6 +1626,8 @@ public class AgentBoardService {
 			throws RelizaException {
 		if (orgUuid == null) throw new RelizaException("Preset requires an org");
 		if (spec == null || StringUtils.isBlank(spec.name())) throw new RelizaException("Preset requires a name");
+		// A role seeded from a preset starts unflagged (task SPLIT-5, 3.5), so a preset never carries the flag.
+		if (null != spec.coordinatorCheckpoint()) throw new RelizaException(CHECKPOINT_NOT_ON_PRESET);
 		Optional<AgentTaskRoleConfig> existing = roleConfigRepository.findPresetByOrgAndName(
 				orgUuid.toString(), spec.name());
 		AgentTaskRoleConfigData rcd;
@@ -1635,7 +1699,7 @@ public class AgentBoardService {
 					preset.getOrderIndex(), preset.getWipLimit(), preset.isRequireDistinctAgent(),
 					true, preset.getRequiredCapabilities(), preset.getKind(), preset.getNecessity(),
 					preset.getHumanGate(), preset.getRequiredInputs(), preset.getProducesOutputs(),
-					StrengthSpec.copyOf(preset), null, preset.isBlindReview(), preset.getCommissions()),
+					StrengthSpec.copyOf(preset), null, preset.isBlindReview(), preset.getCommissions(), null),
 					true, wu);
 		}
 		if (!seeded && StringUtils.isBlank(board.getCoordinatorPrompt())) {
@@ -2041,6 +2105,15 @@ public class AgentBoardService {
 	 * knows when merging is not its job. Null leaves the bullet out.
 	 */
 	public static String routingRules(AgentBoardData board, AgentBoardData.MergeProcedure merge) {
+		return routingRules(board, merge, null);
+	}
+
+	/**
+	 * As above, with the bullet of the design checkpoint (task SPLIT-5, 3.9) when one of the board's active
+	 * {@code roles} carries {@code coordinatorCheckpoint}. Null roles read as "no flagged role".
+	 */
+	public static String routingRules(AgentBoardData board, AgentBoardData.MergeProcedure merge,
+			List<AgentTaskRoleConfigData> roles) {
 		Integer blocking = board.getBlockingPriority();
 		Integer completion = board.getCompletionPriority();
 		StringBuilder sb = new StringBuilder(ROUTING_RULES_HEADING).append('\n');
@@ -2070,6 +2143,8 @@ public class AgentBoardService {
 		sb.append("- A review item the producer fixed in part is RESOLVED in the round that saw the fix;"
 				+ " what remains is re-raised under a new id whose title names the old one. The same"
 				+ " id still OPEN after the producer's round counts as no progress.\n");
+		String checkpoint = null == roles ? null : checkpointRole(roles);
+		if (null != checkpoint) sb.append(checkpointLine(checkpoint));
 		if (null != merge) sb.append(deliveryLine(merge));
 		return sb.toString();
 	}
@@ -2088,7 +2163,16 @@ public class AgentBoardService {
 
 	/** As {@link #servedPrompt(AgentBoardData, String)}, with the merge procedure's bullet. */
 	public static String servedPrompt(AgentBoardData board, String prompt, AgentBoardData.MergeProcedure merge) {
-		String rules = routingRules(board, merge);
+		return servedPrompt(board, prompt, merge, null);
+	}
+
+	/**
+	 * As above, with the board's active roles, so the block says when a role carries the design checkpoint (task
+	 * SPLIT-5). Null roles read as "no flagged role".
+	 */
+	public static String servedPrompt(AgentBoardData board, String prompt, AgentBoardData.MergeProcedure merge,
+			List<AgentTaskRoleConfigData> roles) {
+		String rules = routingRules(board, merge, roles);
 		String served = StringUtils.isBlank(prompt) ? rules : prompt + "\n\n" + rules;
 		String ladder = ladderSection(board);
 		return null == ladder ? served : served + "\n\n" + ladder;
@@ -2145,7 +2229,18 @@ public class AgentBoardService {
 
 	/** What a role is served on this board: its prompt, then the rules with the merge procedure. */
 	public String servedPromptFor(AgentBoardData board, String prompt) {
-		return servedPrompt(board, prompt, effectiveMerge(board));
+		// The roles are read here, not in the static overloads, which cannot (task SPLIT-6, F-1).
+		List<AgentTaskRoleConfigData> active = listRoleConfigs(board.getUuid()).stream()
+				.filter(AgentTaskRoleConfigData::isActive).toList();
+		return servedPrompt(board, prompt, effectiveMerge(board), active);
+	}
+
+	/** The routing-rules bullet of the design checkpoint before {@code role} (task SPLIT-5, 3.9). */
+	static String checkpointLine(String role) {
+		return "- Design checkpoint: before the " + role + " is queued, every task stops at the coordinator with an"
+				+ " ALERT; the coordinator reads the reviewed design and splits the task or sends it on. No pass goes"
+				+ " straight to the " + role + ". An architect that recommends a split says so in the design's last"
+				+ " section and in its sign-off note.\n";
 	}
 
 	/** Heading of the merge-procedure part of the coordinator's served prompt. */
@@ -2543,6 +2638,11 @@ public class AgentBoardService {
 		private List<BoardProducedOutputSpecDto> producesOutputs = new LinkedList<>();
 		private Long hopBudgetMicros;
 		private Boolean blindReview;
+		/**
+		 * Before this role is queued on a design the task stops at the coordinator (task SPLIT-5). A board's own role
+		 * only: a presets file that carries it is refused. Changed only by a person (D11).
+		 */
+		private Boolean coordinatorCheckpoint;
 		/** Who the role may commission for a report (task RD4-12): roles by name, so the file travels. */
 		private AgentTaskRoleConfigData.Commissions commissions;
 		private BoardStrengthSpecDto strength;
@@ -3009,6 +3109,8 @@ public class AgentBoardService {
 		// The commissions check reads the roles as the file leaves them (task RD4-12): the rows below are changed
 		// in place, and a new role joins them once its entry applies.
 		List<String> commissionsBefore = commissionProblems(current, "board " + boardName);
+		// The board's active flagged role before the file (task SPLIT-5, D11): the rows below change in place.
+		String checkpointBefore = checkpointRole(current);
 		List<AgentTaskRoleConfigData> rolesAfter = new ArrayList<>(current);
 		position = 0;
 		for (ResolvedRole rr : roles) {
@@ -3069,6 +3171,8 @@ public class AgentBoardService {
 		List<String> commissionsAfter = new ArrayList<>(commissionProblems(rolesAfter, "board " + boardName));
 		commissionsAfter.removeAll(commissionsBefore);
 		for (String p : commissionsAfter) roleChanges.add(error(boardName, p));
+		checkpointChanges(bd, checkpointBefore, rolesAfter, rolesDeclared ? names : null, actor)
+				.forEach(roleChanges::add);
 
 		// ---- the board's own change, provenance and the record (D9) ----
 		List<String> boardChanged = changedFields(boardBefore, boardState(bd));
@@ -3094,6 +3198,35 @@ public class AgentBoardService {
 		return result;
 	}
 
+	/**
+	 * The design checkpoint's rules on an apply (task SPLIT-5, 3.5, D11), on the roles as the file leaves them, the
+	 * archive of absent roles included: at most one active role carries the flag, and which one does -- by name, or
+	 * none -- changes only when a person applies. A change from any other actor is an error on the role that changed,
+	 * so the file is refused as a whole. A file that repeats the stored state changes nothing and passes.
+	 *
+	 * @param declaredNames the lower-cased role names of a file that declares {@code roles}; null when it does not
+	 */
+	private static List<Change> checkpointChanges(AgentBoardData bd, String before, List<AgentTaskRoleConfigData> after,
+			Set<String> declaredNames, AgentActor actor) {
+		List<Change> out = new ArrayList<>();
+		String two = checkpointProblem(bd, after, null);
+		if (null != two) out.add(error(bd.getName(), two));
+		String now = checkpointRole(after);
+		boolean person = null != actor && AgentActor.ActorKind.USER == actor.kind();
+		if (person || Objects.equals(before, now)) return out;
+		if (null != before) {
+			boolean absent = null != declaredNames && !declaredNames.contains(before.toLowerCase(Locale.ROOT));
+			out.add(error(before, ROUTING_GRAPH_OPERATOR_ONLY + " (" + before + " carries the board's coordinator"
+					+ " checkpoint" + (absent ? " and is absent from the file" : "") + "; only a person changes which role"
+					+ " carries it)"));
+		}
+		if (null != now) {
+			out.add(error(now, ROUTING_GRAPH_OPERATOR_ONLY + " (only a person puts the board's coordinator checkpoint"
+					+ " on " + now + ")"));
+		}
+		return out;
+	}
+
 	private ApplyResult applyPresetWrites(UUID orgUuid, RolePresetsSpecDto spec, boolean dryRun, SourceDto source,
 			WhoUpdated wu) throws RelizaException {
 		ApplyResult result = new ApplyResult();
@@ -3115,6 +3248,10 @@ public class AgentBoardService {
 			}
 			if (!names.add(name.toLowerCase(java.util.Locale.ROOT))) {
 				problems.add(Change.of(DeclarativeKind.ROLE_PRESETS, name, Action.ERROR, null, "declared more than once"));
+				continue;
+			}
+			if (null != r.getCoordinatorCheckpoint()) {
+				problems.add(Change.of(DeclarativeKind.ROLE_PRESETS, name, Action.ERROR, null, CHECKPOINT_NOT_ON_PRESET));
 				continue;
 			}
 			List<Change> own = new ArrayList<>();
@@ -3268,12 +3405,16 @@ public class AgentBoardService {
 				strength,
 				d.has("hopBudgetMicros", r.getHopBudgetMicros()) ? r.getHopBudgetMicros() : null,
 				d.has("blindReview", r.getBlindReview()) ? r.getBlindReview() : null,
-				d.has("commissions", r.getCommissions()) ? r.getCommissions() : null);
+				d.has("commissions", r.getCommissions()) ? r.getCommissions() : null,
+				d.has("coordinatorCheckpoint", r.getCoordinatorCheckpoint()) ? r.getCoordinatorCheckpoint() : null);
 		applySpec(rc, spec, fromFile);
 		// Declared null clears (D15). The upsert reads null as "leave it", so the clears are here.
 		if (d.has("wipLimit", r.getWipLimit()) && null == r.getWipLimit()) rc.setWipLimit(null);
 		if (d.has("hopBudgetMicros", r.getHopBudgetMicros()) && null == r.getHopBudgetMicros()) rc.setHopBudgetMicros(null);
 		if (d.has("blindReview", r.getBlindReview()) && null == r.getBlindReview()) rc.setBlindReview(false);
+		if (d.has("coordinatorCheckpoint", r.getCoordinatorCheckpoint()) && null == r.getCoordinatorCheckpoint()) {
+			rc.setCoordinatorCheckpoint(false);
+		}
 		// Declared null, or naming no role, commissions nobody (task RD4-12).
 		if (d.has("commissions", r.getCommissions()) && null == checkedCommissions(r.getCommissions())) {
 			rc.setCommissions(null);
@@ -3786,6 +3927,7 @@ public class AgentBoardService {
 		m.put("producesOutputs", rc.getProducesOutputs());
 		m.put("hopBudgetMicros", rc.getHopBudgetMicros());
 		m.put("blindReview", rc.isBlindReview());
+		m.put("coordinatorCheckpoint", rc.isCoordinatorCheckpoint());
 		m.put("commissions", rc.getCommissions());
 		m.put("strength.requiredStrength", rc.getRequiredStrength());
 		m.put("strength.strengthHeadroom", rc.getStrengthHeadroom());
@@ -3981,6 +4123,8 @@ public class AgentBoardService {
 		}
 		r.setHopBudgetMicros(rc.getHopBudgetMicros());
 		r.setBlindReview(rc.isBlindReview());
+		// A board's own role only: a preset never carries the flag, and its file refuses the key (task SPLIT-5).
+		if (null != rc.getBoard()) r.setCoordinatorCheckpoint(rc.isCoordinatorCheckpoint());
 		r.setCommissions(rc.getCommissions());
 		BoardStrengthSpecDto st = new BoardStrengthSpecDto();
 		st.setRequiredStrength(rc.getRequiredStrength());
