@@ -40,13 +40,21 @@ describe('ReleaseView Generated artifacts section', () => {
         expect(code).toMatch(/:data="generatedArtifacts"\s+:columns="generatedArtifactsTableFields"/)
     })
 
-    it('offers download only: no delete, edit, tag or Dependency-Track action', () => {
+    it('offers download only, straight to the raw download: no augmented-or-raw dialog, delete, edit, tag or Dependency-Track action', () => {
         const fields = declaration('generatedArtifactsTableFields')
-        expect(fields).toContain('openDownloadArtifactModal(row)')
+        expect(fields).toContain('downloadRawArtifactRef(ref, mediaType)')
+        expect(fields).toContain('generatedArtifactDownloadRef(row)')
+        expect(fields).not.toContain('openDownloadArtifactModal')
         for (const forbidden of ['Trash', 'Edit', 'Tag)', 'renderArtifactDtrackActions', 'deleteArtifactFromRelease',
             'uploadNewBomVersion', 'openEditArtifactTagsModal', 'isWritable']) {
             expect(fields, `generatedArtifactsTableFields must not contain ${forbidden}`).not.toContain(forbidden)
         }
+    })
+
+    it('shows the submission kind and part of an artifact a regulatory submission wrote', () => {
+        const fields = declaration('generatedArtifactsTableFields')
+        expect(fields).toContain("key: 'submission'")
+        expect(fields).toContain('generatedArtifactSubmission(row)')
     })
 
     it('keeps the inventory artifacts computed blind to the generated list', () => {
