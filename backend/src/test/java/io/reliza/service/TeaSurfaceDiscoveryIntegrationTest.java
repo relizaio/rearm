@@ -13,6 +13,7 @@ import static org.mockito.Mockito.doReturn;
 import java.net.URLEncoder;
 import java.net.http.HttpResponse;
 import java.nio.charset.StandardCharsets;
+import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
 
@@ -20,6 +21,8 @@ import org.junit.jupiter.api.Test;
 
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.Utils;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.TeaProfileData.TeaTei;
 import io.reliza.model.TeaProfileData.TeaVisibility;
 import io.reliza.service.TeaPublicationService.TeaPublishMode;
@@ -30,7 +33,7 @@ import tools.jackson.databind.JsonNode;
  * PURL within the organization of the base called, malformed input as 400, and the instance
  * /.well-known/tea document.
  */
-public class TeaSurfaceDiscoveryIntegrationTest extends TeaSurfaceIntegrationTestBase {
+public class TeaSurfaceDiscoveryIntegrationTest extends TeaHostRoutingIntegrationTestBase {
 
 	private static final String DOMAIN = "products.example.com";
 
@@ -122,5 +125,49 @@ public class TeaSurfaceDiscoveryIntegrationTest extends TeaSurfaceIntegrationTes
 		assertEquals("no-store", saas.headers().firstValue("Cache-Control").orElse(null));
 		assertConforms(saas.body(), "error-response");
 		assertTrue(saas.headers().firstValue("Set-Cookie").isEmpty());
+	}
+
+	private static void assertNotHosted(HttpResponse<String> r, String what) {
+		assertEquals(404, r.statusCode(), what + ": " + r.body());
+		assertEquals("NOT_IMPLEMENTED", Utils.OM.readTree(r.body()).get("error").asString(), what);
+		assertEquals("no-store", r.headers().firstValue("Cache-Control").orElse(null), what);
+	}
+
+	// TPF-142 row 7: the per-domain discovery document, and never the OSS listing on a custom host
+	@Test
+	void theDocumentIsServedPerDomain() throws Exception {
+		HostOrg a = hostOrg();
+		serve(a.org(), TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE);
+		HostOrg b = hostOrg();
+		assign(B_HOST, b.org());
+		serve(b.org(), TeaServing.DOMAIN, TeaWellKnownHosting.DOMAIN);
+		HostOrg c = hostOrg();
+		String bToken = accessToken(tokenRequest(HOST_BASE + "/token", B_HOST, b.keyId(), b.secret()));
+		String expected = "{\"schemaVersion\":1,\"endpoints\":[{\"url\":\"https://tea-b.test/tea\",\"versions\":[\"1.0.0\"],\"priority\":1}]}";
+		for (String bearer : Arrays.asList(null, "garbage", bToken)) {
+			HttpResponse<String> r = get(root() + "/.well-known/tea", bearer, on(B_HOST));
+			assertEquals(200, r.statusCode(), bearer + ": " + r.body());
+			assertWellKnownConforms(r.body());
+			assertEquals(expected, r.body());
+			assertEquals("public, max-age=300", r.headers().firstValue("Cache-Control").orElse(null));
+			assertTrue(r.headers().firstValue("Set-Cookie").isEmpty(), "no session, no CSRF cookie");
+		}
+		doReturn(InstallationType.SAAS).when(userService).getInstallationType();
+		assertNotHosted(get(root() + "/.well-known/tea", null), "the default host on SAAS, baseuri unassigned");
+
+		doReturn(InstallationType.OSS).when(userService).getInstallationType();
+		HttpResponse<String> listing = get(root() + "/.well-known/tea", null);
+		assertEquals(200, listing.statusCode(), listing.body());
+		assertTrue(listing.body().contains("\"url\":\"https://tea-b.test/tea\""), listing.body());
+		assertTrue(listing.body().contains("/tea/" + a.teaUuid() + "\""), listing.body());
+		assertFalse(listing.body().contains(c.teaUuid()), "a NONE organization is not listed");
+		serve(b.org(), TeaServing.DOMAIN, TeaWellKnownHosting.NONE);
+		assertNotHosted(get(root() + "/.well-known/tea", null, on(B_HOST)), "hosting NONE on the domain, OSS");
+		assertNotHosted(get(root() + "/.well-known/tea", null, on(C_HOST)), "a listed, unassigned host, OSS");
+		assertNotHosted(get(root() + "/.well-known/tea", null, on(A_HOST)), "another listed host, OSS");
+		doReturn(InstallationType.SAAS).when(userService).getInstallationType();
+		assertNotHosted(get(root() + "/.well-known/tea", null, on(B_HOST)), "hosting NONE on the domain, SAAS");
+		serve(b.org(), TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE);
+		assertNotHosted(get(root() + "/.well-known/tea", null, on(B_HOST)), "serving LEGACY_UUID, hosting NONE");
 	}
 }
