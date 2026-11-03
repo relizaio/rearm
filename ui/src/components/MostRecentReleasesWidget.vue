@@ -66,7 +66,7 @@
                         <span
                             v-if="showsScanBadge(getPendingStatus(rel))"
                             :title="getPendingStatus(rel).title"
-                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: getPendingStatus(rel).kind === 'rejected' ? '#d03050' : getPendingStatus(rel).kind === 'enrichment-pending' ? '#fd8c00' : '#ffc107' }"
+                            :style="{ display: 'inline-block', padding: '2px 10px', borderRadius: '12px', color: 'white', fontSize: '0.8em', whiteSpace: 'nowrap', flexShrink: 0, background: scanBadgeBackground(getPendingStatus(rel)) }"
                         >{{ getPendingStatus(rel).label }}</span>
                         <n-space :size="1" v-else-if="getPendingStatus(rel).kind === 'ready' && rel.metrics?.lastScanned" style="flex-shrink: 0;">
                             <span title="Critical Severity Vulnerabilities" class="circle" :style="{ background: constants.VulnerabilityColors.CRITICAL, cursor: 'pointer' }" @click="openVulnModal(rel, 'CRITICAL', ['Vulnerability', 'Weakness'])">{{ rel.metrics.critical }}</span>
@@ -78,6 +78,7 @@
                             <span title="Licensing Policy Violations" class="circle" :style="{ background: constants.ViolationColors.LICENSE, cursor: 'pointer' }" @click="openVulnModal(rel, '', 'Violation')">{{ rel.metrics.policyViolationsLicenseTotal }}</span>
                             <span title="Security Policy Violations" class="circle" :style="{ background: constants.ViolationColors.SECURITY, cursor: 'pointer' }" @click="openVulnModal(rel, '', 'Violation')">{{ rel.metrics.policyViolationsSecurityTotal }}</span>
                             <span title="Operational Policy Violations" class="circle" :style="{ background: constants.ViolationColors.OPERATIONAL, cursor: 'pointer' }" @click="openVulnModal(rel, '', 'Violation')">{{ rel.metrics.policyViolationsOperationalTotal }}</span>
+                            <span v-if="notScannableNote(rel)" :title="notScannableNote(rel)?.title" data-testid="release-not-scannable-note" :style="{ color: NOT_SCANNABLE_GREY, fontSize: '0.8em', whiteSpace: 'nowrap', alignSelf: 'center', marginLeft: '4px' }">{{ notScannableNote(rel)?.label }}</span>
                         </n-space>
                     </div>
                 </li>
@@ -119,10 +120,11 @@ import { NIcon, NSpin, NSpace, NInputNumber, NSelect, NTooltip, useNotification 
 import { ArrowExpand20Regular } from '@vicons/fluent'
 import { Refresh, CalendarTime } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
+import { artifactScanStateLatch, releaseBomScanLatch, sendWithLatchedTiers } from '@/utils/graphqlDriftFallback'
 import GqlQueries from '@/utils/graphqlQueries'
 import constants from '@/utils/constants'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
-import { isDtrackConfiguredForOrg, getReleaseScanStatus, showsScanBadge, type ReleaseScanStatus } from '@/utils/releaseScanStatus'
+import { isDtrackConfiguredForOrg, getReleaseScanStatus, showsScanBadge, scanBadgeBackground, ownNotScannableNote, NOT_SCANNABLE_GREY, type ReleaseScanStatus, type ReleaseNotScannableNote } from '@/utils/releaseScanStatus'
 import { recentReleasesKinds } from '@/utils/agentDocumentsView'
 import { lifecycleLabel } from '@/utils/lifecycle'
 import VulnerabilityModal from './VulnerabilityModal.vue'
@@ -162,6 +164,10 @@ const dtrackConfigured: Ref<boolean> = ref(false)
 
 function getPendingStatus (rel: any): ReleaseScanStatus {
     return getReleaseScanStatus(rel, dtrackConfigured.value)
+}
+
+function notScannableNote (rel: any): ReleaseNotScannableNote | null {
+    return ownNotScannableNote(rel)
 }
 
 // Internal limit for home-page widget mode; overridden by props.limit on full-page
@@ -216,31 +222,39 @@ async function fetchReleases() {
         const usePerspective = props.perspectiveUuid && props.perspectiveUuid !== 'default'
         let rawReleases: any[]
         if (usePerspective) {
-            const response = await graphqlClient.query({
-                query: GqlQueries.ReleasesByDateRangeAndPerspectiveGql,
-                variables: {
-                    perspectiveUuid: props.perspectiveUuid,
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString(),
-                    limit: effectiveLimit.value,
-                    componentType: effectiveComponentType.value,
-                    componentKinds: recentReleasesKinds(props.includeDocuments)
-                },
-                fetchPolicy: 'no-cache'
+            const variables = {
+                perspectiveUuid: props.perspectiveUuid,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                limit: effectiveLimit.value,
+                componentType: effectiveComponentType.value,
+                componentKinds: recentReleasesKinds(props.includeDocuments)
+            }
+            const { data: response } = await sendWithLatchedTiers<any>({
+                tiers: [
+                    { doc: GqlQueries.ReleasesByDateRangeAndPerspectiveGql, latch: releaseBomScanLatch(store) },
+                    { doc: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+                ],
+                core: GqlQueries.ReleasesByDateRangeAndPerspectiveGqlCore,
+                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
             })
             rawReleases = (response.data as any).releasesByDateRangeAndPerspective || []
         } else {
-            const response = await graphqlClient.query({
-                query: GqlQueries.ReleasesByDateRangeGql,
-                variables: {
-                    org: props.orgUuid,
-                    startDate: startDate.toISOString(),
-                    endDate: endDate.toISOString(),
-                    limit: effectiveLimit.value,
-                    componentType: effectiveComponentType.value,
-                    componentKinds: recentReleasesKinds(props.includeDocuments)
-                },
-                fetchPolicy: 'no-cache'
+            const variables = {
+                org: props.orgUuid,
+                startDate: startDate.toISOString(),
+                endDate: endDate.toISOString(),
+                limit: effectiveLimit.value,
+                componentType: effectiveComponentType.value,
+                componentKinds: recentReleasesKinds(props.includeDocuments)
+            }
+            const { data: response } = await sendWithLatchedTiers<any>({
+                tiers: [
+                    { doc: GqlQueries.ReleasesByDateRangeGql, latch: releaseBomScanLatch(store) },
+                    { doc: GqlQueries.ReleasesByDateRangeGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+                ],
+                core: GqlQueries.ReleasesByDateRangeGqlCore,
+                send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
             })
             rawReleases = (response.data as any).releasesByDateRange || []
         }

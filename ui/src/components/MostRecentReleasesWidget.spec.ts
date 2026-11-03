@@ -7,7 +7,8 @@ import { flushPromises, mount } from '@vue/test-utils'
 
 const query = vi.fn(async (_: any) => ({ data: { releasesByDateRange: [], releasesByDateRangeAndPerspective: [] } }))
 vi.mock('@/utils/graphql', () => ({ default: { query: (q: any) => query(q) } }))
-vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {} }) }))
+const { state, commit } = vi.hoisted(() => ({ state: { artifactScanStateSupported: true, releaseBomScanSupported: true }, commit: vi.fn() }))
+vi.mock('vuex', () => ({ useStore: () => ({ dispatch: vi.fn(), getters: {}, state, commit }) }))
 vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification: () => ({ error: vi.fn() }) }))
 vi.mock('@/utils/releaseScanStatus', () => ({
     isDtrackConfiguredForOrg: async () => false,

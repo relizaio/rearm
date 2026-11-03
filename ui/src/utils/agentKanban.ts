@@ -28,6 +28,24 @@ export function moreLanesHint (past: number): string | null {
     return past > 0 ? `${past} more lane${past === 1 ? '' : 's'} →` : null
 }
 
+/** The hint once the strip is scrolled to its end: it takes the strip back to its first column. */
+export const BACK_LANES_HINT = '← back'
+
+/** Where a strip hint scrolls its strip when clicked. */
+export type StripDirection = 'end' | 'start'
+
+export interface StripHint { label: string, toward: StripDirection }
+
+/**
+ * A lane's hint above its strip: "2 more lanes ->" while columns sit past the right edge, which scrolls to the end;
+ * "<- back" once the strip is scrolled off its start with nothing past the edge, which scrolls back; else none.
+ */
+export function stripHint (past: number, scrolledFromStart: boolean): StripHint | null {
+    const more = moreLanesHint(past)
+    if (more) return { label: more, toward: 'end' }
+    return scrolledFromStart ? { label: BACK_LANES_HINT, toward: 'start' } : null
+}
+
 /** What an empty board says under its headers. */
 export const EMPTY_BOARD_HINT = 'No tasks yet. + New task, or agents register tasks via the coordinator.'
 
@@ -38,6 +56,10 @@ export interface StripMeasure {
     measure (): void
     /** Per lane, how many columns end past the strip's edge. */
     pastEdge: { value: Record<string, number> }
+    /** Per lane, whether the strip is scrolled away from its start. */
+    scrolled: { value: Record<string, boolean> }
+    /** Scroll a lane's strip smoothly to its far end or back to its start; its scroll event re-measures it. */
+    scrollStrip (key: string, toward: StripDirection): void
 }
 
 /**
@@ -45,12 +67,23 @@ export interface StripMeasure {
  * (RD2-13 run 1, T-1): opened on another tab first, the kanban's strip mounts after the tasks arrived, so a
  * watch on the tasks alone measured nothing.
  */
-export function stripMeasure (after: (fn: () => void) => void, pastEdge: { value: Record<string, number> }): StripMeasure {
+export function stripMeasure (after: (fn: () => void) => void, pastEdge: { value: Record<string, number> },
+    scrolled: { value: Record<string, boolean> } = { value: {} }): StripMeasure {
     const els = new Map<string, HTMLElement>()
     function measure () {
         const out: Record<string, number> = {}
-        for (const [key, el] of els) out[key] = columnsPastEdge(Array.from(el.children) as any[], el.scrollLeft, el.clientWidth)
+        const off: Record<string, boolean> = {}
+        for (const [key, el] of els) {
+            out[key] = columnsPastEdge(Array.from(el.children) as any[], el.scrollLeft, el.clientWidth)
+            off[key] = el.scrollLeft > 0
+        }
         pastEdge.value = out
+        scrolled.value = off
+    }
+    function scrollStrip (key: string, toward: StripDirection) {
+        const el = els.get(key)
+        if (!el) return
+        el.scrollTo({ left: toward === 'end' ? el.scrollWidth : 0, behavior: 'smooth' })
     }
     function boardEl (key: string, el: any) {
         if (!el) {
@@ -61,7 +94,7 @@ export function stripMeasure (after: (fn: () => void) => void, pastEdge: { value
         els.set(key, el as HTMLElement)
         if (fresh) after(measure)
     }
-    return { boardEl, measure, pastEdge }
+    return { boardEl, measure, pastEdge, scrolled, scrollStrip }
 }
 
 /** How many cards a column shows before its "Show N more". */

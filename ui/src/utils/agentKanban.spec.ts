@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
-import { CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, COL_MIN_WIDTH, columnFolded, columnHead, columnKey, columnsPastEdge, EMPTY_BOARD_HINT,
-    LANE_CARDS, moreCardsLabel, moreLanesHint, shownCards, stripMeasure } from './agentKanban'
+import { BACK_LANES_HINT, CARD_TOOLTIP_STYLE, CARD_TOOLTIP_TEXT_STYLE, COL_MIN_WIDTH, columnFolded, columnHead, columnKey, columnsPastEdge,
+    EMPTY_BOARD_HINT, LANE_CARDS, moreCardsLabel, moreLanesHint, shownCards, stripHint, stripMeasure } from './agentKanban'
 
 // RD2-13 (sweep UI-21, UI-36): the kanban's columns at a laptop's width.
 describe('the kanban columns', () => {
@@ -62,6 +62,51 @@ describe('measuring a lane\'s strip', () => {
     })
 })
 
+// The hint above a strip is a control: "N more lanes" scrolls the strip to its end, and once there with nothing past
+// the edge, "back" scrolls it to its start.
+describe('the strip hint', () => {
+    it('offers the far end while columns sit past the edge, the start once scrolled there, else nothing', () => {
+        expect(stripHint(2, false)).toEqual({ label: '2 more lanes \u2192', toward: 'end' })
+        expect(stripHint(1, true)).toEqual({ label: '1 more lane \u2192', toward: 'end' })
+        expect(stripHint(0, true)).toEqual({ label: BACK_LANES_HINT, toward: 'start' })
+        expect(BACK_LANES_HINT).toBe('\u2190 back')
+        expect(stripHint(0, false)).toBeNull()
+    })
+
+    const strip = (scrollLeft: number) => {
+        const el: any = { scrollLeft, clientWidth: 1180, scrollWidth: 1716, children: [0, 1, 2, 3, 4, 5, 6, 7, 8]
+            .map(i => ({ offsetLeft: i * 192, offsetWidth: 180 })) }
+        el.scrollTo = (opts: { left: number, behavior: string }) => { el.calls = [...(el.calls ?? []), opts] }
+        return el
+    }
+
+    it('scrolls a lane\'s strip smoothly to its far end, and back to its start', () => {
+        const m = stripMeasure(fn => fn(), { value: {} })
+        const el = strip(0)
+        m.boardEl('none', el)
+        m.scrollStrip('none', 'end')
+        expect(el.calls).toEqual([{ left: 1716, behavior: 'smooth' }])
+        m.scrollStrip('none', 'start')
+        expect(el.calls[1]).toEqual({ left: 0, behavior: 'smooth' })
+        m.scrollStrip('gone', 'end')
+        expect(el.calls).toHaveLength(2, 'a lane without a strip scrolls nothing')
+    })
+
+    it('records whether each strip is scrolled off its start, so the hint turns to back at the end', () => {
+        const scrolled = { value: {} as Record<string, boolean> }
+        const m = stripMeasure(fn => fn(), { value: {} }, scrolled)
+        const el = strip(0)
+        m.boardEl('none', el)
+        expect(m.pastEdge.value).toEqual({ none: 3 })
+        expect(scrolled.value).toEqual({ none: false })
+        expect(stripHint(m.pastEdge.value.none, scrolled.value.none)?.toward).toBe('end')
+        el.scrollLeft = 536
+        m.measure()
+        expect(m.pastEdge.value).toEqual({ none: 0 })
+        expect(scrolled.value).toEqual({ none: true })
+        expect(stripHint(m.pastEdge.value.none, scrolled.value.none)?.toward).toBe('start')
+    })
+})
 
 // Five cards a column until "Show N more" (the board load), and the card tooltips' bounds.
 describe('the kanban columns: five cards each', () => {

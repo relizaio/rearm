@@ -7,7 +7,7 @@ import { apiKeyLabel, apiKeyLabelOf } from './apiKeyLabel'
  * at call time.
  */
 
-const byText = (a: string, b: string): number => (a || '').localeCompare(b || '', undefined, { sensitivity: 'base' })
+export const byText = (a: string, b: string): number => (a || '').localeCompare(b || '', undefined, { sensitivity: 'base' })
 
 /**
  * The updateApiKeyGroup input. apiKeys REPLACES the member list on the server, so it is always the

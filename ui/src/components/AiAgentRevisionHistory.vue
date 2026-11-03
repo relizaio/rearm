@@ -1,6 +1,7 @@
 <template>
-    <n-collapse class="revhist" @item-header-click="onHeader">
-        <n-collapse-item title="Revisions" name="history">
+    <!-- In a collapse, read when opened; open (the task page's Revisions tab), bare and read on mount. -->
+    <component :is="open ? 'div' : NCollapse" class="revhist" v-bind="open ? {} : { onItemHeaderClick: onHeader }">
+        <component :is="open ? 'div' : NCollapseItem" v-bind="open ? {} : { title: 'Revisions', name: 'history' }">
             <n-spin :show="loading">
                 <div v-if="error" class="revhist__note revhist__note--error">{{ error }}</div>
                 <div v-else-if="loaded && !revisions.length" class="revhist__note">No earlier revisions.</div>
@@ -42,15 +43,15 @@
                 </div>
                 <n-button v-if="more" size="tiny" class="revhist__more" @click="load(false)">Load more</n-button>
             </n-spin>
-        </n-collapse-item>
-    </n-collapse>
+        </component>
+    </component>
 </template>
 
 <script lang="ts" setup>
 // A task's, board's or role's earlier revisions (22ddc644), loaded when the section is opened.
 // Each row can show what changed from the revision before it; a prompt or other long text
 // shows the two versions side by side, since that is what people look for after a bad round.
-import { computed, ref, watch } from 'vue'
+import { computed, onMounted, ref, watch } from 'vue'
 import { useStore } from 'vuex'
 import { NButton, NCollapse, NCollapseItem, NSpin } from 'naive-ui'
 import AgentTime from './AgentTime.vue'
@@ -62,6 +63,8 @@ const props = defineProps<{
     uuid: string
     /** The live object as the host has it: the newest revision is the state before the last save. */
     current?: any
+    /** Shown without the collapse, its first page read when it mounts: the host decides when that is. */
+    open?: boolean
 }>()
 
 const PAGE = 20
@@ -118,6 +121,11 @@ watch(() => props.uuid, () => {
     error.value = null
     compareOpen.value = new Set()
     fullOpen.value = new Set()
+    if (props.open) load(true)
+})
+
+onMounted(() => {
+    if (props.open) load(true)
 })
 
 defineExpose({ load })

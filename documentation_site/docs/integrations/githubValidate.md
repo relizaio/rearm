@@ -381,9 +381,15 @@ CEL expression evaluated server-side at fire time. The result must be a string t
 | `release.securityViolations` | int | Count of policy violations of type SECURITY |
 | `release.licenseViolations` | int | Count of policy violations of type LICENSE |
 | `release.operationalViolations` | int | Count of policy violations of type OPERATIONAL |
+| `release.bomScanState` | string | `NO_BOMS` / `ALL_SCANNABLE` / `SOME_NOT_SCANNABLE` / `ALL_NOT_SCANNABLE`: how the release's BOMs stand with the scanner. A release whose BOMs are all not scannable still reads `firstScanned` true with zero findings |
+| `release.scannableBoms` | int | Count of BOMs the scanner can read (scanned or still pending) |
+| `release.notScannableBoms` | int | Count of BOMs with no component the scanner could match |
+| `release.notScannableReasons` | list of string | Distinct reasons of those BOMs: `NO_COMPONENTS` / `ONLY_ROOT` / `ALL_TERMINAL` / `NO_PURL_OR_CPE`; empty when none |
 | `release.approvals[uuid]` | string | `APPROVED` / `DISAPPROVED` / `UNSET` per approval entry |
 
 CEL integers are 64-bit, so use `string(release.criticalVulns)` to interpolate counts into a JSON string.
+
+A release with no BOM the scanner can read still reads `release.firstScanned` true; `release.scannableBoms >= 1` requires one, and `release.bomScanState == "ALL_NOT_SCANNABLE"` names a release the scanner could not read at all.
 
 ::: tip Use template buttons
 The trigger form has a **Use template** button next to each field that pre-fills a starting template you can edit. Clicking it overwrites whatever is currently in the field — clear the field first if you want to start fresh, or copy your work elsewhere before refilling.

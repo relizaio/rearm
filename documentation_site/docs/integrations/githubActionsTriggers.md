@@ -122,6 +122,7 @@ For example, input: `{"product_version": "$releaseversion"}` to pass the release
     - `release.version`, `release.lifecycle`, `release.component`, `release.branchType`
     - vulnerability counts: `release.criticalVulns`, `release.highVulns`, `release.mediumVulns`, `release.lowVulns`, `release.unassignedVulns`, `release.firstScanned`
     - policy violations: `release.securityViolations`, `release.operationalViolations`, `release.licenseViolations`
+    - BOM scan state: `release.bomScanState` (`NO_BOMS` / `ALL_SCANNABLE` / `SOME_NOT_SCANNABLE` / `ALL_NOT_SCANNABLE`), `release.scannableBoms`, `release.notScannableBoms`, `release.notScannableReasons` (`NO_COMPONENTS` / `ONLY_ROOT` / `ALL_TERMINAL` / `NO_PURL_OR_CPE`)
     - approvals: `release.anyApproved`, `release.anyDisapproved`, `release.approvals["<entry-uuid>"]` returning `"APPROVED" | "DISAPPROVED" | "UNSET"`. `approvals` is also a top-level alias so macros like `approvals.exists(k, approvals[k] == "DISAPPROVED")` work.
     - context: `release.agentSessions`, `release.commits`, `release.headCommit`
 

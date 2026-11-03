@@ -53,7 +53,9 @@ import { ref, Ref, h, watch, onMounted } from 'vue'
 import { RouterLink, useRouter } from 'vue-router'
 import { NDataTable, NIcon, NInputNumber, NTag, NTooltip, useNotification, DataTableColumns } from 'naive-ui'
 import { Refresh, Star, CalendarTime } from '@vicons/tabler'
+import { useStore } from 'vuex'
 import graphqlClient from '@/utils/graphql'
+import { artifactScanStateLatch, releaseBomScanLatch, sendWithLatchedTiers } from '@/utils/graphqlDriftFallback'
 import GqlQueries from '@/utils/graphqlQueries'
 import { ReleaseVulnerabilityService } from '@/utils/releaseVulnerabilityService'
 import { isDtrackConfiguredForOrg, getReleaseScanStatus } from '@/utils/releaseScanStatus'
@@ -76,6 +78,7 @@ const props = withDefaults(defineProps<{
 const emit = defineEmits<{ (e: 'selectBranch', branchUuid: string): void }>()
 
 const router = useRouter()
+const store = useStore()
 const notification = useNotification()
 const loading = ref(false)
 const loadError = ref('')
@@ -99,10 +102,14 @@ async function fetchLatest () {
     loading.value = true
     loadError.value = ''
     try {
-        const response = await graphqlClient.query({
-            query: GqlQueries.LatestReleasesOfComponentGql,
-            variables: { componentUuid: props.componentUuid, limit: limit.value },
-            fetchPolicy: 'no-cache'
+        const variables = { componentUuid: props.componentUuid, limit: limit.value }
+        const { data: response } = await sendWithLatchedTiers<any>({
+            tiers: [
+                { doc: GqlQueries.LatestReleasesOfComponentGql, latch: releaseBomScanLatch(store) },
+                { doc: GqlQueries.LatestReleasesOfComponentGqlWithoutBomScan, latch: artifactScanStateLatch(store) }
+            ],
+            core: GqlQueries.LatestReleasesOfComponentGqlCore,
+            send: (query) => graphqlClient.query({ query, variables, fetchPolicy: 'no-cache' })
         })
         rows.value = (response.data as any).latestReleasesOfComponent || []
     } catch (error: any) {

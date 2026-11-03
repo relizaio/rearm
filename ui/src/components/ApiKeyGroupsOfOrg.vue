@@ -1,21 +1,17 @@
 <template>
     <div class="api-key-groups-pane">
+        <!-- The create icon right of the heading, as the component view's Branch heading has it. -->
+        <h5 class="listHead mt-4" style="display: flex; align-items: center; gap: 8px;">
+            <span>API Key Groups</span>
+            <n-icon v-if="isWritable && supported" class="clickable" size="20" title="Add group"
+                data-testid="add-api-key-group" @click="openCreate"><CirclePlus /></n-icon>
+        </h5>
         <div class="tab-toolbar">
             <div class="tab-toolbar-info">
                 An API key group is a permission set that Free Form keys of this organization join. A member key is
                 granted the group's permissions in addition to its own on every call, including calls made through a
                 federated trust rule bound to the key; nothing is copied onto the key.
             </div>
-            <n-button
-                v-if="isWritable && supported"
-                type="primary"
-                size="small"
-                data-testid="add-api-key-group"
-                @click="openCreate"
-            >
-                <template #icon><n-icon><CirclePlus /></n-icon></template>
-                Add group
-            </n-button>
         </div>
 
         <n-alert
@@ -102,7 +98,7 @@
 
 <script lang="ts" setup>
 /**
- * TPF-92 (architecture 4.4): the API Key Groups tab of Organization Settings, beside User Groups.
+ * TPF-92 (architecture 4.4): the API Key Groups sub-tab of Organization Settings' Programmatic Access, after Free Form Keys.
  * OrgSettings owns the group list (decision 1) and passes it in; this pane creates, edits,
  * deactivates and restores groups, then emits changed so OrgSettings reloads. Every refusal goes
  * to notify with the server's text, and nothing is emitted on a failure.

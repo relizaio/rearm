@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-    apiKeyGroupsOfKey, buildApiKeyGroupUpdateInput, freeformKeyOptions, permissionsFromScopedModel, scopedModelFromPermissions
+    apiKeyGroupsOfKey, buildApiKeyGroupUpdateInput, byText, freeformKeyOptions, permissionsFromScopedModel, scopedModelFromPermissions
 } from './apiKeyGroupInput'
 
 // TPF-92 (architecture 4.5, test row 13): the pure parts of the API Key Groups editor.
@@ -119,5 +119,13 @@ describe('apiKeyGroupsOfKey (row 13 e)', () => {
     it('gives [] on empty input', () => {
         expect(apiKeyGroupsOfKey([], 'k')).toEqual([])
         expect(apiKeyGroupsOfKey(null, 'k')).toEqual([])
+    })
+})
+
+describe('byText (TPF-124 row 22)', () => {
+    it('is exported and compares base-insensitively', () => {
+        expect(byText('alpha', 'Beta')).toBeLessThan(0)
+        expect(byText('Beta', 'alpha')).toBeGreaterThan(0)
+        expect(byText('ci', 'CI')).toBe(0)
     })
 })

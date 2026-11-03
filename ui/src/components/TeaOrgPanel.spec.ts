@@ -12,6 +12,9 @@
 // The overrides table: its heading and help line, its empty text, and each object linked to where
 // its TEA profile is edited (a component's or product's settings on the TEA tab, the organization's
 // Perspectives tab).
+//
+// Task TPF-144: the panel reads TeaOrgServing (the discovery with assignedHost, teaServing,
+// teaWellKnownHosting and wellKnownUrl); the serving choices are pinned in TeaOrgPanelServing.spec.ts.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -36,8 +39,9 @@ const TEA = '55555555-5555-4555-8555-555555555555'
 const API = 'https://rearm.example.com/tea/' + TEA
 // The exact string TeaProfileService writes (Jackson compact, field order as served).
 const DOC = '{"schemaVersion":1,"endpoints":[{"url":"' + API + '","versions":["1.0.0"],"priority":1}]}'
-const NOT_MINTED = { org: ORG, teaUuid: null }
-const MINTED = { org: ORG, teaUuid: TEA, apiBase: API, wellKnownDocument: DOC }
+const NOT_MINTED = { org: ORG, teaUuid: null, apiBase: null, wellKnownDocument: null,
+    assignedHost: null, teaServing: 'NONE', teaWellKnownHosting: 'NONE', wellKnownUrl: null }
+const MINTED = { ...NOT_MINTED, teaUuid: TEA, apiBase: API, wellKnownDocument: DOC, teaServing: 'LEGACY_UUID' }
 
 const operation = (opts: any) => opts.query?.definitions?.[0]?.name?.value
 const nameReads = () => query.mock.calls.filter(c => operation(c[0]) === 'TeaComponentName')
@@ -54,7 +58,7 @@ const ALL_ROWS = () => [row('ORGANIZATION', null), row('COMPONENT', LISTED), row
 function answers (archivedRead: () => any, discovery: Record<string, any> = NOT_MINTED, profileRows: () => any[] = ALL_ROWS) {
     query.mockImplementation(async (opts: any) => {
         switch (operation(opts)) {
-        case 'TeaOrgDiscovery': return { data: { teaOrgDiscovery: discovery } }
+        case 'TeaOrgServing': return { data: { teaOrgDiscovery: discovery } }
         case 'TeaProfilesOfOrg': return { data: { teaProfilesOfOrg: profileRows() } }
         case 'TeaComponentName': return archivedRead()
         default: throw new Error('unexpected query ' + operation(opts))

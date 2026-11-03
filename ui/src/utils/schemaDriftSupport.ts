@@ -21,7 +21,7 @@ import { buildSchema, GraphQLEnumType, type GraphQLSchema } from 'graphql'
  */
 const CE_SCHEMA_DIR = fileURLToPath(new URL(
     '../../../backend/src/main/resources/schema/', import.meta.url))
-const PRO_SCHEMA_DIR = fileURLToPath(new URL(
+const PRO_SCHEMA_DIR = process.env.REARM_PRO_SCHEMA || fileURLToPath(new URL(
     '../../../../rearm-core/backend/src/main/resources/schema/', import.meta.url))
 
 /** The schema under `dir`, or null when it holds no schema files. Throws if they do not build. */

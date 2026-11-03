@@ -12,11 +12,12 @@ vi.mock('naive-ui', async (orig) => ({ ...(await orig() as any), useNotification
 
 const { default: Page } = await import('./AiAgentTaskPage.vue')
 
-function serve (task: any) {
+function serve (task: any, myPermissions: string[] = ['BOARD_READ', 'BOARD_WRITE']) {
     dispatch.mockImplementation(async (action: string, arg: any) => {
         switch (action) {
         case 'fetchAgentTask': return arg === task.uuid ? task : null
-        case 'fetchAgentBoard': return { uuid: 'b1', name: 'Dogfood', completionPriority: null, myPermissions: ['BOARD_READ', 'BOARD_WRITE'] }
+        case 'fetchAgentBoard': return { uuid: 'b1', name: 'Dogfood', completionPriority: null, myPermissions }
+        case 'fetchAgentRevisions': return [{ revision: 1, at: '2026-09-25T09:00:00Z', task: { uuid: task.uuid, status: 'QUEUED' } }]
         case 'fetchAgentTasksOfBoard': return fixtureTasks(task)
         case 'fetchAgentTaskRoleConfigsOfBoard': return fixtureRoles
         case 'fetchAgentsOfOrg': return [{ uuid: 'a1', name: 'Arch' }]
@@ -36,8 +37,9 @@ describe('AiAgentTaskPage', () => {
         const rest = dispatch.mock.calls.slice(1).map(c => c[0]).sort()
         expect(rest).toEqual(['fetchAgentBoard', 'fetchAgentTaskRoleConfigsOfBoard', 'fetchAgentTasksOfBoard', 'fetchAgentsOfOrg'])
         expect(dispatch).toHaveBeenCalledWith('fetchAgentBoard', 'b1')
-        // The page reads its board's tasks whole; only the board's views read them card-level.
-        expect(dispatch).toHaveBeenCalledWith('fetchAgentTasksOfBoard', { boardUuid: 'b1', full: true })
+        // The page reads its board's other tasks at card level, as the board's views do: a large board's whole
+        // read was most of the page's load, and the page reads only their key, title, status and links.
+        expect(dispatch).toHaveBeenCalledWith('fetchAgentTasksOfBoard', { boardUuid: 'b1' })
         expect(dispatch).toHaveBeenCalledWith('fetchAgentsOfOrg', 'o1')
     })
 
@@ -103,6 +105,55 @@ describe('AiAgentTaskPage', () => {
         await flushPromises()
         expect(w.find('[data-testid="task-stale"]').exists()).toBe(false)
         expect(w.findAll('.dsec__h').map(h => h.text())).toContain('Current assignment')
+    })
+
+    it('keeps the task in its first tab and the revisions in a second, read only when that tab opens', async () => {
+        serve(richTask())
+        const w = mount(Page)
+        await flushPromises()
+        const tabs = w.findAll('.n-tabs-tab').map(t => t.text())
+        expect(tabs).toEqual(['Task', 'Revisions'])
+        expect(w.find('.tpage__main').exists()).toBe(true)
+        expect(w.find('.revhist').exists()).toBe(false, 'the revisions pane is not mounted before its tab opens')
+        expect(dispatch.mock.calls.some(c => c[0] === 'fetchAgentRevisions')).toBe(false)
+        await w.findAll('.n-tabs-tab')[1].trigger('click')
+        await flushPromises()
+        expect(dispatch).toHaveBeenCalledWith('fetchAgentRevisions', { kind: 'task', uuid: 't1', limit: 20, offset: 0 })
+        expect(w.find('.revhist .revhist__rev').exists()).toBe(true)
+        expect(w.find('.revhist .n-collapse').exists()).toBe(false, 'no collapse inside the tab')
+        await w.findAll('.n-tabs-tab')[0].trigger('click')
+        await w.findAll('.n-tabs-tab')[1].trigger('click')
+        await flushPromises()
+        expect(dispatch.mock.calls.filter(c => c[0] === 'fetchAgentRevisions')).toHaveLength(1, 'kept, not re-read')
+    })
+
+    it('offers no Revisions tab without Board read on the board', async () => {
+        serve(richTask(), [])
+        const w = mount(Page)
+        await flushPromises()
+        expect(w.findAll('.n-tabs-tab').map(t => t.text())).toEqual(['Task'])
+        expect(dispatch.mock.calls.some(c => c[0] === 'fetchAgentRevisions')).toBe(false)
+    })
+
+    it('exports through an icon button with its tooltip, loading while the export runs', async () => {
+        serve(richTask())
+        let finish: (v: any) => void = () => {}
+        const base = dispatch.getMockImplementation()!
+        dispatch.mockImplementation(async (action: string, arg: any) =>
+            action === 'exportAgentTask' ? new Promise(r => { finish = r }) : base(action, arg))
+        const w = mount(Page)
+        await flushPromises()
+        const btn = w.find('[data-testid="task-export"]')
+        expect(btn.text()).toBe('')
+        expect(btn.attributes('aria-label')).toBe('Export task as JSON')
+        expect(btn.find('svg').exists()).toBe(true)
+        await btn.trigger('click')
+        expect(dispatch).toHaveBeenCalledWith('exportAgentTask', 't1')
+        expect(w.find('[data-testid="task-export"]').attributes('disabled')).toBeDefined()
+        finish(null)
+        await flushPromises()
+        expect(w.find('[data-testid="task-export"]').attributes('disabled')).toBeUndefined()
+        expect(w.text()).toContain('Export failed: Task not found')
     })
 
     it('says so when the task is not found', async () => {

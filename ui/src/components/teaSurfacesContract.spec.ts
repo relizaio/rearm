@@ -245,7 +245,9 @@ describe('TEA surfaces contract', () => {
         expect(fed).toBeGreaterThan(0)
         expect(ext).toBeGreaterThan(fed)
         expect(os.slice(ext, os.indexOf('</n-tab-pane>', ext))).toContain('<ExternalKeysPanel :org-uuid="orgResolved" :notify="notify" :is-org-admin="isOrgAdmin" />')
-        expect(os).toMatch(/const programmaticSubTab = ref<[^>]*'externalKeys'[^>]*>/)
+        // the sub-tab names live in one list beside the Programmatic Access landing (orgSettingsTabs)
+        expect(os).toContain("const programmaticSubTab = ref<ProgrammaticSubTab>('freeFormKeys')")
+        expect(src('../utils/orgSettingsTabs.ts')).toMatch(/export const PROGRAMMATIC_SUBTABS = \[[^\]]*'externalKeys'[^\]]*\] as const/)
     })
 
     it('the Scoped Keys table never lists an EXTERNAL key', () => {

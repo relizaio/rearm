@@ -37,6 +37,21 @@ export interface Option { label: string, value: string }
 
 const opt = (value: string, label: string): Option => ({ label, value })
 
+/** How the organization's TEA API is served (task TPF-144): the schema's enum TeaServing, in its order. */
+export const TEA_SERVING_MODES = ['NONE', 'LEGACY_UUID', 'DOMAIN'] as const
+export type TeaServing = typeof TEA_SERVING_MODES[number]
+
+/** Whether the instance hosts the organization's /.well-known/tea on its domain: the schema's enum TeaWellKnownHosting. */
+export const TEA_WELL_KNOWN_HOSTINGS = ['NONE', 'DOMAIN'] as const
+export type TeaWellKnownHosting = typeof TEA_WELL_KNOWN_HOSTINGS[number]
+
+/** The label of each serving mode, keyed in the order of TEA_SERVING_MODES. */
+export const TEA_SERVING_LABELS: Record<TeaServing, string> = {
+    NONE: 'Not served',
+    LEGACY_UUID: 'Legacy path with the organization TEA id',
+    DOMAIN: 'On the assigned domain',
+}
+
 /**
  * The editor-only mode of a scope with no stored row: it resolves through its parents. Never sent:
  * going back to it removes the row (teaProfileInput refuses it).

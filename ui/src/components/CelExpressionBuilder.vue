@@ -166,6 +166,22 @@
                             />
                         </template>
 
+                        <!-- BOM_SCAN_STATE -->
+                        <template v-else-if="cond.type === 'BOM_SCAN_STATE'">
+                            <n-select
+                                v-model:value="(cond as BomScanStateCondition).operator"
+                                :options="bomScanStateOperatorOptions"
+                                size="small"
+                                style="width: 80px;"
+                            />
+                            <n-select
+                                v-model:value="(cond as BomScanStateCondition).state"
+                                :options="bomScanStateOptions"
+                                size="small"
+                                style="min-width: 200px;"
+                            />
+                        </template>
+
                         <!-- Delete condition -->
                         <n-button size="tiny" quaternary type="error" @click="removeCondition(group, ci)">×</n-button>
                     </div>
@@ -269,8 +285,8 @@ import { NRadioGroup, NRadioButton, NRadio, NSelect, NInputNumber, NButton, NAle
 import { QuestionCircle20Regular, ClipboardPaste20Regular } from '@vicons/fluent'
 import constants from '../utils/constants'
 import {
-    builderIssues, compile, parseCelToBuilder,
-    type ApprovalEntryCondition, type AnyApprovalCondition, type BranchTypeCondition, type BuilderState,
+    builderIssues, compile, parseCelToBuilder, BOM_SCAN_STATES,
+    type ApprovalEntryCondition, type AnyApprovalCondition, type BomScanStateCondition, type BranchTypeCondition, type BuilderState,
     type Condition, type ConditionGroup, type ConditionType, type FirstScannedCondition,
     type LifecycleCondition, type MetricsCondition
 } from '../utils/celConditionBuilder'
@@ -342,7 +358,8 @@ const conditionTypeOptions = computed(() => [
         : { label: 'Approval Entry (no approval policy)', value: 'APPROVAL_ENTRY', disabled: true },
     { label: 'Any Approval',    value: 'ANY_APPROVAL' },
     { label: 'Metrics',         value: 'METRICS' },
-    { label: 'First Scanned',   value: 'FIRST_SCANNED' }
+    { label: 'First Scanned',   value: 'FIRST_SCANNED' },
+    { label: 'BOM Scan State',  value: 'BOM_SCAN_STATE' }
 ])
 
 const lifecycleOptions = constants.LifecycleValueOptions
@@ -372,6 +389,13 @@ const metricFieldOptions = [
     { label: 'License Violations',          value: 'licenseViolations' }
 ]
 
+const bomScanStateOperatorOptions = [
+    { label: '==', value: '==' },
+    { label: '!=', value: '!=' }
+]
+
+const bomScanStateOptions = BOM_SCAN_STATES.map(s => ({ label: s, value: s }))
+
 const compOpOptions = [
     { label: '==', value: '==' },
     { label: '!=', value: '!=' },
@@ -398,6 +422,11 @@ const baseVariableDocs: VariableDoc[] = [
     { name: 'release.securityViolations',    snippet: 'release.securityViolations',    display: 'release.securityViolations',    desc: 'int' },
     { name: 'release.operationalViolations', snippet: 'release.operationalViolations', display: 'release.operationalViolations', desc: 'int' },
     { name: 'release.licenseViolations',     snippet: 'release.licenseViolations',     display: 'release.licenseViolations',     desc: 'int' },
+    // --- BOM scan state: written by the metrics compute from the gathered BOMs ---
+    { name: 'release.bomScanState',        snippet: 'release.bomScanState == "ALL_NOT_SCANNABLE"', display: 'release.bomScanState',        desc: 'string -- "NO_BOMS" (no BOM gathered at all), "ALL_SCANNABLE" (every gathered BOM is a scan input: scanned, or pending a scan that will come), "SOME_NOT_SCANNABLE" (some gathered BOMs carry the not-scannable marker, at least one does not), "ALL_NOT_SCANNABLE" (every gathered BOM carries the marker: the release is anchored with nothing to scan). Such a release still reads firstScanned true with zero findings, so a rule that needs a scan gates on this too, together with the precondition release.firstScanned == true (Wait for First Scan).' },
+    { name: 'release.scannableBoms',       snippet: 'release.scannableBoms >= 1',                  display: 'release.scannableBoms',       desc: 'int -- gathered BOMs the scanner can read, scanned or still pending alike. Reads 0 while a release is being created, so a creation guard requiring one refuses creation at Assembled or later, as release.firstScanned == true does.' },
+    { name: 'release.notScannableBoms',    snippet: 'release.notScannableBoms == 0',               display: 'release.notScannableBoms',    desc: 'int -- gathered BOMs carrying the not-scannable marker (no component the scanner could match)' },
+    { name: 'release.notScannableReasons', snippet: '!("NO_COMPONENTS" in release.notScannableReasons)', display: 'release.notScannableReasons', desc: 'list&lt;string&gt; -- the distinct marker reasons: "NO_COMPONENTS" (no component rows at all), "ONLY_ROOT" (every component is the BOM\'s own root component), "ALL_TERMINAL" (every non-root component is enrichment-terminal), "NO_PURL_OR_CPE" (no component carries a pkg: or cpe: purl). Empty when none. A NO_COMPONENTS marker can come from a parse that is still late: a rule that must not act on it adds the exclusion in the snippet.' },
     { name: 'release.approvals',             snippet: 'release.approvals["<uuid>"]',   display: 'release.approvals["&lt;uuid&gt;"]', desc: 'string — "APPROVED" or "DISAPPROVED"' },
     { name: 'release.anyApproved',           snippet: 'release.anyApproved',           display: 'release.anyApproved',           desc: 'bool — true if any approval entry is APPROVED' },
     { name: 'release.anyDisapproved',        snippet: 'release.anyDisapproved',        display: 'release.anyDisapproved',        desc: 'bool — true if any approval entry is DISAPPROVED' },
@@ -459,6 +488,9 @@ const baseExampleDocs: string[] = [
     'release.lifecycle == "GENERAL_AVAILABILITY" && release.criticalVulns == 0',
     'release.approvals["3fa85f64-5717-4562-b3fc-2c963f66afa6"] == "APPROVED"',
     'release.branchType in ["RELEASE", "HOTFIX"] && release.firstScanned == true && release.securityViolations == 0',
+    'release.bomScanState == "ALL_NOT_SCANNABLE"',
+    'release.scannableBoms >= 1',
+    'release.bomScanState == "ALL_NOT_SCANNABLE" && !("NO_COMPONENTS" in release.notScannableReasons)',
     'release.lifecycle in ["DRAFT","ASSEMBLED","READY_TO_SHIP"] && release.anyDisapproved',
     'approvals.exists(k, approvals[k] == "DISAPPROVED")',
     'approvals.all(k, approvals[k] == "APPROVED")',
@@ -504,6 +536,7 @@ function createDefaultCondition(type: ConditionType): Condition {
     case 'ANY_APPROVAL':   return { type: 'ANY_APPROVAL', approvalState: 'DISAPPROVED' }
     case 'METRICS':        return { type: 'METRICS', metricField: 'criticalVulns', operator: '==', value: 0 }
     case 'FIRST_SCANNED':  return { type: 'FIRST_SCANNED', present: true }
+    case 'BOM_SCAN_STATE': return { type: 'BOM_SCAN_STATE', operator: '==', state: 'ALL_NOT_SCANNABLE' }
     }
 }
 

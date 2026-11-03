@@ -83,7 +83,7 @@
                 <n-tab-pane name="permissions" tab="Permissions">
                     <p v-if="apiKey?.type === 'FREEFORM' && apiKeyGroups?.length" class="subtle" style="margin-top: 0;" data-testid="api-key-groups-of-key">
                         Also in API key groups: {{ apiKeyGroups.map(g => g.name).join(', ') }}. Their permissions are added to
-                        this key's at call time; edit them on the API Key Groups tab.
+                        this key's at call time; edit them under Programmatic Access, API Key Groups.
                     </p>
                     <n-spin :show="loading">
                         <ScopedPermissions

@@ -72,7 +72,12 @@ describe('the editors keep BOARD grants', () => {
         expect(org.match(/:boards="orgBoards"/g)).toHaveLength(3)
         const pane = org.slice(org.indexOf('<ApiKeyGroupsOfOrg'), org.indexOf('@changed="loadApiKeyGroupsOfOrg"'))
         expect(pane).toContain(':boards="orgBoards"')
-        // the users table's permission summary names a BOARD grant's board
-        expect(org).toContain("} else if (p.scope === 'BOARD' && p.object) {")
+        // the users table's permission summary names a BOARD grant's board: the line builder lives in
+        // combinedPermissionLines.ts (TPF-124) and OrgSettings hands it boardNameOf over orgBoards
+        const lines = read('./combinedPermissionLines.ts')
+        expect(lines).toContain("} else if (p.scope === 'BOARD' && p.object) {")
+        expect(lines).toContain('names.boardName(p.object) ?? p.object')
+        expect(org).toContain('combinedPermissionLines(combinedPerms, permissionNames())')
+        expect(org).toContain('boardName: (uuid: string) => boardNameOf(orgBoards.value, uuid)')
     })
 })

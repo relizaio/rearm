@@ -17,11 +17,7 @@
 // untagged and the fallback is dormant. Tag future Pro-first fields the same
 // way to re-arm it; changelogSchemaDrift.spec.ts keeps the stripped documents
 // valid against the CE mirror either way.
-const ADDITIVE_FIELD_MARKER = '#additive-field'
-
-export function stripAdditiveFields(queryText: string): string {
-    return queryText.split('\n').filter((line) => !line.includes(ADDITIVE_FIELD_MARKER)).join('\n')
-}
+export { ADDITIVE_FIELD_MARKER, stripAdditiveFields } from './graphqlDriftFallback'
 
 // One-line ComponentAttribution selection for single-line carrier fields
 // (a tagged line cannot interpolate the multi-line COMPONENT_ATTRIBUTION_FRAGMENT).
