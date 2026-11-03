@@ -3,7 +3,7 @@ import {
     teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
     teaActErrorText, TEA_ACT_GATEWAY_TEXT,
-    teaActLabel, teaActProgress, teaEntryChecksums, teaEntryFileName, teaEntryDownloadRef,
+    teaActLabel, teaActProgress, teaEntryChecksums, teaEntryFileName, teaEntryDownloadRef, teaMediaTypeExtension,
 } from './teaPublication'
 
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
@@ -287,25 +287,39 @@ describe('the collection artifact rows: checksums and the manual download', () =
         expect(teaEntryRows({ entries: [entry] }, API)[0].checksums).toHaveLength(2)
     })
 
-    it('names the file as TEA serves it: the frozen name, <teaUuid>-<revision>, or a bare profile name with .cdx.json', () => {
-        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'REAL', name: 'notes.pdf' })).toBe('notes.pdf')
-        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'REAL', name: '  ' })).toBe('t-1-3')
-        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'SYNTHETIC', name: 'top', sbomProfileName: 'top' }))
-            .toBe('top.cdx.json')
-        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'SYNTHETIC', name: 'agg.cdx.json', sbomProfileName: 'top' }))
-            .toBe('agg.cdx.json')
+    it('names the file as TEA serves it: <teaUuid>-r<revision> and the media type extension, never the artifact name', () => {
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'SYNTHETIC', name: 'default', sbomProfileName: 'default',
+            mediaType: 'application/vnd.cyclonedx+json' })).toBe('t-1-r3.cdx.json')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 1, origin: 'REAL', name: 'notes.pdf', mediaType: 'application/pdf' }))
+            .toBe('t-1-r1.pdf')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 2, origin: 'REAL', name: 'sbom', mediaType: 'application/spdx+json' }))
+            .toBe('t-1-r2.spdx.json')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 5, origin: 'REAL', mediaType: 'application/octet-stream' })).toBe('t-1-r5')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 6, origin: 'REAL' })).toBe('t-1-r6')
+    })
+
+    it('maps media types to extensions as the backend TEA file name rule does', () => {
+        expect(teaMediaTypeExtension('application/vnd.cyclonedx+xml')).toBe('.cdx.xml')
+        expect(teaMediaTypeExtension('text/spdx')).toBe('.spdx')
+        expect(teaMediaTypeExtension('application/json')).toBe('.json')
+        expect(teaMediaTypeExtension('text/plain;charset=utf-8')).toBe('.txt')
+        expect(teaMediaTypeExtension('Application/VND.CycloneDX+JSON; version=1.6')).toBe('.cdx.json')
+        expect(teaMediaTypeExtension('application/vnd.openvex+json')).toBe('.json')
+        expect(teaMediaTypeExtension('application/vnd.example+xml')).toBe('.xml')
+        expect(teaMediaTypeExtension('application/x-unknown')).toBe('')
+        expect(teaMediaTypeExtension(null)).toBe('')
     })
 
     it('downloads the artifact row at the frozen revision, and nothing for an external or malformed entry', () => {
-        expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: 4, origin: 'REAL', name: 'sbom.json' }))
-            .toEqual({ uuid: ART, version: 4, fileName: 'sbom.json' })
+        expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: 4, origin: 'REAL', name: 'sbom.json',
+            mediaType: 'application/json' })).toEqual({ uuid: ART, version: 4, fileName: 't-1-r4.json' })
         expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: 1, origin: 'REAL', name: 'notes.pdf',
             url: 'https://cdn.example.com/notes.pdf' })).toBeNull()
         expect(teaEntryDownloadRef({ artifact: 'not-a-uuid', teaUuid: 't-1', revision: 1 })).toBeNull()
         expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: null })).toBeNull()
         const rows = teaEntryRows({ entries: [{ artifact: ART, teaUuid: 't-1', revision: 7, origin: 'SYNTHETIC',
-            name: 'top', sbomProfileName: 'top' }] }, API)
-        expect(rows[0].download).toEqual({ uuid: ART, version: 7, fileName: 'top.cdx.json' })
+            name: 'top', sbomProfileName: 'top', mediaType: 'application/vnd.cyclonedx+json' }] }, API)
+        expect(rows[0].download).toEqual({ uuid: ART, version: 7, fileName: 't-1-r7.cdx.json' })
     })
 })
 
