@@ -1299,6 +1299,14 @@ type Mutation {
 	triggerEnrichment(artifact: ID!): EnrichmentTriggerResult
 	
 	# DTrack
+	"""
+	Requeue a BOM's canonical for the next synthetic fan-out pass, which re-applies the current findings of the
+	organization's ingested synthetic buckets to every artifact of the canonical (under the usual coverage gate).
+	Parses nothing and submits nothing. Write on any component holding the artifact in one of its releases, or
+	organization-wide write for an artifact no release holds; every refusal answers Not authorized. Answers the scan
+	status as it reads right after the requeue.
+	"""
+	requeueArtifactScanFanOut(artifactUuid: ID!): ArtifactScanStatus
 	syncDtrackProjects(orgUuid: ID!): Boolean
 	# Admin-only force re-upload: re-submit every synthetic bucket to DTrack
 	# (existing project or a new one), triggering full re-analysis + re-ingest.
