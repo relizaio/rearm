@@ -49,7 +49,7 @@ To install ReARM, follow documentation [here](https://docs.rearmhq.com/installat
 
 ## ReARM Product Status Information
 - ReARM itself - General Availability
-- Transparency Exchange API (TEA) implementation - TEA v 0.4.0 Public Alpha available on ReARM Demo Instance (see below for details)
+- Transparency Exchange API (TEA) implementation - General Availability at TEA v1.0.0
 
 ## Motivation
 ReARM is a xBOM management system that allows organizations to maintain compliance within various regulatory frameworks, including:
