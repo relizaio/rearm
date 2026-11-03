@@ -652,6 +652,61 @@ query TeaOrgDiscovery($org: ID!) {
     }
 }`
 
+const TEA_ORG_SERVING_FIELDS = `
+        org
+        teaUuid
+        apiBase
+        wellKnownDocument
+        assignedHost
+        teaServing
+        teaWellKnownHosting
+        wellKnownUrl`
+
+const TEA_ORG_SERVING = gql`
+query TeaOrgServing($org: ID!) {
+    teaOrgDiscovery(org: $org) {${TEA_ORG_SERVING_FIELDS}
+    }
+}`
+
+const SET_TEA_ORG_SERVING = gql`
+mutation SetTeaOrgServing($org: ID!, $teaServing: TeaServing!, $teaWellKnownHosting: TeaWellKnownHosting!) {
+    setTeaOrgServing(org: $org, teaServing: $teaServing, teaWellKnownHosting: $teaWellKnownHosting) {${TEA_ORG_SERVING_FIELDS}
+    }
+}`
+
+const TEA_HOST_ASSIGNMENT_FIELDS = `
+        host
+        org
+        orgName
+        isBaseuriHost
+        inAllowList
+        teaServing`
+
+const TEA_HOST_ASSIGNMENTS = gql`
+query TeaHostAssignments {
+    teaHostAssignments {${TEA_HOST_ASSIGNMENT_FIELDS}
+    }
+}`
+
+const ASSIGN_TEA_HOST = gql`
+mutation AssignTeaHost($host: String!, $org: ID!) {
+    assignTeaHost(host: $host, org: $org) {${TEA_HOST_ASSIGNMENT_FIELDS}
+    }
+}`
+
+const UNASSIGN_TEA_HOST = gql`
+mutation UnassignTeaHost($host: String!) {
+    unassignTeaHost(host: $host)
+}`
+
+const ALL_ORGANIZATIONS = gql`
+query AllOrganizations {
+    allOrganizations {
+        uuid
+        name
+    }
+}`
+
 const SAVE_TEA_PROFILE = gql`
 mutation SaveTeaProfile($org: ID!, $scope: TeaProfileScope!, $object: ID, $profile: TeaProfileInput!) {
     saveTeaProfile(org: $org, scope: $scope, object: $object, profile: $profile) {
@@ -2383,6 +2438,12 @@ export default {
     TeaComponentNameGql: TEA_COMPONENT_NAME,
     TeaComponentPerspectivesGql: TEA_COMPONENT_PERSPECTIVES,
     DeleteTeaProfileGql: DELETE_TEA_PROFILE,
+    TeaOrgServingGql: TEA_ORG_SERVING,
+    SetTeaOrgServingGql: SET_TEA_ORG_SERVING,
+    TeaHostAssignmentsGql: TEA_HOST_ASSIGNMENTS,
+    AssignTeaHostGql: ASSIGN_TEA_HOST,
+    UnassignTeaHostGql: UNASSIGN_TEA_HOST,
+    AllOrganizationsGql: ALL_ORGANIZATIONS,
     ReleaseTeaPublicationViewGql: RELEASE_TEA_PUBLICATION_VIEW,
     PublishReleaseOnTeaGql: PUBLISH_RELEASE_ON_TEA,
     RepublishReleaseOnTeaGql: REPUBLISH_RELEASE_ON_TEA,

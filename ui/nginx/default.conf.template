@@ -1,3 +1,11 @@
+# TEA custom domains (TPF-148): nginx keeps exact server names in a hash whose bucket size defaults to
+# the CPU cache line (64 on x86_64). One name of 47 characters or more does not fit, and nginx then
+# refuses to start ("could not build server_names_hash"). The TEA-only server block at the end of this
+# file names the custom-domain hosts, each up to 239 characters (the bound the chart enforces); 256 is
+# too small for 239, 512 holds it and hundreds of names. Set once, here: this file is included inside
+# nginx.conf's http block, the context the directive belongs to, and nginx refuses it twice.
+server_names_hash_bucket_size 512;
+
 upstream backend {
     server ${HUB_HOST}:${HUB_PORT};
 }
@@ -7,7 +15,7 @@ upstream keycloak {
 }
 
 server {
-    listen       80;
+    listen       80 default_server;
     server_name  localhost;
     client_max_body_size 1m;
     #charset koi8-r;
@@ -195,3 +203,60 @@ server {
 
 }
 
+
+# TEA custom domains (TPF-148). TEA_CUSTOM_DOMAINS lists the hosts, separated by spaces, on which an
+# organization's TEA API is served from its own domain. On such a host this block answers instead of the
+# one above: it proxies only the TEA API (/tea/...) and its discovery document (/.well-known/tea) to the
+# backend, and every other path is 404, so the UI files and /kauth are never served on a custom domain.
+# nginx decodes the path and resolves dot segments before it picks a location, so an encoded escape such
+# as /tea/..%2findex.html is matched as /index.html and lands in the 404. With no hosts listed,
+# nginx_start.sh sets the reserved name tea-custom-domains.invalid, which no request can carry, so the
+# block is inert. Any host not named here keeps the default_server above, as before. No error_page and no
+# proxy_intercept_errors here: the backend's answers pass through as sent, and nginx's own errors (the 404
+# below, a 502) use nginx's built-in pages, since this block serves no static files.
+server {
+    listen       80;
+    server_name  ${TEA_CUSTOM_DOMAINS};
+
+    location ^~ /tea/ {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host            $host;
+        # The backend takes the request host from X-Forwarded-Host when present (TPF-142): pin it to the host
+        # this block was selected for, whatever a client or an ingress in front sent (TPF-150).
+        proxy_set_header X-Forwarded-Host $host;
+        # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 90;
+        proxy_read_timeout 90;
+        proxy_send_timeout 90;
+    }
+
+    location = /.well-known/tea {
+        proxy_pass http://backend;
+        proxy_http_version 1.1;
+        proxy_set_header Connection "";
+        proxy_set_header Host            $host;
+        # The backend takes the request host from X-Forwarded-Host when present (TPF-142): pin it to the host
+        # this block was selected for, whatever a client or an ingress in front sent (TPF-150).
+        proxy_set_header X-Forwarded-Host $host;
+        # https://www.nginx.com/resources/wiki/start/topics/examples/forwarded/
+        proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;
+        proxy_set_header        X-Forwarded-Proto $http_x_forwarded_proto; # aws version - essentially this sets https schema
+        proxy_connect_timeout 60;
+        proxy_read_timeout 60;
+        proxy_send_timeout 60;
+    }
+
+    # Without this, /tea would get nginx's automatic 301 to /tea/ (a prefix location ending in a slash
+    # that proxies); the backend serves nothing at /tea, so it is a 404 like every other path.
+    location = /tea {
+        return 404;
+    }
+
+    location / {
+        return 404;
+    }
+}
