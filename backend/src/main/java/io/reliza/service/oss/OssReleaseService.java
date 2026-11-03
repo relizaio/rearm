@@ -681,7 +681,7 @@ public class OssReleaseService {
 	/**
 	 * One rule for the references a release stores to other rows by uuid: every source code entry
 	 * (sourceCodeEntry, commits[]) and every parent release must exist and be referenceable from
-	 * {@code org} -- the release's own organization or the shared external-components one, see
+	 * {@code org} -- the release's own organization, see
 	 * {@link SharedReleaseService#isReferenceableFromOrg}. Without it a caller with write access to
 	 * one release could point it at another organization's commit or release and read that row back
 	 * through the release.
@@ -724,8 +724,8 @@ public class OssReleaseService {
 	 * Parent release uuids a release of some org may not reference. {@code refused} is every one of
 	 * them in the order requested -- missing and foreign interleaved as the caller sent them, so the
 	 * user-facing refusal does not tell which of them exists in another org by where it is listed.
-	 * {@code foreign} is the subset that exists in another org (not the shared external-components
-	 * one), mapped to its component; the rest are missing (no such release visible, or null).
+	 * {@code foreign} is the subset that exists in another org, mapped to its component; the rest
+	 * are missing (no such release visible, or null).
 	 */
 	public record UnreferenceableParents(List<UUID> refused, Map<UUID, UUID> foreign) {
 		public boolean isEmpty() {
@@ -1989,7 +1989,7 @@ public class OssReleaseService {
 			allCommits.addAll(releaseDto.getCommits());
 		//handle tickets
 		if(!allCommits.isEmpty()){
-			Set<UUID> tickets = getSourceCodeEntryService.getTicketsList(allCommits, List.of(releaseDto.getOrg(), CommonVariables.EXTERNAL_PROJ_ORG_UUID));
+			Set<UUID> tickets = getSourceCodeEntryService.getTicketsList(allCommits, List.of(releaseDto.getOrg()));
 			if(!tickets.isEmpty()){
 				releaseDto.setTickets(tickets);
 			}
