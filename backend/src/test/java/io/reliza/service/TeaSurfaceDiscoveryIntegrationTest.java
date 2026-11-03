@@ -18,6 +18,7 @@ import java.util.List;
 import java.util.Map;
 
 import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
 
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.common.Utils;
@@ -25,6 +26,7 @@ import io.reliza.model.OrganizationData.TeaServing;
 import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.TeaProfileData.TeaTei;
 import io.reliza.model.TeaProfileData.TeaVisibility;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.service.TeaPublicationService.TeaPublishMode;
 import tools.jackson.databind.JsonNode;
 
@@ -36,6 +38,8 @@ import tools.jackson.databind.JsonNode;
 public class TeaSurfaceDiscoveryIntegrationTest extends TeaHostRoutingIntegrationTestBase {
 
 	private static final String DOMAIN = "products.example.com";
+
+	@Autowired private SharedReleaseService sharedReleaseService;
 
 	private HttpResponse<String> discover(TeaWorld w, String query, String bearer) throws Exception {
 		return get(w.base() + "/discovery?" + query, bearer);
@@ -71,6 +75,16 @@ public class TeaSurfaceDiscoveryIntegrationTest extends TeaHostRoutingIntegratio
 		// 30: the stamped TEI is a served identifier
 		HttpResponse<String> filtered = get(w.base() + "/productReleases?" + q("idValue", stamped), null);
 		assertEquals(List.of(w.prod().head().toString()), uuidsOf(filtered));
+		// the publish stamped it on the release as a TEI identifier too, and TEA still serves it once
+		assertTrue(sharedReleaseService.getReleaseData(w.prod().release()).orElseThrow().getIdentifiers().stream()
+				.anyMatch(i -> RearmIdentifierType.TEI == i.getIdType() && stamped.equals(i.getIdValue())),
+				"the release carries the stamped TEI");
+		JsonNode served = Utils.OM.readTree(get(w.base() + "/productRelease/" + w.prod().head(), null).body());
+		int copies = 0;
+		for (JsonNode id : served.get("identifiers")) {
+			if ("TEI".equals(id.get("idType").asString()) && stamped.equals(id.get("idValue").asString())) copies++;
+		}
+		assertEquals(1, copies, served.toString());
 
 		assertEquals(200, discover(w, q("tei", "tei://Products.Example.com/uuid/" + w.prod().head()), null).statusCode(),
 				"step 3 compares the DNS name case-insensitively");

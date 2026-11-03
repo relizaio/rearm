@@ -52,6 +52,7 @@ import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.RearmIdentifier;
+import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
@@ -1235,6 +1236,8 @@ public class TeaPublicationService {
 		contextOf(c.release(), fresh);
 		Optional<TeaPublication> headRow = fresh.head();
 		TeaPublicationData before = headRow.map(TeaPublicationData::dataFromRecord).orElse(null);
+		// the TEI the last publish stamped, read before the head is updated: its release identifier is replaced
+		String previousTei = null == before ? null : before.getTei();
 		UUID pubUuid = null != before ? before.getUuid() : c.publicationUuid();
 		if (null == before && !publicationUuidIsFreeOrOwn(pubUuid, c.org(), c.release())) {
 			// D16 (F-5): never a version or a head under another release's or organization's uuid; nothing
@@ -1315,7 +1318,7 @@ public class TeaPublicationService {
 							c.wu());
 				}
 			}
-			writeRelease(fresh.release(), c, handOver);
+			writeRelease(fresh.release(), c, handOver, previousTei);
 			return new Act(current, latest, TeaPublishOutcome.UNCHANGED, rideAlongs, false);
 		}
 
@@ -1344,7 +1347,7 @@ public class TeaPublicationService {
 			event = new ReleaseUpdateEvent(ReleaseUpdateScope.TEA_PUBLICATION, ReleaseUpdateAction.CHANGED,
 					"v" + latestVersion, "v" + version, pubUuid, c.comment(), now, c.wu());
 		}
-		writeRelease(fresh.release(), c, event);
+		writeRelease(fresh.release(), c, event, previousTei);
 		TeaPublishOutcome outcome = null == before ? TeaPublishOutcome.PUBLISHED
 				: (null == written ? TeaPublishOutcome.UNCHANGED : TeaPublishOutcome.REPUBLISHED);
 		TeaPublishedCollectionData collection = null != written ? written : latest;
@@ -1414,19 +1417,48 @@ public class TeaPublicationService {
 
 	/**
 	 * The act's one write to the release row (3.5 step 10), on the row the commit refreshed in its
-	 * transaction: each aggregate's bind staged on it, then the release event when the act records
-	 * one, saved once with no trigger (part 6's output event must not re-enter processRelease from
-	 * its own publish) and no collection resolve (nothing in the inventory changed). Nothing staged
-	 * and no event: no save.
+	 * transaction: each aggregate's bind staged on it, the publication's TEI as a release identifier
+	 * ({@link #stageTeiIdentifier}), then the release event when the act records one, saved once with
+	 * no trigger (part 6's output event must not re-enter processRelease from its own publish) and no
+	 * collection resolve (nothing in the inventory changed). Nothing staged and no event: no save.
 	 */
-	private void writeRelease(Release release, Commit c, ReleaseUpdateEvent event) throws RelizaException {
+	private void writeRelease(Release release, Commit c, ReleaseUpdateEvent event, String previousTei)
+			throws RelizaException {
 		ReleaseData rd = ReleaseData.dataFromRecord(release);
 		boolean staged = false;
 		for (TeaAggregateArtifact a : c.aggregateArtifacts()) {
 			staged |= syntheticArtifactService.stageBind(rd, a.artifact(), c.wu());
 		}
+		staged |= stageTeiIdentifier(rd, previousTei, c.tei());
 		if (null != event) rd.addUpdateEvent(event);
 		if (staged || null != event) ossReleaseService.saveRelease(release, rd, c.wu(), false, AcollectionMode.SKIP);
+	}
+
+	/**
+	 * TEI stamping onto the release (profile {@code tei = UUID}): the release carries the TEI its publication
+	 * records, {@code tei://<teiDomain>/uuid/<publication uuid>}, as a {@link RearmIdentifierType#TEI} identifier,
+	 * so the release lists it among its own identifiers (page, API, exports) and discovery's live-identifier step
+	 * finds it. TEA's release object already serves the stamped TEI from the head and skips a release copy of it
+	 * (TeaTransformerService.releaseIdentifiers), so it is served once. The identifier an earlier publish
+	 * stamped ({@code previousTei}, the head's TEI before this act) is replaced when the TEI changed (another
+	 * teiDomain) and removed when stamping is off; a TEI identifier with any other value is never touched.
+	 *
+	 * @return whether the release's identifiers changed
+	 */
+	static boolean stageTeiIdentifier(ReleaseData rd, String previousTei, String tei) {
+		List<RearmIdentifier> ids = rd.getIdentifiers();
+		boolean changed = false;
+		if (null != previousTei && !previousTei.equals(tei)) {
+			changed = ids.removeIf(i -> null != i && RearmIdentifierType.TEI == i.getIdType()
+					&& previousTei.equals(i.getIdValue()));
+		}
+		if (null != tei && ids.stream().noneMatch(i -> null != i && RearmIdentifierType.TEI == i.getIdType()
+				&& tei.equals(i.getIdValue()))) {
+			ids.add(new RearmIdentifier(RearmIdentifierType.TEI, tei));
+			changed = true;
+		}
+		if (changed) rd.setIdentifiers(ids);
+		return changed;
 	}
 
 	/**

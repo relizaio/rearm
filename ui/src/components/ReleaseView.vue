@@ -4464,7 +4464,10 @@ async function runTeaPublish (mutation: any, field: string) {
 
 /**
  * Runs a TEA act the server completes within the request: one at a time, with the header spinner
- * and a modal that cannot be dismissed until the answer arrives, then the publication is reloaded.
+ * and a modal that cannot be dismissed until the answer arrives, then the release is refetched.
+ * A publish writes to the release (the generated TEA aggregate is bound, the stamped TEI joins its
+ * identifiers), so the whole release is reloaded, not only the publication: fetchRelease reloads the
+ * generated artifacts and the publication as well. A failed refetch falls back to the publication.
  */
 const teaActing: Ref<TeaAct | null> = ref(null)
 async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>) {
@@ -4478,7 +4481,16 @@ async function withTeaProgress (act: TeaAct, view: any, run: () => Promise<void>
     } finally {
         teaActing.value = null
     }
-    await loadTeaPublication()
+    await refreshAfterTeaAct()
+}
+
+async function refreshAfterTeaAct () {
+    try {
+        await fetchRelease()
+    } catch (e) {
+        console.warn('Failed to refresh the release after a TEA act', e)
+        await loadTeaPublication()
+    }
 }
 
 const publishOnTea = () => runTeaPublish(graphqlQueries.PublishReleaseOnTeaGql, 'publishReleaseOnTea')
