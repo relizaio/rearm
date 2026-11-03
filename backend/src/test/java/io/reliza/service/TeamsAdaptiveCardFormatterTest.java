@@ -27,6 +27,11 @@ import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload.ChangeType;
+import java.time.ZoneOffset;
+import io.reliza.model.ComponentData.ComponentType;
+import io.reliza.model.dto.notifications.BomComponentChange;
+import io.reliza.model.dto.notifications.ReleaseBomDiffPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
 
 /**
  * Pins the Teams Adaptive Card envelope shape across event types.
@@ -276,5 +281,72 @@ class TeamsAdaptiveCardFormatterTest {
         } catch (Exception e) {
             throw new RuntimeException(e);
         }
+    }
+
+    // ---------- TPF-147: one-sided BOM diffs ----------
+
+    private static final BomComponentChange BOM_ADDED = new BomComponentChange("pkg:npm/added@1.0", "1.0");
+    private static final BomComponentChange BOM_REMOVED = new BomComponentChange("pkg:npm/removed@0.9", "0.9");
+
+    /** A deterministic RELEASE_BOM_DIFF event: fixed uuids and time, so the rendered output is a stable golden. */
+    @SuppressWarnings("unchecked")
+    private static NotificationOutboxEvent bomDiffEvent(List<BomComponentChange> added,
+            List<BomComponentChange> removed) {
+        ReleaseRef r = new ReleaseRef(UUID.fromString("11111111-1111-1111-1111-111111111111"), "v2.0",
+                UUID.fromString("22222222-2222-2222-2222-222222222222"), "myapp", ComponentType.COMPONENT,
+                UUID.fromString("33333333-3333-3333-3333-333333333333"), "main", ReleaseLifecycle.ASSEMBLED,
+                null, null, null, "alice", "alice@example.com");
+        NotificationOutboxEvent ev = new NotificationOutboxEvent();
+        ev.setUuid(UUID.fromString("44444444-4444-4444-4444-444444444444"));
+        ev.setEventType(NotificationEventType.RELEASE_BOM_DIFF);
+        ev.setOccurredAt(ZonedDateTime.of(2026, 11, 3, 0, 0, 0, 0, ZoneOffset.UTC));
+        ev.setOrg(UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        ev.setRecordData(Utils.OM.convertValue(new ReleaseBomDiffPayload(r, added, removed), Map.class));
+        return ev;
+    }
+
+    /** The both-sides card captured at rearm-saas e1177d2e, before TPF-147. */
+    private static final String TEAMS_BOM_DIFF_BOTH_GOLDEN = "{\"attachments\":[{\"contentUrl\":null,\"contentType\":\"application/vnd.microsoft.card.adaptive"
+            + "\",\"content\":{\"$schema\":\"http://adaptivecards.io/schemas/adaptive-card.json\",\"type\":\"Ad"
+            + "aptiveCard\",\"body\":[{\"size\":\"Large\",\"color\":\"Default\",\"weight\":\"Bolder\",\"text\":"
+            + "\"BOM diff on component\",\"type\":\"TextBlock\",\"wrap\":true},{\"size\":\"Medium\",\"color\":\""
+            + "Default\",\"weight\":\"Default\",\"text\":\"myapp v2.0\",\"type\":\"TextBlock\",\"wrap\":true},{"
+            + "\"type\":\"FactSet\",\"facts\":[{\"title\":\"Branch\",\"value\":\"main\"},{\"title\":\"By\",\"va"
+            + "lue\":\"alice\"}]},{\"size\":\"Medium\",\"color\":\"Default\",\"weight\":\"Bolder\",\"text\":\"A"
+            + "dded components\",\"type\":\"TextBlock\",\"wrap\":true},{\"type\":\"FactSet\",\"facts\":[{\"titl"
+            + "e\":\"pkg:npm/added@1.0\",\"value\":\"1.0\"}]},{\"size\":\"Medium\",\"color\":\"Default\",\"weig"
+            + "ht\":\"Bolder\",\"text\":\"Removed components\",\"type\":\"TextBlock\",\"wrap\":true},{\"type\":"
+            + "\"FactSet\",\"facts\":[{\"title\":\"pkg:npm/removed@0.9\",\"value\":\"0.9\"}]}],\"version\":\"1."
+            + "5\"}}],\"type\":\"message\"}";
+
+    @Test
+    void releaseBomDiffAddOnlyRendersOnlyTheAddedHeading() {
+        List<String> texts = teamsTextBlocks(formatter.format(bomDiffEvent(List.of(BOM_ADDED), List.of())));
+        assertTrue(texts.contains("Added components"), texts.toString());
+        assertFalse(texts.contains("Removed components"), texts.toString());
+    }
+
+    @Test
+    void releaseBomDiffRemoveOnlyRendersOnlyTheRemovedHeading() {
+        List<String> texts = teamsTextBlocks(formatter.format(bomDiffEvent(List.of(), List.of(BOM_REMOVED))));
+        assertTrue(texts.contains("Removed components"), texts.toString());
+        assertFalse(texts.contains("Added components"), texts.toString());
+    }
+
+    @Test
+    void releaseBomDiffBothSidesMatchesGolden() throws Exception {
+        assertEquals(TEAMS_BOM_DIFF_BOTH_GOLDEN, Utils.OM.writeValueAsString(
+                formatter.format(bomDiffEvent(List.of(BOM_ADDED), List.of(BOM_REMOVED)))));
+    }
+
+    /** The text of every TextBlock in the card body. */
+    @SuppressWarnings("unchecked")
+    private static List<String> teamsTextBlocks(Map<String, Object> envelope) {
+        List<Map<String, Object>> attachments = (List<Map<String, Object>>) envelope.get("attachments");
+        Map<String, Object> card = (Map<String, Object>) attachments.get(0).get("content");
+        return ((List<Map<String, Object>>) card.get("body")).stream()
+                .filter(b -> "TextBlock".equals(b.get("type")))
+                .map(b -> (String) b.get("text"))
+                .toList();
     }
 }

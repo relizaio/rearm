@@ -3,7 +3,6 @@
 */
 package io.reliza.ws;
 
-import java.math.BigInteger;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
 import java.util.Collection;
@@ -195,14 +194,14 @@ public class OrganizationDataFetcher {
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "totalsAnalytics")
-	public Map<String,BigInteger> getTotalsAnalytics(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
+	public Map<String,Object> getTotalsAnalytics(@InputArgument("orgUuid") String orgUuidStr) throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		UUID orgUuid = UUID.fromString(orgUuidStr);
 		var odTotals = getOrganizationService.getOrganizationData(orgUuid);
 		RelizaObject roTotals = odTotals.isPresent() ? odTotals.get() : null;
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.ORGANIZATION, orgUuid, List.of(roTotals), CallType.READ);
-		return organizationService.getNumericAnalytics(orgUuid);
+		return organizationService.getNumericAnalytics(odTotals.get());
 	}
 	
 	@PreAuthorize("isAuthenticated()")

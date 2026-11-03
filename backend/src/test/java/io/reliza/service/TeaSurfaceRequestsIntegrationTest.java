@@ -8,8 +8,11 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.net.URI;
+import java.net.http.HttpRequest;
 import java.net.http.HttpResponse;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Comparator;
 import java.util.List;
 import java.util.Map;
@@ -21,6 +24,8 @@ import org.junit.jupiter.api.Test;
 import org.springframework.boot.context.properties.bind.Binder;
 import org.springframework.boot.context.properties.source.MapConfigurationPropertySource;
 
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.ws.RelizaConfigProps;
 import io.reliza.ws.tea.LogEventCapture;
 import io.reliza.ws.tea.TeaErrorAdvice;
@@ -32,7 +37,7 @@ import io.reliza.ws.tea.TeaTokenController;
  * 0.4.0 base and beta flag (round 2: every unmounted TEA path answers a non-TEA body). Case 34, the
  * artifact stub, went with the stub (task TEA-10).
  */
-public class TeaSurfaceRequestsIntegrationTest extends TeaSurfaceIntegrationTestBase {
+public class TeaSurfaceRequestsIntegrationTest extends TeaHostRoutingIntegrationTestBase {
 
 	private static void assertError(HttpResponse<String> r, int status, String error, String what) {
 		assertEquals(status, r.statusCode(), what + ": " + r.body());
@@ -120,6 +125,28 @@ public class TeaSurfaceRequestsIntegrationTest extends TeaSurfaceIntegrationTest
 		RelizaConfigProps bound = new Binder(new MapConfigurationPropertySource(Map.of(
 				"relizaprops.enableBetaTea", "true", "relizaprops.baseuri", "http://x"))).bind("relizaprops", RelizaConfigProps.class).get();
 		assertEquals("http://x", bound.getBaseuri(), "an unknown relizaprops key binds without error");
+	}
+
+	// TPF-142 row 20: the host-routed base on an assigned host: an unmounted path answers the TEA-6 body, a mounted one
+	// with no organization the unknown base, an unsupported method 405
+	@Test
+	void theHostRoutedBaseAnswersUnmountedAndUnknownAsTheUuidBaseDoes() throws Exception {
+		TeaWorld w = world();
+		assign(B_HOST, org.getUuid());
+		serve(org.getUuid(), TeaServing.DOMAIN, TeaWellKnownHosting.NONE);
+		for (String path : List.of(HOST_BASE + "/nothing", HOST_BASE, HOST_BASE + "/")) {
+			for (String bearer : Arrays.asList(null, BAD, w.cover())) {
+				assertNotTeaError(get(root() + path, bearer, on(B_HOST)), 404, "Not Found", path + " " + bearer);
+			}
+		}
+		assertEquals(200, get(root() + HOST_BASE + "/products", null, on(B_HOST)).statusCode(), "mounted, B's host");
+		assertObjectUnknown(get(root() + HOST_BASE + "/products", null), "mounted, the default host with the baseuri unassigned");
+		for (Map<String, String> host : List.of(on(B_HOST), Map.<String, String>of())) {
+			HttpRequest.Builder b = HttpRequest.newBuilder(URI.create(root() + HOST_BASE + "/products")).header("X-Forwarded-For", randomIp())
+					.POST(HttpRequest.BodyPublishers.noBody());
+			host.forEach(b::header);
+			assertNotTeaError(http.send(b.build(), HttpResponse.BodyHandlers.ofString()), 405, "Method Not Allowed", "POST " + host);
+		}
 	}
 
 	// Task TEA-21, design section 5 rows 10 to 13 and 16: parameters Tomcat could not decode are answered on the TEA

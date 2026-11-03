@@ -46,12 +46,10 @@ public record FlowControl(
         String sbomReconcileSkipUntil,
         Integer sbomReconcileFailureCount,
         // One-shot marker for the once-per-release BOM-diff (SBOM components
-        // changelog) notification. Stamped the first time a reconcile drains
-        // a release at lifecycle >= ASSEMBLED, so the alert fires exactly once
-        // regardless of how many reconciles run over the release's lifetime.
-        // firstScanned-style: presence means "already evaluated", independent
-        // of whether the diff was non-empty. Survives clearSbomReconcileRequested
-        // (which strips only the sbomReconcile* keys).
+        // changelog) notification. Stamped by the first reconcile at lifecycle
+        // >= ASSEMBLED whose diff is non-empty; an empty diff leaves it unset
+        // (TPF-147), so a later non-empty diff still notifies once. Survives
+        // clearSbomReconcileRequested (which strips only the sbomReconcile* keys).
         String bomDiffNotifiedAt,
         // Product auto-integration queue (mirrors the sbomReconcile* keys).
         // Stamped by ReleaseRepository.markAutoIntegrateRequested when a

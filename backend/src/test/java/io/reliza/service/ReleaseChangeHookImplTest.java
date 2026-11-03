@@ -17,6 +17,7 @@ import java.lang.reflect.Field;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
@@ -320,14 +321,54 @@ class ReleaseChangeHookImplTest {
     }
 
     @Test
-    void onReleaseBomDiffSkipsWhenOneSideEmpty() {
-        // Mirrors the legacy gate: an add-only (or remove-only) reconcile
-        // is not a "diff" worth paging on.
+    void onReleaseBomDiffEmitsWhenOnlyAdded() {
+        // TPF-147 (operator decision 2): an add-only diff is a newly introduced dependency and notifies.
+        stubComponent(ComponentType.COMPONENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
         ArtifactChangelog addOnly = new ArtifactChangelog(
                 Set.of(new DiffComponent("pkg:npm/added@1.0", "1.0")),
                 Set.of());
 
         hook.onReleaseBomDiff(release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED), addOnly);
+
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals(NotificationEventType.RELEASE_BOM_DIFF, saved.getEventType());
+        assertTrue(saved.getDedupKey().startsWith("release:bomdiff:"),
+                "Unexpected dedup key: " + saved.getDedupKey());
+        List<?> added = (List<?>) saved.getRecordData().get("added");
+        assertEquals(1, added.size());
+        assertEquals("pkg:npm/added@1.0", ((Map<?, ?>) added.get(0)).get("purl"));
+        assertEquals(List.of(), saved.getRecordData().get("removed"));
+    }
+
+    @Test
+    void onReleaseBomDiffEmitsWhenOnlyRemoved() {
+        // TPF-147: the mirror of the add-only row, a dropped dependency notifies.
+        stubComponent(ComponentType.COMPONENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+        ArtifactChangelog removeOnly = new ArtifactChangelog(
+                Set.of(),
+                Set.of(new DiffComponent("pkg:npm/removed@0.9", "0.9")));
+
+        hook.onReleaseBomDiff(release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED), removeOnly);
+
+        NotificationOutboxEvent saved = captureSaved();
+        assertEquals(NotificationEventType.RELEASE_BOM_DIFF, saved.getEventType());
+        List<?> removed = (List<?>) saved.getRecordData().get("removed");
+        assertEquals(1, removed.size());
+        assertEquals("pkg:npm/removed@0.9", ((Map<?, ?>) removed.get(0)).get("purl"));
+        assertEquals(List.of(), saved.getRecordData().get("added"));
+    }
+
+    @Test
+    void onReleaseBomDiffSkipsWhenBothSidesEmpty() {
+        // The same stubs as the add-only row, so buildReleaseRef answers a ref and the empty gate is the
+        // only reason nothing is saved (TPF-147 design 6.1 row 4).
+        stubComponent(ComponentType.COMPONENT);
+        when(branchService.getBranchData(any())).thenReturn(Optional.empty());
+
+        hook.onReleaseBomDiff(release(UUID.randomUUID(), ReleaseLifecycle.ASSEMBLED),
+                new ArtifactChangelog(Set.of(), Set.of()));
 
         verify(outboxRepo, never()).save(any());
     }

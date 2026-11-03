@@ -16,6 +16,8 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrgTotalsCacheService;
 import io.reliza.service.OrganizationService;
 import io.reliza.ws.App;
 
@@ -25,7 +27,9 @@ import io.reliza.ws.App;
  * of {@link OrgTotalsEquivalenceTest} has only ACTIVE, ARCHIVED, missing and null statuses, so a
  * statement that excluded just ARCHIVED ({@code <> 'ARCHIVED'}) counted the same there. This
  * fixture gives every status-filtered table a row in a third and a fourth status (DRAFT and
- * COMPLETE, both {@code StatusEnum} values) that must not be counted.
+ * COMPLETE, both {@code StatusEnum} values) that must not be counted. TPF-139: the nightly
+ * statements of the four cached tables do not count them either. TPF-141: the nightly counts are
+ * stamped into the organization's record data, so the fixture inserts the organization row.
  */
 @SpringBootTest(classes = {App.class})
 class OrgTotalsStatusShapeTest {
@@ -36,6 +40,8 @@ class OrgTotalsStatusShapeTest {
 
 	@Autowired private JdbcTemplate jdbc;
 	@Autowired private OrganizationService organizationService;
+	@Autowired private OrgTotalsCacheService orgTotalsCacheService;
+	@Autowired private GetOrganizationService getOrganizationService;
 
 	/** Rows inserted by the fixture, as table and uuid, for the cleanup. */
 	private final List<String[]> inserted = new ArrayList<>();
@@ -73,6 +79,9 @@ class OrgTotalsStatusShapeTest {
 	void onlyActiveRowsAreCountedWhateverTheOtherStatuses() {
 		UUID org = UUID.randomUUID();
 		try {
+			jdbc.update("INSERT INTO rearm.organizations (uuid, record_data) VALUES (?, cast(? as jsonb))", org,
+					"{\"name\":\"tpf141 " + org + "\"}");
+			inserted.add(new String[] {"organizations", org.toString()});
 			UUID c1 = component(org, "COMPONENT", "ACTIVE");
 			component(org, "COMPONENT", "DRAFT");
 			component(org, "COMPONENT", "COMPLETE");
@@ -99,7 +108,10 @@ class OrgTotalsStatusShapeTest {
 				expected.put(key, "artifacts".equals(key) || "commits".equals(key) ? 0L : 1L);
 			}
 
-			Map<String, ?> m = organizationService.getNumericAnalytics(org);
+			// TPF-139 6.3.6: the four cached counts come from the nightly stamp, so count it first.
+			orgTotalsCacheService.countAndStampOrg(org);
+			Map<String, ?> m = organizationService.getNumericAnalytics(
+					getOrganizationService.getOrganizationData(org).orElseThrow());
 			Map<String, Long> actual = new LinkedHashMap<>();
 			for (String key : COUNT_KEYS) {
 				actual.put(key, ((Number) m.get(key)).longValue());

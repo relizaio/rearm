@@ -129,6 +129,11 @@ public class KevCatalogSyncService {
 	 * caller (e.g. a future CE scheduler) must do the same.
 	 */
 	public int syncCatalog() {
+		// TPF-131: re-launch the re-gates whose statement failed on an earlier
+		// tick, before this pass adds new ones (cross-bean, so @Async holds).
+		vulnAnalysisUpdateService.drainKevReGateRetries()
+				.forEach((org, ids) -> vulnAnalysisUpdateService.recomputeReleasesForNewlyKev(ids, org));
+
 		Map<KevSource, KevSourceConnector> bySource = new HashMap<>();
 		for (KevSourceConnector c : connectors) bySource.put(c.source(), c);
 
@@ -249,21 +254,27 @@ public class KevCatalogSyncService {
 	}
 
 	/**
-	 * For each genuinely new KEV CVE in this org, hand off to the shared
-	 * {@code @Async} fan-out to recompute the metrics of every release
-	 * within the org that ships the CVE, so the KEV gate re-fires.
+	 * Collects the genuinely new KEV CVEs of this org that the org has a
+	 * vulnerability record of, and hands them in ONE call to the shared
+	 * {@code @Async} fan-out, which recomputes the metrics of every release
+	 * within the org that ships any of them, so the KEV gate re-fires (one
+	 * task per org per sync, not one per CVE: TPF-131).
 	 * Called only after the reconcile transaction has committed.
 	 */
 	private void triggerKevReGate(UUID orgUuid, List<String> newlyKevCveIds) {
 		if (newlyKevCveIds.isEmpty()) return;
+		List<String> inOrg = new ArrayList<>();
 		for (String cveId : newlyKevCveIds) {
 			List<VulnerabilityRecord> affected =
 					vulnerabilityRecordRepository.findAllOrgsByVulnIdOrAlias(cveId);
 			boolean affectsOrg = affected.stream()
 					.anyMatch(vr -> orgUuid.equals(vr.getOrg()));
 			if (affectsOrg) {
-				vulnAnalysisUpdateService.recomputeReleasesForNewlyKev(cveId, Set.of(orgUuid));
+				inOrg.add(cveId);
 			}
+		}
+		if (!inOrg.isEmpty()) {
+			vulnAnalysisUpdateService.recomputeReleasesForNewlyKev(inOrg, orgUuid);
 		}
 	}
 

@@ -8,6 +8,7 @@ import java.math.BigInteger;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
@@ -62,10 +63,13 @@ import io.reliza.model.BrandingPreset;
 import io.reliza.model.SystemInfoData;
 import io.reliza.model.MetricsAudit;
 import io.reliza.model.Organization;
+import io.reliza.model.OrgTotalsTable;
 import io.reliza.model.FdaProse;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.OrganizationData.InvitedObject;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionFunction;
@@ -118,6 +122,9 @@ public class OrganizationService {
 	@Autowired
 	private SystemInfoService systemInfoService;
 
+	@Autowired
+	private TeaHostAssignmentService teaHostAssignmentService;
+
 	private final OrganizationRepository repository;
 	
 	private static final Logger log = LoggerFactory.getLogger(OrganizationService.class);
@@ -133,8 +140,21 @@ public class OrganizationService {
 	    this.repository = repository;
 	}
 	
+	/**
+	 * Whether a whole-record save writes the TPF-142 serving enums the caller's data carries
+	 * (WRITE_REQUESTED, setTeaServing only) or keeps the stored ones under the row lock (KEEP_STORED,
+	 * every other caller).
+	 */
+	public enum TeaServingWrite { KEEP_STORED, WRITE_REQUESTED }
+
 	@Transactional
 	private Organization saveOrganization (Organization org, Map<String,Object> recordData, WhoUpdated wu) {
+		return saveOrganization(org, recordData, wu, TeaServingWrite.KEEP_STORED);
+	}
+
+	@Transactional
+	private Organization saveOrganization (Organization org, Map<String,Object> recordData, WhoUpdated wu,
+			TeaServingWrite teaServingWrite) {
 		if (null == recordData || recordData.isEmpty() ||  StringUtils.isEmpty((String) recordData.get(CommonVariables.NAME_FIELD))) {
 			throw new IllegalStateException("Organization must have name in record data");
 		}
@@ -142,6 +162,11 @@ public class OrganizationService {
 		if (oo.isPresent()) {
 			recordData = Utils.withStoredTeaUuid(recordData, repository.currentTeaUuidForUpdate(org.getUuid()));
 			recordData = OrganizationData.keepArchived(recordData, repository.currentStatusForUpdate(org.getUuid()));
+			recordData = OrganizationData.withStoredTotals(recordData, repository.currentTotalsForUpdate(org.getUuid()));
+			if (TeaServingWrite.KEEP_STORED == teaServingWrite) {
+				recordData = OrganizationData.withStoredTeaServing(recordData, repository.currentTeaServingForUpdate(org.getUuid()),
+						repository.currentTeaWellKnownHostingForUpdate(org.getUuid()));
+			}
 			auditService.createAndSaveAuditRecord(TableName.ORGANIZATIONS, org);
 			org.setRevision(org.getRevision() + 1);
 			org.setLastUpdatedDate(ZonedDateTime.now());
@@ -155,9 +180,57 @@ public class OrganizationService {
 		repository.save(org);
 	}
 
+	static final String NO_TEA_DOMAIN_ASSIGNED = "No TEA domain is assigned to this organization; a global administrator assigns one";
+	static final String WELL_KNOWN_NEEDS_DOMAIN = "The instance hosts /.well-known/tea on the domain only while TEA serving is DOMAIN";
+
+	/**
+	 * How the organization's TEA surface is served and whether the instance hosts its
+	 * /.well-known/tea on its assigned domain (TPF-142, architecture D7). Takes the system_info row
+	 * lock first (TeaHostAssignmentService.lockedAssignments) for every requested mode, so it
+	 * serialises with assign and unassign and checks "DOMAIN needs an assigned host" on the locked
+	 * map; then writes through the audited funnel (content a person changed), the only writer of the
+	 * two keys.
+	 *
+	 * <p>A mode other than NONE on an organization without a TEA id mints one through
+	 * {@link #ensureTeaUuid} in the same transaction (TPF-149), after every refusal (a checked
+	 * RelizaException commits what was written before it) and before the funnel save, which carries
+	 * the minted id forward from the row under its lock; this method never writes the id itself.
+	 * NONE never mints and never clears an id.
+	 *
+	 * <p>Lock order: the system_info row, then the TEA_ID_MINT advisory lock of the organization,
+	 * then the organization row. assign and unassign take system_info before the organization row,
+	 * and every other mint caller takes the mint lock before the organization row, so this order
+	 * closes no cycle; minting after the funnel save would invert against those mint callers.
+	 */
+	@Transactional
+	public OrganizationData setTeaServing(UUID orgUuid, TeaServing serving, TeaWellKnownHosting hosting, WhoUpdated wu)
+			throws RelizaException {
+		if (null == orgUuid || null == serving || null == hosting) {
+			throw new RelizaException("org, teaServing and teaWellKnownHosting are required");
+		}
+		Map<String, String> map = teaHostAssignmentService.lockedAssignments();
+		Optional<String> assignedHost = teaHostAssignmentService.hostOfOrg(map, orgUuid);
+		Organization org = getOrganizationService.getOrganization(orgUuid)
+				.orElseThrow(() -> new RelizaException(TeaHostAssignmentService.ORGANIZATION_NOT_FOUND));
+		OrganizationData od = OrganizationData.orgDataFromDbRecord(org);
+		if (StatusEnum.ARCHIVED == od.getStatus()) throw new RelizaException(TeaHostAssignmentService.ORGANIZATION_NOT_FOUND);
+		if (TeaServing.DOMAIN == serving && assignedHost.isEmpty()) throw new RelizaException(NO_TEA_DOMAIN_ASSIGNED);
+		if (TeaWellKnownHosting.DOMAIN == hosting && TeaServing.DOMAIN != serving) throw new RelizaException(WELL_KNOWN_NEEDS_DOMAIN);
+		// after every refusal, before the funnel save: system_info -> TEA_ID_MINT(org) -> org row
+		if (TeaServing.NONE != serving && null == od.getTeaUuid()) ensureTeaUuid(orgUuid, wu);
+		od.setTeaServing(serving);
+		od.setTeaWellKnownHosting(hosting);
+		Organization saved = saveOrganization(org, Utils.dataToRecord(od), wu, TeaServingWrite.WRITE_REQUESTED);
+		log.info("TEA serving of organization {} set to {} / {}", orgUuid, serving, hosting);
+		return OrganizationData.orgDataFromDbRecord(saved);
+	}
+
 	/**
 	 * The organization's TEA-facing id, minted on the first call and returned unchanged after that
-	 * (task TEA-2). Called by {@code TeaProfileService} after the first ENABLED profile save.
+	 * (task TEA-2). Called on the first of: an ENABLED TEA profile save ({@code TeaProfileService}),
+	 * a TEA publication ({@code TeaPublicationService}), an external key creation
+	 * ({@code ExternalApiKeyService}) and a TEA serving mode other than NONE ({@link #setTeaServing},
+	 * TPF-149, which holds the system_info row lock when it calls this).
 	 *
 	 * <p>Under a transaction lock keyed on the org: two concurrent first saves must not mint two
 	 * ids and hand the loser's to a caller. The unique index on {@code teaUuid} prevents duplicates
@@ -202,7 +275,7 @@ public class OrganizationService {
 	 * {@code OrgValidationTriggerService.setRules}, which handles those checks
 	 * before delegating here. Lives on the shared service so the data field
 	 * round-trip stays in one place; the validation that gates writes lives in
-	 * the SAAS layer per the {@code saas ← oss ← shared} layering rule.
+	 * the SAAS layer per the {@code saas <- oss <- shared} layering rule.
 	 */
 	@Transactional
 	public OrganizationData setGlobalPrValidationTriggerRules(UUID orgUuid,
@@ -224,7 +297,7 @@ public class OrganizationService {
 	 * which handles those checks before delegating here. Lives on the
 	 * shared service so the data field round-trip stays in one place;
 	 * the validation that gates writes lives in the SAAS layer per the
-	 * {@code saas ← oss ← shared} layering rule.
+	 * {@code saas <- oss <- shared} layering rule.
 	 */
 	@Transactional
 	public OrganizationData setGlobalApprovalPolicyRules(UUID orgUuid,
@@ -409,9 +482,22 @@ public class OrganizationService {
 		});
 	}
 
-	public Map<String,BigInteger> getNumericAnalytics(UUID orgUuid) {
-		Map<String, BigInteger> analytics = new HashMap<>(
-				inTotalsReadTransaction(() -> repository.getNumericAnalytics(orgUuid.toString())));
+	/**
+	 * The Statistics totals of the organization (TPF-139, store TPF-141): the five live counts through
+	 * the TPF-70 wrapper, then the four nightly counts from the organization's own record data (the
+	 * OrganizationData the caller already loaded: no second query). A cached count is null while
+	 * pending; counted_at is the oldest instant of the non-null cached counts as an ISO-8601 UTC
+	 * instant, or null when none is present. Never counts the four cached tables.
+	 */
+	public Map<String,Object> getNumericAnalytics(OrganizationData org) {
+		UUID orgUuid = org.getUuid();
+		Map<String, Object> analytics = new HashMap<>(
+				inTotalsReadTransaction(() -> repository.getLiveNumericAnalytics(orgUuid.toString())));
+		for (OrgTotalsTable table : OrgTotalsTable.values()) {
+			analytics.put(table.getMapKey(), org.totalsCount(table));
+		}
+		analytics.put(OrgTotalsTable.COUNTED_AT_KEY, org.oldestTotalsCountedAt()
+				.map(at -> DateTimeFormatter.ISO_INSTANT.format(at.toInstant())).orElse(null));
 
 		List<OrgUserRecord> orgUserRecords = getOrgUserRecords(orgUuid);
 		long writeUsers = orgUserRecords.stream().filter(r -> r.type() == UserType.WRITE).count();

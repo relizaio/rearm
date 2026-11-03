@@ -5,41 +5,26 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
-import static org.junit.jupiter.api.Assertions.assertFalse;
-import static org.junit.jupiter.api.Assertions.assertNotNull;
-import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.ZonedDateTime;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
-import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.test.context.junit.jupiter.SpringExtension;
 
 import io.reliza.model.Artifact;
-import io.reliza.model.ArtifactCanonicalMap;
-import io.reliza.model.ArtifactSbomComponent;
-import io.reliza.model.SbomComponent;
-import io.reliza.model.SyntheticDtrackBucket;
-import io.reliza.model.SyntheticDtrackBucket.IngestState;
-import io.reliza.repositories.ArtifactCanonicalMapRepository;
-import io.reliza.repositories.ArtifactRepository;
-import io.reliza.repositories.ArtifactSbomComponentRepository;
-import io.reliza.repositories.SbomComponentRepository;
-import io.reliza.repositories.SyntheticDtrackBucketRepository;
 import io.reliza.ws.App;
-import io.reliza.ws.oss.TestInitializer;
 
 /**
- * Pins the fan-out candidate contract broken on prod 2026-07-25: every
- * processed candidate must drop out of
- * {@code findCanonicalArtifactsNeedingFanOut}'s pool, and never-scanned
- * artifacts must win the batch.
+ * Pins the fan-out scan-stamp and stall-counter contracts broken on prod 2026-07-25: every
+ * processed candidate must drop out of the candidate set, and the [FANOUT-STALL] counters
+ * must count only what fan-out can act on.
  *
  * <p>The incident: the idempotency guard in
  * {@code SharedArtifactService.updateArtifactDti} skipped unchanged artifacts
@@ -47,25 +32,16 @@ import io.reliza.ws.oss.TestInitializer;
  * put ~800 canonicals (5,029 artifact rows) back in the pool, none of them
  * ever dropped out, the unordered LIMIT batch served the same 500 every tick,
  * and 3 genuinely-unscanned artifacts sat on "Scan pending" indefinitely with
- * every pipeline diagnostic reading healthy.
+ * every pipeline diagnostic reading healthy. The artifact-level pool itself is gone
+ * (TPF-114: change-driven candidates per canonical, see FanOutChangeDrivenIntegrationTest).
  */
 @ExtendWith(SpringExtension.class)
 @SpringBootTest(classes = {App.class})
-public class FanOutCandidateContractTest {
-
-	@Autowired private ArtifactRepository artifactRepository;
-	@Autowired private ArtifactCanonicalMapRepository artifactCanonicalMapRepository;
-	@Autowired private ArtifactSbomComponentRepository artifactSbomComponentRepository;
-	@Autowired private SbomComponentRepository sbomComponentRepository;
-	@Autowired private SyntheticDtrackBucketRepository bucketRepository;
-	@Autowired private TestInitializer testInitializer;
-
-	/** Epoch stamp far in the past — always below any bucket's last_updated_date. */
-	private static final double STALE_EPOCH = 1_000_000_000.0; // 2001
+public class FanOutCandidateContractTest extends FanOutCandidateTestBase {
 
 	@Test
 	public void advanceLastScannedOnlyStampsWithoutTouchingOtherMetrics() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
+		UUID org = newOrg();
 		Artifact a = saveArtifactWithLastScanned(org, STALE_EPOCH);
 
 		double scannedAt = 1_790_000_000.25;
@@ -78,90 +54,14 @@ public class FanOutCandidateContractTest {
 	}
 
 	@Test
-	public void poolSlicePutsNeverScannedFirstThenStalestStamp() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
-		// One INGESTED bucket so cutoff is meaningful for the caller.
-		SyntheticDtrackBucket bucket = new SyntheticDtrackBucket();
-		bucket.setOrg(org);
-		bucket.setBucketIndex(0);
-		bucket.setIngestState(IngestState.INGESTED);
-		Map<String, Object> refMap = new java.util.HashMap<>();
-		refMap.put("pkg:npm/looper@1.0.0", "x");
-		refMap.put("pkg:npm/fresh@1.0.0", "y");
-		bucket.setRefMap(refMap);
-		bucketRepository.save(bucket);
-
-		// A stale looper (stamp far in the past) and a never-scanned artifact.
-		UUID looperCanonical = mapArtifactWithComponent(org, "pkg:npm/looper@1.0.0", STALE_EPOCH);
-		UUID freshCanonical = mapArtifactWithComponent(org, "pkg:npm/fresh@1.0.0", null);
-		double cutoff = 2_000_000_000.0; // above STALE_EPOCH: both are in the pool
-
-		List<UUID> slice = artifactRepository.findFanOutPoolSlice(org, cutoff, 1000);
-		// The org is fresh, so exactly our two artifacts qualify; never-scanned first.
-		List<UUID> ours = slice.stream().filter(u ->
-				artifactCanonicalMapRepository.findByArtifactUuid(u).isPresent()).toList();
-		assertTrue(ours.size() >= 2, "both artifacts must be in the pool slice");
-		UUID firstCanonical = artifactCanonicalMapRepository
-				.findByArtifactUuid(ours.get(0)).orElseThrow().getCanonicalArtifactUuid();
-		assertEquals(freshCanonical, firstCanonical,
-				"never-scanned artifacts must lead the slice -- they are what users actively wait on");
-		assertTrue(ours.stream().anyMatch(u -> looperCanonical.equals(
-				artifactCanonicalMapRepository.findByArtifactUuid(u).orElseThrow().getCanonicalArtifactUuid())),
-				"the stale looper must also be in the pool below the cutoff");
-	}
-
-	/** Steady state: every stamp postdates the cutoff -- the slice must be empty(-ish). */
-	@Test
-	public void poolSliceEmptyWhenStampsPostdateCutoff() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
-		mapArtifactWithComponent(org, "pkg:npm/settled@1.0.0", STALE_EPOCH);
-		List<UUID> slice = artifactRepository.findFanOutPoolSlice(org, STALE_EPOCH - 1.0, 1000);
-		assertEquals(0, slice.size(),
-				"a stamp at or above the cutoff must not be pooled -- steady state is an empty index range");
-	}
-
-	/**
-	 * The coalesce sentinel in findFanOutPoolSlice must sort below the cutoff's
-	 * floor, and that floor is 0: findCanonicalArtifactsNeedingFanOut seeds
-	 * cutoffEpoch to 0d and only ever raises it with Math.max, so cutoff == 0 is
-	 * reachable for any org whose INGESTED buckets carry no lastUpdatedDate.
-	 * With a sentinel of 0 -- the spelling used for this field elsewhere, and
-	 * the obvious thing to "tidy" this to -- never-scanned artifacts stop
-	 * qualifying at exactly that cutoff, so the pool silently drains nothing for
-	 * the orgs it exists to serve, with no error and nothing in the logs.
-	 * Pins the predicate spelling shared by ArtifactRepository and V80.
-	 */
-	@Test
-	public void neverScannedArtifactsStayPooledAtTheZeroCutoff() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
-		UUID pending = mapArtifactWithComponent(org, "pkg:npm/pending@1.0.0", null);
-		UUID scanned = mapArtifactWithComponent(org, "pkg:npm/settled@1.0.0", STALE_EPOCH);
-
-		List<UUID> slice = artifactRepository.findFanOutPoolSlice(org, 0d, 1000);
-
-		assertTrue(canonicalsOf(slice).contains(pending),
-				"a never-scanned artifact must still be pooled at cutoff 0 -- the seed value");
-		assertFalse(canonicalsOf(slice).contains(scanned),
-				"an artifact stamped above the cutoff must stay out of the pool");
-	}
-
-	private List<UUID> canonicalsOf(List<UUID> artifactUuids) {
-		return artifactUuids.stream()
-				.map(u -> artifactCanonicalMapRepository.findByArtifactUuid(u))
-				.filter(Optional::isPresent)
-				.map(m -> m.get().getCanonicalArtifactUuid())
-				.toList();
-	}
-
-	@Test
 	public void neverScannedStallCounterSeesOnlyOldUnscannedMappedArtifacts() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
+		UUID org = newOrg();
 		mapArtifactWithComponent(org, "pkg:npm/old-unscanned@1.0.0", null);
 		long counted = artifactCanonicalMapRepository.countNeverScannedMappedArtifactsOlderThan(
-				org, java.time.ZonedDateTime.now().plusMinutes(5));
+				org, ZonedDateTime.now().plusMinutes(5));
 		assertEquals(1, counted, "a mapped never-scanned artifact older than the cutoff must be counted");
 		long none = artifactCanonicalMapRepository.countNeverScannedMappedArtifactsOlderThan(
-				org, java.time.ZonedDateTime.now().minusHours(2));
+				org, ZonedDateTime.now().minusHours(2));
 		assertEquals(0, none, "a fresh upload must not trip the stall counter");
 	}
 
@@ -174,80 +74,42 @@ public class FanOutCandidateContractTest {
 	 */
 	@Test
 	public void artifactOutsideScanningUniverseDoesNotTripStallCounter() {
-		UUID org = testInitializer.obtainOrganization().getUuid();
+		UUID org = newOrg();
 		// Mapped, never scanned, old -- but zero component rows.
 		Artifact bare = saveArtifactWithLastScanned(org, null);
-		Map<String, Object> metrics = new java.util.HashMap<>();
+		Map<String, Object> metrics = new HashMap<>();
 		metrics.put("projectName", "keep-me");
 		bare.setMetrics(metrics);
 		bare = artifactRepository.save(bare);
-		ArtifactCanonicalMap m = new ArtifactCanonicalMap();
-		m.setOrg(org);
-		m.setArtifactUuid(bare.getUuid());
-		m.setCanonicalArtifactUuid(UUID.randomUUID());
-		artifactCanonicalMapRepository.save(m);
+		mapRow(org, bare.getUuid(), UUID.randomUUID(), null);
 
 		long counted = artifactCanonicalMapRepository.countNeverScannedMappedArtifactsOlderThan(
-				org, java.time.ZonedDateTime.now().plusMinutes(5));
+				org, ZonedDateTime.now().plusMinutes(5));
 		assertEquals(0, counted,
 				"zero-component artifacts are outside the scanning universe and must not be counted");
 	}
 
-	// ---------------- fixtures ----------------
+	/**
+	 * TPF-114 architecture 4.8 (a): a mapped non-BOM row (simulated: a VEX artifact with a
+	 * direct map row) is a candidate of the never-stamped query, because the map is its
+	 * source, but the stall counters count BOM-typed artifacts only.
+	 */
+	@Test
+	public void stallCountersCountBomTypedMappedArtifactsOnly() {
+		UUID org = newOrg();
+		Artifact vex = saveArtifactWithLastScanned(org, null);
+		vex.getRecordData().put("type", "VEX");
+		vex = artifactRepository.save(vex);
+		UUID vexCanonical = UUID.randomUUID();
+		holdComponent(org, vexCanonical, component(org, uniquePurl("vex-dep"), 0));
+		mapRow(org, vex.getUuid(), vexCanonical, null);
+		Mapped bomTwin = mapBom(org, null, null, component(org, uniquePurl("bom-dep"), 0));
 
-	private Artifact saveArtifactWithLastScanned(UUID org, Double lastScannedEpoch) {
-		Artifact a = new Artifact();
-		Map<String, Object> rd = new java.util.HashMap<>();
-		rd.put("org", org.toString());
-		a.setRecordData(rd);
-		Map<String, Object> metrics = new java.util.HashMap<>();
-		if (lastScannedEpoch != null) {
-			metrics.put("lastScanned", lastScannedEpoch);
-			metrics.put("firstScanned", lastScannedEpoch);
-		}
-		metrics.put("projectName", "keep-me");
-		a.setMetrics(metrics);
-		return artifactRepository.save(a);
-	}
-
-	/** Artifact + canonical map row + one bucketed component; returns the canonical uuid. */
-	private UUID mapArtifactWithComponent(UUID org, String canonicalPurl, Double lastScannedEpoch) {
-		Artifact a = saveArtifactWithLastScanned(org, lastScannedEpoch);
-		if (lastScannedEpoch == null) {
-			// never scanned: metrics present but without lastScanned
-			Map<String, Object> metrics = new java.util.HashMap<>();
-			metrics.put("projectName", "keep-me");
-			a.setMetrics(metrics);
-			a = artifactRepository.save(a);
-			assertNull(a.getMetrics().get("lastScanned"));
-		} else {
-			assertNotNull(a.getMetrics().get("lastScanned"));
-		}
-
-		SbomComponent sc = new SbomComponent();
-		sc.setOrg(org);
-		sc.setCanonicalPurl(canonicalPurl);
-		Map<String, Object> rec = new java.util.HashMap<>();
-		rec.put("name", canonicalPurl);
-		rec.put("type", "library");
-		sc.setRecordData(rec);
-		sc.setSyntheticBucketIndex(0);
-		sc = sbomComponentRepository.save(sc);
-
-		UUID canonical = UUID.randomUUID();
-		ArtifactSbomComponent asc = new ArtifactSbomComponent();
-		asc.setOrg(org);
-		asc.setCanonicalArtifactUuid(canonical);
-		asc.setSbomComponentUuid(sc.getUuid());
-		asc.setExactPurl(canonicalPurl);
-		asc.setParents(new java.util.ArrayList<>());
-		artifactSbomComponentRepository.save(asc);
-
-		ArtifactCanonicalMap m = new ArtifactCanonicalMap();
-		m.setOrg(org);
-		m.setArtifactUuid(a.getUuid());
-		m.setCanonicalArtifactUuid(canonical);
-		artifactCanonicalMapRepository.save(m);
-		return canonical;
+		assertTrue(neverFannedOut(org).contains(vexCanonical),
+				"a mapped non-BOM row is still a never-stamped candidate: the map is the source");
+		assertEquals(1, artifactCanonicalMapRepository.countNeverScannedMappedArtifactsOlderThan(
+				org, ZonedDateTime.now().plusMinutes(5)), "the BOM twin counts, the VEX row does not");
+		assertEquals(List.of(bomTwin.canonical()), artifactCanonicalMapRepository
+				.findNeverScannedMappedArtifactCanonicalsOlderThan(org, ZonedDateTime.now().plusMinutes(5), 10));
 	}
 }

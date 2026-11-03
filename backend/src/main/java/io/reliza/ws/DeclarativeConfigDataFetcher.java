@@ -44,6 +44,7 @@ import io.reliza.service.DeclarativeConfigService.SourceDto;
 import io.reliza.service.GetOrganizationService;
 import io.reliza.service.AgentBoardService;
 import io.reliza.model.AgentActor;
+import io.reliza.model.UserData;
 
 /**
  * Declarative configuration surface for API keys: apply / export of the Catalog and
@@ -62,7 +63,12 @@ public class DeclarativeConfigDataFetcher {
 	@Autowired private AgentBoardService agentBoardService;
 	@Autowired private ApiKeyDeclarativeService apiKeyDeclarativeService;
 
-	private record Authed(UUID orgUuid, WhoUpdated whoUpdated, AuthHeaderParse ahp) {}
+	/** @param owner a personal (USER) key's owner on the board operations' gate; null otherwise */
+	private record Authed(UUID orgUuid, WhoUpdated whoUpdated, AuthHeaderParse ahp, UserData owner) {
+		Authed(UUID orgUuid, WhoUpdated whoUpdated, AuthHeaderParse ahp) {
+			this(orgUuid, whoUpdated, ahp, null);
+		}
+	}
 
 	private Authed authorize(DgsDataFetchingEnvironment dfe, CallType ct) throws RelizaException {
 		return authorize(caller(dfe), ct);
@@ -110,7 +116,16 @@ public class DeclarativeConfigDataFetcher {
 		List<PermissionFunction> functions = ct == CallType.WRITE ? List.of(PermissionFunction.CONFIGURATION_WRITE)
 				: List.of(PermissionFunction.CONFIGURATION_READ, PermissionFunction.CONFIGURATION_WRITE);
 		FreeformKeyVerification fkv = authorizationService.rbacKeyForBoardConfiguration(c.ahp(), c.orgUuid(), ct, functions);
-		return new Authed(c.orgUuid(), fkv.whoUpdated(), c.ahp());
+		return new Authed(c.orgUuid(), fkv.whoUpdated(), c.ahp(), fkv.owner());
+	}
+
+	/**
+	 * Who a programmatic board apply acts as (task SPLIT-5, D11): the owner of a personal (USER) key, whose every
+	 * call is capped by and attributed to them; the application for any other key, which is what an agent's session
+	 * is opened with. Only a person changes which role carries the board's coordinator checkpoint.
+	 */
+	static AgentActor applyActor(UserData owner) {
+		return null == owner ? AgentActor.system("declarative apply") : AgentActor.ofUser(owner.getUuid(), owner.getEmail());
 	}
 
 	private Authed authorize(Caller c, CallType ct, PermissionFunction function) throws RelizaException {
@@ -164,7 +179,7 @@ public class DeclarativeConfigDataFetcher {
 		AgentBoardService.BoardSpecDto spec = AgentBoardService.boardSpecFromInput(dfe.getArgument("spec"));
 		// Perspectives the file adds or removes need the key's consent (board-permissions.md D9).
 		return agentBoardService.applyBoard(a.orgUuid(), spec, dryRun(dfe), source(dfe),
-				AgentActor.system("declarative apply"), authorizationService.perspectiveConsent(a.ahp(), a.orgUuid()),
+				applyActor(a.owner()), authorizationService.perspectiveConsent(a.ahp(), a.orgUuid()),
 				authorizationService.boardAccess(a.ahp(), a.orgUuid()), a.whoUpdated());
 	}
 

@@ -447,7 +447,7 @@ public class ProductChildNudgeIntegrationTest extends ReleaseScanSelfHealTestBas
 	}
 
 	private void compute(UUID releaseUuid) {
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(reload(releaseUuid));
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(reload(releaseUuid).getUuid());
 	}
 
 	private Release reload(UUID releaseUuid) {

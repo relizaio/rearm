@@ -61,8 +61,8 @@ public interface ReleaseChangeHook {
 	void onReleaseLifecycleChanged(ReleaseData rd, ReleaseLifecycle oldLifecycle, ReleaseLifecycle newLifecycle);
 
 	/**
-	 * Fires once per release when the post-reconcile BOM diff has both
-	 * additions and removals. The SAAS impl emits a {@code RELEASE_BOM_DIFF}
+	 * Fires once per release when the post-reconcile BOM diff is non-empty
+	 * (additions, removals, or both). The SAAS impl emits a {@code RELEASE_BOM_DIFF}
 	 * event; the caller has already claimed the one-shot flag.
 	 */
 	void onReleaseBomDiff(ReleaseData rd, ArtifactChangelog changelog);

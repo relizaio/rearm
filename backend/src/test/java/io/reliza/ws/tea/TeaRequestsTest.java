@@ -8,7 +8,10 @@ import static org.junit.jupiter.api.Assertions.assertSame;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 import java.util.Map;
@@ -51,8 +54,17 @@ class TeaRequestsTest {
 		TeaAuthorizationService auth = new TeaAuthorizationService();
 		ReflectionTestUtils.setField(requests, "teaSurfaceService", surface);
 		ReflectionTestUtils.setField(requests, "teaAuthorizationService", auth);
-		when(surface.orgOfBase(any())).thenReturn(Optional.empty());
-		when(surface.orgOfBase(TEA.toString())).thenReturn(Optional.of(ORG));
+		// TPF-142: context resolves through orgOfRequest(segment, host); MockHttpServletRequest's server name is localhost
+		when(surface.orgOfRequest(any(), any())).thenReturn(Optional.empty());
+		when(surface.orgOfRequest(eq(TEA.toString()), eq("localhost"))).thenReturn(Optional.of(ORG));
+		when(surface.orgOfRequest(eq(null), eq("tea-b.test"))).thenReturn(Optional.of(ORG));
+	}
+
+	private static ServletWebRequest hostRequest(String host, TeaCaller caller) {
+		MockHttpServletRequest r = new MockHttpServletRequest("GET", "/tea/v1.0.0/products");
+		r.setServerName(host);
+		if (null != caller) r.setAttribute(TeaAuthorizationService.CALLER_ATTRIBUTE, caller);
+		return new ServletWebRequest(r, new MockHttpServletResponse());
 	}
 
 	private static ServletWebRequest request(String org, TeaCaller caller) {
@@ -69,6 +81,15 @@ class TeaRequestsTest {
 		assertEquals(TeaAuthState.ANONYMOUS, anon.caller().state());
 		TeaRequestContext bad = requests.context(request(TEA.toString(), TeaCaller.invalidToken("x")));
 		assertEquals(TeaAuthState.INVALID_TOKEN, bad.caller().state());
+		// TPF-142 row 18: one call with the template's {org} value and the normalised server name
+		verify(surface, times(2)).orgOfRequest(TEA.toString(), "localhost");
+		// the host shape: no {org} variable, the normalised server name names the organization
+		TeaRequestContext onHost = requests.context(hostRequest("TEA-B.test", null));
+		assertEquals(ORG, onHost.org());
+		verify(surface, times(1)).orgOfRequest(null, "tea-b.test");
+		TeaCaller foreign = TeaCaller.authenticated(new TeaPrincipal(UUID.randomUUID(), UUID.randomUUID(), "EXTERNAL__t__ord__o", 1, "192.0.2.9"));
+		assertEquals(TeaCaller.anonymous(), requests.context(hostRequest("tea-b.test", foreign)).caller(),
+				"a valid token of another organization is anonymous on the host shape too");
 	}
 
 	@Test
@@ -91,6 +112,9 @@ class TeaRequestsTest {
 			assertEquals(404, r.response().getStatusCode().value());
 			assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, r.response().getBody().getError());
 		}
+		// TPF-142 row 18: an empty resolution on the host shape is the same refusal
+		TeaRefusal h = assertThrows(TeaRefusal.class, () -> requests.context(hostRequest("tea-x.test", null)));
+		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, h.response().getBody().getError());
 	}
 
 	@Test

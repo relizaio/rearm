@@ -54,6 +54,7 @@ import org.cyclonedx.parsers.JsonParser;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -61,6 +62,7 @@ import org.springframework.transaction.annotation.Transactional;
 import org.springframework.transaction.support.TransactionTemplate;
 import org.springframework.web.multipart.MultipartFile;
 
+import jakarta.annotation.PostConstruct;
 import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 
@@ -100,6 +102,7 @@ import io.reliza.common.Utils.RootComponentMergeMode;
 import io.reliza.common.Utils.StripBom;
 import io.reliza.common.VersRanges;
 import io.reliza.common.VulnerabilityReferenceParser;
+import io.reliza.exceptions.ActionRefusedException;
 import io.reliza.exceptions.MergedSbomUnavailableException;
 import io.reliza.exceptions.MergedSbomUnavailableException.ChildBomOutcome;
 import io.reliza.exceptions.MergedSbomUnavailableException.ChildBomStatus;
@@ -141,6 +144,15 @@ import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.AnalyticsDtos.VegaDateValue;
 import io.reliza.model.dto.ArtifactDto;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateDependencyRow;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateEvaluation;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateOutcome;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateRef;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateReleaseRef;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateReleaseSource;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateResult;
+import io.reliza.model.VersionAssignment.VersionTypeEnum;
+import io.reliza.versioning.VersionApi.ActionEnum;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.dto.SceDto;
@@ -158,6 +170,7 @@ import io.reliza.model.Rebom.ReleaseNodeFacts;
 import io.reliza.service.DeclaredLicenses.DeclaredLicense;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.repositories.ReleaseRepository.MetricsComputeCandidate;
 import io.reliza.repositories.dao.DateCountDao;
 import io.reliza.versioning.VersionType;
 import io.reliza.service.RebomService.BomMediaType;
@@ -202,6 +215,9 @@ public class ReleaseService {
 
 	@Autowired
 	private ComponentLockService componentLockService;
+
+	@Autowired
+	private VersionAssignmentService versionAssignmentService;
 	
 	@Autowired
 	private RebomService rebomService;
@@ -829,7 +845,6 @@ public class ReleaseService {
 
 	/**
 	 * Looks for all releases with this specific version within specified organization uuid
-	 * Note that this does not expand to external organization as is the case when we search by digests
 	 * @param version
 	 * @param orgUuid
 	 * @return
@@ -1348,7 +1363,8 @@ public class ReleaseService {
 
 	/**
 	 * Whether {@code rd} is a release of a PRODUCT component, by its component's type; not
-	 * {@link #isProductRelease(Release)}, which guesses from parent releases for the metrics drain.
+	 * {@link #isProductRelease(MetricsComputeCandidate)}, which guesses from parent releases for the
+	 * metrics drain.
 	 */
 	private boolean isOfProductComponent(ReleaseData rd) {
 		return getComponentService.getComponentData(rd.getComponent())
@@ -2822,58 +2838,175 @@ public class ReleaseService {
 		ossReleaseService.processAutoIntegrateForBatch(releaseUuids);
 	}
 
-	@Transactional
-	public Optional<UUID> autoIntegrateFeatureSetOnDemand (BranchData bd) {
-		// check that status of this child project is not ignored
-		log.info("PSDEBUG: autointegrate feature set on demand for bd = " + bd.getUuid());
-		// Use effective dependencies which includes pattern-resolved dependencies
+	/** Row note of a chosen dependency release that belongs to another organization (never a parent). */
+	static final String FOREIGN_RELEASE_NOTE = "release belongs to another organization and cannot be a parent";
+
+	/** Top-level note when createProductRelease declines; the detail is in the server log. */
+	static final String CREATE_DECLINED_NOTE = "the product release was not created: see the server log"
+			+ " (cycle, unreferenceable parent or create error)";
+
+	/**
+	 * The auto-integrate dry run: what autoIntegrateFeatureSetOnDemand would do on this feature set right
+	 * now and why, with one row per effective dependency. Read-only: writes nothing, mints no version,
+	 * takes no row lock (the read-only transaction makes Postgres refuse any locking read). Knows no
+	 * caller: same-organization rows carry their release facts, the per-caller redaction is the
+	 * fetcher's. A chosen release of another organization is redacted here and stops the create.
+	 */
+	@Transactional(readOnly = true)
+	public AutoIntegrateEvaluation evaluateAutoIntegrate (BranchData bd) {
 		List<ChildComponent> dependencies = dependencyPatternService.resolveEffectiveDependencies(bd);
-		// log.info("autointegrate on-demand, dependencies found: {}", dependencies);
-		
-		// Take every required child project of this branch, and take latest completed release for each of them
-		// including transients, but exclude ignored 
-		
-		Set<UUID> releasesToMatch = new LinkedHashSet<>(); // this will be used to match to existing product, in which case nothing would happen
-		List<ParentRelease> parentReleases = new LinkedList<>();
-		
-		boolean requirementsMet = bd.getAutoIntegrate() == AutoIntegrateState.ENABLED;
-		var cpIter = dependencies.iterator();
-				
-		while (requirementsMet && cpIter.hasNext()) {
-			var cp = cpIter.next();
-			if ((cp.getStatus() != StatusEnum.IGNORED)) {
-				// if release present in cp, use that release
-				Optional<ReleaseData> ord = Optional.empty();
-				if (null != cp.getRelease()) {
-					ord = sharedReleaseService.getReleaseData(cp.getRelease());
+		List<AutoIntegrateDependencyRow> rows = new ArrayList<>(dependencies.size());
+		Set<UUID> releasesToMatch = new LinkedHashSet<>();
+		List<ParentRelease> parents = new LinkedList<>();
+		boolean blocking = false;
+		boolean foreign = false;
+		for (ChildComponent cp : dependencies) {
+			AutoIntegrateRef componentRef = new AutoIntegrateRef(cp.getUuid(),
+					getComponentService.getComponentData(cp.getUuid()).map(ComponentData::getName).orElse(null));
+			Optional<BranchData> odepBranch = (null != cp.getBranch()) ? branchService.getBranchData(cp.getBranch())
+					: Optional.empty();
+			AutoIntegrateRef branchRef = (null != cp.getBranch())
+					? new AutoIntegrateRef(cp.getBranch(), odepBranch.map(BranchData::getName).orElse(null))
+					: null;
+			AutoIntegrateReleaseSource source = AutoIntegrateReleaseSource.NONE;
+			Optional<ReleaseData> chosen = Optional.empty();
+			String note;
+			if (cp.getStatus() == StatusEnum.IGNORED) {
+				note = "ignored";
+			} else if (null != cp.getRelease()) {
+				source = AutoIntegrateReleaseSource.PINNED;
+				chosen = sharedReleaseService.getReleaseData(cp.getRelease());
+				note = chosen.isPresent() ? "pinned" : "pinned release " + cp.getRelease() + " not found";
+			} else if (null == cp.getBranch()) {
+				note = "no branch set on this dependency";
+			} else if (odepBranch.isEmpty()) {
+				note = "branch " + cp.getBranch() + " not found";
+			} else {
+				String branchName = odepBranch.get().getName();
+				chosen = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), ReleaseLifecycle.ASSEMBLED);
+				if (chosen.isPresent()) {
+					source = AutoIntegrateReleaseSource.LATEST_ASSEMBLED;
+					note = "latest " + chosen.get().getLifecycle() + " release of branch " + branchName;
+				} else if (!bd.getOrg().equals(odepBranch.get().getOrg())) {
+					// another organization's branch: its lifecycles and versions are not this caller's to see
+					note = "no release on branch " + branchName;
 				} else {
-					// obtain latest ASSEMBLED release to match automatic auto-integrate behavior
-					ord = sharedReleaseService.getReleaseDataOfBranch(bd.getOrg(), cp.getBranch(), ReleaseLifecycle.ASSEMBLED);
-				}
-				if (ord.isPresent()) {
-					// TODO handle proper artifact selection via tags
-					releasesToMatch.add(ord.get().getUuid());
-					ParentRelease dr = ParentRelease.minimalParentReleaseFactory(ord.get().getUuid(), null);
-					parentReleases.add(dr);
-				} else if (cp.getStatus() == StatusEnum.REQUIRED){
-					requirementsMet = false;
+					Optional<ReleaseData> latest = sharedReleaseService
+							.getLatestNonCancelledOrRejectedReleaseDataOfBranch(cp.getBranch());
+					note = latest.isPresent()
+							? "no ASSEMBLED release on branch " + branchName + "; latest is "
+									+ latest.get().getLifecycle() + " " + latest.get().getVersion()
+							: "no release on branch " + branchName;
 				}
 			}
+			AutoIntegrateReleaseRef releaseRef = null;
+			if (chosen.isPresent()) {
+				ReleaseData rd = chosen.get();
+				if (!bd.getOrg().equals(rd.getOrg())) {
+					// nothing of another organization's release leaves the evaluator
+					note = FOREIGN_RELEASE_NOTE;
+					foreign = true;
+					if (cp.getStatus() == StatusEnum.REQUIRED) blocking = true;
+				} else {
+					releaseRef = releaseRefOf(rd);
+					releasesToMatch.add(rd.getUuid());
+					parents.add(ParentRelease.minimalParentReleaseFactory(rd.getUuid(), null));
+				}
+			} else if (cp.getStatus() == StatusEnum.REQUIRED) {
+				blocking = true;
+			}
+			rows.add(new AutoIntegrateDependencyRow(componentRef, branchRef, cp.getStatus(), source, releaseRef, note));
 		}
+		List<AutoIntegrateDependencyRow> unmodifiableRows = Collections.unmodifiableList(rows);
 
-	
-		// check if a product release like that already exists
-		if (requirementsMet) {
-			var existingProduct = matchToProductRelease(bd.getUuid(), releasesToMatch);
-			requirementsMet = existingProduct.isEmpty();
+		if (bd.getAutoIntegrate() != AutoIntegrateState.ENABLED) {
+			return new AutoIntegrateEvaluation(AutoIntegrateOutcome.AUTO_INTEGRATE_DISABLED, null, null,
+					unmodifiableRows, null, null);
 		}
-			
-		// If one of required projects does not have latest release, then we fail the process and don't yield anything there
-		if (requirementsMet) {
-			// create new product release using shared method
-			return ossReleaseService.createProductRelease(bd, bd.getOrg(), parentReleases);
+		if (blocking) {
+			return new AutoIntegrateEvaluation(AutoIntegrateOutcome.REQUIRED_DEPENDENCY_WITHOUT_RELEASE, null, null,
+					unmodifiableRows, null, null);
 		}
-		return Optional.empty();
+		if (foreign) {
+			return new AutoIntegrateEvaluation(AutoIntegrateOutcome.CREATE_FAILED, null, null,
+					unmodifiableRows, FOREIGN_RELEASE_NOTE, null);
+		}
+		Optional<ReleaseData> existing = matchToProductRelease(bd.getUuid(), releasesToMatch);
+		if (existing.isPresent()) {
+			return new AutoIntegrateEvaluation(AutoIntegrateOutcome.MATCHING_PRODUCT_RELEASE_EXISTS,
+					releaseRefOf(existing.get()), null, unmodifiableRows, null, null);
+		}
+		try {
+			// the mint's own lock check (VersionAssignmentService.getSetNewVersionWrapper), same arguments
+			componentLockService.assertUnlocked(null, bd.getUuid(), LockedOperation.VERSION_ASSIGNMENT);
+		} catch (ActionRefusedException e) {
+			return new AutoIntegrateEvaluation(AutoIntegrateOutcome.CREATE_FAILED, null, null,
+					unmodifiableRows, e.getMessage(), e.getMessage());
+		}
+		ActionEnum action = ActionEnum.BUMP;
+		try {
+			action = ossReleaseService.getLargestActionFromComponents(bd.getComponent(), bd.getUuid(), parents);
+		} catch (RelizaException e) {
+			log.error("Error calculating version action for the auto-integrate preview of feature set "
+					+ bd.getUuid(), e);
+		}
+		String projectedVersion = versionAssignmentService.getCurrentNextVersion(bd.getUuid(), action,
+				VersionTypeEnum.DEV);
+		return new AutoIntegrateEvaluation(AutoIntegrateOutcome.WOULD_CREATE, null, projectedVersion,
+				unmodifiableRows, null, null);
+	}
+
+	private static AutoIntegrateReleaseRef releaseRefOf (ReleaseData rd) {
+		return new AutoIntegrateReleaseRef(rd.getUuid(), rd.getVersion(), rd.getLifecycle(), rd.getCreatedDate());
+	}
+
+	/** Parents of the create, in row order, from the service's own (unredacted) evaluation. */
+	private static List<ParentRelease> parentsOf (AutoIntegrateEvaluation ev) {
+		List<ParentRelease> parents = new LinkedList<>();
+		for (AutoIntegrateDependencyRow row : ev.dependencies()) {
+			if (null != row.release()) {
+				parents.add(ParentRelease.minimalParentReleaseFactory(row.release().uuid(), null));
+			}
+		}
+		return parents;
+	}
+
+	/**
+	 * autoIntegrateFeatureSetOnDemand with the explanation beside the result. Re-evaluates at call time
+	 * and creates only on WOULD_CREATE. A lock is reported as CREATE_FAILED with the refusal text, never
+	 * thrown. Catches only the two expected create-step exceptions; anything else surfaces as a server error.
+	 */
+	@Transactional
+	public AutoIntegrateResult autoIntegrateFeatureSetOnDemandExplained (BranchData bd) {
+		log.info("PSDEBUG: autointegrate feature set on demand for bd = " + bd.getUuid());
+		AutoIntegrateEvaluation ev = evaluateAutoIntegrate(bd);
+		if (ev.outcome() != AutoIntegrateOutcome.WOULD_CREATE) {
+			return new AutoIntegrateResult(Optional.empty(), ev);
+		}
+		try {
+			Optional<UUID> created = ossReleaseService.createProductRelease(bd, bd.getOrg(), parentsOf(ev));
+			if (created.isPresent()) return new AutoIntegrateResult(created, ev);
+			return new AutoIntegrateResult(Optional.empty(),
+					ev.withOutcome(AutoIntegrateOutcome.CREATE_FAILED, CREATE_DECLINED_NOTE));
+		} catch (IllegalStateException e) {
+			// mint exhaustion in createProductRelease; the text names only this feature set
+			log.error("Auto-integrate of feature set " + bd.getUuid() + " could not mint a version", e);
+			return new AutoIntegrateResult(Optional.empty(),
+					ev.withOutcome(AutoIntegrateOutcome.CREATE_FAILED, e.getMessage()));
+		} catch (ActionRefusedException e) {
+			// a lock taken between the evaluation and the mint's own check
+			return new AutoIntegrateResult(Optional.empty(), ev.withLockRefusal(e.getMessage()));
+		}
+	}
+
+	@Transactional
+	public Optional<UUID> autoIntegrateFeatureSetOnDemand (BranchData bd) {
+		AutoIntegrateResult r = autoIntegrateFeatureSetOnDemandExplained(bd);
+		if (null != r.evaluation().lockRefusal()) {
+			// today's client error on a locked product or feature set, same text, nothing written
+			throw new ActionRefusedException(r.evaluation().lockRefusal());
+		}
+		return r.release();
 	}
 	
 	public Optional<ReleaseData> getReleaseDataFromProgrammaticInput (ReleaseApprovalProgrammaticInput rapi) throws RelizaException {
@@ -2891,7 +3024,7 @@ public class ReleaseService {
 		if (or.isPresent()) {
 			boolean metricsChanged;
 			if (onRescan) {
-				metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(or.get());
+				metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(releaseId);
 			} else {
 				metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnNonRescan(or.get());
 			}
@@ -2911,7 +3044,7 @@ public class ReleaseService {
 	 * SET LOCAL reverts at commit, so nothing else on the connection is
 	 * affected when it returns to the pool.
 	 */
-	private List<Release> findForMetricsComputeJitOff (Supplier<List<Release>> finder) {
+	private <T> List<T> findForMetricsComputeJitOff (Supplier<List<T>> finder) {
 		TransactionTemplate tx = new TransactionTemplate(transactionManager);
 		return tx.execute(status -> {
 			entityManager.createNativeQuery("SET LOCAL jit = off").executeUpdate();
@@ -2927,11 +3060,14 @@ public class ReleaseService {
 	}
 
 	/**
-	 * Per-tick metrics compute. Each of the five constituent finders is capped at
-	 * {@code limit} rows so the worst-case in-memory batch is bounded to 5*limit releases
-	 * (typically ~100 with limit=20). Whichever rows don't fit this tick land on the next
-	 * — the ORDER BY ASC on stalest-scan in each query guarantees forward progress and no
-	 * starvation under a backlog.
+	 * Per-tick metrics compute, in two lanes over the same eligibility predicate (TPF-138).
+	 * The RECENT lane runs first: the eligible releases created in the last
+	 * {@code recentWindowMinutes}, oldest-created first, at most {@code recentLimit}. The
+	 * normal lane runs after it: the eligible releases oldest-touched first, at most
+	 * {@code limit}. Budgets are additive and the batches are loaded and computed one after
+	 * the other, so the in-memory peak stays one batch of candidates. Whichever rows do not
+	 * fit this tick land on the next -- both lanes are oldest-first, which guarantees forward
+	 * progress and no starvation under a backlog.
 	 */
 	/** Last [METRICS-BACKLOG] emission; null => eligible to fire on the first pressured tick. */
 	private final java.util.concurrent.atomic.AtomicReference<java.time.Instant> lastMetricsBacklogReport =
@@ -2944,9 +3080,9 @@ public class ReleaseService {
 	 * hourly [METRICS-BACKLOG] gauge is emitted. Below it the queue is draining
 	 * within a few ticks and needs neither, so the backend stays silent.
 	 */
-	private static final long METRICS_BACKLOG_PRESSURE_THRESHOLD = 1000;
+	static final long METRICS_BACKLOG_PRESSURE_THRESHOLD = 1000;
 
-	protected void computeMetricsForAllUnprocessedReleases (int limit) {
+	protected void computeMetricsForAllUnprocessedReleases (int limit, int recentLimit, int recentWindowMinutes) {
 		// One eligible-count per tick, shared by the pressure gauge and the
 		// drain-mode gate below (the count is served by the V73 partial index, so
 		// it is pool-sized rather than table-sized -- but there is no reason to
@@ -3001,6 +3137,21 @@ public class ReleaseService {
 		// of drain mode by construction.
 		boolean drainMode = eligibleBefore > METRICS_BACKLOG_PRESSURE_THRESHOLD;
 
+		// RECENT lane (TPF-138), first: the eligible releases created inside the window,
+		// oldest-created first, capped at recentLimit. Its parallel compute returns only
+		// when every shard is done, so every recent row is attempted before the first
+		// normal-lane row. Products are computed here in drain mode too: a deferral bumps
+		// last_updated_date, not created_date, so a deferred recent product would be
+		// re-selected by this lane and re-deferred every tick until it aged out.
+		try {
+			List<MetricsComputeCandidate> recentReleases = findForMetricsComputeJitOff(
+					() -> repository.findReleasesForMetricsComputeRecent(recentWindowMinutes, recentLimit));
+			log.debug("[compute metrics scheduler]: recent lane size = {}", recentReleases.size());
+			computeMetricsForReleaseListParallel(recentReleases, dedupProcessedReleases);
+		} catch (Exception e) {
+			log.error("[compute metrics scheduler]: recent lane failed", e);
+		}
+
 		// RETIRED: the BY_ARTIFACT_DIRECT, BY_SCE and BY_OUTBOUND_DELIVERABLES
 		// finders used to live here (BY_ARTIFACT_DIRECT last, after it too began
 		// hitting the 10s fail-fast timeout under grown touch traffic).
@@ -3032,13 +3183,22 @@ public class ReleaseService {
 		// backend/ai-plans/metrics-finder-retirement.md.
 
 		try {
-			var releasesByUpdateDate = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByUpdate(limit));
+			var byUpdate = findForMetricsComputeJitOff(() -> repository.findReleasesForMetricsComputeByUpdate(limit));
+			// Drop the rows the recent lane already claimed this tick BEFORE the drain
+			// partition (TPF-138 D3): the deferral below runs on the finder's rows, ahead of
+			// the dedup claim inside computeMetricsForReleaseList, so without this filter a
+			// recent product the recent lane attempted (and left eligible) would be deferred
+			// in the same tick. At this point the dedup set holds exactly the recent lane's rows.
+			List<MetricsComputeCandidate> releasesByUpdateDate = new ArrayList<>(byUpdate.size());
+			for (MetricsComputeCandidate r : byUpdate) {
+				if (!dedupProcessedReleases.contains(r.getUuid())) releasesByUpdateDate.add(r);
+			}
 			log.debug("[compute metrics scheduler]: releases by updated date del size = " + releasesByUpdateDate.size());
 			// for (var r : releasesByUpdateDate) log.debug("[compute metrics scheduler]: release by upd uuid = " + r.getUuid());
 			if (drainMode) {
-				List<Release> componentReleases = new LinkedList<>();
-				List<Release> productReleases = new LinkedList<>();
-				for (Release r : releasesByUpdateDate) {
+				List<MetricsComputeCandidate> componentReleases = new LinkedList<>();
+				List<MetricsComputeCandidate> productReleases = new LinkedList<>();
+				for (MetricsComputeCandidate r : releasesByUpdateDate) {
 					if (isProductRelease(r)) productReleases.add(r);
 					else componentReleases.add(r);
 				}
@@ -3048,7 +3208,7 @@ public class ReleaseService {
 					// recycle the same rows forever (livelock). Compute them.
 					computeMetricsForReleaseListParallel(productReleases, dedupProcessedReleases);
 				} else {
-					for (Release p : productReleases) {
+					for (MetricsComputeCandidate p : productReleases) {
 						repository.deferMetricsRecompute(p.getUuid());
 					}
 					computeMetricsForReleaseListParallel(componentReleases, dedupProcessedReleases);
@@ -3092,38 +3252,40 @@ public class ReleaseService {
 	 */
 	/**
 	 * Drain-mode classifier: a release with parent (component) releases is a
-	 * product release. Purely in-memory -- parentReleases is already in the
-	 * loaded record_data, no component lookup. Verified against live data
+	 * product release. The finder computes the flag in SQL (a non-empty
+	 * parentReleases array), so no record is loaded and no component looked
+	 * up. Verified against live data
 	 * (psclaude, 2026-07-27): of 3607 releases under COMPONENT-typed
 	 * components, ZERO carry a non-empty parentReleases (no false positives);
 	 * of 895 under PRODUCT-typed components, 732 carry it -- the remainder
 	 * (products with nothing integrated yet) classify as components and
 	 * compute normally, which is benign: with no children their compute is
-	 * cheap and nothing ever re-touches them mid-drain. Any classification
-	 * failure also computes normally, so a bad row can never be starved by
-	 * the drain-mode partition.
+	 * cheap and nothing ever re-touches them mid-drain. A row whose
+	 * parentReleases is missing or not an array classifies as a component
+	 * and computes normally, so a bad row can never be starved by the
+	 * drain-mode partition.
 	 */
-	private boolean isProductRelease (Release r) {
-		try {
-			ReleaseData rd = ReleaseData.dataFromRecord(r);
-			return rd.getParentReleases() != null && !rd.getParentReleases().isEmpty();
-		} catch (Exception e) {
-			log.error("isProductRelease classification failed for release {}: {}", r.getUuid(), e.getMessage(), e);
-			return false;
-		}
+	private static boolean isProductRelease (MetricsComputeCandidate r) {
+		return Boolean.TRUE.equals(r.getProduct());
 	}
 
-	private List<Release> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases, int limit) {
+	/**
+	 * The products of the releases this tick processed, as candidates: the organization of each
+	 * processed release and its products' candidate columns are read, never a whole row. A
+	 * processed release deleted since is skipped.
+	 */
+	private List<MetricsComputeCandidate> findProductReleasesFromComponentsForMetrics (Set<UUID> dedupProcessedReleases, int limit) {
 		Set<UUID> dedupReleases = new HashSet<>();
-		List<Release> productReleases = new LinkedList<>();
+		List<MetricsComputeCandidate> productReleases = new LinkedList<>();
 		if (null != dedupProcessedReleases && !dedupProcessedReleases.isEmpty()) {
 			for (UUID dpr : dedupProcessedReleases) {
 				if (productReleases.size() >= limit) break;
-				ReleaseData rd = sharedReleaseService.getReleaseData(dpr).get();
-				List<Release> wipProducts = repository.findProductsByRelease(rd.getOrg().toString(),
-						rd.getUuid().toString());
+				Optional<String> org = repository.findOrgOfRelease(dpr);
+				if (org.isEmpty()) continue;
+				List<MetricsComputeCandidate> wipProducts = repository.findProductMetricsCandidatesByRelease(org.get(),
+						dpr.toString());
 				if (null != wipProducts && !wipProducts.isEmpty()) {
-					for (Release p : wipProducts) {
+					for (MetricsComputeCandidate p : wipProducts) {
 						if (productReleases.size() >= limit) break;
 						if (!dedupProcessedReleases.contains(p.getUuid()) && !dedupReleases.contains(p.getUuid())) {
 							productReleases.add(p);
@@ -3136,42 +3298,52 @@ public class ReleaseService {
 		return productReleases;
 	}
 
-	/** Worker count for the parallel metrics pass; the batch limit in
-	 * SchedulingService (102) is kept divisible by this so shards stay even. */
-	private static final int METRICS_COMPUTE_WORKERS = 3;
+	/** Worker count for the parallel metrics pass (default 3; the default batch limit in
+	 * SchedulingService, 102, is divisible by it so shards stay even). Configurable via
+	 * relizaprops.metricsComputeWorkers / the METRICS_COMPUTE_WORKERS env var; at least 1. */
+	@Value("${relizaprops.metricsComputeWorkers:3}")
+	private int metricsComputeWorkersSetting;
+
+	private int metricsComputeWorkers = 3;
 
 	/** Dedicated pool -- thread naming is load-bearing for ops (thread dumps
-	 * must attribute compute work); daemon so it never blocks shutdown. */
-	private final java.util.concurrent.ExecutorService metricsComputePool =
-			java.util.concurrent.Executors.newFixedThreadPool(METRICS_COMPUTE_WORKERS, runnable -> {
-				Thread t = new Thread(runnable);
-				t.setName("metrics-compute-" + t.threadId());
-				t.setDaemon(true);
-				return t;
-			});
+	 * must attribute compute work); daemon so it never blocks shutdown. Built
+	 * once the worker count is injected. */
+	private java.util.concurrent.ExecutorService metricsComputePool;
+
+	@PostConstruct
+	void initMetricsComputePool () {
+		metricsComputeWorkers = Math.max(1, metricsComputeWorkersSetting);
+		metricsComputePool = java.util.concurrent.Executors.newFixedThreadPool(metricsComputeWorkers, runnable -> {
+			Thread t = new Thread(runnable);
+			t.setName("metrics-compute-" + t.threadId());
+			t.setDaemon(true);
+			return t;
+		});
+	}
 
 	/**
 	 * Parallel wrapper over {@link #computeMetricsForReleaseList}: round-robins
-	 * the batch across {@value #METRICS_COMPUTE_WORKERS} workers and blocks
+	 * the batch across the configured number of workers and blocks
 	 * until all shards finish, so the tick still ends when the whole batch is done. Safe because each release's compute is
 	 * an independent transaction with its own row lock, the dedup set is
 	 * concurrent, and markContainingProductsStale acquires product-row locks in
 	 * UUID order (cross-worker deadlock ordering). Tiny batches skip the
 	 * dispatch overhead and run inline.
 	 */
-	private void computeMetricsForReleaseListParallel(List<Release> releaseList,
+	private void computeMetricsForReleaseListParallel(List<MetricsComputeCandidate> releaseList,
 			Set<UUID> dedupProcessedReleases) {
 		if (releaseList.isEmpty()) return;
-		if (releaseList.size() <= METRICS_COMPUTE_WORKERS) {
+		if (releaseList.size() <= metricsComputeWorkers) {
 			computeMetricsForReleaseList(releaseList, dedupProcessedReleases);
 			return;
 		}
-		List<List<Release>> shards = new ArrayList<>(METRICS_COMPUTE_WORKERS);
-		for (int i = 0; i < METRICS_COMPUTE_WORKERS; i++) shards.add(new LinkedList<>());
+		List<List<MetricsComputeCandidate>> shards = new ArrayList<>(metricsComputeWorkers);
+		for (int i = 0; i < metricsComputeWorkers; i++) shards.add(new LinkedList<>());
 		int i = 0;
-		for (Release r : releaseList) shards.get(i++ % METRICS_COMPUTE_WORKERS).add(r);
-		List<java.util.concurrent.Callable<Void>> tasks = new ArrayList<>(METRICS_COMPUTE_WORKERS);
-		for (List<Release> shard : shards) {
+		for (MetricsComputeCandidate r : releaseList) shards.get(i++ % metricsComputeWorkers).add(r);
+		List<java.util.concurrent.Callable<Void>> tasks = new ArrayList<>(metricsComputeWorkers);
+		for (List<MetricsComputeCandidate> shard : shards) {
 			tasks.add(() -> {
 				computeMetricsForReleaseList(shard, dedupProcessedReleases);
 				return null;
@@ -3193,7 +3365,7 @@ public class ReleaseService {
 		}
 	}
 
-	private void computeMetricsForReleaseList(List<Release> releaseList,
+	private void computeMetricsForReleaseList(List<MetricsComputeCandidate> releaseList,
 			Set<UUID> dedupProcessedReleases) {
 		// Per-release try/catch — without this, a single bad release in the
 		// batch propagates through Stream.forEach and aborts every release
@@ -3206,13 +3378,14 @@ public class ReleaseService {
 		// finder will re-pick it next tick if it still qualifies, and the
 		// failure surface (logged here) is enough for an operator to find
 		// the actual problem release.
-		for (Release r : releaseList) {
+		for (MetricsComputeCandidate r : releaseList) {
 			// Heap guard (same contract as the SbomComponentService sweeps):
-			// releases carry fat metrics jsonb and the batch limit is 100, so
+			// each compute loads a release with its fat metrics jsonb, so
 			// under heap pressure we stop the batch here -- every unprocessed
 			// release still matches its finder predicate and is re-picked next
-			// tick, exactly like the poison-pill skip below.
-			if (HeapPressureGuard.checkAndMaybeGc(log, "release metrics compute",
+			// tick, exactly like the poison-pill skip below. The retry text
+			// goes on the abort line only: after a mere GC the batch goes on.
+			if (HeapPressureGuard.checkAndMaybeGc(log, "release metrics compute", null,
 					"remaining releases in this batch retried next tick.")) {
 				return;
 			}
@@ -3223,7 +3396,7 @@ public class ReleaseService {
 			// leave the batch entirely, so the same release was re-picked at the head of every
 			// tick for ever -- which is what maxAttempts=2845 on one release was telling us.
 			boolean computed = SchedulerGuard.runIsolated("release metrics " + r.getUuid(), () -> {
-				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r);
+				boolean metricsChanged = releaseMetricsComputeService.computeReleaseMetricsOnRescan(r.getUuid());
 				if (metricsChanged) ossReleaseService.processRelease(r.getUuid());
 			});
 			if (!computed) {
@@ -3234,7 +3407,7 @@ public class ReleaseService {
 				// attempts free) keeps it retrying without monopolizing the batch.
 				try {
 					repository.recordMetricsComputeIncomplete(r.getUuid(),
-							ReleaseMetricsComputeService.nextMetricsComputeBackoffSeconds(r.getFlowControl()));
+							ReleaseMetricsComputeService.nextMetricsComputeBackoffSecondsAfter(r.getMetricsComputeFailureCount()));
 				} catch (Exception fenceEx) {
 					log.error("Failed to fence release {} after metrics compute failure",
 							r.getUuid(), fenceEx);

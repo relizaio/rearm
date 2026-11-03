@@ -40,6 +40,7 @@ import io.reliza.model.NotificationSeverity;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload.ChangeType;
+import java.time.ZoneOffset;
 
 /**
  * Pins the Slack Block Kit payload shape — every event type emits a
@@ -704,5 +705,64 @@ class SlackBlockKitFormatterTest {
     private static String extractBlockText(Map<String, Object> block) {
         Map<String, Object> textObj = (Map<String, Object>) block.get("text");
         return textObj != null ? (String) textObj.get("text") : "";
+    }
+
+    // ---------- TPF-147: one-sided BOM diffs ----------
+
+    private static final BomComponentChange BOM_ADDED = new BomComponentChange("pkg:npm/added@1.0", "1.0");
+    private static final BomComponentChange BOM_REMOVED = new BomComponentChange("pkg:npm/removed@0.9", "0.9");
+
+    /** A deterministic RELEASE_BOM_DIFF event: fixed uuids and time, so the rendered output is a stable golden. */
+    @SuppressWarnings("unchecked")
+    private static NotificationOutboxEvent bomDiffEvent(List<BomComponentChange> added,
+            List<BomComponentChange> removed) {
+        ReleaseRef r = new ReleaseRef(UUID.fromString("11111111-1111-1111-1111-111111111111"), "v2.0",
+                UUID.fromString("22222222-2222-2222-2222-222222222222"), "myapp", ComponentType.COMPONENT,
+                UUID.fromString("33333333-3333-3333-3333-333333333333"), "main", ReleaseLifecycle.ASSEMBLED,
+                null, null, null, "alice", "alice@example.com");
+        NotificationOutboxEvent ev = new NotificationOutboxEvent();
+        ev.setUuid(UUID.fromString("44444444-4444-4444-4444-444444444444"));
+        ev.setEventType(NotificationEventType.RELEASE_BOM_DIFF);
+        ev.setOccurredAt(ZonedDateTime.of(2026, 11, 3, 0, 0, 0, 0, ZoneOffset.UTC));
+        ev.setOrg(UUID.fromString("55555555-5555-5555-5555-555555555555"));
+        ev.setRecordData(Utils.OM.convertValue(new ReleaseBomDiffPayload(r, added, removed), Map.class));
+        return ev;
+    }
+
+    /** The both-sides output captured at rearm-saas e1177d2e, before TPF-147. */
+    private static final String SLACK_BOM_DIFF_BOTH_GOLDEN = "{\"blocks\":[{\"text\":{\"emoji\":true,\"text\":\":mag: BOM diff on component: myapp v2.0\",\"ty"
+            + "pe\":\"plain_text\"},\"type\":\"header\"},{\"text\":{\"text\":\"*Branch:* main\\n*By:* alice\",\""
+            + "type\":\"mrkdwn\"},\"type\":\"section\"},{\"text\":{\"text\":\"*Added components:*\\n\u2022 pkg:"
+            + "npm/added@1.0 : 1.0\",\"type\":\"mrkdwn\"},\"type\":\"section\"},{\"text\":{\"text\":\"*Removed "
+            + "components:*\\n\u2022 pkg:npm/removed@0.9 : 0.9\",\"type\":\"mrkdwn\"},\"type\":\"section\"}],\""
+            + "text\":\":mag: BOM diff on component: myapp v2.0\"}";
+
+    @Test
+    void releaseBomDiffAddOnlyRendersOnlyTheAddedSection() {
+        String allText = slackBlocksText(formatter.format(bomDiffEvent(List.of(BOM_ADDED), List.of())));
+        assertTrue(allText.contains("Added components"), allText);
+        assertTrue(allText.contains("pkg:npm/added@1.0"), allText);
+        assertFalse(allText.contains("Removed components"), allText);
+    }
+
+    @Test
+    void releaseBomDiffRemoveOnlyRendersOnlyTheRemovedSection() {
+        String allText = slackBlocksText(formatter.format(bomDiffEvent(List.of(), List.of(BOM_REMOVED))));
+        assertTrue(allText.contains("Removed components"), allText);
+        assertTrue(allText.contains("pkg:npm/removed@0.9"), allText);
+        assertFalse(allText.contains("Added components"), allText);
+    }
+
+    @Test
+    void releaseBomDiffBothSidesMatchesGolden() throws Exception {
+        assertEquals(SLACK_BOM_DIFF_BOTH_GOLDEN, Utils.OM.writeValueAsString(
+                formatter.format(bomDiffEvent(List.of(BOM_ADDED), List.of(BOM_REMOVED)))));
+    }
+
+    @SuppressWarnings("unchecked")
+    private static String slackBlocksText(Map<String, Object> payload) {
+        return ((List<Map<String, Object>>) payload.get("blocks")).stream()
+                .map(SlackBlockKitFormatterTest::extractBlockText)
+                .reduce("", (acc, s) -> acc + " " + s);
     }
 }

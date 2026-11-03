@@ -10,14 +10,19 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.RestController;
 
+import jakarta.servlet.http.HttpServletRequest;
+
 import io.reliza.service.tea.TeaSurfaceService;
 import io.reliza.service.tea.TeaSurfaceService.WellKnownAnswer;
 import io.reliza.model.tea.TeaUnknownErrorType;
 
 /**
- * The instance's TEA discovery document (task TEA-6). On the single-organization OSS installation
- * it lists the API base of every organization with a TEA id; elsewhere each organization hosts its
- * own document on its TEI domain. Public, on the TEA chain; a presented bearer is ignored.
+ * The instance's TEA discovery document (task TEA-6), per request host (TPF-142): on an assigned
+ * domain whose organization serves on DOMAIN with hosting DOMAIN, the document naming that domain's
+ * base; on any other custom host NOT_IMPLEMENTED; elsewhere, on the single-organization OSS
+ * installation, the API base of every serving organization, and on every other installation type
+ * NOT_IMPLEMENTED (each organization hosts its own document on its TEI domain). Public, on the TEA
+ * chain; a presented bearer is ignored.
  */
 @RestController
 public class WellKnownWs {
@@ -28,8 +33,8 @@ public class WellKnownWs {
 	private TeaSurfaceService teaSurfaceService;
 
 	@GetMapping(value = "/.well-known/tea", produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<String> teaWellKnown() {
-		WellKnownAnswer a = teaSurfaceService.wellKnown();
+	public ResponseEntity<String> teaWellKnown(HttpServletRequest request) {
+		WellKnownAnswer a = teaSurfaceService.wellKnown(TeaHosts.hostOf(request));
 		if (null == a.document()) {
 			throw TeaUnknownErrorType.NOT_IMPLEMENTED == a.error() ? TeaRefusal.notImplemented(a.message())
 					: TeaRefusal.objectUnknown(a.message());

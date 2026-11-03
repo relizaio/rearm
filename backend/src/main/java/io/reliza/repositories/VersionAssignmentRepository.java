@@ -51,6 +51,14 @@ public interface VersionAssignmentRepository extends CrudRepository<VersionAssig
 	Optional<VersionAssignment> findOPENVersionAssignmentByBranch(UUID branchUuid, String versionType);
 
 	/**
+	 * Non-locking twin of findOPENVersionAssignmentByBranch for the read-only peek
+	 * (auto-integrate dry run); the mint keeps the locking one. Postgres refuses
+	 * SELECT ... FOR NO KEY UPDATE inside a read-only transaction.
+	 */
+	@Query(value = "SELECT va from VersionAssignment va WHERE branch = :branchUuid AND assignmentType = 'OPEN' AND versionType = :versionType")
+	Optional<VersionAssignment> findOPENVersionAssignmentByBranchNoLock(UUID branchUuid, String versionType);
+
+	/**
 	 * Lookup for the commit-keyed dedup at getversion time. Returns the
 	 * existing version assignment for {@code (component, branch, commit)}
 	 * if any — caller decides whether to surface it (rebuild) or fail

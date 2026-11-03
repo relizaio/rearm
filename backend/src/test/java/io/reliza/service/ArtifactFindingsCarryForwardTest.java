@@ -19,6 +19,8 @@ import java.util.stream.Collectors;
 import org.junit.jupiter.api.Test;
 
 import io.reliza.model.ArtifactData.DependencyTrackIntegration;
+import io.reliza.model.ArtifactNotScannable;
+import io.reliza.model.NoMatchableComponentsReason;
 import io.reliza.model.dto.ReleaseMetricsDto.FindingSourceDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationDto;
 import io.reliza.model.dto.ReleaseMetricsDto.ViolationType;
@@ -191,6 +193,17 @@ class ArtifactFindingsCarryForwardTest {
 				"the upload and the fan-out are independent, so the replacement's own scan CAN land "
 				+ "first. That result is authoritative -- inheriting over it would resurrect findings "
 				+ "the scan had just cleared, which is the genuine-remediation case inverted");
+	}
+
+	@Test
+	void aNotScannableReplacementIsNeverSeeded() {
+		DependencyTrackIntegration notScannable = metricsWith(0, null);
+		notScannable.setNotScannable(new ArtifactNotScannable(NoMatchableComponentsReason.NO_PURL_OR_CPE,
+				ZonedDateTime.now(), 2, 0, 0, 2));
+
+		assertNull(SharedArtifactService.inheritFindingsFromPredecessor(notScannable, scannedPredecessor(8)),
+				"the fan-out's not-scannable verdict is as authoritative as a scan (TPF-125): a seed under "
+				+ "it would show findings on an artifact nothing will ever scan");
 	}
 
 	@Test

@@ -251,8 +251,8 @@ public class NotificationInboxFormatter {
         StringBuilder desc = new StringBuilder();
         int added = p.added() != null ? p.added().size() : 0;
         int removed = p.removed() != null ? p.removed().size() : 0;
-        appendFact(desc, added + " added");
-        appendFact(desc, removed + " removed");
+        if (added > 0) appendFact(desc, added + " added");
+        if (removed > 0) appendFact(desc, removed + " removed");
         return new InboxRendering(title, desc.toString());
     }
 

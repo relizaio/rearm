@@ -27,6 +27,8 @@ import org.springframework.mock.web.MockHttpServletRequest;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.Organization;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.ws.App;
@@ -199,6 +201,12 @@ public class ExternalApiKeyGraphqlIntegrationTest extends ExternalKeyIntegration
 			+ " setApprovalsOnApiKey(apiKeyUuid: $k, approvals: $a, notes: $n) { uuid } }";
 
 	@Autowired private TeaTokenController tokenController;
+	@Autowired private OrganizationService organizationService;
+
+	/** TPF-142 (F-6): the key creation minted the TEA id; the token controller's uuid base serves LEGACY_UUID only. */
+	private void serveOnUuidBase(Organization org) throws Exception {
+		organizationService.setTeaServing(org.getUuid(), TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE, WU);
+	}
 
 	private List<Map<String, Object>> state(UserData admin, Organization org) {
 		return ok(exec(admin, STATE, "o", org.getUuid().toString()), "externalApiKeys");
@@ -261,6 +269,7 @@ public class ExternalApiKeyGraphqlIntegrationTest extends ExternalKeyIntegration
 		UserData admin = admin(org);
 		UserData writer = writer(org);
 		Map<String, Object> k = createKey(admin, org, "Acme");
+		serveOnUuidBase(org);
 		String key = (String) k.get("uuid");
 		String s1 = mintSecret(admin, key);
 		String s2 = mintSecret(admin, key);
@@ -305,6 +314,7 @@ public class ExternalApiKeyGraphqlIntegrationTest extends ExternalKeyIntegration
 		UserData admin = admin(org);
 		UserData reader = reader(org);
 		Map<String, Object> k = createKey(admin, org, "Acme");
+		serveOnUuidBase(org);
 		String key = (String) k.get("uuid");
 		String s1 = mintSecret(admin, key);
 		String s2 = mintSecret(admin, key);
@@ -341,6 +351,7 @@ public class ExternalApiKeyGraphqlIntegrationTest extends ExternalKeyIntegration
 		UserData admin = admin(org);
 		UserData writer = writer(org);
 		Map<String, Object> k = createKey(admin, org, "Acme");
+		serveOnUuidBase(org);
 		String key = (String) k.get("uuid");
 		String s1 = mintSecret(admin, key);
 		String s2 = mintSecret(admin, key);

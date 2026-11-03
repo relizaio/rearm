@@ -30,16 +30,16 @@ import org.springframework.web.util.pattern.PathPatternParser;
 import io.reliza.common.LogSafe;
 import io.reliza.common.OAuthErrors;
 import io.reliza.common.OAuthQueryGuard;
-import io.reliza.model.Organization;
 import io.reliza.model.tea.TeaErrorResponse;
 import io.reliza.model.tea.TeaTokenErrorResponse.ErrorEnum;
 import io.reliza.model.tea.TeaUnknownErrorType;
-import io.reliza.repositories.OrganizationRepository;
 import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.service.ExternalApiKeyService;
 import io.reliza.service.ExternalApiKeyService.ExternalKeyMatch;
+import io.reliza.service.tea.TeaSurfaceService;
+import io.reliza.service.tea.TeaSurfaceService.TeaOrg;
 import jakarta.servlet.http.HttpServletRequest;
 import lombok.extern.slf4j.Slf4j;
 
@@ -61,19 +61,22 @@ import lombok.extern.slf4j.Slf4j;
 public class TeaTokenController {
 
 	public static final String TOKEN_PATH_TEMPLATE = TeaPaths.ORG_BASE + "/token";
+	/** The token endpoint on the host-routed base (TPF-142). */
+	public static final String HOST_TOKEN_PATH_TEMPLATE = TeaPaths.HOST_BASE + "/token";
 	private static final PathPattern TOKEN_PATH = PathPatternParser.defaultInstance.parse(TOKEN_PATH_TEMPLATE);
+	private static final PathPattern HOST_TOKEN_PATH = PathPatternParser.defaultInstance.parse(HOST_TOKEN_PATH_TEMPLATE);
 	static final String CHALLENGE = "Basic realm=\"tea\"";
 	static final String UNDECODABLE_DESCRIPTION = "the request parameters could not be decoded";
 
 	private final ExternalApiKeyService externalApiKeyService;
-	private final OrganizationRepository organizationRepository;
+	private final TeaSurfaceService teaSurfaceService;
 	private final ApiTokenService apiTokenService;
 	private final ApiKeyAccessService apiKeyAccessService;
 
-	public TeaTokenController(ExternalApiKeyService externalApiKeyService, OrganizationRepository organizationRepository,
+	public TeaTokenController(ExternalApiKeyService externalApiKeyService, TeaSurfaceService teaSurfaceService,
 			ApiTokenService apiTokenService, ApiKeyAccessService apiKeyAccessService) {
 		this.externalApiKeyService = externalApiKeyService;
-		this.organizationRepository = organizationRepository;
+		this.teaSurfaceService = teaSurfaceService;
 		this.apiTokenService = apiTokenService;
 		this.apiKeyAccessService = apiKeyAccessService;
 	}
@@ -83,13 +86,14 @@ public class TeaTokenController {
 	 * of some organization, the path this controller serves (the TEA filter skips it).
 	 */
 	public static boolean isTokenPath(PathContainer path) {
-		return null != path && TOKEN_PATH.matches(path);
+		return null != path && (TOKEN_PATH.matches(path) || HOST_TOKEN_PATH.matches(path));
 	}
 
-	@PostMapping(value = TOKEN_PATH_TEMPLATE, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
-	public ResponseEntity<?> token(HttpServletRequest request, @PathVariable("org") String orgTeaId) {
-		// 1. the organization of the base path
-		Optional<UUID> org = organizationOf(orgTeaId);
+	@PostMapping(value = {TOKEN_PATH_TEMPLATE, HOST_TOKEN_PATH_TEMPLATE}, consumes = MediaType.APPLICATION_FORM_URLENCODED_VALUE, produces = MediaType.APPLICATION_JSON_VALUE)
+	public ResponseEntity<?> token(HttpServletRequest request, @PathVariable(value = "org", required = false) String orgTeaId) {
+		// 1. the organization of the base path or of the host (TPF-142: the one resolution of every TEA request, which
+		// carries the archived and serving-mode filters; on a custom host a uuid segment is unknown)
+		Optional<UUID> org = teaSurfaceService.orgOfRequest(orgTeaId, TeaHosts.hostOf(request)).map(TeaOrg::org);
 		if (org.isEmpty()) {
 			return ResponseEntity.status(HttpStatus.NOT_FOUND).header(HttpHeaders.CACHE_CONTROL, "no-store")
 					.contentType(MediaType.APPLICATION_JSON).body(new TeaErrorResponse(TeaUnknownErrorType.OBJECT_UNKNOWN));
@@ -171,17 +175,6 @@ public class TeaTokenController {
 		if (secretExpiry == null) return ttl;
 		long left = secretExpiry.getEpochSecond() - now.getEpochSecond();
 		return Math.max(0, Math.min(ttl, left));
-	}
-
-	/** The live organization of a TEA base segment: an archived or unknown one is empty, through the repository rule (TEA-22). */
-	private Optional<UUID> organizationOf(String orgTeaId) {
-		UUID teaOrg;
-		try {
-			teaOrg = UUID.fromString(orgTeaId);
-		} catch (IllegalArgumentException | NullPointerException malformed) {
-			return Optional.empty();
-		}
-		return organizationRepository.findByTeaUuid(teaOrg.toString()).map(Organization::getUuid);
 	}
 
 	private static ResponseEntity<Map<String, Object>> invalidClient(String description) {

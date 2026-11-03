@@ -25,7 +25,7 @@ import lombok.extern.slf4j.Slf4j;
 /** The published product releases of the organization the caller may see (task TEA-6). */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class ProductReleasesApiController implements ProductReleasesApi {
 
 	@Autowired private TeaRequests teaRequests;

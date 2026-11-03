@@ -4,8 +4,14 @@
 package io.reliza.repositories;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.math.BigInteger;
+import java.time.Instant;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.LinkedHashMap;
@@ -18,15 +24,21 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.jdbc.core.JdbcTemplate;
 
+import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrgTotalsCacheService;
 import io.reliza.service.OrganizationService;
 import io.reliza.ws.App;
 
 /**
  * TPF-70 (architecture round 2, test 4.2): the rewritten totals statement counts what the old one
  * counted, for the organization asked about and no other, and the transaction-local planner
- * settings do not outlive the call. The fixture is two fresh organizations, A with every status
- * shape the statement distinguishes and B with one active row per table, inserted with
- * {@link JdbcTemplate} and deleted by uuid in {@code finally}.
+ * settings do not outlive the call. TPF-139 (architecture round 2, 6.3): the four counts that grow
+ * with release volume come from the nightly stamp, pending (null) until it is written; the live five
+ * plus the nightly four equal the old nine. TPF-141 (architecture round 2, 6.6): the stamp is a cell
+ * of the organization's record data, so the fixture inserts an organization row per uuid. The
+ * fixture is two fresh organizations, A with every status shape the statement distinguishes and B
+ * with one active row per table, inserted with {@link JdbcTemplate} and deleted by uuid in
+ * {@code finally}.
  */
 @SpringBootTest(classes = {App.class})
 class OrgTotalsEquivalenceTest {
@@ -70,6 +82,8 @@ class OrgTotalsEquivalenceTest {
 
 	@Autowired private JdbcTemplate jdbc;
 	@Autowired private OrganizationService organizationService;
+	@Autowired private OrgTotalsCacheService orgTotalsCacheService;
+	@Autowired private GetOrganizationService getOrganizationService;
 
 	/** Rows inserted by the fixture, as table and uuid, for the cleanup. */
 	private final List<String[]> inserted = new ArrayList<>();
@@ -112,8 +126,22 @@ class OrgTotalsEquivalenceTest {
 		insert("vcs_repositories", org, status, "\"uri\":\"github.com/tpf70/" + UUID.randomUUID() + "\"");
 	}
 
+	/** The organization row the nightly stamp writes into (TPF-141 D12). */
+	private void organization(UUID org) {
+		jdbc.update("INSERT INTO rearm.organizations (uuid, record_data) VALUES (?, cast(? as jsonb))", org,
+				"{\"name\":\"tpf141 " + org + "\"}");
+		inserted.add(new String[] {"organizations", org.toString()});
+	}
+
+	/** The totalsAnalytics map of {@code org}, from the record loaded once (the datafetcher's shape). */
+	private Map<String, Object> totals(UUID org) {
+		return organizationService.getNumericAnalytics(getOrganizationService.getOrganizationData(org).orElseThrow());
+	}
+
 	/** Organization A of the 4.2 table (rows 1-7) and B (row 8). */
 	private void fixture(UUID a, UUID b) {
+		organization(a);
+		organization(b);
 		UUID cB = component(b, "COMPONENT", "ACTIVE");
 		UUID c1 = component(a, "COMPONENT", "ACTIVE");
 		UUID c2 = component(a, "COMPONENT", NO_STATUS);
@@ -185,28 +213,96 @@ class OrgTotalsEquivalenceTest {
 		return counts(jdbc.queryForMap(LEGACY_TOTALS, args));
 	}
 
+	/** The five live keys of the TPF-139 live statement. */
+	private static final List<String> LIVE_KEYS = List.of("components", "products", "vcs", "branches", "feature_sets");
+
+	/** The four cached keys (TPF-139), read from the organization's record data. */
+	private static final List<String> CACHED_KEYS = List.of("releases", "artifacts", "commits", "deliverables");
+
+	/** TPF-139 6.3.1: before the first nightly run the four cached keys and counted_at are present and null. */
 	@Test
-	void theServiceCountsOrganizationAAndTheLegacyStatementAgreesForBoth() {
+	void pendingBeforeTheFirstRun() {
 		UUID a = UUID.randomUUID();
 		UUID b = UUID.randomUUID();
 		try {
 			fixture(a, b);
-			// components, products, releases, vcs, artifacts, commits, branches, deliverables, feature_sets
-			Map<String, Long> expectedA = expected(2, 2, 4, 2, 3, 2, 3, 3, 2);
-			Map<String, Long> expectedB = expected(1, 0, 1, 1, 1, 1, 1, 1, 0);
-
-			Map<String, ?> m = organizationService.getNumericAnalytics(a);
-			assertEquals(expectedA, counts(m), m.toString());
-			assertEquals(2L, ((Number) m.get("components")).longValue());
+			Map<String, ?> m = totals(b);
+			Map<String, Long> live = new LinkedHashMap<>();
+			for (String key : LIVE_KEYS) {
+				live.put(key, ((Number) m.get(key)).longValue());
+			}
+			assertEquals(Map.of("components", 1L, "products", 0L, "vcs", 1L, "branches", 1L, "feature_sets", 0L), live,
+					m.toString());
+			for (String key : CACHED_KEYS) {
+				assertTrue(m.containsKey(key), key + " in " + m);
+				assertNull(m.get(key), key + " in " + m);
+			}
+			assertTrue(m.containsKey("counted_at"), m.toString());
+			assertNull(m.get("counted_at"), m.toString());
 			assertEquals(BigInteger.ZERO, m.get("admin_and_write_users"));
 			assertEquals(BigInteger.ZERO, m.get("read_only_users"));
-			assertEquals(COUNT_KEYS.size() + 2, m.size(), m.toString());
+			assertEquals(12, m.size(), m.toString());
+		} finally {
+			cleanup();
+		}
+	}
 
-			Map<String, ?> mB = organizationService.getNumericAnalytics(b);
-			assertEquals(expectedB, counts(mB), mB.toString());
+	/** TPF-139 6.3.2: the nightly count of A is written, read back through the service and stored as counted. */
+	@Test
+	void theCachedRowIsWrittenAndReadBack() {
+		UUID a = UUID.randomUUID();
+		UUID b = UUID.randomUUID();
+		try {
+			fixture(a, b);
+			Instant t0 = Instant.now().truncatedTo(ChronoUnit.MILLIS);
+			assertEquals(List.of(), orgTotalsCacheService.countAndStampOrg(a));
+			Instant t1 = Instant.now();
+			Map<String, ?> m = totals(a);
+			// components, products, releases, vcs, artifacts, commits, branches, deliverables, feature_sets
+			assertEquals(expected(2, 2, 4, 2, 3, 2, 3, 3, 2), counts(m), m.toString());
+			Object countedAt = m.get("counted_at");
+			assertTrue(countedAt instanceof String, m.toString());
+			assertTrue(((String) countedAt).endsWith("Z"), countedAt.toString());
+			Instant at = Instant.parse((String) countedAt).truncatedTo(ChronoUnit.MILLIS);
+			assertFalse(at.isBefore(t0), at + " before " + t0);
+			assertFalse(at.isAfter(t1), at + " after " + t1);
+			assertEquals(12, m.size(), m.toString());
 
-			assertEquals(expectedA, legacy(a));
-			assertEquals(expectedB, legacy(b));
+			assertEquals(List.of("artifacts", "commits", "deliverables", "releases"), jdbc.queryForList(
+					"SELECT jsonb_object_keys(record_data->'totals') AS k FROM rearm.organizations WHERE uuid = ? ORDER BY k",
+					String.class, a));
+			List<String> storedCounts = new ArrayList<>();
+			for (String key : CACHED_KEYS) {
+				storedCounts.add(jdbc.queryForObject("SELECT record_data->'totals'->CAST(? AS text)->>'count'"
+						+ " FROM rearm.organizations WHERE uuid = ?", String.class, key, a));
+				String storedAt = jdbc.queryForObject("SELECT record_data->'totals'->CAST(? AS text)->>'countedAt'"
+						+ " FROM rearm.organizations WHERE uuid = ?", String.class, key, a);
+				assertNotNull(storedAt, key);
+				assertTrue(storedAt.endsWith("Z"), storedAt);
+				Instant.parse(storedAt);
+			}
+			assertEquals(List.of("4", "3", "2", "3"), storedCounts);
+		} finally {
+			cleanup();
+		}
+	}
+
+	/**
+	 * TPF-139 6.3.3: the live five plus the nightly four equal the pre-TPF-70 statement's nine, for
+	 * both organizations.
+	 */
+	@Test
+	void theLiveFivePlusTheNightlyFourEqualTheLegacyNine() {
+		UUID a = UUID.randomUUID();
+		UUID b = UUID.randomUUID();
+		try {
+			fixture(a, b);
+			orgTotalsCacheService.countAndStampOrg(a);
+			assertEquals(legacy(a), counts(totals(a)));
+			orgTotalsCacheService.countAndStampOrg(b);
+			Map<String, ?> mB = totals(b);
+			assertEquals(legacy(b), counts(mB));
+			assertEquals(expected(1, 0, 1, 1, 1, 1, 1, 1, 0), counts(mB), mB.toString());
 		} finally {
 			cleanup();
 		}
@@ -232,7 +328,8 @@ class OrgTotalsEquivalenceTest {
 		UUID b = UUID.randomUUID();
 		try {
 			fixture(a, b);
-			organizationService.getNumericAnalytics(a);
+			orgTotalsCacheService.countAndStampOrg(a);
+			totals(a);
 			for (int i = 0; i < 5; i++) {
 				assertEquals("on", jdbc.queryForObject("SHOW enable_seqscan", String.class));
 				assertEquals("on", jdbc.queryForObject("SHOW jit", String.class));

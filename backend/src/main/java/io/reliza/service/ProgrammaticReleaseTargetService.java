@@ -32,8 +32,8 @@ import io.reliza.service.AuthorizationService.VerifiedProgrammaticKey;
  * addArtifactProgrammatic and addOutboundDeliverablesProgrammatic.
  *
  * <p>Rules: the key is verified first; every lookup is scoped to the key's organization and only
- * a release of that organization is a target (the shared external organization is readable, never
- * written through these); the release must belong to the component the call is authorized for.
+ * a release of that organization is a target; the release must belong to the component the call
+ * is authorized for.
  * A missing, malformed, foreign or inaccessible release (or variant) gets one answer --
  * {@link CommonVariables#PROGRAMMATIC_RELEASE_NOT_FOUND_MESSAGE} or
  * {@link CommonVariables#PROGRAMMATIC_VARIANT_NOT_FOUND_MESSAGE} -- and nothing is written. No

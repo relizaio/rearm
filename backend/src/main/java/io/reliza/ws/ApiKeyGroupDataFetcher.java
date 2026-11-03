@@ -7,6 +7,7 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.springframework.beans.factory.annotation.Autowired;
@@ -24,15 +25,18 @@ import io.reliza.common.InputConversion;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ApiKey;
+import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.ApiKeyData;
 import io.reliza.model.ApiKeyGroupData;
 import io.reliza.model.OrganizationData;
 import io.reliza.model.UserData;
+import io.reliza.model.UserPermission;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ApiKeyGroupWebDto;
 import io.reliza.model.dto.ApiKeyGroupWebDto.ApiKeyRef;
+import io.reliza.model.dto.CombinedApiKeyOrgPermissionsDto;
 import io.reliza.model.dto.CreateApiKeyGroupDto;
 import io.reliza.model.dto.UpdateApiKeyGroupDto;
 import io.reliza.service.ApiKeyGroupService;
@@ -48,6 +52,9 @@ import lombok.extern.slf4j.Slf4j;
  * group up where it names one, and only then runs the admin gate on the group's (or the input's)
  * organization; grant objects, approvals and members are read only after the gate. An unknown group
  * and a group of another organization both answer the literal "Not authorized".
+ * The key-side fields combinedApiKeyOrgPermissions and setApiKeyGroupsOfKey (TPF-123) take the key as
+ * their subject: the key is proved to be of the argument organization before the admin gate runs on
+ * that organization, and an unknown key and a key of another organization answer alike.
  */
 @Slf4j
 @DgsComponent
@@ -89,6 +96,56 @@ public class ApiKeyGroupDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, akgd.getOrg(), List.of(akgd), CallType.ADMIN);
 		return akgd;
+	}
+
+	/**
+	 * The key a caller names, proved to be of the argument organization, then the admin gate on that
+	 * organization (TPF-123). Absent and not-of-this-org are ONE condition with one text, so a foreign key
+	 * and an unknown uuid take the same branch; rendered "Not authorized".
+	 */
+	private ApiKey authorizedKey(UserData ud, UUID orgUuid, UUID apiKeyUuid) throws RelizaException {
+		Optional<ApiKey> oak = null == apiKeyUuid ? Optional.empty() : apiKeyService.getApiKey(apiKeyUuid);
+		if (oak.isEmpty() || null == orgUuid || !orgUuid.equals(oak.get().getOrg())) {
+			throw new AccessDeniedException("API key not found: " + apiKeyUuid);
+		}
+		authorizeOrgAdmin(ud, orgUuid);
+		return oak.get();
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "combinedApiKeyOrgPermissions")
+	public CombinedApiKeyOrgPermissionsDto combinedApiKeyOrgPermissions(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		UserData ud = caller();
+		// TPF-91 security F-2 / TPF-123: the system state is answered before any argument or row is read
+		authorizationService.validateSystemOperational(CallType.ADMIN);
+		UUID orgUuid = InputConversion.convert(dfe.getArgument("orgUuid"), UUID.class, "orgUuid");
+		UUID apiKeyUuid = InputConversion.convert(dfe.getArgument("apiKeyUuid"), UUID.class, "apiKeyUuid");
+		ApiKey ak = authorizedKey(ud, orgUuid, apiKeyUuid);
+		// TPF-123 round 2 (F-3): only FREEFORM and USER keys are authorized through their stored set (isRbacKey,
+		// keyPermissions); an object key never is, and a FEDERATED identity's set comes from the trust rules.
+		// An allowlist, never a denylist. After the admin gate: the key is already proved this organization's.
+		if (ak.getObjectType() != ApiTypeEnum.FREEFORM && ak.getObjectType() != ApiTypeEnum.USER) {
+			throw new RelizaException("Only FREEFORM and USER keys carry a permission set: " + apiKeyUuid);
+		}
+		ApiKeyData akd = ApiKeyData.dataFromRecord(ak);
+		Set<UserPermission> effective = authorizationService.effectiveStoredKeyPermissions(ak.getUuid(), ak.getObjectType(), akd, orgUuid);
+		List<ApiKeyGroupData> groups = ak.getObjectType() == ApiTypeEnum.FREEFORM
+				? apiKeyGroupService.activeGroupsHoldingKey(ak.getUuid(), orgUuid) : List.of();
+		return CombinedApiKeyOrgPermissionsDto.of(ak.getUuid(), orgUuid, effective, akd, groups);
+	}
+
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "setApiKeyGroupsOfKey")
+	public List<ApiKeyGroupWebDto> setApiKeyGroupsOfKey(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		UserData ud = caller();
+		// TPF-91 security F-2 / TPF-123: the system state is answered before any argument or row is read
+		authorizationService.validateSystemOperational(CallType.ADMIN);
+		UUID orgUuid = InputConversion.convert(dfe.getArgument("orgUuid"), UUID.class, "orgUuid");
+		UUID apiKeyUuid = InputConversion.convert(dfe.getArgument("apiKeyUuid"), UUID.class, "apiKeyUuid");
+		List<UUID> groupUuids = InputConversion.convertEach(dfe.getArgument("groupUuids"), UUID.class, "groupUuids");
+		ApiKey ak = authorizedKey(ud, orgUuid, apiKeyUuid);
+		return apiKeyGroupService.setGroupsOfKey(ak.getUuid(), orgUuid, groupUuids, WhoUpdated.getWhoUpdated(ud))
+				.stream().map(ApiKeyGroupData::toWebDto).toList();
 	}
 
 	@PreAuthorize("isAuthenticated()")

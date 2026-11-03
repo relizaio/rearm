@@ -26,8 +26,22 @@ import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
  * the corrected canonical locally via {@link io.reliza.common.Utils#canonicalizePurl}),
  * so there is no transient upstream failure to space retries against. Add them
  * if that ever stops being true.
+ *
+ * <p>{@code fanOutAt} (TPF-114): absent means the canonical has never been fanned
+ * out, so the never-stamped candidate query takes it. The value is the bucket-state
+ * instant the canonical was last processed against (the newest INGESTED-bucket
+ * update the pass saw, an ISO-8601 UTC instant), not a wall-clock pass time; the
+ * change-driven query compares it with bucket dates. Written in place by
+ * {@code ArtifactCanonicalMapRepository.stampFanOutPass}, removed by the two
+ * {@code requeueFanOutFor*} methods.
+ *
+ * <p>{@code fanOutRequeuedAt} (TPF-114): the database instant of the last requeue
+ * (ISO-8601 UTC), read only by the stamp's precondition, so a pass that started
+ * before a requeue cannot stamp over it.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record CanonicalMapFlowControl(
-		Integer canonicalFormVersion) implements Serializable {
+		Integer canonicalFormVersion,
+		String fanOutAt,
+		String fanOutRequeuedAt) implements Serializable {
 }

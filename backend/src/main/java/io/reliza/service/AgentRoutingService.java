@@ -27,7 +27,10 @@ import io.reliza.exceptions.RelizaException;
 import io.reliza.model.AgentActor;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskData.DesignCheckpoint;
+import io.reliza.model.AgentTaskData.DesignCheckpointState;
 import io.reliza.model.AgentTaskData.QuestionFrame;
+import io.reliza.model.AgentTaskData.Reopen;
 import io.reliza.model.AgentTaskData.SignOff;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.StatusTrigger;
@@ -163,7 +166,7 @@ public class AgentRoutingService {
 	 * authorizes it. So does a round that would not fit the budget: a person asked for this work,
 	 * and completing the task under policy over what they just filed would undo their decision.
 	 */
-	public Routed routeDecided(AgentTaskData td, AgentBoardData board, ReleaseData round) {
+	public Routed routeDecided(AgentTaskData td, AgentBoardData board, ReleaseData round, AgentActor by) {
 		BoardEffects effects = new BoardEffects(board.getUuid());
 		try {
 			DocumentRef doc = round.getDocument();
@@ -177,8 +180,9 @@ public class AgentRoutingService {
 						+ maker.whyNone(), effects);
 				return new Routed(td, effects);
 			}
+			List<AgentTaskRoleConfigData> roles = activeRoles(board);
 			Optional<AgentTaskRoleConfigData> producer = null != maker ? Optional.of(maker.role())
-					: activeRoles(board).stream().filter(rc -> produces(rc, about)).findFirst();
+					: roles.stream().filter(rc -> produces(rc, about)).findFirst();
 			if (producer.isEmpty()) {
 				toCoordinator(td, "a person's review item decisions left blocking items about " + about
 						+ ", which no active role on this board produces", effects);
@@ -189,10 +193,14 @@ public class AgentRoutingService {
 						+ " round, which the budget does not cover", effects);
 				return new Routed(td, effects);
 			}
-			effects.info("Review items decided on task " + label(td) + "; back to "
-					+ producer.get().getName());
-			return new Routed(queueFor(td, board, producer.get(), StatusTrigger.AUTHORIZE, doc, effects,
-					"review items decided; back to " + producer.get().getName()), effects);
+			// A person's blocking item is the person sending the task to the producer (task SPLIT-5, D12).
+			AgentTaskData queued = queueFor(td, board, roles, producer.get(), StatusTrigger.AUTHORIZE, doc, effects,
+					"review items decided; back to " + producer.get().getName(),
+					new ChosenBy(by, "review items decided; queued for " + producer.get().getName()));
+			if (TaskStatus.QUEUED == queued.getStatus()) {
+				effects.info("Review items decided on task " + label(td) + "; back to " + producer.get().getName());
+			}
+			return new Routed(queued, effects);
 		} catch (RuntimeException e) {
 			log.error("Routing a review item decision failed for task {} on board {}; leaving it to the"
 					+ " coordinator", td.getUuid(), board.getUuid(), e);
@@ -303,9 +311,11 @@ public class AgentRoutingService {
 			// output pinned, if the next round fits the budget.
 			String budget = budgetStop(td, board, named, "the next " + named.getName() + " round");
 			if (null != budget) return holdStopped(td, budget, List.of(), effects);
-			return queueFor(td, board, named, StatusTrigger.AUTHORIZE,
+			// The person who named it settled the checkpoint before routing (AgentTaskService.liftHold, task
+			// SPLIT-5 3.4), so routing passes no actor here.
+			return queueFor(td, board, roles, named, StatusTrigger.AUTHORIZE,
 					null == closing ? null : latestRoundOfOutput(td, board, closing), effects,
-					"sent to " + named.getName() + " as the person named");
+					"sent to " + named.getName() + " as the person named", null);
 		}
 		// A rejection that says nothing about what is wrong is an exception, not a route.
 		//
@@ -363,8 +373,8 @@ public class AgentRoutingService {
 			}
 			String budget = budgetStop(td, board, investigator, "the next " + investigator.getName() + " round");
 			if (null != budget) return holdStopped(td, budget, List.of(), effects);
-			return queueFor(td, board, investigator, StatusTrigger.AUTHORIZE, null, effects,
-					"investigation; to " + investigator.getName());
+			return queueFor(td, board, roles, investigator, StatusTrigger.AUTHORIZE, null, effects,
+					"investigation; to " + investigator.getName(), null);
 		}
 		if (null != inv.review()) {
 			SignOff reviewed = td.lastSignOffForRole(inv.reviewUuid(), inv.review());
@@ -383,8 +393,8 @@ public class AgentRoutingService {
 				DocumentRef report = new DocumentRef(RearmSpecificationType.BOARD_INVESTIGATION_REPORT, null, null, null, null,
 						null, td.getUuid(), null, null, null);
 				effects.info("Investigation " + label(td) + ": report in; to " + reviewer.getName() + " for review");
-				return queueFor(td, board, reviewer, StatusTrigger.AUTHORIZE, report, effects,
-						"report in; to " + reviewer.getName() + " for review");
+				return queueFor(td, board, roles, reviewer, StatusTrigger.AUTHORIZE, report, effects,
+						"report in; to " + reviewer.getName() + " for review", null);
 			}
 		}
 		// A correction a person filed is still theirs to decide, as on a work task (operator-actions D25).
@@ -415,9 +425,9 @@ public class AgentRoutingService {
 			// most of what a task spends.
 			String budget = budgetStop(td, board, next.get(), "the next " + next.get().getName() + " round");
 			if (null != budget) return holdStopped(td, budget, List.of(), effects);
-			return queueFor(td, board, next.get(), StatusTrigger.AUTHORIZE, null, effects,
+			return queueFor(td, board, roles, next.get(), StatusTrigger.AUTHORIZE, null, effects,
 					(null == closing ? "" : closing.role() + " " + closing.outcome().name().toLowerCase() + "; ")
-							+ "next " + next.get().getName());
+							+ "next " + next.get().getName(), null);
 		}
 		List<String> missing = requiredWithoutCurrentPass(td, board, roles);
 		if (missing.isEmpty()) {
@@ -541,9 +551,9 @@ public class AgentRoutingService {
 
 		countCycle(td, askingRole, answering.getUuid());
 		pushFrame(td, askingRole, closing, questioned, answering.getUuid());
-		return queueFor(td, board, answering, StatusTrigger.AUTHORIZE, questioned, effects,
+		return queueFor(td, board, roles, answering, StatusTrigger.AUTHORIZE, questioned, effects,
 				"open " + String.join(", ", blocking.stream().map(BoardReviewItem::id).filter(Objects::nonNull).toList())
-						+ "; back to " + answering.getName());
+						+ "; back to " + answering.getName(), null);
 	}
 
 	// ---------- 2.2.3 the answer comes back ----------
@@ -597,11 +607,15 @@ public class AgentRoutingService {
 					DocumentRef round = newRoundOf(closing, about);
 					AgentTaskRoleConfigData builder = null == round ? null : builderAfter(roles, answering, about);
 					if (null != builder && !builder.getUuid().equals(frame.askingRole())) {
-						return toBuilder(td, board, closing, builder, reviewer, ids, round, effects);
+						return toBuilder(td, board, roles, closing, builder, reviewer, ids, round, effects);
 					}
 				}
-				effects.info(closing.role() + " passed on task " + label(td) + "; back to " + reviewer
-						+ " to verify" + (ids.isEmpty() ? "" : " " + ids));
+				AgentTaskData back = backToAsker(td, board, roles, frame, null, effects);
+				if (TaskStatus.QUEUED == back.getStatus()) {
+					effects.info(closing.role() + " passed on task " + label(td) + "; back to " + reviewer
+							+ " to verify" + (ids.isEmpty() ? "" : " " + ids));
+				}
+				return back;
 			}
 		}
 		return backToAsker(td, board, roles, frame, null, effects);
@@ -623,8 +637,8 @@ public class AgentRoutingService {
 		}
 		String budget = budgetStop(td, board, asker.get(), "returning to " + asker.get().getName());
 		if (null != budget) return holdStopped(td, budget, List.of(), effects);
-		return queueFor(td, board, asker.get(), StatusTrigger.AUTHORIZE, null, effects, null != note ? note
-				: (null == closing ? "" : closing.role() + " passed; ") + "back to " + asker.get().getName());
+		return queueFor(td, board, roles, asker.get(), StatusTrigger.AUTHORIZE, null, effects, null != note ? note
+				: (null == closing ? "" : closing.role() + " passed; ") + "back to " + asker.get().getName(), null);
 	}
 
 	// ---------- 2.2.4 an answer that changes what is built (task RD4-13) ----------
@@ -677,15 +691,19 @@ public class AgentRoutingService {
 	 * once the builder has passed, since the filer's rejection is not a pass. The new round is pinned on
 	 * the builder beside the review item round the task already carries, which names why it came.
 	 */
-	private AgentTaskData toBuilder(AgentTaskData td, AgentBoardData board, SignOff closing,
-			AgentTaskRoleConfigData builder, String filer, String ids, DocumentRef round, BoardEffects effects) {
+	private AgentTaskData toBuilder(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
+			SignOff closing, AgentTaskRoleConfigData builder, String filer, String ids, DocumentRef round,
+			BoardEffects effects) {
 		String budget = budgetStop(td, board, builder, "the next " + builder.getName() + " round");
 		if (null != budget) return holdStopped(td, budget, List.of(), effects);
-		effects.info("Task " + label(td) + ": " + closing.role() + " passed with a new round; to " + builder.getName()
-				+ (ids.isEmpty() ? "" : "; " + ids + " stay" + (ids.contains(",") ? "" : "s") + " open until the "
-						+ filer + " re-checks"));
-		return queueFor(td, board, builder, StatusTrigger.AUTHORIZE, round, effects,
-				closing.role() + " passed with a new round; to " + builder.getName());
+		AgentTaskData queued = queueFor(td, board, roles, builder, StatusTrigger.AUTHORIZE, round, effects,
+				closing.role() + " passed with a new round; to " + builder.getName(), null);
+		if (TaskStatus.QUEUED == queued.getStatus()) {
+			effects.info("Task " + label(td) + ": " + closing.role() + " passed with a new round; to " + builder.getName()
+					+ (ids.isEmpty() ? "" : "; " + ids + " stay" + (ids.contains(",") ? "" : "s") + " open until the "
+							+ filer + " re-checks"));
+		}
+		return queued;
 	}
 
 	/**
@@ -697,7 +715,8 @@ public class AgentRoutingService {
 	 */
 	private AgentTaskData toAskerAfterAnswer(AgentTaskData td, AgentBoardData board,
 			QuestionFrame frame, UUID answerRelease, BoardEffects effects) {
-		Optional<AgentTaskRoleConfigData> asker = activeRoles(board).stream()
+		List<AgentTaskRoleConfigData> roles = activeRoles(board);
+		Optional<AgentTaskRoleConfigData> asker = roles.stream()
 				.filter(rc -> rc.getUuid().equals(frame.askingRole())).findFirst();
 		if (asker.isEmpty()) {
 			toCoordinator(td, "the question was answered but the role that asked is no longer"
@@ -706,12 +725,14 @@ public class AgentRoutingService {
 		}
 		String budget = budgetStop(td, board, asker.get(), "returning to " + asker.get().getName());
 		if (null != budget) return holdStopped(td, budget, List.of(), effects);
-		effects.info("Question answered on task " + label(td) + "; back to "
-				+ asker.get().getName());
 		DocumentRef pin = new DocumentRef(RearmSpecificationType.BOARD_QUESTIONS, null, null, null, null,
 				null, td.getUuid(), null, null, null);
-		return queueFor(td, board, asker.get(), StatusTrigger.AUTHORIZE, pin, effects,
-				"question answered; back to " + asker.get().getName());
+		AgentTaskData queued = queueFor(td, board, roles, asker.get(), StatusTrigger.AUTHORIZE, pin, effects,
+				"question answered; back to " + asker.get().getName(), null);
+		if (TaskStatus.QUEUED == queued.getStatus()) {
+			effects.info("Question answered on task " + label(td) + "; back to " + asker.get().getName());
+		}
+		return queued;
 	}
 
 	// ---------- stops ----------
@@ -1090,7 +1111,16 @@ public class AgentRoutingService {
 						AgentTaskInputService.maturity(ReleaseLifecycle.DRAFT)), Math::max);
 			}
 		});
-		if (floors.isEmpty()) return false;
+		return publishedSince(td, floors, pass.signedOffAt());
+	}
+
+	/**
+	 * Whether the task has an agent's release of one of {@code floors}' types, at or above that type's floor,
+	 * created after {@code since}: the walk staleness ({@link #inputsMovedSince}) and the design checkpoint
+	 * ({@link #checkpointStands}) share. A round the board cut names no session and never counts.
+	 */
+	private boolean publishedSince(AgentTaskData td, Map<RearmSpecificationType, Integer> floors, ZonedDateTime since) {
+		if (floors.isEmpty() || null == since || null == td.getReleases()) return false;
 		for (UUID r : td.getReleases()) {
 			Optional<ReleaseData> rd = sharedReleaseService.getReleaseData(r);
 			if (rd.isEmpty()) continue;
@@ -1100,7 +1130,7 @@ public class AgentRoutingService {
 				continue;
 			}
 			ZonedDateTime created = rd.get().getCreatedDate();
-			if (null != created && created.isAfter(pass.signedOffAt())) return true;
+			if (null != created && created.isAfter(since)) return true;
 		}
 		return false;
 	}
@@ -1315,9 +1345,25 @@ public class AgentRoutingService {
 	 * @param note why routing sent it there, with the role (RD2-23): the status history's row reads
 	 *        "queued → queued · routing: review items decided; back to designer" rather than a bare trigger
 	 */
-	private AgentTaskData queueFor(AgentTaskData td, AgentBoardData board,
+	private AgentTaskData queueFor(AgentTaskData td, AgentBoardData board, List<AgentTaskRoleConfigData> roles,
 			AgentTaskRoleConfigData rc, StatusTrigger trigger, DocumentRef pinned,
-			BoardEffects effects, String note) {
+			BoardEffects effects, String note, ChosenBy by) {
+		// The design checkpoint (task SPLIT-5, D2, D12): routing's own choice of the flagged role stops at the
+		// coordinator unless the checkpoint stands; a person's choice settles it in their name and is never stopped.
+		if (rc.isCoordinatorCheckpoint() && !td.isInvestigation()) {
+			if (null != by && null != by.actor()) {
+				settle(td, roles, rc, by.actor(), by.note(), effects);
+			} else if (!checkpointStands(td, roles, rc)) {
+				// F-7: always the current design; a PENDING record reached again keeps only its reachedAt.
+				DesignCheckpoint reached = reached(td, roles, rc, td.getDesignCheckpoint());
+				td.setDesignCheckpoint(reached);
+				toCoordinator(td, "design checkpoint before " + rc.getName() + " \u2014 " + roundsLine(reached.design())
+						+ architectNote(td, reached.design()) + "; read the design, then split it or send it on"
+						+ " (rearm agent task authorize " + td.keyOrUuid() + " --role " + rc.getName()
+						+ " --session <seat>)", effects);
+				return td;
+			}
+		}
 		noteBoardSpend(td, board, effects);
 		if (null != pinned) {
 			List<RequiredInput> required = new ArrayList<>(
@@ -1334,6 +1380,175 @@ public class AgentRoutingService {
 		td.setAssignment(null);
 		td.transitionStatus(TaskStatus.QUEUED, trigger, AgentActor.system("routing"), note);
 		return td;
+	}
+
+	/**
+	 * Who chose the role {@link #queueFor} queues, when a person or the seat did (task SPLIT-5, D12), and the note a
+	 * checkpoint they settle records. Null when routing chose the role itself.
+	 */
+	record ChosenBy(AgentActor actor, String note) {}
+
+	// ---------- the design checkpoint (task SPLIT-5) ----------
+
+	/**
+	 * Settle the design checkpoint because {@code by} sent the task to {@code rc} with a verb that queues without
+	 * routing -- {@code authorize}, {@code liftHold} naming a role, {@code reopen} (3.4). A PENDING record is settled
+	 * SENT_ON when {@code rc} is the checkpoint's role or a later one; a settled record whose checkpoint no longer
+	 * stands (a design round or a reopen to a design role since) is written afresh, settled in {@code by}'s name,
+	 * when {@code rc} carries the flag. Anything else -- a role before the checkpoint, a checkpoint that stands, an
+	 * investigation -- writes nothing and posts nothing.
+	 *
+	 * @return whether the record was written
+	 */
+	public boolean settleCheckpoint(AgentTaskData td, AgentBoardData board, AgentTaskRoleConfigData rc, AgentActor by,
+			String note, BoardEffects effects) {
+		if (td.isInvestigation()) return false;
+		DesignCheckpoint cp = td.getDesignCheckpoint();
+		List<AgentTaskRoleConfigData> roles = activeRoles(board);
+		if (null != cp && cp.pending()) {
+			AgentTaskRoleConfigData before = roles.stream().filter(r -> r.getUuid().equals(cp.beforeRoleUuid()))
+					.findFirst().orElse(null);
+			// A checkpoint role no longer on the board counts as before every role.
+			if (null != before && rc.getOrderIndex() < before.getOrderIndex()) return false;
+			AgentTaskRoleConfigData flagged = rc.isCoordinatorCheckpoint() ? rc
+					: null != before && before.isCoordinatorCheckpoint() ? before : null;
+			if (null == flagged) {
+				td.setDesignCheckpoint(cp.withSettled(DesignCheckpointState.SENT_ON, by, note));
+				sentOn(td, rc, by, effects);
+				return true;
+			}
+			return settle(td, roles, flagged, rc, by, note, effects);
+		}
+		if (!rc.isCoordinatorCheckpoint()) return false;
+		return settle(td, roles, rc, by, note, effects);
+	}
+
+	/** Settle a checkpoint that does not stand, before {@code rc}, in {@code by}'s name; false when it stands. */
+	private boolean settle(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc,
+			AgentActor by, String note, BoardEffects effects) {
+		return settle(td, roles, rc, rc, by, note, effects);
+	}
+
+	private boolean settle(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData flagged,
+			AgentTaskRoleConfigData to, AgentActor by, String note, BoardEffects effects) {
+		if (checkpointStands(td, roles, flagged)) return false;
+		td.setDesignCheckpoint(reached(td, roles, flagged, td.getDesignCheckpoint())
+				.withSettled(DesignCheckpointState.SENT_ON, by, note));
+		sentOn(td, to, by, effects);
+		return true;
+	}
+
+	private void sentOn(AgentTaskData td, AgentTaskRoleConfigData to, AgentActor by, BoardEffects effects) {
+		effects.info("Task " + label(td) + ": " + (null == by ? "someone" : by.display()) + " sent it on to "
+				+ to.getName() + " at the design checkpoint");
+	}
+
+	/**
+	 * The record of reaching the checkpoint before {@code rc} now, PENDING: rewritten on every arrival (F-7), so it
+	 * names the current design and the role that just passed; a PENDING record reached again keeps its
+	 * {@code reachedAt}, a settled one is replaced with a fresh one.
+	 */
+	private DesignCheckpoint reached(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc,
+			DesignCheckpoint cp) {
+		return new DesignCheckpoint(null != cp && cp.pending() ? cp.reachedAt() : ZonedDateTime.now(), lastHopRole(td),
+				rc.getName(), rc.getUuid(), designBefore(td, roles, rc), DesignCheckpointState.PENDING, null, null, null);
+	}
+
+	/** The role of the task's last sign-off; null when there is none. */
+	private static String lastHopRole(AgentTaskData td) {
+		List<SignOff> hops = td.getSignOffs();
+		return null == hops || hops.isEmpty() ? null : hops.get(hops.size() - 1).role();
+	}
+
+	/**
+	 * The newest live round of every design document the active roles before {@code rc} produce -- every produced
+	 * type but the indexes and the investigation report -- de-duplicated, in role order. The task's own releases
+	 * only: a child's pinned inputs are not its rounds.
+	 */
+	private List<UUID> designBefore(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
+		Set<RearmSpecificationType> specs = new LinkedHashSet<>();
+		for (AgentTaskRoleConfigData r : roles) {
+			if (r.getOrderIndex() >= rc.getOrderIndex() || null == r.getProducesOutputs()) continue;
+			for (ProducedOutput o : r.getProducesOutputs()) {
+				if (null == o.specification() || INDEX_KINDS.contains(o.specification())
+						|| RearmSpecificationType.BOARD_INVESTIGATION_REPORT == o.specification()) {
+					continue;
+				}
+				specs.add(o.specification());
+			}
+		}
+		List<UUID> design = new ArrayList<>();
+		for (RearmSpecificationType spec : specs) {
+			newestRoundOf(td, spec).map(ReleaseData::getUuid).filter(u -> !design.contains(u)).ifPresent(design::add);
+		}
+		return design;
+	}
+
+	/** "ARCHITECTURE round 2 (READY_TO_SHIP), THREAT_MODEL round 1 (READY_TO_SHIP)": the rounds the ALERT names. */
+	private String roundsLine(List<UUID> design) {
+		List<String> parts = new ArrayList<>();
+		for (UUID r : design) {
+			sharedReleaseService.getReleaseData(r).ifPresent(rd -> parts.add(roundLabel(rd) + " (" + rd.getLifecycle() + ")"));
+		}
+		return parts.isEmpty() ? "no design round" : String.join(", ", parts);
+	}
+
+	static final int CHECKPOINT_NOTE_CHARS = 200;
+
+	/**
+	 * {@code ; architect: "<note>"} -- the note of the newest agent pass by the role whose hop published the newest
+	 * ARCHITECTURE round in {@code design}, cut to 200 characters (D6). Empty when the round was published by no hop
+	 * of the task (an advisory round) or that role has no agent pass with a note.
+	 */
+	private String architectNote(AgentTaskData td, List<UUID> design) {
+		ReleaseData arch = null;
+		for (UUID r : design) {
+			Optional<ReleaseData> rd = sharedReleaseService.getReleaseData(r);
+			if (rd.isPresent() && null != rd.get().getDocument()
+					&& RearmSpecificationType.ARCHITECTURE == rd.get().getDocument().specification()) {
+				arch = rd.get();
+				break;
+			}
+		}
+		if (null == arch || null == arch.getDocument().session() || null == td.getSignOffs()) return "";
+		UUID session = arch.getDocument().session();
+		ZonedDateTime published = arch.getCreatedDate();
+		// The hop the round was published in: that session's first sign-off at or after the round.
+		SignOff hop = td.getSignOffs().stream()
+				.filter(so -> session.equals(so.session()) && null != so.signedOffAt()
+						&& (null == published || !so.signedOffAt().isBefore(published)))
+				.findFirst().orElse(null);
+		if (null == hop) return "";
+		SignOff pass = null;
+		for (SignOff so : td.getSignOffs()) {
+			if (null != so.reviewedBy() || SignOffOutcome.PASSED != so.outcome()) continue;
+			boolean sameRole = null != hop.roleUuid() && null != so.roleUuid() ? hop.roleUuid().equals(so.roleUuid())
+					: null != hop.role() && hop.role().equalsIgnoreCase(so.role());
+			if (sameRole) pass = so;
+		}
+		if (null == pass || StringUtils.isBlank(pass.note())) return "";
+		return "; " + pass.role() + ": \"" + StringUtils.left(pass.note(), CHECKPOINT_NOTE_CHARS) + "\"";
+	}
+
+	/**
+	 * Whether the coordinator's look at the design still holds before {@code rc} (D5): the record is settled, no
+	 * reopen since names a role ordered before {@code rc}, and no agent-published ARCHITECTURE round at or above
+	 * ASSEMBLED -- an advisory round included -- was created since. A new THREAT_MODEL round alone does not unsettle it.
+	 */
+	private boolean checkpointStands(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
+		DesignCheckpoint cp = td.getDesignCheckpoint();
+		if (null == cp || cp.pending() || null == cp.settledAt()) return false;
+		if (null != td.getReopens()) {
+			for (Reopen ro : td.getReopens()) {
+				if (null == ro.at() || !ro.at().isAfter(cp.settledAt())) continue;
+				boolean designRole = roles.stream()
+						.filter(r -> null != ro.roleUuid() ? ro.roleUuid().equals(r.getUuid()) : r.getName().equalsIgnoreCase(ro.role()))
+						.anyMatch(r -> r.getOrderIndex() < rc.getOrderIndex());
+				if (designRole) return false;
+			}
+		}
+		return !publishedSince(td, Map.of(RearmSpecificationType.ARCHITECTURE,
+				AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED)), cp.settledAt());
 	}
 
 	private void toCoordinator(AgentTaskData td, String why, BoardEffects effects) {

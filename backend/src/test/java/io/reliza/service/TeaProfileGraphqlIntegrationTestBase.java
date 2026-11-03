@@ -67,7 +67,9 @@ import io.reliza.ws.oss.TestInitializer;
  * The shared fixture of the TEA profile GraphQL integration tests (tasks TEA-2 and TEA-9): users
  * with a scope ADMIN, components, the built-in defaults as an input, and the query helpers.
  */
-@SpringBootTest(classes = {App.class})
+// TPF-142: the TEA custom domain allow-list of the host assignment and serving classes (the Tea-C.test. spelling is
+// normalised at startup); the other subclasses send no host and are unaffected
+@SpringBootTest(classes = {App.class}, properties = "relizaprops.teaCustomDomains=tea-a.test,tea-b.test,Tea-C.test.")
 public abstract class TeaProfileGraphqlIntegrationTestBase {
 
 	protected static final WhoUpdated WU = WhoUpdated.getTestWhoUpdated();
@@ -85,7 +87,12 @@ public abstract class TeaProfileGraphqlIntegrationTestBase {
 	protected static final String LIST = "query($o: ID!) { teaProfilesOfOrg(org: $o) { uuid scope object } }";
 	protected static final String DELETE = "mutation($o: ID!, $s: TeaProfileScope!, $ob: ID) {"
 			+ " deleteTeaProfile(org: $o, scope: $s, object: $ob) }";
-	protected static final String DISCOVERY = "query($o: ID!) { teaOrgDiscovery(org: $o) { org teaUuid apiBase wellKnownDocument } }";
+	protected static final String DISCOVERY = "query($o: ID!) { teaOrgDiscovery(org: $o) { org teaUuid apiBase wellKnownDocument"
+			+ " assignedHost teaServing teaWellKnownHosting wellKnownUrl } }";
+	/** TPF-142: the organization administrator's serving write, answering the discovery after it. */
+	protected static final String SET_SERVING = "mutation($o: ID!, $s: TeaServing!, $h: TeaWellKnownHosting!) {"
+			+ " setTeaOrgServing(org: $o, teaServing: $s, teaWellKnownHosting: $h) { org teaUuid apiBase wellKnownDocument"
+			+ " assignedHost teaServing teaWellKnownHosting wellKnownUrl } }";
 
 	@MockitoSpyBean protected UserService userService;
 	@Autowired protected DgsQueryExecutor dgsQueryExecutor;

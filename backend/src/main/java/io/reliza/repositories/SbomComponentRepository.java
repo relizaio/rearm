@@ -52,6 +52,29 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 			@Param("orgUuidAsString") String orgUuidAsString,
 			@Param("canonicalPurls") Collection<String> canonicalPurls);
 
+	/** A component's uuid and canonical purl (TPF-137): the fan-out bookkeeping reads nothing else. */
+	interface ComponentUuidByPurl {
+		UUID getUuid();
+		String getCanonicalPurl();
+	}
+
+	/**
+	 * The non-terminal components of the org with the given canonical purls, uuid and purl only
+	 * (TPF-137: the synthetic bucket bookkeeping resolves changed purls to the component uuids the
+	 * fan-out walk filters on; principle "select only what the caller reads"). A purl with no row,
+	 * or whose row is enrichment-terminal, returns nothing: the coverage gate excludes terminal
+	 * rows anyway. Served by sbom_components_org_canonical_purl_unique. The caller skips the call
+	 * on an empty collection.
+	 */
+	@Query(value = """
+			SELECT sc.uuid AS uuid, sc.canonical_purl AS canonicalPurl
+			FROM rearm.sbom_components sc
+			WHERE sc.org = :org AND sc.canonical_purl IN (:purls)
+			  AND sc.flow_control->>'enrichmentTerminalAt' IS NULL
+			""", nativeQuery = true)
+	List<ComponentUuidByPurl> findUuidsByOrgAndCanonicalPurlIn(@Param("org") UUID org,
+			@Param("purls") Collection<String> purls);
+
 	/**
 	 * Search canonical sbom_components scoped to an org. With per-org pinning
 	 * the org filter is a direct column match — no join through
@@ -387,6 +410,13 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 	 * Mark a component enrichment-terminal (see V75 / SbomComponentFlowControl).
 	 * Merge-write so future flow_control keys survive; only ever fires on rows
 	 * that are still un-enriched (the caller checks), and enriched_at stays NULL.
+	 *
+	 * <p>A terminal mark changes the fan-out coverage gate of every canonical
+	 * holding the row without moving any bucket date (TPF-114), so every caller,
+	 * and any future bulk writer of enrichmentTerminalAt (a migration or a pass),
+	 * must requeue the canonicals holding the rows it marks
+	 * (ArtifactCanonicalMapRepository.requeueFanOutForComponents) after the marks
+	 * commit, or a canonical the gate held on such a row is never fanned out again.
 	 */
 	@Modifying
 	@Transactional

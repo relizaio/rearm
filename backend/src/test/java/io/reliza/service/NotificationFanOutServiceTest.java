@@ -34,6 +34,7 @@ import java.util.UUID;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.ArgumentCaptor;
+import org.springframework.transaction.PlatformTransactionManager;
 
 import java.util.Optional;
 import java.util.stream.Collectors;
@@ -106,6 +107,10 @@ class NotificationFanOutServiceTest {
     private OssPerspectiveService ossPerspectiveService;
     private Map<UUID, UUID> channelOrgs;
     private NotificationFanOutService fanOut;
+    // TPF-131: the resolve gathers releases with the batched
+    // gatherReleaseIdsForArtifacts and hydrates them with getReleaseDataListLight;
+    // stubGather registers which releases an artifact reaches.
+    private Map<UUID, List<ReleaseData>> gatherByArtifact;
 
     @BeforeEach
     void wireMocks() throws Exception {
@@ -124,6 +129,23 @@ class NotificationFanOutServiceTest {
         componentOwnershipService = mock(ComponentOwnershipService.class);
         vulnerabilityRecordService = mock(VulnerabilityRecordService.class);
         channelOrgs = new HashMap<>();
+        gatherByArtifact = new HashMap<>();
+        when(sharedReleaseService.gatherReleaseIdsForArtifacts(any(), any())).thenAnswer(inv -> {
+            Set<UUID> ids = new LinkedHashSet<>();
+            for (UUID a : inv.<Collection<UUID>>getArgument(0)) {
+                for (ReleaseData rd : gatherByArtifact.getOrDefault(a, List.of())) ids.add(rd.getUuid());
+            }
+            return ids;
+        });
+        when(sharedReleaseService.getReleaseDataListLight(any(), any())).thenAnswer(inv -> {
+            Collection<UUID> ids = inv.getArgument(0);
+            UUID org = inv.getArgument(1);
+            Map<UUID, ReleaseData> byUuid = new HashMap<>();
+            gatherByArtifact.values().forEach(l -> l.forEach(rd -> byUuid.put(rd.getUuid(), rd)));
+            return ids.stream().map(byUuid::get)
+                    .filter(rd -> rd != null && (org == null || org.equals(rd.getOrg())))
+                    .collect(Collectors.toList());
+        });
         // Defaults: no team channels, no owner channels. Tests that exercise
         // T3 / T4a targeting override per-call.
         when(teamService.resolveTeamChannelUuids(any(), any())).thenReturn(List.of());
@@ -163,6 +185,10 @@ class NotificationFanOutServiceTest {
         inject(fanOut, "teamService", teamService);
         inject(fanOut, "componentOwnershipService", componentOwnershipService);
         inject(fanOut, "vulnerabilityRecordService", vulnerabilityRecordService);
+        // A bare mock: TransactionTemplate.execute then runs the enrichment read
+        // directly (the own-transaction behaviour is covered by
+        // NotificationFanOutSlowEnrichmentIntegrationTest).
+        inject(fanOut, "transactionManager", mock(PlatformTransactionManager.class));
         // The one filter of a component's stored perspectives (task TEA-8, D13): pass-through, so
         // the enrichment and perspective-gate cases see the component's set; TEA-8 cases stub it.
         ossPerspectiveService = mock(OssPerspectiveService.class);
@@ -704,8 +730,7 @@ class NotificationFanOutServiceTest {
                 .thenReturn(List.of(artifactUuid));
         ReleaseData rd = buildReleaseData(releaseUuid, orgUuid, branchUuid, componentUuid,
                 "v3.1.4", ReleaseLifecycle.GENERAL_AVAILABILITY);
-        when(sharedReleaseService.gatherReleasesForArtifact(artifactUuid, orgUuid))
-                .thenReturn(List.of(rd));
+        stubGather(artifactUuid, List.of(rd));
         BranchData branchData = buildBranchData("main");
         when(branchService.getBranchData(branchUuid)).thenReturn(Optional.of(branchData));
         ComponentData componentData = buildComponentData("payments-api");
@@ -1800,10 +1825,8 @@ class NotificationFanOutServiceTest {
                 "v1.0", ReleaseLifecycle.GENERAL_AVAILABILITY);
         ReleaseData rdB = buildReleaseData(releaseB, orgUuid, branchB, componentB,
                 "v2.0", ReleaseLifecycle.GENERAL_AVAILABILITY);
-        when(sharedReleaseService.gatherReleasesForArtifact(artifactA, orgUuid))
-                .thenReturn(List.of(rdA));
-        when(sharedReleaseService.gatherReleasesForArtifact(artifactB, orgUuid))
-                .thenReturn(List.of(rdB));
+        stubGather(artifactA, List.of(rdA));
+        stubGather(artifactB, List.of(rdB));
         when(branchService.getBranchData(branchA)).thenReturn(Optional.of(buildBranchData("main-a")));
         when(branchService.getBranchData(branchB)).thenReturn(Optional.of(buildBranchData("main-b")));
         when(getComponentService.getComponentData(componentA))
@@ -2760,8 +2783,7 @@ class NotificationFanOutServiceTest {
         UUID componentUuid = UUID.randomUUID();
         when(artifactRepo.findArtifactsWithVulnId(orgUuid.toString(), cve))
                 .thenReturn(List.of(artifactUuid));
-        when(sharedReleaseService.gatherReleasesForArtifact(artifactUuid, orgUuid))
-                .thenReturn(List.of(buildReleaseData(UUID.randomUUID(), orgUuid, branchUuid,
+        stubGather(artifactUuid, List.of(buildReleaseData(UUID.randomUUID(), orgUuid, branchUuid,
                         componentUuid, "v1.0", ReleaseLifecycle.GENERAL_AVAILABILITY)));
         when(branchService.getBranchData(branchUuid))
                 .thenReturn(Optional.of(buildBranchData("main")));
@@ -2781,8 +2803,7 @@ class NotificationFanOutServiceTest {
                 .thenReturn(List.of(artifactUuid));
         ReleaseData rd = buildReleaseData(releaseUuid, orgUuid, branchUuid, componentUuid,
                 "v1.0", ReleaseLifecycle.GENERAL_AVAILABILITY);
-        when(sharedReleaseService.gatherReleasesForArtifact(artifactUuid, orgUuid))
-                .thenReturn(List.of(rd));
+        stubGather(artifactUuid, List.of(rd));
         when(branchService.getBranchData(branchUuid))
                 .thenReturn(Optional.of(buildBranchData("main")));
         when(getComponentService.getComponentData(componentUuid))
@@ -2822,9 +2843,16 @@ class NotificationFanOutServiceTest {
      * Route the test fixture through Jackson so the deserializer can
      * land those fields without the visibility restriction.
      */
+    /** Registers the releases the gather reaches from {@code artifactUuid} (TPF-131 batched gather). */
+    private void stubGather(UUID artifactUuid, List<ReleaseData> releases) {
+        gatherByArtifact.put(artifactUuid, releases);
+    }
+
     private static ReleaseData buildReleaseData(UUID uuid, UUID org, UUID branch, UUID component,
             String version, ReleaseLifecycle lifecycle) {
         Map<String, Object> m = new HashMap<>();
+        // The resolve sorts releases newest first (TPF-131), so a fixture carries a created date.
+        m.put("createdDate", "2026-01-01T00:00:00Z");
         m.put("uuid", uuid.toString());
         m.put("org", org.toString());
         m.put("branch", branch.toString());

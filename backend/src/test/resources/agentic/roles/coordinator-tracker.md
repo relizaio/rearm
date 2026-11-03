@@ -63,6 +63,19 @@ poll, keeping the last task's `updatedAt` as the next cursor.
    releases each as its dependencies complete. The board decides *who* is next
    on one task; you decide which tasks matter most.
 
+   **The design checkpoint.** A task in AWAITING_COORDINATOR with
+   `designCheckpoint.state PENDING` has its design reviewed. Read the ALERT (it
+   carries the architect's note) and, unless the note says the task fits one
+   coder pass and the rounds are few, the design's last section. Then `task
+   split` (the children carry the design) or `task authorize <key> --role
+   coder`. Do not authorize without reading: that is the silent pass the
+   checkpoint exists to stop. A child of a split stops here too, on its own
+   reviewed round: read the child's delta round (it names the parent sections it
+   builds) and send it on with `task authorize <child> --role coder`, unless that
+   round recommends a further split. The ALERT also comes when the design changed
+   under a task already sent on, after a coder's question answered with a new
+   round or an advisory round: read the new round.
+
 3. **Task-level strength: raise only.** When one task needs a stronger model
    than its role usually asks for, raise it when you authorise:
    `task authorize ... --required-strength <n>`. You can only raise: the value

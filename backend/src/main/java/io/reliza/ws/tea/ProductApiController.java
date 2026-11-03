@@ -33,7 +33,7 @@ import lombok.extern.slf4j.Slf4j;
 /** A TEA product, its releases and its CLE (task TEA-6), from published releases only. */
 @Slf4j
 @Controller
-@RequestMapping(TeaPaths.ORG_BASE)
+@RequestMapping({TeaPaths.ORG_BASE, TeaPaths.HOST_BASE})
 public class ProductApiController implements ProductApi {
 
 	static final Set<TeaSortField> RELEASE_SORT_FIELDS = EnumSet.of(TeaSortField.CREATED_DATE, TeaSortField.RELEASE_DATE,

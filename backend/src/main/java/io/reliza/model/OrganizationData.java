@@ -4,6 +4,7 @@
 
 package io.reliza.model;
 
+import java.io.Serializable;
 import java.time.ZonedDateTime;
 import java.util.Iterator;
 import java.util.LinkedHashMap;
@@ -14,6 +15,7 @@ import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
+import java.util.stream.Stream;
 
 import org.springframework.security.crypto.argon2.Argon2PasswordEncoder;
 
@@ -597,11 +599,67 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 	private Settings settings;
 	/**
 	 * The organization's TEA-facing id (task TEA-2): the TEA API base is {@code <host>/tea/<teaUuid>}.
-	 * Minted once by the server on the first ENABLED TEA profile save
-	 * ({@code OrganizationService.ensureTeaUuid}), never editable, and never on an input.
+	 * Minted once by the server ({@code OrganizationService.ensureTeaUuid}) on the first of: an ENABLED
+	 * TEA profile save, a TEA publication, an external key, a TEA serving mode other than NONE
+	 * (TPF-149); never editable, and never on an input.
 	 */
 	@JsonProperty
 	private UUID teaUuid;
+
+	/** How the organization's TEA surface is served (TPF-142). Absent on the record = NONE: nothing is served. */
+	public enum TeaServing { NONE, LEGACY_UUID, DOMAIN }
+	/**
+	 * Where the instance hosts the organization's /.well-known/tea (TPF-142): nowhere (the organization
+	 * hosts it on its TEI domain, as before) or on its assigned domain. Absent = NONE.
+	 */
+	public enum TeaWellKnownHosting { NONE, DOMAIN }
+	/** The record keys of the two TPF-142 enums. */
+	public static final String TEA_SERVING_FIELD = "teaServing";
+	public static final String TEA_WELL_KNOWN_HOSTING_FIELD = "teaWellKnownHosting";
+
+	/**
+	 * TPF-142: written only by OrganizationService.setTeaServing; every other whole-record save carries
+	 * the stored value forward under the row lock (withStoredTeaServing). Absent = NONE, no backfill:
+	 * an organization with a teaUuid from before TPF-142 is dark until its administrator picks a mode.
+	 */
+	@JsonProperty(TEA_SERVING_FIELD)
+	private TeaServing teaServing;
+	/** TPF-142: as {@link #teaServing}. */
+	@JsonProperty(TEA_WELL_KNOWN_HOSTING_FIELD)
+	private TeaWellKnownHosting teaWellKnownHosting;
+
+	/** The stored serving mode, NONE when absent. */
+	public TeaServing effectiveTeaServing() {
+		return null == teaServing ? TeaServing.NONE : teaServing;
+	}
+
+	/** The stored well-known hosting, NONE when absent. */
+	public TeaWellKnownHosting effectiveTeaWellKnownHosting() {
+		return null == teaWellKnownHosting ? TeaWellKnownHosting.NONE : teaWellKnownHosting;
+	}
+
+	/**
+	 * The record with the row's stored TEA serving enums in place of whatever the caller's copy carried
+	 * (TPF-142, the withStoredTotals shape): every whole-record save but setTeaServing's keeps them, so a
+	 * save from a copy read before a NONE write or an unassign cannot carry DOMAIN back. Each present
+	 * stored value is put under its key, each absent one removes the key. The values are the texts of
+	 * {@code record_data->>'teaServing'} and {@code ->>'teaWellKnownHosting'} read FOR UPDATE.
+	 */
+	public static Map<String, Object> withStoredTeaServing(Map<String, Object> recordData, Optional<String> storedServing,
+			Optional<String> storedHosting) {
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		if (storedServing.isPresent()) {
+			out.put(TEA_SERVING_FIELD, storedServing.get());
+		} else {
+			out.remove(TEA_SERVING_FIELD);
+		}
+		if (storedHosting.isPresent()) {
+			out.put(TEA_WELL_KNOWN_HOSTING_FIELD, storedHosting.get());
+		} else {
+			out.remove(TEA_WELL_KNOWN_HOSTING_FIELD);
+		}
+		return out;
+	}
 	/**
 	 * Org-wide PR-validation trigger rules -- see
 	 * {@link GlobalPrValidationTriggerRule}. Empty/null means "no
@@ -638,6 +696,59 @@ public class OrganizationData extends RelizaDataParent implements RelizaObject {
 
 	/** Which board holds a task-key prefix, and since when. */
 	public static record TaskPrefixClaim(UUID board, ZonedDateTime claimedAt) implements java.io.Serializable {}
+
+	/**
+	 * TPF-139 / TPF-141: the Statistics totals of the four tables that grow with release volume,
+	 * counted once a night (OrgTotalsCacheService) and written in place by
+	 * OrganizationRepository.stampTotal, one cell per table keyed by OrgTotalsTable.getMapKey().
+	 * Bookkeeping, never on an input: every whole-record save carries the stored cells forward
+	 * (withStoredTotals), so a user edit can neither erase nor set them. A missing cell, a missing
+	 * key or a null count reads as pending (never counted successfully).
+	 */
+	@JsonProperty(CommonVariables.TOTALS_FIELD)
+	private Map<String, TotalsCell> totals = new LinkedHashMap<>();
+
+	/** One nightly count and the UTC instant it was taken (ISO-8601, microseconds, trailing Z). */
+	public static record TotalsCell(Long count, ZonedDateTime countedAt) implements Serializable {}
+
+	/** The cached count of {@code table}, or null while pending. */
+	public Long totalsCount(OrgTotalsTable table) {
+		TotalsCell cell = null == totals ? null : totals.get(table.getMapKey());
+		return null == cell ? null : cell.count();
+	}
+
+	/**
+	 * The oldest instant among the tables whose count is non-null (the TPF-139 oldestCountedAt
+	 * rule): "as of" this instant is true of every cached number shown. Empty when none is present.
+	 */
+	public Optional<ZonedDateTime> oldestTotalsCountedAt() {
+		if (null == totals) return Optional.empty();
+		return Stream.of(OrgTotalsTable.values())
+				.map(t -> totals.get(t.getMapKey()))
+				.filter(c -> null != c && null != c.count() && null != c.countedAt())
+				.map(TotalsCell::countedAt)
+				.min((x, y) -> x.toInstant().compareTo(y.toInstant()));
+	}
+
+	/**
+	 * The record with the row's stored totals in place of whatever the caller's copy carried
+	 * (the withStoredTeaUuid / keepArchived rule): a whole-record save is never a writer of the
+	 * totals key, so it cannot erase or revert a nightly stamp that committed after the caller's
+	 * read, nor introduce or alter a count. A row without stored totals leaves the key out.
+	 * {@code stored} is the text of {@code record_data->>'totals'} read FOR UPDATE (an object's
+	 * JSON text, or empty when the key is absent or JSON null).
+	 */
+	public static Map<String, Object> withStoredTotals(Map<String, Object> recordData, Optional<String> stored) {
+		Map<String, Object> out = new LinkedHashMap<>(recordData);
+		if (stored.isPresent()) {
+			@SuppressWarnings("unchecked")
+			Map<String, Object> storedTotals = Utils.OM.readValue(stored.get(), LinkedHashMap.class);
+			out.put(CommonVariables.TOTALS_FIELD, storedTotals);
+		} else {
+			out.remove(CommonVariables.TOTALS_FIELD);
+		}
+		return out;
+	}
 
 	public void removeInvitee(String email, UUID whoInvited){
 		boolean found = false;

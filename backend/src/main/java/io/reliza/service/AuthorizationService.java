@@ -1181,7 +1181,16 @@ public class AuthorizationService {
 		return new VerifiedProgrammaticKey(principal, oak.get().getOrg());
 	}
 
-	public record FreeformKeyVerification(WhoUpdated whoUpdated, UUID orgUuid, UUID apiKeyUuid) {}
+	/**
+	 * @param owner the personal (USER) key's owner, set only where a caller needs to tell a person's key from the
+	 *        organization's (the board apply, task SPLIT-5 D11); null for a FREEFORM or federated key, a browser-login
+	 *        session on one included, and on every other path
+	 */
+	public record FreeformKeyVerification(WhoUpdated whoUpdated, UUID orgUuid, UUID apiKeyUuid, UserData owner) {
+		public FreeformKeyVerification(WhoUpdated whoUpdated, UUID orgUuid, UUID apiKeyUuid) {
+			this(whoUpdated, orgUuid, apiKeyUuid, null);
+		}
+	}
 
 	/**
 	 * Permissions a personal key may store: the requested set reduced to what its owner holds right
@@ -1446,19 +1455,32 @@ public class AuthorizationService {
 	 * {@code boardPermission(ApiKey, ...)} sees group grants (a key covers a board through its group),
 	 * and {@code declaringCaller} lets a FREEFORM key declare keys up to its effective, group-included
 	 * ceiling, consistent with what it may do itself. The groups are read on every call, no cache, so a
-	 * removal, a deactivated group or a deleted key takes effect on the next call.
+	 * removal, a deactivated group or a deleted key takes effect on the next call. The stored-key branch
+	 * is {@link #effectiveStoredKeyPermissions}, which the browser query {@code combinedApiKeyOrgPermissions}
+	 * also calls (TPF-123), so the display and every check share one implementation.
 	 */
 	private Set<UserPermission> keyPermissions(RbacKey key) {
 		if (key.type() == ApiTypeEnum.FEDERATED) {
 			// nothing is stored on the identity row: the trust rules and the calling repository decide on every call
 			return federatedTrustRuleService.permissionsFor(key.orgUuid(), key.federation());
 		}
-		Set<UserPermission> own = key.akd().getPermissions(key.orgUuid()).getOrgPermissionsAsSet(key.orgUuid());
-		if (key.type() == ApiTypeEnum.FREEFORM) {
+		return effectiveStoredKeyPermissions(key.keyUuid(), key.type(), key.akd(), key.orgUuid());
+	}
+
+	/**
+	 * The effective permissions of a STORED RBAC key in its organization (TPF-118/TPF-123 extracts this from
+	 * keyPermissions so the browser read answers the rows every check enforces, from the same code):
+	 * FREEFORM: its own grants union every ACTIVE API key group of the organization holding it (TPF-91),
+	 * read per call, no cache; any other stored type (USER): its own grants, the ceiling the callers
+	 * intersect with the owner. A FEDERATED identity stores no set and is not answered here: keyPermissions
+	 * takes it to the trust rules before calling this.
+	 */
+	public Set<UserPermission> effectiveStoredKeyPermissions(UUID keyUuid, ApiTypeEnum type, ApiKeyData akd, UUID org) {
+		Set<UserPermission> own = akd.getPermissions(org).getOrgPermissionsAsSet(org);
+		if (type == ApiTypeEnum.FREEFORM) {
 			// own grants union every ACTIVE API key group of this org holding the key (TPF-91); read per call, no cache
-			return OrganizationService.combinePermissions(own, key.orgUuid(),
-					apiKeyGroupService.permissionSetsForKey(key.keyUuid(), key.orgUuid()))
-				.getOrgPermissionsAsSet(key.orgUuid());
+			return OrganizationService.combinePermissions(own, org,
+					apiKeyGroupService.permissionSetsForKey(keyUuid, org)).getOrgPermissionsAsSet(org);
 		}
 		return own;   // USER: the stored ceiling, intersected with ownerSide by the callers, exactly as today
 	}
@@ -1616,7 +1638,8 @@ public class AuthorizationService {
 					.collect(java.util.stream.Collectors.joining(" or ")) + " on a board, a perspective or the organization");
 		}
 		apiKeyAccessService.recordApiKeyAccess(key.keyUuid(), ahp.getRemoteIp(), orgUuid, ahp.getApiKeyId());
-		return new FreeformKeyVerification(whoUpdatedFor(key, ahp.getRemoteIp(), ahp.getActorUser()), orgUuid, key.keyUuid());
+		return new FreeformKeyVerification(whoUpdatedFor(key, ahp.getRemoteIp(), ahp.getActorUser()), orgUuid, key.keyUuid(),
+				key.owner());
 	}
 
 	private boolean holdsCoveringBoards(Collection<UserPermission> grants, UUID org, PermissionFunction fn, CallType ct) {

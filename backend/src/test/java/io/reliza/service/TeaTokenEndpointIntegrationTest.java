@@ -14,10 +14,13 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
+import org.junit.jupiter.api.AfterEach;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.context.SpringBootTest;
 import org.springframework.http.ResponseEntity;
+import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.mock.web.MockFilterChain;
 import org.springframework.mock.web.MockHttpServletRequest;
 import org.springframework.mock.web.MockHttpServletResponse;
@@ -28,6 +31,8 @@ import io.reliza.model.ApiKeyData.ApiKeyStatus;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.Organization;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.UserData;
 import io.reliza.model.tea.TeaErrorResponse;
 import io.reliza.model.tea.TeaUnknownErrorType;
@@ -44,7 +49,8 @@ import io.reliza.ws.tea.TeaTokenController;
  * Task TEA-3, design 4.8 cases 41 to 45: the TEA token endpoint and the TEA filter with the real beans against the
  * test database, and the per-object check on a real perspective (Pro).
  */
-@SpringBootTest(classes = {App.class})
+// TPF-142 row 21: the allow-list of the host token path cases (the other cases send no host)
+@SpringBootTest(classes = {App.class}, properties = "relizaprops.teaCustomDomains=tea-a.test,tea-b.test,Tea-C.test.")
 public class TeaTokenEndpointIntegrationTest extends ExternalKeyIntegrationTestBase {
 
 	@Autowired private TeaTokenController tokenController;
@@ -56,12 +62,95 @@ public class TeaTokenEndpointIntegrationTest extends ExternalKeyIntegrationTestB
 	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private TeaAuthorizationService teaAuthorizationService;
 	@Autowired private GetComponentService getComponentService;
+	@Autowired private OrganizationService organizationService;
+	@Autowired private TeaHostAssignmentService teaHostAssignmentService;
+	@Autowired private JdbcTemplate jdbcTemplate;
+
+	@BeforeEach
+	@AfterEach
+	void clearHostMap() {
+		jdbcTemplate.update("UPDATE rearm.system_info SET data = data - 'teaHostAssignments' WHERE id = 1");
+	}
+
+	/** The token endpoint on {@code host}: the uuid path when {@code teaOrg} is set, else the host path. */
+	private ResponseEntity<?> exchangeOn(String teaOrg, String host, String keyId, String secret, String query) {
+		String path = null == teaOrg ? TeaTokenController.HOST_TOKEN_PATH_TEMPLATE : "/tea/" + teaOrg + "/v1.0.0/token";
+		MockHttpServletRequest req = new MockHttpServletRequest("POST", path);
+		req.setServerName(host);
+		req.setRemoteAddr("192.0.2.34");
+		if (null != query) req.setQueryString(query);
+		req.addHeader("Authorization", "Basic " + Base64.getEncoder().encodeToString((keyId + ":" + secret).getBytes(StandardCharsets.UTF_8)));
+		req.setParameter("grant_type", "client_credentials");
+		return tokenController.token(req, teaOrg);
+	}
+
+	private TeaCaller filterOnHost(String token) throws Exception {
+		TeaAuthenticationFilter f = new TeaAuthenticationFilter(apiTokenService, apiKeyService);
+		String uri = "/tea/v1.0.0/product/" + UUID.randomUUID();
+		MockHttpServletRequest req = new MockHttpServletRequest("GET", uri);
+		req.setRequestURI(uri);
+		req.setServerName("tea-b.test");
+		req.addHeader("Authorization", "Bearer " + token);
+		f.doFilter(req, new MockHttpServletResponse(), new MockFilterChain());
+		return (TeaCaller) req.getAttribute(TeaAuthenticationFilter.CALLER_ATTRIBUTE);
+	}
+
+	private static void assertObjectUnknown(ResponseEntity<?> r, String what) {
+		assertEquals(404, r.getStatusCode().value(), what);
+		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, ((TeaErrorResponse) r.getBody()).getError(), what);
+	}
+
+	@SuppressWarnings("unchecked")
+	private static String error(ResponseEntity<?> r) {
+		return (String) ((Map<String, Object>) r.getBody()).get("error");
+	}
+
+	// TPF-142 row 21: the host token path, and the uuid token path on a custom host
+	@Test
+	public void theHostTokenPathServesTheHostsOrganizationOnly() throws Exception {
+		Minted a = mint();
+		Minted b = mint();
+		// A LEGACY_UUID: its uuid token path is unknown on a custom host and served on the baseuri host
+		teaHostAssignmentService.assign("tea-b.test", b.org().getUuid(), null);
+		organizationService.setTeaServing(b.org().getUuid(), TeaServing.DOMAIN, TeaWellKnownHosting.NONE, WU);
+		assertObjectUnknown(exchangeOn(a.teaOrg(), "tea-b.test", a.keyId(), a.secret(), null), "A's uuid token on B's host");
+		token(exchangeOn(a.teaOrg(), "localhost", a.keyId(), a.secret(), null));
+
+		String t = token(exchangeOn(null, "tea-b.test", b.keyId(), b.secret(), null));
+		TeaCaller onB = filterOnHost(t);
+		assertEquals(TeaAuthState.AUTHENTICATED, onB.state(), "the token works on B's host shape");
+		assertEquals(b.org().getUuid(), onB.principal().org());
+
+		teaHostAssignmentService.assign("tea-a.test", a.org().getUuid(), null);
+		organizationService.setTeaServing(a.org().getUuid(), TeaServing.DOMAIN, TeaWellKnownHosting.NONE, WU);
+		ResponseEntity<?> foreign = exchangeOn(null, "tea-a.test", b.keyId(), b.secret(), null);
+		assertEquals(401, foreign.getStatusCode().value(), "B's key on A's host");
+		assertEquals("invalid_client", error(foreign));
+		assertObjectUnknown(exchangeOn(null, "tea-c.test", b.keyId(), b.secret(), null), "a listed, unassigned host");
+		ResponseEntity<?> inQuery = exchangeOn(null, "tea-b.test", b.keyId(), b.secret(), "client_secret=" + b.secret());
+		assertEquals(400, inQuery.getStatusCode().value(), "the body-only rule holds on the host path");
+		assertEquals("invalid_request", error(inQuery));
+	}
+
+	// TPF-142 row 21: the uuid token path of a NONE and a DOMAIN organization, on the baseuri host
+	@Test
+	public void theUuidTokenPathServesLegacyUuidOrganizationsOnly() throws Exception {
+		Minted dark = mint();
+		organizationService.setTeaServing(dark.org().getUuid(), TeaServing.NONE, TeaWellKnownHosting.NONE, WU);
+		assertObjectUnknown(exchangeOn(dark.teaOrg(), "localhost", dark.keyId(), dark.secret(), null), "NONE");
+		Minted domain = mint();
+		teaHostAssignmentService.assign("tea-a.test", domain.org().getUuid(), null);
+		organizationService.setTeaServing(domain.org().getUuid(), TeaServing.DOMAIN, TeaWellKnownHosting.NONE, WU);
+		assertObjectUnknown(exchangeOn(domain.teaOrg(), "localhost", domain.keyId(), domain.secret(), null), "DOMAIN");
+	}
 
 	private record Minted(Organization org, ApiKey key, String keyId, String teaOrg, String secret) {}
 
 	private Minted mint() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		ApiKey ak = externalApiKeyService.create(org.getUuid(), "Acme", null, WU);
+		// TPF-142 (F-6, F-8): the key creation minted the TEA id; the uuid base serves LEGACY_UUID organizations only
+		organizationService.setTeaServing(org.getUuid(), TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE, WU);
 		String secret = apiKeyService.addApiKeySecret(ak.getUuid(), null, WU);
 		ApiKey stored = apiKeyService.getApiKey(ak.getUuid()).orElseThrow();
 		String tea = getOrganizationService.getOrganizationData(org.getUuid()).orElseThrow().getTeaUuid().toString();

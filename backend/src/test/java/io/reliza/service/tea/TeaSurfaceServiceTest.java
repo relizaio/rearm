@@ -9,8 +9,10 @@ import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
@@ -39,6 +41,8 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.Organization;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.RearmIdentifierType;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.TeaProfileData;
@@ -49,11 +53,13 @@ import io.reliza.model.tea.TeaProduct;
 import io.reliza.model.tea.TeaUnknownErrorType;
 import io.reliza.repositories.ComponentRepository;
 import io.reliza.repositories.OrganizationRepository;
+import io.reliza.service.GetOrganizationService;
 import io.reliza.service.SharedReleaseService;
 import io.reliza.service.TeaAuthorizationService;
 import io.reliza.service.TeaAuthorizationService.TeaAccess;
 import io.reliza.service.TeaAuthorizationService.TeaCaller;
 import io.reliza.service.TeaAuthorizationService.TeaPrincipal;
+import io.reliza.service.TeaHostAssignmentService;
 import io.reliza.service.TeaProfileResolver.TeaProfileSource;
 import io.reliza.service.TeaProfileResolver.TeaResolutionStatus;
 import io.reliza.service.TeaProfileResolver.TeaResolvedProfile;
@@ -87,6 +93,8 @@ class TeaSurfaceServiceTest {
 	private ComponentRepository compRepo;
 	private SharedReleaseService releases;
 	private UserService userService;
+	private TeaHostAssignmentService hosts;
+	private GetOrganizationService getOrgs;
 	private final Map<UUID, TeaPublicationExposure> exposures = new HashMap<>();
 
 	@BeforeEach
@@ -104,6 +112,14 @@ class TeaSurfaceServiceTest {
 		ReflectionTestUtils.setField(service, "componentRepository", compRepo);
 		ReflectionTestUtils.setField(service, "sharedReleaseService", releases);
 		ReflectionTestUtils.setField(service, "userService", userService);
+		// TPF-142 (architecture section 4, the r4 bullet): the collaborators D9, D10 and D13 inject, stubbed to
+		// today's answer: no host is custom and no host has a mapping
+		hosts = mock(TeaHostAssignmentService.class);
+		getOrgs = mock(GetOrganizationService.class);
+		when(hosts.isCustomHost(any())).thenReturn(false);
+		when(hosts.orgOfHost(any())).thenReturn(Optional.empty());
+		ReflectionTestUtils.setField(service, "teaHostAssignmentService", hosts);
+		ReflectionTestUtils.setField(service, "getOrganizationService", getOrgs);
 		when(pubs.exposureOf(any())).thenAnswer(inv -> {
 			TeaPublicationData p = inv.getArgument(0);
 			return exposures.get(p.getUuid());
@@ -192,27 +208,122 @@ class TeaSurfaceServiceTest {
 
 	// ------------------------------------------------------------------ 10
 
-	private static Organization orgRow(UUID tea, StatusEnum status) {
+	/** TPF-142 r3: the row carries the serving mode; null leaves the key off the record (NONE). */
+	private static Organization orgRow(UUID tea, StatusEnum status, TeaServing serving) {
 		OrganizationData od = new OrganizationData();
 		od.setTeaUuid(tea);
 		od.setStatus(status);
+		od.setTeaServing(serving);
 		Organization o = new Organization();
 		o.setUuid(ORG);
 		o.setRecordData(Utils.dataToRecord(od));
 		return o;
 	}
 
+	// TPF-142 row 1: the uuid base answers a LEGACY_UUID organization only
 	@Test
 	void orgOfBaseAnswersAKnownOrganizationOnly() {
-		when(orgRepo.findByTeaUuid(ORG_TEA.toString())).thenReturn(Optional.of(orgRow(ORG_TEA, StatusEnum.ACTIVE)));
+		when(orgRepo.findByTeaUuid(ORG_TEA.toString())).thenReturn(Optional.of(orgRow(ORG_TEA, StatusEnum.ACTIVE, TeaServing.LEGACY_UUID)));
 		when(pubs.apiBaseOf(ORG)).thenReturn(TORG.apiBase());
 		assertEquals(TORG, service.orgOfBase(ORG_TEA.toString()).orElseThrow());
 		assertTrue(service.orgOfBase(UUID.randomUUID().toString()).isEmpty(), "unknown");
 		assertTrue(service.orgOfBase("not-a-uuid").isEmpty(), "malformed");
 		assertTrue(service.orgOfBase(null).isEmpty(), "null");
 		UUID archived = UUID.randomUUID();
-		when(orgRepo.findByTeaUuid(archived.toString())).thenReturn(Optional.of(orgRow(archived, StatusEnum.ARCHIVED)));
+		when(orgRepo.findByTeaUuid(archived.toString())).thenReturn(Optional.of(orgRow(archived, StatusEnum.ARCHIVED, TeaServing.LEGACY_UUID)));
 		assertTrue(service.orgOfBase(archived.toString()).isEmpty(), "archived");
+		UUID dark = UUID.randomUUID();
+		Organization darkRow = orgRow(dark, StatusEnum.ACTIVE, null);
+		assertTrue(!darkRow.getRecordData().containsKey(OrganizationData.TEA_SERVING_FIELD)
+				|| null == darkRow.getRecordData().get(OrganizationData.TEA_SERVING_FIELD), "no teaServing key: NONE");
+		when(orgRepo.findByTeaUuid(dark.toString())).thenReturn(Optional.of(darkRow));
+		assertTrue(service.orgOfBase(dark.toString()).isEmpty(), "NONE (no key) is not served on the uuid base");
+		UUID domain = UUID.randomUUID();
+		when(orgRepo.findByTeaUuid(domain.toString())).thenReturn(Optional.of(orgRow(domain, StatusEnum.ACTIVE, TeaServing.DOMAIN)));
+		assertTrue(service.orgOfBase(domain.toString()).isEmpty(), "DOMAIN is not served on the uuid base");
+	}
+
+	// TPF-142 row 8: the one resolution of a request
+	@Test
+	void orgOfRequestLetsTheHostAloneNameTheOrganizationOnACustomHost() {
+		TeaSurfaceService spied = spy(service);
+		doReturn(Optional.of(TORG)).when(spied).orgOfBase(any());
+		doReturn(Optional.of(TORG)).when(spied).orgOfHost(any());
+		when(hosts.isCustomHost("tea-b.test")).thenReturn(true);
+
+		assertTrue(spied.orgOfRequest(ORG_TEA.toString(), "tea-b.test").isEmpty(), "custom host with a segment");
+		verify(spied, never()).orgOfBase(any());
+		verify(spied, never()).orgOfHost(any());
+
+		assertEquals(TORG, spied.orgOfRequest(null, "tea-b.test").orElseThrow());
+		verify(spied, times(1)).orgOfHost("tea-b.test");
+		verify(spied, never()).orgOfBase(any());
+
+		assertEquals(TORG, spied.orgOfRequest(ORG_TEA.toString(), "localhost").orElseThrow());
+		verify(spied, times(1)).orgOfBase(ORG_TEA.toString());
+		verify(spied, never()).orgOfHost("localhost");
+
+		assertEquals(TORG, spied.orgOfRequest(null, "localhost").orElseThrow());
+		verify(spied, times(1)).orgOfHost("localhost");
+		verify(spied, times(1)).orgOfBase(any());
+	}
+
+	private OrganizationData domainOrg(UUID uuid, TeaWellKnownHosting hosting) {
+		OrganizationData od = new OrganizationData();
+		od.setUuid(uuid);
+		od.setTeaUuid(UUID.randomUUID());
+		od.setStatus(StatusEnum.ACTIVE);
+		od.setTeaServing(TeaServing.DOMAIN);
+		od.setTeaWellKnownHosting(hosting);
+		return od;
+	}
+
+	// TPF-142 row 8: the unit twin of row 7, the per-host document
+	@Test
+	void theWellKnownDocumentIsServedPerHost() {
+		UUID b = UUID.randomUUID();
+		when(hosts.isCustomHost("tea-b.test")).thenReturn(true);
+		when(hosts.orgOfHost("tea-b.test")).thenReturn(Optional.of(b));
+		when(getOrgs.getOrganizationData(b)).thenReturn(Optional.of(domainOrg(b, TeaWellKnownHosting.DOMAIN)));
+		when(pubs.apiBaseOf(b)).thenReturn("https://tea-b.test/tea");
+		WellKnownAnswer a = service.wellKnown("tea-b.test");
+		assertNull(a.error());
+		assertEquals("{\"schemaVersion\":1,\"endpoints\":[{\"url\":\"https://tea-b.test/tea\",\"versions\":[\"1.0.0\"],\"priority\":1}]}",
+				a.document());
+		TeaOpenApiSchemas.assertWellKnownConforms(a.document());
+
+		// hosting NONE on a custom host: NOT_IMPLEMENTED even on OSS, and the listing is never built
+		when(getOrgs.getOrganizationData(b)).thenReturn(Optional.of(domainOrg(b, TeaWellKnownHosting.NONE)));
+		when(userService.getInstallationType()).thenReturn(InstallationType.OSS);
+		OrganizationRepository fresh = mock(OrganizationRepository.class);
+		ReflectionTestUtils.setField(service, "organizationRepository", fresh);
+		WellKnownAnswer ni = service.wellKnown("tea-b.test");
+		assertEquals(TeaUnknownErrorType.NOT_IMPLEMENTED, ni.error());
+		assertNull(ni.document());
+		verifyNoInteractions(fresh);
+
+		// a non-custom host falls to the installation-type branch
+		when(fresh.listWithTeaUuid()).thenReturn(List.of());
+		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, service.wellKnown("localhost").error(), "OSS, nothing serving");
+		when(userService.getInstallationType()).thenReturn(InstallationType.SAAS);
+		assertEquals(TeaUnknownErrorType.NOT_IMPLEMENTED, service.wellKnown("localhost").error(), "SAAS");
+	}
+
+	// TPF-142 row 8: a NONE organization's null base drops out of the OSS listing
+	@Test
+	void aNoneOrganizationDropsOutOfTheOssListing() {
+		when(userService.getInstallationType()).thenReturn(InstallationType.OSS);
+		UUID live = UUID.randomUUID();
+		UUID dark = UUID.randomUUID();
+		Organization r1 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE, TeaServing.LEGACY_UUID);
+		r1.setUuid(live);
+		Organization r2 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE, null);
+		r2.setUuid(dark);
+		when(orgRepo.listWithTeaUuid()).thenReturn(List.of(r1, r2));
+		when(pubs.apiBaseOf(live)).thenReturn("https://a.example.com/tea/1");
+		when(pubs.apiBaseOf(dark)).thenReturn(null);
+		assertEquals("{\"schemaVersion\":1,\"endpoints\":[{\"url\":\"https://a.example.com/tea/1\",\"versions\":[\"1.0.0\"],\"priority\":1}]}",
+				service.wellKnown("localhost").document());
 	}
 
 	// ------------------------------------------------------------------ 11
@@ -447,30 +558,30 @@ class TeaSurfaceServiceTest {
 		UUID o1 = UUID.randomUUID();
 		UUID o2 = UUID.randomUUID();
 		UUID o3 = UUID.randomUUID();
-		Organization r1 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE);
+		Organization r1 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE, TeaServing.LEGACY_UUID);
 		r1.setUuid(o1);
-		Organization r2 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE);
+		Organization r2 = orgRow(UUID.randomUUID(), StatusEnum.ACTIVE, TeaServing.LEGACY_UUID);
 		r2.setUuid(o2);
-		Organization r3 = orgRow(UUID.randomUUID(), StatusEnum.ARCHIVED);
+		Organization r3 = orgRow(UUID.randomUUID(), StatusEnum.ARCHIVED, TeaServing.LEGACY_UUID);
 		r3.setUuid(o3);
 		when(orgRepo.listWithTeaUuid()).thenReturn(List.of(r1, r2, r3));
 		when(pubs.apiBaseOf(o1)).thenReturn("https://b.example.com/tea/1");
 		when(pubs.apiBaseOf(o2)).thenReturn("https://a.example.com/tea/2");
 		when(pubs.apiBaseOf(o3)).thenReturn("https://c.example.com/tea/3");
-		WellKnownAnswer a = service.wellKnown();
+		WellKnownAnswer a = service.wellKnown("localhost");
 		assertNull(a.error());
 		assertEquals("{\"schemaVersion\":1,\"endpoints\":[{\"url\":\"https://a.example.com/tea/2\",\"versions\":[\"1.0.0\"],\"priority\":1},"
 				+ "{\"url\":\"https://b.example.com/tea/1\",\"versions\":[\"1.0.0\"],\"priority\":1}]}", a.document());
 		TeaOpenApiSchemas.assertWellKnownConforms(a.document());
 
 		when(orgRepo.listWithTeaUuid()).thenReturn(List.of());
-		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, service.wellKnown().error());
+		assertEquals(TeaUnknownErrorType.OBJECT_UNKNOWN, service.wellKnown("localhost").error());
 
 		for (InstallationType t : List.of(InstallationType.SAAS, InstallationType.DEMO, InstallationType.MANAGED_SERVICE)) {
 			OrganizationRepository fresh = mock(OrganizationRepository.class);
 			ReflectionTestUtils.setField(service, "organizationRepository", fresh);
 			when(userService.getInstallationType()).thenReturn(t);
-			assertEquals(TeaUnknownErrorType.NOT_IMPLEMENTED, service.wellKnown().error(), t.name());
+			assertEquals(TeaUnknownErrorType.NOT_IMPLEMENTED, service.wellKnown("localhost").error(), t.name());
 			verifyNoInteractions(fresh);
 		}
 	}

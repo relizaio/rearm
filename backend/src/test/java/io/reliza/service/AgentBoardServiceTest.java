@@ -23,6 +23,7 @@ import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentBoardData.MergeMethod;
 import io.reliza.model.AgentBoardData.MergeProcedure;
 import io.reliza.model.AgentBoardData.ServedPromptStatus;
+import io.reliza.model.AgentTaskRoleConfigData;
 import io.reliza.service.AgentBoardService.ServedPrompt;
 
 /**
@@ -182,6 +183,36 @@ class AgentBoardServiceTest {
 		String rules = AgentBoardService.routingRules(board);
 		assertEquals("you are the coder\n\n" + rules, AgentBoardService.servedPrompt(board, "you are the coder"));
 		assertEquals(rules, AgentBoardService.servedPrompt(board, null), "a role with no prompt still gets its rules");
+	}
+
+	/** Task SPLIT-5 (3.9): the design checkpoint's bullet, only when an active role in {@code roles} carries the flag. */
+	@Test
+	void routingRulesNameTheDesignCheckpointOnlyWithAFlaggedRole() {
+		AgentBoardData board = new AgentBoardData();
+		AgentTaskRoleConfigData architect = role("architect", false, true);
+		AgentTaskRoleConfigData coder = role("coder", true, true);
+		String bullet = "- Design checkpoint: before the coder is queued, every task stops at the coordinator with an"
+				+ " ALERT; the coordinator reads the reviewed design and splits the task or sends it on. No pass goes"
+				+ " straight to the coder. An architect that recommends a split says so in the design's last section and"
+				+ " in its sign-off note.\n";
+		String strict = AgentBoardService.routingRules(board);
+		assertEquals(strict + bullet, AgentBoardService.routingRules(board, null, List.of(architect, coder)));
+		assertEquals(strict, AgentBoardService.routingRules(board, null, null), "null roles: no flagged role");
+		assertEquals(strict, AgentBoardService.routingRules(board, null, List.of(architect, role("coder", false, true))));
+		assertEquals(strict, AgentBoardService.routingRules(board, null, List.of(architect, role("coder", true, false))),
+				"an inactive role carries no checkpoint");
+		assertEquals("you are the coder\n\n" + strict + bullet,
+				AgentBoardService.servedPrompt(board, "you are the coder", null, List.of(architect, coder)));
+		assertEquals("you are the coder\n\n" + strict, AgentBoardService.servedPrompt(board, "you are the coder"),
+				"the static overloads pass no roles");
+	}
+
+	private static AgentTaskRoleConfigData role(String name, boolean checkpoint, boolean active) {
+		AgentTaskRoleConfigData rc = new AgentTaskRoleConfigData();
+		rc.setName(name);
+		rc.setCoordinatorCheckpoint(checkpoint);
+		rc.setActive(active);
+		return rc;
 	}
 
 	@Test

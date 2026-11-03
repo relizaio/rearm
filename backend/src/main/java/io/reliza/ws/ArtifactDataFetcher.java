@@ -13,6 +13,7 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
 import org.springframework.security.core.context.SecurityContextHolder;
 import org.springframework.security.oauth2.server.resource.authentication.JwtAuthenticationToken;
@@ -26,6 +27,7 @@ import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
 
 import graphql.execution.DataFetcherResult;
+import io.reliza.common.InputConversion;
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
 import io.reliza.common.CommonVariables.TagRecord;
@@ -38,7 +40,9 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.RelizaObject;
+import io.reliza.model.UserData;
 import io.reliza.model.WhoUpdated;
+import io.reliza.model.dto.ArtifactScanStatusDto;
 import io.reliza.model.dto.ReleaseMetricsDto;
 import io.reliza.service.ArtifactDownloadAccessService;
 import io.reliza.service.ArtifactService;
@@ -54,6 +58,7 @@ import io.reliza.service.RiskSummaryCalculator;
 import io.reliza.service.SbomScoreService;
 import io.reliza.service.SharedArtifactService;
 import io.reliza.service.SharedReleaseService;
+import io.reliza.service.SyntheticSbomService;
 import io.reliza.service.UserService;
 import lombok.extern.slf4j.Slf4j;
 
@@ -99,6 +104,9 @@ public class ArtifactDataFetcher {
 
 	@Autowired
 	private SbomScoreService sbomScoreService;
+
+	@Autowired
+	private SyntheticSbomService syntheticSbomService;
 	
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "artifact")
@@ -114,7 +122,7 @@ public class ArtifactDataFetcher {
 		var releases = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, oad.get().getOrg());
 		var components = releases.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
 		if (components.isEmpty()) {
-			// Session-attached / orphan artifact — no release/component
+			// Session-attached / orphan artifact -- no release/component
 			// linkage exists, so the per-component auth check can't be
 			// answered. Fall back to org-scope READ on the artifact's
 			// owning org (the next-broader natural boundary).
@@ -185,6 +193,41 @@ public class ArtifactDataFetcher {
 		}
 		
 		return versionHistory;
+	}
+
+	/**
+	 * Why one artifact is or is not scanned (TPF-121): the synthetic scan state, the coverage gate's blockers and
+	 * the fan-out candidate rule, computed read-only by SyntheticSbomService.explainArtifactScanStatus. Behind the
+	 * artifact's read permission exactly as the artifact query asks it (one reader tier: every field goes to every
+	 * reader, the operator's decision of 2026-10-29). Unknown and refused uuids end in the same
+	 * AccessDeniedException, which the client receives as Not authorized; the explainer is never reached for either.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "artifactScanStatus")
+	public ArtifactScanStatusDto artifactScanStatus(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		// The system state is answered before the argument is converted or any row is read (TPF-91 F-2 idiom).
+		authorizationService.validateSystemOperational(CallType.READ);
+		UUID artifactUuid = InputConversion.convert(dfe.getArgument("artifactUuid"), UUID.class, "artifactUuid");
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		UserData ud = userService.getUserDataByAuth(auth).orElseThrow(() -> new AccessDeniedException("Not authorized"));
+		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
+		if (oad.isEmpty()) throw new AccessDeniedException("Artifact not found: " + artifactUuid);
+		ArtifactData ad = oad.get();
+		try {
+			var components = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, ad.getOrg())
+					.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
+			if (components.isEmpty()) {
+				authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE,
+						PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.READ);
+			} else {
+				authorizationService.isUserAuthorizedForAnyObjectGraphQL(ud, PermissionFunction.RESOURCE,
+						PermissionScope.COMPONENT, components, List.of(ad), CallType.READ);
+			}
+		} catch (AccessDeniedException e) {
+			// A refused uuid reads exactly as an unknown one (no cross-organization existence oracle).
+			throw new AccessDeniedException("Artifact not found: " + artifactUuid);
+		}
+		return syntheticSbomService.explainArtifactScanStatus(ad);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -285,7 +328,7 @@ public class ArtifactDataFetcher {
 	 * Surface the rebom-side enrichment status so the UI can render a per-artifact
 	 * pending/failed/done indicator without hitting rebom directly. Returns null
 	 * for artifacts that have no internalBom (non-BOM types or BOMs that never
-	 * landed in rebom) — the UI hides the badge in that case.
+	 * landed in rebom) -- the UI hides the badge in that case.
 	 */
 	@DgsData(parentType = "Artifact", field = "enrichmentStatus")
 	public RebomService.EnrichmentStatus enrichmentStatusOfArtifact(DgsDataFetchingEnvironment dfe) {

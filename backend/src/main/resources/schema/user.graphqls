@@ -76,6 +76,20 @@ type Query {
 	branchesOfComponent(componentUuid:ID!): [Branch]
 	releases(branchFilter:ID, orgFilter:ID, releaseFilter:[ID], numRecords:Int): [Release]
 	getNextVersion(branchUuid:ID!, versionType: VersionType): String
+	"""
+	Dry run of autoIntegrateFeatureSet: what a trigger on this feature set would do right now and why.
+	Read-only: creates nothing, reserves no version. Authorized as the branch query (BRANCH RESOURCE READ on the
+	feature set); refused whole while the system is sealed or the licence is invalid, before anything is read.
+	A dependency row shows the release it found only when you can read that component: otherwise its release is
+	null and its note is "release not shown: you have no read permission on this component" (outcome, note and
+	projectedVersion are decided on the full data either way, so the preview still says what the mutation would do).
+	projectedVersion (WOULD_CREATE only) is the version the next create would mint if nothing else mints first,
+	derived as the mint derives it: an OPEN version assignment of the feature set when one exists, else the bump
+	of the feature set's latest version by the largest action of the parent releases, following the followed
+	dependency's pinned release or its branch's latest ASSEMBLED release when the feature set follows one.
+	Advisory: a concurrent create or a version reserved in between can take it first.
+	"""
+	autoIntegrateFeatureSetPreview(branchUuid: ID!): AutoIntegrateEvaluation!
 	vcsRepository(vcs:ID!): VcsRepository
 	listVcsReposOfOrganization(orgUuid:ID!): [VcsRepository]
 	pullRequest(prUuid: ID!): PullRequest
@@ -98,6 +112,12 @@ type Query {
 	sourceCodeEntry(sceUuid:ID!): SourceCodeEntry
 	artifact(artifactUuid: ID!): Artifact
 	artifactVersionHistory(artifactUuid: ID!): [Artifact]
+	"""
+	Why one artifact is or is not scanned (TPF-121): its synthetic scan state, the coverage gate's
+	blocking components and whether it qualifies for a fan-out pass. Read-only; behind the artifact's
+	read permission. Every refusal (unknown or unreadable uuid) answers Not authorized.
+	"""
+	artifactScanStatus(artifactUuid: ID!): ArtifactScanStatus
 	artifactTypes: [String]
 	users(orgUuid: ID!, includeInactive: Boolean): [OrgUserData]
 	combinedUserOrgPermissions(orgUuid: ID!, userUuid: ID!): Permissions
@@ -227,13 +247,17 @@ type Query {
 	# above. Search and grouping run against rearm.sbom_components /
 	# rearm.release_sbom_components instead of dtrack -- same shapes, sbom_component
 	# UUIDs in place of dtrack project UUIDs. See SbomComponentDataFetcher.
-	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID): [ComponentWithBranches]
+	# branchScope: ACTIVE_BRANCHES by default leaves out the releases of archived
+	# branches; a component or branch left with no release drops out.
+	releasesBySbomComponents(orgUuid: ID!, sbomComponentUuids: [ID]!, perspectiveUuid: ID, branchScope: ReleaseBranchScope = ACTIVE_BRANCHES): [ComponentWithBranches]
 	sbomComponentSearchNative(orgUuid: ID!, queries: [SbomComponentSearchInput!]!, perspectiveUuid: ID): [ComponentPurlToSbom]
 	searchSbomComponentByPurl(orgUuid: ID!, purl: String!): ID
 
 	getAllOrganizations: [Organization]
 	
 	getSystemInfoIsSet: SystemInfoIsSet
+	"""Every assignable TEA host with its assignment (TPF-142). Global administrators only."""
+	teaHostAssignments: [TeaHostAssignment!]!
 	license: LicensePayload
 	
 	exportAsObomManual(releaseUuid: ID!): String
@@ -265,6 +289,8 @@ type Query {
 	getUserGroups(org: ID!): [UserGroupWebDto]
 	"Active and inactive API key groups of the organization; organization administrators only"
 	apiKeyGroupsOfOrg(org: ID!): [ApiKeyGroupWebDto]
+	"A key's effective permissions in the organization, the rows every check enforces (its own grants union every ACTIVE API key group holding it for a FREEFORM key; the own grants for a USER key), each with its sources; organization administrators only. FREEFORM and USER keys only: a key of any other type (an object key such as INSTANCE or COMPONENT, or a FEDERATED identity, whose set comes from the trust rules) is refused with 'Only FREEFORM and USER keys carry a permission set'. The stored set: never the owner-intersected set of a USER key"
+	combinedApiKeyOrgPermissions(orgUuid: ID!, apiKeyUuid: ID!): CombinedApiKeyOrgPermissions
 	getTeams(org: ID!): [TeamWebDto]
 
 	# Vulnerability Analysis
@@ -356,8 +382,10 @@ type Query {
 	"""
 	Bounded search: the hierarchy covers the 500 newest matching releases;
 	totalReleases/truncated tell the client when more matches exist.
+	branchScope narrows the search (count and cap included) to the releases of
+	non-archived branches unless ALL_BRANCHES is passed.
 	"""
-	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID): CveSearchResult
+	searchReleasesByCveId(org: ID!, cveId: String!, perspectiveUuid: ID, branchScope: ReleaseBranchScope = ACTIVE_BRANCHES): CveSearchResult
 	# Time Frame Search
 	searchReleasesByTimeFrame(org: ID!, startDate: DateTime!, endDate: DateTime!, perspectiveUuid: ID): [ComponentWithBranches]
 	searchReleasesByTimeFrameAndComponent(componentUuid: ID!, startDate: DateTime!, endDate: DateTime!): [ComponentWithBranches]
@@ -459,7 +487,7 @@ type Query {
 	agentBoardHistory(boardUuid: ID!, limit: Int = 50, offset: Int = 0): [AgentBoardRevision]
 	"""A role config's or preset's earlier revisions, newest first, as agentTaskHistory. Org ADMIN."""
 	agentRoleConfigHistory(roleConfigUuid: ID!, limit: Int = 50, offset: Int = 0): [AgentRoleConfigRevision]
-	"""The newest BOARD_ELEMENT_CHECK_REPORT round about a document (elements.md §7); null when it has none."""
+	"""The newest BOARD_ELEMENT_CHECK_REPORT round about a document (elements.md section 7); null when it has none."""
 	elementCheckReport(releaseUuid: ID!): Release
 	"""JWT dashboard read: the org's role presets."""
 	agentTaskRolePresetsOfOrg(orgUuid: ID!): [AgentTaskRoleConfig]
@@ -751,6 +779,10 @@ type Mutation {
 	unSealSystem(secret: String): Boolean
 	uploadLicense(license: String!): LicensePayload
 	finalizeAllReleases: Boolean
+	"""Assign a host to an organization (TPF-142). Global administrators only. Refused: a host outside the allow-list and not the instance host, a host already assigned to another organization, an organization already holding a host, an archived organization."""
+	assignTeaHost(host: String!, org: ID!): TeaHostAssignment!
+	"""Clear a host's assignment (TPF-142). Global administrators only. Refused while the holding organization is live and serves on DOMAIN; a host held by an archived organization is cleared."""
+	unassignTeaHost(host: String!): Boolean!
 	createOrganization(name: String!): Organization
 	setEmailProperties(emailProperties: EmailPropertiesInput!): Boolean
 	# Global setVulnCheckKevToken removed in V54 KEV per-org refactor;
@@ -820,6 +852,17 @@ type Mutation {
 	"""
 	cloneBranch(branchUuid: ID!, name: String!, branchType: BranchType, versionSchema: String): Branch
 	autoIntegrateFeatureSet(branchUuid: ID!): Release
+	"""
+	autoIntegrateFeatureSet with the explanation beside the result: release is the created product release
+	(null when nothing was created) and evaluation says why. Authorized exactly as autoIntegrateFeatureSet
+	(BRANCH RESOURCE WRITE). evaluation.outcome is WOULD_CREATE when release is present, CREATE_FAILED when the
+	create step is refused or declines: a lock on the product or feature set, a dependency release of another
+	organization, a cycle, an unreferenceable parent, a create error or version exhaustion (evaluation.note names
+	the reason). Unlike autoIntegrateFeatureSet, which returns a lock refusal as an error, this mutation reports it
+	as CREATE_FAILED. Dependency rows are redacted as in autoIntegrateFeatureSetPreview for components you cannot
+	read; the release itself and its parents are not.
+	"""
+	autoIntegrateFeatureSetExplained(branchUuid: ID!): AutoIntegrateResult!
 	archiveBranch(branchUuid: ID!): Boolean
 	# Archive many branches (or feature sets) in one call, reporting PER BRANCH.
 	# Refused whole, exactly as archiveBranch, while the system is sealed or the licence is invalid
@@ -982,7 +1025,7 @@ type Mutation {
 
 	"""
 	Bulk-advance every release of a component whose lifecycle is
-	≥ GENERAL_AVAILABILITY but < `targetLifecycle` to `targetLifecycle`.
+	>= GENERAL_AVAILABILITY but < `targetLifecycle` to `targetLifecycle`.
 	Pre-GA releases (PENDING, DRAFT, ASSEMBLED, READY_TO_SHIP) and
 	terminal-state releases (CANCELLED, REJECTED) are untouched, as are
 	releases already at or beyond the target. Each bumped release records
@@ -1077,9 +1120,9 @@ type Mutation {
 	"""
 	Generate an OpenVEX 0.2.0 document for a release. Reuses the same enrichment + snapshot +
 	filtering pipeline as releaseCdxVexExport; each retained vulnerability is emitted as one
-	OpenVEX statement. Status mapping: EXPLOITABLE→affected, NOT_AFFECTED→not_affected,
-	FALSE_POSITIVE→not_affected (+ justification vulnerable_code_not_present), RESOLVED→fixed,
-	IN_TRIAGE→under_investigation. CE-compatible: supports DATE and LIFECYCLE snapshots.
+	OpenVEX statement. Status mapping: EXPLOITABLE->affected, NOT_AFFECTED->not_affected,
+	FALSE_POSITIVE->not_affected (+ justification vulnerable_code_not_present), RESOLVED->fixed,
+	IN_TRIAGE->under_investigation. CE-compatible: supports DATE and LIFECYCLE snapshots.
 	"""
 	releaseOpenVexExport(release: ID!, includeSuppressed: Boolean, includeInTriage: Boolean, upToDate: DateTime, targetLifecycle: ReleaseLifecycleEnum): String
 	"""
@@ -1175,6 +1218,8 @@ type Mutation {
 	updateApiKeyGroup(apiKeyGroup: UpdateApiKeyGroupInput!): ApiKeyGroupWebDto
 	"Deactivates the group (status INACTIVE): its members lose its permissions on their next call; restore with updateApiKeyGroup status ACTIVE"
 	deleteApiKeyGroup(groupUuid: ID!): ApiKeyGroupWebDto
+	"Sets the API key groups of one FREEFORM key of the organization to exactly this list, in one transaction: the key is added to each listed group it is not in and removed from each unlisted group it is in; other members and the groups' permissions are untouched; a changed group gets one audit row. A key cannot be added to an INACTIVE group (restore the group first); it can be removed from one. Organization administrators only"
+	setApiKeyGroupsOfKey(orgUuid: ID!, apiKeyUuid: ID!, groupUuids: [ID!]!): [ApiKeyGroupWebDto]
 	createTeam(team: CreateTeamInput!): TeamWebDto
 	updateTeam(team: UpdateTeamInput!): TeamWebDto
 
@@ -1211,6 +1256,8 @@ type Mutation {
 	saveTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID, profile: TeaProfileInput!): TeaProfile
 	"Remove the TEA profile of a PERSPECTIVE or COMPONENT scope; answers whether one existed. A removal that makes the object resolve PUBLIC needs organization admin."
 	deleteTeaProfile(org: ID!, scope: TeaProfileScope!, object: ID): Boolean
+	"""Set how the organization is served and whether the instance hosts its .well-known/tea (TPF-142). Organization administrators. DOMAIN needs an assigned host; LEGACY_UUID needs a TEA id; hosting DOMAIN needs serving DOMAIN."""
+	setTeaOrgServing(org: ID!, teaServing: TeaServing!, teaWellKnownHosting: TeaWellKnownHosting!): TeaOrgDiscovery!
 	"Save the SBOM profile of a name at a scope, wholesale (ADMIN on the scope's object)."
 	saveSbomProfile(org: ID!, scope: SettingsScope!, object: ID, name: String!, profile: SbomProfileInput!): SbomProfile!
 	"Remove the SBOM profile of a name at a scope; answers whether one existed. Refused while TEA publishing settings name it and it would no longer resolve there."
@@ -1463,7 +1510,7 @@ type Mutation {
 	# Notifications framework -- Inbox MVP read-state (Phase 14).
 	#
 	# markNotificationRead: idempotent. A repeat call on the same
-	# (caller × delivery) is a no-op upsert; read_at anchors to the
+	# (caller x delivery) is a no-op upsert; read_at anchors to the
 	# FIRST read so the inbox can show "you saw this 3 days ago"
 	# without drifting on every re-render. Authorization: the caller
 	# must be able to see this delivery under the inbox visibility
@@ -1473,7 +1520,7 @@ type Mutation {
 	markNotificationRead(deliveryUuid: ID!): NotificationInboxItem!
 
 	# markNotificationUnread: returns true when an existing read row
-	# was removed, false when the (caller × delivery) pair was already
+	# was removed, false when the (caller x delivery) pair was already
 	# unread. Same visibility auth as markNotificationRead.
 	markNotificationUnread(deliveryUuid: ID!): Boolean!
 
@@ -1861,6 +1908,53 @@ input ApprovalRoleInput {
 	displayView: String
 }
 
+"""The synthetic scan state of one artifact (TPF-121)."""
+enum ArtifactScanState { NOT_A_BOM UNMAPPED BLOCKED_ON_COVERAGE WAITING_FOR_FAN_OUT SCANNED NO_MATCHABLE_COMPONENTS }
+"""Enrichment state of a component on a scan blocker row (TPF-121)."""
+enum ScanBlockerEnrichmentState { UNENRICHED ENRICHED TERMINAL }
+
+"""A gate-matchable component no INGESTED synthetic bucket covers yet (TPF-121)."""
+type ScanBlocker {
+	purl: String!
+	enrichment: ScanBlockerEnrichmentState!
+	terminalReason: String
+	bucketIndex: Int
+	bucketIngestState: String
+	bucketLastUpdatedDate: DateTime
+	reason: String!
+}
+
+"""Answer of artifactScanStatus (TPF-121). Dates are UTC."""
+type ArtifactScanStatus {
+	artifactUuid: ID!
+	type: String!
+	state: ArtifactScanState!
+	mapped: Boolean!
+	canonicalArtifactUuid: ID
+	mappedAt: DateTime
+	firstScanned: DateTime
+	lastScanned: DateTime
+	fanOutAt: DateTime
+	fanOutRequeuedAt: DateTime
+	newestIngestedBucketUpdate: DateTime
+	ingestedBucketCount: Int!
+	"""true: submission waits for BEAR enrichment; false: it does not; null: not determined."""
+	enrichmentGated: Boolean
+	"""Qualifies for a fan-out pass under the rule; not a promise of the next tick."""
+	inCandidateSet: Boolean!
+	candidateRule: String!
+	matchableComponentCount: Int!
+	rootComponentCount: Int!
+	terminalComponentCount: Int!
+	unmatchableComponentCount: Int!
+	noMatchableComponentsReason: NoMatchableComponentsReason
+	"""When the fan-out marked this artifact not scannable (Artifact.metrics.notScannable.at, TPF-125); null when unmarked."""
+	notScannableAt: DateTime
+	blockerTotal: Int!
+	blockersTruncated: Boolean!
+	blockers: [ScanBlocker!]!
+}
+
 type ArtifactWithAttribution {
 	purl: String!
 	name: String
@@ -2236,13 +2330,20 @@ input CreateVulnAnalysisInput {
 	workaround: String
 }
 
-"""Bounded CVE search response — components built from the shownReleases newest matches."""
+"""Bounded CVE search response -- components built from the shownReleases newest matches."""
 type CveSearchResult {
 	components: [ComponentWithBranches]
 	totalReleases: Int!
 	shownReleases: Int!
 	truncated: Boolean!
 }
+
+"""
+Which branches a release search lists. ACTIVE_BRANCHES (the default) leaves out the
+releases of archived branches; ALL_BRANCHES lists every branch, as the searches did
+before this argument existed.
+"""
+enum ReleaseBranchScope { ACTIVE_BRANCHES ALL_BRANCHES }
 
 input DependencyPatternInput {
 	uuid: ID
@@ -3746,7 +3847,7 @@ input NotificationRouteInput {
 	# Phase 13b channel-group expansion. UUIDs of NotificationChannelGroups
 	# whose member channels are merged with the route's direct {@code channels}
 	# list at fan-out time. Missing groups (deleted, never existed) are
-	# silently skipped; dedup is first-seen across {channels ⨁ groups}.
+	# silently skipped; dedup is first-seen across {channels + groups}.
 	# Same null/[] equivalence as perspectives: both treated as "no group
 	# expansion."
 	channelGroups: [ID!]
@@ -5293,6 +5394,97 @@ type ApiKeyGroupWebDto {
 	status: ApiKeyGroupStatus
 	createdDate: DateTime
 	lastUpdatedBy: ID
+}
+
+enum PermissionSourceKind {
+	OWN
+	GROUP
+}
+
+"Where one row of a key's effective set comes from: the key's own grant, or an ACTIVE group's, with what that source contributes"
+type PermissionSource {
+	kind: PermissionSourceKind
+	groupUuid: ID
+	groupName: String
+	type: PermissionType
+	functions: [PermissionFunction]
+	approvals: [String]
+}
+
+"One row of a key's effective set: the UserPermission fields, plus its sources"
+type SourcedPermission {
+	org: ID
+	scope: PermissionScope
+	object: ID
+	type: PermissionType
+	functions: [PermissionFunction]
+	meta: String
+	approvals: [String]
+	sources: [PermissionSource]
+}
+
+type CombinedApiKeyOrgPermissions {
+	apiKeyUuid: ID
+	org: ID
+	permissions: [SourcedPermission]
+}
+
+"What an auto-integrate trigger on a feature set would do (autoIntegrateFeatureSetPreview)"
+enum AutoIntegrateOutcome {
+	WOULD_CREATE
+	AUTO_INTEGRATE_DISABLED
+	REQUIRED_DEPENDENCY_WITHOUT_RELEASE
+	MATCHING_PRODUCT_RELEASE_EXISTS
+	CREATE_FAILED
+}
+
+"Where an auto-integrate dependency row's release came from"
+enum AutoIntegrateReleaseSource {
+	PINNED
+	LATEST_ASSEMBLED
+	NONE
+}
+
+"A component or branch of an auto-integrate dependency row"
+type AutoIntegrateRef {
+	uuid: ID!
+	name: String
+}
+
+"The release an auto-integrate dependency row found, or an existing matching product release"
+type AutoIntegrateReleaseRef {
+	uuid: ID!
+	version: String
+	lifecycle: ReleaseLifecycleEnum
+	createdDate: DateTime
+}
+
+type AutoIntegrateDependencyRow {
+	component: AutoIntegrateRef!
+	"null when the dependency names no branch"
+	branch: AutoIntegrateRef
+	"REQUIRED, TRANSIENT, IGNORED, JOB as stored on the dependency"
+	status: Status!
+	source: AutoIntegrateReleaseSource!
+	"null when none was found, when it is another organization's, or when the caller cannot read the component"
+	release: AutoIntegrateReleaseRef
+	"release not shown: you have no read permission on this component -- in the last case"
+	note: String!
+}
+
+type AutoIntegrateEvaluation {
+	outcome: AutoIntegrateOutcome!
+	"MATCHING_PRODUCT_RELEASE_EXISTS only"
+	existingRelease: AutoIntegrateReleaseRef
+	"WOULD_CREATE only, advisory"
+	projectedVersion: String
+	dependencies: [AutoIntegrateDependencyRow!]!
+	note: String
+}
+
+type AutoIntegrateResult {
+	release: Release
+	evaluation: AutoIntegrateEvaluation!
 }
 
 type PermissionTemplate {

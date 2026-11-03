@@ -171,7 +171,7 @@ public class DocumentComponentScanSkipIntegrationTest {
 		releaseRepository.recordMetricsComputeIncomplete(doc, 0);
 		int revision = row(doc).getMetricsRevision();
 
-		assertFalse(releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(doc)));
+		assertFalse(releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(doc).getUuid()));
 		Release after = row(doc);
 		assertNull(metric(after, "firstScanned"), "no scan state is derived for a document");
 		Object vulns = metric(after, "vulnerabilityDetails");
@@ -191,7 +191,7 @@ public class DocumentComponentScanSkipIntegrationTest {
 		assertEquals(revision, row(doc).getMetricsRevision());
 
 		UUID sw = release(org, softwareComponent(org, ComponentType.COMPONENT), ReleaseLifecycle.ASSEMBLED, null);
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(sw));
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(sw).getUuid());
 		assertNotNull(metric(row(sw), "firstScanned"),
 				"a software release without a BOM still settles scanned through the no-BOM anchor");
 	}
@@ -202,7 +202,7 @@ public class DocumentComponentScanSkipIntegrationTest {
 		UUID doc = release(org, documentComponent(org), ReleaseLifecycle.ASSEMBLED, null);
 		UUID product = release(org, softwareComponent(org, ComponentType.PRODUCT), ReleaseLifecycle.ASSEMBLED,
 				null, doc);
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(product));
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(product).getUuid());
 		Release after = row(product);
 		assertNotNull(metric(after, "firstScanned"),
 				"a document child never scans, so it must not hold its product in Scan pending");
@@ -212,10 +212,10 @@ public class DocumentComponentScanSkipIntegrationTest {
 		UUID sw = release(org, softwareComponent(org, ComponentType.COMPONENT), ReleaseLifecycle.ASSEMBLED, null);
 		UUID mixed = release(org, softwareComponent(org, ComponentType.PRODUCT), ReleaseLifecycle.ASSEMBLED,
 				null, doc, sw);
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(mixed));
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(mixed).getUuid());
 		assertNull(metric(row(mixed), "firstScanned"), "the unscanned software child still holds the product");
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(sw));
-		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(mixed));
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(sw).getUuid());
+		releaseMetricsComputeService.computeReleaseMetricsOnRescan(row(mixed).getUuid());
 		assertNotNull(metric(row(mixed), "firstScanned"), "and releases it once scanned");
 	}
 

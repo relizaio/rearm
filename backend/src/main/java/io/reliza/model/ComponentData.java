@@ -774,7 +774,7 @@ public class ComponentData extends RelizaDataParent implements RelizaObject {
 	private Integer revision;
 
 	public List<RearmIdentifier> getIdentifiers () {
-		return new LinkedList<>(this.identifiers);
+		return null == this.identifiers ? new LinkedList<>() : new LinkedList<>(this.identifiers);
 	}
 
 	/** Treats null as INTERNAL for back-compat with legacy rows. */

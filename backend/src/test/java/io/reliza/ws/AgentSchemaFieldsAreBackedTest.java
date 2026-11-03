@@ -52,6 +52,7 @@ class AgentSchemaFieldsAreBackedTest {
 		m.put("AgentTaskAssignment", AgentTaskService.WorkerAssignment.class);
 		m.put("AgentTaskWorkAssignment", AgentTaskData.TaskAssignment.class);
 		m.put("AgentTaskSignOff", AgentTaskData.SignOff.class);
+		m.put("AgentTaskDesignCheckpoint", AgentTaskData.DesignCheckpoint.class);
 		m.put("AgentTaskReturn", AgentTaskData.TaskReturn.class);
 		m.put("AgentTaskStatusChange", AgentTaskData.StatusChange.class);
 		m.put("AgentTaskHold", AgentTaskData.TaskHold.class);

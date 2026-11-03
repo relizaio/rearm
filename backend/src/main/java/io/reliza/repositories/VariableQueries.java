@@ -176,6 +176,50 @@ class VariableQueries {
 	protected static final String SET_API_TOKEN_PEPPER_IF_ABSENT =
 			"update rearm.system_info set data = jsonb_set(data, '{apiTokenPepper}', to_jsonb(cast(:pepper as text)))"
 			+ " where id = 1 and coalesce(data->>'apiTokenPepper', '') = ''";
+
+	// Fan-out drained-at watermark per org (TPF-114): an in-place stamp of one key of the
+	// fanOutDrainedAt map; creates the map when absent. Bookkeeping: no revision, no audit row.
+	// "Absent" includes a JSON null: the whole-record setters write every SystemInfoData field,
+	// a null map as "fanOutDrainedAt": null, and a plain coalesce does not see that (it is not
+	// SQL NULL), so 'null'::jsonb || {...} would store an ARRAY and break every later read of
+	// the row. Anything that is not a jsonb object is therefore replaced by an empty map.
+	protected static final String STAMP_FANOUT_DRAINED_AT =
+			"update rearm.system_info set data = jsonb_set(data, '{fanOutDrainedAt}',"
+			+ " (case when jsonb_typeof(data->'fanOutDrainedAt') = 'object'"
+			+ " then data->'fanOutDrainedAt' else '{}'::jsonb end)"
+			+ " || jsonb_build_object(cast(:org as text), cast(:at as text)))"
+			+ " where id = 1";
+	// Fan-out walk state per org (TPF-137): an in-place stamp of one key of the fanOutWalk map, the
+	// whole {cutoff, cursor} object; creates the map when absent (a JSON null included, as above).
+	// Bookkeeping: no revision, no audit row.
+	protected static final String STAMP_FANOUT_WALK =
+			"update rearm.system_info set data = jsonb_set(data, '{fanOutWalk}',"
+			+ " (case when jsonb_typeof(data->'fanOutWalk') = 'object'"
+			+ " then data->'fanOutWalk' else '{}'::jsonb end)"
+			+ " || jsonb_build_object(cast(:org as text),"
+			+ " jsonb_build_object('cutoff', cast(:cutoff as text), 'cursor', cast(:cursor as text))))"
+			+ " where id = 1";
+	// Removes the org's walk state (the drain completed); a no-op when absent. path = {fanOutWalk,<org>}.
+	protected static final String CLEAR_FANOUT_WALK =
+			"update rearm.system_info set data = data #- cast(:path as text[]) where id = 1";
+	// TEA custom domain assignment (TPF-142): sets or replaces one key of the teaHostAssignments map
+	// in place; creates the map when absent (a JSON null included, as STAMP_FANOUT_DRAINED_AT explains).
+	// Content a global administrator wrote, written in place because system_info has no audit funnel
+	// and its whole-record setters race with the scheduler stamps (architecture D1); logged by the service.
+	protected static final String ASSIGN_TEA_HOST =
+			"update rearm.system_info set data = jsonb_set(data, '{teaHostAssignments}',"
+			+ " (case when jsonb_typeof(data->'teaHostAssignments') = 'object'"
+			+ " then data->'teaHostAssignments' else '{}'::jsonb end)"
+			+ " || jsonb_build_object(cast(:host as text), cast(:org as text)))"
+			+ " where id = 1";
+	// Removes one host from the map (TPF-142); the host is a bound text in an array path, never a
+	// text-array literal built from it; a no-op when the map or the key is absent.
+	protected static final String UNASSIGN_TEA_HOST =
+			"update rearm.system_info set data = data #- array['teaHostAssignments', cast(:host as text)] where id = 1";
+	// The committed map as JSON text with the row locked FOR UPDATE until the caller's transaction ends
+	// (TPF-142): the one statement takes the lock and answers past any managed copy.
+	protected static final String CURRENT_TEA_HOST_ASSIGNMENTS_FOR_UPDATE =
+			"select data->>'teaHostAssignments' from rearm.system_info where id = 1 for update";
 	
 	/*
 	 * Resource Groups
@@ -236,7 +280,7 @@ class VariableQueries {
 	// findById materializations -- at most one Artifact (and one row's JSONB
 	// snapshot) is resident in the persistence context. Loading full rows
 	// up front triggered Hibernate dirty-checking snapshots that deep-copy
-	// the metrics JSONB via serialize→bytes→deserialize, large enough on
+	// the metrics JSONB via serialize->bytes->deserialize, large enough on
 	// projects with thousands of vulns to OOM the scheduler thread.
 	// dtrackFetchSkipUntil filter excludes artifacts whose last fetch attempt
 	// threw and whose backoff window hasn't elapsed. Most rows have no fetch
@@ -277,15 +321,21 @@ class VariableQueries {
 	// full Artifact rows (and their JSONB-snapshot deep copies) in the
 	// persistence context for a finding-affected sweep that can return
 	// large lists org-wide.
+	//
+	// TPF-131: the id is matched through the V103 GIN over rearm.vuln_ids(metrics) (spelled
+	// exactly as the index expression, or the planner does not match it), and the exact
+	// containment on the same element (purl and vulnId together) filters only the rows the
+	// bitmap returns. The location guard keeps the old answer for a null location (the old
+	// equality was never true; a containment would match a finding stored with "purl": null).
+	// An id over 512 bytes is not in the index array and is not found (V103 header).
 	protected static final String FIND_ARTIFACTS_WITH_VULNERABILITY = """
 			SELECT uuid FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'purl' = :location
-					AND vuln->>'vulnId' = :findingId
-				)
+				AND cast(:location as text) IS NOT NULL
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:findingId as text)]
+				AND metrics->'vulnerabilityDetails' @> jsonb_build_array(
+					jsonb_build_object('purl', cast(:location as text), 'vulnId', cast(:findingId as text)))
 			""";
 
 	// Notifications fan-out enrichment (Phase 2c): given a vuln primary id,
@@ -294,14 +344,16 @@ class VariableQueries {
 	// at fan-out time we know the vulnPrimaryId but not which purl(s) it
 	// landed against, since one CVE can affect multiple components in
 	// the same org.
+	// TPF-131: the primary id only, as before (an alias is not a match here: the event names
+	// the primary id); the GIN on rearm.vuln_ids(metrics) selects the rows, the containment
+	// keeps those where the id is a finding's vulnId.
 	protected static final String FIND_ARTIFACTS_WITH_VULN_ID = """
 			SELECT uuid FROM rearm.artifacts
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'vulnId' = :vulnId
-				)
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:vulnId as text)]
+				AND metrics->'vulnerabilityDetails' @> jsonb_build_array(
+					jsonb_build_object('vulnId', cast(:vulnId as text)))
 			""";
 
 	// Notifications fan-out: the most recent artifact-metrics scan stamp in an
@@ -325,11 +377,14 @@ class VariableQueries {
 	// Notifications fan-out enrichment (S-3): the distinct package purls a
 	// vuln landed against in the org, ordered for a deterministic pick when
 	// one CVE affects multiple packages.
+	// TPF-131: the GIN on rearm.vuln_ids(metrics) selects the rows first, so only the
+	// documents that carry the id are unnested.
 	protected static final String FIND_VULN_PURLS_FOR_VULN_ID = """
-			SELECT DISTINCT vuln->>'purl' FROM rearm.artifacts,
-				jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-				WHERE record_data->>'org' = :orgUuidAsString
-				AND metrics IS NOT NULL
+			SELECT DISTINCT vuln->>'purl' FROM rearm.artifacts a,
+				jsonb_array_elements(a.metrics->'vulnerabilityDetails') AS vuln
+				WHERE a.record_data->>'org' = :orgUuidAsString
+				AND a.metrics IS NOT NULL
+				AND rearm.vuln_ids(a.metrics) @> ARRAY[cast(:vulnId as text)]
 				AND vuln->>'vulnId' = :vulnId
 				AND vuln->>'purl' IS NOT NULL
 				ORDER BY 1
@@ -464,7 +519,7 @@ class VariableQueries {
 	 */
 	 protected static final String FIND_RELEASE_REBOM_BY_RELEASE_AND_ORG = """
 		SELECT * from rearm.release_reboms r where r.record_data->>'release' = :releaseUuidAsString
-		AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		AND r.record_data->>'org' = :orgUuidAsString
 		""";
 
 	protected static final String EXISTS_RELEASE_REBOM_LISTING_REBOM_ID = """
@@ -477,14 +532,17 @@ class VariableQueries {
 	 * SCORE-71 ADR-1: the stored merged rows of the seed releases and of every release of the same
 	 * organization above them (parentReleases, transitively) are emptied, and the revision and
 	 * last_updated_date of every one of those records move, already empty or not, so a store fenced on
-	 * an earlier read is refused (ADR-11). UNION (not UNION ALL) ends the walk on a cycle. jsonb_exists
-	 * is the function behind the ? operator, which Hibernate reads as a positional parameter.
+	 * an earlier read is refused (ADR-11). UNION (not UNION ALL) ends the walk on a cycle. The step
+	 * finds the parents of each release of the level by whole-column containment, one probe of
+	 * idx_releases_record_data_gin (V13/V61) per release: the @> operator form, as no index serves
+	 * jsonb_contains() or jsonb_exists() over jsonb_path_query_array.
 	 */
 	private static final String INVALIDATE_RELEASE_REBOMS_ABOVE_TAIL = """
 		  UNION
 			SELECT p.uuid::text FROM rearm.releases p JOIN above a
 				ON p.record_data->>'org' = :orgUuidAsString
-			   AND jsonb_exists(jsonb_path_query_array(p.record_data, '$.parentReleases[*].release'), a.u)
+			   AND p.record_data @> jsonb_build_object('parentReleases',
+					jsonb_build_array(jsonb_build_object('release', a.u)))
 		)
 		UPDATE rearm.release_reboms rr
 		   SET record_data = jsonb_set(rr.record_data, '{reboms}', '[]'::jsonb),
@@ -516,7 +574,7 @@ class VariableQueries {
 	protected static final String READ_RELEASE_REBOM_STAMP = """
 		SELECT r.uuid::text, r.revision, cast(extract(epoch from r.created_date) * 1000 as bigint), r.record_data::text
 		FROM rearm.release_reboms r WHERE r.record_data->>'release' = :releaseUuidAsString
-		AND r.record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		AND r.record_data->>'org' = :orgUuidAsString
 		""";
 
 	protected static final String UPDATE_RELEASE_REBOM_IF_REVISION = """
@@ -528,7 +586,7 @@ class VariableQueries {
 		INSERT INTO rearm.release_reboms (uuid, revision, schema_version, created_date, last_updated_date, record_data)
 		SELECT CAST(:uuid AS uuid), 0, 0, now(), now(), CAST(:recordData AS jsonb)
 		WHERE NOT EXISTS (SELECT 1 FROM rearm.release_reboms e WHERE e.record_data->>'release' = :releaseUuidAsString
-		AND e.record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
+		AND e.record_data->>'org' = :orgUuidAsString)
 		""";
 
 
@@ -539,7 +597,7 @@ class VariableQueries {
 
 	protected static final String FIND_RELEASE_BY_ID_AND_ORG = """
 			SELECT * from rearm.releases r where r.uuid = :releaseUuid
-			AND r.record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+			AND r.record_data->>'org' = :orgUuidAsString
 			""";
 	
 	protected static final String FIND_ALL_RELEASES_OF_BRANCH = "select * from rearm.releases r where r.record_data->>'"
@@ -672,7 +730,7 @@ class VariableQueries {
 
 	/*
 	 * Batched lookup used by the components-list GraphQL resolver to fold what was an
-	 * N+1 of per-component release fetches (84 components × ~40ms = ~3.5s on agent-scully)
+	 * N+1 of per-component release fetches (84 components x ~40ms = ~3.5s on agent-scully)
 	 * into a single round-trip. Returns one row per release across the requested
 	 * components, projecting just the two columns needed to compute the
 	 * synthetic effectiveLifecycle bucket -- never the full record_data JSONB.
@@ -695,22 +753,50 @@ class VariableQueries {
 	protected static final String FIND_RELEASES_BY_DELIVERABLE_AND_ORG = """
 			select * from rearm.releases where uuid in (select cast (record_data->>'release' as UUID) from rearm.variants
 			WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(:deliverableUuidAsString))
-			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000'))
+			AND record_data->>'org' = :orgUuidAsString)
 			order by created_date desc
 			""";
 	
-	protected static final String FIND_RELEASES_BY_ARTIFACT_AND_ORG = """
-			select * from rearm.releases
+	private static final String RELEASES_BY_ARTIFACT_AND_ORG_WHERE = """
 			WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artifactUuidAsString))
-			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+			AND record_data->>'org' = :orgUuidAsString
 			""";
+
+	protected static final String FIND_RELEASES_BY_ARTIFACT_AND_ORG = "select * from rearm.releases "
+			+ RELEASES_BY_ARTIFACT_AND_ORG_WHERE;
+
+	// The uuid-only form for the affected-release gather, which reads nothing else: a full row
+	// carries record_data and metrics jsonb.
+	protected static final String FIND_RELEASE_UUIDS_BY_ARTIFACT_AND_ORG = "select uuid from rearm.releases "
+			+ RELEASES_BY_ARTIFACT_AND_ORG_WHERE;
 	
 	// Twin of FIND_RELEASES_BY_ARTIFACT_AND_ORG over the generated-artifact list; the same
 	// top-level containment rides idx_releases_record_data_gin (jsonb_path_ops).
-	protected static final String FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG = """
-			select * from rearm.releases
+	private static final String RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG_WHERE = """
 			WHERE record_data @> jsonb_build_object('syntheticArtifacts', jsonb_build_array(:artifactUuidAsString))
-			AND record_data->>'org' in (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+			AND record_data->>'org' = :orgUuidAsString
+			""";
+
+	protected static final String FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG = "select * from rearm.releases "
+			+ RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG_WHERE;
+
+	// The uuid-only form for the affected-release gather (see FIND_RELEASE_UUIDS_BY_ARTIFACT_AND_ORG).
+	protected static final String FIND_RELEASE_UUIDS_BY_SYNTHETIC_ARTIFACT_AND_ORG = "select uuid from rearm.releases "
+			+ RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG_WHERE;
+
+	// TPF-131: the batched twin of FIND_RELEASES_BY_SYNTHETIC_ARTIFACT_AND_ORG (the list form of
+	// FIND_RELEASES_BY_ARTIFACTS_AND_ORG over syntheticArtifacts, with the singular statement's org
+	// predicate), so the plural gather reaches a release through its generated artifacts (a
+	// submission's VDR part carries vulnerabilityDetails) as the per-artifact gather does. The
+	// EXISTS / IN-list form, not a containment per uuid: the org btree bounds the scan and the
+	// key is absent on most rows (measured 128 ms per 500 uuids at 120k releases, against 843 ms).
+	protected static final String FIND_RELEASES_BY_SYNTHETIC_ARTIFACTS_AND_ORG = """
+			SELECT DISTINCT r.uuid FROM rearm.releases r
+			WHERE record_data->>'org' = :orgUuidAsString
+			AND EXISTS (
+				SELECT 1 FROM jsonb_array_elements_text(r.record_data->'syntheticArtifacts') AS art
+				WHERE art IN (:artifactUuidsAsStrings)
+			)
 			""";
 	
 	// Commit membership is expressed as whole-document containment
@@ -822,16 +908,32 @@ class VariableQueries {
 	protected static final String LIST_RELEASES_BY_COMPONENTS = "select * from rearm.releases r where cast(r.record_data->>'"
 			+ CommonVariables.COMPONENT_FIELD + "' as uuid) in (:componentUuids)";
 	
-	// select * from rearm.releases where jsonb_path_match(record_data, cast(concat('$.parentReleases[*].release == ', '"', '4c1a81f9-736e-4863-8fee-6b56a91607fc', '"') as jsonpath));
-	protected static final String FIND_PRODUCTS_THAT_HAVE_THIS_RELEASE = "select * from rearm.releases r where r.record_data->>'"
-			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND jsonb_path_match(r.record_data, "
-			+ "cast(concat('$.parentReleases[*].release == ', '\"', :releaseUuidAsString, '\"') as jsonpath))";
+	// The products of one release: whole-column containment, so the V13 GIN index
+	// idx_releases_record_data_gin (jsonb_path_ops on record_data) serves it as a bitmap scan.
+	// It replaced jsonb_path_match('$.parentReleases[*].release == ...'), which no index serves
+	// and which therefore walked every release of the organization (31.8ms against 5.2ms on a
+	// 7,669-release organization, same rows). Keep the @> operator: jsonb_contains() and
+	// sub-path forms (record_data->'parentReleases' @> ...) never match this index.
+	private static final String PRODUCTS_THAT_HAVE_THIS_RELEASE_WHERE = " where r.record_data->>'"
+			+ CommonVariables.ORGANIZATION_FIELD + "' = :orgUuidAsString AND r.record_data @> jsonb_build_object("
+			+ "'parentReleases', jsonb_build_array(jsonb_build_object('release', cast(:releaseUuidAsString as text))))";
+
+	protected static final String FIND_PRODUCTS_THAT_HAVE_THIS_RELEASE = "select * from rearm.releases r"
+			+ PRODUCTS_THAT_HAVE_THIS_RELEASE_WHERE;
 	
+	// The products that contain ALL of the given releases (:releaseArrString is a JSON array of
+	// release uuids): the feature-set match needs a candidate holding every reported release.
+	// {"parentReleases": [{"release": a}, {"release": b}, ...]} is contained only when every element
+	// matches some entry, which is that ALL. Whole-column @>, served by idx_releases_record_data_gin,
+	// like PRODUCTS_THAT_HAVE_THIS_RELEASE_WHERE. An empty array keeps its old meaning, every release
+	// of the organization: the HAVING leaves no row, and record_data @> '{}' holds for every row.
 	protected static final String FIND_PRODUCTS_THAT_HAVE_THESE_RELEASES = """
-			select * from rearm.releases r where r.record_data->>'org'
-			 = :orgUuidAsString AND 
-			 jsonb_contains(jsonb_path_query_array(record_data, 
-			 '$.parentReleases[*].release'), cast (:releaseArrString as jsonb))
+			select * from rearm.releases r where r.record_data->>'org' = :orgUuidAsString
+			 AND r.record_data @> coalesce(
+			     (select jsonb_build_object('parentReleases', jsonb_agg(jsonb_build_object('release', e)))
+			        from jsonb_array_elements_text(cast(:releaseArrString as jsonb)) e
+			      having count(*) > 0),
+			     '{}'::jsonb)
 	""";
 	
 	protected static final String FIND_RELEASES_BY_ORG_AND_IDENTIFIER = """
@@ -958,42 +1060,30 @@ class VariableQueries {
 	// timeout on large instances once touch traffic grew. Replaced by
 	// touchReleasesByScannedArtifactDirect fired from
 	// SharedArtifactService.saveArtifactMetrics; the historical comment above is
-	// kept because BY_UPDATE / the product finder still reference it for the
-	// LIMIT / ORDER BY / fence rationale.
+	// kept because BY_UPDATE still references it for the LIMIT / ORDER BY /
+	// fence rationale.
 
 
 	/*
 	 * SCE variant of the above. Same per-release comparison, joined through the SCE link:
-	 * release.record_data->>'sourceCodeEntry' → sce.uuid → sce.record_data->'artifacts'[].artifactUuid.
+	 * release.record_data->>'sourceCodeEntry' -> sce.uuid -> sce.record_data->'artifacts'[].artifactUuid.
 	 * See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
 	 */
 
 	/*
 	 * Outbound-deliverable variant. Same per-release comparison, joined through the
-	 * variant.outboundDeliverables → deliverable.artifacts chain back to the variant's
+	 * variant.outboundDeliverables -> deliverable.artifacts chain back to the variant's
 	 * release. See BY_ARTIFACT_DIRECT comment for why the global cutoff was dropped.
 	 *
 	 * NOTE on shape: keep the variants-driven element-unnest join. A rewrite to
 	 * whole-column jsonb containment (record_data @> {"outboundDeliverables": [...]})
 	 * regressed catastrophically on prod: the planner correlated the deliverable's
-	 * artifacts unnest into the hash-build side and rebuilt the releases×artifacts
+	 * artifacts unnest into the hash-build side and rebuilt the releasesxartifacts
 	 * hash once per deliverable row (statement timeout, from a ~0.5s baseline).
 	 * This shape decomposes only one reasonable way (one variants scan, PK joins,
 	 * one merge with releases) and measures ~0.5s/tick on prod-scale data.
 	 */
 
-	// See BY_ARTIFACT_DIRECT comment for LIMIT/ORDER BY rationale.
-	protected static final String FIND_PRODUCT_RELEASES_FOR_METRICS_COMPUTE = """
-		WITH
-		  lastComputedRlz (maxVal) AS (
-	    select coalesce(max(cast (metrics->>'lastScanned' as float)), 0) AS lastUpd from rearm.releases
-	  )
-    SELECT rlz.* from lastComputedRlz, rearm.releases rlz where coalesce(cast (rlz.metrics->>'lastScanned' as float), 0) < (lastComputedRlz.maxVal - 0.01)
-	    AND rlz.record_data->>'parentReleases' != '[]'
-	    ORDER BY rlz.last_updated_date ASC
-	    LIMIT :limit
-			""";
-	
 	// See the BY_ARTIFACT_DIRECT retirement comment above for LIMIT/ORDER BY
 	// rationale and the metricsComputeSkipUntil fence.
 	//
@@ -1007,16 +1097,81 @@ class VariableQueries {
 	// The eligibility condition is defined ONCE, here, and composed into the finder, the
 	// backlog count (ReleaseRepository#countReleasesEligibleForMetricsCompute) and the
 	// per-release check (ReleaseRepository#isEligibleForMetricsComputeByUpdate), so the three
-	// cannot drift apart -- and none of them can drift from the index predicate above.
+	// cannot drift apart -- and none of them can drift from the index predicate above. The
+	// recent-lane finder (FIND_RELEASES_FOR_METRICS_COMPUTE_RECENT, TPF-138) composes it too.
 	protected static final String METRICS_COMPUTE_BY_UPDATE_ELIGIBLE = """
 		last_updated_date > to_timestamp(coalesce(cast (metrics->>'lastScanned' as float), 0))
 			   AND (flow_control->>'metricsComputeSkipUntil' IS NULL
 			        OR (flow_control->>'metricsComputeSkipUntil')::timestamptz < now())
 		""";
 
+	// What the metrics tick reads of each release it picks, and nothing else: the uuid (the
+	// compute locks and reloads the row itself), the failure count the poison-pill fence
+	// escalates on (read with the same cast recordMetricsComputeIncomplete writes it with), and
+	// the drain-mode product flag (a non-empty parentReleases array). Selecting the whole row
+	// kept record_data and the metrics jsonb of the whole batch alive for the whole tick. The
+	// aliases are quoted so they match the ReleaseRepository.MetricsComputeCandidate getters.
+	// Single-table statements only: the columns are unqualified.
+	private static final String METRICS_COMPUTE_CANDIDATE_COLUMNS = """
+		uuid AS "uuid",
+		(flow_control->>'metricsComputeFailureCount')::int AS "metricsComputeFailureCount",
+		CASE WHEN jsonb_typeof(record_data->'parentReleases') = 'array'
+		     THEN jsonb_array_length(record_data->'parentReleases') > 0
+		     ELSE false END AS "product"
+		""";
+
 	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_BY_UPDATE =
-		"SELECT * FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE
+		"SELECT " + METRICS_COMPUTE_CANDIDATE_COLUMNS + " FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE
 		+ " ORDER BY last_updated_date ASC LIMIT :limit";
+
+	// The RECENT lane of the metrics tick (TPF-138): the eligible releases created inside the window,
+	// oldest-created first (FIFO within the window, never newest-first), capped. Composed from the SAME
+	// METRICS_COMPUTE_BY_UPDATE_ELIGIBLE as the finder above, the count and the per-release check, so
+	// the four statements and the V73/V105 index predicate cannot drift. Served by the V105 partial
+	// index releases_metrics_pending_recent_idx (created_date, V73's predicate): one forward range
+	// scan from now() - window that stops at the limit, the fence filtered on the heap rows. The
+	// window and the limit are bind parameters so the statement text is constant; the int-into-
+	// interval spelling is ReleaseRepository.recordMetricsComputeIncomplete's.
+	protected static final String FIND_RELEASES_FOR_METRICS_COMPUTE_RECENT =
+		"SELECT " + METRICS_COMPUTE_CANDIDATE_COLUMNS + " FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE
+		+ " AND created_date > now() - (:recentWindowMinutes || ' minutes')::interval"
+		+ " ORDER BY created_date ASC LIMIT :limit";
+
+	// Whether a metrics push (a statement that bumps releases back into the BY_UPDATE pool) may
+	// re-queue release r: it is not PENDING, CANCELLED or REJECTED, its branch is not ARCHIVED and
+	// its component is not ARCHIVED. Such a release never needs a metrics refresh, and re-queueing
+	// every one of them is how a single child change once touched about 17,600 product releases of
+	// one product (one per CI build) in five minutes. The archived terms are the rule
+	// AnalyticsMetricsService.isAnalyticsEligible applies to the findings analytics, without its
+	// analytics-only EXCLUDED flag. A release with no branch, component or lifecycle, or whose
+	// branch or component row is missing, is pushed as before. The literals are the
+	// ReleaseLifecycle and StatusEnum names; MetricsPushSkipsInactiveReleasesTest pins them.
+	//
+	// The branch and component checks are correlated scalar subqueries on purpose, not joins or
+	// NOT EXISTS: a subquery runs as a per-row SubPlan on the primary key after the statement's
+	// own predicates have filtered, so the planner has no join order to choose and the existing
+	// GIN probes stay the driving paths (join plans that hang on jsonb selectivity estimates have
+	// timed out on prod before). Every statement that composes this aliases the releases row as r.
+	protected static final String METRICS_PUSH_ELIGIBLE = """
+		coalesce(r.record_data->>'lifecycle', '') NOT IN ('PENDING', 'CANCELLED', 'REJECTED')
+		AND coalesce((SELECT b.record_data->>'status' FROM rearm.branches b
+		              WHERE b.uuid = cast(r.record_data->>'branch' as uuid)), '') <> 'ARCHIVED'
+		AND coalesce((SELECT c.record_data->>'status' FROM rearm.components c
+		              WHERE c.uuid = cast(r.record_data->>'component' as uuid)), '') <> 'ARCHIVED'
+		""";
+
+	// The product predicate of FIND_PRODUCTS_THAT_HAVE_THIS_RELEASE, for the metrics paths that
+	// read only the products' uuids (markContainingProductsStale) or the candidate columns (the
+	// tick's product cascade). The uuid form feeds a push, so it keeps only the products
+	// METRICS_PUSH_ELIGIBLE allows to be re-queued.
+	protected static final String FIND_PRODUCT_UUIDS_TO_REQUEUE_THAT_HAVE_THIS_RELEASE = "select r.uuid from rearm.releases r"
+		+ PRODUCTS_THAT_HAVE_THIS_RELEASE_WHERE + " AND " + METRICS_PUSH_ELIGIBLE;
+
+	protected static final String FIND_PRODUCT_METRICS_CANDIDATES_THAT_HAVE_THIS_RELEASE = "select "
+		+ METRICS_COMPUTE_CANDIDATE_COLUMNS + " from rearm.releases r" + PRODUCTS_THAT_HAVE_THIS_RELEASE_WHERE;
+
+	protected static final String FIND_ORG_OF_RELEASE = "SELECT record_data->>'"
+		+ CommonVariables.ORGANIZATION_FIELD + "' FROM rearm.releases WHERE uuid = :uuid";
 
 	protected static final String IS_RELEASE_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
 		"SELECT EXISTS (SELECT 1 FROM rearm.releases WHERE uuid = :uuid AND ("
@@ -1025,31 +1180,49 @@ class VariableQueries {
 	protected static final String COUNT_RELEASES_ELIGIBLE_FOR_METRICS_COMPUTE_BY_UPDATE =
 		"SELECT count(*) FROM rearm.releases WHERE " + METRICS_COMPUTE_BY_UPDATE_ELIGIBLE;
 
-	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACT = """
+	// uuid only: the affected-release gather is its only reader. The containment probe is served by
+	// the GIN on record_data->'artifacts' (V71); only the matching SCEs are expanded, for the
+	// element's componentUuid (the shape of FIND_SCE_ARTIFACT_HOLDERS).
+	protected static final String FIND_RELEASE_UUIDS_SHARING_SCE_ARTIFACT = """
 		WITH
 		unprocessedSces (uuid, componentUuid) AS (
 			SELECT sce.uuid,
-           		(artifact_element->>'componentUuid')::uuid as componentUuid
-    			FROM rearm.source_code_entries sce,
-         		jsonb_array_elements(sce.record_data->'artifacts') as artifact_element
-    		WHERE artifact_element->>'artifactUuid' = :artUuidAsString
+				(artifact_element->>'componentUuid')::uuid as componentUuid
+			FROM rearm.source_code_entries sce,
+				jsonb_array_elements(sce.record_data->'artifacts') as artifact_element
+			WHERE sce.record_data->'artifacts' @> jsonb_build_array(
+					jsonb_build_object('artifactUuid', cast(:artUuidAsString as text)))
+			  AND artifact_element->>'artifactUuid' = :artUuidAsString
 		)
-		SELECT rlzs.* FROM unprocessedSces, rearm.releases rlzs
+		SELECT rlzs.uuid FROM unprocessedSces, rearm.releases rlzs
 		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text)
 		  AND (rlzs.record_data->>'component')::uuid = unprocessedSces.componentUuid;
 		""";
 
-	protected static final String FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT = """
-		WITH
-			unprocessedDeliverables (uuid) AS (
-				SELECT del.uuid from rearm.deliverables del
-				WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString))),
-			unprocessedRlzIds (uuid) AS (
-				SELECT distinct var.record_data->>'release' from unprocessedDeliverables, rearm.variants var
-				WHERE record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(unprocessedDeliverables.uuid)))
-			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
-				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+	// The releases whose variants list a deliverable carrying the artifact: one probe of
+	// idx_deliverables_record_data_gin, one of idx_variants_record_data_gin per deliverable, then the
+	// release ids as one = ANY array on the primary key. The release lookup used to be a join, and the
+	// default @> estimates (2000 variants per probe) made the planner hash-join the ids against a
+	// sequential scan of every release: about 120 ms on 300k releases for probes that take 0.1 ms.
+	// An ARRAY(subquery) is an InitPlan, so the outer scan is a primary-key lookup whatever the
+	// estimates; = ANY returns each release once, as the DISTINCT did. Not a LATERAL fence as in
+	// FIND_RELEASES_SHARING_DELIVERABLE_ARTIFACTS: fenced, the estimated cost (about 156k) crossed
+	// jit_above_cost, and this statement runs in its callers' transactions with JIT on; this form
+	// costs about 30k.
+	private static final String RELEASES_SHARING_DELIVERABLE_ARTIFACT_WHERE = """
+		WHERE r.uuid = ANY(ARRAY(
+			SELECT cast(var.record_data->>'release' as uuid)
+			FROM rearm.deliverables del, rearm.variants var
+			WHERE del.record_data @> jsonb_build_object('artifacts', jsonb_build_array(:artUuidAsString))
+			  AND var.record_data @> jsonb_build_object('outboundDeliverables', jsonb_build_array(del.uuid))))
 		""";
+
+	protected static final String FIND_RELEASES_SHARING_DELIVRABLE_ARTIFACT = "SELECT r.* FROM rearm.releases r "
+			+ RELEASES_SHARING_DELIVERABLE_ARTIFACT_WHERE;
+
+	// The uuid-only form for the affected-release gather (see FIND_RELEASE_UUIDS_BY_ARTIFACT_AND_ORG).
+	protected static final String FIND_RELEASE_UUIDS_SHARING_DELIVERABLE_ARTIFACT = "SELECT r.uuid FROM rearm.releases r "
+			+ RELEASES_SHARING_DELIVERABLE_ARTIFACT_WHERE;
 
 	protected static final String FIND_BOM_ARTIFACTS_BY_ORG_AND_INTERNAL_BOM = """
 		SELECT * FROM rearm.artifacts
@@ -1087,41 +1260,61 @@ class VariableQueries {
 		WHERE record_data @> jsonb_build_object('artifacts', jsonb_build_array(cast(:artUuidAsString as text)))
 		""";
 
+	// The batched statements of the affected-release gather project the uuid only (its sole
+	// reader): a full row carries record_data and metrics jsonb, and a CVE in thousands of
+	// releases held that many entities in one read transaction.
 	protected static final String FIND_RELEASES_BY_ARTIFACTS_AND_ORG = """
-		SELECT DISTINCT r.* FROM rearm.releases r
-		WHERE record_data->>'org' IN (:orgUuidAsString, '00000000-0000-0000-0000-000000000000')
+		SELECT DISTINCT r.uuid FROM rearm.releases r
+		WHERE record_data->>'org' = :orgUuidAsString
 		AND EXISTS (
 			SELECT 1 FROM jsonb_array_elements_text(r.record_data->'artifacts') AS art
 			WHERE art IN (:artifactUuidsAsStrings)
 		)
 		""";
 
+	// The batched SCE and deliverable statements take the artifact list as one text[] and walk it
+	// element by element: each artifact is one probe of the GIN on the jsonb array (V71 for SCEs,
+	// V68 for deliverables and variants), each matching row one btree probe of releases, rather than
+	// an expansion of every row of the table. Every hop is a LATERAL subquery fenced with OFFSET 0,
+	// so the planner cannot flatten it into a join: the default @> estimates (1% of the table per
+	// probe) otherwise turned the unfenced form into a hash join over a sequential scan of
+	// source_code_entries and a merge join over the whole releases primary key.
 	protected static final String FIND_RELEASES_SHARING_SCE_ARTIFACTS = """
-		WITH
-		unprocessedSces (uuid, componentUuid) AS (
+		SELECT DISTINCT rlzs.uuid
+		FROM unnest(CAST(:artifactUuidsAsStrings AS text[])) AS wanted (u)
+		CROSS JOIN LATERAL (
 			SELECT sce.uuid,
 				(artifact_element->>'componentUuid')::uuid as componentUuid
 			FROM rearm.source_code_entries sce,
 				jsonb_array_elements(sce.record_data->'artifacts') as artifact_element
-			WHERE artifact_element->>'artifactUuid' IN (:artifactUuidsAsStrings)
-		)
-		SELECT DISTINCT rlzs.* FROM unprocessedSces, rearm.releases rlzs
-		WHERE record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text)
-			AND (rlzs.record_data->>'component')::uuid = unprocessedSces.componentUuid;
+			WHERE sce.record_data->'artifacts' @> jsonb_build_array(
+					jsonb_build_object('artifactUuid', wanted.u))
+			  AND artifact_element->>'artifactUuid' = wanted.u
+			OFFSET 0) unprocessedSces
+		CROSS JOIN LATERAL (
+			SELECT r.uuid FROM rearm.releases r
+			WHERE r.record_data->>'sourceCodeEntry' = cast (unprocessedSces.uuid as text)
+			  AND (r.record_data->>'component')::uuid = unprocessedSces.componentUuid
+			OFFSET 0) rlzs
 		""";
 
 	protected static final String FIND_RELEASES_SHARING_DELIVERABLE_ARTIFACTS = """
-		WITH
-			unprocessedDeliverables (uuid) AS (
-				SELECT DISTINCT del.uuid FROM rearm.deliverables del,
-					jsonb_array_elements_text(del.record_data->'artifacts') AS art
-				WHERE art IN (:artifactUuidsAsStrings)),
-			unprocessedRlzIds (uuid) AS (
-				SELECT DISTINCT var.record_data->>'release' FROM unprocessedDeliverables, rearm.variants var,
-					jsonb_array_elements_text(var.record_data->'outboundDeliverables') AS del
-				WHERE del = unprocessedDeliverables.uuid::text)
-			SELECT rlzs.* FROM unprocessedRlzIds, rearm.releases rlzs
-				WHERE rlzs.uuid = cast (unprocessedRlzIds.uuid as uuid);
+		SELECT DISTINCT rlzs.uuid
+		FROM (
+			SELECT DISTINCT del.uuid
+			FROM unnest(CAST(:artifactUuidsAsStrings AS text[])) AS wanted (u)
+			CROSS JOIN LATERAL (
+				SELECT d.uuid FROM rearm.deliverables d
+				WHERE d.record_data->'artifacts' @> jsonb_build_array(wanted.u)
+				OFFSET 0) del) unprocessedDeliverables
+		CROSS JOIN LATERAL (
+			SELECT var.record_data->>'release' AS uuid FROM rearm.variants var
+			WHERE var.record_data->'outboundDeliverables' @> jsonb_build_array(unprocessedDeliverables.uuid::text)
+			OFFSET 0) unprocessedRlzIds
+		CROSS JOIN LATERAL (
+			SELECT r.uuid FROM rearm.releases r
+			WHERE r.uuid = cast (unprocessedRlzIds.uuid as uuid)
+			OFFSET 0) rlzs
 		""";
 
 	// UUID-only -- caller (VulnAnalysisUpdateService) feeds each UUID
@@ -1129,15 +1322,16 @@ class VariableQueries {
 	// FIND_ARTIFACTS_WITH_* block above for the heap-pressure
 	// rationale; Release rows are even worse offenders because they
 	// carry five JSONB columns each.
+	// TPF-131: FIND_ARTIFACTS_WITH_VULNERABILITY's shape on releases (the GIN on
+	// rearm.vuln_ids(metrics), the exact containment as a filter, the null-location guard).
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'purl' = :location
-					AND vuln->>'vulnId' = :findingId
-				)
+				AND cast(:location as text) IS NOT NULL
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:findingId as text)]
+				AND metrics->'vulnerabilityDetails' @> jsonb_build_array(
+					jsonb_build_object('purl', cast(:location as text), 'vulnId', cast(:findingId as text)))
 			""";
 
 	// Same as FIND_RELEASES_WITH_VULNERABILITY but with NO location/purl
@@ -1149,25 +1343,33 @@ class VariableQueries {
 	// aliases (KEV resolution is alias-aware -- a release is KEV if the listed
 	// CVE is an alias even when the primary id is a GHSA/OSV id). Location is
 	// intentionally not predicated (the CVE may sit in any package).
+	// TPF-131: rearm.vuln_ids(metrics) holds exactly the primary ids and the alias ids, so the
+	// GIN condition is the whole predicate.
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'vulnId' = :findingId
-					   OR EXISTS (
-						SELECT 1 FROM jsonb_array_elements(
-							CASE WHEN jsonb_typeof(vuln->'aliases') = 'array'
-								THEN vuln->'aliases' ELSE '[]'::jsonb END) AS al
-						WHERE al->>'aliasId' = :findingId
-					)
-				)
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:findingId as text)]
 			""";
 
-	/** Yes/no form of {@link #FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION}: stops at the first match. */
+	/**
+	 * Yes/no form of {@link #FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION}. A count, not
+	 * SELECT EXISTS (...): under an EXISTS the planner takes a low-startup sequential scan
+	 * expecting an early hit (23 s for a rare id at 120k rows, TPF-131); the count takes the
+	 * bitmap on the GIN and costs milliseconds.
+	 */
 	protected static final String EXISTS_RELEASE_WITH_VULNERABILITY_ANY_LOCATION =
-			"SELECT EXISTS (" + FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION + ")";
+			"SELECT count(*) > 0 FROM (" + FIND_RELEASES_WITH_VULNERABILITY_ANY_LOCATION + ") q";
+
+	// TPF-131 KEV re-gate: the releases of an org carrying ANY of the ids (primary or alias),
+	// one static statement for the whole newly-KEV list: the overlap operator on the GIN over
+	// rearm.vuln_ids(metrics), the ids bound as one text[] parameter.
+	protected static final String FIND_RELEASES_WITH_ANY_VULNERABILITY_ANY_LOCATION = """
+			SELECT DISTINCT uuid FROM rearm.releases
+				WHERE record_data->>'org' = :orgUuidAsString
+				AND metrics IS NOT NULL
+				AND rearm.vuln_ids(metrics) && CAST(:findingIds AS text[])
+			""";
 
 	protected static final String FIND_RELEASES_WITH_VIOLATION = """
 			SELECT uuid FROM rearm.releases
@@ -1191,16 +1393,16 @@ class VariableQueries {
 				)
 			""";
 
+	// TPF-131: FIND_RELEASES_WITH_VULNERABILITY with the branch predicate.
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_BRANCH = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'branch' = :branchUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'purl' = :location
-					AND vuln->>'vulnId' = :findingId
-				)
+				AND cast(:location as text) IS NOT NULL
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:findingId as text)]
+				AND metrics->'vulnerabilityDetails' @> jsonb_build_array(
+					jsonb_build_object('purl', cast(:location as text), 'vulnId', cast(:findingId as text)))
 			""";
 
 	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_BRANCH = """
@@ -1227,16 +1429,16 @@ class VariableQueries {
 				)
 			""";
 
+	// TPF-131: FIND_RELEASES_WITH_VULNERABILITY with the component predicate.
 	protected static final String FIND_RELEASES_WITH_VULNERABILITY_IN_COMPONENT = """
 			SELECT uuid FROM rearm.releases
 				WHERE record_data->>'org' = :orgUuidAsString
 				AND record_data->>'component' = :componentUuidAsString
 				AND metrics IS NOT NULL
-				AND EXISTS (
-					SELECT 1 FROM jsonb_array_elements(metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'purl' = :location
-					AND vuln->>'vulnId' = :findingId
-				)
+				AND cast(:location as text) IS NOT NULL
+				AND rearm.vuln_ids(metrics) @> ARRAY[cast(:findingId as text)]
+				AND metrics->'vulnerabilityDetails' @> jsonb_build_array(
+					jsonb_build_object('purl', cast(:location as text), 'vulnId', cast(:findingId as text)))
 			""";
 
 	protected static final String FIND_RELEASES_WITH_VIOLATION_IN_COMPONENT = """
@@ -1472,37 +1674,56 @@ class VariableQueries {
 	 * Organizations
 	 */
 	/**
-	 * TPF-70: the Statistics totals table, nine counts of one organization. Every count is an index
-	 * path on the org totals indexes migration (org leading; the status predicate spelled
-	 * {@code coalesce(status, 'ACTIVE') = 'ACTIVE'} so it is an index condition, not a heap filter
-	 * that detoasts the document), and the branch counts join components once on the primary key
-	 * instead of a correlated lookup per branch. Run only through
-	 * {@code OrganizationService.inTotalsReadTransaction} (SET LOCAL enable_seqscan = off), because
-	 * the planner prefers the sequential scan when the organization owns most of a table. Keep the
-	 * one cast spelled {@code cast(... as uuid)}: the plan tests bind named parameters by regex.
+	 * TPF-139: the four nightly counts (OrgTotalsCountRepository), one statement per table, each the
+	 * body of the derived table it was in the former nine-count statement (TPF-70) with its alias
+	 * dropped, spelled the TPF-70 way (org predicate as an index condition on the org totals indexes
+	 * migration; "status missing or ACTIVE" as coalesce(...) = 'ACTIVE' so it is an index condition
+	 * too). Run only inside OrgTotalsCacheService.inNightlyCountTransaction (enable_seqscan off, jit
+	 * off, the long statement_timeout), never on request. The plan and text pins
+	 * (OrgTotalsIndexTest) hold each text to this spelling.
 	 */
-	protected static final String GET_NUMERIC_ANALYTICS_FOR_ORG = """
-			select component_count.components, component_count.products, release_count.releases,
-			vcs_count.vcs, artifact_count.artifacts, sce_count.commits, branch_count.branches, deliverable_count.deliverables, branch_count.feature_sets
+	protected static final String ORG_TOTALS_COUNT_RELEASES = """
+			select count(*) from rearm.releases where record_data->>'org' = :orgUuidAsString
+			and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE'
+			""";
+	protected static final String ORG_TOTALS_COUNT_ARTIFACTS = """
+			select count(*) from rearm.artifacts where record_data->>'org' = :orgUuidAsString
+			""";
+	protected static final String ORG_TOTALS_COUNT_COMMITS = """
+			select count(*) from rearm.source_code_entries where record_data->>'org' = :orgUuidAsString
+			""";
+	protected static final String ORG_TOTALS_COUNT_DELIVERABLES = """
+			select count(*) from rearm.deliverables where record_data->>'org' = :orgUuidAsString
+			and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE'
+			""";
+
+	/**
+	 * TPF-139: the Statistics totals that stay live, five counts over the tables that do not grow
+	 * with release volume (components, products, vcs repositories, branches, feature sets): the
+	 * former nine-count statement (TPF-70) minus the four derived tables of releases, artifacts,
+	 * source code entries and deliverables and their four select items; the TPF-70 shape otherwise
+	 * (index paths, the coalesce spelling, the branch join on the primary key, the one cast spelled
+	 * cast(... as uuid) because the plan tests bind named parameters by regex). Run only through
+	 * OrganizationService.inTotalsReadTransaction (enable_seqscan off, jit off, 30 s). The four
+	 * cached counts never come from this statement: they come from the organization's record data
+	 * (OrganizationData.totals, stamped by OrgTotalsCacheService).
+	 */
+	protected static final String GET_NUMERIC_ANALYTICS_LIVE_FOR_ORG = """
+			select component_count.components, component_count.products, vcs_count.vcs,
+			branch_count.branches, branch_count.feature_sets
 			from
 			(select count(*) filter (where record_data->>'type' = 'COMPONENT') as components,
 			        count(*) filter (where record_data->>'type' = 'PRODUCT') as products
 			   from rearm.components where record_data->>'org' = :orgUuidAsString
 			   and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as component_count,
-			(select count(*) as releases from rearm.releases where record_data->>'org' = :orgUuidAsString
-			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as release_count,
 			(select count(*) as vcs from rearm.vcs_repositories where record_data->>'org' = :orgUuidAsString
 			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as vcs_count,
-			(select count(*) as artifacts from rearm.artifacts where record_data->>'org' = :orgUuidAsString) as artifact_count,
-			(select count(*) as commits from rearm.source_code_entries where record_data->>'org' = :orgUuidAsString) as sce_count,
 			(select count(*) filter (where c.record_data->>'type' = 'COMPONENT') as branches,
 			        count(*) filter (where c.record_data->>'type' = 'PRODUCT') as feature_sets
 			   from rearm.branches b join rearm.components c on c.uuid = cast(b.record_data->>'component' as uuid)
 			   where b.record_data->>'org' = :orgUuidAsString
-			   and coalesce(b.record_data->>'status', 'ACTIVE') = 'ACTIVE') as branch_count,
-			(select count(*) as deliverables from rearm.deliverables where record_data->>'org' = :orgUuidAsString
-			    and coalesce(record_data->>'status', 'ACTIVE') = 'ACTIVE') as deliverable_count
-		""";
+			   and coalesce(b.record_data->>'status', 'ACTIVE') = 'ACTIVE') as branch_count
+			""";
 
 	/*
 	 * Analytical Queries
@@ -1833,7 +2054,7 @@ class VariableQueries {
 	// purl that hits N components) and each target gets its own proposal; keying dedupe only on
 	// (org, artifact, hash) collapses across targets and trips IncorrectResultSizeDataAccess once
 	// a re-upload sees more than one prior row. See ai-plans/vex_imports/05_staging_entity_proposal.md
-	// §"Per-target dedupe".
+	// section "Per-target dedupe".
 	protected static final String FIND_VEX_PROPOSAL_DEDUPE = """
 			SELECT * FROM rearm.vex_statement_proposals
 				WHERE record_data->>'org' = :orgUuidAsString
@@ -1982,24 +2203,29 @@ class VariableQueries {
 	 * a widely-present CVE matching thousands of releases exhausted the heap
 	 * and OOM-restarted a client instance. Callers hydrate the capped uuid page
 	 * through the lite loader (totals only, no metrics detail arrays).
+	 *
+	 * TPF-131: the id and alias arms are one probe of the GIN on rearm.vuln_ids(metrics), the
+	 * weakness arm one of the GIN on rearm.weakness_ids(metrics): a BitmapOr of two exact
+	 * indexes instead of unnesting every release of the org.
+	 *
+	 * TPF-135: :branchScope is a ReleaseBranchScope name; ACTIVE_BRANCHES leaves out the releases
+	 * of ARCHIVED branches inside the WHERE, so the window count and the LIMIT see the scope;
+	 * ALL_BRANCHES is the statement as it was.
 	 */
 	protected static final String FIND_RELEASES_BY_CVE_ID = """
 			SELECT r.uuid, count(*) OVER () AS total_matches FROM rearm.releases r
 			WHERE r.record_data->>'org' = :orgUuidAsString
 			AND r.metrics IS NOT NULL
 			AND (
-				EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.metrics->'vulnerabilityDetails') AS vuln
-					WHERE vuln->>'vulnId' = :cveId
-				)
-				OR EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.metrics->'vulnerabilityDetails') AS vuln,
-					jsonb_array_elements(vuln->'aliases') AS alias
-					WHERE alias->>'aliasId' = :cveId
-				)
-				OR EXISTS (
-					SELECT 1 FROM jsonb_array_elements(r.metrics->'weaknessDetails') AS weakness
-					WHERE weakness->>'cweId' = :cveId
+				rearm.vuln_ids(r.metrics) @> ARRAY[cast(:cveId as text)]
+				OR rearm.weakness_ids(r.metrics) @> ARRAY[cast(:cveId as text)]
+			)
+			AND (
+				cast(:branchScope as text) = 'ALL_BRANCHES'
+				OR NOT EXISTS (
+					SELECT 1 FROM rearm.branches b
+					WHERE b.uuid = cast(r.record_data->>'branch' as uuid)
+					AND b.record_data->>'status' = 'ARCHIVED'
 				)
 			)
 			ORDER BY r.created_date DESC

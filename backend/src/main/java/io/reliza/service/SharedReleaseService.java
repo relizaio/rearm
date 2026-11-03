@@ -29,8 +29,10 @@ import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.support.TransactionSynchronization;
 import org.springframework.transaction.support.TransactionSynchronizationManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 import com.github.packageurl.PackageURL;
 
@@ -52,6 +54,7 @@ import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.Release;
+import io.reliza.model.ReleaseBranchScope;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SourceCodeEntryData;
 import io.reliza.model.VcsRepositoryData;
@@ -91,6 +94,9 @@ public class SharedReleaseService {
 
 	@Autowired
 	private SidPurlResolver sidPurlResolver;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 
 	// Best-effort, REQUIRES_NEW + afterCommit emitter of finding-change deltas (board task #38,
 	// phase 1). Living in its own bean keeps the diff-emit in a physically separate transaction so a
@@ -241,13 +247,11 @@ public class SharedReleaseService {
 	/**
 	 * Whether a row owned by {@code referencedOrg} (a source code entry, a parent release) may be
 	 * referenced from -- and shown through -- a release or other row of {@code ownerOrg}: the owner's
-	 * own organization, or the shared external-components organization, which the org-scoped release
-	 * lookup (FIND_RELEASE_BY_ID_AND_ORG), the dependency unwind and the ticket lookup in
-	 * createRelease already accept. A null org matches nothing.
+	 * own organization only, as the org-scoped release lookup (FIND_RELEASE_BY_ID_AND_ORG), the
+	 * dependency unwind and the ticket lookup in createRelease. A null org matches nothing.
 	 */
 	public static boolean isReferenceableFromOrg (UUID referencedOrg, UUID ownerOrg) {
-		return null != referencedOrg
-				&& (referencedOrg.equals(ownerOrg) || CommonVariables.EXTERNAL_PROJ_ORG_UUID.equals(referencedOrg));
+		return null != referencedOrg && referencedOrg.equals(ownerOrg);
 	}
 
 	/**
@@ -803,7 +807,7 @@ public class SharedReleaseService {
 				if (!retListOfUuids.contains(depData.getUuid())) {
 					retListOfUuids.add(depData.getUuid());
 					retListOfReleases.add(depData);
-					// security check - org must either match base release of be known external org
+					// security check - org must match the base release's org
 					if (!isReferenceableFromOrg(depData.getOrg(), rd.getOrg())) {
 						log.error("Security: Release from another organization with id " + depData.getUuid() + " is detected among dependencies of release " + rd.getUuid());
 						throw new IllegalStateException("Security: Detected release from a different organization");
@@ -1491,33 +1495,48 @@ public class SharedReleaseService {
 	}
 	
 	private Set<UUID> gatherReleaseIdsForArtifact(UUID artifactUuid, UUID orgUuid){
+		String artifact = artifactUuid.toString();
+		String org = orgUuid.toString();
 		Set<UUID> releases = new HashSet<>();
-		Set<UUID> allDirectReleases = findReleasesByReleaseArtifact(artifactUuid, orgUuid).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifact(artifactUuid.toString()).stream().map(r -> r.getUuid()).collect(Collectors.toSet());
-		releases.addAll(allDirectReleases);
-		releases.addAll(allSceReleases);
-		releases.addAll(allDeliverableReleases);
-		releases.addAll(findReleasesBySyntheticArtifact(artifactUuid, orgUuid).stream().map(Release::getUuid).collect(Collectors.toSet()));
+		releases.addAll(repository.findReleaseUuidsByReleaseArtifact(artifact, org));
+		releases.addAll(repository.findReleaseUuidsSharingSceArtifact(artifact));
+		releases.addAll(repository.findReleaseUuidsSharingDeliverableArtifact(artifact));
+		releases.addAll(repository.findReleaseUuidsBySyntheticArtifact(artifact, org));
 		return releases;
 	}
 
-	private Set<UUID> gatherReleaseIdsForArtifacts(Collection<UUID> artifactUuids, UUID orgUuid){
+	/**
+	 * Batched form of the per-artifact gather: the union, over the artifacts, of the releases
+	 * listing them directly, through an SCE, through a deliverable (product releases included)
+	 * and through their generated (synthetic) artifacts, the same four paths as
+	 * {@code gatherReleaseIdsForArtifact}. The SCE and deliverable statements carry no org
+	 * predicate: callers hydrate through {@link #getReleaseDataListLight(Collection, UUID)},
+	 * which drops releases of another org. Callers chunk the list (TPF-131). Every statement
+	 * projects the release uuid only, so the gather loads no Release entity: a CVE in thousands of
+	 * releases otherwise held every full row in the caller's read transaction.
+	 *
+	 * <p>Runs with JIT off for its transaction (SET LOCAL): the caller's when there is one, as the
+	 * fan-out's own read transaction, else one of its own. The SCE and deliverable statements walk
+	 * the list one GIN probe per artifact, a few milliseconds, but the default @> estimates price
+	 * each probe at 1% of its table, the plan cost crosses jit_above_cost and LLVM compile took
+	 * about 170 ms of a 176 ms batched SCE read on a seeded database. A TransactionTemplate rather
+	 * than @Transactional, so the setting also holds when this class calls the method itself.
+	 */
+	public Set<UUID> gatherReleaseIdsForArtifacts(Collection<UUID> artifactUuids, UUID orgUuid){
 		if (artifactUuids == null || artifactUuids.isEmpty()) {
 			return new HashSet<>();
 		}
-		Set<UUID> releases = new HashSet<>();
-		Collection<String> artifactUuidsAsStrings = artifactUuids.stream().map(UUID::toString).toList();
-		Set<UUID> allDirectReleases = repository.findReleasesByReleaseArtifacts(artifactUuidsAsStrings, orgUuid.toString())
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
-		Set<UUID> allSceReleases = repository.findReleasesSharingSceArtifacts(artifactUuidsAsStrings)
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
-		Set<UUID> allDeliverableReleases = repository.findReleasesSharingDeliverableArtifacts(artifactUuidsAsStrings)
-				.stream().map(Release::getUuid).collect(Collectors.toSet());
-		releases.addAll(allDirectReleases);
-		releases.addAll(allSceReleases);
-		releases.addAll(allDeliverableReleases);
-		return releases;
+		return new TransactionTemplate(transactionManager).execute(status -> {
+			repository.disableJitForTransaction();
+			Set<UUID> releases = new HashSet<>();
+			Collection<String> artifactUuidsAsStrings = artifactUuids.stream().map(UUID::toString).toList();
+			releases.addAll(repository.findReleasesByReleaseArtifacts(artifactUuidsAsStrings, orgUuid.toString()));
+			String[] artifactUuidArray = artifactUuidsAsStrings.toArray(String[]::new);
+			releases.addAll(repository.findReleasesSharingSceArtifacts(artifactUuidArray));
+			releases.addAll(repository.findReleasesSharingDeliverableArtifacts(artifactUuidArray));
+			releases.addAll(repository.findReleasesBySyntheticArtifacts(artifactUuidsAsStrings, orgUuid.toString()));
+			return releases;
+		});
 	}
 
 	public List<ReleaseData> gatherReleasesForArtifact(UUID artifactUuid, UUID orgUuid){
@@ -1610,7 +1629,7 @@ public class SharedReleaseService {
 	 * (same digest on different branches, release + proxy in legacy data) the pick prefers a
 	 * BASE branch, then the newest release -- see {@link DeliverableReleasePicker}.
 	 * @param deliverableUuid
-	 * @param orgUuid - organization UUID - will only search for this org + external org
+	 * @param orgUuid - organization UUID - will only search within this org
 	 * @return
 	 */
 	public Optional<ReleaseData> getReleaseByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
@@ -1634,7 +1653,7 @@ public class SharedReleaseService {
 		return ord;
 	}
 
-	/** Every release whose base variant carries the deliverable, newest first (org + external org). */
+	/** Every release whose base variant carries the deliverable, newest first, within the org. */
 	public List<ReleaseData> listReleasesByOutboundDeliverable (UUID deliverableUuid, UUID orgUuid) {
 		List<Release> releases = repository.findReleasesByDeliverable(deliverableUuid.toString(), orgUuid.toString());
 		if (null == releases || releases.isEmpty()) {
@@ -1670,11 +1689,12 @@ public class SharedReleaseService {
 	 * search path that walks {@code release_sbom_components}) can reuse the
 	 * same component/branch grouping without going through dtrack.
 	 */
-	public List<ComponentWithBranches> findReleaseDatasByReleaseIds(Collection<UUID> releaseIds, final UUID org) {
+	public List<ComponentWithBranches> findReleaseDatasByReleaseIds(Collection<UUID> releaseIds, final UUID org,
+			ReleaseBranchScope branchScope) {
 		if (releaseIds == null || releaseIds.isEmpty()) return List.of();
 		Set<UUID> ids = (releaseIds instanceof Set<?>) ? (Set<UUID>) releaseIds : new HashSet<>(releaseIds);
 		var releaseDatas = getReleaseDataListLight(ids, org);
-		return convertReleasesToComponentWithBranches(releaseDatas, org, null);
+		return convertReleasesToComponentWithBranches(releaseDatas, org, null, false, branchScope);
 	}
 
 	public List<ComponentWithBranches> findReleaseDatasByDtrackProjects(Collection<UUID> dtrackProjects, final UUID org) {
@@ -1727,9 +1747,19 @@ public class SharedReleaseService {
 	}
 
 	/**
+	 * UUIDs of releases in {@code org} whose metrics carry ANY of {@code findingIds} as a
+	 * finding's primary id or one of its aliases, in any location: one statement for the
+	 * whole list (TPF-131, the KEV re-gate). Each release appears once.
+	 */
+	public List<UUID> findReleaseUuidsWithAnyVulnerabilityAnyLocation(UUID org, Collection<String> findingIds) {
+		return repository.findReleasesWithAnyVulnerabilityAnyLocation(org.toString(), findingIds.toArray(new String[0]));
+	}
+
+	/**
 	 * Whether any release in {@code org} carries {@code findingId} (as the
-	 * finding id or one of its aliases) in any location. Stops at the first
-	 * match, unlike {@link #findReleaseUuidsWithVulnerabilityAnyLocation}.
+	 * finding id or one of its aliases) in any location: a count over the
+	 * indexed lookup of {@link #findReleaseUuidsWithVulnerabilityAnyLocation}
+	 * (TPF-131: an EXISTS made the planner scan the org).
 	 */
 	public boolean hasReleaseWithVulnerabilityAnyLocation(UUID org, String findingId) {
 		return repository.existsReleaseWithVulnerabilityAnyLocation(org.toString(), findingId);
@@ -1814,18 +1844,21 @@ public class SharedReleaseService {
 	 */
 	private List<ComponentWithBranches> convertReleasesToComponentWithBranches(
 			List<ReleaseData> releaseDataList, UUID orgUuid, UUID perspectiveUuid) {
-		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, false);
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, false,
+				ReleaseBranchScope.ALL_BRANCHES);
 	}
 
 	/**
 	 * As the three-argument overload; with excludeDocumentComponents true, the
 	 * releases of BOARD_DOCUMENT components are left out (TPF-75: the
 	 * day-click list of the releases-per-day chart, the Java twin of
-	 * VariableQueries.RELEASE_NOT_OF_DOCUMENT_COMPONENT).
+	 * VariableQueries.RELEASE_NOT_OF_DOCUMENT_COMPONENT). With branchScope
+	 * ACTIVE_BRANCHES the branches whose status is ARCHIVED are left out, and a
+	 * component left with no branch drops out (TPF-135).
 	 */
 	private List<ComponentWithBranches> convertReleasesToComponentWithBranches(
 			List<ReleaseData> releaseDataList, UUID orgUuid, UUID perspectiveUuid,
-			boolean excludeDocumentComponents) {
+			boolean excludeDocumentComponents, ReleaseBranchScope branchScope) {
 		
 		// Get perspective components if perspectiveUuid is provided
 		Set<UUID> perspectiveComponentUuids = null;
@@ -1869,6 +1902,9 @@ public class SharedReleaseService {
 				List<ReleaseData> branchReleases = branchEntry.getValue();
 				
 				BranchData branchData = branchService.getBranchData(branchUuid).get();
+				if (ReleaseBranchScope.ACTIVE_BRANCHES == branchScope && StatusEnum.ARCHIVED == branchData.getStatus()) {
+					continue; // TPF-135: an archived branch is left out of the result under ACTIVE_BRANCHES
+				}
 				
 				// Sort releases by version schema
 				branchReleases.sort(new ReleaseVersionComparator(componentData.getVersionSchema(), branchData.getVersionSchema()));
@@ -1890,6 +1926,9 @@ public class SharedReleaseService {
 				));
 			}
 			
+			if (branches.isEmpty()) {
+				continue; // TPF-135: a component whose matching releases are all on archived branches drops out
+			}
 			// Sort branches by name
 			branches.sort((b1, b2) -> b1.name().compareTo(b2.name()));
 			
@@ -1922,8 +1961,11 @@ public class SharedReleaseService {
 	 */
 	public static final int CVE_SEARCH_RELEASE_LIMIT = 500;
 
-	public CveSearchResultDto.CveSearchResult findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid) {
-		List<Object[]> rows = repository.findReleasesByCveId(orgUuid.toString(), cveId, CVE_SEARCH_RELEASE_LIMIT);
+	public CveSearchResultDto.CveSearchResult findReleasesByCveId(UUID orgUuid, String cveId, UUID perspectiveUuid,
+			ReleaseBranchScope branchScope) {
+		// TPF-135: the scope is a conjunct of the statement, so the window count and the LIMIT see it
+		List<Object[]> rows = repository.findReleasesByCveId(orgUuid.toString(), cveId, branchScope.name(),
+				CVE_SEARCH_RELEASE_LIMIT);
 		int totalMatches = rows.isEmpty() ? 0 : ((Number) rows.get(0)[1]).intValue();
 		List<UUID> uuids = rows.stream()
 				.map(row -> Utils.parseUuidFromObject(row[0]))
@@ -1953,7 +1995,8 @@ public class SharedReleaseService {
 				.map(ReleaseData::dataFromRecord)
 				.collect(Collectors.toList());
 		
-		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, true);
+		return convertReleasesToComponentWithBranches(releaseDataList, orgUuid, perspectiveUuid, true,
+				ReleaseBranchScope.ALL_BRANCHES);
 	}
 	
 	/**

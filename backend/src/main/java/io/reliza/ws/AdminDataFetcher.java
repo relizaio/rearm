@@ -36,6 +36,8 @@ import io.reliza.service.ReleaseFinalizerService;
 import io.reliza.service.UserService;
 import io.reliza.service.SystemInfoService.SystemInfoDto;
 import io.reliza.service.SystemInfoService;
+import io.reliza.service.TeaHostAssignmentService;
+import io.reliza.service.TeaHostAssignmentService.TeaHostAssignment;
 import lombok.extern.slf4j.Slf4j;
 
 @Slf4j
@@ -66,6 +68,9 @@ public class AdminDataFetcher {
 	@Autowired
 	private BrandingService brandingService;
 
+	@Autowired
+	private TeaHostAssignmentService teaHostAssignmentService;
+
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Query", field = "getSystemInfoIsSet")
 	public SystemInfoDto getSystemInfoIsSet() throws RelizaException {
@@ -75,6 +80,39 @@ public class AdminDataFetcher {
 		return systemInfoService.getSystemInfoIsSet();
 	}
 	
+	/** Every assignable TEA host with its assignment (TPF-142, architecture D16). Global administrators only. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "teaHostAssignments")
+	public List<TeaHostAssignment> teaHostAssignments() throws RelizaException {
+		globalAdmin();
+		return teaHostAssignmentService.list();
+	}
+
+	/** Assign a TEA host to an organization (TPF-142). Global administrators only. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "assignTeaHost")
+	public TeaHostAssignment assignTeaHost(@InputArgument("host") String host, @InputArgument("org") UUID org)
+			throws RelizaException {
+		UserData admin = globalAdmin();
+		return teaHostAssignmentService.assign(host, org, admin);
+	}
+
+	/** Clear a TEA host's assignment (TPF-142). Global administrators only. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "unassignTeaHost")
+	public Boolean unassignTeaHost(@InputArgument("host") String host) throws RelizaException {
+		UserData admin = globalAdmin();
+		return teaHostAssignmentService.unassign(host, admin);
+	}
+
+	/** The gate of getSystemInfoIsSet: the caller must be a global administrator. */
+	private UserData globalAdmin() throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		authorizationService.authorize(oud.get(), CallType.GLOBAL_ADMIN);
+		return oud.get();
+	}
+
 	// Global setVulnCheckKevToken mutation removed in V54 KEV per-org
 	// refactor. Use the org-scoped IntegrationDataFetcher.setVulnCheckKevToken
 	// (org-admin scope) instead — the token now lives on a per-org

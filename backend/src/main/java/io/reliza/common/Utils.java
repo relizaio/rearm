@@ -1542,6 +1542,28 @@ public class Utils {
 	}
 
 	/**
+	 * Version-agnostic identity key of a purl: type, namespace and name only. Version, every qualifier
+	 * (the identity-bearing ones of CANONICAL_PRESERVED_QUALIFIERS included) and subpath are dropped.
+	 * Used to recognise a release's own package at any version (TPF-146). An opaque key, never a purl
+	 * to persist or display. Quiet: null, no log, when the input is not a parseable pkg: purl
+	 * (a CPE canonical included).
+	 */
+	public static String purlVersionlessKey(String purl) {
+		if (purl == null || !purl.startsWith(PURL_SCHEME_PREFIX)) return null;
+		try {
+			// Same raw '+' pre-normalization as purlSemanticKey.
+			PackageURL p = new PackageURL(purl.replace("+", "%2B"));
+			return PackageURLBuilder.aPackageURL()
+					.withType(p.getType())
+					.withNamespace(p.getNamespace())
+					.withName(p.getName())
+					.build().canonicalize();
+		} catch (MalformedPackageURLException e) {
+			return null;
+		}
+	}
+
+	/**
 	 * Every spelling a stored {@code sbom_components.canonical_purl} can have for
 	 * the identity of {@code purl}. Writers disagree only on the version: rebom
 	 * (packageurl-js) keeps {@code +} and an epoch {@code :} raw, PackageURL

@@ -48,11 +48,15 @@ public class TeaRequests {
 	@Autowired private TeaSurfaceService teaSurfaceService;
 	@Autowired private TeaAuthorizationService teaAuthorizationService;
 
-	/** Throws a 404 OBJECT_UNKNOWN refusal for an unknown, malformed or archived base; nothing else is read first. */
+	/**
+	 * Throws a 404 OBJECT_UNKNOWN refusal for an unknown, malformed, archived or dark base; nothing else
+	 * is read first. The organization is the one {@link TeaSurfaceService#orgOfRequest} resolves from
+	 * the template's {org} segment and the request host (TPF-142): on a custom host the host alone,
+	 * elsewhere the segment when present, else the host. It is the only organization passed down.
+	 */
 	public TeaRequestContext context(NativeWebRequest request) {
-		String segment = orgSegment(request);
-		TeaOrg org = teaSurfaceService.orgOfBase(segment).orElseThrow(TeaRefusal::objectUnknown);
 		HttpServletRequest raw = null == request ? null : request.getNativeRequest(HttpServletRequest.class);
+		TeaOrg org = teaSurfaceService.orgOfRequest(orgSegment(request), TeaHosts.hostOf(raw)).orElseThrow(TeaRefusal::objectUnknown);
 		return new TeaRequestContext(org, TeaAuthorizationService.callerOn(teaAuthorizationService.callerOf(raw), org.org()), raw);
 	}
 

@@ -77,6 +77,8 @@ import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
 import io.reliza.model.OrganizationData;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.Release;
 import io.reliza.model.ReleaseData;
@@ -271,7 +273,8 @@ abstract class TeaPublicationServiceTestBase {
 		OrganizationData od = new OrganizationData();
 		ReflectionTestUtils.setField(od, "name", "Acme");
 		when(getOrganizationService.getOrganizationData(any())).thenReturn(Optional.of(od));
-		when(teaProfileService.orgDiscovery(any())).thenReturn(new TeaOrgDiscovery(ORG, ORG_TEA, API_BASE, "{}"));
+		when(teaProfileService.orgDiscovery(any())).thenReturn(new TeaOrgDiscovery(ORG, ORG_TEA, API_BASE, "{}", null,
+				TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE, null));
 
 		when(shared.getRelease(any(UUID.class))).thenAnswer(inv -> Optional.ofNullable(releaseRows.get(inv.<UUID>getArgument(0))));
 		when(shared.getReleaseData(any(UUID.class))).thenAnswer(inv -> Optional

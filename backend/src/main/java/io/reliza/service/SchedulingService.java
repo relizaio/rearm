@@ -49,9 +49,19 @@ public class SchedulingService {
     // is a non-issue at this scale. Sequential with the enrichment pull on the
     // same tick, deliberately: less concurrent stress, and enrichment cost
     // collapses to a dirty-check once its backlog drains. 102, not 100: the
-    // compute shards across ReleaseService.METRICS_COMPUTE_WORKERS (3) parallel
-    // workers, and a divisible batch keeps the shards even.
-    private static final int METRICS_COMPUTE_BATCH_LIMIT = 102;
+    // compute shards across the metrics compute workers (3 by default) and a
+    // divisible batch keeps the shards even. Configurable via
+    // relizaprops.metricsComputeBatch / METRICS_COMPUTE_BATCH, so an instance under
+    // heap pressure can claim fewer releases per tick without a code change. The
+    // recent lane's window and batch (TPF-138) are the two constants below it.
+    @Value("${relizaprops.metricsComputeBatch:102}")
+    private int metricsComputeBatchLimit;
+    // TPF-138 recent lane: a release is RECENT while its created_date lies inside this window, and the
+    // lane drains at most this many per tick, BEFORE the batch above. Constants, not properties
+    // (operator decision 2026-10-31): the lane is a fixed fairness rule, not a per-instance tuning
+    // knob. 51 = 3 workers x 17, even shards (the 102 convention above), half the normal batch.
+    static final int METRICS_RECENT_WINDOW_MINUTES = 60;
+    static final int METRICS_RECENT_BATCH_LIMIT = 51;
 
     @Autowired
     private ModelCatalogueSweepService modelCatalogueSweepService;
@@ -90,6 +100,9 @@ public class SchedulingService {
     
     @Autowired
     OssAnalyticsMetricsService ossAnalyticsMetricsService;
+
+    @Autowired
+    private OrgTotalsCacheService orgTotalsCacheService;
     
     @Autowired
     OrganizationService organizationService;
@@ -205,7 +218,7 @@ public class SchedulingService {
     
     /**
      * Every-minute drain. Originally just dependency-track work, now also
-     * runs the SBOM-component reconcile queue — both kinds of work share
+     * runs the SBOM-component reconcile queue -- both kinds of work share
      * the {@code RESOLVE_DEPENDENCY_TRACK_STATUS} advisory lock so that at
      * most one replica processes them at any moment, and they run serially
      * within a tick.
@@ -391,7 +404,8 @@ public class SchedulingService {
                     // and post-drain the pull collapses to a dirty-check so the
                     // compute effectively owns the tick.
                     try {
-                        releaseService.computeMetricsForAllUnprocessedReleases(METRICS_COMPUTE_BATCH_LIMIT);
+                        releaseService.computeMetricsForAllUnprocessedReleases(Math.max(1, metricsComputeBatchLimit),
+                                METRICS_RECENT_BATCH_LIMIT, METRICS_RECENT_WINDOW_MINUTES);
                     } catch (Exception e) {
                         log.error("computeMetricsForAllUnprocessedReleases failed", e);
                     }
@@ -431,7 +445,13 @@ public class SchedulingService {
             Boolean lock = getLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
             if (lock) {
                 try {
-                    ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs();
+                    // TPF-139: the analytics pass first, unchanged; then the cached Statistics
+                    // totals under the same lock. Each in its own guard, so an Error contained
+                    // in one does not skip the other.
+                    SchedulerGuard.runIsolated("daily analytics",
+                            () -> ossAnalyticsMetricsService.computeAndRecordAnalyticsMetricsForAllOrgs());
+                    SchedulerGuard.runIsolated("org totals cache",
+                            () -> orgTotalsCacheService.countAllOrgs());
                 } finally {
                     releaseLock(AdvisoryLockKey.COMPUTE_ANALYTICS_METRICS);
                 }
@@ -493,7 +513,7 @@ public class SchedulingService {
         syntheticSbomService.reportFanOutStallIfAny(orgUuid);
     }
 
-    @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM — separated from other daily crons
+    @Scheduled(cron="0 15 3 * * *") // once daily 3:15 AM -- separated from other daily crons
     public void scheduleSyntheticDtrackDailyResync() {
         try {
             Boolean lock = getLock(AdvisoryLockKey.SYNC_DEPENDENCY_TRACK_DATA);
@@ -578,9 +598,9 @@ public class SchedulingService {
      * Daily retention sweep for the {@code api_key_access} audit table.
      * CI/CD pipelines polling against an org's keys can drive this table
      * to multi-GB scale; the per-request dedupe in
-     * {@code ApiKeyAccessService.recordApiKeyAccess} caps inserts to ≤1
+     * {@code ApiKeyAccessService.recordApiKeyAccess} caps inserts to <=1
      * per (key, ip) per hour, and this sweep caps the historical tail
-     * at 90 days. Runs at 04:30 UTC — well separated from the other
+     * at 90 days. Runs at 04:30 UTC -- well separated from the other
      * daily crons (00:00 analytics, 03:00 DTrack-project cleanup,
      * 21:50 DTrack sync) so the single-transaction DELETE doesn't
      * contend with them.
@@ -736,12 +756,12 @@ public class SchedulingService {
      * Autoclose OPEN agent sessions idle past their org's window (task 6e7fe6fe: 24 h by default,
      * twice that while a session holds a task or a seat), warning them first. Any programmatic call
      * made with a session's id counts as activity, so a polling agent stays open without touching.
-     * An OPEN session whose {@code lastActivityAt} is past the window is crashed, stalled, or abandoned —
+     * An OPEN session whose {@code lastActivityAt} is past the window is crashed, stalled, or abandoned --
      * leaving it OPEN distorts the dashboard's per-agent open-session
      * count and lets CEL gates that key on {@code session.status == "OPEN"}
      * keep firing against an agent that's no longer working.
      *
-     * <p>BLOCKED sessions are intentionally skipped — they're awaiting
+     * <p>BLOCKED sessions are intentionally skipped -- they're awaiting
      * operator action, not an automatic close.
      *
      * <p>Runs at the top of every hour; advisory lock prevents concurrent
@@ -889,7 +909,7 @@ public class SchedulingService {
     // Notification pipeline + finding-change v3 drains. These drive shared
     // services (NotificationFanOutService, NotificationDeliveryWorker,
     // NotificationRetentionService, FindingChangeEventBackfillService), so
-    // their ticks live here in the shared scheduler — both editions run
+    // their ticks live here in the shared scheduler -- both editions run
     // them. Edition-specific jobs (email digest, webhook prune, license,
     // perspective analytics) stay in the SAAS-side scheduler.
     // =====================================================================

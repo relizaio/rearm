@@ -22,11 +22,13 @@ import java.util.LinkedHashSet;
 
 import com.fasterxml.jackson.annotation.JsonFormat;
 import com.fasterxml.jackson.annotation.JsonIgnoreProperties;
+import com.fasterxml.jackson.annotation.JsonInclude;
 import com.fasterxml.jackson.annotation.JsonProperty;
 import com.fasterxml.jackson.annotation.JsonAlias;
 
 import io.reliza.common.Utils;
 import io.reliza.model.AnalysisState;
+import io.reliza.model.NoMatchableComponentsReason;
 import io.reliza.model.dto.AnalyticsDtos.VulnViolationsChartDto;
 import lombok.Data;
 import lombok.NoArgsConstructor;
@@ -67,6 +69,8 @@ public class ReleaseMetricsDto implements Cloneable {
 	@JsonProperty private Integer weaknesses = 0;
 	@JsonProperty private ZonedDateTime lastScanned;
 	@JsonProperty private ZonedDateTime firstScanned;
+	/** TPF-129: the BOM tally of the last compute; null (no JSON key) on artifacts and on legacy rows. */
+	@JsonProperty @JsonInclude(JsonInclude.Include.NON_NULL) private BomScanTally bomScan;
 	@JsonProperty private List<ViolationDto> violationDetails = new LinkedList<>();
 	@JsonProperty private List<VulnerabilityDto> vulnerabilityDetails = new LinkedList<>();
 	@JsonProperty private List<WeaknessDto> weaknessDetails = new LinkedList<>();
@@ -77,6 +81,18 @@ public class ReleaseMetricsDto implements Cloneable {
 		OPERATIONAL
 	}
 	
+	/** TPF-129: how a release's gathered BOMs stand with the synthetic scan pipeline. */
+	public static enum BomScanState {
+		/** No BOM artifact gathered at all (the no-BOM anchor's own case). */
+		NO_BOMS,
+		/** Every gathered BOM is a scan input: scanned, or pending a scan that will come. */
+		ALL_SCANNABLE,
+		/** Some gathered BOMs carry the not-scannable marker, at least one does not. */
+		SOME_NOT_SCANNABLE,
+		/** Every gathered BOM carries the marker: the release anchored with nothing to scan. */
+		ALL_NOT_SCANNABLE
+	}
+
 	public static enum VulnerabilitySeverity {
 		CRITICAL,
 		HIGH,
@@ -105,6 +121,33 @@ public class ReleaseMetricsDto implements Cloneable {
 	 * themselves serializable; the JSON shape is unchanged.
 	 */
 	public static record VulnerabilityAliasDto (VulnerabilityAliasType type, String aliasId) implements Serializable {}
+
+	/**
+	 * TPF-129: the tally of a release's gathered BOMs, persisted at release metrics.bomScan by the
+	 * metrics compute and read by the CEL activation as release.bomScanState, release.scannableBoms,
+	 * release.notScannableBoms and release.notScannableReasons. Absent (Java null, no JSON key) on an
+	 * artifact's metrics and on a release never computed since it landed. Serializable for the same
+	 * reason as {@link VulnerabilityAliasDto} (the JSONB deep copy). The state is derived, not stored:
+	 * a record accessor without a get prefix is not a Jackson property. A stored tally without the
+	 * reasons list reads with a null list; {@link #reasonsOrEmpty()} is the null-tolerant read.
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record BomScanTally(int scannableBoms, int notScannableBoms,
+			List<NoMatchableComponentsReason> notScannableReasons) implements Serializable {
+		public static final BomScanTally EMPTY = new BomScanTally(0, 0, List.of());
+
+		public BomScanState state() {
+			if (scannableBoms + notScannableBoms == 0) return BomScanState.NO_BOMS;
+			if (notScannableBoms == 0) return BomScanState.ALL_SCANNABLE;
+			if (scannableBoms == 0) return BomScanState.ALL_NOT_SCANNABLE;
+			return BomScanState.SOME_NOT_SCANNABLE;
+		}
+
+		/** The reasons, an empty list when the stored tally carries none. */
+		public List<NoMatchableComponentsReason> reasonsOrEmpty() {
+			return null != notScannableReasons ? notScannableReasons : List.of();
+		}
+	}
 
 	/**
 	 * Vulnerability ID types based on OSV schema.
@@ -185,7 +228,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	public static record VulnerabilityReferenceDto (String id, String sourceName, String sourceUrl) {}
 
 	/**
-	 * Per-vulnerability findings row used throughout the ingestion → export pipeline.
+	 * Per-vulnerability findings row used throughout the ingestion -> export pipeline.
 	 *
 	 * <p>The trailing five fields ({@code description}, {@code cwes}, {@code references},
 	 * {@code published}, {@code updated}) are nullable enrichment fields; the VDR emitter
@@ -194,7 +237,7 @@ public class ReleaseMetricsDto implements Cloneable {
 	 * existing behavior.
 	 *
 	 * <p>{@code cwes} carries weakness identifiers as prefixed strings (e.g. {@code "CWE-79"}).
-	 * Strings — not raw integers — because future taxonomies (CAPEC, CWE-CATEGORY, vendor codes)
+	 * Strings -- not raw integers -- because future taxonomies (CAPEC, CWE-CATEGORY, vendor codes)
 	 * may not be numeric, and the rest of the codebase already stores weaknesses prefixed.
 	 * The CDX emitter strips the {@code CWE-} prefix and parses to {@link Integer} for
 	 * {@code Vulnerability.setCwes(List&lt;Integer&gt;)}; non-numeric / non-{@code CWE-} entries
@@ -753,7 +796,7 @@ public class ReleaseMetricsDto implements Cloneable {
 					vuln.analysisState(),
 					vuln.analysisDate(),
 					vuln.attributedAt(),
-					// description / cwes / references / published / updated → vulnerability_records
+					// description / cwes / references / published / updated -> vulnerability_records
 					null, null, null, null, null,
 					vuln.knownExploited()
 				);
@@ -905,7 +948,7 @@ public class ReleaseMetricsDto implements Cloneable {
 
 				// description / cwes / references / published / updated migrated to
 				// rearm.vulnerability_records (V33); per-artifact union of those
-				// fields is no longer needed — the canonical row in the new table
+				// fields is no longer needed -- the canonical row in the new table
 				// already merges across upstream feeds.
 				VulnerabilityDto merged = new VulnerabilityDto(
 					existing.purl(),
@@ -1225,7 +1268,7 @@ public class ReleaseMetricsDto implements Cloneable {
 
 		// description / cwes / references / published / updated migrated to
 		// rearm.vulnerability_records (V33). No need to union them across
-		// alias-equivalent vulns here — the canonical row in the new table
+		// alias-equivalent vulns here -- the canonical row in the new table
 		// already merges across sources by primaryVulnId / aliases.
 		return new VulnerabilityDto(purl, primaryId, bestSeverity, finalAliases, allSources, allSeverities, baseVuln.analysisState(), baseVuln.analysisDate(), earliestAttributedAt,
 				null, null, null, null, null, mergedKnownExploited);

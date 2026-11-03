@@ -15,6 +15,8 @@ import io.reliza.service.ApiKeyAccessService;
 import io.reliza.service.ApiKeyService;
 import io.reliza.service.ApiTokenService;
 import io.reliza.service.CliSessionService;
+import io.reliza.service.TeaHostAssignmentService;
+import io.reliza.ws.tea.TeaHostGateFilter;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.SpringApplication;
@@ -23,6 +25,7 @@ import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.boot.context.properties.EnableConfigurationProperties;
 import org.springframework.boot.persistence.autoconfigure.EntityScan;
 import org.springframework.boot.restclient.RestTemplateBuilder;
+import org.springframework.boot.web.servlet.FilterRegistrationBean;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.ComponentScan;
 import org.springframework.context.annotation.Configuration;
@@ -32,6 +35,7 @@ import org.springframework.scheduling.TaskScheduler;
 import org.springframework.scheduling.annotation.EnableAsync;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskExecutor;
 import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
+import org.springframework.core.Ordered;
 import org.springframework.core.annotation.Order;
 import org.springframework.security.config.Customizer;
 import org.springframework.security.config.annotation.method.configuration.EnableMethodSecurity;
@@ -59,6 +63,8 @@ import org.springframework.http.server.RequestPath;
 import org.springframework.web.util.pattern.PathPattern;
 import org.springframework.web.util.pattern.PathPatternParser;
 
+import jakarta.servlet.DispatcherType;
+import jakarta.servlet.RequestDispatcher;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
@@ -327,6 +333,57 @@ public class App {
 		if (request.getDispatcherType() != jakarta.servlet.DispatcherType.ERROR) return false;
 		Object original = request.getAttribute(jakarta.servlet.RequestDispatcher.ERROR_REQUEST_URI);
 		return original instanceof String uri && isTeaUri(uri, request.getContextPath());
+	}
+
+	/**
+	 * The custom-host gate's own TEA path test (TPF-142, architecture D12, F-11): {@link #isTeaUri} on
+	 * a path with no dot segment. {@link #chainPathOf} decodes each segment but resolves no {@code .}
+	 * or {@code ..}, so /tea/../graphql is /tea/** to isTeaUri while the container maps it to
+	 * /graphql; Spring Security's StrictHttpFirewall (with FirewallRejectionHandler, 400) refuses such
+	 * spellings first on every host, and this test keeps the custom-host promise whatever a later
+	 * firewall setting allows. A decoded segment that carries a slash or a backslash (an encoded
+	 * separator) is refused too. isTeaUri itself is unchanged.
+	 */
+	public static boolean isNormalizedTeaUri(String uri, String contextPath) {
+		return chainPathOf(uri, contextPath).filter(p -> !hasUnsafeSegment(p))
+				.filter(p -> isTeaApiPath(p) || WELL_KNOWN_TEA_PATTERN.matches(p)).isPresent();
+	}
+
+	/** Whether a request (its own dispatch) is on a normalised TEA path ({@link #isNormalizedTeaUri(String, String)}). */
+	public static boolean isNormalizedTeaUri(HttpServletRequest request) {
+		return isNormalizedTeaUri(request.getRequestURI(), request.getContextPath());
+	}
+
+	/** The error dispatch of a request whose original path is a normalised TEA path ({@link #isNormalizedTeaUri(String, String)}). */
+	public static boolean isNormalizedTeaErrorDispatch(HttpServletRequest request) {
+		if (request.getDispatcherType() != DispatcherType.ERROR) return false;
+		Object original = request.getAttribute(RequestDispatcher.ERROR_REQUEST_URI);
+		return original instanceof String uri && isNormalizedTeaUri(uri, request.getContextPath());
+	}
+
+	/** A decoded segment (path parameters stripped) that is {@code .} or {@code ..}, or that carries a slash or a backslash. */
+	private static boolean hasUnsafeSegment(PathContainer path) {
+		for (PathContainer.Element e : path.elements()) {
+			if (e instanceof PathContainer.PathSegment seg) {
+				String v = seg.valueToMatch();
+				if (".".equals(v) || "..".equals(v) || v.indexOf('/') >= 0 || v.indexOf('\\') >= 0) return true;
+			}
+		}
+		return false;
+	}
+
+	/**
+	 * The custom-host gate (TPF-142, architecture D12): ahead of every security chain (Boot registers
+	 * springSecurityFilterChain at -100), on the request and error dispatches, for every URL.
+	 */
+	@Bean
+	public FilterRegistrationBean<TeaHostGateFilter> teaHostGateFilter(TeaHostAssignmentService teaHostAssignmentService) {
+		FilterRegistrationBean<TeaHostGateFilter> reg = new FilterRegistrationBean<>(new TeaHostGateFilter(teaHostAssignmentService));
+		reg.setOrder(Ordered.HIGHEST_PRECEDENCE);
+		reg.addUrlPatterns("/*");
+		reg.setDispatcherTypes(DispatcherType.REQUEST, DispatcherType.ERROR);
+		reg.setName("teaHostGateFilter");
+		return reg;
 	}
 
 	@Bean

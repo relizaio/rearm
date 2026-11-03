@@ -4,12 +4,17 @@
 
 package io.reliza.service;
 
+import java.util.ArrayList;
 import java.util.Collection;
+import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.context.annotation.Lazy;
@@ -66,44 +71,69 @@ public class VulnAnalysisUpdateService {
 	}
 	
 	/**
-	 * Live KEV re-gate fan-out. Called by the KEV catalog sync (after the
-	 * reconcile transaction commits) when a CVE newly enters the catalog:
+	 * Organizations whose KEV re-gate statement failed, with the newly-KEV ids it was asked for.
+	 * Drained by the next KEV sync tick (KevCatalogSyncService.syncCatalog). In memory on purpose:
+	 * a restart loses it, and what is lost is bounded by the compute's own re-stamp of
+	 * knownExploited at each release's next scan (ReleaseMetricsComputeService.knownExploitedStampedCopy).
+	 */
+	private final Map<UUID, Set<String>> kevReGateRetry = new ConcurrentHashMap<>();
+
+	/**
+	 * Live KEV re-gate fan-out for one organization. Called by the KEV catalog
+	 * sync (after the reconcile transaction commits) with every CVE of the
+	 * sync that newly entered the catalog and that the org has a record of:
 	 * KEV status is time-varying independent of any scan, so a release that
-	 * already ships {@code cveId} would otherwise keep a stale
-	 * {@code kevCount}/gate verdict until its next scan. For each affected
-	 * org we find every release carrying the CVE in any location, dedupe the
-	 * union, and recompute each release's metrics (which re-stamps
-	 * {@code knownExploited}/{@code kevCount} and re-fires the gate via the
-	 * metrics-change path). Per-release try/catch so one bad release never
-	 * aborts the fan-out.
+	 * already ships one of {@code cveIds} would otherwise keep a stale
+	 * {@code kevCount}/gate verdict until its next scan. One statement finds
+	 * every release of the org carrying any of the ids in any location (as a
+	 * primary id or an alias), the releases are deduplicated, and each is
+	 * recomputed once (which re-stamps {@code knownExploited}/{@code kevCount}
+	 * and re-fires the gate via the metrics-change path). A failed statement
+	 * queues the org and its ids for the next sync tick
+	 * ({@link #drainKevReGateRetries}); per-release try/catch so one bad
+	 * release never aborts the fan-out (TPF-131).
 	 *
-	 * <p>Runs {@code @Async} — must be invoked through the Spring proxy
+	 * <p>Runs {@code @Async} -- must be invoked through the Spring proxy
 	 * (cross-bean call from the sync), never as a same-class self-call.
 	 */
 	@Async
-	public void recomputeReleasesForNewlyKev(String cveId, Collection<UUID> affectedOrgs) {
-		if (cveId == null || affectedOrgs == null || affectedOrgs.isEmpty()) {
+	public void recomputeReleasesForNewlyKev(Collection<String> cveIds, UUID org) {
+		if (org == null || cveIds == null || cveIds.isEmpty()) {
 			return;
 		}
-		Set<UUID> releaseUuids = new LinkedHashSet<>();
-		for (UUID org : affectedOrgs) {
-			if (org == null) continue;
-			try {
-				releaseUuids.addAll(
-						sharedReleaseService.findReleaseUuidsWithVulnerabilityAnyLocation(org, cveId));
-			} catch (Exception e) {
-				log.error("Error finding releases for newly-KEV CVE {} in org {}", cveId, org, e);
-			}
+		List<UUID> found;
+		try {
+			found = sharedReleaseService.findReleaseUuidsWithAnyVulnerabilityAnyLocation(org, cveIds);
+		} catch (Exception e) {
+			log.error("KEV re-gate: finding the releases of org {} carrying {} newly-KEV CVE(s) failed; "
+					+ "queued for the next KEV sync tick", org, cveIds.size(), e);
+			kevReGateRetry.compute(org, (k, prev) -> {
+				Set<String> merged = prev == null ? new HashSet<>() : prev;
+				merged.addAll(cveIds);
+				return merged;
+			});
+			return;
 		}
-		log.info("KEV re-gate: {} carries newly-KEV CVE {} across {} org(s); recomputing metrics",
-				releaseUuids.size(), cveId, affectedOrgs.size());
+		Set<UUID> releaseUuids = new LinkedHashSet<>(found);
+		log.info("KEV re-gate: {} release(s) of org {} carry {} newly-KEV CVE(s); recomputing metrics",
+				releaseUuids.size(), org, cveIds.size());
 		for (UUID releaseUuid : releaseUuids) {
 			try {
 				releaseService.computeReleaseMetrics(releaseUuid, false);
 			} catch (Exception e) {
-				log.error("Error recomputing metrics for release {} on newly-KEV CVE {}", releaseUuid, cveId, e);
+				log.error("Error recomputing metrics for release {} on newly-KEV CVEs", releaseUuid, e);
 			}
 		}
+	}
+
+	/** Takes and clears the queued KEV re-gate retries; the caller re-launches each through the proxy. */
+	public Map<UUID, Set<String>> drainKevReGateRetries() {
+		Map<UUID, Set<String>> out = new HashMap<>();
+		for (UUID org : new ArrayList<>(kevReGateRetry.keySet())) {
+			Set<String> ids = kevReGateRetry.remove(org);
+			if (ids != null && !ids.isEmpty()) out.put(org, ids);
+		}
+		return out;
 	}
 
 	/**

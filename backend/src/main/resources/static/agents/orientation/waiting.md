@@ -29,7 +29,9 @@ rearm agent wait --session <seat-session-uuid> --board <board-uuid> --coordinato
 A coordinator wakes when a task is in `PENDING_INTAKE` or
 `AWAITING_COORDINATOR`, when a hold is at the coordinator's level, when a
 `DELIVERING` task has a PR not merged and the board's merge is the
-coordinator's, and when an `ALERT` is posted. A task waiting on a person (an
+coordinator's, and when an `ALERT` is posted, the design checkpoint (an ALERT)
+included, which wakes it even when the task was already
+`AWAITING_COORDINATOR`. A task waiting on a person (an
 operator-level hold, a human gate) does not wake it. It wakes when a trigger
 appears that it has not reported (a new task, or a task in a new state), or on
 an `ALERT`; a set that only shrinks stays quiet. The triggers print with the new

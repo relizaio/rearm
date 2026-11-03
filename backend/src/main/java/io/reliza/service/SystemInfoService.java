@@ -3,9 +3,16 @@
 */
 package io.reliza.service;
 
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.format.DateTimeParseException;
+import java.util.LinkedHashMap;
 import java.util.Map;
+import java.util.Set;
 import java.util.UUID;
+import java.util.concurrent.ConcurrentHashMap;
 
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
@@ -22,11 +29,14 @@ import io.reliza.model.SystemInfoData;
 import io.reliza.model.SystemInfoData.SmtpProps;
 import io.reliza.model.SystemInfoData.AzureCreds;
 import io.reliza.model.SystemInfoData.EmailSendType;
+import io.reliza.model.SystemInfoData.FanOutWalkState;
 import io.reliza.model.SystemInfoData.SetEmailPropertiesDto;
 import io.reliza.model.UserData;
 import io.reliza.repositories.SystemInfoRepository;
+import lombok.extern.slf4j.Slf4j;
 
 @Service
+@Slf4j
 public class SystemInfoService {
 
 	@Autowired
@@ -96,6 +106,135 @@ public class SystemInfoService {
 		var sysInfo = findSystemInfo();
 		return sysInfo.getUnmappedBomSweepWatermark();
 	}
+
+	/** Org keys whose stored fan-out watermark did not parse, so the WARN is logged once each. */
+	private final Set<String> unparsableFanOutDrainedAt = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * The org's persisted fan-out drained-at watermark (TPF-114), or null when the map or the key
+	 * is absent. A value that does not parse is logged once (at ERROR with the exception, the
+	 * board's caught-exception convention) and read as absent: the only
+	 * writer is {@link #stampFanOutDrainedAt}, so this guards a corrupted row, and an absent
+	 * watermark only costs a bounded bucket walk, never a skipped pass.
+	 */
+	@Transactional
+	public ZonedDateTime getFanOutDrainedAt(UUID org) {
+		Map<String, String> drained = findSystemInfo().getFanOutDrainedAt();
+		if (null == drained || null == org) return null;
+		String key = org.toString();
+		String raw = drained.get(key);
+		if (null == raw) return null;
+		try {
+			return Instant.parse(raw).atZone(ZoneOffset.UTC);
+		} catch (DateTimeParseException e) {
+			if (unparsableFanOutDrainedAt.add(key)) {
+				log.error("Unparsable fan-out drained-at watermark for org {}; treated as absent", key, e);
+			}
+			return null;
+		}
+	}
+
+	/**
+	 * Stamp the org's fan-out drained-at watermark in place (TPF-114): one key of the
+	 * fanOutDrainedAt map, as an ISO-8601 UTC instant. Creates the system_info row and stamps
+	 * once more when the row does not exist yet. Bookkeeping: no revision, no audit row.
+	 */
+	@Transactional
+	public void stampFanOutDrainedAt(UUID org, ZonedDateTime at) {
+		String key = org.toString();
+		String value = DateTimeFormatter.ISO_INSTANT.format(at.toInstant());
+		if (repository.stampFanOutDrainedAt(key, value) == 0) {
+			findSystemInfo();
+			repository.stampFanOutDrainedAt(key, value);
+		}
+	}
+
+	/** Org keys whose stored fan-out walk state did not parse, so the ERROR is logged once each. */
+	private final Set<String> unparsableFanOutWalk = ConcurrentHashMap.newKeySet();
+
+	/**
+	 * The org's running fan-out drain (TPF-137), or null when the map or the key is absent. A
+	 * value that is not an object, whose cutoff does not parse as an instant or whose cursor is not
+	 * a uuid is logged once (at ERROR with the exception) and read as absent: the drain then
+	 * restarts from the beginning of the uuid space, which costs a walk and loses nothing.
+	 */
+	@Transactional
+	public FanOutWalkState getFanOutWalk(UUID org) {
+		Map<String, Object> walks = findSystemInfo().getFanOutWalk();
+		if (null == walks || null == org) return null;
+		String key = org.toString();
+		Object raw = walks.get(key);
+		if (null == raw) return null;
+		try {
+			if (!(raw instanceof Map<?, ?> m) || !(m.get("cutoff") instanceof String cutoff)
+					|| !(m.get("cursor") instanceof String cursor)) {
+				throw new IllegalArgumentException("not a {cutoff, cursor} object of strings");
+			}
+			Instant.parse(cutoff);
+			UUID.fromString(cursor);
+			return new FanOutWalkState(cutoff, cursor);
+		} catch (RuntimeException e) {
+			if (unparsableFanOutWalk.add(key)) {
+				log.error("Unparsable fan-out walk state for org {}; treated as absent", key, e);
+			}
+			return null;
+		}
+	}
+
+	/**
+	 * Stamp the org's fan-out walk state in place (TPF-137): one key of the fanOutWalk map, the
+	 * drain's cutoff as an ISO-8601 UTC instant and the cursor. Creates the system_info row and
+	 * stamps once more when the row does not exist yet. Bookkeeping: no revision, no audit row.
+	 */
+	@Transactional
+	public void stampFanOutWalk(UUID org, ZonedDateTime cutoff, UUID cursor) {
+		String key = org.toString();
+		String at = DateTimeFormatter.ISO_INSTANT.format(cutoff.toInstant());
+		if (repository.stampFanOutWalk(key, at, cursor.toString()) == 0) {
+			findSystemInfo();
+			repository.stampFanOutWalk(key, at, cursor.toString());
+		}
+	}
+
+	/** Remove the org's fan-out walk state in place (TPF-137): the drain completed or restarts. */
+	@Transactional
+	public void clearFanOutWalk(UUID org) {
+		repository.clearFanOutWalk("{fanOutWalk," + org + "}");
+	}
+
+	/**
+	 * The TEA custom domain assignments (TPF-142), host -> organization uuid as text, read without
+	 * the lock; an absent map reads as empty. Creates the system_info row when it does not exist yet.
+	 */
+	public Map<String, String> getTeaHostAssignments() {
+		Map<String, String> m = findSystemInfo().getTeaHostAssignments();
+		return null == m ? Map.of() : new LinkedHashMap<>(m);
+	}
+
+	/**
+	 * Write one TEA host assignment in place (TPF-142). Creates the system_info row and writes once
+	 * more when the row does not exist yet. The caller (TeaHostAssignmentService) holds the row lock
+	 * and has checked the invariants on the locked map.
+	 */
+	@Transactional
+	public void assignTeaHost(String host, UUID org) {
+		if (repository.assignTeaHost(host, org.toString()) == 0) {
+			findSystemInfo();
+			repository.assignTeaHost(host, org.toString());
+		}
+	}
+
+	/**
+	 * Remove one TEA host assignment in place (TPF-142); the host is a bound parameter, no path
+	 * literal is built from it. 0 rows is the absent-row retry of {@link #assignTeaHost}.
+	 */
+	@Transactional
+	public void unassignTeaHost(String host) {
+		if (repository.unassignTeaHost(host) == 0) {
+			findSystemInfo();
+			repository.unassignTeaHost(host);
+		}
+	}
 	
 
 	@Transactional
@@ -144,17 +283,23 @@ public class SystemInfoService {
 		saveSystemInfo(sysInfo, sd);
 	}
 	
+	/**
+	 * Scheduler-driven whole-record setter: reads the row under its lock (TPF-114, coding principle
+	 * "whole-record writers re-read the row under its lock"), so an in-place stamp such as
+	 * stampFanOutDrainedAt waits for this save instead of being overwritten by it.
+	 */
 	@Transactional
 	public void setLastDtrackSync (ZonedDateTime lastDtrackSync) {
-		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfo sysInfo = this.repository.findSystemInfoWriteLocked();
 		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
 		sd.setLastDtrackSync(lastDtrackSync);
 		saveSystemInfo(sysInfo, sd);
 	}
 
+	/** Scheduler-driven whole-record setter: locked read, as {@link #setLastDtrackSync}. */
 	@Transactional
 	public void setUnmappedBomSweepWatermark (ZonedDateTime watermark) {
-		SystemInfo sysInfo = this.repository.findSystemInfo();
+		SystemInfo sysInfo = this.repository.findSystemInfoWriteLocked();
 		SystemInfoData sd = SystemInfoData.dataFromRecord(sysInfo);
 		sd.setUnmappedBomSweepWatermark(watermark);
 		saveSystemInfo(sysInfo, sd);
@@ -198,9 +343,16 @@ public class SystemInfoService {
 		saveSystemInfo(sysInfo, sd);
 	}
 
+	/**
+	 * The one whole-record save of the system_info row. TPF-142 r5: the committed TEA host map, read
+	 * under the row lock (a native FOR UPDATE text read, past any managed copy), replaces whatever
+	 * copy the setter started from, so a setter that read the row before a concurrent assign or
+	 * unassign cannot write a stale map back. Nothing writes teaHostAssignments through here.
+	 */
 	@Transactional
 	private SystemInfo saveSystemInfo(SystemInfo s, SystemInfoData data){
 		Map<String,Object> recordData = Utils.dataToRecord(data);
+		recordData = SystemInfoData.withStoredTeaHostAssignments(recordData, repository.currentTeaHostAssignmentsForUpdate());
 		s.setData(recordData);
 		return repository.save(s);
 	}

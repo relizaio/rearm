@@ -87,6 +87,16 @@ public class SyntheticDtrackBucket implements Serializable {
 	@Column(columnDefinition = ModelProperties.JSONB)
 	private Map<String, Object> findings = new LinkedHashMap<>();
 
+	/**
+	 * Fan-out bookkeeping (TPF-137): the pending change map and the date of the save that last
+	 * maintained it ({@link BucketFlowControl}). Null on a row no save of the TPF-137 code has
+	 * reached yet. Rides on the whole-record saves of the bucket writers; written in place by the
+	 * fan-out catch-up and the completion clear.
+	 */
+	@Type(JsonBinaryType.class)
+	@Column(name = "flow_control", columnDefinition = ModelProperties.JSONB)
+	private BucketFlowControl flowControl;
+
 	@Column
 	private ZonedDateTime lastSubmitted;
 
@@ -125,6 +135,9 @@ public class SyntheticDtrackBucket implements Serializable {
 
 	public Map<String, Object> getFindings() { return findings; }
 	public void setFindings(Map<String, Object> findings) { this.findings = findings; }
+
+	public BucketFlowControl getFlowControl() { return flowControl; }
+	public void setFlowControl(BucketFlowControl flowControl) { this.flowControl = flowControl; }
 
 	public ZonedDateTime getLastSubmitted() { return lastSubmitted; }
 	public void setLastSubmitted(ZonedDateTime lastSubmitted) { this.lastSubmitted = lastSubmitted; }

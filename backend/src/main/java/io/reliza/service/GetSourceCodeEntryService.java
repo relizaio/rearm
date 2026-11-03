@@ -19,7 +19,6 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
 
 import io.micrometer.common.util.StringUtils;
-import io.reliza.common.CommonVariables;
 import io.reliza.common.CommonVariables.InstallationType;
 import io.reliza.model.BranchData;
 import io.reliza.model.SourceCodeEntry;
@@ -70,9 +69,8 @@ public class GetSourceCodeEntryService {
 	 * Whether {@code org} may write to the entry (merge a build into it, attach artifacts to it):
 	 * its {@link #ownerOrg} is {@code org}. This is the write rule. It is stricter than the
 	 * read/reference rule, {@link SharedReleaseService#isReferenceableFromOrg} (used by
-	 * {@link #getReferenceableSceData}): the shared external-components org is never writable from
-	 * another org and an entry with no known owner belongs to no org, while an owner-less legacy
-	 * entry is writable by its branch's org.
+	 * {@link #getReferenceableSceData}): an entry with no known owner belongs to no org, while an
+	 * owner-less legacy entry is writable by its branch's org.
 	 */
 	public boolean belongsTo (SourceCodeEntryData sced, UUID org) {
 		return null != org && org.equals(ownerOrg(sced));
@@ -94,9 +92,8 @@ public class GetSourceCodeEntryService {
 
 	/**
 	 * The entries among {@code uuids} that a release or pull request of {@code ownerOrg} may show:
-	 * owned by {@code ownerOrg} or by the shared external-components org, the rule of
-	 * {@link SharedReleaseService#isReferenceableFromOrg}. One org-scoped query; the result follows
-	 * the input order (duplicates included), and a uuid that is missing, owned by another org, null
+	 * owned by {@code ownerOrg}, the rule of {@link SharedReleaseService#isReferenceableFromOrg}.
+	 * One org-scoped query; the result follows the input order (duplicates included), and a uuid that is missing, owned by another org, null
 	 * or the {@link SourceCodeEntryData#NULL_SCE_UUID} placeholder is simply absent from it.
 	 */
 	public List<SourceCodeEntryData> getReferenceableSceDataList (Collection<UUID> uuids, UUID ownerOrg) {
@@ -106,7 +103,7 @@ public class GetSourceCodeEntryService {
 				.collect(Collectors.toCollection(LinkedHashSet::new));
 		if (toResolve.isEmpty()) return new LinkedList<>();
 		Map<UUID, SourceCodeEntryData> byUuid = getSceList(toResolve,
-					List.of(ownerOrg, CommonVariables.EXTERNAL_PROJ_ORG_UUID)).stream()
+					List.of(ownerOrg)).stream()
 				.map(this::dataForDisplay)
 				.collect(Collectors.toMap(SourceCodeEntryData::getUuid, Function.identity(), (a, b) -> a));
 		return uuids.stream().filter(byUuid::containsKey).map(byUuid::get)

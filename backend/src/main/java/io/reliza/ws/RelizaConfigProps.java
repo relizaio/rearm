@@ -32,4 +32,12 @@ public class RelizaConfigProps {
 	 * or "default" means the Reliza branding; resolved by BrandingService.
 	 */
 	private String brandingPreset;
+
+	/**
+	 * TPF-142: the TEA custom domains a global administrator may assign to organizations, a
+	 * comma-separated list of bare hostnames (env RELIZAPROP_TEA_CUSTOM_DOMAINS, rendered by the Pro
+	 * chart from tea.customDomains). The baseuri host is assignable without being listed. Parsed and
+	 * validated once at startup by TeaHostAssignmentService.
+	 */
+	private String teaCustomDomains;
 }

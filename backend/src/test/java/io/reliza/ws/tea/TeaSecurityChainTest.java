@@ -33,6 +33,8 @@ import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.Organization;
+import io.reliza.model.OrganizationData.TeaServing;
+import io.reliza.model.OrganizationData.TeaWellKnownHosting;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.Link;
@@ -40,6 +42,7 @@ import io.reliza.service.ApiKeyService;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.ExternalApiKeyService;
 import io.reliza.service.GetOrganizationService;
+import io.reliza.service.OrganizationService;
 import io.reliza.ws.App;
 import io.reliza.ws.oss.TestInitializer;
 
@@ -60,6 +63,7 @@ public class TeaSecurityChainTest {
 	@Autowired private ApiKeyService apiKeyService;
 	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private ArtifactService artifactService;
+	@Autowired private OrganizationService organizationService;
 	@Autowired private io.reliza.service.LicenseStatus licenseStatus;
 
 	private boolean wasSealed;
@@ -90,6 +94,8 @@ public class TeaSecurityChainTest {
 	private Minted mint() throws Exception {
 		Organization org = testInitializer.obtainOrganization();
 		ApiKey ak = externalApiKeyService.create(org.getUuid(), "Acme", null, WU);
+		// TPF-142 (F-6, F-8): the key creation minted the TEA id; the uuid base serves LEGACY_UUID organizations only
+		organizationService.setTeaServing(org.getUuid(), TeaServing.LEGACY_UUID, TeaWellKnownHosting.NONE, WU);
 		String secret = apiKeyService.addApiKeySecret(ak.getUuid(), null, WU);
 		String tea = getOrganizationService.getOrganizationData(org.getUuid()).orElseThrow().getTeaUuid().toString();
 		return new Minted(org, ApiKeyService.keyIdOf(apiKeyService.getApiKey(ak.getUuid()).orElseThrow()), secret, tea);

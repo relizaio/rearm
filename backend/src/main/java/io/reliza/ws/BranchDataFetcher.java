@@ -3,7 +3,10 @@
 */
 package io.reliza.ws;
 
+import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.Collections;
+import java.util.HashMap;
 import java.util.LinkedList;
 import java.util.List;
 import java.util.Map;
@@ -46,9 +49,13 @@ import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VcsRepositoryData;
 import io.reliza.model.VersionAssignment;
+import io.reliza.model.UserData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ApiKey.ApiTypeEnum;
 import io.reliza.model.dto.AuthorizationResponse;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateDependencyRow;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateEvaluation;
+import io.reliza.model.dto.AutoIntegrateDtos.AutoIntegrateResult;
 import io.reliza.model.dto.BranchDto;
 import io.reliza.model.dto.ProgrammaticAuthContext;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
@@ -294,14 +301,71 @@ public class BranchDataFetcher {
 	@PreAuthorize("isAuthenticated()")
 	@DgsData(parentType = "Mutation", field = "autoIntegrateFeatureSet")
 	public ReleaseData autoIntegrateFeatureSet(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
+		authorizationService.validateSystemOperational(CallType.WRITE);
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
 		RelizaObject ro = obd.isPresent() ? obd.get() : null;
-		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, List.of(ro), CallType.WRITE);
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, Collections.singletonList(ro), CallType.WRITE);
 		return releaseService.autoIntegrateFeatureSetOnDemand(obd.get())
 				.flatMap(sharedReleaseService::getReleaseData)
 				.orElse(null);
+	}
+
+	/** The GraphQL AutoIntegrateResult: the created product release (null when none) and why. */
+	public record AutoIntegrateResultView(ReleaseData release, AutoIntegrateEvaluation evaluation) {}
+
+	/**
+	 * Dry run of autoIntegrateFeatureSet: BRANCH READ on the feature set, the system gate before any
+	 * lookup, unknown and foreign uuids refused alike. Rows of components the caller cannot read are
+	 * redacted on the returned copy.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "autoIntegrateFeatureSetPreview")
+	public AutoIntegrateEvaluation autoIntegrateFeatureSetPreview(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
+		authorizationService.validateSystemOperational(CallType.READ);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, Collections.singletonList(ro), CallType.READ);
+		return redactUnreadableRows(oud.get(), obd.get(), releaseService.evaluateAutoIntegrate(obd.get()));
+	}
+
+	/** autoIntegrateFeatureSet with the explanation beside the result; same gate (BRANCH WRITE). */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "autoIntegrateFeatureSetExplained")
+	public AutoIntegrateResultView autoIntegrateFeatureSetExplained(@InputArgument("branchUuid") UUID branchUuid) throws RelizaException {
+		authorizationService.validateSystemOperational(CallType.WRITE);
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		Optional<BranchData> obd = branchService.getBranchData(branchUuid);
+		RelizaObject ro = obd.isPresent() ? obd.get() : null;
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE, PermissionScope.BRANCH, branchUuid, Collections.singletonList(ro), CallType.WRITE);
+		AutoIntegrateResult r = releaseService.autoIntegrateFeatureSetOnDemandExplained(obd.get());
+		return new AutoIntegrateResultView(r.release().flatMap(sharedReleaseService::getReleaseData).orElse(null),
+				redactUnreadableRows(oud.get(), obd.get(), r.evaluation()));
+	}
+
+	/**
+	 * A same-organization dependency row shows its release facts only to a caller who can READ the
+	 * component. Decided on the evaluator's full data; only the returned copy is redacted. Rows of
+	 * another organization are left as the evaluator produced them (already redacted there).
+	 */
+	private AutoIntegrateEvaluation redactUnreadableRows(UserData ud, BranchData featureSet, AutoIntegrateEvaluation ev) {
+		Map<UUID, Boolean> readable = new HashMap<>();
+		List<AutoIntegrateDependencyRow> rows = new ArrayList<>(ev.dependencies().size());
+		for (AutoIntegrateDependencyRow row : ev.dependencies()) {
+			boolean ok = readable.computeIfAbsent(row.component().uuid(), c -> {
+				Optional<ComponentData> ocd = getComponentService.getComponentData(c);
+				if (ocd.isEmpty()) return false;
+				if (!featureSet.getOrg().equals(ocd.get().getOrg())) return true;
+				return authorizationService.isUserAuthorizedForObject(ud, PermissionFunction.RESOURCE,
+						PermissionScope.COMPONENT, c, List.<RelizaObject>of(ocd.get()), CallType.READ);
+			});
+			rows.add(ok ? row : row.redacted());
+		}
+		return ev.withDependencies(Collections.unmodifiableList(rows));
 	}
 	
 	@DgsData(parentType = "Mutation", field = "setNextVersion")

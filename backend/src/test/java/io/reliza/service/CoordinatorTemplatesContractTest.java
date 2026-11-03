@@ -64,6 +64,24 @@ class CoordinatorTemplatesContractTest {
 	}
 
 	@Test
+	void theCoordinatorTemplatesSayWhatToDoAtTheDesignCheckpoint() throws IOException {
+		// task SPLIT-5 (3.9): a task stops at the seat once its design is reviewed; the seat reads it and splits or sends it on.
+		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
+			String doc = template(name).replaceAll("[ \\t]*\\n[ \\t]*", " ");
+			assertTrue(doc.contains("**The design checkpoint.** A task in AWAITING_COORDINATOR with"
+					+ " `designCheckpoint.state PENDING` has its design reviewed."), name);
+			assertTrue(doc.contains("Do not authorize without reading: that is the silent pass the checkpoint exists to"
+					+ " stop."), name);
+			assertTrue(doc.contains("A child of a split stops here too, on its own reviewed round: read the child's delta"
+					+ " round (it names the parent sections it builds) and send it on with `task authorize <child> --role"
+					+ " coder`, unless that round recommends a further split."), name + ": the child sentence");
+			assertTrue(doc.contains("The ALERT also comes when the design changed under a task already sent on, after a"
+					+ " coder's question answered with a new round or an advisory round: read the new round."),
+					name + ": the changed-under sentence");
+		}
+	}
+
+	@Test
 	void theCoordinatorReadsTheBoardInBulk() throws IOException {
 		// task cc14f4cb: one task show per task spent the rate limit in a poll.
 		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {

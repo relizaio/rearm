@@ -94,7 +94,7 @@ public class ReleaseReferenceOrgValidationTest {
 		return rigIn(testInitializer.obtainOrganization().getUuid());
 	}
 
-	/** {@link #rig()} in a given org -- used for the shared external-components org. */
+	/** {@link #rig()} in a given org -- used for the zero org. */
 	private Rig rigIn(UUID org) throws RelizaException {
 		return rigIn(org, ComponentType.COMPONENT);
 	}
@@ -352,27 +352,29 @@ public class ReleaseReferenceOrgValidationTest {
 		assertEquals(List.of(head), commits.stream().map(SourceCodeEntryData::getUuid).toList());
 	}
 
-	// ---------------- the shared external-components org ----------------
+	// ---------------- the zero (former shared external-components) org ----------------
 
 	@Test
-	public void updateAcceptsAnEntryAndAParentOfTheExternalOrg() throws RelizaException {
-		// Consistent with the org-scoped release lookup, the dependency unwind and the ticket
-		// lookup, which all admit the external org next to the release's own.
+	public void updateRefusesAnEntryAndAParentOfTheZeroOrg() throws RelizaException {
+		// The org-scoped lookups no longer admit the zero org next to the release's own: its rows
+		// are refused like any other organization's.
 		Rig a = rig();
-		Rig external = rigIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+		Rig zero = rigIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		UUID release = draft(a, "1.0.0");
-		UUID externalSce = sce(external);
-		UUID externalParent = draft(external, "1.0.0");
+		UUID zeroSce = sce(zero);
+		UUID zeroParent = draft(zero, "1.0.0");
 
-		ossReleaseService.updateRelease(ReleaseDto.builder().uuid(release).sourceCodeEntry(externalSce)
-				.commits(List.of(externalSce))
-				.parentReleases(List.of(ParentRelease.minimalParentReleaseFactory(externalParent, null))).build(), WU);
+		RelizaException re = assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(
+				ReleaseDto.builder().uuid(release).sourceCodeEntry(zeroSce).commits(List.of(zeroSce)).build(), WU));
+		assertTrue(re.getMessage().contains(zeroSce.toString()), re.getMessage());
+		re = assertThrows(RelizaException.class, () -> ossReleaseService.updateRelease(ReleaseDto.builder()
+				.uuid(release).parentReleases(List.of(ParentRelease.minimalParentReleaseFactory(zeroParent, null)))
+				.build(), WU));
+		assertTrue(re.getMessage().contains(zeroParent.toString()), re.getMessage());
 		ReleaseData rd = stored(release);
-		assertEquals(externalSce, rd.getSourceCodeEntry());
-		assertEquals(List.of(externalSce), rd.getCommits());
-		assertEquals(List.of(externalParent), parentUuids(rd));
-		assertEquals(externalSce, releaseDatafetcher.sceOfReleaseWithDep(dfeFor(rd)).getUuid(),
-				"an external-org entry is shown, like an own-org one");
+		assertNull(rd.getSourceCodeEntry(), "a refused reference must not be stored");
+		assertTrue(null == rd.getCommits() || rd.getCommits().isEmpty(), "a refused commit must not be stored");
+		assertTrue(rd.getParentReleases().isEmpty(), "a refused parent must not be stored");
 	}
 
 	// ---------------- the org-scoped batch read ----------------
@@ -381,20 +383,21 @@ public class ReleaseReferenceOrgValidationTest {
 	public void referenceableReadKeepsInputOrderAndDropsMissingForeignAndPlaceholder() throws RelizaException {
 		Rig a = rig();
 		Rig b = rig();
-		Rig external = rigIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
+		Rig zero = rigIn(CommonVariables.EXTERNAL_PROJ_ORG_UUID);
 		UUID own1 = sce(a);
 		UUID own2 = sce(a);
 		UUID foreign = sce(b);
-		UUID ext = sce(external);
+		UUID zeroOrgSce = sce(zero);
 
-		List<UUID> requested = Arrays.asList(own2, foreign, UUID.randomUUID(), ext, null,
+		List<UUID> requested = Arrays.asList(own2, foreign, UUID.randomUUID(), zeroOrgSce, null,
 				SourceCodeEntryData.NULL_SCE_UUID, own1, own2);
-		assertEquals(List.of(own2, ext, own1, own2),
+		assertEquals(List.of(own2, own1, own2),
 				getSourceCodeEntryService.getReferenceableSceDataList(requested, a.org()).stream()
 					.map(SourceCodeEntryData::getUuid).toList(),
-				"own and external entries in input order (duplicates kept); missing, foreign, null and "
+				"own entries in input order (duplicates kept); missing, foreign, zero-org, null and "
 				+ "the placeholder dropped");
 		assertTrue(getSourceCodeEntryService.getReferenceableSceData(foreign, a.org()).isEmpty());
+		assertTrue(getSourceCodeEntryService.getReferenceableSceData(zeroOrgSce, a.org()).isEmpty());
 		assertEquals(foreign, getSourceCodeEntryService.getReferenceableSceData(foreign, b.org()).orElseThrow().getUuid());
 	}
 

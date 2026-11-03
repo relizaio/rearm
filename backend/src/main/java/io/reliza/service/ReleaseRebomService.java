@@ -12,9 +12,12 @@ import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
+import java.util.function.Supplier;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
 import org.springframework.transaction.annotation.Transactional;
+import org.springframework.transaction.support.TransactionTemplate;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.Utils;
 import io.reliza.model.ReleaseData;
@@ -23,6 +26,7 @@ import io.reliza.model.ReleaseRebomData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.ReleaseRebomData.ReleaseBom;
 import io.reliza.repositories.ReleaseRebomRepository;
+import io.reliza.repositories.ReleaseRepository;
 import lombok.extern.slf4j.Slf4j;
 
 @Service
@@ -46,6 +50,12 @@ public class ReleaseRebomService {
 	
 	@Autowired
     private AuditService auditService;
+
+	@Autowired
+	private ReleaseRepository releaseRepository;
+
+	@Autowired
+	private PlatformTransactionManager transactionManager;
 	
 	private final ReleaseRebomRepository repository;
 	
@@ -123,13 +133,14 @@ public class ReleaseRebomService {
 	 * above them (SCORE-71 ADR-1): each existing record's row list is emptied and its revision moved,
 	 * already empty or not, so a store fenced on an earlier read is refused (ADR-11); the next export
 	 * or merge rebuilds the rows. Runs in the caller's transaction; nothing for an empty collection.
+	 * JIT is off for that transaction from here on ({@link #withJitOff}).
 	 *
 	 * @return the number of records touched
 	 */
 	public int invalidateRowsOfAndAbove(UUID org, Collection<UUID> releases) {
 		if (null == releases || releases.isEmpty()) return 0;
 		String[] seeds = releases.stream().map(UUID::toString).toArray(String[]::new);
-		return repository.invalidateRowsOfReleasesAndProductsAbove(org.toString(), seeds);
+		return withJitOff(() -> repository.invalidateRowsOfReleasesAndProductsAbove(org.toString(), seeds));
 	}
 
 	/**
@@ -139,7 +150,21 @@ public class ReleaseRebomService {
 	 * @return the number of records touched
 	 */
 	public int invalidateRowsOfComponentReleasesAndAbove(UUID org, UUID component) {
-		return repository.invalidateRowsOfComponentReleasesAndProductsAbove(org.toString(), component.toString());
+		return withJitOff(() -> repository.invalidateRowsOfComponentReleasesAndProductsAbove(org.toString(),
+				component.toString()));
+	}
+
+	/**
+	 * Runs an invalidation with JIT off (SET LOCAL) in the caller's transaction, or in one of its own
+	 * when there is none. The walk probes idx_releases_record_data_gin once per release per level, a
+	 * few milliseconds, but the default @> estimates push its cost over jit_above_cost: on a seeded
+	 * database LLVM compile was about 90 ms of a 138 ms walk. SET LOCAL ends with the transaction.
+	 */
+	private int withJitOff(Supplier<Integer> invalidation) {
+		return new TransactionTemplate(transactionManager).execute(status -> {
+			releaseRepository.disableJitForTransaction();
+			return invalidation.get();
+		});
 	}
 
 	/**

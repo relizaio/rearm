@@ -8,9 +8,13 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
+import java.time.format.DateTimeFormatter;
+import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.LinkedHashMap;
@@ -62,16 +66,27 @@ public class CanonicalQualifierSweepTest {
 	private static final String EXACT = "pkg:apk/alpine/musl@1.2.4?distro=alpine-3.18&arch=x86_64";
 	private static final String CORRECTED = "pkg:apk/alpine/musl@1.2.4?distro=alpine-3.18";
 
+	/**
+	 * Also TPF-114 W3 (architecture 4.12): through the sweep body, a repoint that repaired a
+	 * mapping requeues the canonical for fan-out (fanOutAt removed) before it is stamped
+	 * verified, because the repoint changes the canonical's findings without moving any bucket.
+	 */
 	@Test
 	public void repointsStaleMappingOntoQualifierBearingCanonical() {
 		UUID org = testInitializer.obtainOrganization().getUuid();
 		SbomComponent stripped = saveComponent(org, STRIPPED, null, null);
 		UUID canonicalArtifact = UUID.randomUUID();
 		ArtifactSbomComponent mapping = saveMapping(org, canonicalArtifact, stripped.getUuid(), EXACT, null);
+		ArtifactCanonicalMap map = saveCanonicalMap(org, canonicalArtifact);
+		assertEquals(1, stampFanOut(org, canonicalArtifact, T1));
 
-		int repaired = sbomComponentService.repointCanonicalArtifactQualifiers(org, canonicalArtifact);
+		sbomComponentService.verifyCanonicalForms(List.of(pending(org, canonicalArtifact)));
 
-		assertEquals(1, repaired, "the stale mapping must be counted as repaired");
+		ArtifactCanonicalMap after = artifactCanonicalMapRepository.findById(map.getUuid()).orElseThrow();
+		assertNull(after.getFlowControl().fanOutAt(), "a repaired canonical is requeued for fan-out");
+		assertNotNull(after.getFlowControl().fanOutRequeuedAt());
+		assertEquals(SbomComponentService.CANONICAL_FORM_VERSION, after.getFlowControl().canonicalFormVersion(),
+				"and then stamped verified");
 		UUID nowPointsAt = artifactSbomComponentRepository.findById(mapping.getUuid())
 				.orElseThrow().getSbomComponentUuid();
 		assertNotEquals(stripped.getUuid(), nowPointsAt, "mapping must no longer point at the stripped canonical");
@@ -119,6 +134,15 @@ public class CanonicalQualifierSweepTest {
 		assertEquals(0, repaired, "an already-correct mapping must not be counted as repaired");
 		assertEquals(correct.getUuid(), artifactSbomComponentRepository.findById(mapping.getUuid())
 				.orElseThrow().getSbomComponentUuid(), "the mapping must be untouched");
+
+		// TPF-114 4.12: through the sweep body, repaired == 0 requeues nothing.
+		ArtifactCanonicalMap map = saveCanonicalMap(org, canonicalArtifact);
+		assertEquals(1, stampFanOut(org, canonicalArtifact, T1));
+		sbomComponentService.verifyCanonicalForms(List.of(pending(org, canonicalArtifact)));
+		ArtifactCanonicalMap after = artifactCanonicalMapRepository.findById(map.getUuid()).orElseThrow();
+		assertEquals(DateTimeFormatter.ISO_INSTANT.format(T1.toInstant()), after.getFlowControl().fanOutAt(),
+				"an already-correct canonical keeps its fan-out stamp");
+		assertEquals(SbomComponentService.CANONICAL_FORM_VERSION, after.getFlowControl().canonicalFormVersion());
 	}
 
 	/**
@@ -354,6 +378,23 @@ public class CanonicalQualifierSweepTest {
 	}
 
 	// ---------------- fixtures ----------------
+
+	/** A fan-out stamp instant (TPF-114 4.12), at the database's microsecond precision. */
+	private static final ZonedDateTime T1 =
+			ZonedDateTime.now(ZoneOffset.UTC).minusMinutes(5).truncatedTo(ChronoUnit.MICROS);
+
+	private int stampFanOut(UUID org, UUID canonicalArtifact, ZonedDateTime at) {
+		return artifactCanonicalMapRepository.stampFanOutPass(org, canonicalArtifact,
+				DateTimeFormatter.ISO_INSTANT.format(at.toInstant()),
+				ZonedDateTime.of(2000, 1, 1, 0, 0, 0, 0, ZoneOffset.UTC));
+	}
+
+	private static PendingCanonicalForm pending(UUID org, UUID canonicalArtifact) {
+		return new PendingCanonicalForm() {
+			@Override public UUID getOrg() { return org; }
+			@Override public UUID getCanonicalArtifactUuid() { return canonicalArtifact; }
+		};
+	}
 
 	private SbomComponent saveComponentNamed(UUID org, String canonicalPurl, String name, String version) {
 		SbomComponent sc = new SbomComponent();
