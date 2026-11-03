@@ -67,12 +67,9 @@ describe('release documents with the artifact scan state, and their core twins (
         expect(errorsAgainst(proSchema as GraphQLSchema, preferred)).toEqual([])
     })
 
-    // The canary: retired by deleting this row only, when an operator sync carries both fields to CE
-    // (TPF-133: the list documents and the product document also carry bomScan).
-    it.each(PREFERRED)('(c) %s is refused by CE for notScannable or bomScan and nothing else', (_name, preferred) => {
-        const errors = errorsAgainst(ceSchema, preferred)
-        expect(errors.length).toBeGreaterThan(0)
-        for (const message of errors) expect(message).toMatch(/notScannable|bomScan/)
+    // The former canary, retired: a backend sync carried notScannable and bomScan to CE.
+    it.each(PREFERRED)('(c) %s is valid against the CE schema', (_name, preferred) => {
+        expect(errorsAgainst(ceSchema, preferred)).toEqual([])
     })
 
     it.each(PAIRS)('(d) %s selects the field and its core twin does not', (_name, preferred, core) => {
@@ -132,9 +129,7 @@ describe('release documents with the artifact scan state, and their core twins (
         expect(coreChildren).not.toContain('sourceCodeEntryDetails')
         expect(coreChildren).not.toContain('variantDetails')
 
-        const errors = errorsAgainst(ceSchema, graphqlQueries.SingleReleaseProductGql)
-        expect(errors.length).toBeGreaterThan(0)
-        for (const message of errors) expect(message).toMatch(/notScannable|bomScan/)
+        expect(errorsAgainst(ceSchema, graphqlQueries.SingleReleaseProductGql)).toEqual([])
     })
 
     it('(j) the branch list fragment: no artifact marker, no artifact type, one bomScan line, componentDetails { type } (TPF-133)', () => {
@@ -152,12 +147,7 @@ describe('release documents with the artifact scan state, and their core twins (
         expect(component).toMatch(/\btype\b/)
         expect(component).not.toMatch(/\bkind\b/)
         const shape = (f: string) => parse(`query q($b: ID!) { releases(branchFilter: $b) { ${f} } }`)
-        const errors = errorsAgainst(ceSchema, shape(fragment))
-        expect(errors.length).toBeGreaterThan(0)
-        for (const message of errors) {
-            expect(message).toContain('bomScan')
-            expect(message).not.toContain('notScannable')
-        }
+        expect(errorsAgainst(ceSchema, shape(fragment))).toEqual([])
         expect(errorsAgainst(ceSchema, shape(stripAdditiveFields(fragment)))).toEqual([])
     })
 
@@ -222,21 +212,11 @@ describe('documents with the release BOM scan tally, the second tier (TPF-133)',
         for (const doc of [full, withoutBomScan, core]) expect(errorsAgainst(proSchema as GraphQLSchema, doc)).toEqual([])
     })
 
-    it.each(TIERED)('(b) %s on CE: the core validates, the full form is refused for bomScan or notScannable only, the form without bomScan for notScannable only', (_name, full, withoutBomScan, core) => {
-        expect(errorsAgainst(ceSchema, core)).toEqual([])
-        const fullErrors = errorsAgainst(ceSchema, full)
-        expect(fullErrors.length).toBeGreaterThan(0)
-        for (const message of fullErrors) expect(message).toMatch(/notScannable|bomScan/)
-        expect(fullErrors.some((m) => m.includes('bomScan'))).toBe(true)
-        const tier2Errors = errorsAgainst(ceSchema, withoutBomScan)
-        expect(tier2Errors.length).toBeGreaterThan(0)
-        for (const message of tier2Errors) {
-            expect(message).toContain('notScannable')
-            expect(message).not.toContain('bomScan')
-        }
+    it.each(TIERED)('(b) all three forms of %s validate on CE', (_name, full, withoutBomScan, core) => {
+        for (const doc of [full, withoutBomScan, core]) expect(errorsAgainst(ceSchema, doc)).toEqual([])
     })
 
-    it('(b) the branch document: the full form selects bomScan and componentDetails, the core neither field; CE refuses the full form for bomScan only', () => {
+    it('(b) the branch document: the full form selects bomScan and componentDetails, the core neither field; both validate on CE', () => {
         const [full, core] = BRANCH_PAIR
         expect(full).not.toBe(core)
         expect(print(full)).toContain('bomScan {')
@@ -245,12 +225,7 @@ describe('documents with the release BOM scan tally, the second tier (TPF-133)',
         expect(print(core)).not.toContain('bomScan')
         expect(print(core)).toContain('componentDetails {')
         expect(errorsAgainst(ceSchema, core)).toEqual([])
-        const errors = errorsAgainst(ceSchema, full)
-        expect(errors.length).toBeGreaterThan(0)
-        for (const message of errors) {
-            expect(message).toContain('bomScan')
-            expect(message).not.toContain('notScannable')
-        }
+        expect(errorsAgainst(ceSchema, full)).toEqual([])
     })
 
     it.runIf(proSchema)('(b) both forms of the branch document validate on Pro', () => {

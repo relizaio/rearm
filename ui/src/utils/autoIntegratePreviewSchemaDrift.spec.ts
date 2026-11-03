@@ -8,14 +8,11 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 // rearm-core checkout and its checks are skipped (not failed) when it is absent.
 
 describe('auto-integrate documents vs the CE mirror schema (in-repo, always runs)', () => {
-    // Canary: the CE mirror lacks the preview query and the explained mutation, which is what makes
-    // the probe meaningful there. When a backend sync carries the two fields to CE this fires; the
-    // retirement is to delete this one test (the probe and the legacy fallback stay for older servers).
-    it('the preview query and the explained mutation are INVALID against the CE mirror', () => {
-        expect(validate(ceSchema, AUTO_INTEGRATE_PREVIEW_QUERY).map(e => e.message).join('\n'))
-            .toContain('autoIntegrateFeatureSetPreview')
-        expect(validate(ceSchema, AUTO_INTEGRATE_EXPLAINED_MUTATION).map(e => e.message).join('\n'))
-            .toContain('autoIntegrateFeatureSetExplained')
+    // The former canary, retired: a backend sync carried the two fields to CE (the probe and the
+    // legacy fallback stay for older servers).
+    it('the preview query and the explained mutation are valid against the CE mirror', () => {
+        expect(validate(ceSchema, AUTO_INTEGRATE_PREVIEW_QUERY).map(e => e.message)).toEqual([])
+        expect(validate(ceSchema, AUTO_INTEGRATE_EXPLAINED_MUTATION).map(e => e.message)).toEqual([])
     })
 
     // The fallback document must validate everywhere.
