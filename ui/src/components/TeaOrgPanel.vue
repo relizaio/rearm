@@ -19,37 +19,61 @@
             </template>
             <template v-else>
                 <!-- Pro (task TPF-144): the assigned domain, the serving mode and the /.well-known/tea hosting, as the server holds them -->
-                <div v-if="discovery?.teaUuid"><strong>Organization TEA id:</strong> <code data-testid="tea-org-uuid">{{ discovery.teaUuid }}</code></div>
-                <div v-else data-testid="tea-org-uuid-missing" class="text-muted">
-                    Organization TEA id: not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.
+                <div class="tea-setting">
+                    <div class="tea-setting-label">Organization TEA id</div>
+                    <div class="tea-setting-value">
+                        <code v-if="discovery?.teaUuid" data-testid="tea-org-uuid">{{ discovery.teaUuid }}</code>
+                        <span v-else data-testid="tea-org-uuid-missing" class="text-muted">{{ TEA_ID_NOT_MINTED }}</span>
+                    </div>
                 </div>
                 <template v-if="discovery">
-                    <div v-if="discovery.assignedHost" data-testid="tea-assigned-domain"><strong>Assigned TEA domain:</strong> <code>{{ discovery.assignedHost }}</code></div>
-                    <div v-else data-testid="tea-no-domain-notice" class="text-muted">{{ TEA_NO_DOMAIN_NOTICE }}</div>
-
-                    <div data-testid="tea-serving-mode" class="mt-2"><strong>Serving mode:</strong>
-                        <n-radio-group :value="discovery.teaServing" :disabled="!isOrgAdmin || servingSaving" @update:value="onServingChange">
-                            <span v-for="o in servingOptions" :key="o.value" :data-testid="'tea-serving-option-' + o.value"><n-radio :value="o.value" :disabled="o.disabled">{{ o.label }}</n-radio></span>
-                        </n-radio-group>
-                        <div data-testid="tea-serving-public-note" class="text-muted">{{ TEA_SERVING_PUBLIC_NOTE }}</div>
+                    <div class="tea-setting">
+                        <div class="tea-setting-label">Assigned TEA domain</div>
+                        <div class="tea-setting-value">
+                            <code v-if="discovery.assignedHost" data-testid="tea-assigned-domain">{{ discovery.assignedHost }}</code>
+                            <span v-else data-testid="tea-no-domain-notice" class="text-muted">{{ TEA_NO_DOMAIN_NOTICE }}</span>
+                        </div>
                     </div>
 
-                    <div v-if="discovery.apiBase" data-testid="tea-effective-base"><strong>TEA API base:</strong> <code data-testid="tea-api-base">{{ discovery.apiBase }}</code></div>
-                    <div v-else-if="discovery.teaServing === 'NONE'" data-testid="tea-not-served" class="text-warning">{{ TEA_NOT_SERVED }}</div>
-                    <div v-else-if="!discovery.teaUuid && discovery.assignedHost" data-testid="tea-not-served-no-id" class="text-warning">{{ TEA_NOT_SERVED_NO_ID }}</div>
-                    <div v-else data-testid="tea-domain-lost" class="text-warning">{{ TEA_DOMAIN_LOST }}</div>
-
-                    <div v-if="discovery.assignedHost" data-testid="tea-well-known-hosting" class="mt-2"><strong>/.well-known/tea:</strong>
-                        <n-radio-group :value="discovery.teaWellKnownHosting" :disabled="!isOrgAdmin || servingSaving" @update:value="onHostingChange">
-                            <span data-testid="tea-hosting-option-NONE"><n-radio value="NONE">Not hosted by this instance</n-radio></span>
-                            <span data-testid="tea-hosting-option-DOMAIN"><n-radio value="DOMAIN" :disabled="discovery.teaServing !== 'DOMAIN'">Hosted on {{ discovery.assignedHost }}</n-radio></span>
-                        </n-radio-group>
-                        <div v-if="discovery.teaServing !== 'DOMAIN'" data-testid="tea-hosting-help" class="text-muted">{{ TEA_HOSTING_NEEDS_DOMAIN }}</div>
+                    <div class="tea-setting" data-testid="tea-serving-mode">
+                        <div class="tea-setting-label">Serving mode</div>
+                        <div class="tea-setting-value">
+                            <n-radio-group class="tea-options" :value="discovery.teaServing" :disabled="!isOrgAdmin || servingSaving" @update:value="onServingChange">
+                                <span v-for="o in servingOptions" :key="o.value" class="tea-option" :data-testid="'tea-serving-option-' + o.value"><n-radio :value="o.value" :disabled="o.disabled">{{ o.label }}</n-radio><n-tooltip trigger="hover" style="max-width: 420px;">
+                                        <template #trigger>
+                                            <n-icon size="16" class="tea-help" :aria-label="TEA_SERVING_DESCRIPTIONS[o.value]" :data-testid="'tea-serving-help-' + o.value"><QuestionMark /></n-icon>
+                                        </template>
+                                        {{ TEA_SERVING_DESCRIPTIONS[o.value] }}
+                                    </n-tooltip></span>
+                            </n-radio-group>
+                            <div data-testid="tea-serving-public-note" class="text-muted">{{ TEA_SERVING_PUBLIC_NOTE }}</div>
+                        </div>
                     </div>
-                    <div v-if="discovery.wellKnownUrl" data-testid="tea-well-known-hosted"><strong>Hosted at:</strong> <code data-testid="tea-well-known-url">{{ discovery.wellKnownUrl }}</code></div>
 
-                    <div v-if="discovery.wellKnownDocument">
-                        <p v-if="!discovery.wellKnownUrl" class="text-muted mt-2" data-testid="tea-well-known-self-host">Host this document at https://&lt;your TEI domain&gt;/.well-known/tea</p>
+                    <div class="tea-setting">
+                        <div class="tea-setting-label">TEA API base</div>
+                        <div class="tea-setting-value">
+                            <code v-if="discovery.apiBase" data-testid="tea-effective-base"><span data-testid="tea-api-base">{{ discovery.apiBase }}</span></code>
+                            <span v-else-if="discovery.teaServing === 'NONE'" data-testid="tea-not-served" class="text-warning">{{ TEA_NOT_SERVED }}</span>
+                            <span v-else-if="!discovery.teaUuid && discovery.assignedHost" data-testid="tea-not-served-no-id" class="text-warning">{{ TEA_NOT_SERVED_NO_ID }}</span>
+                            <span v-else data-testid="tea-domain-lost" class="text-warning">{{ TEA_DOMAIN_LOST }}</span>
+                        </div>
+                    </div>
+
+                    <div v-if="discovery.assignedHost" class="tea-setting" data-testid="tea-well-known-hosting">
+                        <div class="tea-setting-label">/.well-known/tea</div>
+                        <div class="tea-setting-value">
+                            <n-radio-group class="tea-options" :value="discovery.teaWellKnownHosting" :disabled="!isOrgAdmin || servingSaving" @update:value="onHostingChange">
+                                <span class="tea-option" data-testid="tea-hosting-option-NONE"><n-radio value="NONE">Not hosted by this instance</n-radio></span>
+                                <span class="tea-option" data-testid="tea-hosting-option-DOMAIN"><n-radio value="DOMAIN" :disabled="discovery.teaServing !== 'DOMAIN'">Hosted on {{ discovery.assignedHost }}</n-radio></span>
+                            </n-radio-group>
+                            <div v-if="discovery.teaServing !== 'DOMAIN'" data-testid="tea-hosting-help" class="text-muted">{{ TEA_HOSTING_NEEDS_DOMAIN }}</div>
+                            <div v-if="discovery.wellKnownUrl" data-testid="tea-well-known-hosted">Hosted at <code data-testid="tea-well-known-url">{{ discovery.wellKnownUrl }}</code></div>
+                        </div>
+                    </div>
+
+                    <div v-if="discovery.wellKnownDocument" class="mt-2">
+                        <p v-if="!discovery.wellKnownUrl" class="text-muted" data-testid="tea-well-known-self-host">Host this document at https://&lt;your TEI domain&gt;/.well-known/tea</p>
                         <n-input data-testid="tea-well-known" type="textarea" readonly :value="discovery.wellKnownDocument"
                             :autosize="{ minRows: 3, maxRows: 8 }" />
                         <n-button size="small" class="mt-2" data-testid="tea-well-known-copy" @click="copyWellKnown">Copy</n-button>
@@ -92,14 +116,15 @@
 <script setup lang="ts">
 import { computed, h, onMounted, ref, watch } from 'vue'
 import { RouterLink } from 'vue-router'
-import { NButton, NDataTable, NInput, NRadio, NRadioGroup, NTag, useNotification } from 'naive-ui'
+import { NButton, NDataTable, NIcon, NInput, NRadio, NRadioGroup, NTag, NTooltip, useNotification } from 'naive-ui'
+import { QuestionMark } from '@vicons/tabler'
 import graphqlClient from '@/utils/graphql'
 import graphqlQueries from '@/utils/graphqlQueries'
 import commonFunctions from '@/utils/commonFunctions'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { isProEdition } from '@/utils/editionCapabilities'
 import { brandingState } from '@/utils/branding'
-import { TEA_SERVING_LABELS, TeaNamedObject, TeaServing, TeaWellKnownHosting, teaRowLink, teaRowObject } from '@/utils/teaProfile'
+import { TEA_SERVING_DESCRIPTIONS, TEA_SERVING_LABELS, TeaNamedObject, TeaServing, TeaWellKnownHosting, teaRowLink, teaRowObject } from '@/utils/teaProfile'
 import TeaProfileEditor from './TeaProfileEditor.vue'
 
 const props = withDefaults(defineProps<{
@@ -133,6 +158,7 @@ const objects = computed((): Record<string, TeaNamedObject> => {
     return out
 })
 
+const TEA_ID_NOT_MINTED = 'Not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.'
 const TEA_OVERRIDES_EMPTY = 'No component or perspective overrides the organization profile.'
 const TEA_NO_DOMAIN_NOTICE = 'No TEA domain is assigned to this organization. A global administrator can assign one in System Settings.'
 const TEA_NOT_SERVED = 'Not served: the TEA API of this organization answers nothing. Choose a serving mode above to enable it.'
@@ -270,6 +296,34 @@ watch(() => props.orgUuid, reload)
 <style scoped>
 .tea-block {
     margin-bottom: 1.5rem;
+}
+.tea-setting {
+    display: grid;
+    grid-template-columns: 12rem 1fr;
+    column-gap: 1rem;
+    align-items: baseline;
+    margin-bottom: 0.75rem;
+}
+.tea-setting-label {
+    font-weight: 600;
+}
+.tea-options {
+    display: flex;
+    flex-direction: column;
+    gap: 0.25rem;
+}
+.tea-option {
+    display: inline-flex;
+    align-items: center;
+}
+.tea-help {
+    cursor: help;
+    margin-left: 2px;
+}
+@media (max-width: 640px) {
+    .tea-setting {
+        grid-template-columns: 1fr;
+    }
 }
 :deep(.tea-public-row td) {
     color: #d03050;

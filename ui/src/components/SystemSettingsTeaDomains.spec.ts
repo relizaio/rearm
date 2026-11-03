@@ -121,7 +121,7 @@ describe('System Settings, TEA Custom Domains', () => {
         expect(byId(w, 'tea-domain-rearm-host-' + REARM).text()).toBe('ReARM host')
         expect(w.findAll('[data-testid^="tea-domain-rearm-host-"]').filter(e => e.attributes('data-testid') !== 'tea-domain-rearm-host-note')
             .map(e => e.attributes('data-testid'))).toEqual(['tea-domain-rearm-host-' + REARM])
-        expect(byId(w, 'tea-domain-rearm-host-note').text()).toBe(REARM_HOST_NOTE)
+        expect(byId(w, 'tea-domain-rearm-host-note').attributes('aria-label')).toBe(REARM_HOST_NOTE)
         expect(byId(w, 'tea-domain-row-' + REARM).find('[data-testid="tea-domain-rearm-host-note"]').exists()).toBe(true)
         expect(w.findAll('[data-testid="tea-domain-rearm-host-note"]')).toHaveLength(1)
         expect(byId(w, 'tea-domain-unlisted-' + STALE).text()).toBe('not in the allow-list')

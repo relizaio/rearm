@@ -52,6 +52,13 @@ export const TEA_SERVING_LABELS: Record<TeaServing, string> = {
     DOMAIN: 'On the assigned domain',
 }
 
+/** What each serving mode does, for the help next to its option, keyed in the order of TEA_SERVING_MODES. */
+export const TEA_SERVING_DESCRIPTIONS: Record<TeaServing, string> = {
+    NONE: "The organization's TEA API answers nothing: no TEA path of this instance serves it, whatever its TEA profiles publish.",
+    LEGACY_UUID: "Served on this instance's host at /tea/<organization TEA id>/v1.0.0/. The TEA id is part of every URL, so no domain is needed; it is not served on a custom domain.",
+    DOMAIN: 'Served at https://<assigned domain>/tea/v1.0.0/, without the TEA id in the URL. Needs a domain a global administrator assigned to this organization; only in this mode can the instance also host /.well-known/tea on that domain.',
+}
+
 /**
  * The editor-only mode of a scope with no stored row: it resolves through its parents. Never sent:
  * going back to it removes the row (teaProfileInput refuses it).
