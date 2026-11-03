@@ -85,16 +85,30 @@ export function generatedArtifactDownloadRef (ad: any): ArtifactDownloadRef | nu
     return artifactDownloadRef(ad?.uuid, ad?.version, ad?.displayIdentifier)
 }
 
-export interface GeneratedSubmissionFacts { kind: string, part: string, version: string }
+export interface GeneratedArtifactOrigin {
+    /** What the artifact was generated for: 'TEA publication', or '<kind> submission (v<n>)'. */
+    title: string
+    /** Label and value pairs under the title: the TEA profile, or the submission part. */
+    details: Array<{ label: string, value: string }>
+}
 
 /**
- * The regulatory submission a generated artifact belongs to, from the tags the submission composer
- * writes (SubmissionTags): the package kind and the part, the manifest named as such; null for an
- * artifact no submission wrote.
+ * What a generated artifact was generated for, from the system tags its generator writes:
+ * - a TEA publication's aggregate (teaAggregate, teaProfileName): 'TEA publication' and its profile;
+ * - a regulatory submission's part (SubmissionTags: submissionKind, submissionPart,
+ *   submissionManifest, submissionVersion): '<kind> submission (v<n>)' and the part, the manifest
+ *   named as such.
+ * Null for an artifact neither wrote.
  */
-export function generatedArtifactSubmission (ad: any): GeneratedSubmissionFacts | null {
+export function generatedArtifactOrigin (ad: any): GeneratedArtifactOrigin | null {
+    if (tagValue(ad, 'teaAggregate') === 'true') {
+        const profile = tagValue(ad, 'teaProfileName')
+        return { title: 'TEA publication', details: profile ? [{ label: 'Profile', value: profile }] : [] }
+    }
     const kind = tagValue(ad, 'submissionKind')
     const part = tagValue(ad, 'submissionManifest') === 'true' ? 'Manifest' : packagePartLabel(tagValue(ad, 'submissionPart'))
     if (!kind && !part) return null
-    return { kind: packageKindLabel(kind), part, version: tagValue(ad, 'submissionVersion') }
+    const version = tagValue(ad, 'submissionVersion')
+    const title = [kind ? packageKindLabel(kind) : '', 'submission'].filter(Boolean).join(' ') + (version ? ' (v' + version + ')' : '')
+    return { title, details: part ? [{ label: 'Part', value: part }] : [] }
 }

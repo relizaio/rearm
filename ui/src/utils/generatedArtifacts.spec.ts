@@ -1,6 +1,6 @@
 import { describe, it, expect, vi } from 'vitest'
 import { belongsToLabel, generatedArtifactRows, isSyntheticArtifact, syntheticArtifactsAvailable, syntheticHistoryText,
-    generatedArtifactDownloadRef, generatedArtifactSubmission } from './generatedArtifacts'
+    generatedArtifactDownloadRef, generatedArtifactOrigin } from './generatedArtifacts'
 
 vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
@@ -98,15 +98,25 @@ describe('generated artifact download and submission facts', () => {
         expect(generatedArtifactDownloadRef({ uuid: 'nope', version: '1', displayIdentifier: 'x' })).toBeNull()
     })
 
-    it('reads the submission kind and part from the composer tags, the manifest named as such', () => {
+    it('names a TEA publication aggregate and its profile', () => {
         const tag = (key: string, value: string) => ({ key, value })
-        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionPart', 'NARRATIVE'),
-            tag('submissionVersion', '2')] })).toEqual({ kind: 'FDA premarket', part: 'Narrative', version: '2' })
-        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionManifest', 'true'),
-            tag('submissionVersion', '1')] })).toEqual({ kind: 'FDA premarket', part: 'Manifest', version: '1' })
-        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'OTHER_KIND'), tag('submissionPart', 'NEW_PART')] }))
-            .toEqual({ kind: 'OTHER_KIND', part: 'NEW_PART', version: '' })
-        expect(generatedArtifactSubmission({ tags: [tag('teaAggregate', 'true')] })).toBeNull()
-        expect(generatedArtifactSubmission({})).toBeNull()
+        expect(generatedArtifactOrigin({ tags: [tag('teaAggregate', 'true'), tag('teaProfileName', 'default'),
+            tag('teaPublication', 'p-1')] })).toEqual({ title: 'TEA publication', details: [{ label: 'Profile', value: 'default' }] })
+        expect(generatedArtifactOrigin({ tags: [tag('teaAggregate', 'true')] })).toEqual({ title: 'TEA publication', details: [] })
+    })
+
+    it('names a regulatory submission part from the composer tags, the manifest named as such', () => {
+        const tag = (key: string, value: string) => ({ key, value })
+        expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionPart', 'NARRATIVE'),
+            tag('submissionVersion', '2')] })).toEqual({ title: 'FDA premarket submission (v2)', details: [{ label: 'Part', value: 'Narrative' }] })
+        expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionManifest', 'true'),
+            tag('submissionVersion', '1')] })).toEqual({ title: 'FDA premarket submission (v1)', details: [{ label: 'Part', value: 'Manifest' }] })
+        expect(generatedArtifactOrigin({ tags: [tag('submissionKind', 'OTHER_KIND'), tag('submissionPart', 'NEW_PART')] }))
+            .toEqual({ title: 'OTHER_KIND submission', details: [{ label: 'Part', value: 'NEW_PART' }] })
+    })
+
+    it('answers null for an artifact neither a TEA publication nor a submission wrote', () => {
+        expect(generatedArtifactOrigin({ tags: [{ key: 'teaAggregate', value: 'false' }] })).toBeNull()
+        expect(generatedArtifactOrigin({})).toBeNull()
     })
 })

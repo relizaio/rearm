@@ -51,10 +51,12 @@ describe('ReleaseView Generated artifacts section', () => {
         }
     })
 
-    it('shows the submission kind and part of an artifact a regulatory submission wrote', () => {
+    it('shows what an artifact was generated for (a TEA publication or a regulatory submission) in a Generated for column', () => {
         const fields = declaration('generatedArtifactsTableFields')
-        expect(fields).toContain("key: 'submission'")
-        expect(fields).toContain('generatedArtifactSubmission(row)')
+        expect(fields).toContain("key: 'generatedFor'")
+        expect(fields).toContain("title: 'Generated for'")
+        expect(fields).toContain('generatedArtifactOrigin(row)')
+        expect(fields).not.toContain("title: 'Submission'")
     })
 
     it('keeps the inventory artifacts computed blind to the generated list', () => {
