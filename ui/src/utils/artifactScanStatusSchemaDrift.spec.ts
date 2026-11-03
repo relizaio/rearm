@@ -51,8 +51,11 @@ describe('artifactScanStatus document shape', () => {
 })
 
 describe('requeueArtifactScanFanOut mutation document', () => {
-    // Pro carries the mutation (relizaio/rearm-saas#1001); the CE mirror gets it with the next backend sync,
-    // and until then a click answers REQUEUE_UNSUPPORTED_TEXT (the helper maps the drift error).
+    // Both schemas carry the mutation (relizaio/rearm-saas#1001, synced to CE), so the UI has no fallback for it.
+    it('validates against the CE mirror', () => {
+        expect(validate(ceSchema, REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION).map(e => e.message)).toEqual([])
+    })
+
     it.runIf(proSchema)('validates against Pro', () => {
         expect(validate(proSchema as GraphQLSchema, REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION).map(e => e.message)).toEqual([])
     })

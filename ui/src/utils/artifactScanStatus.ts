@@ -132,25 +132,17 @@ export async function loadArtifactScanStatus (client: { query: Function }, artif
     }
 }
 
-/** A server without the requeue mutation (a CE mirror before the sync that carries it). */
-export const REQUEUE_UNSUPPORTED_TEXT = 'Re-applying findings is not available on this server'
-
 /**
- * Requeues the artifact's scan fan-out and answers the status read right after. A schema-drift error (a
- * server without the mutation) throws REQUEUE_UNSUPPORTED_TEXT; every other error is rethrown as is.
+ * Requeues the artifact's scan fan-out and answers the status read right after. Every error, a refusal
+ * included, is rethrown as is for the caller to show.
  */
 export async function requeueArtifactScanFanOut (client: { mutate: Function }, artifactUuid: string): Promise<ArtifactScanStatus | null> {
-    try {
-        const resp: any = await client.mutate({
-            mutation: REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION,
-            variables: { artifactUuid },
-            fetchPolicy: 'no-cache'
-        })
-        return resp?.data?.requeueArtifactScanFanOut ?? null
-    } catch (e: any) {
-        if (isSchemaDriftError(e)) throw new Error(REQUEUE_UNSUPPORTED_TEXT)
-        throw e
-    }
+    const resp: any = await client.mutate({
+        mutation: REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION,
+        variables: { artifactUuid },
+        fetchPolicy: 'no-cache'
+    })
+    return resp?.data?.requeueArtifactScanFanOut ?? null
 }
 
 /** Whether the status names a mapped BOM, the only artifact a requeue applies to. */

@@ -4,7 +4,7 @@ import {
     enrichmentFactOf, enrichmentGatedText, enrichmentNote, factRows, formatInstant, loadArtifactScanStatus, reasonLabel,
     resetScanStatusSupportForTests, scanStatusSupported, stateLine, truncatedNote,
     notScannableTitle, notScannableReleaseTitle, notScannableCountLabel,
-    REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION, REQUEUE_UNSUPPORTED_TEXT, requeueArtifactScanFanOut, canRequeueScanFanOut
+    REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION, requeueArtifactScanFanOut, canRequeueScanFanOut
 } from './artifactScanStatus'
 import type { ArtifactNotScannable, ArtifactScanStatus, ScanBlocker } from './artifactScanStatus'
 import { isDriftRejected } from './graphqlDriftFallback'
@@ -356,9 +356,7 @@ describe('requeueArtifactScanFanOut (Re-apply findings)', () => {
         expect(calls[0].fetchPolicy).toBe('no-cache')
     })
 
-    it('a server without the mutation answers the unsupported text; any other error is rethrown as is', async () => {
-        const drift = { mutate: async () => { throw validationError() } }
-        await expect(requeueArtifactScanFanOut(drift, 'a1')).rejects.toThrow(REQUEUE_UNSUPPORTED_TEXT)
+    it('rethrows every error as is, a refusal included', async () => {
         const e: any = new Error('Not authorized')
         await expect(requeueArtifactScanFanOut({ mutate: async () => { throw e } }, 'a1')).rejects.toBe(e)
     })
