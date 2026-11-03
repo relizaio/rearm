@@ -181,6 +181,10 @@ relizaprops:
   # Notification pipeline drains (shared scheduler): events fanned out and channel
   # deliveries dispatched per 5s tick.
   notificationOutboxBatch: ${NOTIFICATION_OUTBOX_BATCH:50}
+  # Metrics compute: releases claimed per tick and parallel workers. Lower both to cut the
+  # heap the tick holds at once (each worker computes one release at a time).
+  metricsComputeBatch: ${METRICS_COMPUTE_BATCH:102}
+  metricsComputeWorkers: ${METRICS_COMPUTE_WORKERS:3}
   notificationDeliveryBatch: ${NOTIFICATION_DELIVERY_BATCH:50}
   # SBOM reconciles processed per 5s tick (same shared scheduler). Bounds the
   # work one drain claims while holding the advisory lock; raise for burst
@@ -193,6 +197,10 @@ relizaprops:
   # Branding preset: empty or "default" is the Reliza branding. Presets are a ReARM Pro feature:
   # on CE any other value logs a WARN and the default is used.
   brandingPreset: ${RELIZAPROP_BRANDING_PRESET:}
+  # The TEA custom domains a global administrator may assign to organizations, comma-separated bare
+  # hostnames (lowercase, no scheme, port or path). The instance host (relizaprops.baseuri) is assignable
+  # without being listed. Empty: no custom domain.
+  teaCustomDomains: ${RELIZAPROP_TEA_CUSTOM_DOMAINS:}
 #spring.jpa.show-sql=true
 #spring.jpa.properties.hibernate.format_sql=true
 #logging.level.org.hibernate.SQL=DEBUG
