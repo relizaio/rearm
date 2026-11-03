@@ -189,6 +189,12 @@ describe('hopHistory: the split request row', () => {
         expect(h.at(-1)!.at).toBe(compareHopTimes(stamp, splitAt) > 0 ? stamp : splitAt)
     })
 
+    it('takes a requestedAt later by a whole second', () => {
+        const h = hopHistory(task({ splitRequest: req({ requestedAt: '2026-09-23T10:00:01Z' }) }))
+        expect(kinds(h)).toEqual(['return', 'return', 'split_request'])
+        expect(h[2].at).toBe('2026-09-23T10:00:01Z')
+    })
+
     it('takes the SPLIT return\'s time when requestedAt is earlier, and still follows it', () => {
         const h = hopHistory(task({ splitRequest: req({ requestedAt: '2026-09-23T09:59:59Z' }) }))
         expect(kinds(h)).toEqual(['return', 'return', 'split_request'])

@@ -58,11 +58,11 @@
                     <n-tag size="tiny" :bordered="false" data-testid="hop-split-request"
                            :type="splitRequestWaits(task) ? 'warning' : 'default'">split request</n-tag>
                     <span class="hist__role">by {{ e.rec.role }}</span>
-                    <span class="hist__time"><agent-time :at="e.rec.requestedAt"/> · {{ e.rec.proposedChildren?.length ? childCount(e.rec.proposedChildren.length) + ' proposed' : 'no children proposed' }} · <template
+                    <span class="hist__time hist__time--wrap"><agent-time :at="e.rec.requestedAt"/> · {{ e.rec.proposedChildren?.length ? childCount(e.rec.proposedChildren.length) + ' proposed' : 'no children proposed' }} · <template
                         v-if="e.rec.state === 'REQUESTED'">requested<template
                         v-if="splitRequestWaits(task)">, waiting for the coordinator</template></template><template
                         v-else-if="e.rec.state === 'LAPSED'">lapsed <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
-                        v-else>{{ e.rec.state === 'SPLIT' ? 'split' : 'declined' }}<template v-if="e.rec.settledBy"> by <actor-ref
+                        v-else>{{ e.rec.state === 'DECLINED' ? 'declined' : enumWord(e.rec.state) }}<template v-if="e.rec.settledBy"> by <actor-ref
                         :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
                         v-if="e.rec.state !== 'REQUESTED' && e.rec.note">: {{ e.rec.note }}</template></span>
                     <ol v-if="e.rec.proposedChildren?.length" class="hist__children" data-testid="split-request-children">

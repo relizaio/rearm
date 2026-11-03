@@ -58,7 +58,7 @@
                 {{ checkpointTooltip(task) }}
             </n-tooltip>
             <!-- A role's split request while it waits at the coordinator (task SPLIT-13); the hop log keeps every state. -->
-            <n-tooltip v-if="splitRequest" trigger="hover" :style="{ maxWidth: '520px' }">
+            <n-tooltip v-if="splitRequest" trigger="hover" :style="{ maxWidth: '520px', overflowWrap: 'anywhere' }">
                 <template #trigger>
                     <n-tag size="small" :bordered="false" :type="splitRequest.type" data-testid="split-request-chip">{{ splitRequest.text }}</n-tag>
                 </template>

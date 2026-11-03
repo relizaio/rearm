@@ -59,6 +59,8 @@
     &__role { font-weight: 600; }
     &__agent { color: #666; }
     &__time { color: #999; font-size: 11.5px; }
+    // A row whose time line carries writer text (a split request's note, task SPLIT-13) wraps it like a note.
+    &__time--wrap { overflow-wrap: anywhere; min-width: 0; }
     &__pv { font-size: 10.5px; color: #999; background: rgba(128, 128, 128, 0.1); padding: 0 5px; border-radius: 4px; }
     // Pushed to the right so the hop reads role/agent/time first and cost last:
     // the money is the qualifier on the hop, not its headline.

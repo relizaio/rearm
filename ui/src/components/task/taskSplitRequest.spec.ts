@@ -144,6 +144,13 @@ describe('the hop log\'s split-request row', () => {
         expect(chip(task).exists()).toBe(false)
     })
 
+    it('wraps the writer text of the time line, and names an unknown state by its word, never declined', () => {
+        const w = hops(srTask({}, req({ state: 'WITHDRAWN', note: 'x' })))
+        expect(row(w).find('.hist__time--wrap').exists()).toBe(true)
+        expect(row(w).text()).toContain('withdrawn')
+        expect(row(w).text()).not.toContain('declined')
+    })
+
     it('says no children proposed, with no list, for an empty proposal', () => {
         const w = hops(srTask({}, req({ proposedChildren: [] })))
         expect(row(w).text()).toContain('no children proposed')
