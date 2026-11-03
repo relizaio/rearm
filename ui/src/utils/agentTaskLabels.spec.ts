@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
-import { checkpointPhase, checkpointTag, checkpointTooltip, compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef, subtaskProgress,
-    subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
+import { checkpointPhase, checkpointTag, checkpointTooltip, childCount, compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef,
+    splitRequestTag, splitRequestTooltip, splitRequestWaits, subtaskProgress, subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
 import { prChips } from './agentDelivery'
 
 const tasks = [
@@ -254,5 +254,78 @@ describe('checkpointTag and checkpointTooltip', () => {
         expect(checkpointTooltip(cpTask({}, null))).toBe('')
         expect(checkpointTooltip(cpTask({ status: 'AWAITING_COORDINATOR' }, pending({ afterRole: null }))))
             .toContain('reached after the design ')
+    })
+})
+
+// The split request's chip and tooltip (task SPLIT-13, T-18 a): the server's state read beside the task's status;
+// "waiting" is REQUESTED on AWAITING_COORDINATOR and nothing else (parent SPLIT-9 D11, F-1).
+function requested (over: Record<string, any> = {}) {
+    return { requestedAt: '2026-09-23T10:00:00Z', role: 'coder', roleUuid: 'r-coder', session: 's3', description: 'too big: two repositories',
+        proposedChildren: [{ title: 'A', description: null, dependsOnSiblingIndexes: [], workLevel: null },
+            { title: 'B', description: null, dependsOnSiblingIndexes: [0], workLevel: null }],
+        state: 'REQUESTED', settledBy: null, settledAt: null, note: null, ...over }
+}
+function srTask (over: Record<string, any> = {}, rec: any = requested()) {
+    return { status: 'AWAITING_COORDINATOR', role: 'coder', assignment: null, signOffs: [], returns: [], splitRequest: rec, ...over }
+}
+
+describe('splitRequestTag', () => {
+    it('says split requested by the role, in warning, while the request waits at the coordinator', () => {
+        expect(splitRequestTag(srTask())).toEqual({ text: 'split requested by coder', type: 'warning' })
+    })
+
+    it('is null for a REQUESTED record on any other status, a hold over the wait included', () => {
+        expect(splitRequestTag(srTask({ status: 'QUEUED' }))).toBeNull()
+        expect(splitRequestTag(srTask({ status: 'ON_HOLD' }))).toBeNull()
+    })
+
+    it('is null for a settled or lapsed record, even back at the coordinator', () => {
+        for (const state of ['DECLINED', 'SPLIT', 'LAPSED']) {
+            expect(splitRequestTag(srTask({}, requested({ state })))).toBeNull()
+        }
+    })
+
+    it('is null without a record or a task', () => {
+        expect(splitRequestTag(srTask({}, null))).toBeNull()
+        expect(splitRequestTag(null)).toBeNull()
+    })
+})
+
+describe('splitRequestWaits and childCount', () => {
+    it('waits only for REQUESTED on AWAITING_COORDINATOR', () => {
+        expect(splitRequestWaits(srTask())).toBe(true)
+        expect(splitRequestWaits(srTask({ status: 'ON_HOLD' }))).toBe(false)
+        expect(splitRequestWaits(srTask({}, requested({ state: 'LAPSED' })))).toBe(false)
+        expect(splitRequestWaits(null)).toBe(false)
+    })
+
+    it('agrees the count word', () => {
+        expect(childCount(1)).toBe('1 child')
+        expect(childCount(2)).toBe('2 children')
+    })
+})
+
+describe('splitRequestTooltip', () => {
+    it('reads the reason and the proposed titles, whole', () => {
+        expect(splitRequestTooltip(srTask())).toBe('too big: two repositories; proposes 2 children: A; B')
+    })
+
+    it('agrees the count word with one child', () => {
+        expect(splitRequestTooltip(srTask({}, requested({ proposedChildren: [{ title: 'A', dependsOnSiblingIndexes: [] }] }))))
+            .toBe('too big: two repositories; proposes 1 child: A')
+    })
+
+    it('says proposes no children for an empty proposal', () => {
+        expect(splitRequestTooltip(srTask({}, requested({ proposedChildren: [] }))))
+            .toBe('too big: two repositories; proposes no children')
+    })
+
+    it('reads the redacted shape: no description, no proposal', () => {
+        expect(splitRequestTooltip(srTask({}, requested({ description: null, session: null, proposedChildren: [] }))))
+            .toBe('split requested by coder; proposes no children')
+    })
+
+    it('is empty without a record', () => {
+        expect(splitRequestTooltip(srTask({}, null))).toBe('')
     })
 })

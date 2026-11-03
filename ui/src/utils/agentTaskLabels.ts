@@ -201,3 +201,36 @@ export function checkpointTooltip (task: any): string {
     }
     }
 }
+
+/**
+ * The task header's split-request chip (task SPLIT-13, parent SPLIT-9 D11), or null. The server carries the
+ * request's state (a REQUESTED record exists only while the task waits at the coordinator or is held over that
+ * wait), so the chip's one condition is REQUESTED on AWAITING_COORDINATOR; every other state and status is a
+ * hop-log row, and a hold says itself what the task waits on.
+ */
+export function splitRequestTag (task: any): { text: string, type: 'warning' } | null {
+    return splitRequestWaits(task) ? { text: `split requested by ${task.splitRequest.role}`, type: 'warning' } : null
+}
+
+/** Whether the task's split request waits at the coordinator now: the chip's and the hop row's one condition. */
+export function splitRequestWaits (task: any): boolean {
+    return task?.splitRequest?.state === 'REQUESTED' && task.status === 'AWAITING_COORDINATOR'
+}
+
+/** "1 child", "<n> children": the count of a split request's proposed children. */
+export function childCount (n: number): string {
+    return `${n} ${n === 1 ? 'child' : 'children'}`
+}
+
+/**
+ * The chip's tooltip: the requester's reason and the children it proposes, titles whole (the server bounds
+ * them). A blind read has no description; it then reads as the redacted request does. '' without a record.
+ */
+export function splitRequestTooltip (task: any): string {
+    const rec = task?.splitRequest
+    if (!rec) return ''
+    const head = rec.description ?? `split requested by ${rec.role}`
+    const titles = (rec.proposedChildren ?? []).map((c: any) => c.title)
+    if (!titles.length) return `${head}; proposes no children`
+    return `${head}; proposes ${childCount(titles.length)}: ${titles.join('; ')}`
+}
