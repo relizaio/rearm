@@ -345,6 +345,9 @@ public class TeaTransformerService {
 			resolvedType = "vnd.cyclonedx+json";
 		} else if ("application/xml".equals(initialType) && bomFormat == BomFormat.CYCLONEDX){
 			resolvedType = "vnd.cyclonedx+xml";
+		} else if ("application/json".equals(initialType) && bomFormat == BomFormat.SPDX) {
+			// the IANA-registered SPDX JSON type, so a TEA client (and the download's .spdx.json name) can tell SPDX from plain JSON
+			resolvedType = "application/spdx+json";
 		} else {
 			resolvedType = initialType;
 		}

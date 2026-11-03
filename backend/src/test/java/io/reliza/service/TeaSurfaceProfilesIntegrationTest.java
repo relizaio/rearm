@@ -31,9 +31,10 @@ import tools.jackson.databind.JsonNode;
 /**
  * Task TEA-28, design 4.15 (threat-model mitigations M1 and M4): the TEA surface serves the named aggregates of
  * a PUBLIC publication from its stored collection versions with no spec-shape change: two BOM artifacts named
- * after their profiles, each at its own uuid with its own bytes and the download file name {@code <name>.cdx.json}
- * (D10); a removed profile's revision still served from the versions naming it; a re-added one the same object;
- * a legacy-named revision served under its frozen name.
+ * after their profiles, each at its own uuid with its own bytes and the download file name
+ * {@code <teaUuid>-r<revision>.cdx.json} (the TEA file name rule, which replaced D10's {@code <name>.cdx.json}); a removed
+ * profile's revision still served from the versions naming it; a re-added one the same object; a legacy-named revision
+ * keeping its frozen name in the metadata.
  */
 class TeaSurfaceProfilesIntegrationTest extends TeaSurfaceIntegrationTestBase {
 
@@ -78,7 +79,9 @@ class TeaSurfaceProfilesIntegrationTest extends TeaSurfaceIntegrationTestBase {
 				.orElseThrow();
 	}
 
-	private void assertDownloads(TeaPublishedEntry e, String fileName) throws Exception {
+	/** Served under {@code <teaUuid>-r<revision>.cdx.json}, whatever the frozen name (the TEA file name rule). */
+	private void assertDownloads(TeaPublishedEntry e) throws Exception {
+		String fileName = e.teaUuid() + "-r" + e.revision() + ".cdx.json";
 		HttpResponse<byte[]> d = getBytes(download(e.teaUuid(), e.revision()), null, null);
 		assertEquals(200, d.statusCode());
 		assertArrayEquals(retained.get(e.checksums().get(0).algValue()), d.body(), "its uploaded bytes");
@@ -96,7 +99,7 @@ class TeaSurfaceProfilesIntegrationTest extends TeaSurfaceIntegrationTestBase {
 	// here. It saves a two-profile TEA row, which CE refuses; Pro's copy of this test keeps it.
 
 	@Test
-	void aLegacyNamedRevisionIsServedUnderItsFrozenNameUntilItsContentChanges() throws Exception {
+	void aLegacyNamedRevisionKeepsItsFrozenNameUntilItsContentChanges() throws Exception {
 		saveOrgProfile(TeaVisibility.PUBLIC, TeaRawArtifacts.NONE, TeaProductComponents.PUBLISH_WITH_PRODUCT);
 		World w = componentReleaseWithPurl(org, "pkg:generic/tea28-" + tag() + "@1.0.0", List.of());
 		UUID head = publish(w.release(), TeaPublishMode.PUBLISH).publication().getUuid();
@@ -105,14 +108,14 @@ class TeaSurfaceProfilesIntegrationTest extends TeaSurfaceIntegrationTestBase {
 		TeaFrozenEntries.freezeName(collectionRepository, head, 1, def.teaUuid(), legacy);
 
 		assertEquals(legacy, artifact(def.teaUuid(), 1).get("name").asString());
-		assertDownloads(entry(head, 1, "default"), legacy);
+		assertDownloads(entry(head, 1, "default"));
 
 		mergedPurls.put(w.release(), new ArrayList<>(List.of(mergedPurls.get(w.release()).get(0), "pkg:generic/dep@2")));
 		publish(w.release(), TeaPublishMode.REPUBLISH);
 		TeaPublishedEntry bumped = entry(head, 2, "default");
 		assertEquals(2, bumped.revision());
 		assertEquals("default", artifact(def.teaUuid(), 2).get("name").asString());
-		assertDownloads(bumped, "default.cdx.json");
+		assertDownloads(bumped);
 		assertEquals(legacy, artifact(def.teaUuid(), 1).get("name").asString(), "revision 1 keeps its frozen name");
 		TeaPublishedCollectionData v1 = teaPublicationService.getCollection(head, 1).orElseThrow();
 		assertEquals(legacy, elementOf(Utils.OM.readTree(v1.getDocument()), def.teaUuid()).get("name").asString());

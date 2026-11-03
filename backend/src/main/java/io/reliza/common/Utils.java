@@ -993,18 +993,18 @@ public class Utils {
     public static final String REARM_CD_GROUP = "rearm-cd---ReARM CD";
 
     private static final String REARM_CD_PRODUCT_NAME = "ReARM CD";
-    private static final String REARM_CD_PRODUCT_VERSION = "26.10.12";
+    private static final String REARM_CD_PRODUCT_VERSION = "26.10.15";
 
     public static final String REARM_CD_HELM_NAME = "registry.relizahub.com/library/rearm-cd";
-    public static final String REARM_CD_HELM_DIGEST = "be1ba3f57d46ffa092e1ea5198a6bcac814842dd17baa7f470b2d0cc79645170";
-    private static final String REARM_CD_HELM_VERSION = "0.4.5";
-    private static final String REARM_CD_HELM_COMMIT = "a8df5dee200959ee129c408d84919c651fe7655d";
-    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.4.5 [skip ci]";
+    public static final String REARM_CD_HELM_DIGEST = "72963a984ae49a27043bf3c14be6f78fb09baebc992fc842b91e8afc9fb35e70";
+    private static final String REARM_CD_HELM_VERSION = "0.4.7";
+    private static final String REARM_CD_HELM_COMMIT = "81ad244adc07548ae0d7cea06c3fa819062a2481";
+    private static final String REARM_CD_HELM_COMMIT_MESSAGE = "chore: bump helm chart version to 0.4.7 [skip ci]";
 
-    public static final String REARM_CD_CONTAINER_DIGEST = "69221c7ee247a22c3c0f914b6f234d8006d73759c3b7dcd9df323c497adbc471";
-    public static final String REARM_CD_CONTAINER_VERSION = "26.10.4";
-    public static final String REARM_CD_CONTAINER_COMMIT = "076d2862c2b25f223163ab4563d7b337c0af98b4";
-    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): CVE sweep - bump rearm CLI, kubectl, kubeseal and helm (#16)";
+    public static final String REARM_CD_CONTAINER_DIGEST = "018f292320c30bbb6011e6e074bb154a2feb35f0d3f080034c218cd637540e14";
+    public static final String REARM_CD_CONTAINER_VERSION = "26.10.5";
+    public static final String REARM_CD_CONTAINER_COMMIT = "9255d409585cfa76d45ea14e718cb4c2c556a12e";
+    public static final String REARM_CD_CONTAINER_COMMIT_MESSAGE = "fix(rearm-cd): pass --server-side=true with --force-conflicts (#17)";
 
     // ReARM Watcher container — sibling to rearm-cd-app under the same ReARM CD product.
     // Was missing from the hard-coded fallback prior to the 26.05.5 BOM update.

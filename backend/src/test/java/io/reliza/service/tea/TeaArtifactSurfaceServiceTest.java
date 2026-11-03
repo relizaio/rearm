@@ -275,7 +275,8 @@ class TeaArtifactSurfaceServiceTest {
 		assertArrayEquals(bytes, b.bytes());
 		assertEquals(io.reliza.common.Utils.bytesToHexSha256(bytes), b.sha256());
 		assertEquals(CDX, b.contentType());
-		assertEquals("lic.txt", b.fileName());
+		// named <teaUuid>-r<revision> and the served media type's extension, not the frozen name lic.txt
+		assertEquals(r.teaUuid() + "-r2.cdx.json", b.fileName());
 		InOrder order = inOrder(artifacts, shared);
 		order.verify(artifacts).getArtifactDataByVersion(row, 2);
 		order.verify(shared).downloadRawArtifact(ad);
@@ -614,7 +615,7 @@ class TeaArtifactSurfaceServiceTest {
 				assertEquals(c[1], b.contentType(), c[1]);
 				assertArrayEquals(bytes, b.bytes());
 				assertEquals(io.reliza.common.Utils.bytesToHexSha256(bytes), b.sha256());
-				assertEquals("lic.txt", b.fileName());
+				assertEquals(r.teaUuid() + "-r2.txt", b.fileName());
 			}
 			assertEquals(List.of(), logs.aboveDebug());
 		}
