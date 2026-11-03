@@ -112,6 +112,7 @@ const AGENT_TASK_SELECTION = `
     signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     designCheckpoint { reachedAt afterRole beforeRole design state settledBy { kind uuid name } settledAt note }
+    splitRequest { requestedAt role roleUuid session description proposedChildren { title description dependsOnSiblingIndexes workLevel } state settledBy { kind uuid name } settledAt note }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
     documents {
         uuid

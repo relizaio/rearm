@@ -162,3 +162,64 @@ describe('hopHistory: the design checkpoint row', () => {
         expect(h[1]).toMatchObject({ phase: 'sent_on', at: '2026-09-23T10:00:00Z' })
     })
 })
+
+// The split request's row in the hop log (task SPLIT-13, T-18 b): after the SPLIT return that wrote it, at the later of
+// its requestedAt and that return's returnedAt, whichever way the server stamps the two.
+describe('hopHistory: the split request row', () => {
+    const splitAt = '2026-09-23T10:00:00Z'
+    const blocked = { role: 'coder', reason: 'BLOCKED', returnedAt: '2026-09-22T10:00:00Z' }
+    const splitReturn = { role: 'coder', reason: 'SPLIT', description: 'too big', returnedAt: splitAt }
+    const req = (over: Record<string, any> = {}) => ({ requestedAt: splitAt, role: 'coder', description: 'too big',
+        proposedChildren: [], state: 'REQUESTED', settledBy: null, settledAt: null, note: null, ...over })
+    const task = (over: Record<string, any> = {}) => ({ status: 'AWAITING_COORDINATOR', role: 'coder', signOffs: [],
+        returns: [blocked, splitReturn], splitRequest: req(), ...over })
+    const kinds = (h: any[]) => h.map(e => e.kind)
+
+    it('follows the SPLIT return on a tie, at that instant', () => {
+        const h = hopHistory(task())
+        expect(kinds(h)).toEqual(['return', 'return', 'split_request'])
+        expect(h[2].at).toBe(splitAt)
+        expect(h[1].rec).toBe(splitReturn)
+    })
+
+    it('stays last with a later requestedAt, at the later time by the sort\'s own comparator', () => {
+        const stamp = '2026-09-23T10:00:00.500Z'
+        const h = hopHistory(task({ splitRequest: req({ requestedAt: stamp }) }))
+        expect(h.at(-1)!.kind).toBe('split_request')
+        expect(h.at(-1)!.at).toBe(compareHopTimes(stamp, splitAt) > 0 ? stamp : splitAt)
+    })
+
+    it('takes the SPLIT return\'s time when requestedAt is earlier, and still follows it', () => {
+        const h = hopHistory(task({ splitRequest: req({ requestedAt: '2026-09-23T09:59:59Z' }) }))
+        expect(kinds(h)).toEqual(['return', 'return', 'split_request'])
+        expect(h[2].at).toBe(splitAt)
+    })
+
+    it('counts only SPLIT returns: an older or newer OTHER return does not move it', () => {
+        const h = hopHistory(task({ returns: [blocked], splitRequest: req({ requestedAt: '2026-09-21T10:00:00Z' }) }))
+        expect(h[0].kind).toBe('split_request')
+        expect(h[0].at).toBe('2026-09-21T10:00:00Z')
+        const other = { role: 'architect', reason: 'OTHER', returnedAt: '2026-09-24T10:00:00Z' }
+        const later = hopHistory(task({ returns: [blocked, splitReturn, other], splitRequest: req({ state: 'LAPSED' }) }))
+        expect(later.find(e => e.kind === 'split_request')!.at).toBe(splitAt)
+        expect(later.at(-1)!.rec).toBe(other)
+    })
+
+    it('follows a PENDING checkpoint row that ties with the SPLIT return', () => {
+        const h = hopHistory(task({ returns: [splitReturn],
+            designCheckpoint: { reachedAt: '2026-09-22T09:00:00Z', afterRole: 'reviewer', beforeRole: 'coder', design: [], state: 'PENDING' } }))
+        expect(kinds(h)).toEqual(['return', 'checkpoint', 'split_request'])
+    })
+
+    it('sits between the return and a later sign-off once declined', () => {
+        const h = hopHistory(task({ status: 'ASSIGNED', returns: [splitReturn],
+            signOffs: [{ role: 'coder', signedOffAt: '2026-09-24T10:00:00Z', outcome: 'PASSED' }],
+            splitRequest: req({ state: 'DECLINED', settledAt: '2026-09-23T11:00:00Z', note: 'one pass is fine' }) }))
+        expect(kinds(h)).toEqual(['return', 'split_request', 'signoff'])
+    })
+
+    it('has no row without a record', () => {
+        expect(kinds(hopHistory(task({ splitRequest: null })))).toEqual(['return', 'return'])
+        expect(hopHistory(null)).toEqual([])
+    })
+})

@@ -57,6 +57,13 @@
                 </template>
                 {{ checkpointTooltip(task) }}
             </n-tooltip>
+            <!-- A role's split request while it waits at the coordinator (task SPLIT-13); the hop log keeps every state. -->
+            <n-tooltip v-if="splitRequest" trigger="hover" :style="{ maxWidth: '520px' }">
+                <template #trigger>
+                    <n-tag size="small" :bordered="false" :type="splitRequest.type" data-testid="split-request-chip">{{ splitRequest.text }}</n-tag>
+                </template>
+                {{ splitRequestTooltip(task) }}
+            </n-tooltip>
             <n-tag v-for="k in tagKeys(task)" :key="k" size="small" :bordered="false" round class="dhead__tag"
                    data-testid="tag-chip">#{{ k }}</n-tag>
             <slot/>
@@ -71,7 +78,7 @@ import { computed } from 'vue'
 import { NTag, NTooltip } from 'naive-ui'
 import { missingRequiredRoles, requiredSignOffsLine, statusTone } from '@/utils/agentTaskFormat'
 import { statusWord } from '@/utils/agentWords'
-import { checkpointTag, checkpointTooltip, refLabel, roleTagFor } from '@/utils/agentTaskLabels'
+import { checkpointTag, checkpointTooltip, refLabel, roleTagFor, splitRequestTag, splitRequestTooltip } from '@/utils/agentTaskLabels'
 import { levelTooltip, taskLevelLabel } from '@/utils/agentTaskLevel'
 import { groupByKey, groupColour, groupLabel, tagKeys, waitingOnLabel } from '@/utils/agentTaskGroups'
 import { actorLabel } from '@/utils/agentActors'
@@ -82,6 +89,7 @@ const props = defineProps<{ task: any, board?: any, clamp?: boolean, roles?: any
 const boardHasSources = computed(() => (props.board?.sources?.length ?? 0) > 0)
 const roleTag = computed(() => roleTagFor(props.task))
 const checkpoint = computed(() => checkpointTag(props.task))
+const splitRequest = computed(() => splitRequestTag(props.task))
 const requiredLine = computed(() => requiredSignOffsLine(missingRequiredRoles(props.task, props.roles)))
 </script>
 
