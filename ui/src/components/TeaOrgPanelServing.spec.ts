@@ -6,7 +6,9 @@
 // /.well-known/tea hosting choice with its URL, the not-served states, the refusal text with the
 // server's state re-read, and, on CE, the Discovery block of before with no serving control. The
 // GraphQL client is mocked and answers by operation with clones of the fixtures; the profile editor
-// is stubbed; the edition rows take installationType from the real store.
+// is stubbed; the edition rows take installationType from the real store. Task TPF-151 (rows 1, 7a, 7c,
+// 9, 14, 15, 16): the legacy TEA id path is offered without a TEA id, since the server mints one on a
+// serving mode other than NONE, and the save renders the minted id and API base it answers.
 import { readFileSync } from 'node:fs'
 import { resolve } from 'node:path'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
@@ -43,14 +45,22 @@ const DOMAIN_NO_ID = { ...NONE_DOMAIN, teaUuid: null, teaServing: 'DOMAIN' }
 const DOMAIN_LOST = { ...NONE_NO_DOMAIN, teaServing: 'DOMAIN' }
 const CE_DISCOVERY = { org: ORG, teaUuid: TEA, apiBase: LEGACY_API, wellKnownDocument: doc(LEGACY_API) }
 const LEGACY_NO_DOMAIN = { ...LEGACY_DOMAIN, assignedHost: null }
+const NONE_NO_ID = { ...NONE_NO_DOMAIN, teaUuid: null }
+const NONE_DOMAIN_NO_ID = { ...NONE_DOMAIN, teaUuid: null }
+// The server's answer after the mint: teaUuid is TEA.
+const LEGACY_MINTED = { ...NONE_NO_DOMAIN, teaServing: 'LEGACY_UUID', apiBase: LEGACY_API, wellKnownDocument: doc(LEGACY_API) }
+// DOMAIN stored without an id and without an assignable host.
+const DOMAIN_LOST_NO_ID = { ...DOMAIN_LOST, teaUuid: null }
 
 const TEA_NO_DOMAIN_NOTICE = 'No TEA domain is assigned to this organization. A global administrator can assign one in System Settings.'
 const TEA_NOT_SERVED = 'Not served: the TEA API of this organization answers nothing. Choose a serving mode above to enable it.'
-const TEA_NOT_SERVED_NO_ID = 'Not served yet: the organization has no TEA id. Enable publishing on a TEA profile to mint one.'
+const TEA_NOT_SERVED_NO_ID = 'Not served yet: this organization has no TEA id. Choosing Not served and then this serving mode again mints one, as does choosing the Legacy path with the organization TEA id.'
 const TEA_DOMAIN_LOST = 'Not served: this organization has no assignable TEA domain any more. A global administrator can assign one in System Settings, or choose another serving mode.'
 const TEA_HOSTING_NEEDS_DOMAIN = 'The instance hosts /.well-known/tea on the domain only while the serving mode is On the assigned domain.'
 const TEA_SERVING_PUBLIC_NOTE = "Choosing a serving mode makes this organization's public TEA content reachable at the API base below at once."
 const NO_DOMAIN_REFUSAL = 'No TEA domain is assigned to this organization; a global administrator assigns one'
+const PRO_NOT_MINTED = 'Organization TEA id: not minted yet: choosing a serving mode other than Not served mints it, as does enabling publishing on a profile.'
+const CE_NOT_MINTED = 'Organization TEA id: not minted yet: enable publishing on a profile to mint it.'
 
 // TeaOrgPanel.vue lines 6-16 at 76021180, the Discovery block before TPF-144 (the CE branch keeps it).
 const CE_MARKUP_76021180 = `<div v-if="discovery?.teaUuid">
@@ -83,6 +93,9 @@ const callsOf = (name: string) => query.mock.calls.filter(c => operation(c[0]) =
 const servingGroup = (w: any) => byId(w, 'tea-serving-mode').findComponent(NRadioGroup)
 const hostingGroup = (w: any) => byId(w, 'tea-well-known-hosting').findComponent(NRadioGroup)
 const checked = (w: any, id: string) => (byId(w, id).find('input').element as HTMLInputElement).checked
+// What the browser renders: NRadio's disabled prop defaults to undefined, so props('disabled') cannot tell unset from false.
+const inputDisabled = (w: any, id: string) => (byId(w, id).find('input').element as HTMLInputElement).disabled
+const missingText = (w: any) => byId(w, 'tea-org-uuid-missing').text().replace(/\s+/g, ' ').trim()
 
 /** The n-th TeaOrgServing read answers the n-th discovery (the last repeats; a function is called and may throw). */
 function answers (...discoveries: any[]) {
@@ -148,7 +161,7 @@ describe('TeaOrgPanel serving choices', () => {
         expect(byId(w, 'tea-serving-option-LEGACY_UUID').exists()).toBe(true)
         expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(false)
         expect(servingGroup(w).props('value')).toBe('NONE')
-        expect(byId(w, 'tea-serving-option-LEGACY_UUID').findComponent(NRadio).props('disabled')).toBe(false)
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
         expect(byId(w, 'tea-serving-public-note').text()).toBe(TEA_SERVING_PUBLIC_NOTE)
         expect(byId(w, 'tea-not-served').text()).toBe(TEA_NOT_SERVED)
         for (const id of ['tea-api-base', 'tea-not-served-no-id', 'tea-domain-lost', 'tea-well-known-hosting', 'tea-well-known-url', 'tea-well-known']) {
@@ -240,13 +253,14 @@ describe('TeaOrgPanel serving choices', () => {
         expect(byId(w, 'tea-serving-error').exists()).toBe(false)
     })
 
-    it('7a: not NONE without a TEA id: not served yet, LEGACY_UUID disabled', async () => {
+    it('7a: not NONE without a TEA id (stored before the mint): not served yet, LEGACY_UUID offered', async () => {
         const w = await mountWith(DOMAIN_NO_ID)
         expect(byId(w, 'tea-not-served-no-id').text()).toBe(TEA_NOT_SERVED_NO_ID)
+        expect(byId(w, 'tea-domain-lost').exists()).toBe(false)
         expect(byId(w, 'tea-api-base').exists()).toBe(false)
         expect(byId(w, 'tea-not-served').exists()).toBe(false)
-        expect(byId(w, 'tea-serving-option-LEGACY_UUID').findComponent(NRadio).props('disabled')).toBe(true)
-        expect(byId(w, 'tea-org-uuid-missing').exists()).toBe(true)
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
+        expect(missingText(w)).toBe(PRO_NOT_MINTED)
         expect(errors).not.toHaveBeenCalled()
     })
 
@@ -257,6 +271,27 @@ describe('TeaOrgPanel serving choices', () => {
         expect(byId(w, 'tea-domain-lost').text()).toBe(TEA_DOMAIN_LOST)
         expect(byId(w, 'tea-no-domain-notice').exists()).toBe(true)
         expect(byId(w, 'tea-well-known-hosting').exists()).toBe(false)
+        expect(errors).not.toHaveBeenCalled()
+    })
+
+    it('7c: DOMAIN without a TEA id and without an assignable host: domain lost, LEGACY_UUID offered and minting', async () => {
+        const w = await mountWith(DOMAIN_LOST_NO_ID)
+        // (a)
+        expect(byId(w, 'tea-domain-lost').text()).toBe(TEA_DOMAIN_LOST)
+        for (const id of ['tea-not-served-no-id', 'tea-not-served', 'tea-api-base']) expect(byId(w, id).exists(), id).toBe(false)
+        expect(byId(w, 'tea-no-domain-notice').exists()).toBe(true)
+        expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(true)
+        expect(servingGroup(w).props('value')).toBe('DOMAIN')
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
+        expect(missingText(w)).toBe(PRO_NOT_MINTED)
+        // (b)
+        setResult(LEGACY_MINTED)
+        await emitServing(w, 'LEGACY_UUID')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: ORG, teaServing: 'LEGACY_UUID', teaWellKnownHosting: 'NONE' })
+        expect(byId(w, 'tea-org-uuid').text()).toBe(TEA)
+        expect(byId(w, 'tea-api-base').text()).toBe(LEGACY_API)
+        expect(byId(w, 'tea-domain-lost').exists()).toBe(false)
+        expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(false)
         expect(errors).not.toHaveBeenCalled()
     })
 
@@ -288,6 +323,17 @@ describe('TeaOrgPanel serving choices', () => {
         for (const t of [TEA_NOT_SERVED, TEA_NOT_SERVED_NO_ID, TEA_DOMAIN_LOST, TEA_HOSTING_NEEDS_DOMAIN, TEA_NO_DOMAIN_NOTICE]) {
             expect(count(t)).toBe(1)
         }
+        // (g)
+        expect(count(PRO_NOT_MINTED)).toBe(1)
+        expect(count(CE_NOT_MINTED)).toBe(1)
+        expect(source.indexOf(CE_NOT_MINTED)).toBeLessThan(source.indexOf('<template v-else>'))
+        // (h)
+        expect(source).not.toContain('disabled: !discovery.value?.teaUuid')
+        expect(source).not.toContain('LEGACY_UUID needs a TEA id')
+        const options = source.slice(source.indexOf('const servingOptions'))
+        expect(options.slice(0, options.indexOf('})')).includes('teaUuid')).toBe(false)
+        // (i)
+        expect(count('v-else-if="!discovery.teaUuid && discovery.assignedHost" data-testid="tea-not-served-no-id"')).toBe(1)
         // (f)
         expect(count('async function refreshDiscovery')).toBe(1)
         const setServing = source.slice(source.indexOf('async function setServing'), source.indexOf('async function refreshDiscovery'))
@@ -326,6 +372,71 @@ describe('TeaOrgPanel serving choices', () => {
         expect(servingGroup(w).props('value')).toBe('LEGACY_UUID')
         expect(checked(w, 'tea-serving-option-LEGACY_UUID')).toBe(true)
         expect(checked(w, 'tea-serving-option-DOMAIN')).toBe(false)
+    })
+
+    it('14: an organization without a TEA id offers LEGACY_UUID; saving it renders the minted id and base', async () => {
+        store.commit('SET_MY_USER', { uuid: 'u1', installationType: 'MANAGED_SERVICE' })
+        answers(NONE_NO_ID)
+        const w = await mountPanel({ installationType: store.getters.myuser.installationType })
+        // (a)
+        expect(byId(w, 'tea-serving-option-LEGACY_UUID').exists()).toBe(true)
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
+        expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(false)
+        expect(servingGroup(w).props('value')).toBe('NONE')
+        expect(byId(w, 'tea-not-served').text()).toBe(TEA_NOT_SERVED)
+        expect(byId(w, 'tea-not-served-no-id').exists()).toBe(false)
+        expect(byId(w, 'tea-org-uuid').exists()).toBe(false)
+        expect(missingText(w)).toBe(PRO_NOT_MINTED)
+        // (b)
+        setResult(LEGACY_MINTED)
+        await emitServing(w, 'LEGACY_UUID')
+        expect(mutate).toHaveBeenCalledTimes(1)
+        expect(operation(mutate.mock.calls[0][0])).toBe('SetTeaOrgServing')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: ORG, teaServing: 'LEGACY_UUID', teaWellKnownHosting: 'NONE' })
+        // (c)
+        expect(byId(w, 'tea-org-uuid').text()).toBe(TEA)
+        expect(byId(w, 'tea-org-uuid-missing').exists()).toBe(false)
+        expect(byId(w, 'tea-api-base').text()).toBe(LEGACY_API)
+        expect(byId(w, 'tea-not-served').exists()).toBe(false)
+        expect(byId(w, 'tea-not-served-no-id').exists()).toBe(false)
+        expect(servingGroup(w).props('value')).toBe('LEGACY_UUID')
+        expect((byId(w, 'tea-well-known').find('textarea').element as HTMLTextAreaElement).value).toBe(doc(LEGACY_API))
+        expect(byId(w, 'tea-well-known-self-host').exists()).toBe(true)
+        expect(byId(w, 'tea-serving-error').exists()).toBe(false)
+        expect(callsOf('TeaOrgServing')).toHaveLength(1)
+        expect(errors).not.toHaveBeenCalled()
+    })
+
+    it('15: DOMAIN without a TEA id: the rule is unchanged and the save renders the answer', async () => {
+        // (a)
+        let w = await mountWith(NONE_NO_ID)
+        expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(false)
+        // (b)
+        w = await mountWith(NONE_DOMAIN_NO_ID)
+        expect(byId(w, 'tea-serving-option-DOMAIN').exists()).toBe(true)
+        expect(byId(w, 'tea-serving-option-LEGACY_UUID').exists()).toBe(true)
+        expect(inputDisabled(w, 'tea-serving-option-DOMAIN')).toBe(false)
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
+        setResult(DOMAIN_SERVED)
+        await emitServing(w, 'DOMAIN')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: ORG, teaServing: 'DOMAIN', teaWellKnownHosting: 'NONE' })
+        expect(byId(w, 'tea-org-uuid').text()).toBe(TEA)
+        expect(byId(w, 'tea-api-base').text()).toBe(DOMAIN_API)
+        expect(byId(w, 'tea-org-uuid-missing').exists()).toBe(false)
+        expect(errors).not.toHaveBeenCalled()
+    })
+
+    it('16: an organization with a TEA id is unchanged', async () => {
+        const w = await mountWith(NONE_NO_DOMAIN)
+        expect(inputDisabled(w, 'tea-serving-option-LEGACY_UUID')).toBe(false)
+        expect(byId(w, 'tea-org-uuid').text()).toBe(TEA)
+        expect(byId(w, 'tea-org-uuid-missing').exists()).toBe(false)
+        setResult(LEGACY_MINTED)
+        await emitServing(w, 'LEGACY_UUID')
+        expect(mutate.mock.calls[0][0].variables).toEqual({ org: ORG, teaServing: 'LEGACY_UUID', teaWellKnownHosting: 'NONE' })
+        expect(byId(w, 'tea-org-uuid').text()).toBe(TEA)
+        expect(byId(w, 'tea-api-base').text()).toBe(LEGACY_API)
+        expect(errors).not.toHaveBeenCalled()
     })
 
     it('11: CE renders the Discovery block of before and sends only the TeaOrgDiscovery read', async () => {
