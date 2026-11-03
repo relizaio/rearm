@@ -354,15 +354,53 @@ export function teaEntryChecksums (entry: any): Array<{ alg: string, value: stri
 }
 
 /**
- * The file name TEA serves an entry's bytes under (TeaArtifactSurfaceService.contentFileName): the
- * frozen name, else {@code <teaUuid>-<revision>}; a generated revision named by the bare SBOM profile
- * it was shaped by gets {@code .cdx.json}.
+ * Extensions by media type (type/subtype, lowercase, no parameters). The backend's TEA file name rule
+ * (io.reliza.service.tea.TeaFileNames) holds the same table; change both together.
+ */
+const TEA_MEDIA_TYPE_EXTENSIONS: Record<string, string> = {
+    'application/vnd.cyclonedx+json': '.cdx.json',
+    'application/vnd.cyclonedx+xml': '.cdx.xml',
+    'application/spdx+json': '.spdx.json',
+    'application/spdx+xml': '.spdx.xml',
+    'application/spdx+yaml': '.spdx.yaml',
+    'text/spdx': '.spdx',
+    'application/vnd.in-toto+json': '.intoto.json',
+    'application/json': '.json',
+    'application/xml': '.xml',
+    'text/xml': '.xml',
+    'application/yaml': '.yaml',
+    'text/yaml': '.yaml',
+    'application/pdf': '.pdf',
+    'text/plain': '.txt',
+    'text/markdown': '.md',
+    'text/html': '.html',
+    'text/csv': '.csv',
+    'application/zip': '.zip',
+    'application/gzip': '.gz',
+    'application/x-tar': '.tar',
+    'application/pgp-signature': '.asc',
+}
+
+/**
+ * The extension of a media type: a known type's, else .json or .xml for a +json or +xml structured
+ * suffix, else none (octet-stream, unknown or absent).
+ */
+export function teaMediaTypeExtension (mediaType: string | null | undefined): string {
+    if (typeof mediaType !== 'string' || !mediaType.trim()) return ''
+    const base = mediaType.split(';')[0].trim().toLowerCase()
+    const known = TEA_MEDIA_TYPE_EXTENSIONS[base]
+    if (known) return known
+    if (base.endsWith('+json')) return '.json'
+    if (base.endsWith('+xml')) return '.xml'
+    return ''
+}
+
+/**
+ * The file name TEA serves an entry's bytes under (TeaFileNames.artifactFileName):
+ * {@code <teaUuid>-r<revision>} and the extension of its media type, never the artifact's own name.
  */
 export function teaEntryFileName (entry: any): string {
-    const name = typeof entry?.name === 'string' ? entry.name.trim() : ''
-    if (!name) return entry?.teaUuid + '-' + entry?.revision
-    if (entry.origin === 'SYNTHETIC' && name === entry.sbomProfileName) return name + '.cdx.json'
-    return name
+    return entry?.teaUuid + '-r' + entry?.revision + teaMediaTypeExtension(entry?.mediaType)
 }
 
 /**
