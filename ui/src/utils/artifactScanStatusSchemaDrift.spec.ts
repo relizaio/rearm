@@ -6,12 +6,11 @@ import { ceSchema, proSchema } from './schemaDriftSupport'
 // TPF-122 (architecture-3 section 5, row 23): the scan-status document against both schemas.
 
 describe('artifactScanStatus document vs the CE mirror schema (in-repo, always runs)', () => {
-    // Canary: the CE mirror lacks the query, which is what makes the loader's drift probe
-    // meaningful on CE. When a backend sync carries the query to CE this fails; retire it by
-    // deleting this one test, nothing else.
-    it('(a) is rejected by the CE mirror on artifactScanStatus', () => {
-        const messages = validate(ceSchema, ARTIFACT_SCAN_STATUS_QUERY).map(e => e.message)
-        expect(messages.some(m => m.includes('artifactScanStatus'))).toBe(true)
+    // The canary that pinned the query's absence from CE is retired: the shared backend sync (#652)
+    // carried artifactScanStatus to CE, so the document now validates there. The loader's drift probe
+    // stays for servers older than the sync.
+    it('(a) validates against the CE mirror', () => {
+        expect(validate(ceSchema, ARTIFACT_SCAN_STATUS_QUERY).map(e => e.message)).toEqual([])
     })
 })
 
