@@ -5,6 +5,7 @@
 
 import { graphqlRefusalText } from './graphqlErrorText'
 import { teaSourceLabel } from './teaProfile'
+import { artifactDownloadRef, type ArtifactDownloadRef } from './artifactDownload'
 
 /** What the confirmation names: the release, and the perspective names a profile source may point at. */
 export interface TeaPublishNames {
@@ -337,9 +338,42 @@ export function teaEntryRows (collection: any, apiBase: string | null | undefine
         profile: e.sbomProfileName ?? '',
         mediaType: e.mediaType ?? '',
         checksum: (e.checksums || []).map((c: any) => c.algType + ':' + c.algValue).join(', '),
+        checksums: teaEntryChecksums(e),
         teaUrl: teaArtifactUrl(apiBase, e.teaUuid, e.revision),
         externalUrl: e.url ?? '',
+        download: teaEntryDownloadRef(e),
     }))
+}
+
+/** An entry's checksums, one per algorithm as frozen; an entry may carry several, or none. */
+export function teaEntryChecksums (entry: any): Array<{ alg: string, value: string }> {
+    const checksums: any[] = Array.isArray(entry?.checksums) ? entry.checksums : []
+    return checksums
+        .filter(c => typeof c?.algValue === 'string' && c.algValue !== '')
+        .map(c => ({ alg: String(c.algType ?? ''), value: c.algValue }))
+}
+
+/**
+ * The file name TEA serves an entry's bytes under (TeaArtifactSurfaceService.contentFileName): the
+ * frozen name, else {@code <teaUuid>-<revision>}; a generated revision named by the bare SBOM profile
+ * it was shaped by gets {@code .cdx.json}.
+ */
+export function teaEntryFileName (entry: any): string {
+    const name = typeof entry?.name === 'string' ? entry.name.trim() : ''
+    if (!name) return entry?.teaUuid + '-' + entry?.revision
+    if (entry.origin === 'SYNTHETIC' && name === entry.sbomProfileName) return name + '.cdx.json'
+    return name
+}
+
+/**
+ * The manual download of an entry: the artifact row at the frozen revision, the same row and version
+ * TEA serves, fetched through the manual raw download and so under the caller's own artifact download
+ * permission, whatever the publication's TEA visibility. Null for an entry stored outside ReARM (its
+ * bytes are at its url) and, fail closed, for an entry naming no artifact uuid or integer revision.
+ */
+export function teaEntryDownloadRef (entry: any): ArtifactDownloadRef | null {
+    if (typeof entry?.url === 'string' && entry.url !== '') return null
+    return artifactDownloadRef(entry?.artifact, entry?.revision, teaEntryFileName(entry))
 }
 
 /**

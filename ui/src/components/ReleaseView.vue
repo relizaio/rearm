@@ -4500,20 +4500,69 @@ async function hideOnTea () {
 
 const teaRowKey = (row: any) => row.key
 
+const TEA_INFO_ICON_STYLE = 'cursor: pointer; vertical-align: middle; color: #909399;'
+const TEA_COPY_ICON_STYLE = 'margin-left: 6px; vertical-align: middle; flex-shrink: 0;'
+
+/** A copy icon for one value; the click copies the full value, never a shortened one. */
+function teaCopyIcon (value: string, label: string) {
+    return h(NIcon, { class: 'icons clickable', size: 14, style: TEA_COPY_ICON_STYLE, title: 'Copy ' + label,
+        'aria-label': 'Copy ' + label, onClick: () => copyToClipboard(value) }, () => h(Copy20Regular))
+}
+
+/** An info icon whose hover shows the full value(s); the tooltip stays open while hovered, so its copy icons can be clicked. */
+function teaInfoTooltip (testId: string, ariaLabel: string, content: () => any) {
+    return h(NTooltip, { trigger: 'hover', placement: 'left', style: 'max-width: 640px;' }, {
+        trigger: () => h(NIcon, { size: 18, style: TEA_INFO_ICON_STYLE, 'aria-label': ariaLabel, 'data-testid': testId },
+            { default: () => h(Info20Regular) }),
+        default: content
+    })
+}
+
+async function downloadTeaEntry (ref: { uuid: string, version: number | null, fileName: string }, mediaType?: string) {
+    try {
+        // the manual raw download of the artifact row at the frozen revision: the caller's own artifact
+        // download permission applies, whatever the publication's TEA visibility
+        const bytes = await downloadArtifactBytes(artifactDownloadUrl(ref.uuid, true, ref.version))
+        saveBlob(bytes, ref.fileName, mediaType || undefined)
+    } catch (err: any) {
+        notify('error', 'Download failed', String(err?.message ?? err))
+        console.error(err)
+    }
+}
+
 const teaEntriesTableFields: DataTableColumns<any> = [
     { key: 'teaUuid', title: 'TEA id' },
     { key: 'revision', title: 'Revision' },
     { key: 'origin', title: 'Origin' },
     { key: 'type', title: 'Type' },
-    { key: 'name', title: 'Name' },
     { key: 'profile', title: 'Profile' },
     { key: 'mediaType', title: 'Media type' },
-    { key: 'checksum', title: 'Checksum', render: (row: any) => h('span', { style: 'word-break: break-all;' }, row.checksum) },
+    {
+        key: 'checksum',
+        title: 'Checksum',
+        render: (row: any) => row.checksums?.length
+            ? teaInfoTooltip('tea-entry-checksums', 'Checksums', () => h('div', row.checksums.map((c: any) =>
+                h('div', { style: 'display: flex; align-items: center; margin: 2px 0;' }, [
+                    h('span', { style: 'word-break: break-all; font-family: monospace;' }, [h('strong', c.alg + ': '), c.value]),
+                    teaCopyIcon(c.value, c.alg + ' checksum')
+                ]))))
+            : h('span', { class: 'text-muted' }, '—')
+    },
     {
         key: 'teaUrl',
         title: 'TEA URL',
         render: (row: any) => h('span', { style: 'word-break: break-all;' },
             row.externalUrl ? [row.teaUrl, h('br'), 'Stored at: ' + row.externalUrl] : row.teaUrl)
+    },
+    {
+        key: 'download',
+        title: 'Download',
+        render: (row: any) => row.download
+            ? h(NButton, { size: 'tiny', 'data-testid': 'tea-entry-download', title: 'Download ' + row.download.fileName,
+                'aria-label': 'Download ' + row.download.fileName, onClick: () => downloadTeaEntry(row.download, row.mediaType) },
+            () => 'Download')
+            : h('span', { class: 'text-muted', title: row.externalUrl ? 'Stored outside ReARM, at its TEA URL' : 'Not downloadable' },
+                row.externalUrl ? 'Stored externally' : '—')
     },
 ]
 
@@ -4538,9 +4587,14 @@ const teaCollectionsTableFields: DataTableColumns<any> = [
     {
         key: 'sha256',
         title: 'SHA-256',
-        render: (row: any) => h('span', { title: row.sha256 }, [row.sha256Short,
-            h(NIcon, { class: 'icons clickable', size: 14, style: 'margin-left: 5px; vertical-align: middle;', title: 'Copy',
-                onClick: () => copyToClipboard(row.sha256) }, () => h(Copy20Regular))])
+        // the sha256 of the collection document as TEA serves it (its strong ETag)
+        render: (row: any) => h('span', { style: 'white-space: nowrap;' }, [row.sha256Short,
+            h('span', { style: 'margin-left: 5px;' }, [teaInfoTooltip('tea-collection-sha256', 'Full SHA-256', () =>
+                h('div', { style: 'display: flex; align-items: center;' }, [
+                    h('span', { style: 'word-break: break-all; font-family: monospace;' }, row.sha256),
+                    teaCopyIcon(row.sha256, 'SHA-256')
+                ]))]),
+            teaCopyIcon(row.sha256, 'SHA-256')])
     },
     { key: 'artifactCount', title: 'Artifacts' },
 ]

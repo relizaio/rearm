@@ -1,10 +1,12 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi } from 'vitest'
 import {
     teaPublishConfirm, teaHideConfirm, teaPublicUrlText, teaPublishSummary, teaCollectionRows, teaEntryRows,
     teaPublicationBanner, teaPublicationHistoryText, teaConcealedText, teaPublishedWithText,
     teaActErrorText, TEA_ACT_GATEWAY_TEXT,
-    teaActLabel, teaActProgress,
+    teaActLabel, teaActProgress, teaEntryChecksums, teaEntryFileName, teaEntryDownloadRef,
 } from './teaPublication'
+
+vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
 // TEA publications (task TEA-5, design 4.10 tests 54 to 57): the release page's pure helpers.
 
@@ -270,6 +272,40 @@ describe('teaCollectionRows, teaEntryRows and teaPublicationHistoryText (57)', (
         expect(teaPublicationHistoryText({ rua: 'REMOVED', newValue: 'HIDDEN' })).toBe('Hidden from TEA')
         expect(teaPublicationHistoryText({ rua: 'CHANGED', oldValue: 'with left 1.0.0', newValue: 'with right 2.0.0' }))
             .toBe('Published on TEA with another product: with left 1.0.0 -> with right 2.0.0')
+    })
+})
+
+describe('the collection artifact rows: checksums and the manual download', () => {
+    const ART = '0f8fad5b-d9cb-469f-a165-70867728950e'
+
+    it('lists every checksum of an entry, one per algorithm, and none for an entry with no checksum', () => {
+        const entry = { teaUuid: 't', revision: 2, checksums: [
+            { algType: 'SHA-256', algValue: 'a'.repeat(64) }, { algType: 'SHA-512', algValue: 'b'.repeat(128) },
+            { algType: 'MD5', algValue: '' }] }
+        expect(teaEntryChecksums(entry)).toEqual([{ alg: 'SHA-256', value: 'a'.repeat(64) }, { alg: 'SHA-512', value: 'b'.repeat(128) }])
+        expect(teaEntryChecksums({ teaUuid: 't', revision: 1 })).toEqual([])
+        expect(teaEntryRows({ entries: [entry] }, API)[0].checksums).toHaveLength(2)
+    })
+
+    it('names the file as TEA serves it: the frozen name, <teaUuid>-<revision>, or a bare profile name with .cdx.json', () => {
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'REAL', name: 'notes.pdf' })).toBe('notes.pdf')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'REAL', name: '  ' })).toBe('t-1-3')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'SYNTHETIC', name: 'top', sbomProfileName: 'top' }))
+            .toBe('top.cdx.json')
+        expect(teaEntryFileName({ teaUuid: 't-1', revision: 3, origin: 'SYNTHETIC', name: 'agg.cdx.json', sbomProfileName: 'top' }))
+            .toBe('agg.cdx.json')
+    })
+
+    it('downloads the artifact row at the frozen revision, and nothing for an external or malformed entry', () => {
+        expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: 4, origin: 'REAL', name: 'sbom.json' }))
+            .toEqual({ uuid: ART, version: 4, fileName: 'sbom.json' })
+        expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: 1, origin: 'REAL', name: 'notes.pdf',
+            url: 'https://cdn.example.com/notes.pdf' })).toBeNull()
+        expect(teaEntryDownloadRef({ artifact: 'not-a-uuid', teaUuid: 't-1', revision: 1 })).toBeNull()
+        expect(teaEntryDownloadRef({ artifact: ART, teaUuid: 't-1', revision: null })).toBeNull()
+        const rows = teaEntryRows({ entries: [{ artifact: ART, teaUuid: 't-1', revision: 7, origin: 'SYNTHETIC',
+            name: 'top', sbomProfileName: 'top' }] }, API)
+        expect(rows[0].download).toEqual({ uuid: ART, version: 7, fileName: 'top.cdx.json' })
     })
 })
 

@@ -429,9 +429,18 @@ describe('TEA surfaces contract', () => {
         expect(src('../utils/submissionQueries.ts')).toContain('release(releaseUuid: $releaseID, orgUuid: $orgID) { uuid regulatoryPackageKinds }')
     })
 
-    it('ReleaseView shows the SBOM profile of each TEA entry in a Profile column after Name (design 3.3.7)', () => {
+    it('ReleaseView shows the SBOM profile of each TEA entry in a Profile column after Type; the Name column is gone (design 3.3.7)', () => {
         const rv = src('ReleaseView.vue')
-        expect(rv).toContain("    { key: 'name', title: 'Name' },\n    { key: 'profile', title: 'Profile' },\n    { key: 'mediaType', title: 'Media type' },")
+        expect(rv).toContain("    { key: 'type', title: 'Type' },\n    { key: 'profile', title: 'Profile' },\n    { key: 'mediaType', title: 'Media type' },")
+        expect(rv).not.toContain("{ key: 'name', title: 'Name' },\n    { key: 'profile', title: 'Profile' }")
+    })
+
+    it('ReleaseView: TEA checksums and the full collection sha256 sit behind info icons with copy, and an entry downloads through the manual raw download', () => {
+        const rv = src('ReleaseView.vue')
+        expect(rv).toContain("teaInfoTooltip('tea-entry-checksums'")
+        expect(rv).toContain("teaInfoTooltip('tea-collection-sha256'")
+        expect(rv).toContain('artifactDownloadUrl(ref.uuid, true, ref.version)')
+        expect(rv).toContain("'data-testid': 'tea-entry-download'")
     })
 
     it('ReleaseView renders a SUBMISSION History row through submissionHistoryText, before the acollection branch', () => {
