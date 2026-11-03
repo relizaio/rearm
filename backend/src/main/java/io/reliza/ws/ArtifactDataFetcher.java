@@ -208,6 +208,39 @@ public class ArtifactDataFetcher {
 		// The system state is answered before the argument is converted or any row is read (TPF-91 F-2 idiom).
 		authorizationService.validateSystemOperational(CallType.READ);
 		UUID artifactUuid = InputConversion.convert(dfe.getArgument("artifactUuid"), UUID.class, "artifactUuid");
+		return syntheticSbomService.explainArtifactScanStatus(authorizedArtifactThroughHolders(artifactUuid,
+				CallType.READ).artifact());
+	}
+
+	/**
+	 * Requeue a BOM's canonical for the next synthetic fan-out pass, which re-applies the current bucket findings to
+	 * every artifact of the canonical (SyntheticSbomService.requeueFanOutForArtifact), and answer the scan status as
+	 * it reads right after. Write on any component holding the artifact in one of its releases, or organization-wide
+	 * write for an artifact no release holds: the artifactScanStatus rule at the write level, the rule
+	 * updateArtifactTags applies. Every refusal answers Not authorized, as for the query.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "requeueArtifactScanFanOut")
+	public ArtifactScanStatusDto requeueArtifactScanFanOut(DgsDataFetchingEnvironment dfe) throws RelizaException {
+		authorizationService.validateSystemOperational(CallType.WRITE);
+		UUID artifactUuid = InputConversion.convert(dfe.getArgument("artifactUuid"), UUID.class, "artifactUuid");
+		AuthorizedArtifact a = authorizedArtifactThroughHolders(artifactUuid, CallType.WRITE);
+		int rows = syntheticSbomService.requeueFanOutForArtifact(a.artifact());
+		log.info("User {} requeued the synthetic fan-out of artifact {} ({} map rows)", a.user().getUuid(),
+				artifactUuid, rows);
+		return syntheticSbomService.explainArtifactScanStatus(a.artifact());
+	}
+
+	/** The caller and the artifact the caller is authorized for. */
+	private record AuthorizedArtifact(UserData user, ArtifactData artifact) {}
+
+	/**
+	 * The artifact, once the caller is authorized for it at {@code callType}: on any component holding it in one of
+	 * its releases, or on its organization when no release holds it. An unknown and a refused uuid end in the same
+	 * AccessDeniedException (no cross-organization existence oracle).
+	 */
+	private AuthorizedArtifact authorizedArtifactThroughHolders(UUID artifactUuid, CallType callType)
+			throws RelizaException {
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		UserData ud = userService.getUserDataByAuth(auth).orElseThrow(() -> new AccessDeniedException("Not authorized"));
 		Optional<ArtifactData> oad = artifactService.getArtifactData(artifactUuid);
@@ -218,16 +251,16 @@ public class ArtifactDataFetcher {
 					.stream().map(x -> x.getComponent()).collect(Collectors.toSet());
 			if (components.isEmpty()) {
 				authorizationService.isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE,
-						PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), CallType.READ);
+						PermissionScope.ORGANIZATION, ad.getOrg(), List.of(ad), callType);
 			} else {
 				authorizationService.isUserAuthorizedForAnyObjectGraphQL(ud, PermissionFunction.RESOURCE,
-						PermissionScope.COMPONENT, components, List.of(ad), CallType.READ);
+						PermissionScope.COMPONENT, components, List.of(ad), callType);
 			}
 		} catch (AccessDeniedException e) {
 			// A refused uuid reads exactly as an unknown one (no cross-organization existence oracle).
 			throw new AccessDeniedException("Artifact not found: " + artifactUuid);
 		}
-		return syntheticSbomService.explainArtifactScanStatus(ad);
+		return new AuthorizedArtifact(ud, ad);
 	}
 
 	@PreAuthorize("isAuthenticated()")

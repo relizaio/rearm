@@ -45,6 +45,7 @@ import tools.jackson.databind.JsonNode;
 import io.reliza.common.CdxLicenseUtil;
 import io.reliza.common.CommonVariables;
 import io.reliza.common.Utils;
+import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
@@ -1882,6 +1883,33 @@ public class SyntheticSbomService {
 	// ===================================================================
 	// Scan status (TPF-121): why one artifact is or is not scanned
 	// ===================================================================
+
+	/**
+	 * The operator nudge of the scan status: requeue the artifact's canonical for the next fan-out pass, the same
+	 * write the parse and repoint writers make ({@code requeueFanOutForCanonical}: fanOutAt removed on every map row
+	 * of the canonical, fanOutRequeuedAt set to the database clock). The next pass reads the canonical in rule (A)
+	 * and applies the current findings of the org's INGESTED buckets to every artifact of the canonical, under the
+	 * same coverage gate as any pass. Nothing else is written here: no parse, no bucket change, no submission.
+	 * The caller has already authorized the artifact for writing.
+	 *
+	 * @return the map rows requeued (every artifact of the canonical)
+	 * @throws RelizaException when the artifact is not a BOM or has no canonical map row yet
+	 */
+	public int requeueFanOutForArtifact(ArtifactData ad) throws RelizaException {
+		if (ArtifactType.BOM != ad.getType()) {
+			throw new RelizaException("Only a BOM is scanned: there are no findings to re-apply to this artifact");
+		}
+		Optional<ArtifactCanonicalMap> own = artifactCanonicalMapRepository.findByArtifactUuid(ad.getUuid());
+		if (own.isEmpty()) {
+			throw new RelizaException("This BOM is not mapped yet: the post-upload reconcile has not mapped it, so "
+					+ "there are no findings to re-apply; run Reconcile SBOM components on its release");
+		}
+		UUID canonical = own.get().getCanonicalArtifactUuid();
+		int rows = artifactCanonicalMapRepository.requeueFanOutForCanonical(ad.getOrg(), canonical);
+		log.info("Synthetic fan-out requeued for artifact {} (canonical {}, org {}): {} map rows", ad.getUuid(),
+				canonical, ad.getOrg(), rows);
+		return rows;
+	}
 
 	/** Whether the canonical qualifies for a fan-out pass, and the sentence of the rule evaluated (TPF-121). */
 	private record CandidateAnswer(boolean inCandidateSet, String candidateRule) {}

@@ -2,6 +2,8 @@
     <div class="artifact-scan-status-panel" data-testid="artifact-scan-status-panel">
         <div class="artifact-scan-status-toolbar">
             <n-button size="small" :disabled="pending" :loading="pending" data-testid="artifact-scan-status-refresh" @click="run">Refresh</n-button>
+            <n-button v-if="requeue && canRequeueScanFanOut(status)" size="small" :disabled="pending || requeuePending" :loading="requeuePending"
+                data-testid="artifact-scan-status-requeue" :title="REQUEUE_HELP" @click="runRequeue">Re-apply findings</n-button>
             <span v-if="loadedAt" class="subtle" data-testid="artifact-scan-status-loaded-at">as of {{ loadedAt }}</span>
         </div>
         <div v-if="pending && !status" data-testid="artifact-scan-status-loading"><n-spin size="small" /> Loading scan status</div>
@@ -55,14 +57,20 @@ import { Clipboard } from '@vicons/tabler'
 import { copyToClipboard } from '@/utils/uuidCopyColumn'
 import type { NotifyFn } from '@/utils/uuidCopyColumn'
 import { extractError } from '@/utils/notificationsCommon'
-import { blockerRows, candidateLine, enrichmentNote, factRows, formatInstant, stateLine, truncatedNote } from '@/utils/artifactScanStatus'
+import { blockerRows, canRequeueScanFanOut, candidateLine, enrichmentNote, factRows, formatInstant, stateLine, truncatedNote } from '@/utils/artifactScanStatus'
 import type { ArtifactScanStatus, BlockerRow, ScanStatusLoadResult } from '@/utils/artifactScanStatus'
 
 const props = defineProps<{
     artifactUuid: string
     load: (artifactUuid: string) => Promise<ScanStatusLoadResult>
     notify: NotifyFn
+    /** Requeues the scan fan-out and answers the status read after; absent when the caller cannot write. */
+    requeue?: (artifactUuid: string) => Promise<ArtifactScanStatus | null>
 }>()
+
+const REQUEUE_HELP = 'Re-apply the current scan findings to this BOM and every artifact with the same content, on the next '
+    + 'fan-out pass. Parses nothing and submits nothing to Dependency-Track.'
+const requeuePending = ref(false)
 
 const status: Ref<ArtifactScanStatus | null> = ref(null)
 const supported: Ref<boolean | null> = ref(null)
@@ -91,6 +99,24 @@ async function run () {
         props.notify('error', 'Error', extractError(e))
     } finally {
         if (runNo === currentRun) pending.value = false
+    }
+}
+
+async function runRequeue () {
+    if (!props.requeue || requeuePending.value) return
+    requeuePending.value = true
+    currentRun++ // a load in flight is superseded by the status the requeue answers
+    try {
+        const after = await props.requeue(props.artifactUuid)
+        now.value = Date.now()
+        if (after) status.value = after
+        loadedAt.value = formatInstant(new Date(now.value).toISOString())
+        props.notify('success', 'Requeued', 'The next fan-out pass re-applies the current findings to this BOM.')
+    } catch (e: any) {
+        props.notify('error', 'Error', extractError(e))
+    } finally {
+        requeuePending.value = false
+        pending.value = false
     }
 }
 

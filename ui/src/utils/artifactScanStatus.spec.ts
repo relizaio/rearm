@@ -3,7 +3,8 @@ import {
     ARTIFACT_SCAN_STATUS_QUERY, ENRICHMENT_FACT_TEXT, ageText, blockerRows, candidateLine, dateCell, enrichmentCell,
     enrichmentFactOf, enrichmentGatedText, enrichmentNote, factRows, formatInstant, loadArtifactScanStatus, reasonLabel,
     resetScanStatusSupportForTests, scanStatusSupported, stateLine, truncatedNote,
-    notScannableTitle, notScannableReleaseTitle, notScannableCountLabel
+    notScannableTitle, notScannableReleaseTitle, notScannableCountLabel,
+    REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION, requeueArtifactScanFanOut, canRequeueScanFanOut
 } from './artifactScanStatus'
 import type { ArtifactNotScannable, ArtifactScanStatus, ScanBlocker } from './artifactScanStatus'
 import { isDriftRejected } from './graphqlDriftFallback'
@@ -341,5 +342,30 @@ describe('not-scannable titles and the count label (TPF-127)', () => {
     it('counts BOMs in the note label', () => {
         expect(notScannableCountLabel(1)).toBe('1 BOM not scannable')
         expect(notScannableCountLabel(2)).toBe('2 BOMs not scannable')
+    })
+})
+
+describe('requeueArtifactScanFanOut (Re-apply findings)', () => {
+    it('sends the mutation uncached and answers the status read after', async () => {
+        const calls: any[] = []
+        const client = { mutate: async (opts: any) => { calls.push(opts); return { data: { requeueArtifactScanFanOut: base } } } }
+        expect(await requeueArtifactScanFanOut(client, 'a1')).toBe(base)
+        expect(calls).toHaveLength(1)
+        expect(calls[0].mutation).toBe(REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION)
+        expect(calls[0].variables).toEqual({ artifactUuid: 'a1' })
+        expect(calls[0].fetchPolicy).toBe('no-cache')
+    })
+
+    it('rethrows every error as is, a refusal included', async () => {
+        const e: any = new Error('Not authorized')
+        await expect(requeueArtifactScanFanOut({ mutate: async () => { throw e } }, 'a1')).rejects.toBe(e)
+    })
+
+    it('applies to a mapped BOM only', () => {
+        expect(canRequeueScanFanOut(base)).toBe(base.mapped && !!base.canonicalArtifactUuid)
+        expect(canRequeueScanFanOut({ ...base, mapped: true, canonicalArtifactUuid: 'c1', state: 'SCANNED' })).toBe(true)
+        expect(canRequeueScanFanOut({ ...base, mapped: false, canonicalArtifactUuid: null, state: 'UNMAPPED' })).toBe(false)
+        expect(canRequeueScanFanOut({ ...base, mapped: false, canonicalArtifactUuid: null, state: 'NOT_A_BOM' })).toBe(false)
+        expect(canRequeueScanFanOut(null)).toBe(false)
     })
 })

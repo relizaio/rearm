@@ -1125,6 +1125,7 @@
                         :key="scanStatusRun"
                         :artifact-uuid="scanStatusArtifact.uuid"
                         :load="loadScanStatusOf"
+                        :requeue="isWritable ? requeueScanFanOutOf : undefined"
                         :notify="notify" />
                 </div>
             </n-modal>
@@ -2372,7 +2373,7 @@ import type { ExportBomType, SupportExportFormat } from '@/utils/exportFormatSel
 import { supportMetadataArg } from '@/utils/exportMetadataFallback'
 import { useFileComponentsSwitch } from '@/utils/useFileComponentsSwitch'
 import { SBOM_SCORE_PROFILES, buildReleaseScoreVariables } from '@/utils/sbomScore'
-import { loadArtifactScanStatus, scanStatusSupported, notScannableTitle } from '@/utils/artifactScanStatus'
+import { loadArtifactScanStatus, requeueArtifactScanFanOut, scanStatusSupported, notScannableTitle } from '@/utils/artifactScanStatus'
 import { FDA_PROSE_MAX_LENGTH } from '@/utils/fdaProseInput'
 import { formatNarrativeChange } from '@/utils/narrativeHistory'
 import { generatedArtifactRows, belongsToLabel, syntheticArtifactsAvailable, syntheticHistoryText, generatedArtifactDownloadRef, generatedArtifactOrigin } from '@/utils/generatedArtifacts'
@@ -6665,6 +6666,11 @@ function openScanStatusModal (artifact: any) {
 
 function loadScanStatusOf (artifactUuid: string) {
     return loadArtifactScanStatus(graphqlClient, artifactUuid)
+}
+
+/** The scan status panel's Re-apply findings: requeue the BOM's fan-out (the server checks write). */
+function requeueScanFanOutOf (artifactUuid: string) {
+    return requeueArtifactScanFanOut(graphqlClient, artifactUuid)
 }
 
 function runSbomExport (mutation: any, variables: Record<string, any>): Promise<any> {

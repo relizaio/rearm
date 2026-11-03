@@ -102,16 +102,18 @@ describe('ReleaseView scan status wiring (row 21)', () => {
         expect(fn('loadScanStatusOf')).toContain('loadArtifactScanStatus(graphqlClient, artifactUuid)')
     })
 
-    it('(e) one panel, fresh per open, bound to the uuid, the loader and notify only', () => {
+    it('(e) one panel, fresh per open, bound to the uuid, the loader, notify and the write-gated requeue', () => {
         const panels = elements('artifact-scan-status-panel')
         expect(panels).toHaveLength(1)
         const { node, ancestors } = panels[0]
         const a = attrs(node)
         for (const want of ['v-if="showScanStatusModal && scanStatusArtifact"', ':key="scanStatusRun"',
-            ':artifact-uuid="scanStatusArtifact.uuid"', ':load="loadScanStatusOf"', ':notify="notify"']) {
+            ':artifact-uuid="scanStatusArtifact.uuid"', ':load="loadScanStatusOf"', ':notify="notify"',
+            ':requeue="isWritable ? requeueScanFanOutOf : undefined"']) {
             expect(a).toContain(want)
         }
-        expect(a).toHaveLength(5)
+        expect(a).toHaveLength(6)
+        expect(fn('requeueScanFanOutOf')).toContain('requeueArtifactScanFanOut(graphqlClient, artifactUuid)')
         const div = ancestors[ancestors.length - 1]
         expect(div.tag).toBe('div')
         expect(attrs(div)).toContain('data-testid="artifact-scan-status-modal"')
