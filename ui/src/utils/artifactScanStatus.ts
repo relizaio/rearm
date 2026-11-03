@@ -24,6 +24,27 @@ export const ARTIFACT_SCAN_STATUS_QUERY = gql`
         }
     }`
 
+/**
+ * Requeue the artifact's canonical for the next synthetic fan-out pass, which re-applies the current
+ * bucket findings to every artifact of the canonical, and read the status back (the same selection as
+ * the query, written out for scripts/validate-graphql.mjs). Write on a component holding the artifact
+ * in one of its releases, or organization-wide write; the server decides.
+ */
+export const REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION = gql`
+    mutation requeueArtifactScanFanOut($artifactUuid: ID!) {
+        requeueArtifactScanFanOut(artifactUuid: $artifactUuid) {
+            artifactUuid type state mapped canonicalArtifactUuid
+            mappedAt firstScanned lastScanned fanOutAt fanOutRequeuedAt
+            newestIngestedBucketUpdate ingestedBucketCount
+            enrichmentGated inCandidateSet candidateRule
+            matchableComponentCount rootComponentCount terminalComponentCount unmatchableComponentCount
+            noMatchableComponentsReason
+            notScannableAt
+            blockerTotal blockersTruncated
+            blockers { purl enrichment terminalReason bucketIndex bucketIngestState bucketLastUpdatedDate reason }
+        }
+    }`
+
 export type ArtifactScanState = 'NOT_A_BOM' | 'UNMAPPED' | 'BLOCKED_ON_COVERAGE' | 'WAITING_FOR_FAN_OUT' | 'SCANNED' | 'NO_MATCHABLE_COMPONENTS'
 export type ScanBlockerEnrichmentState = 'UNENRICHED' | 'ENRICHED' | 'TERMINAL'
 export type NoMatchableComponentsReason = 'NO_COMPONENTS' | 'ONLY_ROOT' | 'ALL_TERMINAL' | 'NO_PURL_OR_CPE'
@@ -109,6 +130,32 @@ export async function loadArtifactScanStatus (client: { query: Function }, artif
         }
         throw e
     }
+}
+
+/** A server without the requeue mutation (a CE mirror before the sync that carries it). */
+export const REQUEUE_UNSUPPORTED_TEXT = 'Re-applying findings is not available on this server'
+
+/**
+ * Requeues the artifact's scan fan-out and answers the status read right after. A schema-drift error (a
+ * server without the mutation) throws REQUEUE_UNSUPPORTED_TEXT; every other error is rethrown as is.
+ */
+export async function requeueArtifactScanFanOut (client: { mutate: Function }, artifactUuid: string): Promise<ArtifactScanStatus | null> {
+    try {
+        const resp: any = await client.mutate({
+            mutation: REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION,
+            variables: { artifactUuid },
+            fetchPolicy: 'no-cache'
+        })
+        return resp?.data?.requeueArtifactScanFanOut ?? null
+    } catch (e: any) {
+        if (isSchemaDriftError(e)) throw new Error(REQUEUE_UNSUPPORTED_TEXT)
+        throw e
+    }
+}
+
+/** Whether the status names a mapped BOM, the only artifact a requeue applies to. */
+export function canRequeueScanFanOut (status: ArtifactScanStatus | null | undefined): boolean {
+    return !!status && status.mapped === true && !!status.canonicalArtifactUuid && status.state !== 'NOT_A_BOM'
 }
 
 function parseableIso (iso: string | null | undefined): iso is string {

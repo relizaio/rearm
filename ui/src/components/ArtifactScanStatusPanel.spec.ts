@@ -340,7 +340,57 @@ describe('ArtifactScanStatusPanel (row 22)', () => {
         expect(buttons).toHaveLength(1)
         expect(buttons[0].text()).toBe('Refresh')
         expect(w.find('a[href]').exists()).toBe(false)
-        expect(Object.keys(w.props()).sort()).toEqual(['artifactUuid', 'load', 'notify'])
+        // the optional requeue (Re-apply findings) is declared; unpassed here, so no second button
+        expect(Object.keys(w.props()).sort()).toEqual(['artifactUuid', 'load', 'notify', 'requeue'])
         expect(load).toHaveBeenCalledTimes(1)
+    })
+})
+
+describe('Re-apply findings (requeue)', () => {
+    async function mountWith (status: ArtifactScanStatus, requeue?: (uuid: string) => Promise<ArtifactScanStatus | null>) {
+        const notify = vi.fn()
+        const w = mount(ArtifactScanStatusPanel, { props: { artifactUuid: UUID, load: served(status), notify, requeue }, attachTo: document.body })
+        await flushPromises()
+        return { w, notify }
+    }
+
+    it('is offered on a mapped BOM when the caller passes a requeue, and never without one', async () => {
+        const { w } = await mountWith(scanned, vi.fn())
+        expect(w.find(tid('requeue')).exists()).toBe(true)
+        w.unmount()
+        const { w: w2 } = await mountWith(scanned)
+        expect(w2.find(tid('requeue')).exists()).toBe(false)
+        w2.unmount()
+    })
+
+    it('is not offered for an unmapped BOM or an artifact that is not a BOM', async () => {
+        for (const s of [unmapped, notABom]) {
+            const { w } = await mountWith(s, vi.fn())
+            expect(w.find(tid('requeue')).exists(), s.state).toBe(false)
+            w.unmount()
+        }
+    })
+
+    it('requeues the uuid, shows the status it answers and says so', async () => {
+        const after: ArtifactScanStatus = { ...scanned, inCandidateSet: true, candidateRule: 'requeued at 2026-11-03T18:00:00Z: a gate writer changed its inputs; never fanned out' }
+        const requeue = vi.fn(async () => after)
+        const { w, notify } = await mountWith(scanned, requeue)
+        await w.find(tid('requeue')).trigger('click')
+        await flushPromises()
+        expect(requeue).toHaveBeenCalledWith(UUID)
+        expect(w.find(tid('candidate')).attributes('data-candidate')).toBe('true')
+        expect(w.find(tid('candidate')).text()).toContain('requeued at 2026-11-03T18:00:00Z')
+        expect(notify).toHaveBeenCalledWith('success', 'Requeued', expect.any(String))
+        w.unmount()
+    })
+
+    it('shows a refusal through notify and keeps the status it had', async () => {
+        const requeue = vi.fn(async () => { throw new Error('Not authorized') })
+        const { w, notify } = await mountWith(scanned, requeue)
+        await w.find(tid('requeue')).trigger('click')
+        await flushPromises()
+        expect(notify).toHaveBeenCalledWith('error', 'Error', expect.stringContaining('Not authorized'))
+        expect(w.find(tid('state')).attributes('data-state')).toBe('SCANNED')
+        w.unmount()
     })
 })

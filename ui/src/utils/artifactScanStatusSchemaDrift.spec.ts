@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { print, validate, type GraphQLSchema } from 'graphql'
-import { ARTIFACT_SCAN_STATUS_QUERY } from './artifactScanStatus'
+import { ARTIFACT_SCAN_STATUS_QUERY, REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION } from './artifactScanStatus'
 import { ceSchema, proSchema } from './schemaDriftSupport'
 
 // TPF-122 (architecture-3 section 5, row 23): the scan-status document against both schemas.
@@ -47,5 +47,22 @@ describe('artifactScanStatus document shape', () => {
         expect(printed.indexOf('notScannableAt')).toBeLessThan(printed.indexOf('blockerTotal'))
         expect(printed).not.toMatch(/dtrackProjectUuid/)
         expect(printed).not.toMatch(/blockersVisible/)
+    })
+})
+
+describe('requeueArtifactScanFanOut mutation document', () => {
+    // Pro carries the mutation (relizaio/rearm-saas#1001); the CE mirror gets it with the next backend sync,
+    // and until then a click answers REQUEUE_UNSUPPORTED_TEXT (the helper maps the drift error).
+    it.runIf(proSchema)('validates against Pro', () => {
+        expect(validate(proSchema as GraphQLSchema, REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION).map(e => e.message)).toEqual([])
+    })
+
+    it('is the mutation requeueArtifactScanFanOut selecting what the query selects', () => {
+        const def: any = REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION.definitions[0]
+        expect(def.operation).toBe('mutation')
+        expect(def.name.value).toBe('requeueArtifactScanFanOut')
+        const fieldsOf = (doc: any) => doc.definitions[0].selectionSet.selections[0].selectionSet.selections
+            .map((f: any) => f.name.value)
+        expect(fieldsOf(REQUEUE_ARTIFACT_SCAN_FAN_OUT_MUTATION)).toEqual(fieldsOf(ARTIFACT_SCAN_STATUS_QUERY))
     })
 })
