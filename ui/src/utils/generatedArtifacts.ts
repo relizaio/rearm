@@ -6,6 +6,8 @@
  */
 
 import { isProEdition } from './editionCapabilities'
+import { artifactDownloadRef, type ArtifactDownloadRef } from './artifactDownload'
+import { packageKindLabel, packagePartLabel } from './packageSettings'
 
 /**
  * Whether this edition serves generated artifacts. Both do: the CE backend serves
@@ -63,4 +65,36 @@ export function syntheticHistoryText (objectId: string | null | undefined, detai
         : undefined
     if (!ad) return `Generated artifact ${objectId ?? ''}`.trim()
     return ['Generated artifact', ad.type, ad.displayIdentifier].filter(Boolean).join(' ')
+}
+
+/** A tag's value on a generated artifact row, or '' when absent. */
+function tagValue (ad: any, key: string): string {
+    const tags: any[] = Array.isArray(ad?.tags) ? ad.tags : []
+    const v = tags.find((t: any) => t && t.key === key)?.value
+    return typeof v === 'string' ? v : ''
+}
+
+/**
+ * The direct download of a generated artifact: its current version, raw. A generated artifact is
+ * never augmented after it is written, so the augmented-or-raw choice does not apply. Saved under
+ * its display identifier, which every generator sets to a file name (the TEA aggregate's
+ * <component>-<version>-<profile>-tea-aggregate.cdx.json, a submission part's package file name).
+ * Null, fail closed, without an artifact uuid or an integer version.
+ */
+export function generatedArtifactDownloadRef (ad: any): ArtifactDownloadRef | null {
+    return artifactDownloadRef(ad?.uuid, ad?.version, ad?.displayIdentifier)
+}
+
+export interface GeneratedSubmissionFacts { kind: string, part: string, version: string }
+
+/**
+ * The regulatory submission a generated artifact belongs to, from the tags the submission composer
+ * writes (SubmissionTags): the package kind and the part, the manifest named as such; null for an
+ * artifact no submission wrote.
+ */
+export function generatedArtifactSubmission (ad: any): GeneratedSubmissionFacts | null {
+    const kind = tagValue(ad, 'submissionKind')
+    const part = tagValue(ad, 'submissionManifest') === 'true' ? 'Manifest' : packagePartLabel(tagValue(ad, 'submissionPart'))
+    if (!kind && !part) return null
+    return { kind: packageKindLabel(kind), part, version: tagValue(ad, 'submissionVersion') }
 }

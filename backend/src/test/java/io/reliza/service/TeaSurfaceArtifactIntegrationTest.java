@@ -36,6 +36,7 @@ import io.reliza.model.TeaPublishedCollectionData;
 import io.reliza.model.TeaPublishedCollectionData.TeaPublishedEntry;
 import io.reliza.service.TeaPublicationService.TeaPublishMode;
 import io.reliza.service.tea.TeaArtifactSurfaceService;
+import io.reliza.service.tea.TeaFileNames;
 import io.reliza.service.tea.TeaLogCapture;
 import io.reliza.ws.tea.ArtifactApiController;
 import io.reliza.ws.tea.TeaArtifactResponses;
@@ -98,11 +99,10 @@ public class TeaSurfaceArtifactIntegrationTest extends TeaSurfaceArtifactIntegra
 	void aDownloadCarriesEveryHeaderNamed() throws Exception {
 		ArtWorld w = artifactWorld();
 		for (Art a : List.of(w.pub().agg(), w.pub().bom(), w.pub().lic(), w.pub().nosig(), w.pub().s512())) {
-			String name = Utils.OM.readTree(get(url(w, a, "latest", ""), null).body()).get("name").asString();
 			HttpResponse<byte[]> v = getBytes(url(w, a, String.valueOf(a.revision()), "/download"), null, null);
 			assertDownload(v, a.bytes(), a.mediaType(), contentLocation(w, a, false), "public, max-age=86400, immutable", a.mediaType());
-			// task TEA-28, D10: the aggregate's frozen name is its bare profile name, served as <name>.cdx.json
-			String fileName = a == w.pub().agg() ? name + ".cdx.json" : name;
+			// the TEA file name rule: <teaUuid>-r<revision> and the media type's extension, never the artifact's own name
+			String fileName = a.tea() + "-r" + a.revision() + TeaFileNames.extensionOf(a.mediaType());
 			assertEquals("attachment; filename=\"" + fileName + "\"", header(v, "Content-Disposition"), a.mediaType());
 			HttpResponse<byte[]> l = getBytes(url(w, a, "latest", "/download"), null, null);
 			assertDownload(l, a.bytes(), a.mediaType(), contentLocation(w, a, false), "no-cache", a.mediaType() + " latest");

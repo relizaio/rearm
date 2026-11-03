@@ -71,6 +71,10 @@ public class ArtifactData extends RelizaDataParent implements RelizaObject {
         // commit is accepted"). Free-form contents -- the policy CEL
         // inspects type + display identifier / tags / bom data.
         AGENTIC_REPORT,
+        // A document ReARM generates for a regulatory submission (an FDA premarket package): the
+        // assessment narrative, the device support statement, the support addendum, the CLE and the
+        // package manifest. The submission's kind and part are on its submissionKind / submissionPart tags.
+        REGULATORY_DOCUMENT,
         OTHER
     }
     

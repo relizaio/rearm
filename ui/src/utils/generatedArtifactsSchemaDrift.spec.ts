@@ -1,8 +1,10 @@
-import { describe, it, expect } from 'vitest'
+import { vi, describe, it, expect } from 'vitest'
 import { validate } from 'graphql'
 import graphqlQueries from './graphqlQueries'
 import { syntheticArtifactsAvailable } from './generatedArtifacts'
 import { ceSchema, proSchema } from './schemaDriftSupport'
+
+vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
 /**
  * The generated-artifacts document (task TEA-4) against both schemas, and the edition gate that

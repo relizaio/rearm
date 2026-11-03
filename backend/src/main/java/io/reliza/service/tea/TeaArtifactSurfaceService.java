@@ -30,7 +30,6 @@ import io.reliza.model.DigestAlgorithm;
 import io.reliza.model.Link;
 import io.reliza.model.TeaPublicationData;
 import io.reliza.model.TeaPublishedCollectionData;
-import io.reliza.model.TeaPublishedCollectionData.TeaArtifactOrigin;
 import io.reliza.model.TeaPublishedCollectionData.TeaPublishedEntry;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.service.ArtifactService;
@@ -241,23 +240,15 @@ public class TeaArtifactSurfaceService {
 		// decision 24: the rendering of the parsed media type, never the stored string
 		String contentType = TeaArtifactResponses.mediaTypeOf(mediaType).map(MediaType::toString)
 				.orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
-		return new RawBytes(bytes, Utils.bytesToHexSha256(bytes), contentType, contentFileName(r));
+		return new RawBytes(bytes, Utils.bytesToHexSha256(bytes), contentType, contentFileName(r, mediaType));
 	}
 
 	/**
-	 * The frozen object's name, else {@code <uuid>-<revision>}. A generated revision whose frozen name is
-	 * the bare SBOM profile name it was shaped by (task TEA-28, D10) is served as {@code <name>.cdx.json};
-	 * every other case, the legacy aggregate's file-style name included, is the name as frozen.
+	 * The file name a revision's bytes are served under: {@code <teaUuid>-r<revision>} and the extension of
+	 * the served format's media type ({@link TeaFileNames}), never the artifact's own name.
 	 */
-	public static String contentFileName(ArtifactRevision r) {
-		JsonNode name = r.artifactObject().get("name");
-		String n = null == name ? null : name.asString();
-		if (StringUtils.isBlank(n)) return r.teaUuid() + "-" + r.revision();
-		TeaPublishedEntry e = r.entry();
-		if (null != e && TeaArtifactOrigin.SYNTHETIC == e.origin() && n.equals(e.sbomProfileName())) {
-			return n + ".cdx.json";
-		}
-		return n;
+	public static String contentFileName(ArtifactRevision r, String mediaType) {
+		return TeaFileNames.artifactFileName(r.teaUuid(), r.revision(), mediaType);
 	}
 
 	// ------------------------------------------------------------------ signatures
@@ -353,7 +344,8 @@ public class TeaArtifactSurfaceService {
 		byte[] bytes = fetch(r, signature, "signature");
 		String contentType = tagOf(signature, CommonVariables.MEDIA_TYPE_FIELD).flatMap(TeaArtifactSurfaceService::concreteMediaType)
 				.map(MediaType::toString).orElse(MediaType.APPLICATION_OCTET_STREAM_VALUE);
-		String fileName = tagOf(signature, CommonVariables.FILE_NAME_FIELD).orElse(contentFileName(r) + ".sig");
+		String fileName = tagOf(signature, CommonVariables.FILE_NAME_FIELD)
+				.orElse(contentFileName(r, null == r.entry() ? null : r.entry().mediaType()) + ".sig");
 		return new RawBytes(bytes, Utils.bytesToHexSha256(bytes), contentType, fileName);
 	}
 

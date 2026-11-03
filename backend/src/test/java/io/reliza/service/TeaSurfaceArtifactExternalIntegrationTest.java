@@ -302,13 +302,13 @@ public class TeaSurfaceArtifactExternalIntegrationTest extends TeaSurfaceArtifac
 			assertEquals(p.extIriOverUrl(), Utils.OM.readTree(iriMeta.body()).get("formats").get(0).get("url").asString(),
 					"the metadata serves the frozen IRI as stored; the bound is on the URI form");
 
-			// the file name is cut to 255 octets
+			// a hosted artifact with a 304-character name is served as <teaUuid>-r<revision>.txt, not under its name
 			Art ln = p.longName();
 			assertEquals(304, p.longNameFile().length());
 			HttpResponse<byte[]> got = getBytes(url(w, ln, String.valueOf(ln.revision()), "/download"), null, null);
 			assertDownload(got, ln.bytes(), LIC_MEDIA_TYPE, contentLocation(w, ln, false), "public, max-age=86400, immutable",
 					"longName");
-			assertEquals("attachment; filename=\"" + "n".repeat(255) + "\"", header(got, "Content-Disposition"));
+			assertEquals("attachment; filename=\"" + ln.tea() + "-r" + ln.revision() + ".txt\"", header(got, "Content-Disposition"));
 
 			assertEquals(1, awaitTeaDownloads(since, 1).size(), "only the longName 200 is logged");
 			assertFalse(controller.lines(Level.DEBUG).isEmpty(), "the captures are open at DEBUG");

@@ -1,5 +1,8 @@
-import { describe, it, expect } from 'vitest'
-import { belongsToLabel, generatedArtifactRows, isSyntheticArtifact, syntheticArtifactsAvailable, syntheticHistoryText } from './generatedArtifacts'
+import { describe, it, expect, vi } from 'vitest'
+import { belongsToLabel, generatedArtifactRows, isSyntheticArtifact, syntheticArtifactsAvailable, syntheticHistoryText,
+    generatedArtifactDownloadRef, generatedArtifactSubmission } from './generatedArtifacts'
+
+vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAuth: vi.fn() }))
 
 describe('generatedArtifactRows', () => {
     it('answers the synthetic list only, in order, marked as generated for the release', () => {
@@ -80,5 +83,30 @@ describe('syntheticArtifactsAvailable', () => {
         for (const t of ['SAAS', 'DEMO', 'MANAGED_SERVICE', undefined, null]) {
             expect(syntheticArtifactsAvailable(t)).toBe(true)
         }
+    })
+})
+
+describe('generated artifact download and submission facts', () => {
+    const ART = '0f8fad5b-d9cb-469f-a165-70867728950e'
+
+    it('downloads the current version under the display identifier, and nothing without an integer version', () => {
+        expect(generatedArtifactDownloadRef({ uuid: ART, version: '3', displayIdentifier: 'shop-1.0-default-tea-aggregate.cdx.json' }))
+            .toEqual({ uuid: ART, version: 3, fileName: 'shop-1.0-default-tea-aggregate.cdx.json' })
+        expect(generatedArtifactDownloadRef({ uuid: ART, version: '1', displayIdentifier: '' }))
+            .toEqual({ uuid: ART, version: 1, fileName: ART })
+        expect(generatedArtifactDownloadRef({ uuid: ART, version: '1.0', displayIdentifier: 'x' })).toBeNull()
+        expect(generatedArtifactDownloadRef({ uuid: 'nope', version: '1', displayIdentifier: 'x' })).toBeNull()
+    })
+
+    it('reads the submission kind and part from the composer tags, the manifest named as such', () => {
+        const tag = (key: string, value: string) => ({ key, value })
+        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionPart', 'NARRATIVE'),
+            tag('submissionVersion', '2')] })).toEqual({ kind: 'FDA premarket', part: 'Narrative', version: '2' })
+        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'FDA_PREMARKET'), tag('submissionManifest', 'true'),
+            tag('submissionVersion', '1')] })).toEqual({ kind: 'FDA premarket', part: 'Manifest', version: '1' })
+        expect(generatedArtifactSubmission({ tags: [tag('submissionKind', 'OTHER_KIND'), tag('submissionPart', 'NEW_PART')] }))
+            .toEqual({ kind: 'OTHER_KIND', part: 'NEW_PART', version: '' })
+        expect(generatedArtifactSubmission({ tags: [tag('teaAggregate', 'true')] })).toBeNull()
+        expect(generatedArtifactSubmission({})).toBeNull()
     })
 })
