@@ -309,6 +309,7 @@ public class TeaTransformerService {
 			case CERTIFICATE_PGP:
 			case RISK_ASSESSMENT:
 			case CODE_SCANNING_RESULT:
+			case REGULATORY_DOCUMENT:
 				tat = TeaArtifactType.OTHER;
 				break;
 			case BUILD_META:
