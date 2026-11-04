@@ -2,13 +2,13 @@
 // Site-wide dismissible announcement bar above the header. One campaign at a
 // time: update the id, href and message together. Dismissal is remembered
 // per-campaign in localStorage, so a new id re-shows the bar for everyone.
-const id = 'bh-india-2026';
-const href = '/news/2026-08-18-rearm-ce-at-black-hat-india-2026-arsenal/';
+const id = 'community-meetup-2-2026-11';
+const href = 'https://www.meetup.com/machine-learning-artificial-intelligence-ottawa/events/316974379';
 ---
 
 <div class="announce" id="announce-bar" hidden>
-  <a class="announce-link" href={href}>
-    Meet us at Black Hat India 2026 in Bengaluru, Oct 29&ndash;30. Catch a live ReARM CE demo at Arsenal.
+  <a class="announce-link" href={href} target="_blank" rel="noopener noreferrer">
+    2nd ReARM Community Meetup: ReARM Boards, Managing Agentic Coding Squads. Online, Wed Nov 18, 12:00 PM ET. Register on Meetup.
   </a>
   <button class="announce-close" id="announce-close" aria-label="Dismiss announcement">&#10005;</button>
 </div>
