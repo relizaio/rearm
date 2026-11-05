@@ -78,6 +78,8 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import io.reliza.service.AcollectionService;
 import io.reliza.service.ArtifactAttachmentGuard;
+import io.reliza.service.ArtifactRetentionLock;
+import io.reliza.service.ArtifactRetentionLock.Retention;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.DeclaredLicenses;
 import io.reliza.service.ReleaseRebomService;
@@ -153,6 +155,10 @@ public class OssReleaseService {
 
 	@Autowired
 	private ArtifactAttachmentGuard artifactAttachmentGuard;
+
+	@Lazy
+	@Autowired
+	private ArtifactRetentionLock artifactRetentionLock;
 			
 	@Autowired
 	@Lazy
@@ -643,8 +649,10 @@ public class OssReleaseService {
 						LockedOperation.RELEASE_CONTENT));
 		}
 		Release r = null;
-		// locate and lock release in db
-		Optional<Release> rOpt = sharedReleaseService.getRelease(releaseDto.getUuid());
+		// locate and lock release in db: FDAW-5, the retention check of a dropped artifact and an act's
+		// commit both decide under this row's write lock, each seeing the other's commit.
+		Optional<Release> rOpt = repository.findByIdWriteLocked(releaseDto.getUuid());
+		rOpt.ifPresent(entityManager::refresh);
 		if (rOpt.isPresent()) {
 			r = rOpt.get();
 			ReleaseData rData = ReleaseData.dataFromRecord(r);
@@ -880,6 +888,11 @@ public class OssReleaseService {
 						artifactService.getArtifactData(ad.object()).orElse(null));
 			}
 		}
+		// FDAW-5: a dropped artifact a package version of this release pins is refused before anything
+		// is written; one pinned only by another release's version is unbound and kept (never archived).
+		List<UUID> removedArtifacts = artDiff.stream().filter(ad -> ad.diffAction() == ReleaseUpdateAction.REMOVED)
+				.map(UuidDiff::object).toList();
+		final Retention held = artifactRetentionLock.assertNotUnbindable(rData.getOrg(), r.getUuid(), removedArtifacts);
 		if (!artDiff.isEmpty()) {
 			rData.setArtifacts(releaseDto.getArtifacts());
 			artDiff.forEach(ad -> {
@@ -889,7 +902,11 @@ public class OssReleaseService {
 					Optional<ArtifactData> oad = artifactService.getArtifactData(ad.object());
 					if (oad.isPresent()) {
 						List<Release> or = sharedReleaseService.findReleasesByReleaseArtifact(ad.object(), oad.get().getOrg());
-						if (or.isEmpty() || (or.size() == 1 && or.get(0).getUuid().equals(r.getUuid()))) {
+						boolean noOtherHolder = or.isEmpty() || (or.size() == 1 && or.get(0).getUuid().equals(r.getUuid()));
+						if (noOtherHolder && held.retains(ad.object())) {
+							log.info("artifact {} unbound from release {} and kept: pinned by {}", ad.object(), r.getUuid(),
+									held.describe(ad.object()));
+						} else if (noOtherHolder) {
 							artifactService.archiveArtifact(ad.object(), wu);
 						}
 					}

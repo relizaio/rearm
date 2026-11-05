@@ -14,5 +14,10 @@ public enum SubmissionRefusal {
 	/** The edition has no submissions (CE): the shared fetcher's answer when no hook is present. */
 	EDITION_UNSUPPORTED,
 	/** The kind is not switched on in the component's effective package settings. */
-	KIND_DISABLED
+	KIND_DISABLED,
+	/**
+	 * A REFERENCED artifact left the release's inventory or was archived between composition and
+	 * commit; repeat the act (task FDAW-5).
+	 */
+	INVENTORY_CHANGED
 }

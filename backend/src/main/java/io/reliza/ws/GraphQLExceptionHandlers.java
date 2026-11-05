@@ -25,6 +25,7 @@ import graphql.schema.DataFetchingEnvironment;
 import com.netflix.graphql.dgs.exceptions.DgsEntityNotFoundException;
 
 import io.reliza.exceptions.ActionRefusedException;
+import io.reliza.exceptions.ArtifactRetainedException;
 import io.reliza.exceptions.ComponentRevisionConflictException;
 import io.reliza.exceptions.InvalidInputException;
 import io.reliza.exceptions.RebomResponseTooLargeException;
@@ -96,6 +97,18 @@ public class GraphQLExceptionHandlers {
     public GraphQLError handleActionRefused(ActionRefusedException ex) {
         // A policy the org configured said no. Same treatment as RelizaException: the message
         // names the guard that refused and is the whole point of the refusal.
+        return GraphqlErrorBuilder.newError()
+                .message(ex.getMessage())
+                .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))
+                .build();
+    }
+
+    /**
+     * FDAW-5: an archive, unbind or replace of a file a package version pins. A refusal, not a fault:
+     * the message names the package version and is the whole point; nothing is logged.
+     */
+    @GraphQlExceptionHandler
+    public GraphQLError handleArtifactRetained(ArtifactRetainedException ex) {
         return GraphqlErrorBuilder.newError()
                 .message(ex.getMessage())
                 .errorType(ErrorClassification.errorClassification("BAD_REQUEST"))

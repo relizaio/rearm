@@ -175,7 +175,7 @@ class ReleaseDatafetcherSyntheticArtifactsTest {
 
 	private void assertNothingUploaded() throws Exception {
 		verifyNoInteractions(getComponentService);
-		verify(artifactService, never()).uploadArtifact(any(), any(), any(), any(), any());
+		verify(artifactService, never()).uploadArtifact(any(), any(), any(), any(), any(), any());
 		verify(artifactService, never()).createArtifact(any(), any());
 	}
 

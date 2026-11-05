@@ -25,6 +25,7 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.exceptions.ArtifactRetainedException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.RearmIdentifier;
@@ -36,6 +37,8 @@ import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.ArtifactRetentionLock.Retention;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.oss.OssReleaseService.AcollectionMode;
 import jakarta.persistence.EntityManager;
@@ -71,6 +74,14 @@ public class SyntheticArtifactService {
 
 	@Autowired
 	private ArtifactService artifactService;
+
+	/** The release row write-locked in remove (FDAW-5): the pin check and an act's commit take the same lock. */
+	@Autowired
+	private ReleaseRepository releaseRepository;
+
+	@Lazy
+	@Autowired
+	private ArtifactRetentionLock artifactRetentionLock;
 
 	/** Re-reads the release row inside the bind and remove transactions. */
 	@PersistenceContext
@@ -198,28 +209,35 @@ public class SyntheticArtifactService {
 	}
 
 	/**
-	 * Unbinds a generated artifact and archives it when no other release holds it in any list.
-	 * Only the generator that wrote it calls this; no user flow does.
+	 * Unbinds a generated artifact and archives it when no other release holds it in any list and
+	 * no package version pins it. Only the generator that wrote it calls this; no user flow does.
+	 * FDAW-5: refused with {@link ArtifactRetainedException} when a package
+	 * version of this release pins it, decided under the release row's write lock.
 	 *
 	 * @return false when the artifact was not bound to the release
 	 */
 	@Transactional
 	public boolean remove(UUID releaseUuid, UUID artifactUuid, WhoUpdated wu) throws RelizaException {
-		Release release = sharedReleaseService.getRelease(releaseUuid)
+		Release release = releaseRepository.findByIdWriteLocked(releaseUuid)
 				.orElseThrow(() -> new RelizaException("release " + releaseUuid + " not found"));
 		entityManager.refresh(release);
 		ReleaseData rd = ReleaseData.dataFromRecord(release);
-		if (!rd.removeSyntheticArtifact(artifactUuid)) return false;
+		if (!rd.getSyntheticArtifacts().contains(artifactUuid)) return false;
+		Retention held = artifactRetentionLock.assertNotUnbindable(rd.getOrg(), releaseUuid, List.of(artifactUuid));
+		rd.removeSyntheticArtifact(artifactUuid);
 		rd.addUpdateEvent(new ReleaseUpdateEvent(ReleaseUpdateScope.SYNTHETIC_ARTIFACT, ReleaseUpdateAction.REMOVED,
 				null, null, artifactUuid, ZonedDateTime.now(), wu));
 		ossReleaseService.saveRelease(release, rd, wu, false, AcollectionMode.SKIP);
 		boolean heldElsewhere = sharedReleaseService.gatherReleasesForArtifact(artifactUuid, rd.getOrg()).stream()
 				.anyMatch(other -> !releaseUuid.equals(other.getUuid()));
-		if (!heldElsewhere) {
+		boolean archive = !heldElsewhere && !held.retains(artifactUuid);
+		if (archive) {
 			artifactService.archiveArtifact(artifactUuid, wu);
+		} else if (held.retains(artifactUuid)) {
+			log.info("synthetic artifact {} unbound from release {} and kept: pinned by {}", artifactUuid, releaseUuid,
+					held.describe(artifactUuid));
 		}
-		log.info("synthetic artifact {} removed from release {} (archived: {})", artifactUuid, releaseUuid,
-				!heldElsewhere);
+		log.info("synthetic artifact {} removed from release {} (archived: {})", artifactUuid, releaseUuid, archive);
 		return true;
 	}
 

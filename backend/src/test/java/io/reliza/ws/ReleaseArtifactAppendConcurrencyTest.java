@@ -288,7 +288,7 @@ public class ReleaseArtifactAppendConcurrencyTest {
 		doAnswer(inv -> {
 			r1.set(secondWriter(o.release()));
 			return b;
-		}).when(artifactService).uploadArtifact(any(), any(), any(), any(), any());
+		}).when(artifactService).uploadArtifact(any(), any(), any(), any(), any(), any());
 
 		Map<String, Object> artifact = new LinkedHashMap<>();
 		artifact.put("type", ArtifactType.OTHER.name());
@@ -297,7 +297,7 @@ public class ReleaseArtifactAppendConcurrencyTest {
 				"tpf-36 replacement".getBytes(StandardCharsets.UTF_8)));
 		addAs(writer, o.release(), o.artifact(), artifact);
 
-		verify(artifactService, times(1)).uploadArtifact(any(), any(), any(), any(), any());
+		verify(artifactService, times(1)).uploadArtifact(any(), any(), any(), any(), any(), any());
 		ReleaseData rd = readBack(o.release());
 		assertLifecycleSurvived(rd);
 		assertTrue(artifactAddedIds(rd).contains(b), "no ARTIFACT ADDED event for " + b);
