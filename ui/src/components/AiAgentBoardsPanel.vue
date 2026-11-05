@@ -447,11 +447,19 @@
                             @update:checked="(v: boolean) => { editingBoard.coordinatorStopLift = v }">
                     the coordinator may lift a no-progress or cycle-cap stop once per task
                 </n-checkbox>
+                <!-- task TPF-152: null is the default, on; false keeps every design at the coordinator and the architect's
+                     flag is recorded but ignored. Operator-only, like the role's coordinator checkpoint: the server refuses
+                     a change from anything but a person. -->
+                <n-checkbox :checked="editingBoard.architectCheckpointWaiver !== false" data-testid="board-architect-waiver"
+                            @update:checked="(v: boolean) => { editingBoard.architectCheckpointWaiver = v }">
+                    the architect may waive the design checkpoint (--no-split)
+                </n-checkbox>
                 <n-text depth="3" style="font-size: 11.5px; margin-top: -6px;">
                     Blank budget: no board limit. Blank priorities: strict, every open item counts. The
                     placeholders are the defaults a blank field takes. Events older than the days kept
                     are deleted daily; 0 keeps everything, and the log then grows without bound. Unchecked, every stop is the
-                    operator's; budget stops always are.
+                    operator's; budget stops always are. The architect's waiver is the operator's switch: a seat cannot
+                    change it, and it does nothing on a board without a coordinator checkpoint role.
                 </n-text>
                 <!-- task 18c5c293: how a task on this board proves it was delivered. -->
                 <div class="flabel">delivery</div>

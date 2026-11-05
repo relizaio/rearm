@@ -3,7 +3,7 @@
 // The design checkpoint in the task header and the hop log (task SPLIT-8, T-18 b and b'): the chip and the hop
 // row say the phase checkpointPhase reads, so a PENDING record says "at the checkpoint" only while the task waits
 // there, and the row of a PENDING record is the last line.
-import { describe, expect, it, vi } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import { readFileSync } from 'fs'
 import { join } from 'path'
 import { mount } from '@vue/test-utils'
@@ -154,5 +154,121 @@ describe('the store\'s selections', () => {
         expect(store.match(/^\s*coordinatorCheckpoint$/gm)).toHaveLength(3)
         const presets = store.slice(store.indexOf('agentTaskRolePresetsOfOrg'))
         expect(presets.slice(0, presets.indexOf('`', presets.indexOf('`') + 1))).not.toContain('coordinatorCheckpoint')
+    })
+})
+
+// The architect's waiver (task TPF-153, T-10): the chip, the hop row and the sign-off's --no-split tag, for a
+// waived pass, a blind reader's copy of it, and a stop where the board's switch made the waiver ignored.
+describe('the design checkpoint waiver in the header and the hop log', () => {
+    const mounted: any[] = []
+    afterEach(() => { while (mounted.length) mounted.pop().unmount() })
+    const mountTitle = (task: any) => { const w = mount(TaskTitle, { props: { task } }); mounted.push(w); return w }
+    const mountHops = (task: any) => { const w = mount(TaskHops, { props: { task, agentNames: {} } }); mounted.push(w); return w }
+    const titleChip = (task: any) => {
+        const w = mountTitle(task)
+        return { chip: w.find('[data-testid="checkpoint-chip"]'),
+            type: w.findAllComponents(NTag).find((t: any) => t.attributes('data-testid') === 'checkpoint-chip')?.props('type') }
+    }
+    const cpRow = (w: any) => w.findAll('.hist__row').find((r: any) => r.find('[data-testid="hop-checkpoint"]').exists())
+    const settledAt = '2026-11-05T03:00:00Z'
+    const arch = { kind: 'SESSION', uuid: 's-arch', name: 'architect-seat' }
+    const waivedTask = () => richTask({
+        status: 'QUEUED', role: 'coder', assignment: null,
+        signOffs: [...richTask().signOffs, { role: 'architect', agent: 'ag-1', session: 's-arch', signedOffAt: '2026-11-05T02:59:00Z',
+            outcome: 'PASSED', note: 'fits one coder pass', noSplit: true }],
+        designCheckpoint: rec({ afterRole: 'architect', design: ['a1'], state: 'SENT_ON', settledBy: arch, settledAt,
+            note: 'waived by architect: fits one coder pass' }),
+        designCheckpointWaiver: { bySession: 's-arch', byAgent: 'ag-1', role: 'architect', roleUuid: 'r-arch',
+            at: '2026-11-05T02:59:00Z', designRound: 'a1', note: 'fits one coder pass', standing: true },
+    })
+    const blindTask = () => {
+        const t = structuredClone(waivedTask())
+        t.designCheckpoint.settledBy = null
+        t.designCheckpoint.note = 'waived by architect'
+        Object.assign(t.designCheckpointWaiver, { bySession: null, byAgent: null, note: null })
+        Object.assign(t.signOffs.at(-1), { note: null, session: null, agent: null })
+        return t
+    }
+    const ignoredTask = (standing: boolean) => richTask({ status: 'AWAITING_COORDINATOR', role: 'architect', assignment: null,
+        designCheckpoint: rec(),
+        designCheckpointWaiver: { bySession: 's-arch', byAgent: 'ag-1', role: 'architect', roleUuid: 'r-arch',
+            at: '2026-11-05T02:59:00Z', designRound: 'a1', note: 'fits one coder pass', standing } })
+
+    it('the chip names the architect and the note for a waived pass, in default colour', () => {
+        const { chip, type } = titleChip(waivedTask())
+        expect(chip.text()).toBe('checkpoint waived by architect: fits one coder pass')
+        expect(type).toBe('default')
+    })
+
+    it('the chip says the waiver was ignored at a stop, and only when the server says it does not stand', () => {
+        const ignored = titleChip(ignoredTask(false))
+        expect(ignored.chip.text()).toBe('at the design checkpoint (--no-split ignored)')
+        expect(ignored.type).toBe('warning')
+        expect(titleChip(ignoredTask(true)).chip.text()).toBe('at the design checkpoint')
+        const by = { kind: 'USER', uuid: 'u1', name: 'rhythm@example.org' }
+        expect(titleChip(richTask({ status: 'ASSIGNED', designCheckpoint: rec({ state: 'SENT_ON', settledBy: by }) })).chip.text())
+            .toBe('sent on by rhythm@example.org')
+        expect(titleChip(richTask({ designCheckpoint: null })).chip.exists()).toBe(false)
+    })
+
+    it('the hop row says who waived it, with the session and the time, and the note once', () => {
+        const w = mountHops(waivedTask())
+        const r = cpRow(w)
+        expect(r.text()).toContain('checkpoint waived by architect: fits one coder pass')
+        // The actor-ref renders the session (role, uuid, name) after the phrase's "by".
+        expect(r.text()).toMatch(/fits one coder pass by .*architect-seat/)
+        expect(r.find('.hist__time').text()).toMatch(/2026|ago|Nov/)
+        expect(r.find('.hist__note').exists()).toBe(false)
+        expect(r.findAllComponents(NTag).find((t: any) => t.attributes('data-testid') === 'hop-checkpoint')?.props('type')).toBe('default')
+    })
+
+    it('a blind reader\'s copy reads without the note, the actor or a placeholder, and keeps the --no-split tag', () => {
+        const task = blindTask()
+        expect(titleChip(task).chip.text()).toBe('checkpoint waived by architect')
+        const w = mountHops(task)
+        const text = cpRow(w).text()
+        expect(text).toContain('checkpoint waived by architect')
+        expect(text.slice(text.indexOf('checkpoint waived by architect') + 'checkpoint waived by architect'.length)).not.toMatch(/^\s*(:|by )/)
+        expect(w.text()).not.toMatch(/null|undefined/)
+        expect(w.find('[data-testid="hop-no-split"]').exists()).toBe(true)
+    })
+
+    it('the ignored stop\'s row says so, in warning', () => {
+        const w = mountHops(ignoredTask(false))
+        expect(cpRow(w).text()).toContain('waiting for the coordinator; --no-split by architect ignored: the board\'s architectCheckpointWaiver is off')
+        expect(cpRow(w).findAllComponents(NTag).find((t: any) => t.attributes('data-testid') === 'hop-checkpoint')?.props('type')).toBe('warning')
+        expect(cpRow(mountHops(ignoredTask(true))).text()).not.toContain('--no-split')
+    })
+
+    it('the architect\'s sign-off row carries --no-split, and a sign-off without it none', () => {
+        const w = mountHops(waivedTask())
+        const tags = w.findAll('[data-testid="hop-no-split"]')
+        expect(tags).toHaveLength(1)
+        expect(tags[0].text()).toBe('--no-split')
+        const without = structuredClone(waivedTask())
+        without.signOffs.at(-1).noSplit = null
+        expect(mountHops(without).find('[data-testid="hop-no-split"]').exists()).toBe(false)
+    })
+})
+
+// T-11: the chip and the row read what the store selects.
+describe('the store\'s waiver selections', () => {
+    const store = readFileSync(join(process.cwd(), 'src/store.ts'), 'utf8')
+    const literal = (start: number) => store.slice(start, store.indexOf('`', store.indexOf('`', start) + 1))
+
+    it('selects the waiver and the sign-off\'s noSplit on the task, not on the card', () => {
+        const task = literal(store.indexOf('const AGENT_TASK_SELECTION = `'))
+        expect(task).toContain('designCheckpointWaiver { bySession byAgent role roleUuid at designRound note standing }')
+        expect(task.split('\n').find(l => l.includes('signOffs {'))).toContain(' note noSplit promptVersion')
+        const card = literal(store.indexOf('const AGENT_TASK_CARD_SELECTION = `'))
+        expect(card).not.toContain('designCheckpointWaiver')
+        expect(card).not.toContain('noSplit')
+    })
+
+    it('selects the switch on the board, as set and in effect', () => {
+        const at = store.indexOf('effectiveCoordinatorStopLift')
+        const board = store.slice(store.lastIndexOf('`', at), store.indexOf('`', at))
+        expect(board).toContain('architectCheckpointWaiver')
+        expect(board).toContain('effectiveArchitectCheckpointWaiver')
     })
 })

@@ -1,6 +1,7 @@
 import { describe, it, expect } from 'vitest'
-import { checkpointPhase, checkpointTag, checkpointTooltip, childCount, compareTaskKeys, matchesTaskText, refLabel, roleTagFor, shortRef,
-    splitRequestTag, splitRequestTooltip, splitRequestWaits, subtaskProgress, subtaskTag, waitsOn, waitsOnLabel } from './agentTaskLabels'
+import { checkpointPhase, checkpointTag, checkpointTooltip, checkpointWaiver, childCount, compareTaskKeys, matchesTaskText, refLabel, roleTagFor,
+    shortRef, splitRequestTag, splitRequestTooltip, splitRequestWaits, subtaskProgress, subtaskTag, waiverIgnored, waitsOn,
+    waitsOnLabel } from './agentTaskLabels'
 import { prChips } from './agentDelivery'
 
 const tasks = [
@@ -327,5 +328,75 @@ describe('splitRequestTooltip', () => {
 
     it('is empty without a record', () => {
         expect(splitRequestTooltip(srTask({}, null))).toBe('')
+    })
+})
+
+// The architect's design checkpoint waiver (task TPF-153, T-9): read off the record the server wrote and the
+// waiver's standing as the server resolved it; a blind reader's copy reads without its note.
+describe('the design checkpoint waiver', () => {
+    const settledAt = '2026-11-05T03:00:00Z'
+    const arch = { kind: 'SESSION', uuid: 's-arch', name: 'architect-seat' }
+    const waived = (note: string | null = 'waived by architect: fits one coder pass', settledBy: any = arch) =>
+        pending({ state: 'SENT_ON', settledBy, settledAt, note })
+    const waiver = (over: Record<string, any> = {}) => ({ bySession: 's-arch', byAgent: 'ag-1', role: 'architect',
+        roleUuid: 'r-arch', at: '2026-11-05T02:59:00Z', designRound: 'a1', note: 'fits one coder pass', standing: true, ...over })
+    const blindWaiver = (over: Record<string, any> = {}) => waiver({ bySession: null, byAgent: null, note: null, ...over })
+    const waiting = (w: any) => cpTask({ status: 'AWAITING_COORDINATOR', role: 'reviewer', assignment: null,
+        designCheckpointWaiver: w })
+
+    it('checkpointWaiver splits the server\'s note on its first separator', () => {
+        expect(checkpointWaiver(waived())).toEqual({ role: 'architect', note: 'fits one coder pass' })
+        expect(checkpointWaiver(waived('waived by architect'))).toEqual({ role: 'architect', note: null })
+        expect(checkpointWaiver(waived('waived by architect: '))).toEqual({ role: 'architect', note: null })
+        expect(checkpointWaiver(waived('waived by architect: a: b'))).toEqual({ role: 'architect', note: 'a: b' })
+    })
+
+    it('checkpointWaiver is null for any other record', () => {
+        expect(checkpointWaiver(waived('authorized for coder'))).toBeNull()
+        expect(checkpointWaiver(waived(null))).toBeNull()
+        expect(checkpointWaiver(pending({ note: 'waived by architect: fits one coder pass' }))).toBeNull()
+        expect(checkpointWaiver(null)).toBeNull()
+    })
+
+    it('waiverIgnored: waiting on a round the waiver names, the waiver not standing', () => {
+        expect(waiverIgnored(waiting(waiver({ standing: false })))).toBe(true)
+        expect(waiverIgnored(waiting(blindWaiver({ standing: false })))).toBe(true)
+        expect(waiverIgnored(waiting(waiver({ standing: true })))).toBe(false)
+        expect(waiverIgnored(waiting(waiver({ standing: false, designRound: 'a2' })))).toBe(false)
+        expect(waiverIgnored(waiting(null))).toBe(false)
+        expect(waiverIgnored(cpTask({ status: 'AWAITING_COORDINATOR', designCheckpointWaiver: waiver({ standing: false }) }, waived())))
+            .toBe(false)
+        expect(waiverIgnored(cpTask({ designCheckpointWaiver: waiver({ standing: false }) }))).toBe(false)
+    })
+
+    it('checkpointTag says who waived it and why, cut at 80, and the ignored stop in warning', () => {
+        const sent = (rec: any, w: any = waiver()) => cpTask({ status: 'QUEUED', role: 'coder', assignment: null,
+            designCheckpointWaiver: w }, rec)
+        expect(checkpointTag(sent(waived()))).toEqual({ text: 'checkpoint waived by architect: fits one coder pass', type: 'default' })
+        expect(checkpointTag(sent(waived('waived by architect', null), blindWaiver())))
+            .toEqual({ text: 'checkpoint waived by architect', type: 'default' })
+        const eighty = 'x'.repeat(80)
+        expect(checkpointTag(sent(waived('waived by architect: ' + eighty)))?.text).toBe('checkpoint waived by architect: ' + eighty)
+        expect(checkpointTag(sent(waived('waived by architect: ' + eighty + 'y')))?.text)
+            .toBe('checkpoint waived by architect: ' + eighty + '...')
+        expect(checkpointTag(sent(waived('waived by architect: ' + 'x'.repeat(79))))?.text).toBe('checkpoint waived by architect: ' + 'x'.repeat(79))
+        expect(checkpointTag(waiting(waiver({ standing: false })))).toEqual({ text: 'at the design checkpoint (--no-split ignored)', type: 'warning' })
+        expect(checkpointTag(waiting(waiver({ standing: true })))).toEqual({ text: 'at the design checkpoint', type: 'warning' })
+        const seat = { kind: 'SESSION', uuid: 's-1', name: 'rg-coord1' }
+        expect(checkpointTag(sent(waived('authorized for coder', seat), null))?.text).toBe('sent on by rg-coord1')
+    })
+
+    it('checkpointTooltip carries the whole note, the blind form without one, and what the server says of standing', () => {
+        const sent = (rec: any, w: any = waiver()) => cpTask({ status: 'QUEUED', role: 'coder', assignment: null,
+            designCheckpointWaiver: w }, rec)
+        const long = 'z'.repeat(120)
+        expect(checkpointTooltip(sent(waived()))).toContain('checkpoint waived by architect 2026-11-05T03:00:00Z: fits one coder pass')
+        expect(checkpointTooltip(sent(waived('waived by architect: ' + long)))).toContain(': ' + long)
+        expect(checkpointTooltip(sent(waived('waived by architect', null), blindWaiver())))
+            .toMatch(/checkpoint waived by architect 2026-11-05T03:00:00Z$/)
+        expect(checkpointTooltip(sent(waived(), waiver({ standing: false })))).toContain('the waiver no longer stands')
+        expect(checkpointTooltip(sent(waived(), waiver({ standing: true })))).not.toContain('no longer stands')
+        expect(checkpointTooltip(waiting(waiver({ standing: false })))).toContain('--no-split on this round was ignored')
+        expect(checkpointTooltip(waiting(waiver({ standing: true })))).not.toContain('ignored')
     })
 })

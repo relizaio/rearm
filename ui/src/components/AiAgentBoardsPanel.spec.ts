@@ -43,7 +43,7 @@ describe('the board settings form: notify a person after', () => {
         expect(Object.keys(draft).sort()).toEqual([...BOARD_SETTING_KEYS].sort())
         expect(draft).toEqual({ budgetMicros: 1_500_000, softAlertPercent: 70, cycleCap: 4, noProgressRepeatsToStop: 2,
             blockingPriority: 1, completionPriority: 2, humanQueueAgeMinutes: 45, eventRetentionDays: 0,
-            coordinatorStopLift: false })
+            coordinatorStopLift: false, architectCheckpointWaiver: null })
         expect(Object.values(settingsDraftOf({})).every(v => v === null)).toBe(true)
     })
 })
@@ -762,5 +762,36 @@ describe('the board load: the last board', () => {
         expect(watchBoard).toContain('writeLastBoard(props.orgUuid, selectedBoard.value)')
         const watchOrg = source.slice(source.indexOf('watch(() => props.orgUuid'), source.indexOf('// ---------- declarative boards'))
         expect(watchOrg).toContain('await refreshBoards({ ignoreUrlBoard: previous })')
+    })
+})
+
+// The architect's design checkpoint waiver switch (task TPF-153, T-12): beside the stop lift, outside the settings
+// grid, on the board form only a person who may configure the board opens; null and true read on.
+describe('the board settings form: the architect\'s waiver', () => {
+    it('binds a checkbox to architectCheckpointWaiver, on unless false, after the stop lift and before the help text', () => {
+        const field = template.indexOf('data-testid="board-architect-waiver"')
+        expect(field).toBeGreaterThan(-1)
+        const tag = template.lastIndexOf('<n-checkbox', field)
+        const end = template.indexOf('</n-checkbox>', field)
+        const checkbox = template.slice(tag, end)
+        expect(checkbox).toContain(':checked="editingBoard.architectCheckpointWaiver !== false"')
+        expect(checkbox).toContain('editingBoard.architectCheckpointWaiver = v')
+        expect(checkbox).toContain('the architect may waive the design checkpoint (--no-split)')
+        const grid = template.indexOf('data-testid="board-settings"')
+        const stopLift = template.indexOf('data-testid="board-stop-lift"')
+        const help = template.indexOf('operator\'s switch')
+        const delivery = template.indexOf('<div class="flabel">delivery</div>')
+        expect(grid).toBeGreaterThan(-1)
+        expect(grid).toBeLessThan(stopLift)
+        expect(stopLift).toBeLessThan(field)
+        expect(field).toBeLessThan(help)
+        expect(help).toBeLessThan(delivery)
+        // A sibling of the settings grid, not inside it: the grid's div closes before the stop lift.
+        expect(template.slice(grid, stopLift)).toContain('</div>')
+    })
+
+    it('sits in the form a person who may configure the board opens', () => {
+        const button = template.indexOf('>Edit board</n-button>')
+        expect(template.slice(template.lastIndexOf('<n-button', button), button)).toContain('v-if="currentBoard && canConfigure(currentBoard)"')
     })
 })
