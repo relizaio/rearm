@@ -52,6 +52,25 @@
                         :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template></span>
                     <div v-if="e.rec.note" class="hist__note">{{ e.rec.note }}</div>
                 </template>
+                <!-- The split request's one row (task SPLIT-13), in the words of its state. Its reason is the SPLIT return's
+                     note just above; the proposed children follow as a numbered list. -->
+                <template v-else-if="e.kind === 'split_request'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-split-request"
+                           :type="splitRequestWaits(task) ? 'warning' : 'default'">split request</n-tag>
+                    <span class="hist__role">by {{ e.rec.role }}</span>
+                    <span class="hist__time hist__time--wrap"><agent-time :at="e.rec.requestedAt"/> · {{ e.rec.proposedChildren?.length ? childCount(e.rec.proposedChildren.length) + ' proposed' : 'no children proposed' }} · <template
+                        v-if="e.rec.state === 'REQUESTED'">requested<template
+                        v-if="splitRequestWaits(task)">, waiting for the coordinator</template></template><template
+                        v-else-if="e.rec.state === 'LAPSED'">lapsed <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
+                        v-else>{{ e.rec.state === 'DECLINED' ? 'declined' : enumWord(e.rec.state) }}<template v-if="e.rec.settledBy"> by <actor-ref
+                        :actor="e.rec.settledBy" :task="task"/></template> <agent-time v-if="e.rec.settledAt" :at="e.rec.settledAt"/></template><template
+                        v-if="e.rec.state !== 'REQUESTED' && e.rec.note">: {{ e.rec.note }}</template></span>
+                    <ol v-if="e.rec.proposedChildren?.length" class="hist__children" data-testid="split-request-children">
+                        <li v-for="(c, j) in e.rec.proposedChildren" :key="j" :title="c.description ?? undefined">{{ c.title }}<template
+                            v-if="c.dependsOnSiblingIndexes?.length"> · after {{ c.dependsOnSiblingIndexes.map((x: number) => x + 1).join(', ') }}</template><template
+                            v-if="c.workLevel != null"> · level {{ c.workLevel }}</template></li>
+                    </ol>
+                </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
                     <span v-if="!e.rec.session" class="hist__role">{{ e.rec.role }}</span>
@@ -87,7 +106,7 @@ import { actorLabel } from '@/utils/agentActors'
 import { costLabel, formatTokenSplit, formatTokens, totalTokens } from '@/utils/agentUsage'
 import { DocumentRelease, documentFileUrl, documentLabel, outputsOfHop } from '@/utils/agentDocuments'
 import { agentName, dur, hopHistory } from '@/utils/agentTaskFormat'
-import { roleAhead } from '@/utils/agentTaskLabels'
+import { childCount, roleAhead, splitRequestWaits } from '@/utils/agentTaskLabels'
 import { enumWord, outcomeWord } from '@/utils/agentWords'
 import { reviewedChips } from '@/utils/agentReviewed'
 
