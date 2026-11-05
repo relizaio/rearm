@@ -1,7 +1,8 @@
 import { describe, it, expect } from 'vitest'
 import {
-    SOFTWARE_KINDS, recentReleasesKinds, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, elementCheckVerdictOf, documentRoundView, latestLabel,
+    SOFTWARE_KINDS, documentBoardBanner, documentRoundRows, documentSeriesRows, isDocumentComponent, splitDocumentDependencies, elementCheckVerdictOf, documentRoundView, latestLabel,
 } from './agentDocumentsView'
+import * as view from './agentDocumentsView'
 import { lifecycleWord } from './agentWords'
 import { cardRef } from './agentTaskFormat'
 
@@ -127,12 +128,11 @@ describe('document surfaces', () => {
 })
 
 
-// RD4-10: the home page's most-recent-releases widget lists software only.
-describe('the most-recent-releases kinds', () => {
-    it('are the software kinds, every kind but BOARD_DOCUMENT, unless the caller wants the rounds', () => {
-        expect(recentReleasesKinds(false)).toBe(SOFTWARE_KINDS)
-        expect(recentReleasesKinds(false)).toEqual(['GENERIC', 'HELM'])
-        expect(recentReleasesKinds(false)).not.toContain('BOARD_DOCUMENT')
-        expect(recentReleasesKinds(true)).toBeNull()
+// RD4-10, TPF-157: the most-recent-releases widget and the full page list software only.
+describe('the most-recent-releases lists send SOFTWARE_KINDS itself (RD4-10, TPF-157)', () => {
+    it('no function chooses the kinds, and the constant is every kind but BOARD_DOCUMENT', () => {
+        expect('recentReleasesKinds' in view).toBe(false)
+        expect(view.SOFTWARE_KINDS).toEqual(['GENERIC', 'HELM'])
+        expect(view.SOFTWARE_KINDS).not.toContain('BOARD_DOCUMENT')
     })
 })
