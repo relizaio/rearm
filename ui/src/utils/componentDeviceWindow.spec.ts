@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { loadComponentDeviceWindow, deviceWindowMutationInput, deviceSaveInput,
-    COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
+    deviceWindowWarningsOf, COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import { withoutAdditiveFields } from './graphqlDriftFallback'
 import { print, type DocumentNode } from 'graphql'
 
@@ -100,6 +100,36 @@ describe('reading the declared window', () => {
         expect(calls).toBe(2)
         expect(r.supported).toBe(false)
         expect(r.warnings).toEqual([])
+    })
+})
+
+/**
+ * FDAW-3, B3: `deviceWindowWarningsOf` normalises whatever the server (or a stubbed client in a
+ * test) hands it. A malformed `warnings` that is present but not an array -- not just absent or
+ * null -- must still come back as an empty list rather than throwing out of `.filter`, since a
+ * throw here would break the window read for a reason with nothing to do with the dates.
+ */
+describe('deviceWindowWarningsOf: normalising whatever the server sent', () => {
+    it('returns empty for an absent, null or non-array warnings value, without throwing', () => {
+        expect(deviceWindowWarningsOf(undefined)).toEqual([])
+        expect(deviceWindowWarningsOf({})).toEqual([])
+        expect(deviceWindowWarningsOf({ warnings: null })).toEqual([])
+        expect(() => deviceWindowWarningsOf({ warnings: 'oops' })).not.toThrow()
+        expect(deviceWindowWarningsOf({ warnings: 'oops' })).toEqual([])
+        expect(deviceWindowWarningsOf({ warnings: {} })).toEqual([])
+    })
+
+    it('drops an entry with no string message and keeps the rest, stringifying code', () => {
+        const warnings = [
+            { code: 'EOS_BEFORE_EOL', message: 'ok' },
+            { code: 'X', message: null },
+            null,
+            { message: 'no code' }
+        ]
+        expect(deviceWindowWarningsOf({ warnings })).toEqual([
+            { code: 'EOS_BEFORE_EOL', message: 'ok' },
+            { code: '', message: 'no code' }
+        ])
     })
 })
 

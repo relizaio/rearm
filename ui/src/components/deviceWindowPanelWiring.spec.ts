@@ -317,6 +317,21 @@ describe('the shipment device-window override', () => {
         expect(distribution).toMatch(/notify\('warning', 'Saved with a warning'/)
     })
 
+    /**
+     * FDAW-3, B3: after a save, the warning notify must read back the shipment it just saved
+     * (by `savedUuid`), not some other row in the list -- `shipments.value` can hold many. A
+     * wrong comparison here would show the warning for the wrong batch, or none at all, right
+     * after a save that DID produce one.
+     */
+    it('reads the just-saved shipment back by its own uuid for the warning notify', () => {
+        const start = distribution.indexOf('async function shipProduct')
+        expect(start).toBeGreaterThan(-1)
+        const end = distribution.indexOf('\n}\n', start)
+        const fn = distribution.slice(start, end > -1 ? end + 3 : undefined)
+        expect(fn).toMatch(/shipments\.value\.find\(\(x: any\) => x\.uuid === savedUuid\)/)
+        expect(fn).not.toMatch(/x\.uuid !== savedUuid/)
+    })
+
     /** FDAW-3, B11: the override pickers carry the IMDRF N70 names. */
     it('labels the override pickers from deviceDateLabels', () => {
         expect(distribution).toMatch(/import \{ EOS_FIELD_LABEL, EOL_FIELD_LABEL \} from '@\/utils\/deviceDateLabels'/)
