@@ -909,16 +909,12 @@ public class ComponentDataFetcher {
 	// Derived on read, never stored (FDAW-3, B3): one rule for the component's window and the
 	// batch override, which is the same Java class (ShippedProductData.deviceSupportWindow), so
 	// this one resolver serves both parents and rides the object either save already returns.
-	// Pure: fires only on a window the caller was already authorized to load. Tolerates a
-	// map-shaped parent (a resolver that hands back record data) rather than failing the field.
+	// Pure: fires only on a window the caller was already authorized to load. A parent of any
+	// other shape answers no warning rather than failing the field.
 	@DgsData(parentType = "DeviceSupportWindow", field = "warnings")
 	public List<DeviceWindowWarning> deviceWindowWarnings (DgsDataFetchingEnvironment dfe) {
 		Object source = dfe.getSource();
-		if (source instanceof ComponentData.DeviceSupportWindow w) return DeviceWindowWarning.of(w);
-		if (source instanceof Map<?, ?> m) {
-			return DeviceWindowWarning.of(Utils.OM.convertValue(m, ComponentData.DeviceSupportWindow.class));
-		}
-		return List.of();
+		return source instanceof ComponentData.DeviceSupportWindow w ? DeviceWindowWarning.of(w) : List.of();
 	}
 
 	private static List<OrgUserData> toOrgUserData (List<UserData> uds, UUID org) {
