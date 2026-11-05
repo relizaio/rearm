@@ -94,13 +94,18 @@ describe('addendumHeaderRows', () => {
     // "support window" cell forces the reader to guess which a lone date is.
     it('states device EOS and EOL as two separate labelled facts', () => {
         const flat = addendumHeaderRows(data()).map(r => r[0])
-        expect(flat).toContain('Device end of support (EOS)')
-        expect(flat).toContain('Device end of sale / end of life (EOL)')
+        expect(flat).toContain('Device end of support (last security update)')
+        expect(flat).toContain('Device end of life (last sale date)')
+        // FDAW-3, B11: the old wording is gone from the rendered header
+        for (const label of flat) {
+            expect(String(label ?? '')).not.toMatch(/end of sale/i)
+            expect(String(label ?? '')).not.toContain('(EOL)')
+        }
     })
 
     it('says "not declared" for an absent device date rather than leaving it blank', () => {
         const rows = addendumHeaderRows(data({ deviceEos: null }))
-        expect(rows.find(r => r[0] === 'Device end of support (EOS)')![1]).toBe('not declared')
+        expect(rows.find(r => r[0] === 'Device end of support (last security update)')![1]).toBe('not declared')
     })
 
     it('carries the assessed and unassessed counts', () => {

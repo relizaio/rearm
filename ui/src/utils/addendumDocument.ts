@@ -15,6 +15,7 @@
 
 import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation } from './addendumData'
+import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
 
 /**
  * The document's own title, owned here because every renderer needs it and one of them also
@@ -126,8 +127,8 @@ export function addendumHeaderRows (d: AddendumData): unknown[][] {
         ['Release UUID', d.releaseUuid],
         ['Generated', d.generatedAt],
         [],
-        ['Device end of support (EOS)', d.deviceEos || 'not declared'],
-        ['Device end of sale / end of life (EOL)', d.deviceEol || 'not declared'],
+        [DEVICE_EOS_LABEL, d.deviceEos || 'not declared'],
+        [DEVICE_EOL_LABEL, d.deviceEol || 'not declared'],
         [],
         ['Components in this release', d.totalComponents],
         ['Components with a support attestation', d.attestedComponents],
