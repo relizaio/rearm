@@ -104,6 +104,19 @@ describe('loadWithSchemaDriftFallback', () => {
         expect(r.degraded).toBe(false)
         expect(r.data.enrichment).toBe('e')
     })
+    it('sends network-only by default and the caller\'s fetchPolicy on both attempts', async () => {
+        const seen: Array<string | undefined> = []
+        const client: DriftFallbackClient = {
+            async query ({ query, fetchPolicy }: { query: DocumentNode, fetchPolicy?: string }) {
+                seen.push(fetchPolicy)
+                if (query !== CORE) throw validationError()
+                return { data: { thing: { a: 1 } } }
+            },
+        }
+        await loadWithSchemaDriftFallback(client, opts())
+        await loadWithSchemaDriftFallback(client, { ...opts(), fetchPolicy: 'no-cache' })
+        expect(seen).toEqual(['network-only', 'network-only', 'no-cache', 'no-cache'])
+    })
     it('degrades to core on a validation drift', async () => {
         const r = await loadWithSchemaDriftFallback(clientThatRejectsFullWith(validationError(), { a: 1 }), opts())
         expect(r.degraded).toBe(true)

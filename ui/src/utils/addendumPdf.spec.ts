@@ -82,8 +82,12 @@ describe('buildAddendumDocDefinition', () => {
 
     it('states the device EOS and EOL as two separate labelled facts', () => {
         const labels = factsTable(buildAddendumDocDefinition(data())).body.map((r: any) => r[0].text)
-        expect(labels).toContain('Device end of support (EOS)')
-        expect(labels).toContain('Device end of sale / end of life (EOL)')
+        expect(labels).toContain('Device end of support (last security update)')
+        expect(labels).toContain('Device end of life (last sale date)')
+        // FDAW-3, B11: the old wording is gone from the rendered PDF
+        const json = JSON.stringify(buildAddendumDocDefinition(data()))
+        expect(json).not.toMatch(/end of sale/i)
+        expect(json).not.toContain('(EOL)')
     })
 
     it('carries the assessed and unassessed counts', () => {

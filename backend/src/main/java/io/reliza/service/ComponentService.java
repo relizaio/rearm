@@ -855,7 +855,7 @@ public class ComponentService {
 	 * saving anything else would silently retract a regulatory commitment. Clearing has to be
 	 * asked for.
 	 *
-	 * @throws RelizaException when the window is not valid for this component
+	 * @throws RelizaException when a window is declared on a component without a device class
 	 */
 	static void applyDeviceSupportWindowPatch (ComponentData cd, ComponentDto cdto, WhoUpdated wu)
 			throws RelizaException {
@@ -889,13 +889,10 @@ public class ComponentService {
 			if (null == patch.getEos()) patch.setEos(stored.getEos());
 			if (null == patch.getEol()) patch.setEol(stored.getEol());
 		}
-		// Checked AFTER the merge, so a patch that moves one date past the stored other is
-		// rejected instead of being stored as an inconsistent pair.
-		if (null != patch.getEos() && null != patch.getEol()
-				&& patch.getEos().isAfter(patch.getEol())) {
-			throw new RelizaException("End of support (" + patch.getEos() + ") cannot be after"
-					+ " end of life / end of sale (" + patch.getEol() + ").");
-		}
+		// No order rule here (FDAW-3, B3). Under IMDRF N70 end of life is the last sale date and
+		// normally precedes end of support, so any pair of dates is stored as declared; the odd
+		// order (eos before eol) is a derived warning on read, DeviceWindowWarning.of, never a
+		// refusal.
 		// PROVENANCE IS SERVER-SET, always. The input type deliberately omits assertedBy and
 		// source, because a caller that could attribute a regulatory claim to someone else is a
 		// caller that can forge one. assessedAt stays caller-supplied so earlier work can be

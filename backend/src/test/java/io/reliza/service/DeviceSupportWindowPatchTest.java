@@ -10,6 +10,7 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.time.LocalDate;
+import java.util.List;
 import java.util.UUID;
 
 import org.junit.jupiter.api.Test;
@@ -20,6 +21,8 @@ import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.DeviceClass;
 import io.reliza.model.ComponentData.DeviceSupportWindow;
 import io.reliza.model.ComponentData.MedicalProfile;
+import io.reliza.model.DeviceWindowWarning;
+import io.reliza.model.DeviceWindowWarningCode;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ComponentDto;
 
@@ -58,6 +61,11 @@ class DeviceSupportWindowPatchTest {
 		return cd.getMedicalProfile() == null ? null : cd.getMedicalProfile().getDeviceSupportWindow();
 	}
 
+	private static boolean windowEventRecorded(ComponentData cd) {
+		return null != cd.getUpdateEvents() && cd.getUpdateEvents().stream()
+				.anyMatch(e -> e.cus() == ComponentData.ComponentUpdateScope.DEVICE_SUPPORT_WINDOW);
+	}
+
 	@Test
 	void aWindowIsStoredOnADevice() throws Exception {
 		ComponentData cd = device();
@@ -88,17 +96,35 @@ class DeviceSupportWindowPatchTest {
 				() -> ComponentService.applyDeviceSupportWindowPatch(cd, patch(window(EOS, null), null), WU));
 	}
 
+	/**
+	 * The IMDRF N70 order (FDAW-3, B3): end of life is the last sale date and normally precedes
+	 * end of support. It used to be refused; it is the ordinary case and is stored, with no warning.
+	 */
 	@Test
-	void endOfSupportAfterEndOfLifeIsRejected() {
+	void endOfSupportAfterEndOfLifeIsStored() throws Exception {
 		ComponentData cd = device();
-		RelizaException e = assertThrows(RelizaException.class,
-				() -> ComponentService.applyDeviceSupportWindowPatch(cd,
-						patch(window(LocalDate.of(2034, 1, 1), EOL), null), WU));
-		assertTrue(e.getMessage().contains("2034-01-01") && e.getMessage().contains("2033-06-30"),
-				"the message must name both dates: " + e.getMessage());
+		ComponentService.applyDeviceSupportWindowPatch(cd,
+				patch(window(LocalDate.of(2034, 1, 1), EOL), null), WU);
+		assertEquals(LocalDate.of(2034, 1, 1), stored(cd).getEos());
+		assertEquals(EOL, stored(cd).getEol());
+		assertTrue(windowEventRecorded(cd), "the declaration must be on the record");
+		assertTrue(DeviceWindowWarning.of(stored(cd)).isEmpty(), "the IMDRF order warns nothing");
 	}
 
-	/** Either date alone is fine -- the ordering rule only applies when both are present. */
+	/** The odd order is stored as declared too, and only the derived read warns about it. */
+	@Test
+	void endOfSupportBeforeEndOfLifeIsStoredAndWarns() throws Exception {
+		ComponentData cd = device();
+		ComponentService.applyDeviceSupportWindowPatch(cd,
+				patch(window(LocalDate.of(2030, 12, 31), LocalDate.of(2033, 12, 31)), null), WU);
+		assertEquals(LocalDate.of(2030, 12, 31), stored(cd).getEos());
+		assertEquals(LocalDate.of(2033, 12, 31), stored(cd).getEol());
+		List<DeviceWindowWarning> warnings = DeviceWindowWarning.of(stored(cd));
+		assertEquals(1, warnings.size());
+		assertEquals(DeviceWindowWarningCode.EOS_BEFORE_EOL, warnings.get(0).code());
+	}
+
+	/** Either date alone is fine: "not declared" is a fact in its own right.
 	@Test
 	void oneDateAloneIsAccepted() throws Exception {
 		ComponentData cd = device();
@@ -166,16 +192,17 @@ class DeviceSupportWindowPatchTest {
 		assertEquals(EOL, stored(cd).getEol());
 	}
 
-	/** Ordering is checked AFTER the merge, or a partial patch could store an inconsistent pair. */
+	/**
+	 * A partial patch that moves one date past the stored other is no longer refused (FDAW-3,
+	 * B3): the merged pair is stored as declared.
+	 */
 	@Test
-	void aPartialPatchThatCrossesTheStoredOtherDateIsRejected() throws Exception {
+	void aPartialPatchThatCrossesTheStoredOtherDateIsStored() throws Exception {
 		ComponentData cd = device();
 		cd.getMedicalProfile().setDeviceSupportWindow(window(EOS, EOL));
-		RelizaException e = assertThrows(RelizaException.class,
-				() -> ComponentService.applyDeviceSupportWindowPatch(cd,
-						patch(window(EOL.plusYears(1), null), null), WU));
-		assertTrue(e.getMessage().contains("cannot be after"), e.getMessage());
-		assertEquals(EOS, stored(cd).getEos(), "a rejected patch must leave the record alone");
+		ComponentService.applyDeviceSupportWindowPatch(cd, patch(window(EOL.plusYears(1), null), null), WU);
+		assertEquals(EOL.plusYears(1), stored(cd).getEos(), "the supplied date wins");
+		assertEquals(EOL, stored(cd).getEol(), "the omitted date survives the merge");
 	}
 
 	/** The commitment's history is on the record, not just its current value. */

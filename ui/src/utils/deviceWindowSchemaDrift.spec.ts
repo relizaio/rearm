@@ -4,6 +4,7 @@ import { fileURLToPath } from 'url'
 import { validate, parse, print, type GraphQLSchema } from 'graphql'
 import { ADDENDUM_RELEASE_QUERY_CORE, ADDENDUM_RELEASE_QUERY_FULL } from './addendumData'
 import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
+import { withoutAdditiveFields } from './graphqlDriftFallback'
 import { ceSchema, proSchema } from './schemaDriftSupport'
 
 /**
@@ -57,12 +58,24 @@ describe('the component device-window query (the panel and the release read-only
      * and the line handle a backend without the field by HIDING, via loadComponentDeviceWindow's
      * drift branch, not by falling back to a narrower query.
      */
-    it('validates against the CE mirror', () => {
+    // FDAW-3, B3: the full document carries the additive `warnings`; the core one is the window alone.
+    const CORE = withoutAdditiveFields(COMPONENT_DEVICE_WINDOW_QUERY)
+
+    it('validates against the CE mirror, full and core', () => {
         expect(errorsAgainst(ceSchema, COMPONENT_DEVICE_WINDOW_QUERY)).toEqual([])
+        expect(errorsAgainst(ceSchema, CORE)).toEqual([])
     })
 
-    it.runIf(proSchema)('validates against the Pro schema', () => {
+    it.runIf(proSchema)('validates against the Pro schema, full and core', () => {
         expect(errorsAgainst(proSchema as GraphQLSchema, COMPONENT_DEVICE_WINDOW_QUERY)).toEqual([])
+        expect(errorsAgainst(proSchema as GraphQLSchema, CORE)).toEqual([])
+    })
+
+    /** A backend with the window but not the warning must still answer the core document. */
+    it('only the full document selects the warnings', () => {
+        expect(print(CORE)).not.toMatch(/\bwarnings\b/)
+        expect(print(CORE)).toMatch(/\bdeviceSupportWindow\b/)
+        expect(print(COMPONENT_DEVICE_WINDOW_QUERY)).toMatch(/\bwarnings\b/)
     })
 })
 
@@ -75,20 +88,32 @@ describe('the component device-window query (the panel and the release read-only
  * moved. Both schemas declare them, so CE is checked unconditionally and Pro when present.
  */
 describe('the shipments query (interpolated, skipped by validate-graphql)', () => {
-    function shipmentsDocument () {
+    /** The core document (SHIP_FIELDS), or the full one with SHIP_FIELDS_ADDITIVE (FDAW-3, B3). */
+    function shipmentsDocument (additive: boolean) {
         const source = readFileSync(
             fileURLToPath(new URL('../components/DistributionOfOrg.vue', import.meta.url)), 'utf8')
         const m = source.match(/const SHIP_FIELDS = '([^']+)'\s*\n\s*\+ '([^']+)'/)
         expect(m, 'SHIP_FIELDS changed shape -- update this spec rather than deleting it').toBeTruthy()
+        const a = source.match(/const SHIP_FIELDS_ADDITIVE = '([^']+)'/)
+        expect(a, 'SHIP_FIELDS_ADDITIVE changed shape -- update this spec rather than deleting it').toBeTruthy()
+        const fields = `${(m as RegExpMatchArray)[1]}${(m as RegExpMatchArray)[2]}`
+            + (additive ? ` ${(a as RegExpMatchArray)[1]}` : '')
         return parse(`query shippedProductsOfSite($siteUuid: ID!) {
-            shippedProductsOfSite(siteUuid: $siteUuid) { ${(m as RegExpMatchArray)[1]}${(m as RegExpMatchArray)[2]} } }`)
+            shippedProductsOfSite(siteUuid: $siteUuid) { ${fields} } }`)
     }
 
-    it('asks only for fields CE declares on ShippedProduct', () => {
-        expect(errorsAgainst(ceSchema, shipmentsDocument())).toEqual([])
+    it('asks only for fields CE declares on ShippedProduct, core and full', () => {
+        expect(errorsAgainst(ceSchema, shipmentsDocument(false))).toEqual([])
+        expect(errorsAgainst(ceSchema, shipmentsDocument(true))).toEqual([])
     })
 
-    it.runIf(proSchema)('asks only for fields Pro declares on ShippedProduct', () => {
-        expect(errorsAgainst(proSchema as GraphQLSchema, shipmentsDocument())).toEqual([])
+    it.runIf(proSchema)('asks only for fields Pro declares on ShippedProduct, core and full', () => {
+        expect(errorsAgainst(proSchema as GraphQLSchema, shipmentsDocument(false))).toEqual([])
+        expect(errorsAgainst(proSchema as GraphQLSchema, shipmentsDocument(true))).toEqual([])
+    })
+
+    it('only the full document selects the warnings', () => {
+        expect(print(shipmentsDocument(false))).not.toMatch(/\bwarnings\b/)
+        expect(print(shipmentsDocument(true))).toMatch(/\bwarnings\b/)
     })
 })

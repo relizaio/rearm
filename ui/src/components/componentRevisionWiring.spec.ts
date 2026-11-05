@@ -41,10 +41,12 @@ describe('the component settings page sends and keeps the revision', () => {
         expect(init).toMatch(/updatedComponent\.value = commonFunctions\.deepCopy\(storeComponent\)/)
     })
 
-    it('sends the revision on the form, device-class and window saves', () => {
+    it('sends the revision on the form and device saves', () => {
         expect(body(source, 'async function save ()')).toMatch(/submitComponentSave\(formRevision\.value\)/)
-        expect(body(source, 'async function submitDeviceClass (')).toMatch(/withExpectedRevision\(/)
-        expect(body(source, 'async function submitDeviceWindow (')).toMatch(/withExpectedRevision\(/)
+        // FDAW-3, B8: the Device tab's one Save, class and window together
+        expect(body(source, 'async function saveDevice ()')).toMatch(/submitDevice\(formRevision\.value\)/)
+        expect(body(source, 'async function submitDevice (')).toMatch(/withExpectedRevision\(/)
+        expect(body(source, 'async function submitDevice (')).toMatch(/revisionRefused\(e, \(rev\) => submitDevice\(rev\)\)/)
         const action = store.slice(store.indexOf('async updateComponent (context'), store.indexOf('async updateComponentResourceGroup ('))
         expect(action.length).toBeGreaterThan(0)
         expect(action).toMatch(/withExpectedRevision\(compUpdObject,/)
