@@ -15,7 +15,8 @@
                     <span style="margin-left: 8px;">v{{ headOf(k).latestVersion }}</span>
                     <span class="text-muted" style="margin-left: 8px;">
                         {{ labelOf(SUBMISSION_ACT_LABELS, headOf(k).lastActKind) }} on {{ dateText(headOf(k).lastActDate) }}
-                        by {{ userLabel(headOf(k).lastActBy) }}
+                        by <span data-testid="submission-actor" :title="headOf(k).lastActBy ?? ''">{{
+                            submissionActorText(headOf(k).lastActByName, headOf(k).lastActBy) }}</span>
                     </span>
                     <div v-if="headOf(k).state === 'WITHDRAWN'" class="submission-withdrawn">
                         Withdrawn on {{ dateText(headOf(k).withdrawnDate) }}:
@@ -32,6 +33,12 @@
                     <n-button v-if="headOf(k)?.state === 'ACTIVE'" size="tiny" type="error" data-testid="submission-withdraw"
                         :disabled="acts.busy.value" @click="acts.withdraw(headOf(k), actNames)">Withdraw</n-button>
                 </n-space>
+            </div>
+            <!-- The newest version's parts, downloads and manifest in the open, without the chevron
+                 (task FDAW-4, B13): after Create or Resubmit the re-read moves it to the new version. -->
+            <div v-if="latestOf(k)" class="submission-latest" :data-testid="'submission-latest-' + k">
+                <div class="submission-latest-heading">Latest: v{{ latestOf(k).version }}</div>
+                <VersionDetail :kind="k" :version="latestOf(k)" />
             </div>
             <n-data-table v-if="headOf(k)" :data-testid="'submission-versions-' + k" :columns="versionColumns(k)"
                 :data="versionRows(k)" :row-key="versionKey" :expanded-row-keys="expanded[k] ?? []"
@@ -99,7 +106,7 @@ import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
-    manifestDownloadRef, submissionPartRows, submissionVersionRows,
+    manifestDownloadRef, submissionActorText, submissionPartRows, submissionVersionRows,
 } from '@/utils/submissions'
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import { useSubmissionActs } from '@/utils/submissionActs'
@@ -119,8 +126,8 @@ const props = withDefaults(defineProps<{
     kinds?: string[] | null
     isWritable?: boolean
     installationType?: string
+    componentType?: string | null
     names?: Record<string, string>
-    userLabel?: (id: string) => string
     narrativeOverride?: string | null
     orgNarrative?: string | null
 }>(), {
@@ -133,8 +140,8 @@ const props = withDefaults(defineProps<{
     kinds: null,
     isWritable: false,
     installationType: 'OSS',
+    componentType: null,
     names: () => ({}),
-    userLabel: (id: string) => id ?? '',
     narrativeOverride: null,
     orgNarrative: null,
 })
@@ -159,7 +166,8 @@ const kindList = computed((): string[] => {
     return list
 })
 const canCreate = computed(() => canCreateSubmission(props.lifecycle))
-const actNames = computed(() => ({ componentName: props.componentName, releaseVersion: props.releaseVersion }))
+const actNames = computed(() => ({ componentName: props.componentName, releaseVersion: props.releaseVersion,
+    componentType: props.componentType }))
 const versionKey = (r: any) => r.version
 
 // The assessment-narrative prompt (any release): open for a kind whose catalog entry has a REQUIRED
@@ -236,6 +244,15 @@ function headOf (kind: string): any {
     return heads.value.find((hd: any) => hd?.kind === kind) ?? null
 }
 
+/** The head's newest version: the one at latestVersion, else the highest the head lists. */
+function latestOf (kind: string): any {
+    const versions: any[] = headOf(kind)?.versions ?? []
+    if (!versions.length) return null
+    const latest = headOf(kind)?.latestVersion
+    return versions.find((v: any) => v?.version === latest)
+        ?? versions.reduce((a: any, b: any) => ((b?.version ?? 0) > (a?.version ?? 0) ? b : a))
+}
+
 function versionRows (kind: string): any[] {
     return submissionVersionRows(headOf(kind), props.names)
 }
@@ -291,12 +308,12 @@ const partColumns = [
     },
 ]
 
-function expandOf (kind: string, row: any) {
-    const v = row.versionObject
-    const key = kind + ':' + row.version
+/** One version's parts, downloads and manifest: the inline newest block and each history row's expansion. */
+function versionDetail (kind: string, v: any) {
+    const key = kind + ':' + v?.version
     const manifest = manifestDownloadRef(v)
     return h('div', { class: 'submission-version-detail' }, [
-        h(NDataTable, { 'data-testid': 'submission-parts-' + kind + '-' + row.version, columns: partColumns,
+        h(NDataTable, { 'data-testid': 'submission-parts-' + kind + '-' + v?.version, columns: partColumns,
             data: submissionPartRows(v), rowKey: (r: any) => r.key, size: 'small', pagination: false, bordered: false }),
         h('div', { class: 'submission-manifest-block' }, [
             manifest
@@ -315,12 +332,17 @@ function expandOf (kind: string, row: any) {
     ])
 }
 
+// The template's handle on versionDetail; defined once, so the inline block is not remounted per render.
+const VersionDetail = (p: { kind: string, version: any }) => versionDetail(p.kind, p.version)
+
 function versionColumns (kind: string) {
     return [
-        { type: 'expand' as const, renderExpand: (row: any) => expandOf(kind, row) },
+        { type: 'expand' as const, renderExpand: (row: any) => versionDetail(kind, row.versionObject) },
         { key: 'version', title: 'Version', render: (r: any) => 'v' + r.version },
         { key: 'createdDate', title: 'Created', render: (r: any) => dateText(r.createdDate) },
-        { key: 'createdBy', title: 'By', render: (r: any) => r.createdBy ? props.userLabel(r.createdBy) : '' },
+        { key: 'createdBy', title: 'By', render: (r: any) => r.createdBy
+            ? h('span', { 'data-testid': 'submission-actor', title: r.createdBy }, submissionActorText(r.createdByName, r.createdBy))
+            : '' },
         { key: 'reason', title: 'Reason', render: (r: any) => h('span', { 'data-testid': 'submission-reason', style: 'white-space: pre-wrap;' }, r.reason) },
         { key: 'settingsLabel', title: 'Settings' },
         { key: 'profileLabel', title: 'SBOM profile' },
@@ -343,10 +365,6 @@ async function read () {
         ])
         if (k) catalogKinds.value = k.data.packageKinds ?? []
         heads.value = s.data.submissionsOfRelease ?? []
-        for (const hd of heads.value) {
-            const newest = Math.max(0, ...(hd.versions ?? []).map((v: any) => v.version ?? 0))
-            if (newest && !expanded[hd.kind]) expanded[hd.kind] = [newest]
-        }
         loaded.value = true
     } catch (err: any) {
         console.error(err)
@@ -370,6 +388,13 @@ defineExpose({ read })
 }
 .submission-actions {
     margin-top: 4px;
+}
+.submission-latest {
+    margin-bottom: 0.5rem;
+}
+.submission-latest-heading {
+    font-weight: 600;
+    margin-bottom: 4px;
 }
 .submission-manifest-block {
     margin-top: 6px;

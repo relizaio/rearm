@@ -128,6 +128,7 @@ export function submissionVersionRows (head: any, names: Record<string, string> 
             version: v.version,
             createdDate: v.createdDate ?? null,
             createdBy: v.createdBy ?? null,
+            createdByName: v.createdByName ?? null,
             reason: v.reason ?? '',
             settingsLabel: submissionRefLabel(v.settings, names),
             profileLabel: submissionProfileLabel(v.sbomProfile, names),
@@ -167,7 +168,29 @@ export function submissionPartRows (version: any): any[] {
 /** A Swal confirmation: constant title and button, the names in `text` only. */
 export interface SubmissionConfirm { title: string, text: string, confirmButtonText: string }
 
-export interface SubmissionNames { componentName?: string | null, releaseVersion?: string | null }
+/** The release an act names; componentType words the KIND_DISABLED explanation (product or component). */
+export interface SubmissionNames {
+    componentName?: string | null
+    releaseVersion?: string | null
+    componentType?: string | null
+}
+
+/**
+ * Who acted, as the page shows it (task FDAW-4, B14): the server-resolved name (a name, or a current
+ * member's email), else 'removed user' when the record names someone the server could not resolve.
+ * The uuid itself is never the text; the panel puts it in a title attribute.
+ */
+export function submissionActorText (name: string | null | undefined, uuid: string | null | undefined): string {
+    if (name) return name
+    return uuid ? 'removed user' : ''
+}
+
+/** The KIND_DISABLED refusal, said for a reader: what is switched off and where to switch it on (B18). */
+export function submissionKindDisabledText (kind: string, componentType: string | null | undefined): string {
+    const typeWord = componentType === 'PRODUCT' ? 'product' : 'component'
+    return packageKindLabel(kind) + ' is switched off for this ' + typeWord
+        + '; switch it on under Settings > Regulatory and try again.'
+}
 
 function planText (preview: any): string {
     const plan: any[] = preview?.plan ?? []

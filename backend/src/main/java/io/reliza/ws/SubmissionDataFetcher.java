@@ -8,6 +8,7 @@ import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
 
+import org.apache.commons.lang3.StringUtils;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.security.access.AccessDeniedException;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -21,6 +22,8 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 import com.netflix.graphql.dgs.context.DgsContext;
 import com.netflix.graphql.dgs.internal.DgsWebMvcRequestData;
+
+import lombok.extern.slf4j.Slf4j;
 
 import io.reliza.common.CommonVariables.AuthHeaderParse;
 import io.reliza.common.CommonVariables.CallType;
@@ -53,11 +56,12 @@ import io.reliza.service.UserService;
  * unless the caller is in the object's organization (a key: the key's organization), judges the
  * permission (acts: READ_WRITE on the release's component; release reads: READ on the release; the
  * component list and the preview: READ on the component) and only then calls the hook with the
- * object's organization. The four child resolvers run no check of their own: the field that answered
+ * object's organization. The child resolvers run no check of their own: the field that answered
  * their parent authorized it. With no hook (CE) the release- and component-keyed fields still run the
  * full check and answer empty lists or EDITION_UNSUPPORTED; the submission-keyed ones, which cannot
  * resolve their object, answer null or EDITION_UNSUPPORTED after authentication alone.
  */
+@Slf4j
 @DgsComponent
 public class SubmissionDataFetcher {
 
@@ -94,6 +98,20 @@ public class SubmissionDataFetcher {
 	public List<PackageKind> regulatoryPackageKinds(DgsDataFetchingEnvironment dfe) {
 		ReleaseData rd = dfe.getSource();
 		return null == hook || null == rd ? List.of() : hook.regulatoryKindsOfRelease(rd);
+	}
+
+	/**
+	 * The package kinds switched on for a component (the product tab offers Create only for these);
+	 * the field that answered the component authorized it, as for its release twin (no annotation of its
+	 * own: a component a key read answers it too). CE: none.
+	 */
+	@DgsData(parentType = "Component", field = "regulatoryPackageKinds")
+	public List<PackageKind> componentRegulatoryPackageKinds(DgsDataFetchingEnvironment dfe) {
+		return regulatoryKindsOf(dfe.<ComponentData>getSource());
+	}
+
+	List<PackageKind> regulatoryKindsOf(ComponentData cd) {
+		return null == hook || null == cd ? List.of() : hook.regulatoryKindsOfComponent(cd);
 	}
 
 	@PreAuthorize("isAuthenticated()")
@@ -302,6 +320,50 @@ public class SubmissionDataFetcher {
 	String releaseVersionOf(SubmissionData s) {
 		if (null == hook || null == s || null == s.getRelease()) return null;
 		return sharedReleaseService.getReleaseDataLight(s.getRelease()).map(ReleaseData::getVersion).orElse(null);
+	}
+
+	@DgsData(parentType = "Submission", field = "createdByName")
+	public String createdByName(DgsDataFetchingEnvironment dfe) {
+		SubmissionData s = dfe.getSource();
+		return null == s ? null : userNameOf(s.getCreatedBy(), s.getOrg());
+	}
+
+	@DgsData(parentType = "Submission", field = "lastActByName")
+	public String lastActByName(DgsDataFetchingEnvironment dfe) {
+		SubmissionData s = dfe.getSource();
+		return null == s ? null : userNameOf(s.getLastActBy(), s.getOrg());
+	}
+
+	@DgsData(parentType = "Submission", field = "withdrawnByName")
+	public String withdrawnByName(DgsDataFetchingEnvironment dfe) {
+		SubmissionData s = dfe.getSource();
+		return null == s ? null : userNameOf(s.getWithdrawnBy(), s.getOrg());
+	}
+
+	@DgsData(parentType = "SubmissionVersion", field = "createdByName")
+	public String versionCreatedByName(DgsDataFetchingEnvironment dfe) {
+		SubmissionVersionData v = dfe.getSource();
+		return null == v ? null : userNameOf(v.getCreatedBy(), v.getOrg());
+	}
+
+	/**
+	 * Who acted, for a reader (task FDAW-4, B14): a current active member of the organization answers
+	 * their name, else their email there; anyone else (removed, deactivated, unknown) answers their
+	 * stored name or null, never an email. The email is read only from the membership-checked record:
+	 * {@code UserData.getEmail(org)} falls back to the primary email, so it is not the boundary.
+	 */
+	String userNameOf(UUID user, UUID org) {
+		if (null == user) return null;
+		try {
+			Optional<UserData> member = null == org ? Optional.empty() : userService.getUserDataWithOrg(user, org);
+			if (member.isPresent()) {
+				return StringUtils.defaultIfEmpty(member.get().getName(), member.get().getEmail(org));
+			}
+			return userService.getUserData(user).map(UserData::getName).filter(StringUtils::isNotEmpty).orElse(null);
+		} catch (Exception e) {
+			log.error("Could not resolve the name of user {} on a submission: {}", user, e.getMessage(), e);
+			return null;
+		}
 	}
 
 	// ------------------------------------------------------------------ helpers

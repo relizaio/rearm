@@ -18,6 +18,7 @@ const SUBMISSION_VERSION_GQL = `
     kind
     createdDate
     createdBy
+    createdByName
     reason
     settings { ${SUBMISSION_REF_GQL} }
     sbomProfile { name ${SUBMISSION_REF_GQL} }
@@ -50,6 +51,10 @@ const SUBMISSION_HEAD_GQL = `
     settings { ${SUBMISSION_REF_GQL} }
 `
 
+// The actors' names (task FDAW-4, B14): resolved by the server per head, so only the release page's
+// read, which shows them, selects them; the product tab's list and the act results do not.
+const SUBMISSION_HEAD_NAMES_GQL = `createdByName lastActByName withdrawnByName`
+
 const SUBMISSIONS_OF_COMPONENT = gql`
 query SubmissionsOfComponent($component: ID!, $kind: PackageKind, $state: SubmissionState) {
     submissionsOfComponent(component: $component, kind: $kind, state: $state) { ${SUBMISSION_HEAD_GQL} }
@@ -57,7 +62,7 @@ query SubmissionsOfComponent($component: ID!, $kind: PackageKind, $state: Submis
 
 const SUBMISSIONS_OF_RELEASE = gql`
 query SubmissionsOfRelease($release: ID!) {
-    submissionsOfRelease(release: $release) { ${SUBMISSION_HEAD_GQL} versions { ${SUBMISSION_VERSION_GQL} } }
+    submissionsOfRelease(release: $release) { ${SUBMISSION_HEAD_GQL} ${SUBMISSION_HEAD_NAMES_GQL} versions { ${SUBMISSION_VERSION_GQL} } }
 }`
 
 const SUBMISSION_PREVIEW = gql`
@@ -104,6 +109,13 @@ query ReleaseRegulatoryPackageKinds($releaseID: ID!, $orgID: ID) {
     release(releaseUuid: $releaseID, orgUuid: $orgID) { uuid regulatoryPackageKinds }
 }`
 
+// The kinds switched on for a product or component (task FDAW-4, B18): the product tab offers Create
+// only for these. Its own read, never a shared component fragment: CE must keep reading components.
+const COMPONENT_REGULATORY_PACKAGE_KINDS = gql`
+query ComponentRegulatoryPackageKinds($componentUuid: ID!) {
+    component(componentUuid: $componentUuid) { uuid regulatoryPackageKinds }
+}`
+
 export default {
     SubmissionsOfComponentGql: SUBMISSIONS_OF_COMPONENT,
     SubmissionsOfReleaseGql: SUBMISSIONS_OF_RELEASE,
@@ -113,4 +125,5 @@ export default {
     WithdrawSubmissionGql: WITHDRAW_SUBMISSION,
     SubmissionReleasesOfBranchGql: SUBMISSION_RELEASES_OF_BRANCH,
     ReleaseRegulatoryPackageKindsGql: RELEASE_REGULATORY_PACKAGE_KINDS,
+    ComponentRegulatoryPackageKindsGql: COMPONENT_REGULATORY_PACKAGE_KINDS,
 }

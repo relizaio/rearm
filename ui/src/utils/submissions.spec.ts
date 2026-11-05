@@ -8,7 +8,8 @@ vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAu
 const {
     canCreateSubmission, manifestDownloadRef, manifestFileName, submissionActErrorText, submissionCreateConfirm,
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
-    submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm,
+    submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionActorText,
+    submissionKindDisabledText,
 } = await import('./submissions')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
@@ -156,3 +157,31 @@ describe('the History text (row 35)', () => {
         expect(submissionHistoryText({ oldValue: '', newValue: 'FDA_PREMARKET v1' })).toBe('Submission FDA_PREMARKET v1')
     })
 })
+
+// Task FDAW-4 (T5): the actor as the page shows it (B14) and the KIND_DISABLED explanation (B18).
+describe('the actor text and the switched-off kind sentence (FDAW-4)', () => {
+    const U = 'd961c662-0000-4000-8000-000000000001'
+
+    it('submissionActorText: the name; removed user for a uuid without one; nothing for neither', () => {
+        expect(submissionActorText('Ada Lovelace', U)).toBe('Ada Lovelace')
+        expect(submissionActorText(null, U)).toBe('removed user')
+        expect(submissionActorText('', U)).toBe('removed user')
+        expect(submissionActorText(null, null)).toBe('')
+        expect(submissionActorText(undefined, undefined)).toBe('')
+    })
+
+    it('submissionKindDisabledText names the kind, product or component, and the setting', () => {
+        expect(submissionKindDisabledText('FDA_PREMARKET', 'PRODUCT'))
+            .toBe('FDA premarket is switched off for this product; switch it on under Settings > Regulatory and try again.')
+        expect(submissionKindDisabledText('FDA_PREMARKET', 'COMPONENT'))
+            .toBe('FDA premarket is switched off for this component; switch it on under Settings > Regulatory and try again.')
+    })
+
+    it('submissionVersionRows carries createdByName', () => {
+        const rows = submissionVersionRows({ versions: [version(1, { createdBy: U, createdByName: 'Ada Lovelace' }),
+            version(2, { createdBy: U })] })
+        expect(rows.map(r => r.createdByName)).toEqual([null, 'Ada Lovelace'])
+        expect(rows.map(r => r.createdBy)).toEqual([U, U])
+    })
+})
+

@@ -6,5 +6,16 @@ package io.reliza.model;
 
 /** A regulatory package kind (tasks TEA-29, TEA-33); each declares its ordered part list in code. */
 public enum PackageKind {
-	FDA_PREMARKET
+	FDA_PREMARKET("FDA premarket");
+
+	private final String label;
+
+	PackageKind(String label) {
+		this.label = label;
+	}
+
+	/** The kind as a reader names it, in refusal texts (the UI's PACKAGE_KIND_LABELS text). */
+	public String label() {
+		return label;
+	}
 }

@@ -193,3 +193,15 @@ describe('ReleaseView export dialog: the signing status line', () => {
         }
     })
 })
+
+/**
+ * Task FDAW-4 (B5, T1): "Top Level Dependencies Only" starts off, as the server's default does, so an
+ * export and the visible score cover the whole tree unless the user switches it on.
+ */
+describe('ReleaseView export dialog: Top Level Dependencies Only starts off', () => {
+    it('declares tldOnly as ref(false) and assigns it nowhere else', () => {
+        expect(code).toContain('const tldOnly: Ref<boolean> = ref(false)')
+        expect(code).not.toContain('const tldOnly: Ref<boolean> = ref(true)')
+        expect(code.match(/tldOnly\.value\s*=[^=]/g) ?? []).toEqual([])
+    })
+})
