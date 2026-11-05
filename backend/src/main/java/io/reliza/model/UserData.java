@@ -232,11 +232,7 @@ public class UserData extends RelizaDataParent implements AuthPrincipal {
 	}
 	
 	public Optional<EmailObject> getEmailObject (UUID orgUuid) {
-		Optional<EmailObject> orgEo = allEmails.stream().filter(eo -> eo.getOrganizations().contains(orgUuid)).findAny();
-		if (!orgEo.isEmpty()) {
-			orgEo = allEmails.stream().filter(eo -> eo.isPrimary() == true).findAny();
-		}
-		return orgEo;
+		return allEmails.stream().filter(eo -> eo.getOrganizations().contains(orgUuid)).findAny();
 	}
 	
 	private void setEmail(String email, boolean primary, boolean verified, UUID emailOrgUuid, boolean acceptMarketing) {

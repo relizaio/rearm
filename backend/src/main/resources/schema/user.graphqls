@@ -1266,11 +1266,11 @@ type Mutation {
 	savePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!, settings: PackageSettingsInput!): PackageSettings!
 	"Remove the package settings of a kind at a scope; answers whether one existed (ADMIN on the scope's object)."
 	deletePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): Boolean!
-	"Create the release's regulatory submission of a kind, version 1 (READ_WRITE on the release's component); refused when one exists: use resubmitSubmission."
+	"Create the release's regulatory submission of a kind: writes a FINAL version 1 with a FINALIZE act and no confirmation record (READ_WRITE on the release's component); refused when one exists: use resubmitSubmission."
 	createSubmission(release: ID!, kind: PackageKind!, reason: String): SubmissionActResult!
-	"Write the next version of a submission with a reason; expectedLatestVersion refuses STALE_HEAD when the head moved (READ_WRITE on the component)."
+	"Write the next version of a submission with a reason: a FINAL version with a FINALIZE act and no confirmation record, the FINAL version it replaces SUPERSEDED; expectedLatestVersion refuses STALE_HEAD when the head moved (READ_WRITE on the component)."
 	resubmitSubmission(submission: ID!, reason: String!, expectedLatestVersion: Int): SubmissionActResult!
-	"Withdraw a submission with a reason; every version and document is kept (READ_WRITE on the component)."
+	"Cancel a FINAL submission with a reason: a CANCEL act, the version becomes CANCELLED; every version and document is kept (READ_WRITE on the component)."
 	withdrawSubmission(submission: ID!, reason: String!): SubmissionActResult!
 	"Publish the release on TEA (PUBLISH_EXTERNALLY); refused when it is already published: use republishReleaseOnTea"
 	publishReleaseOnTea(release: ID!, comment: String): TeaPublishResult!
