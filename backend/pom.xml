@@ -466,5 +466,23 @@
         </plugin>
       </plugins>
     </pluginManagement>
+    <plugins>
+        <!-- META-INF/build-info.properties carries build.version, the pom version the Dockerfile
+             injects; Utils.rearmBuildVersion() names it on the rearm-backend tool entry of every
+             document this server generates. Declaring the plugin here also activates the parent's
+             repackage execution at package; the Dockerfile's explicit spring-boot:repackage then
+             finds the jar already repackaged. -->
+        <plugin>
+            <groupId>org.springframework.boot</groupId>
+            <artifactId>spring-boot-maven-plugin</artifactId>
+            <executions>
+                <execution>
+                    <goals>
+                        <goal>build-info</goal>
+                    </goals>
+                </execution>
+            </executions>
+        </plugin>
+    </plugins>
   </build>
 </project>
