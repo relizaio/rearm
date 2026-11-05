@@ -26,6 +26,7 @@ import type { AddendumComponent, AddendumData } from './addendumData'
 import { isLiveAttestation, deviceWindowProvenanceLine } from './addendumData'
 import { releaseSlug, PROSE_SLOT_LABELS } from './addendumDocument'
 import { fontCoverageRefusal } from './pdfFontCoverage'
+import { DEVICE_EOS_LABEL, DEVICE_EOL_LABEL } from './deviceDateLabels'
 
 pdfMake.vfs = pdfFonts.vfs
 
@@ -210,9 +211,9 @@ export function buildDeviceSupportStatementDefinition (d: AddendumData): Record<
                 // comparison and wrong here: this document is read as two separate
                 // commitments, and collapsing them would answer a question nobody asked.
                 body: [
-                    [{ text: 'Software support ends (end of support)', bold: true },
+                    [{ text: DEVICE_EOS_LABEL, bold: true },
                         { text: d.deviceEos || NOT_DECLARED }],
-                    [{ text: 'Device end of life / end of sale', bold: true },
+                    [{ text: DEVICE_EOL_LABEL, bold: true },
                         { text: d.deviceEol || NOT_DECLARED }]
                 ]
             },

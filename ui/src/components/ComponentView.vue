@@ -623,11 +623,7 @@
                                             <n-space align="end" style="margin-bottom: 8px;">
                                                 <n-select v-model:value="deviceClassEdit"
                                                     :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
-                                                    :disabled="!isWritable || savingDeviceClass" />
-                                                <n-button v-if="isWritable" size="small" type="primary"
-                                                    :disabled="deviceClassEdit === deviceClassBaseline"
-                                                    :loading="savingDeviceClass"
-                                                    @click="saveDeviceClass">Save device class</n-button>
+                                                    :disabled="!isWritable || savingDevice" />
                                             </n-space>
                                             <div class="text-muted" style="font-size: 12px; max-width: 720px;">
                                                 Setting this to anything but <strong>NONE</strong> makes the
@@ -643,11 +639,12 @@
                                             <h4>Device support window</h4>
                                             <n-alert type="default" :show-icon="false"
                                                 style="font-size: 12px; margin: 8px 0 10px; max-width: 720px;">
-                                                Shown separately and never merged: end of support and
-                                                end of sale are different facts, and a reader of the
-                                                Device Support Statement is entitled to both. Blank
-                                                means <strong>not declared</strong>, which is a fact in
-                                                its own right &mdash; not an unknown to fill in.
+                                                End of life is the last sale date; end of support is the
+                                                date of the last security update. Under IMDRF N70 end of
+                                                life normally comes first. Blank means <strong>not
+                                                declared</strong>, which is a fact in its own right. For a
+                                                subscription SaMD, end of life is the date you stop
+                                                offering it to new customers.
                                                 <span style="display:block; margin-top:6px;">
                                                     This is the DEVICE's window, inherited by every
                                                     release of this product. A release's own end-of-support
@@ -656,28 +653,52 @@
                                             </n-alert>
                                             <n-space align="end" style="margin-bottom: 8px;">
                                                 <div>
-                                                    <div class="text-muted" style="font-size: 12px;">End of support (EOS)</div>
+                                                    <div class="text-muted" style="font-size: 12px;">{{ EOS_FIELD_LABEL }}</div>
                                                     <n-date-picker v-model:formatted-value="deviceWindow.eos"
                                                         value-format="yyyy-MM-dd" type="date" clearable
                                                         @update:formatted-value="deviceWindowError = null"
-                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                        :disabled="!isWritable || savingDevice" style="width: 200px;" />
                                                 </div>
                                                 <div>
-                                                    <div class="text-muted" style="font-size: 12px;">End of life / end of sale (EOL)</div>
+                                                    <div class="text-muted" style="font-size: 12px;">{{ EOL_FIELD_LABEL }}</div>
                                                     <n-date-picker v-model:formatted-value="deviceWindow.eol"
                                                         value-format="yyyy-MM-dd" type="date" clearable
                                                         @update:formatted-value="deviceWindowError = null"
-                                                        :disabled="!isWritable || savingDeviceWindow" style="width: 200px;" />
+                                                        :disabled="!isWritable || savingDevice" style="width: 200px;" />
                                                 </div>
-                                                <n-button v-if="isWritable" size="small" type="primary"
-                                                    :disabled="!deviceWindowDirty" :loading="savingDeviceWindow"
-                                                    @click="saveDeviceWindow">Save window</n-button>
                                             </n-space>
-                                            <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
-                                                style="font-size: 12px; max-width: 720px;">
-                                                {{ deviceWindowError }}
+                                            <!-- FDAW-3, B3: the order of the two dates is a warning returned
+                                                 with the save, never a refusal. Read back from the stored
+                                                 window, so it shows for as long as the dates are in that order. -->
+                                            <n-alert v-if="deviceWindowWarnings.length" type="warning" :show-icon="true"
+                                                data-testid="component-device-window-warning"
+                                                style="font-size: 12px; margin-bottom: 8px; max-width: 720px;">
+                                                <div v-for="w in deviceWindowWarnings" :key="w.code">{{ w.message }}</div>
                                             </n-alert>
-                                            </div>
+                                        </div>
+                                        <n-alert v-if="deviceWindowError" type="error" :show-icon="true"
+                                            style="font-size: 12px; margin-top: 8px; max-width: 720px;">
+                                            {{ deviceWindowError }}
+                                        </n-alert>
+                                        <!-- FDAW-3, B8: one Save for the whole tab, like Core Settings. Class
+                                             and dates go in one updateComponent (the server applies the
+                                             class before the window). -->
+                                        <div class="deviceSettingsActions" v-if="hasDeviceChanges && isWritable" style="margin-top: 20px;">
+                                            <n-space>
+                                                <n-button type="success" data-testid="component-device-save" @click="saveDevice" :loading="savingDevice">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Save Changes
+                                                </n-button>
+                                                <n-button type="warning" @click="resetDevice" :disabled="savingDevice">
+                                                    <template #icon>
+                                                        <n-icon><X /></n-icon>
+                                                    </template>
+                                                    Reset Changes
+                                                </n-button>
+                                            </n-space>
+                                        </div>
                                     </n-tab-pane>
                                     <n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">
                                         <!-- Every edition (CE: the one `default` SBOM profile). Shown to everyone,
@@ -1473,7 +1494,8 @@ import ComponentLocks from './ComponentLocks.vue'
 import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
 import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
 import graphqlQueries from '../utils/graphqlQueries'
-import { loadComponentDeviceWindow, deviceWindowMutationInput } from '@/utils/componentDeviceWindow'
+import { loadComponentDeviceWindow, deviceSaveInput, type DeviceWindowWarning } from '@/utils/componentDeviceWindow'
+import { EOS_FIELD_LABEL, EOL_FIELD_LABEL } from '@/utils/deviceDateLabels'
 import {
     COMPONENT_SAVED, COMPONENT_TOOLTIP, EXPRESSION_HINT, EXPRESSION_PLACEHOLDER, SUPPLIER_HINT, SUPPLIER_PLACEHOLDER,
     UNSUPPORTED_NOTE, UPDATE_COMPONENT_DECLARED_LICENSE, URL_HINT, URL_PLACEHOLDER,
@@ -1713,8 +1735,11 @@ const isComponent : Ref<boolean> = ref(true)
 const deviceWindow = reactive<DeviceWindowState>({ eos: null, eol: null })
 const deviceWindowBaseline = reactive<DeviceWindowState>({ eos: null, eol: null })
 const deviceWindowSupported: Ref<boolean> = ref(false)
-const savingDeviceWindow: Ref<boolean> = ref(false)
 const deviceWindowError: Ref<string | null> = ref(null)
+/** FDAW-3, B3: what is unusual about the STORED dates, as the server derives it on read. */
+const deviceWindowWarnings: Ref<DeviceWindowWarning[]> = ref([])
+/** FDAW-3, B8: the Device tab's one Save, class and window together. */
+const savingDevice: Ref<boolean> = ref(false)
 
 const DEVICE_CLASS_OPTIONS = [
     { label: 'NONE -- not a device', value: 'NONE' },
@@ -1723,61 +1748,18 @@ const DEVICE_CLASS_OPTIONS = [
 ]
 const deviceClassEdit: Ref<string> = ref('NONE')
 const deviceClassBaseline: Ref<string> = ref('NONE')
-const savingDeviceClass: Ref<boolean> = ref(false)
 
 /**
  * Only a device declares one; the server rejects the write otherwise.
  *
- * Reads deviceClassBaseline -- the class the SERVER last confirmed -- rather than
- * componentData. initLoad() rehydrates from the store cache and only refetches when the entry
- * is missing or lacks versionType, so componentData still held the old class right after a
- * successful save, and the window panel did not appear until a full page reload. baseline is
- * seeded from componentData on mount and advanced only after the write returns, so it is
- * never ahead of the server.
+ * Reads the DRAFT class (FDAW-3, B8): picking a class reveals the pickers, so the class and its
+ * dates go in one Save. The server applies deviceClass before the window patch inside one
+ * updateComponent, so the combined input is valid; a draft of NONE hides the pickers and the
+ * save sends the class alone, which retracts the window server-side.
  */
 const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
-    !!deviceClassBaseline.value && deviceClassBaseline.value !== 'NONE')
+    !!deviceClassEdit.value && deviceClassEdit.value !== 'NONE')
 
-
-/**
- * Writes the device class, then RE-READS the window rather than assuming it survived.
- *
- * Going back to NONE retracts the window server-side, because the window lives inside the
- * medical profile that NONE removes. Keeping a stale window in the form after that would show
- * the user dates the server no longer holds -- on a section 524B commitment, the worst
- * possible thing to be wrong about.
- */
-async function saveDeviceClass (): Promise<void> {
-    await submitDeviceClass(formRevision.value)
-}
-
-async function submitDeviceClass (expected: number | null): Promise<void> {
-    if (!componentUuid || deviceClassEdit.value === deviceClassBaseline.value) return
-    savingDeviceClass.value = true
-    deviceWindowError.value = null
-    try {
-        await graphqlClient.mutate({
-            mutation: graphqlQueries.ComponentMutate,
-            variables: { component: withExpectedRevision({ uuid: componentUuid,
-                name: componentData.value?.name || updatedComponent.value?.name,
-                deviceClass: deviceClassEdit.value }, expected) },
-            fetchPolicy: 'no-cache'
-        })
-        revisionSaved(expected)
-        await initLoad()
-        deviceClassBaseline.value = deviceClassEdit.value
-        await loadDeviceWindow()
-        await loadComponentLicense()
-    } catch (e: any) {
-        // A stale-revision refusal shows the panel and keeps the class as the user set it, so
-        // Force resends it.
-        if (revisionRefused(e, (rev) => submitDeviceClass(rev))) return
-        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
-        deviceClassEdit.value = deviceClassBaseline.value
-    } finally {
-        savingDeviceClass.value = false
-    }
-}
 
 const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
     deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
@@ -1791,11 +1773,31 @@ async function loadDeviceWindow (): Promise<void> {
         deviceWindow.eol = r.window.eol
         deviceWindowBaseline.eos = r.window.eos
         deviceWindowBaseline.eol = r.window.eol
+        deviceWindowWarnings.value = r.warnings
     } catch (e: any) {
         // A real failure hides the panel rather than showing an empty editable one: an operator
         // must never be able to "declare" a window against a backend we could not read.
         deviceWindowSupported.value = false
+        deviceWindowWarnings.value = []
     }
+}
+
+/**
+ * Everything a Device save touched, re-read, and the close guard's snapshot taken again
+ * (FDAW-3, B8). The save rewrote the component row, so the form (initLoad), the class, the
+ * window and its warning, and the licence block that reads that row are read fresh; then
+ * originalComponent is refreshed exactly as the core save does, so hasComponentChanges() is
+ * false and closing the modal asks nothing. Without that last line the close guard compared
+ * the pre-save snapshot with the re-read form and prompted "Unsaved Changes" over nothing.
+ * loadComponentLicense never throws. Also the revision-refusal reload (reloadComponentForm).
+ */
+async function refreshAfterDeviceSave (): Promise<void> {
+    await initLoad()
+    deviceClassBaseline.value = componentData.value?.deviceClass || 'NONE'
+    deviceClassEdit.value = deviceClassBaseline.value
+    await loadDeviceWindow()
+    await loadComponentLicense()
+    originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
 }
 
 /**
@@ -1869,42 +1871,61 @@ async function saveComponentLicense (): Promise<void> {
     }
 }
 
-async function saveDeviceWindow (): Promise<void> {
-    await submitDeviceWindow(formRevision.value)
+/** Whether the Device tab holds an unsaved draft: the class, the dates, or both. */
+const hasDeviceChanges: ComputedRef<boolean> = computed((): boolean =>
+    deviceClassEdit.value !== deviceClassBaseline.value || deviceWindowDirty.value)
+
+/** Discard the Device tab's draft: back to what the server last confirmed. */
+function resetDevice (): void {
+    deviceClassEdit.value = deviceClassBaseline.value
+    deviceWindow.eos = deviceWindowBaseline.eos
+    deviceWindow.eol = deviceWindowBaseline.eol
+    deviceWindowError.value = null
 }
 
-async function submitDeviceWindow (expected: number | null): Promise<void> {
+/**
+ * The Device tab's one Save (FDAW-3, B8): class and window in ONE updateComponent, then a
+ * re-read of everything the save touched. Going back to NONE retracts the window server-side,
+ * so the window is RE-READ rather than assumed to have survived.
+ */
+async function saveDevice (): Promise<void> {
+    await submitDevice(formRevision.value)
+}
+
+async function submitDevice (expected: number | null): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
-    const input = deviceWindowMutationInput(componentUuid,
-        componentData.value?.name || updatedComponent.value?.name, deviceWindow, deviceWindowBaseline)
+    const input = deviceSaveInput(componentUuid, componentData.value?.name || updatedComponent.value?.name,
+        deviceClassEdit.value, deviceClassBaseline.value, deviceWindow, deviceWindowBaseline)
     if (!input) return
-    savingDeviceWindow.value = true
+    savingDevice.value = true
     deviceWindowError.value = null
     try {
+        // The mutation document does not select the window back (COMPONENT_FULL_DATA, for the CE
+        // reason above): the warning is read back by refreshAfterDeviceSave instead.
         await graphqlClient.mutate({
             mutation: graphqlQueries.ComponentMutate,
             variables: { component: withExpectedRevision(input, expected) },
             fetchPolicy: 'no-cache'
         })
         revisionSaved(expected)
-        // Advance the baseline from what was SENT and accepted -- the mutation deliberately does
-        // not select the window back, for the CE reason above.
-        deviceWindowBaseline.eos = deviceWindow.eos
-        deviceWindowBaseline.eol = deviceWindow.eol
-        notify('success', 'Saved', 'Device support window updated.')
+        await refreshAfterDeviceSave()
+        if (deviceWindowWarnings.value.length) {
+            notify('warning', 'Saved with a warning',
+                deviceWindowWarnings.value.map((w: DeviceWindowWarning) => w.message).join(' '))
+        } else {
+            notify('success', 'Saved', 'Device settings saved')
+        }
     } catch (e: any) {
-        // extractGraphQLErrorMessage, not parseGraphQLError: the latter only strips three
-        // known BOM prefixes off e.message and never unwraps graphQLErrors[], so under
-        // Apollo's CombinedGraphQLErrors the SERVER's text -- "End of support cannot be after
-        // end of life", the device-class refusal the walkthrough quotes -- never reaches the
-        // panel. saveDeviceClass 40 lines up already uses the right one.
-        // A stale-revision refusal shows the panel instead, and keeps the pickers as the user
-        // set them, so Force resends them.
-        if (revisionRefused(e, (rev) => submitDeviceWindow(rev))) return
+        // extractGraphQLErrorMessage, not parseGraphQLError: the latter never unwraps
+        // graphQLErrors[], so under Apollo's CombinedGraphQLErrors the SERVER's text -- the
+        // device-class refusal the walkthrough quotes -- would never reach the panel.
+        // A stale-revision refusal shows the panel instead, and keeps the draft as the user set
+        // it, so Force resends it.
+        if (revisionRefused(e, (rev) => submitDevice(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
-        savingDeviceWindow.value = false
+        savingDevice.value = false
     }
 }
 
@@ -2227,7 +2248,7 @@ const hasComponentChanges = function() {
 }
 
 const handleComponentSettingsClose = async function(show: boolean) {
-    if (!show && (hasComponentChanges() || hasTriggerChanges.value)) {
+    if (!show && (hasComponentChanges() || hasTriggerChanges.value || hasDeviceChanges.value)) {
         const confirmed = await commonFunctions.confirmUnsavedChanges()
         if (!confirmed) {
             // Prevent closing by setting it back to true
@@ -2241,6 +2262,7 @@ const handleComponentSettingsClose = async function(show: boolean) {
         if (hasTriggerChanges.value) {
             resetTriggers()
         }
+        resetDevice()
     }
     
     if (!show) {
@@ -4577,10 +4599,7 @@ async function initLoad() {
  * The modal stays open on the current values.
  */
 async function reloadComponentForm () {
-    await initLoad()
-    deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
-    deviceClassBaseline.value = deviceClassEdit.value
-    await loadDeviceWindow()
+    await refreshAfterDeviceSave()
     await loadOwnership()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
     if (updatedComponent.value?.perspectiveDetails) {

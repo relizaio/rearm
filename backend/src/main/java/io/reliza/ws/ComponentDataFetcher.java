@@ -66,6 +66,7 @@ import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.SceDto;
 import io.reliza.model.dto.AuthorizationResponse.InitType;
 import io.reliza.model.ComponentOwnershipStatus;
+import io.reliza.model.DeviceWindowWarning;
 import io.reliza.model.dto.ComponentDto;
 import io.reliza.model.dto.ComponentOwnership;
 import io.reliza.model.dto.ComponentOwnershipReportRow;
@@ -903,6 +904,17 @@ public class ComponentDataFetcher {
 					"No component context");
 		}
 		return componentOwnershipService.resolveOwnership(cd);
+	}
+
+	// Derived on read, never stored (FDAW-3, B3): one rule for the component's window and the
+	// batch override, which is the same Java class (ShippedProductData.deviceSupportWindow), so
+	// this one resolver serves both parents and rides the object either save already returns.
+	// Pure: fires only on a window the caller was already authorized to load. A parent of any
+	// other shape answers no warning rather than failing the field.
+	@DgsData(parentType = "DeviceSupportWindow", field = "warnings")
+	public List<DeviceWindowWarning> deviceWindowWarnings (DgsDataFetchingEnvironment dfe) {
+		Object source = dfe.getSource();
+		return source instanceof ComponentData.DeviceSupportWindow w ? DeviceWindowWarning.of(w) : List.of();
 	}
 
 	private static List<OrgUserData> toOrgUserData (List<UserData> uds, UUID org) {

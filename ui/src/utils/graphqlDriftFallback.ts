@@ -154,6 +154,10 @@ export interface DriftFallbackOptions {
     // this once a prior load proved the deployed backend rejects FULL, to
     // avoid paying the reject-then-retry round-trip on every subsequent load.
     skipFull?: boolean
+    // Apollo fetch policy for both attempts; 'network-only' unless the caller
+    // keeps the answer out of the cache ('no-cache'), as a read whose root
+    // field another document also caches must.
+    fetchPolicy?: 'network-only' | 'no-cache'
 }
 
 export interface DriftFallbackResult {
@@ -168,10 +172,11 @@ export async function loadWithSchemaDriftFallback (
     opts: DriftFallbackOptions,
 ): Promise<DriftFallbackResult> {
     const { fullQuery, coreQuery, variables, extractPath, skipFull } = opts
+    const fetchPolicy = opts.fetchPolicy ?? 'network-only'
     let fullError: any
     if (!skipFull) {
         try {
-            const res = await client.query({ query: fullQuery, variables, fetchPolicy: 'network-only' })
+            const res = await client.query({ query: fullQuery, variables, fetchPolicy })
             return { data: extractPath(res.data), degraded: false }
         } catch (err: any) {
             // Only a schema-drift-shaped failure warrants a narrower retry.
@@ -181,7 +186,7 @@ export async function loadWithSchemaDriftFallback (
         }
     }
     try {
-        const res = await client.query({ query: coreQuery, variables, fetchPolicy: 'network-only' })
+        const res = await client.query({ query: coreQuery, variables, fetchPolicy })
         return { data: extractPath(res.data), degraded: true }
     } catch (err) {
         // The narrower query failed too. If we had a FULL error, surface THAT

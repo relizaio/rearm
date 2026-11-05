@@ -186,15 +186,22 @@
                         <template v-else-if="editingShipment">
                             No window is declared for this device model.
                         </template>
+                        <!-- FDAW-3, B3: the batch override's derived warning (eos before eol),
+                             stored as declared and named here, never refused. -->
+                        <span v-for="w in editingShipmentWarnings" :key="w.code"
+                            data-testid="shipment-device-window-warning"
+                            style="display: block; color: var(--n-warning-color, #f0a020); margin: 4px 0;">
+                            {{ w.message }}
+                        </span>
                         Leave both blank to inherit from the product component; fill them to
                         override for this batch only.
                     </div>
-                    <n-form-item label="Batch end of support">
+                    <n-form-item :label="BATCH_EOS_LABEL">
                         <n-date-picker style="width: 100%;" type="date" clearable
                             v-model:formatted-value="shipForm.deviceWindowEos" value-format="yyyy-MM-dd"
                             placeholder="inherit from the product component" />
                     </n-form-item>
-                    <n-form-item label="Batch end of life / end of sale">
+                    <n-form-item :label="BATCH_EOL_LABEL">
                         <n-date-picker style="width: 100%;" type="date" clearable
                             v-model:formatted-value="shipForm.deviceWindowEol" value-format="yyyy-MM-dd"
                             placeholder="inherit from the product component" />
@@ -254,8 +261,10 @@ import gql from 'graphql-tag'
 import graphqlClient from '../utils/graphql'
 import commonFunctions from '@/utils/commonFunctions'
 import { termsFor, DISTRIBUTION_DOMAIN_OPTIONS } from '@/utils/distributionTerms'
-import { applyShipmentWindowToInput,
+import { applyShipmentWindowToInput, deviceWindowWarningsOf,
     effectiveWindowLabel as buildEffectiveWindowLabel } from '@/utils/componentDeviceWindow'
+import { EOS_FIELD_LABEL, EOL_FIELD_LABEL } from '@/utils/deviceDateLabels'
+import { loadWithSchemaDriftFallback } from '@/utils/graphqlDriftFallback'
 import { loadDevicesAtSupportRisk, fleetRiskTag, fleetRiskHeadline, summarizeFleetRiskPage,
     releaseSourceTag, fleetWindowLabel, FLEET_RISK_DETAIL, FLEET_RISK_DEFAULT_PAGE_SIZE,
     type FleetRiskResult, type FleetRiskRow } from '@/utils/fleetSupportRisk'
@@ -388,6 +397,12 @@ const editingShipment: Ref<any> = ref(null)
 /** The window in force for the shipment being edited, named with where it was declared. */
 const effectiveWindowLabel: ComputedRef<string> = computed((): string =>
     buildEffectiveWindowLabel((editingShipment.value as any)?.effectiveDeviceSupportWindow))
+/** FDAW-3, B3: what is unusual about the batch override's own dates, as the server derives it. */
+const editingShipmentWarnings = computed(() =>
+    deviceWindowWarningsOf((editingShipment.value as any)?.deviceSupportWindow))
+// FDAW-3, B11: the override pickers by their IMDRF N70 meaning.
+const BATCH_EOS_LABEL = 'Batch ' + EOS_FIELD_LABEL.toLowerCase()
+const BATCH_EOL_LABEL = 'Batch ' + EOL_FIELD_LABEL.toLowerCase()
 // Shipments carry the same two-axis classification as components: nature (HARDWARE /
 // SOFTWARE, hardware if any constituent component is hardware) and deviceClass. HARDWARE =
 // physical batch; SOFTWARE + MEDICAL_* = SaMD, shipped and tracked per unit like hardware;
@@ -471,10 +486,15 @@ const onCreateUnitId = () => ({ idType: 'SERIAL', idValue: '' })
 const CLIENT_FIELDS = 'uuid org name domain contact { address phone email } notes'
 const SITE_FIELDS = 'uuid org client name contact { address phone email } notes'
 // D7: the batch's own override plus the window that actually applies, with the level it was
-// declared at. No CORE/FULL split -- the Distribution module is SaaS-only, so this document is
-// never issued by a CE build at all, which is a stronger guarantee than a fallback.
+// declared at. SHIP_FIELDS is the CORE document; SHIP_FIELDS_ADDITIVE (FDAW-3, B3) the derived
+// warning on the override, which a Pro backend older than the field does not declare, so the
+// list reads FULL first and falls back to CORE on a drift refusal (deviceWindowSchemaDrift.spec.ts).
+// GraphQL merges the two deviceSupportWindow selections: same field, no arguments.
 const SHIP_FIELDS = 'uuid org site featureSet release deliverable shipDate quantity manufactureDate expiryDate notes nature deviceClass devices identifiers { idType idValue } choiceResolutions { choiceRef selectedRefs }'
     + ' deviceSupportWindow { eos eol } effectiveDeviceSupportWindow { eos eol source }'
+const SHIP_FIELDS_ADDITIVE = 'deviceSupportWindow { warnings { code message } }'
+const SHIPMENTS_CORE_QUERY = gql`query shippedProductsOfSite($siteUuid: ID!) { shippedProductsOfSite(siteUuid: $siteUuid) { ${SHIP_FIELDS} } }`
+const SHIPMENTS_FULL_QUERY = gql`query shippedProductsOfSite($siteUuid: ID!) { shippedProductsOfSite(siteUuid: $siteUuid) { ${SHIP_FIELDS} ${SHIP_FIELDS_ADDITIVE} } }`
 const DEVICE_FIELDS = 'uuid org shippedProduct site versionDrift notes identifiers { idType idValue } plan { expectedRelease } actual { reportedRelease reportedAt source } tracking { receivedDate patientId disposition dispositionDate }'
 
 async function loadClients () {
@@ -488,8 +508,10 @@ async function loadSites (clientUuid: string) {
 }
 async function loadShipments (siteUuid: string) {
     if (!siteUuid) { shipments.value = []; return }
-    const resp: any = await graphqlClient.query({ query: gql`query shippedProductsOfSite($siteUuid: ID!) { shippedProductsOfSite(siteUuid: $siteUuid) { ${SHIP_FIELDS} } }`, variables: { siteUuid }, fetchPolicy: 'no-cache' })
-    shipments.value = resp.data.shippedProductsOfSite || []
+    const r = await loadWithSchemaDriftFallback(graphqlClient as any, {
+        fullQuery: SHIPMENTS_FULL_QUERY, coreQuery: SHIPMENTS_CORE_QUERY, variables: { siteUuid },
+        extractPath: (d: any) => d?.shippedProductsOfSite, fetchPolicy: 'no-cache' })
+    shipments.value = r.data || []
     resolveReleaseInfos(shipments.value.map((s: any) => s.release))
 }
 async function loadDevices (shipUuid: string) {
@@ -884,18 +906,27 @@ async function shipProduct () {
             { eos: shipForm.deviceWindowBaselineEos, eol: shipForm.deviceWindowBaselineEol })
     }
     try {
+        let savedUuid: string
+        let saved: string
         if (editingShipmentUuid.value) {
             await graphqlClient.mutate({
                 mutation: gql`mutation updateShippedProduct($uuid: ID!, $input: ShipProductInput!) { updateShippedProduct(uuid: $uuid, input: $input) { uuid } }`,
                 variables: { uuid: editingShipmentUuid.value, input }
             })
-            notify('success', 'Saved', `${terms.value.shipment} updated`)
+            savedUuid = editingShipmentUuid.value
+            saved = `${terms.value.shipment} updated`
         } else {
-            await graphqlClient.mutate({ mutation: gql`mutation shipProduct($input: ShipProductInput!) { shipProduct(input: $input) { uuid } }`, variables: { input } })
-            notify('success', 'Saved', `${terms.value.shipment} recorded`)
+            const resp: any = await graphqlClient.mutate({ mutation: gql`mutation shipProduct($input: ShipProductInput!) { shipProduct(input: $input) { uuid } }`, variables: { input } })
+            savedUuid = resp?.data?.shipProduct?.uuid
+            saved = `${terms.value.shipment} recorded`
         }
         showShipModal.value = false; editingShipmentUuid.value = ''
         await loadShipments(selectedSiteUuid.value)
+        // FDAW-3, B3: the order of the override's dates is a warning returned with the save,
+        // read back through the list's drift-guarded document (the mutations select { uuid }).
+        const warnings = deviceWindowWarningsOf(shipments.value.find((x: any) => x.uuid === savedUuid)?.deviceSupportWindow)
+        if (warnings.length) notify('warning', 'Saved with a warning', `${saved}. ${warnings.map(w => w.message).join(' ')}`)
+        else notify('success', 'Saved', saved)
     } catch (e: any) { notify('error', 'Failed', e.message || 'Could not record shipment') }
 }
 
