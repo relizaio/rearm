@@ -1413,6 +1413,7 @@
                                 :branches="branches"
                                 :is-writable="isWritable"
                                 :installation-type="myUser.installationType"
+                                :can-configure="isAdmin"
                                 :refresh-token="latestRefreshToken" />
                         </n-tab-pane>
                         <n-tab-pane v-if="componentData.type === 'COMPONENT'" name="tags" tab="Tags">

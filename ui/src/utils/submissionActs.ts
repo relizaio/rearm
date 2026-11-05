@@ -9,7 +9,7 @@ import Swal from 'sweetalert2'
 import submissionQueries from './submissionQueries'
 import {
     SUBMISSION_ACT_LABELS, SubmissionNames, labelOf, submissionActErrorText, submissionCreateConfirm,
-    submissionReasonError, submissionResubmitConfirm, submissionWithdrawConfirm,
+    submissionKindDisabledText, submissionReasonError, submissionResubmitConfirm, submissionWithdrawConfirm,
 } from './submissions'
 
 export interface SubmissionActsDeps {
@@ -40,6 +40,18 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
         }
     }
 
+    // A preview that refuses: KIND_DISABLED (the kind was switched off between the page's read and the
+    // click) is explained with the client sentence and the page re-reads, so its cell turns to
+    // "Not set up"; every other refusal shows the server's message.
+    async function refusedPreview (title: string, p: any, kind: string, componentType: string | null | undefined) {
+        if (p.refusal === 'KIND_DISABLED') {
+            Swal.fire({ title, text: submissionKindDisabledText(kind, componentType), icon: 'error' })
+            await deps.reload()
+            return
+        }
+        Swal.fire({ title, text: p.message ?? '', icon: 'error' })
+    }
+
     async function act (mutation: any, variables: Record<string, any>, field: string, success: (r: any) => string) {
         try {
             const resp: any = await deps.client.mutate({ mutation, variables })
@@ -59,7 +71,7 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
             const p = await preview(release, kind)
             if (!p) return
             if (!p.canSubmit) {
-                Swal.fire({ title: 'Cannot create this submission', text: p.message ?? '', icon: 'error' })
+                await refusedPreview('Cannot create this submission', p, kind, names?.componentType)
                 return
             }
             const answer: any = await Swal.fire({ ...submissionCreateConfirm(p, kind, names, perspectiveNames()),
@@ -82,7 +94,7 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
             const p = await preview(head.release, head.kind)
             if (!p) return
             if (!p.canSubmit) {
-                Swal.fire({ title: 'Cannot resubmit this submission', text: p.message ?? '', icon: 'error' })
+                await refusedPreview('Cannot resubmit this submission', p, head.kind, head.componentType ?? names?.componentType)
                 return
             }
             const answer: any = await Swal.fire({ ...submissionResubmitConfirm(p, head.kind, names, perspectiveNames()),

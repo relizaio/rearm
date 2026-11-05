@@ -13,7 +13,12 @@
         <p v-if="!loadFailed && loaded && !releases.length" data-testid="submissions-no-releases" class="text-muted">
             No release in this feature set yet
         </p>
-        <p v-if="!loadFailed && loaded && !heads.length" data-testid="submissions-none" class="text-muted">
+        <p v-if="!loadFailed && loaded && !heads.length && noKindOn" data-testid="submissions-none" class="text-muted">
+            No submission yet. No regulatory package kind is switched on for this product; set one up under
+            <RouterLink data-testid="submission-setup-link" :to="setupRoute">Settings &gt; Regulatory</RouterLink>.{{
+                canConfigure ? '' : ' ' + ADMIN_DOES_THIS }}
+        </p>
+        <p v-else-if="!loadFailed && loaded && !heads.length" data-testid="submissions-none" class="text-muted">
             No submission yet; create one from a release that is ASSEMBLED or above
         </p>
         <n-data-table data-testid="submissions-release-rows" :columns="columns" :data="rows" :row-key="rowKey"
@@ -32,7 +37,7 @@
 // kind's head, and below it the heads on releases of other feature sets. The acts run through
 // useSubmissionActs and the panel reads again afterwards.
 import { computed, h, ref, watch } from 'vue'
-import { RouterLink } from 'vue-router'
+import { RouterLink, useRoute } from 'vue-router'
 import { NButton, NDataTable, NSelect, NSpace, NTag, useNotification } from 'naive-ui'
 import graphqlClient from '@/utils/graphql'
 import profilesQueries from '@/utils/profilesQueries'
@@ -54,6 +59,7 @@ const props = withDefaults(defineProps<{
     installationType?: string
     refreshToken?: number
     branchWord?: string
+    canConfigure?: boolean
 }>(), {
     componentName: null,
     branches: () => [],
@@ -61,6 +67,7 @@ const props = withDefaults(defineProps<{
     installationType: 'OSS',
     refreshToken: 0,
     branchWord: 'Feature Set',
+    canConfigure: false,
 })
 
 const RELEASES_PER_FEATURE_SET = 50
@@ -74,6 +81,17 @@ const heads = ref<any[]>([])
 const releases = ref<any[]>([])
 const loadFailed = ref(false)
 const loaded = ref(false)
+// The kinds switched on for this product (Component.regulatoryPackageKinds); null while unknown (not
+// read yet, or the read failed), when every kind is offered and the server's gate decides.
+const enabledKinds = ref<string[] | null>(null)
+
+// The settings modal's Regulatory pane (ComponentView opens it on componentSettingsView=true and picks
+// the pane from componentSettingsTab); editable by organization administrators only.
+const ADMIN_DOES_THIS = '(an organization administrator does this)'
+const route = useRoute()
+const setupRoute = computed(() => ({ path: route?.path, query: { ...(route?.query ?? {}),
+    componentSettingsView: 'true', componentSettingsTab: 'regulatory' } }))
+const noKindOn = computed(() => enabledKinds.value !== null && enabledKinds.value.length === 0)
 
 const acts = useSubmissionActs({ client: graphqlClient, reload: () => read() })
 
@@ -96,12 +114,21 @@ function dateText (d: string | null | undefined): string {
     return d ? new Date(d).toLocaleString('en-CA') : ''
 }
 
+function notSetUpCell (kind: string) {
+    const children: any[] = ['Not set up: ' + packageKindLabel(kind) + ' is switched off for this product. ',
+        h(RouterLink, { to: setupRoute.value, 'data-testid': 'submission-setup-link' },
+            () => 'Switch it on under Settings > Regulatory')]
+    if (!props.canConfigure) children.push(' ' + ADMIN_DOES_THIS)
+    return h('div', { class: 'text-muted', 'data-testid': 'submission-not-set-up-' + kind }, children)
+}
+
 function kindCell (row: any, kind: string) {
     const head = row.byKind[kind]
-    const names = { componentName: props.componentName, releaseVersion: row.version }
+    const names = { componentName: props.componentName, releaseVersion: row.version, componentType: 'PRODUCT' }
     const busy = acts.busy.value
     if (!head) {
         if (!props.isWritable) return h('span', { class: 'text-muted' }, 'No submission')
+        if (enabledKinds.value !== null && !enabledKinds.value.includes(kind)) return notSetUpCell(kind)
         const allowed = canCreateSubmission(row.lifecycle)
         return h(NButton, { size: 'tiny', 'data-testid': 'submission-create', disabled: !allowed || busy, loading: busy,
             title: allowed ? '' : CREATE_LIFECYCLE_REASON, onClick: () => acts.create(row.release, kind, names) }, () => 'Create')
@@ -138,16 +165,30 @@ const otherColumns = [
     { key: 'lastActDate', title: 'Last act', render: (r: any) => dateText(r.lastActDate) },
 ]
 
+// The product's switched-on kinds; a failed read leaves them unknown (today's cells: Create offered).
+async function readEnabledKinds (): Promise<string[] | null> {
+    try {
+        const resp: any = await graphqlClient.query({ query: submissionQueries.ComponentRegulatoryPackageKindsGql,
+            variables: { componentUuid: props.componentUuid }, fetchPolicy: 'no-cache' })
+        return resp?.data?.component?.regulatoryPackageKinds ?? null
+    } catch (err: any) {
+        console.error(err)
+        return null
+    }
+}
+
 async function read () {
     if (!branch.value) return
     try {
-        const [k, s, r]: any[] = await Promise.all([
+        const [k, s, r, e]: any[] = await Promise.all([
             graphqlClient.query({ query: profilesQueries.PackageKindsGql, fetchPolicy: 'no-cache' }),
             graphqlClient.query({ query: submissionQueries.SubmissionsOfComponentGql, fetchPolicy: 'no-cache',
                 variables: { component: props.componentUuid, kind: kindFilter.value || null, state: stateFilter.value || null } }),
             graphqlClient.query({ query: submissionQueries.SubmissionReleasesOfBranchGql, fetchPolicy: 'no-cache',
                 variables: { branch: branch.value, numRecords: RELEASES_PER_FEATURE_SET } }),
+            readEnabledKinds(),
         ])
+        enabledKinds.value = e
         kinds.value = k.data.packageKinds ?? []
         heads.value = s.data.submissionsOfComponent ?? []
         releases.value = r.data.releases ?? []
