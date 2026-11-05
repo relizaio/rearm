@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { BOARD_SETTING_KEYS, budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsPatch } from './agentBudget'
+import { BOARD_SETTING_KEYS, budgetChip, dollarsToMicros, hopBudgetInput, microsToDollars, settingsDraftOf, settingsPatch } from './agentBudget'
 
 describe('agentBudget', () => {
     it('converts dollars and micros both ways', () => {
@@ -41,6 +41,15 @@ describe('agentBudget', () => {
         expect(settingsPatch(unset, { ...unset, coordinatorStopLift: false })).toEqual({ coordinatorStopLift: false })
         const off = { cycleCap: 3, coordinatorStopLift: false }
         expect(settingsPatch(off, { ...off, coordinatorStopLift: true })).toEqual({ coordinatorStopLift: true })
+    })
+
+    it('reads and saves the architect\'s waiver switch, only when the person changed it (task TPF-153)', () => {
+        expect(BOARD_SETTING_KEYS).toContain('architectCheckpointWaiver')
+        expect(settingsDraftOf({ architectCheckpointWaiver: false }).architectCheckpointWaiver).toBe(false)
+        expect(settingsDraftOf({}).architectCheckpointWaiver).toBeNull()
+        expect(settingsPatch({ architectCheckpointWaiver: null }, { architectCheckpointWaiver: false })).toEqual({ architectCheckpointWaiver: false })
+        expect(settingsPatch({ architectCheckpointWaiver: false }, { architectCheckpointWaiver: true })).toEqual({ architectCheckpointWaiver: true })
+        expect(settingsPatch({ architectCheckpointWaiver: null }, { architectCheckpointWaiver: null })).toBeNull()
     })
 
     it('sends the event retention as set, 0 included, and an emptied one as null (task 04dedcc5)', () => {
