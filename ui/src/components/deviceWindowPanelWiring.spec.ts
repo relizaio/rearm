@@ -14,15 +14,80 @@ import { fileURLToPath } from 'url'
 const source = readFileSync(
     fileURLToPath(new URL('./ComponentView.vue', import.meta.url)), 'utf8')
 
+/** A top-level function of the page, from its opening to the first `}` at column 0. */
+function fnBody (opening: string): string {
+    const at = source.indexOf(opening)
+    expect(at, opening).toBeGreaterThan(-1)
+    const end = source.slice(at).search(/\n\}\)?\n/)
+    return end < 0 ? '' : source.slice(at, at + end + 3)
+}
+
 describe('the device window panel is wired into the component page', () => {
     it('binds both date pickers to the window state', () => {
         expect(source).toMatch(/v-model:formatted-value="deviceWindow\.eos"/)
         expect(source).toMatch(/v-model:formatted-value="deviceWindow\.eol"/)
     })
 
-    it('gates Save on an actual change', () => {
-        expect(source).toMatch(/:disabled="!deviceWindowDirty"/)
-        expect(source).toMatch(/@click="saveDeviceWindow"/)
+    /**
+     * FDAW-3, B8: ONE Save at the bottom of the Device tab, like Core Settings, shown only when the
+     * tab holds a draft. The two section buttons are gone.
+     */
+    it('has one Save bar for the whole Device tab, gated on an actual change', () => {
+        const at = source.indexOf('data-testid="component-device-save"')
+        expect(at).toBeGreaterThan(-1)
+        const bar = source.slice(source.lastIndexOf('<div', at), at)
+        expect(bar).toMatch(/v-if="hasDeviceChanges && isWritable"/)
+        expect(source.slice(at, source.indexOf('>', at))).toMatch(/@click="saveDevice"/)
+        expect(source).toMatch(/@click="resetDevice"/)
+        for (const gone of ['saveDeviceClass', 'saveDeviceWindow', 'Save window', 'Save device class',
+            'submitDeviceClass', 'submitDeviceWindow']) {
+            expect(source, gone).not.toContain(gone)
+        }
+        expect(source).toMatch(/deviceClassEdit\.value !== deviceClassBaseline\.value \|\| deviceWindowDirty\.value/)
+    })
+
+    /** FDAW-3, B11: the pickers are named by their IMDRF N70 meaning, from the shared labels. */
+    it('labels the pickers from deviceDateLabels', () => {
+        expect(source).toMatch(/import \{ EOS_FIELD_LABEL, EOL_FIELD_LABEL \} from '@\/utils\/deviceDateLabels'/)
+        expect(source).toContain('{{ EOS_FIELD_LABEL }}')
+        expect(source).toContain('{{ EOL_FIELD_LABEL }}')
+        expect(source).not.toContain('End of life / end of sale (EOL)')
+        expect(source).not.toContain('End of support (EOS)')
+    })
+
+    /** FDAW-3, B3: the order of the two dates is a warning shown with the window, never a refusal. */
+    it('shows the window warnings under the pickers', () => {
+        const at = source.indexOf('data-testid="component-device-window-warning"')
+        expect(at).toBeGreaterThan(-1)
+        const tag = source.slice(source.lastIndexOf('<n-alert', at), source.indexOf('</n-alert>', at))
+        expect(tag).toMatch(/v-if="deviceWindowWarnings\.length"/)
+        expect(tag).toMatch(/type="warning"/)
+        expect(tag).toMatch(/v-for="w in deviceWindowWarnings"/)
+        expect(tag).toMatch(/\{\{ w\.message \}\}/)
+        expect(source).toMatch(/deviceWindowWarnings\.value = r\.warnings/)
+    })
+
+    /**
+     * FDAW-3, B8: the false "Unsaved Changes" after a Device save. The save re-reads the form, so
+     * the close guard's snapshot must be taken again, as the core save does.
+     */
+    it('refreshes the close guard snapshot after a Device save', () => {
+        const refresh = fnBody('async function refreshAfterDeviceSave')
+        expect(refresh).toContain('originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)')
+        expect(refresh.indexOf('await initLoad()')).toBeGreaterThan(-1)
+        expect(refresh.indexOf('originalComponent.value')).toBeGreaterThan(refresh.indexOf('await loadDeviceWindow()'))
+        const submit = fnBody('async function submitDevice ')
+        expect(submit.indexOf('await refreshAfterDeviceSave()')).toBeGreaterThan(submit.indexOf('revisionSaved('))
+        expect(submit).toMatch(/notify\('warning', 'Saved with a warning'/)
+        expect(fnBody('async function reloadComponentForm')).toContain('await refreshAfterDeviceSave()')
+    })
+
+    /** FDAW-3, F-4: an unsaved Device draft is prompted for on close, and discarded only on "Yes". */
+    it('covers the Device draft in the close guard, not in the tab switch', () => {
+        const close = fnBody('const handleComponentSettingsClose')
+        expect(close).toMatch(/hasDeviceChanges/)
+        expect(close.indexOf('resetDevice()')).toBeGreaterThan(close.indexOf('confirmUnsavedChanges()'))
+        expect(fnBody('async function handleTabSwitch')).not.toMatch(/hasDeviceChanges/)
     })
 
     /**
@@ -36,10 +101,10 @@ describe('the device window panel is wired into the component page', () => {
 
     /** Only a device declares one; the server rejects the write otherwise. */
     it('hides itself on a component that is not a device', () => {
-        // The gate reads deviceClassBaseline -- the class the SERVER last confirmed -- not
-        // componentData, which initLoad() rehydrates from the store cache and which therefore
-        // still held the old class right after a successful save.
-        expect(source).toMatch(/deviceClassBaseline\.value !== 'NONE'/)
+        // FDAW-3, B8: the gate reads the DRAFT class, so picking a class reveals the pickers and
+        // the class and its dates go in one Save (the server applies the class first).
+        expect(source).toMatch(/!!deviceClassEdit\.value && deviceClassEdit\.value !== 'NONE'/)
+        expect(source).not.toMatch(/deviceClassBaseline\.value !== 'NONE'/)
     })
 
     it('loads the window after the component data exists', () => {
@@ -73,8 +138,10 @@ describe('the device window panel is wired into the component page', () => {
     })
 
     /** The write goes through the shared builder, which owns the clear-vs-empty rule. */
-    it('builds its mutation input through deviceWindowMutationInput', () => {
-        expect(source).toMatch(/deviceWindowMutationInput\(componentUuid,/)
+    it('builds its mutation input through deviceSaveInput', () => {
+        // deviceSaveInput delegates the window part to deviceWindowMutationInput
+        // (utils/componentDeviceWindow.spec.ts runs it).
+        expect(fnBody('async function submitDevice ')).toMatch(/deviceSaveInput\(componentUuid,/)
         // name is String! on UpdateComponentInput -- a partial without it is rejected at
         // coercion, so the panel must pass one.
         // .value on BOTH: updatedComponent is a Ref, and `updatedComponent.name` in
@@ -231,6 +298,47 @@ describe('the shipment device-window override', () => {
     it('asks for the window in the shipments query', () => {
         expect(distribution).toMatch(/effectiveDeviceSupportWindow \{ eos eol source \}/)
     })
+
+    /**
+     * FDAW-3, B3: the override's derived warning is an additive field, so the list reads the full
+     * document first and the core one on a drift refusal; the edit form names the warning beside
+     * the in-force line, and a save that produced one says so.
+     */
+    it('reads the shipments through the drift fallback and renders the warning', () => {
+        const load = distribution.slice(distribution.indexOf('async function loadShipments'),
+            distribution.indexOf('async function loadDevices'))
+        expect(load).toMatch(/loadWithSchemaDriftFallback\(/)
+        expect(load).toMatch(/fullQuery: SHIPMENTS_FULL_QUERY, coreQuery: SHIPMENTS_CORE_QUERY/)
+        const at = distribution.indexOf('data-testid="shipment-device-window-warning"')
+        expect(at).toBeGreaterThan(distribution.indexOf('In force: {{ effectiveWindowLabel }}'))
+        const tag = distribution.slice(distribution.lastIndexOf('<span', at), distribution.indexOf('</span>', at))
+        expect(tag).toMatch(/v-for="w in editingShipmentWarnings"/)
+        expect(tag).toMatch(/\{\{ w\.message \}\}/)
+        expect(distribution).toMatch(/notify\('warning', 'Saved with a warning'/)
+    })
+
+    /**
+     * FDAW-3, B3: after a save, the warning notify must read back the shipment it just saved
+     * (by `savedUuid`), not some other row in the list -- `shipments.value` can hold many. A
+     * wrong comparison here would show the warning for the wrong batch, or none at all, right
+     * after a save that DID produce one.
+     */
+    it('reads the just-saved shipment back by its own uuid for the warning notify', () => {
+        const start = distribution.indexOf('async function shipProduct')
+        expect(start).toBeGreaterThan(-1)
+        const end = distribution.indexOf('\n}\n', start)
+        const fn = distribution.slice(start, end > -1 ? end + 3 : undefined)
+        expect(fn).toMatch(/shipments\.value\.find\(\(x: any\) => x\.uuid === savedUuid\)/)
+        expect(fn).not.toMatch(/x\.uuid !== savedUuid/)
+    })
+
+    /** FDAW-3, B11: the override pickers carry the IMDRF N70 names. */
+    it('labels the override pickers from deviceDateLabels', () => {
+        expect(distribution).toMatch(/import \{ EOS_FIELD_LABEL, EOL_FIELD_LABEL \} from '@\/utils\/deviceDateLabels'/)
+        expect(distribution).toContain(':label="BATCH_EOS_LABEL"')
+        expect(distribution).toContain(':label="BATCH_EOL_LABEL"')
+        expect(distribution).not.toContain('end of life / end of sale')
+    })
 })
 
 /**
@@ -257,13 +365,11 @@ describe('the D7 UI surfaces can actually render and read', () => {
         // Before this, deviceClass could only be set at CREATE time, so the window panel --
         // which correctly renders only for a device -- was unreachable for every component
         // that already existed, and D7's "declare it on the product component" had no path.
-        expect(source).toMatch(/saveDeviceClass/)
+        expect(source).toMatch(/<n-select v-model:value="deviceClassEdit"/)
         expect(source).toMatch(/DEVICE_CLASS_OPTIONS/)
         // Re-read after the write: NONE retracts the window server-side, and leaving stale
         // dates in the form would show a section 524B commitment the server no longer holds.
-        const fn = source.slice(source.indexOf('async function saveDeviceClass'))
-            .slice(0, 1400)
-        expect(fn).toMatch(/loadDeviceWindow\(\)/)
+        expect(fnBody('async function refreshAfterDeviceSave')).toMatch(/await loadDeviceWindow\(\)/)
     })
 
     // The read this pinned is GONE: the release page no longer loads the inherited window, so
@@ -330,6 +436,10 @@ describe('the D7 UI surfaces can actually render and read', () => {
         expect(pane).toContain('<div v-if="deviceWindowSupported && isDeviceComponent"')
         expect(pane).toContain('<h4>Device support window</h4>')
         expect(pane).not.toContain('class="coreSettingsActions"')
+        // FDAW-3, B8: the Device tab's own Save bar is the LAST child of the pane
+        const deviceBar = pane.indexOf('class="deviceSettingsActions"')
+        expect(deviceBar).toBeGreaterThan(pane.indexOf('<h4>Device support window</h4>'))
+        expect(pane.slice(deviceBar)).not.toMatch(/<h4>/)
         // Every div of the pane closes inside it.
         const opens = (pane.match(/<div\b/g) || []).length
         const closes = (pane.match(/<\/div>/g) || []).length

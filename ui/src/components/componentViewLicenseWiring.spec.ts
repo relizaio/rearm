@@ -142,7 +142,7 @@ describe('ComponentView: the declared licence and supplier block', () => {
         expect(load.slice(callAt, catchAt)).toMatch(/if \(!r\.supported\) \{[^}]*store\.commit\('SET_DECLARED_LICENSE_SUPPORTED', false\)/)
     })
 
-    it('loads after the device window on mount, before the settings modal, and after a device-class save', () => {
+    it('loads after the device window on mount, before the settings modal, and after a Device save', () => {
         const mounted = body('onMounted(async () => {')
         const device = mounted.indexOf('await loadDeviceWindow()')
         const license = mounted.indexOf('await loadComponentLicense()')
@@ -150,10 +150,14 @@ describe('ComponentView: the declared licence and supplier block', () => {
         expect(device).toBeGreaterThan(0)
         expect(license).toBeGreaterThan(device)
         expect(modal).toBeGreaterThan(license)
-        // TPF-62 moved the device-class save's body into submitDeviceClass (saveDeviceClass sends the page's revision)
-        const deviceClass = body('async function submitDeviceClass')
-        expect(deviceClass.indexOf('await loadDeviceWindow()')).toBeGreaterThan(-1)
-        expect(deviceClass.indexOf('loadComponentLicense()')).toBeGreaterThan(deviceClass.indexOf('await loadDeviceWindow()'))
+        // FDAW-3, B8 (F-2): the Device tab's one Save re-reads through refreshAfterDeviceSave, which keeps the
+        // licence reload the device-class save did: the save rewrote the component row the licence block reads.
+        const refresh = body('async function refreshAfterDeviceSave')
+        expect(refresh.length).toBeGreaterThan(0)
+        expect(refresh.indexOf('await loadDeviceWindow()')).toBeGreaterThan(-1)
+        expect(refresh.indexOf('loadComponentLicense()')).toBeGreaterThan(refresh.indexOf('await loadDeviceWindow()'))
+        const submit = body('async function submitDevice ')
+        expect(submit.indexOf('await refreshAfterDeviceSave()')).toBeGreaterThan(submit.indexOf('revisionSaved('))
     })
 
     it('saves through its own document and builder, with the refusal in componentLicenseError', () => {

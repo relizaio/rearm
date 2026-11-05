@@ -2523,8 +2523,10 @@ type DeviceSupportRiskRow {
 }
 
 """
-A declared window, for writes. Rejected when the component has no device class, or when
-`eos` is after `eol`.
+A declared window, for writes. `eol` is end of life, the last sale date; `eos` is end of
+support, the last security update; under IMDRF N70 `eol` normally precedes `eos`. Rejected
+only when the component has no device class: any pair of dates is stored as declared, and
+`eos` before `eol` comes back as a warning on `DeviceSupportWindow.warnings`, never a refusal.
 
 **An empty object is NOT a clear.** A form bound to two date pickers posts `{}` the moment
 both are blank; retracting a regulatory commitment has to be asked for explicitly, with
@@ -4747,7 +4749,8 @@ input ShipProductInput {
 	deliverable: ID
 	"""
 	Override the product component's device support window for this batch (D7). Omit to
-	inherit, which is the ordinary case.
+	inherit, which is the ordinary case. Any pair of dates is stored as declared; eos before
+	eol is reported on the returned deviceSupportWindow.warnings, never refused.
 	"""
 	deviceSupportWindow: DeviceSupportWindowInput
 	"""
@@ -5140,8 +5143,9 @@ type UnrecognizedCommit {
 input UpdateComponentInput {
 	"""
 	The section 524B device support window for this device model (D7). PATCH: omitted
-	leaves the stored value alone. Rejected when the component has no device class, or
-	when eos is after eol.
+	leaves the stored value alone. Rejected only when the component has no device class;
+	eos before eol is stored as declared and reported on
+	medicalProfile.deviceSupportWindow.warnings, never refused.
 	"""
 	deviceSupportWindow: DeviceSupportWindowInput
 	"""

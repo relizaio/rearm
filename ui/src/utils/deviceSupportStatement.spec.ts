@@ -236,8 +236,11 @@ describe('buildDeviceSupportStatementDefinition', () => {
     // for a document read as two separate commitments.
     it('shows device EOS and EOL as two separate labelled facts', () => {
         const s = flat(data())
-        expect(s).toContain('end of support')
-        expect(s).toContain('end of life / end of sale')
+        expect(s).toContain('Device end of support (last security update)')
+        expect(s).toContain('Device end of life (last sale date)')
+        // FDAW-3, B11: the old wording is gone from the rendered statement
+        expect(s).not.toMatch(/end of sale/i)
+        expect(s).not.toContain('(EOL)')
         expect(s).toContain('2030-06-30')
         expect(s).toContain('2033-01-01')
     })
