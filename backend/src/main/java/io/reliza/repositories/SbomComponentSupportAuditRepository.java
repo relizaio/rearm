@@ -6,16 +6,20 @@ package io.reliza.repositories;
 import java.util.List;
 import java.util.UUID;
 
-import org.springframework.data.repository.CrudRepository;
+import org.springframework.data.repository.Repository;
 
 import io.reliza.model.SbomComponentSupportAudit;
 
 /**
- * Append-only. There is deliberately no delete method here, and none should be
- * added: a support attestation is corrected by superseding it, never by erasing
- * it. See {@link io.reliza.model.SbomComponentSupportAudit}.
+ * Append-only. A plain {@link Repository} offering the insert and the two reads: there is
+ * deliberately no delete or update method here, and none should be added: a support attestation
+ * is corrected by superseding it, never by erasing it. The V106 trigger refuses UPDATE and DELETE
+ * from every other SQL path too (FDAW-1 F-8). See {@link io.reliza.model.SbomComponentSupportAudit}.
  */
-public interface SbomComponentSupportAuditRepository extends CrudRepository<SbomComponentSupportAudit, UUID> {
+public interface SbomComponentSupportAuditRepository extends Repository<SbomComponentSupportAudit, UUID> {
+
+	/** The one write: every audit row has a fresh uuid, so the save inserts. */
+	SbomComponentSupportAudit save(SbomComponentSupportAudit audit);
 
 	/** Full attestation history for a component, newest first. */
 	List<SbomComponentSupportAudit> findBySbomComponentUuidOrderByAssertedDateDesc(UUID sbomComponentUuid);

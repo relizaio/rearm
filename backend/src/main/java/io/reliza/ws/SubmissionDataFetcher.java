@@ -29,8 +29,10 @@ import io.reliza.exceptions.SubmissionRefusedException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.SubmissionActData;
 import io.reliza.model.SubmissionActResult;
 import io.reliza.model.SubmissionData;
+import io.reliza.model.SubmissionData.VersionState;
 import io.reliza.model.SubmissionPreview;
 import io.reliza.model.SubmissionRefusal;
 import io.reliza.model.SubmissionState;
@@ -282,6 +284,28 @@ public class SubmissionDataFetcher {
 	List<SubmissionVersionData> versionsOf(SubmissionData s) {
 		if (null == hook || null == s) return List.of();
 		return hook.listVersions(s.getOrg(), s.getUuid());
+	}
+
+	/** Each version's state: the head's stored list, or the one a migrated head implies (FDAW-1 D2, D6). */
+	@DgsData(parentType = "Submission", field = "versionStates")
+	public List<VersionState> versionStates(DgsDataFetchingEnvironment dfe) {
+		return versionStatesOf(dfe.<SubmissionData>getSource());
+	}
+
+	List<VersionState> versionStatesOf(SubmissionData s) {
+		if (null == hook || null == s) return List.of();
+		return s.versionStatesOrDerived();
+	}
+
+	/** The head's act record, oldest first; a child of a head the caller already read (FDAW-1 D2). */
+	@DgsData(parentType = "Submission", field = "acts")
+	public List<SubmissionActData> acts(DgsDataFetchingEnvironment dfe) {
+		return actsOf(dfe.<SubmissionData>getSource());
+	}
+
+	List<SubmissionActData> actsOf(SubmissionData s) {
+		if (null == hook || null == s) return List.of();
+		return hook.listActs(s.getOrg(), s.getUuid());
 	}
 
 	@DgsData(parentType = "Submission", field = "latest")

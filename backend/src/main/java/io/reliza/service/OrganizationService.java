@@ -441,26 +441,25 @@ public class OrganizationService {
 			}
 		}
 
-		Map<String, UserType> emailToTypeMap = new LinkedHashMap<>();
+		// per organization, one record per address; the record names the user, so the global counts
+		// merge by user (an address tagged for this organization differs from the user's primary one)
+		Map<String, OrgUserRecord> emailToRecordMap = new LinkedHashMap<>();
 		for (UserData ud : orgUsers) {
 			String email = ud.getEmail(orgUuid);
 			if (email != null && !email.isEmpty()) {
 				boolean isWrite = isWriteUser(ud, orgUuid, userGroupsByUserUuid.getOrDefault(ud.getUuid(), List.of()));
 				UserType type = isWrite ? UserType.WRITE : UserType.READ;
 				// If email already exists, keep WRITE if either is WRITE
-				if (emailToTypeMap.containsKey(email)) {
-					if (type == UserType.WRITE) {
-						emailToTypeMap.put(email, UserType.WRITE);
-					}
-				} else {
-					emailToTypeMap.put(email, type);
+				OrgUserRecord existing = emailToRecordMap.get(email);
+				if (null == existing) {
+					emailToRecordMap.put(email, new OrgUserRecord(ud.getUuid(), email, type));
+				} else if (type == UserType.WRITE) {
+					emailToRecordMap.put(email, new OrgUserRecord(existing.uuid(), email, UserType.WRITE));
 				}
 			}
 		}
 
-		return emailToTypeMap.entrySet().stream()
-				.map(entry -> new OrgUserRecord(entry.getKey(), entry.getValue()))
-				.collect(Collectors.toList());
+		return new ArrayList<>(emailToRecordMap.values());
 	}
 
 	/**
@@ -513,35 +512,35 @@ public class OrganizationService {
 		WRITE
 	}
 
-	public record OrgUserRecord(String email, UserType type) {}
+	public record OrgUserRecord(UUID uuid, String email, UserType type) {}
 
 	public record GlobalUserCounts(long writeUsers, long readUsers, long totalUsers) {}
 
 	public GlobalUserCounts getGlobalUserCounts() {
 		List<OrganizationData> allOrgs = listAllOrganizationData();
-		Map<String, UserType> globalEmailToTypeMap = new HashMap<>();
+		Map<UUID, UserType> globalUserToTypeMap = new HashMap<>();
 		
 		for (OrganizationData od : allOrgs) {
 			List<OrgUserRecord> orgUserRecords = getOrgUserRecords(od.getUuid());
 			for (OrgUserRecord record : orgUserRecords) {
-				String email = record.email();
+				UUID user = record.uuid();
 				UserType type = record.type();
 				
-				// Merge by email: WRITE > READ
-				if (globalEmailToTypeMap.containsKey(email)) {
+				// Merge by user (FDAW-1 F-28: a user's address can differ per organization): WRITE > READ
+				if (globalUserToTypeMap.containsKey(user)) {
 					if (type == UserType.WRITE) {
-						globalEmailToTypeMap.put(email, UserType.WRITE);
+						globalUserToTypeMap.put(user, UserType.WRITE);
 					}
 					// If existing is already WRITE, keep it
 				} else {
-					globalEmailToTypeMap.put(email, type);
+					globalUserToTypeMap.put(user, type);
 				}
 			}
 		}
 		
-		long writeUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.WRITE).count();
-		long readUsers = globalEmailToTypeMap.values().stream().filter(t -> t == UserType.READ).count();
-		long totalUsers = globalEmailToTypeMap.size();
+		long writeUsers = globalUserToTypeMap.values().stream().filter(t -> t == UserType.WRITE).count();
+		long readUsers = globalUserToTypeMap.values().stream().filter(t -> t == UserType.READ).count();
+		long totalUsers = globalUserToTypeMap.size();
 		
 		return new GlobalUserCounts(writeUsers, readUsers, totalUsers);
 	}
