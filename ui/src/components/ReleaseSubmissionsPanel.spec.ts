@@ -1,10 +1,10 @@
 // @vitest-environment happy-dom
 //
 // The release page's Regulatory submissions section (task TEA-30, design 4.6 row 33): one head of two
-// versions and a withdrawn second kind; the head lines, the version history newest first with the
+// versions and a cancelled second kind; the head lines, the version history newest first with the
 // reason as text kept in its line breaks, the parts of the newest version with a download per
 // generated part through the one URL builder, none for a skipped part or one with no version
-// recorded, the manifest download and text, and the withdrawn kind's reason and actions. With the
+// recorded, the manifest download and text, and the cancelled kind's reason and actions. With the
 // host's kinds (Release.regulatoryPackageKinds) the rows are those kinds in their order; the catalog
 // is read for its parts, and a failed read of it loses nothing but the narrative prompt. The
 // assessment-narrative prompt before Create and Resubmit of a kind with a REQUIRED NARRATIVE part:
@@ -51,11 +51,17 @@ const V2 = v(2, { reason: 'Updated <b>SBOM</b>\nline two', parts: [
         fileName: 'narrative.md', mediaType: 'text/markdown', size: 5, sha256: 'b'.repeat(64) },
 ] })
 const HEADS = [
-    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2, lastActKind: 'RESUBMITTED',
+    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'RESUBMITTED',
         lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [v(1), V2] },
-    { uuid: 's2', release: 'r1', kind: 'TEST_KIND', state: 'WITHDRAWN', latestVersion: 1, lastActKind: 'WITHDRAWN',
-        lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', withdrawnDate: '2026-10-03T00:00:00Z',
-        withdrawReason: 'Recalled <i>why</i>', versions: [v(1, { submission: 's2', kind: 'TEST_KIND' })] },
+    { uuid: 's2', release: 'r1', kind: 'TEST_KIND', state: 'CANCELLED', latestVersion: 1, lastActKind: 'CANCELLED',
+        lastActDate: '2026-10-03T00:00:00Z', lastActBy: 'u1', legacyState: null,
+        acts: [
+            { uuid: 'a1', kind: 'FINALIZE', cause: 'USER', version: 1, actedAt: '2026-10-01T00:00:00Z', actorName: 'Ann', reasonText: 'first' },
+            { uuid: 'a2', kind: 'CANCEL', cause: 'USER', version: 1, actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann', reasonText: 'older' },
+            { uuid: 'a3', kind: 'FINALIZE', cause: 'USER', version: 1, actedAt: '2026-10-02T12:00:00Z', actorName: 'Ann', reasonText: 'again' },
+            { uuid: 'a4', kind: 'CANCEL', cause: 'USER', version: 1, actedAt: '2026-10-03T00:00:00Z', actorName: 'Bob <b>', reasonText: 'Recalled <i>why</i>' },
+        ],
+        versions: [v(1, { submission: 's2', kind: 'TEST_KIND' })] },
 ]
 
 function answers () {
@@ -95,7 +101,7 @@ describe('ReleaseSubmissionsPanel', () => {
         expect(query.mock.calls.find(c => operation(c[0]) === 'SubmissionsOfRelease')![0].variables).toEqual({ release: 'r1' })
         const head = w.find('[data-testid="submission-head-FDA_PREMARKET"]')
         expect(head.text()).toContain('FDA premarket')
-        expect(head.find('[data-testid="submission-state"]').text()).toBe('Active')
+        expect(head.find('[data-testid="submission-state"]').text()).toBe('Final (no confirmation record) - not sent')
         expect(head.text()).toContain('v2')
         expect(head.text()).toContain('Resubmitted on')
         expect(head.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
@@ -152,15 +158,48 @@ describe('ReleaseSubmissionsPanel', () => {
         w.unmount()
     })
 
-    it('shows the withdrawn kind with its reason as text, offering Resubmit and not Withdraw', async () => {
+    it('shows the cancelled kind with its newest CANCEL act as text, offering Resubmit and not Cancel', async () => {
         const w = await mountPanel()
         const head = w.find('[data-testid="submission-head-TEST_KIND"]')
-        expect(head.find('[data-testid="submission-state"]').text()).toBe('Withdrawn')
+        expect(head.find('[data-testid="submission-state"]').text()).toBe('Cancelled')
+        expect(head.find('.submission-withdrawn').text())
+            .toContain('Cancelled on ' + new Date('2026-10-03T00:00:00Z').toLocaleString('en-CA') + ' by Bob <b>:')
+        expect(head.find('.submission-withdrawn').find('b').exists()).toBe(false)
+        expect(head.text()).not.toContain('older')
         const reason = head.find('[data-testid="submission-withdraw-reason"]')
         expect(reason.text()).toBe('Recalled <i>why</i>')
         expect(reason.find('i').exists()).toBe(false)
         expect(reason.attributes('style')).toContain('white-space: pre-wrap')
         expect(head.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
+        expect(head.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
+        w.unmount()
+    })
+
+    it('offers Cancel on the FINAL head', async () => {
+        const w = await mountPanel()
+        const button = w.find('[data-testid="submission-head-FDA_PREMARKET"]').find('[data-testid="submission-withdraw"]')
+        expect(button.text()).toBe('Cancel')
+        w.unmount()
+    })
+
+    it('a legacy cancelled head reads its withdrawal triple and says it was migrated', async () => {
+        const legacy = { uuid: 's3', release: 'r1', kind: 'TEST_KIND', state: 'CANCELLED', latestVersion: 1,
+            lastActKind: 'WITHDRAWN', lastActDate: '2026-09-03T00:00:00Z', lastActBy: 'u1', legacyState: 'WITHDRAWN',
+            withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'Old <i>reason</i>', acts: [],
+            versions: [v(1, { submission: 's3', kind: 'TEST_KIND' })] }
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'TEST_KIND', parts: [] }] } }
+            case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: [legacy] } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+        const w = await mountPanel()
+        const head = w.find('[data-testid="submission-head-TEST_KIND"]')
+        const date = new Date('2026-09-03T00:00:00Z').toLocaleString('en-CA')
+        expect(head.find('[data-testid="submission-state"]').text()).toBe('Cancelled (legacy: withdrawn ' + date + ')')
+        expect(head.find('.submission-withdrawn').text()).toContain('Withdrawn on ' + date + ':')
+        expect(head.find('[data-testid="submission-withdraw-reason"]').text()).toBe('Old <i>reason</i>')
         expect(head.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
         w.unmount()
     })
@@ -220,7 +259,7 @@ describe('ReleaseSubmissionsPanel', () => {
             { kind: 'FDA_PREMARKET', parts: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED' }, { part: 'NARRATIVE', requirement: 'REQUIRED' }] },
             { kind: 'TEST_KIND', parts: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED' }, { part: 'NARRATIVE', requirement: 'OPTIONAL' }] },
         ]
-        const ACTIVE = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2, lastActKind: 'CREATED',
+        const ACTIVE = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2, lastActKind: 'CREATED',
             lastActDate: '2026-10-02T00:00:00Z', lastActBy: 'u1', versions: [v(1), v(2)] }
 
         function narrativeAnswers (heads: any[] = []) {

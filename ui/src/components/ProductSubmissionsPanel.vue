@@ -41,7 +41,7 @@ import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
-    submissionOtherRows, submissionReleaseRows,
+    submissionOtherRows, submissionReleaseRows, submissionStateTagType, submissionStateText,
 } from '@/utils/submissions'
 import { useSubmissionActs } from '@/utils/submissionActs'
 
@@ -107,17 +107,17 @@ function kindCell (row: any, kind: string) {
             title: allowed ? '' : CREATE_LIFECYCLE_REASON, onClick: () => acts.create(row.release, kind, names) }, () => 'Create')
     }
     const children: any[] = [
-        h(NTag, { size: 'small', type: head.state === 'ACTIVE' ? 'success' : 'warning', 'data-testid': 'submission-state' },
-            () => labelOf(SUBMISSION_STATE_LABELS, head.state)),
+        h(NTag, { size: 'small', type: submissionStateTagType(head.state), 'data-testid': 'submission-state' },
+            () => submissionStateText(head)),
         ' v' + head.latestVersion,
         h('div', { class: 'text-muted' }, labelOf(SUBMISSION_ACT_LABELS, head.lastActKind) + ' ' + dateText(head.lastActDate)),
     ]
     if (props.isWritable) {
         children.push(h(NButton, { size: 'tiny', 'data-testid': 'submission-resubmit', disabled: busy, loading: busy,
             onClick: () => acts.resubmit(head, names) }, () => 'Resubmit'))
-        if (head.state === 'ACTIVE') {
+        if (head.state === 'FINAL') {
             children.push(h(NButton, { size: 'tiny', type: 'error', style: 'margin-left: 6px;', 'data-testid': 'submission-withdraw',
-                disabled: busy, onClick: () => acts.withdraw(head, names) }, () => 'Withdraw'))
+                disabled: busy, onClick: () => acts.withdraw(head, names) }, () => 'Cancel'))
         }
     }
     return h('div', { 'data-testid': 'submission-cell-' + kind }, children)
