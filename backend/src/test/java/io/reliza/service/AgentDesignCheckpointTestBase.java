@@ -33,6 +33,7 @@ import io.reliza.model.AgentTaskData.TaskStatus;
 import io.reliza.model.AgentTaskInput.InputKind;
 import io.reliza.model.AgentTaskInput.InputScope;
 import io.reliza.model.AgentTaskInput.RequiredInput;
+import io.reliza.model.AgentTaskRoleConfigData.AgentCapability;
 import io.reliza.model.AgentTaskRoleConfigData.HumanGate;
 import io.reliza.model.AgentTaskRoleConfigData.ProducedOutput;
 import io.reliza.model.Component;
@@ -53,6 +54,7 @@ import io.reliza.ws.oss.TestInitializer;
  * <li>plain: architect (10) -> coder (40) -> tester (50);</li>
  * <li>reviewed: architect (10) -> functional_reviewer (20) -> security_reviewer (30) -> coder (40) -> tester (50).</li>
  * </ul>
+ * Task SPLIT-9's tests add {@link #unflagged()}: the plain board without the flag, the coder holding CODE_PUSH.
  * The architect produces ARCHITECTURE and a second design document, the reviewers and the coder read both, the coder
  * produces DETAILED_DESIGN and the tester reads it. The coder carries {@code coordinatorCheckpoint} unless the rig is
  * built without it. One agent and session per role; the coordinator is a session actor, as the seat's verbs pass it.
@@ -66,12 +68,8 @@ abstract class AgentDesignCheckpointTestBase {
 	static final AgentActor COORD = AgentActor.ofSession(UUID.randomUUID());
 	static final AgentActor PERSON = AgentActor.ofUser(UUID.randomUUID(), "ops@acme.example");
 	static final RearmSpecificationType ARCH = RearmSpecificationType.ARCHITECTURE;
-	/**
-	 * The second design document. The design's boards produce THREAT_MODEL beside ARCHITECTURE; the base these tests
-	 * run on predates that type (it is on main, #813), and the checkpoint is the same for any produced prose type, so
-	 * INTERFACES stands in for it.
-	 */
-	static final RearmSpecificationType TM = RearmSpecificationType.INTERFACES;
+	/** The second design document, as the design's boards produce it beside ARCHITECTURE. */
+	static final RearmSpecificationType TM = RearmSpecificationType.THREAT_MODEL;
 	static final RearmSpecificationType DD = RearmSpecificationType.DETAILED_DESIGN;
 	static final String CHECKPOINT = "design checkpoint before coder";
 	static final String SENT_ON = "at the design checkpoint";
@@ -107,29 +105,43 @@ abstract class AgentDesignCheckpointTestBase {
 	}
 
 	/**
+	 * The unflagged board of task SPLIT-9's tests: architect -> coder -> tester with no checkpoint, the coder holding
+	 * {@code CODE_PUSH}, so the coder is the build boundary (D2's second arm) and the design is the architect's.
+	 */
+	Rig unflagged() throws RelizaException {
+		return rig(false, false, HumanGate.NONE, List.of(AgentCapability.CODE_PUSH));
+	}
+
+	/**
 	 * @param reviewers whether the two design reviewers sit between the architect and the coder
 	 * @param checkpoint whether the coder carries {@code coordinatorCheckpoint}
 	 * @param architectGate the architect role's human gate
 	 */
 	Rig rig(boolean reviewers, boolean checkpoint, HumanGate architectGate) throws RelizaException {
+		return rig(reviewers, checkpoint, architectGate, null);
+	}
+
+	/** As above, the coder holding {@code coderCapabilities} (null for none). */
+	Rig rig(boolean reviewers, boolean checkpoint, HumanGate architectGate, List<AgentCapability> coderCapabilities)
+			throws RelizaException {
 		Organization org = testInitializer.obtainOrganization();
 		Component target = componentService.createComponent("checkpoint_" + UUID.randomUUID(), org.getUuid(),
 				ComponentType.PRODUCT, "semver", "Branch.Micro", null, WU);
 		AgentBoardData board = agentBoardService.createBoard(org.getUuid(), "checkpoint-" + UUID.randomUUID(),
 				"design checkpoint", List.of(SRC, DOCS_SOURCE), "coordinate", 4, null, target.getUuid(), null, WU);
 		agentBoardService.upsertRoleConfig(board, role("architect", 10, architectGate, List.of(),
-				List.of(produces(ARCH), produces(TM)), ARCHITECT_HOP, null), true, WU);
+				List.of(produces(ARCH), produces(TM)), ARCHITECT_HOP, null, null), true, WU);
 		if (reviewers) {
 			for (String name : List.of("functional_reviewer", "security_reviewer")) {
 				agentBoardService.upsertRoleConfig(board, role(name, "functional_reviewer".equals(name) ? 20 : 30,
 						HumanGate.NONE, List.of(input(ARCH), input(TM)),
-						List.of(produces(RearmSpecificationType.BOARD_REVIEW_ITEMS)), null, null), true, WU);
+						List.of(produces(RearmSpecificationType.BOARD_REVIEW_ITEMS)), null, null, null), true, WU);
 			}
 		}
 		agentBoardService.upsertRoleConfig(board, role("coder", 40, HumanGate.NONE, List.of(input(ARCH), input(TM)),
-				List.of(produces(DD)), CODER_HOP, checkpoint ? Boolean.TRUE : null), true, WU);
+				List.of(produces(DD)), CODER_HOP, checkpoint ? Boolean.TRUE : null, coderCapabilities), true, WU);
 		agentBoardService.upsertRoleConfig(board, role("tester", 50, HumanGate.NONE, List.of(input(DD)),
-				List.of(produces(RearmSpecificationType.BOARD_TEST_REPORT)), null, null), true, WU);
+				List.of(produces(RearmSpecificationType.BOARD_TEST_REPORT)), null, null, null), true, WU);
 		board = agentBoardService.setDocumentsConfig(board.getUuid(), DOCS, null, WU);
 		return new Rig(org, board, worker(org, "architect"), worker(org, "functional_reviewer"),
 				worker(org, "security_reviewer"), worker(org, "coder"), worker(org, "tester"));
@@ -137,8 +149,13 @@ abstract class AgentDesignCheckpointTestBase {
 
 	static AgentBoardService.RoleConfigSpec role(String name, int order, HumanGate gate, List<RequiredInput> inputs,
 			List<ProducedOutput> outputs, Long hopBudget, Boolean checkpoint) {
-		return new AgentBoardService.RoleConfigSpec(name, name + " prompt", order, null, false, true, null, null, null,
-				gate, inputs, outputs, null, hopBudget, null, null, checkpoint);
+		return role(name, order, gate, inputs, outputs, hopBudget, checkpoint, null);
+	}
+
+	static AgentBoardService.RoleConfigSpec role(String name, int order, HumanGate gate, List<RequiredInput> inputs,
+			List<ProducedOutput> outputs, Long hopBudget, Boolean checkpoint, List<AgentCapability> capabilities) {
+		return new AgentBoardService.RoleConfigSpec(name, name + " prompt", order, null, false, true, capabilities, null,
+				null, gate, inputs, outputs, null, hopBudget, null, null, checkpoint);
 	}
 
 	static RequiredInput input(RearmSpecificationType spec) {

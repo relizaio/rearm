@@ -26,6 +26,7 @@ import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentData;
 import io.reliza.model.AgentSessionData;
 import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskInput;
 import io.reliza.model.AgentTaskData.HoldLevel;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
 import io.reliza.model.AgentTaskData.TaskReturnReason;
@@ -145,6 +146,31 @@ public class AgentBoardEventLabelsTest {
 		idx.put("reviewItems", new ArrayList<>(List.of(item)));
 		idx.put("about", about);
 		return idx;
+	}
+
+	/** T-15 of task SPLIT-9: a split request's ALERT names the task by its label, with the why and titles or blind. */
+	@Test
+	public void aSplitRequestsAlertNamesTheTaskAndWhatItProposes() throws RelizaException {
+		Rig r = rig();
+		List<AgentTaskInput.SplitChild> two = List.of(new AgentTaskInput.SplitChild("part A", null, null, null, null, null),
+				new AgentTaskInput.SplitChild("part B", null, null, null, null, List.of(0)));
+		AgentTaskData open = queued(r, "split, seen");
+		agentTaskService.assign(open.getUuid(), board(r), r.workerA().getUuid(), r.sessA().getUuid(), WU);
+		agentTaskService.returnTask(open.getUuid(), r.sessA().getUuid(), TaskReturnReason.SPLIT, "two repositories",
+				List.of(), two, WU);
+		assertTrue(events(r).contains("Task " + reload(open).label() + " returned by coder (SPLIT): two repositories;"
+				+ " proposes 2 children: part A; part B"), events(r).toString());
+
+		agentBoardService.upsertRoleConfig(board(r), new AgentBoardService.RoleConfigSpec("designer", null, null, null,
+				null, null, null, null, null, null, null, null, null, null, true, null), true, WU);
+		AgentTaskData blind = queued(r, "split, blind");
+		agentTaskService.assign(blind.getUuid(), board(r), r.workerA().getUuid(), r.sessA().getUuid(), WU);
+		agentTaskService.returnTask(blind.getUuid(), r.sessA().getUuid(), TaskReturnReason.SPLIT, "two repositories",
+				List.of(), two, WU);
+		assertTrue(events(r).contains("Task " + reload(blind).label() + " returned by coder (SPLIT); proposes 2 children"),
+				events(r).toString());
+		assertTrue(events(r).stream().filter(m -> m.contains(reload(blind).label()))
+				.noneMatch(m -> m.contains("part A") || m.contains("two repositories")), events(r).toString());
 	}
 
 	@Test

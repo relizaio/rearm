@@ -54,6 +54,8 @@ class AgentSchemaFieldsAreBackedTest {
 		m.put("AgentTaskSignOff", AgentTaskData.SignOff.class);
 		m.put("AgentTaskDesignCheckpoint", AgentTaskData.DesignCheckpoint.class);
 		m.put("AgentTaskReturn", AgentTaskData.TaskReturn.class);
+		m.put("AgentTaskSplitRequest", AgentTaskData.SplitRequest.class);
+		m.put("AgentTaskSplitChild", io.reliza.model.AgentTaskInput.SplitChild.class);
 		m.put("AgentTaskStatusChange", AgentTaskData.StatusChange.class);
 		m.put("AgentTaskHold", AgentTaskData.TaskHold.class);
 		m.put("AgentActor", AgentActor.class);
@@ -271,6 +273,7 @@ class AgentSchemaFieldsAreBackedTest {
 		m.put("AgentTaskStatus", AgentTaskData.TaskStatus.class);
 		m.put("AgentSignOffOutcome", AgentTaskData.SignOffOutcome.class);
 		m.put("AgentTaskReturnReason", AgentTaskData.TaskReturnReason.class);
+		m.put("AgentTaskSplitRequestState", AgentTaskData.SplitRequestState.class);
 		m.put("AgentTaskHoldLevel", AgentTaskData.HoldLevel.class);
 		m.put("AgentTaskHoldKind", AgentTaskData.HoldKind.class);
 		m.put("AgentStatusTrigger", AgentTaskData.StatusTrigger.class);

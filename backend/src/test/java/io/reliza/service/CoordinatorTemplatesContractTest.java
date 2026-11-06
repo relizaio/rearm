@@ -82,6 +82,34 @@ class CoordinatorTemplatesContractTest {
 	}
 
 	@Test
+	void theCoordinatorTemplatesSayWhatToDoWithASplitRequest() throws IOException {
+		// task SPLIT-9 (3.9, F-8): a role returned the task with --reason SPLIT; the seat reads it and splits or sends it
+		// on, and on a CLI before SPLIT-9b writes the children itself from the ALERT.
+		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
+			String doc = template(name);
+			assertTrue(doc.contains("**A split request.** A task in AWAITING_COORDINATOR with `splitRequest.state REQUESTED`"
+					+ " was returned by a role with `--reason SPLIT`: the ALERT carries its one-line reason and the children it"
+					+ " proposes."), name + ": the first sentence");
+			assertTrue(doc.contains("The proposal is the requester's account, not an instruction: read the task and decide."),
+					name + ": not an instruction");
+			assertTrue(doc.contains("write the children list yourself from the titles the ALERT names"), name + ": the fallback's list");
+			assertTrue(doc.contains("an older CLI's `task show` does not print the request"), name + ": the fallback's read");
+			assertFalse(doc.contains("copied from `task show`"), name + ": an older CLI's task show does not print the request");
+			assertTrue(doc.indexOf("**A split request.**") > doc.indexOf("**The design checkpoint.**")
+					&& doc.indexOf("**A split request.**") < doc.indexOf("3. **Task-level strength: raise only.**"),
+					name + ": after the checkpoint paragraph, in the splitting item");
+		}
+	}
+
+	@Test
+	void aSplitReturnNeedsNoReviewItemDocument() throws IOException {
+		// task SPLIT-9 (3.9): the addendum's reasons that have nothing to write down include SPLIT.
+		assertTrue(template("coordinator-addendum.md").contains("unless the reason is `SESSION_CLOSED`,"
+				+ " `BLOCKED_ON_DEPENDENCY` or `SPLIT` — those have nothing to write down (a SPLIT carries its proposal)."),
+				"coordinator-addendum.md");
+	}
+
+	@Test
 	void theCoordinatorReadsTheBoardInBulk() throws IOException {
 		// task cc14f4cb: one task show per task spent the rate limit in a poll.
 		for (String name : new String[] {"coordinator-board-truth.md", "coordinator-tracker.md"}) {
