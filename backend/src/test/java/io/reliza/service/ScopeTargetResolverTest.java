@@ -7,6 +7,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.util.List;
+import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 
@@ -123,6 +125,136 @@ class ScopeTargetResolverTest {
         List<MatchCandidate> out = r2.targets(org, AnalysisScope.COMPONENT, Set.of(release1, release2), null);
         assertEquals(1, out.size());
         assertEquals(componentA, out.get(0).scopeUuid());
+    }
+
+    @Test
+    void componentScopeBoundToReleaseDoesNotFanOutToOtherComponents() {
+        // Regression: a VEX uploaded on component A's release must not land on component B
+        // just because B's releases contain the same PURL.
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherRelease = UUID.randomUUID();
+        UUID componentA = UUID.randomUUID();
+        UUID componentB = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(UUID.randomUUID(), componentA),
+            otherRelease, mockReleaseData(UUID.randomUUID(), componentB)));
+
+        List<MatchCandidate> out = r2.targets(org, AnalysisScope.COMPONENT,
+            Set.of(boundRelease, otherRelease), boundRelease);
+        assertEquals(List.of(new MatchCandidate(AnalysisScope.COMPONENT, componentA)), out);
+    }
+
+    @Test
+    void branchScopeBoundToReleaseDoesNotFanOutToOtherBranches() {
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherRelease = UUID.randomUUID();
+        UUID branchA = UUID.randomUUID();
+        UUID branchB = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(branchA, UUID.randomUUID()),
+            otherRelease, mockReleaseData(branchB, UUID.randomUUID())));
+
+        List<MatchCandidate> out = r2.targets(org, AnalysisScope.BRANCH,
+            Set.of(boundRelease, otherRelease), boundRelease);
+        assertEquals(List.of(new MatchCandidate(AnalysisScope.BRANCH, branchA)), out);
+    }
+
+    @Test
+    void componentAndBranchScopeBoundReleaseOutsideResolvedSetMatchesOlderReleaseOfSameScope() {
+        // The uploading release does not ship the PURL but an older release of the same
+        // component / branch does: the claim lands on the uploading component / branch.
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID olderRelease = UUID.randomUUID();
+        UUID branchA = UUID.randomUUID();
+        UUID componentA = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(branchA, componentA),
+            olderRelease, mockReleaseData(branchA, componentA)));
+
+        assertEquals(List.of(new MatchCandidate(AnalysisScope.COMPONENT, componentA)),
+            r2.targets(org, AnalysisScope.COMPONENT, Set.of(olderRelease), boundRelease));
+        assertEquals(List.of(new MatchCandidate(AnalysisScope.BRANCH, branchA)),
+            r2.targets(org, AnalysisScope.BRANCH, Set.of(olderRelease), boundRelease));
+    }
+
+    @Test
+    void componentAndBranchScopeBoundPurlOnlyInOtherComponentIsEmpty() {
+        // The PURL is only in another component's releases: unmatched, no claim on a
+        // component / branch that never shipped the package.
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherRelease = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(UUID.randomUUID(), UUID.randomUUID()),
+            otherRelease, mockReleaseData(UUID.randomUUID(), UUID.randomUUID())));
+
+        assertTrue(r2.targets(org, AnalysisScope.COMPONENT, Set.of(otherRelease), boundRelease).isEmpty());
+        assertTrue(r2.targets(org, AnalysisScope.BRANCH, Set.of(otherRelease), boundRelease).isEmpty());
+    }
+
+    @Test
+    void branchScopeBoundOlderReleaseOnOtherBranchOfSameComponentIsEmpty() {
+        // BRANCH needs the PURL on the uploading branch; the same component's other branch
+        // does not count.
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherBranchRelease = UUID.randomUUID();
+        UUID componentA = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(UUID.randomUUID(), componentA),
+            otherBranchRelease, mockReleaseData(UUID.randomUUID(), componentA)));
+
+        assertTrue(r2.targets(org, AnalysisScope.BRANCH, Set.of(otherBranchRelease), boundRelease).isEmpty());
+        assertEquals(List.of(new MatchCandidate(AnalysisScope.COMPONENT, componentA)),
+            r2.targets(org, AnalysisScope.COMPONENT, Set.of(otherBranchRelease), boundRelease));
+    }
+
+    @Test
+    void componentScopeBoundReleaseWithoutComponentIsEmpty() {
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID olderRelease = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(null, null),
+            olderRelease, mockReleaseData(UUID.randomUUID(), UUID.randomUUID())));
+
+        assertTrue(r2.targets(org, AnalysisScope.COMPONENT, Set.of(olderRelease), boundRelease).isEmpty());
+        assertTrue(r2.targets(org, AnalysisScope.BRANCH, Set.of(olderRelease), boundRelease).isEmpty());
+    }
+
+    @Test
+    void componentScopeBoundWithNoResolvedReleasesIsEmpty() {
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            boundRelease, mockReleaseData(UUID.randomUUID(), UUID.randomUUID())));
+
+        assertTrue(r2.targets(org, AnalysisScope.COMPONENT, Set.of(), boundRelease).isEmpty());
+        assertTrue(r2.targets(org, AnalysisScope.BRANCH, Set.of(), boundRelease).isEmpty());
+    }
+
+    @Test
+    void componentScopeBoundReleaseUnreadableIsEmptyNotFanOut() {
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherRelease = UUID.randomUUID();
+        ScopeTargetResolver r2 = resolverWith(org, Map.of(
+            otherRelease, mockReleaseData(UUID.randomUUID(), UUID.randomUUID())));
+
+        assertTrue(r2.targets(org, AnalysisScope.COMPONENT, Set.of(boundRelease, otherRelease), boundRelease).isEmpty());
+    }
+
+    private ScopeTargetResolver resolverWith(UUID org, Map<UUID, ReleaseData> releases) {
+        ScopeTargetResolver r2 = new ScopeTargetResolver();
+        SharedReleaseService srs = Mockito.mock(SharedReleaseService.class);
+        Mockito.when(srs.getReleaseDataLight(Mockito.any(), Mockito.eq(org))).thenReturn(Optional.empty());
+        releases.forEach((uuid, rd) ->
+            Mockito.when(srs.getReleaseDataLight(uuid, org)).thenReturn(Optional.of(rd)));
+        r2.sharedReleaseService = srs;
+        return r2;
     }
 
     private ReleaseData mockReleaseData(UUID branch, UUID component) {
