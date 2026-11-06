@@ -2047,6 +2047,12 @@ enum PackageKind {
 	FDA_PREMARKET
 }
 
+"""Whether a package kind is switched on at a scope (FDAW-18); a kind is never on until someone says so."""
+enum PackageKindState {
+	ENABLED
+	DISABLED
+}
+
 """A document kind a package part generator produces from a release, in document order."""
 enum PackagePart {
 	AGGREGATE_SBOM
@@ -2221,8 +2227,10 @@ type PackageSettings {
 	kind: PackageKind!
 	mode: ScopedSettingsMode
 	followedPerspective: ID
-	"Whether the kind is switched on at this scope (off in the built-in default); null on a FOLLOW_PERSPECTIVE row"
-	enabled: Boolean
+	"Whether the kind is switched on at this scope: DISABLED in the built-in default; null on a FOLLOW_PERSPECTIVE row"
+	state: PackageKindState
+	"state == ENABLED; null on a FOLLOW_PERSPECTIVE row"
+	enabled: Boolean @deprecated(reason: "FDAW-18: read state")
 	sbomProfile: String
 	parts: [PackagePartSettings!]
 	description: String
@@ -2231,12 +2239,14 @@ type PackageSettings {
 	lastUpdatedBy: ID
 }
 
-"""A package settings save; the kind and the key come as arguments. A FOLLOW_PERSPECTIVE row sends none of enabled, sbomProfile, parts and description."""
+"""A package settings save; the kind and the key come as arguments. A FOLLOW_PERSPECTIVE row sends none of state, enabled, sbomProfile, parts and description."""
 input PackageSettingsInput {
 	mode: ScopedSettingsMode
 	followedPerspective: ID
-	"Switch the kind on at this scope; absent means off. Must be absent on a FOLLOW_PERSPECTIVE row"
-	enabled: Boolean
+	"Whether the kind is switched on at this scope; absent means DISABLED. Must be absent on a FOLLOW_PERSPECTIVE row"
+	state: PackageKindState
+	"true is state ENABLED, false DISABLED; a save carrying both state and enabled is refused"
+	enabled: Boolean @deprecated(reason: "FDAW-18: send state")
 	sbomProfile: String
 	parts: [PackagePartOptionsInput!]
 	description: String

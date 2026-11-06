@@ -56,6 +56,7 @@ import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.EditedListValidation;
 import io.reliza.common.SafeRegex;
 import io.reliza.common.SidPurlUtils;
+import io.reliza.common.TxUtils;
 import io.reliza.common.oss.LicensingConstants;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.common.Utils;
@@ -1019,10 +1020,11 @@ public class OrganizationService {
 				settings.setSupportInjection(now);
 				// Logged only on a real transition, and only the ACTOR'S UUID: WhoUpdated is a
 				// Lombok @Data, so logging it whole renders lastUpdatedIp into the log. The
-				// one actor-logging precedent in this tree logs the uuid alone.
+				// one actor-logging precedent in this tree logs the uuid alone. Written after the
+				// commit, so a rolled-back change leaves no line (FDAW-18, F-19).
 				if (was != now) {
-					log.info("SUPPORT_INJECTION changed for org {}: {} -> {} by user {}",
-							orgUuid, was, now, wu.getLastUpdatedBy());
+					TxUtils.afterCommitOrNow(() -> log.info("SUPPORT_INJECTION changed for org {}: {} -> {} by user {}",
+							orgUuid, was, now, wu.getLastUpdatedBy()));
 				}
 			}
 
