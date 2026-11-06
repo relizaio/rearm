@@ -424,7 +424,8 @@ public class ArtifactServiceRawUploadRetentionTest {
         };
 
         assertThrows(Exception.class, () -> ReflectionTestUtils.invokeMethod(
-            artifactService, "storeArtifactOnRebom", dto, file, null, new RebomOptions()),
+            artifactService, "storeArtifactOnRebom", dto, file, null, new RebomOptions(),
+            SbomWriteAuthority.NO_PRINCIPAL, (UUID) null),
             "an unparseable document must still fail the upload");
 
         verify(artifactService, never()).uploadFileToConfiguredOci(any(Resource.class),
@@ -456,7 +457,7 @@ public class ArtifactServiceRawUploadRetentionTest {
 
         assertThrows(Exception.class, () -> ReflectionTestUtils.invokeMethod(
             artifactService, "storeArtifactOnRebom", dto, file, null, new RebomOptions(),
-            SbomWriteAuthority.NO_PRINCIPAL));
+            SbomWriteAuthority.NO_PRINCIPAL, (UUID) null));
 
         verify(artifactService).uploadFileToConfiguredOci(any(Resource.class),
             eq("raw-" + Utils.bytesToHexSha256(uploaded)), eq(Utils.bytesToHexSha256(uploaded)));
@@ -521,7 +522,8 @@ public class ArtifactServiceRawUploadRetentionTest {
             @Override public String getFilename() { return "sbom.json"; }
         };
         return ReflectionTestUtils.invokeMethod(artifactService, "storeArtifactOnRebom",
-            bomDto(artifactUuid, format), file, null, new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL);
+            bomDto(artifactUuid, format), file, null, new RebomOptions(), SbomWriteAuthority.NO_PRINCIPAL,
+            (UUID) null);
     }
 
     /**

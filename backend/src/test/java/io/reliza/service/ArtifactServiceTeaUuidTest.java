@@ -34,6 +34,7 @@ import org.springframework.dao.DataIntegrityViolationException;
 import org.springframework.test.util.ReflectionTestUtils;
 
 import io.reliza.common.AdvisoryLockKey;
+import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Artifact;
@@ -269,6 +270,65 @@ class ArtifactServiceTeaUuidTest {
 		svc.persistArtifact(dto(existing.getUuid()), WU);
 
 		assertNull(savedThroughSaveArtifact().getTeaUuid());
+	}
+
+	// ---- FDAW-5, design T18 (3.9): an in-place write keeps the stored status; a new row takes the dto's ----
+
+	/** A persisted BOM row with {@code status}. */
+	private static Artifact rowWithStatus(StatusEnum status) {
+		Artifact a = row(null);
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		ad.setStatus(status);
+		a.setRecordData(Utils.dataToRecord(ad));
+		return a;
+	}
+
+	private static ArtifactDto dtoWithStatus(UUID uuid, StatusEnum status) {
+		ArtifactDto d = dto(uuid);
+		d.setStatus(status);
+		return d;
+	}
+
+	private StatusEnum statusSavedInPlace(StatusEnum stored, StatusEnum sent) throws Exception {
+		Artifact existing = rowWithStatus(stored);
+		when(shared.getArtifact(existing.getUuid())).thenReturn(Optional.of(existing));
+		svc.persistArtifact(dtoWithStatus(existing.getUuid(), sent), WU);
+		return savedThroughSaveArtifact().getStatus();
+	}
+
+	@Test
+	void anInPlaceWriteOfARowWithoutAStatusDoesNotTakeArchivedFromTheDto() throws Exception {
+		assertNull(statusSavedInPlace(null, StatusEnum.ARCHIVED));
+	}
+
+	@Test
+	void anInPlaceWriteOfAnArchivedRowWithoutADtoStatusStaysArchived() throws Exception {
+		assertEquals(StatusEnum.ARCHIVED, statusSavedInPlace(StatusEnum.ARCHIVED, null));
+	}
+
+	@Test
+	void anInPlaceWriteOfAnActiveRowDoesNotTakeArchivedFromTheDto() throws Exception {
+		assertEquals(StatusEnum.ANY, statusSavedInPlace(StatusEnum.ANY, StatusEnum.ARCHIVED));
+	}
+
+	@Test
+	void aNewRowTakesTheDtosArchivedStatus() throws Exception {
+		UUID uuid = UUID.randomUUID();
+		when(shared.getArtifact(uuid)).thenReturn(Optional.empty());
+
+		svc.persistArtifact(dtoWithStatus(uuid, StatusEnum.ARCHIVED), WU);
+
+		assertEquals(StatusEnum.ARCHIVED, savedThroughSaveArtifact().getStatus());
+	}
+
+	@Test
+	void aNewRowWithoutADtoStatusHasNone() throws Exception {
+		UUID uuid = UUID.randomUUID();
+		when(shared.getArtifact(uuid)).thenReturn(Optional.empty());
+
+		svc.persistArtifact(dtoWithStatus(uuid, null), WU);
+
+		assertNull(savedThroughSaveArtifact().getStatus());
 	}
 
 	@Test

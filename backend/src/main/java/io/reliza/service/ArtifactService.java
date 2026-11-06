@@ -139,6 +139,10 @@ public class ArtifactService {
 	@Lazy
 	@Autowired
 	private SbomUpdateGuard sbomUpdateGuard;
+
+	@Lazy
+	@Autowired
+	private ArtifactRetentionLock artifactRetentionLock;
 	
 	@PersistenceContext
 	private EntityManager entityManager;
@@ -375,9 +379,14 @@ public class ArtifactService {
 		validateArtifactFields(artifactDto);
 		ArtifactData ad = ArtifactData.artifactDataFactory(artifactDto, a.getUuid());
 		if (oa.isPresent()) {
+			ArtifactData stored = ArtifactData.dataFromRecord(oa.get());
 			// The dto never carries a TEA id (task TEA-5): a re-upload of this row in place is the same
 			// TEA artifact at a later revision, so the stored id is carried forward.
-			ad.setTeaUuid(ArtifactData.dataFromRecord(oa.get()).getTeaUuid());
+			ad.setTeaUuid(stored.getTeaUuid());
+			// FDAW-5 (3.9): an in-place write never takes the row's status from the caller, so
+			// archiveArtifact, behind the retention lock, stays the only writer of ARCHIVED on an
+			// existing row. A new row is still born with the status the dto names.
+			ad.setStatus(stored.getStatus());
 		}
 		// IN-PLACE re-upload: this row already existed, so a fresh artifactDataFactory product would
 		// take its empty metrics straight over the column and wipe the findings. That is the SAME
@@ -555,6 +564,8 @@ public class ArtifactService {
 		Optional<Artifact> artifact = sharedArtifactService.getArtifact(artifactId);
 		if (artifact.isPresent()) {
 			ArtifactData artifactData = ArtifactData.dataFromRecord(artifact.get());
+			// FDAW-5: the floor of the retention lock; a file any package version pins is never archived.
+			artifactRetentionLock.assertNotArchivable(artifactData.getOrg(), artifactId);
 			artifactData.setStatus(StatusEnum.ARCHIVED);
 			sharedArtifactService.saveArtifact(artifact.get(), artifactData, wu);
 			archived = true;
@@ -672,6 +683,19 @@ public class ArtifactService {
 	@Transactional
 	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions,
 			SbomWriteAuthority authority, WhoUpdated wu) throws RelizaException {
+		return uploadArtifact(artifactDto, file, rebomOptions, authority, wu, null);
+	}
+
+	/**
+	 * {@link #uploadArtifact(ArtifactDto, Resource, RebomOptions, SbomWriteAuthority, WhoUpdated)} with
+	 * {@code replacingOn}, the release whose inventory row {@code artifactDto.getUuid()} names when the
+	 * upload is a new version of it (FDAW-5, C4a): an upload that replaces the row's lineage is refused
+	 * before anything is retained when a package version of that release pins the row. Null everywhere
+	 * else.
+	 */
+	@Transactional
+	public UUID uploadArtifact(ArtifactDto artifactDto, Resource file, RebomOptions rebomOptions,
+			SbomWriteAuthority authority, WhoUpdated wu, UUID replacingOn) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 		if (null == orgUuid) throw new RelizaException("Missing artifact org.");
 		// The caller's records are checked here and only here on this path: before the upload
@@ -702,7 +726,8 @@ public class ArtifactService {
 
 		if(artifactDto.getStoredIn().equals(StoredIn.REARM)){
 			if(isRebomStoreable(artifactDto)){
-				artifactUploadResponse = storeArtifactOnRebom(artifactDto, file, existingAd, rebomOptions, authority);
+				artifactUploadResponse = storeArtifactOnRebom(artifactDto, file, existingAd, rebomOptions, authority,
+						replacingOn);
 			} else {
 				artifactUploadResponse = storeArtifactOnRearmDirect(artifactDto, file, existingAd);
 			}
@@ -808,7 +833,7 @@ public class ArtifactService {
 	 */
 	@Transactional
 	private OASResponseDto storeArtifactOnRebom (ArtifactDto artifactDto, Resource file, ArtifactData existingAd, RebomOptions rebomOptions,
-			SbomWriteAuthority authority) throws RelizaException {
+			SbomWriteAuthority authority, UUID replacingOn) throws RelizaException {
 		UUID orgUuid = artifactDto.getOrg();
 
 		// 1. Read the upload ONCE into memory, then parse from those bytes.
@@ -842,6 +867,13 @@ public class ArtifactService {
 		// who may update; this also keeps the raw blob of a refused upload out of OCI storage. The
 		// answer is what the accepted upload is: an authorizing row, or a copy.
 		UploadKind uploadKind = refuseUnauthorizedUpdate(artifactDto, bomJson, existingAd, authority);
+
+		// 2c. FDAW-5 (C4a): an upload that replaces a pinned row of the release it names is refused
+		// before anything is retained or sent; the in-place new version of the same lineage is not.
+		if (null != replacingOn && BomFormat.CYCLONEDX == artifactDto.getBomFormat()
+				&& replacesLineage(existingAd, bomJson)) {
+			artifactRetentionLock.assertNotReplaceable(orgUuid, replacingOn, List.of(existingAd.getUuid()));
+		}
 
 		// 3. Retain the bytes BEFORE rebom sees them, which is the ordering that actually matters.
 		// Pushing after rebom has accepted would avoid an unreferenced blob when rebom refuses
@@ -1040,20 +1072,28 @@ public class ArtifactService {
 			Integer oldBomVersion = Integer.valueOf(
 				getArtifactBomLatestVersion(existingAd.getInternalBom().id(), existingAd.getOrg())
 			);
-			String oldBomSerial = existingAd.getInternalBom().id().toString();
-			
-			String newBomSerial = bomJson.get("serialNumber").textValue();
-			if(newBomSerial.startsWith("urn")){
-				newBomSerial = newBomSerial.replace("urn:uuid:","");
-			}
-			
-			if(oldBomSerial.equals(newBomSerial)){
+			if(!replacesLineage(existingAd, bomJson)){
 				if(newBomVersion <= oldBomVersion)
 					throw new RelizaException("Uploaded bom should have an incremented version");
 			} else {
 				artifactDto.setUuid(UUID.randomUUID());
 			}
 		}
+	}
+
+	/**
+	 * Whether a CycloneDX upload onto {@code existingAd} starts a new lineage, and so a new row: the
+	 * row has an internalBom and the document's serialNumber differs from it. The one rule
+	 * {@link #validateCycloneDxUpdate} and the retention check before the upload (FDAW-5, C4a) both read.
+	 */
+	static boolean replacesLineage(ArtifactData existingAd, JsonNode bomJson) {
+		if (null == existingAd || null == existingAd.getInternalBom()) return false;
+		String oldBomSerial = existingAd.getInternalBom().id().toString();
+		String newBomSerial = bomJson.get("serialNumber").textValue();
+		if (newBomSerial.startsWith("urn")) {
+			newBomSerial = newBomSerial.replace("urn:uuid:", "");
+		}
+		return !oldBomSerial.equals(newBomSerial);
 	}
 
 	/**

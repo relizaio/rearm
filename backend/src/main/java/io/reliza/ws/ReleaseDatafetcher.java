@@ -1948,9 +1948,14 @@ public class ReleaseDatafetcher {
 
 		if (multipartFile != null) {
 			artDto.setOrg(rd.getOrg());
+			// FDAW-5 (C4a): a new version of a row of this release's own inventory names the release, so
+			// an upload that would replace a row a package version of it pins is refused before it is
+			// retained; the deliverable and source code entry lists hold nothing a version pins.
+			UUID replacingOn = (null != inputArtifactUuid && !toDeliverable && !toSce) ? rd.getUuid() : null;
 			try {
 				artId = artifactService.uploadArtifact(artDto, multipartFile.getResource(),  new RebomOptions(cd.getName(), od.getName(), rd.getVersion(), belongsTo, hash, artDto.getStripBom(), purl)
-						.withSupplierName(supplierName), sbomWriteAuthorityService.forUser(oud.get(), rd.getOrg()), wu);
+						.withSupplierName(supplierName), sbomWriteAuthorityService.forUser(oud.get(), rd.getOrg()), wu,
+						replacingOn);
 			} catch (SbomUpdateNotPermittedException e) {
 				// Nothing of the release is written before the upload, so the record's own
 				// transaction does not wait on this one (SCORE-47 ADR-14).
