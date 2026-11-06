@@ -59,6 +59,12 @@ export interface SubscriptionRow {
      * degraded.
      */
     managedByTeam?: string | null
+    /**
+     * TPF-159: the server's document-round opt-in as stored (null = never set, which is every row
+     * written before the field; false = explicit opt-out; true = opted in). Optional because it is
+     * an ENRICHMENT field: absent on a backend that predates it, when the whole list is degraded.
+     */
+    includeBoardDocuments?: boolean | null
     // See ChannelRow.revision — same optimistic-locking gate.
     revision: number
 }
@@ -244,6 +250,40 @@ export const SEVERITY_BEARING_EVENT_TYPES = ['NEW_VULN_AFFECTS_RELEASES', 'VULNE
 /** True when a minimum-severity gate can ever match, given these event types. */
 export function severityAppliesTo (eventTypes: string[] | null | undefined): boolean {
     return (eventTypes || []).some(t => SEVERITY_BEARING_EVENT_TYPES.includes(t))
+}
+
+/**
+ * The event types whose payload embeds a release and therefore carries the component's kind: the
+ * ones on which the server leaves a board's document rounds out of a subscription unless it opted
+ * in (task TPF-159; the gate and the list are the backend's, task TPF-158). Every other type (vuln,
+ * VEX, instance, board) has no release on it and the opt-in means nothing there.
+ */
+export const BOARD_DOCUMENT_BEARING_EVENT_TYPES = ['RELEASE_CREATED', 'RELEASE_LIFECYCLE_CHANGED',
+    'RELEASE_BOM_DIFF', 'RELEASE_TEA_PUBLISHED', 'RELEASE_TEA_HIDDEN', 'RELEASE_SUBMISSION_CREATED',
+    'RELEASE_SUBMISSION_WITHDRAWN', 'APPROVAL_REQUESTED', 'APPROVAL_RESOLVED']
+
+/** True when the "Include board document releases" switch has anything to act on. */
+export function boardDocumentsApplyTo (eventTypes: string[] | null | undefined): boolean {
+    return (eventTypes || []).some(t => BOARD_DOCUMENT_BEARING_EVENT_TYPES.includes(t))
+}
+
+/** The list marker's one rule: the stored field is exactly true. null, false, absent and anything else read as off. */
+export function includesBoardDocuments (row: { includeBoardDocuments?: boolean | null }): boolean {
+    return row?.includeBoardDocuments === true
+}
+
+export const BOARD_DOCUMENTS_MARKER = 'includes board documents'
+
+/**
+ * The top-level input field for the switch, on EVERY save and in both filter modes: true when the
+ * held value is true, false otherwise, never omitted. The upsert replaces the whole subscription
+ * row, so an omitted key is not "leave it alone", it is a silent opt-out on the next edit of any
+ * unrelated field (the rateLimit comment in SubscriptionsOfOrg.vue names the same hazard). Always
+ * a boolean, so the payload says what the form holds and a reader never has to know that absent
+ * means off.
+ */
+export function includeBoardDocumentsInput (on: boolean): { includeBoardDocuments: boolean } {
+    return { includeBoardDocuments: on === true }
 }
 
 /**
@@ -504,8 +544,9 @@ const SUBSCRIPTION_CORE_FIELDS = 'uuid org resourceGroup name status eventTypes 
 // mirror, and a field CORE selects that the server lacks re-blanks the whole
 // surface the drift fallback exists to protect. Its absence degrades to
 // "no row is team-managed", which is exactly right on a backend that has no
-// teams to manage them.
-const SUBSCRIPTION_ENRICHMENT_FIELDS = 'filter routes dedupWindowMinutes rateLimit managedByTeam'
+// teams to manage them. includeBoardDocuments is Pro-ahead the same way (task
+// TPF-159) and sits here for the same reason.
+const SUBSCRIPTION_ENRICHMENT_FIELDS = 'filter routes dedupWindowMinutes rateLimit managedByTeam includeBoardDocuments'
 function buildSubscriptionsQuery (fields: string) {
     return gql`
         query notificationSubscriptions($orgUuid: ID!) {

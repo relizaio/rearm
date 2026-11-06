@@ -102,6 +102,40 @@
                                 </n-form-item>
                                 <div class="field-hint">To follow one board only, filter on <code>event.board == "&lt;board uuid&gt;"</code>; <code>event.kind</code> and <code>event.holdKind</code> narrow further.</div>
                             </template>
+                            <!-- TPF-159: the server leaves a board's document rounds (releases of
+                                 BOARD_DOCUMENT components) out of a subscription unless it opted in,
+                                 before any filter runs and in both filter modes. Shown only while a
+                                 selected event type carries a release at all; the stored value is
+                                 left alone while hidden (a true there is inert, nothing to clear). -->
+                            <template v-if="boardDocumentsApply">
+                                <div data-testid="sub-include-board-documents-block">
+                                    <n-form-item :show-feedback="false">
+                                        <template #label>
+                                            <span style="display: inline-flex; align-items: center; gap: 6px;">
+                                                Include board document releases
+                                                <n-tooltip trigger="hover" style="max-width: 360px;">
+                                                    <template #trigger>
+                                                        <n-icon size="16" class="clickable"><InfoCircle /></n-icon>
+                                                    </template>
+                                                    Off: releases of board document components (a board's document
+                                                    rounds) are left out of this subscription even though their event
+                                                    types are selected, before any filter runs. On: the document rounds
+                                                    of every board in this organization, with their commit messages and
+                                                    links, go to this subscription's channels, whose recipients need no
+                                                    access to the boards. Approval requests on a document round reach
+                                                    the chosen approvers' inboxes either way.
+                                                </n-tooltip>
+                                            </span>
+                                        </template>
+                                        <n-switch v-model:value="subForm.includeBoardDocuments" data-testid="sub-include-board-documents" />
+                                    </n-form-item>
+                                    <div class="field-hint" data-testid="sub-include-board-documents-hint">
+                                        Off for every subscription unless turned on here, including subscriptions that
+                                        existed before this switch. A filter never needs to exclude board document
+                                        releases; turn this on and narrow with <code>event.componentKind</code> instead.
+                                    </div>
+                                </div>
+                            </template>
                         </div>
 
                         <!-- ===== Section: when to deliver (filter) ===== -->
@@ -140,7 +174,17 @@
                                 A CEL boolean over the event. Examples:
                                 <code>event.severity == "CRITICAL"</code>,
                                 <code>event.kevListed == true</code>,
-                                <code>"CONVERGED" in event.statuses</code>.
+                                <code>"CONVERGED" in event.statuses</code>,
+                                <code>event.componentKind == "BOARD_DOCUMENT"</code>.
+                            </div>
+                            <div v-if="advancedFilter" class="field-hint" data-testid="cel-help-component-kind">
+                                On release and approval events <code>event.componentKind</code> is the component's kind
+                                as a string: <code>GENERIC</code>, <code>HELM</code> or <code>BOARD_DOCUMENT</code>, empty
+                                on events written before it existed; compare it with <code>==</code> or <code>!=</code>.
+                                Board document releases are left out before this filter runs unless "Include board
+                                document releases" is on, so a filter never needs to exclude them; use it to narrow
+                                after opting in. A filter naming it on a subscription that also selects a non-release
+                                event type is refused at save unless guarded with <code>has(event.componentKind)</code>.
                             </div>
 
                         <n-grid :cols="2" :x-gap="12">
@@ -390,6 +434,10 @@ import {
     agentBoardPresets,
     boardSubscriptionPrefill,
     AGENT_BOARD_EVENT_TYPES,
+    boardDocumentsApplyTo,
+    includesBoardDocuments,
+    includeBoardDocumentsInput,
+    BOARD_DOCUMENTS_MARKER,
     type InstanceSubscriptionPrefill,
     type SubscriptionTestOutcome
 } from '@/utils/notificationsCommon'
@@ -461,6 +509,9 @@ interface SubscriptionForm {
     dedupWindowMinutes: number | null
     rateLimitMaxPerWindow: number | null
     rateLimitWindowMinutes: number | null
+    // TPF-159: the document-round opt-in as held by the form: loaded from the stored field on
+    // edit, false on create, and sent on every save whether or not the switch is shown.
+    includeBoardDocuments: boolean
     // Carries the as-loaded filter object on edit so `presetConfigJson`
     // (and any other field the UI doesn't model yet) survives an
     // Edit -> Save round-trip. Empty on Create.
@@ -489,6 +540,7 @@ function freshSubscriptionForm (): SubscriptionForm {
         dedupWindowMinutes: null,
         rateLimitMaxPerWindow: null,
         rateLimitWindowMinutes: null,
+        includeBoardDocuments: false,
     }
 }
 
@@ -569,6 +621,8 @@ const boardPresetOptions = agentBoardPresets.map(p => ({ label: p.label, value: 
 const selectedBoardPreset = ref<string | null>(null)
 const hasBoardEventType = computed(() =>
     (subForm.value.eventTypes || []).some(t => AGENT_BOARD_EVENT_TYPES.includes(t)))
+// TPF-159: read by the template alone; the save path sends the held value whatever this says.
+const boardDocumentsApply = computed<boolean>(() => boardDocumentsApplyTo(subForm.value.eventTypes))
 function onBoardPresetPick (key: string | null): void {
     const preset = agentBoardPresets.find(p => p.key === key)
     if (preset) {
@@ -618,7 +672,7 @@ function managedRowExplanation (row: SubscriptionRow): string | null {
     if (!row.managedByTeam) return null
     return `${managedTeamName(row)} owns this subscription -- it exists because that team asked to`
         + ' hear about the components it owns. Change it on the team: Organization Settings ->'
-        + ' Teams.'
+        + ' Teams. It never includes board document releases.'
 }
 
 function managedTeamName (row: SubscriptionRow): string {
@@ -816,6 +870,7 @@ function openEditSubscription (row: SubscriptionRow): void {
     f.status = row.status
     f.eventTypes = [...(row.eventTypes || [])]
     f.dedupWindowMinutes = row.dedupWindowMinutes ?? null
+    f.includeBoardDocuments = row.includeBoardDocuments === true
     // Filter / routes / rateLimit ride as JSON-stringified blobs over the
     // wire. Parse them back into the structured form shape AND stash the
     // original blob on _raw / _rawFilter so unmodelled fields survive an
@@ -915,6 +970,8 @@ async function saveSubscription (): Promise<void> {
         // CE backend would reject. See buildNotificationRouteInput.
         routes: f.routes.map(r => buildNotificationRouteInput(r)),
         dedupWindowMinutes: f.dedupWindowMinutes,
+        // TPF-159: top-level, both filter modes, on every save as a boolean; the upsert replaces the row, so omitting it would clear an opt-in (3.4 of the design).
+        ...includeBoardDocumentsInput(f.includeBoardDocuments),
     }
     if (f.rateLimitMaxPerWindow && f.rateLimitWindowMinutes) {
         input.rateLimit = {
@@ -1201,7 +1258,19 @@ const subscriptionColumns = computed(() => [
     },
     {
         title: 'Event types', key: 'eventTypes',
-        render: (row: SubscriptionRow) => `${(row.eventTypes || []).length} type(s)`,
+        render: (row: SubscriptionRow) => {
+            const count = `${(row.eventTypes || []).length} type(s)`
+            if (!includesBoardDocuments(row)) return count
+            // TPF-159: the stored opt-in is the only source; a row that says true is opted in
+            // whatever its event types or filter say (a true left behind on a vuln-only
+            // subscription is inert at the server and still the truth of the row).
+            return h('div', null, [
+                h('div', null, count),
+                h(NTag, { size: 'small', type: 'info', bordered: false, style: 'margin-top: 4px;',
+                    'data-testid': 'sub-board-documents-marker' },
+                { default: () => BOARD_DOCUMENTS_MARKER }),
+            ])
+        },
     },
     {
         title: 'Routes', key: 'routes',
