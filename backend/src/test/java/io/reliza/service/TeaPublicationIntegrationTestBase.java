@@ -176,6 +176,7 @@ abstract class TeaPublicationIntegrationTestBase {
 	@Autowired SbomProfileService sbomProfileService;
 	@Autowired TeaProfileService teaProfileService;
 	@Autowired TeaPublicationService teaPublicationService;
+	@Autowired ReleaseSbomService releaseSbomService;
 	@Autowired TeaPublicationRepository publicationRepository;
 	@Autowired TeaPublishedCollectionRepository collectionRepository;
 	@Autowired ArtifactRepository artifactRepository;
@@ -194,6 +195,8 @@ abstract class TeaPublicationIntegrationTestBase {
 	final Map<UUID, List<String>> mergedPurls = new ConcurrentHashMap<>();
 	final Map<UUID, UUID> mergeOfRelease = new ConcurrentHashMap<>();
 	final Map<UUID, JsonNode> uploaded = new ConcurrentHashMap<>();
+	/** FDAW-7: every uploaded document by "serial:version", what rebom's per-version store answers. */
+	final Map<String, JsonNode> uploadedVersions = new ConcurrentHashMap<>();
 	final List<List<UUID>> mergeInputs = Collections.synchronizedList(new ArrayList<>());
 	/**
 	 * Task TEA-28, design 4.12: the purls a merge answers when its options ask for top-level dependencies
@@ -291,10 +294,15 @@ abstract class TeaPublicationIntegrationTestBase {
 			}
 			return doc;
 		});
+		when(rebomService.findBomByVersion(any(), any(), any())).thenAnswer(inv -> {
+			JsonNode doc = uploadedVersions.get(inv.getArgument(0) + ":" + inv.getArgument(2));
+			return null == doc ? null : doc.deepCopy();
+		});
 		when(rebomService.uploadSbom(any(), any(), any(), any(), any())).thenAnswer(inv -> {
 			JsonNode bom = inv.getArgument(0);
 			String serial = bom.get("serialNumber").asText();
 			uploaded.put(UUID.fromString(serial.replace("urn:uuid:", "")), bom.deepCopy());
+			uploadedVersions.put(serial.replace("urn:uuid:", "") + ":" + bom.path("version").asInt(), bom.deepCopy());
 			String digest = Utils.bytesToHexSha256(Utils.OM.writeValueAsBytes(bom));
 			RebomOptions meta = new RebomOptions(null, null, null, ArtifactBelongsTo.SYNTHETIC, null, false, false,
 					null, null, null, null, null, null, null,

@@ -4,6 +4,7 @@
 package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
@@ -24,7 +25,6 @@ import java.util.concurrent.TimeUnit;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.EnumSource;
-import org.mockito.ArgumentCaptor;
 
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.exceptions.TeaPublishRefusedException;
@@ -208,11 +208,13 @@ public class TeaPublicationConcurrentChangeIntegrationTest extends TeaPublicatio
 
 	// ---------------------------------------------------------------- 93
 
-	/** The aggregate the failed act archived: the one artifact it handed to archiveArtifact. */
-	private UUID archivedAggregate() {
-		ArgumentCaptor<UUID> archived = ArgumentCaptor.forClass(UUID.class);
-		verify(artifactService, times(1)).archiveArtifact(archived.capture(), any());
-		return archived.getValue();
+	/**
+	 * The aggregate the failed act kept (FDAW-7 3.3 step 5): the release SBOM version committed before the
+	 * refusal, never handed to archiveArtifact; the next act reuses it.
+	 */
+	private UUID keptAggregate(UUID release) {
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		return releaseSbomService.latestPin(release, "default").orElseThrow().artifact();
 	}
 
 	/** No product path archives a release; the status is written through the release funnel, as an import would. */
@@ -267,8 +269,8 @@ public class TeaPublicationConcurrentChangeIntegrationTest extends TeaPublicatio
 				() -> componentService.archiveComponent(w.component(), WU)));
 
 		assertRefusedWithNothingCommitted(w, e, TeaPublishRefusal.COMPONENT_ARCHIVED);
-		ArtifactData orphan = artifactService.getArtifactData(archivedAggregate()).orElseThrow();
-		assertEquals(StatusEnum.ARCHIVED, orphan.getStatus());
+		ArtifactData kept = artifactService.getArtifactData(keptAggregate(w.release())).orElseThrow();
+		assertNotEquals(StatusEnum.ARCHIVED, kept.getStatus());
 		ComponentData cd = getComponentService.getComponentData(w.component()).orElseThrow();
 		assertEquals(StatusEnum.ARCHIVED, cd.getStatus());
 		assertNotNull(cd.getTeaUuid(), "the id minted before the archive is kept");
@@ -284,8 +286,8 @@ public class TeaPublicationConcurrentChangeIntegrationTest extends TeaPublicatio
 
 		assertRefusedWithNothingCommitted(w, e, TeaPublishRefusal.RELEASE_ARCHIVED);
 		assertEquals(ReleaseStatus.ARCHIVED, stored(w.release()).getStatus());
-		ArtifactData orphan = artifactService.getArtifactData(archivedAggregate()).orElseThrow();
-		assertEquals(StatusEnum.ARCHIVED, orphan.getStatus());
+		ArtifactData kept = artifactService.getArtifactData(keptAggregate(w.release())).orElseThrow();
+		assertNotEquals(StatusEnum.ARCHIVED, kept.getStatus());
 	}
 
 	@Test

@@ -520,6 +520,43 @@ public class ArtifactService {
 	}
 
 	/**
+	 * Replaces, on the stored row, the tag of every key {@code tags} names and keeps every other stored
+	 * tag, system or user (FDAW-7 3.3a): the release SBOM identity stamps TEA's identity tags on a row it
+	 * reuses without an upload. Only system tags ({@code Removable.NO}) are merged here. The version is
+	 * unchanged, so no {@code previousVersions} snapshot is cut; the save writes one audit row. No upload,
+	 * no rebom call. Package-private: only {@code ReleaseSbomService} calls it.
+	 */
+	@Transactional
+	Artifact mergeSystemTags(UUID artifactUuid, List<TagRecord> tags, WhoUpdated wu) throws RelizaException {
+		if (null != tags) {
+			for (TagRecord t : tags) {
+				if (null == t || Removable.NO != t.removable()) {
+					throw new IllegalArgumentException("mergeSystemTags of artifact " + artifactUuid + ": tag "
+							+ (null == t ? null : t.key()) + " is Removable.YES; only system tags are merged here");
+				}
+			}
+		}
+		Optional<Artifact> oa = sharedArtifactService.getArtifact(artifactUuid);
+		if (oa.isEmpty()) {
+			throw new RelizaException("Artifact not found: " + artifactUuid);
+		}
+		Artifact a = oa.get();
+		ArtifactData ad = ArtifactData.dataFromRecord(a);
+		if (null == tags || tags.isEmpty()) return a;
+		Set<String> keys = new HashSet<>();
+		tags.forEach(t -> keys.add(t.key()));
+		List<TagRecord> merged = new ArrayList<>();
+		if (null != ad.getTags()) {
+			for (TagRecord t : ad.getTags()) {
+				if (null != t && !keys.contains(t.key())) merged.add(t);
+			}
+		}
+		merged.addAll(tags);
+		ad.setTags(merged);
+		return sharedArtifactService.saveArtifact(a, ad, wu);
+	}
+
+	/**
 	 * Validates that any tags with key COVERAGE_TYPE have valid ArtifactCoverageType values.
 	 * @param tags list of tags to validate
 	 * @throws RelizaException if any COVERAGE_TYPE tag has an invalid value

@@ -80,6 +80,8 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseSbomRef;
+import io.reliza.model.ReleaseSbomWriter;
 import io.reliza.model.TeaProfileData.TeaProductComponents;
 import io.reliza.model.TeaProfileData.TeaProfileScope;
 import io.reliza.model.TeaProfileData.TeaPublishing;
@@ -88,6 +90,7 @@ import io.reliza.model.TeaProfileData.TeaTei;
 import io.reliza.model.TeaProfileData.TeaVisibility;
 import io.reliza.model.TeaPublication;
 import io.reliza.model.TeaPublicationData;
+import io.reliza.model.TeaPublicationData.TeaAggregateArtifact;
 import io.reliza.model.TeaPublishedCollection;
 import io.reliza.model.User;
 import io.reliza.model.UserData;
@@ -123,6 +126,7 @@ import io.reliza.ws.App;
 import io.reliza.ws.ProgrammaticAuthenticationFilter;
 import io.reliza.ws.ProgrammaticGraphQlConfig;
 import io.reliza.ws.oss.TestInitializer;
+import jakarta.persistence.EntityManager;
 import tools.jackson.databind.JsonNode;
 import tools.jackson.databind.node.ArrayNode;
 import tools.jackson.databind.node.ObjectNode;
@@ -170,6 +174,65 @@ public class TeaPublicationIntegrationTest extends TeaPublicationIntegrationTest
 		assertEquals(aggregate, artifactRepository.findByTeaUuid(ad.getTeaUuid().toString()).orElseThrow().getUuid());
 		assertEquals(1, events(w.release(), ReleaseUpdateScope.SYNTHETIC_ARTIFACT).size());
 		assertEquals(1, events(w.release(), ReleaseUpdateScope.TEA_PUBLICATION).size());
+
+		// FDAW-7 row 5: the release SBOM identity of the published name, on the same row
+		ReleaseSbomRef pin = releaseSbomService.latestPin(w.release(), "default").orElseThrow();
+		assertEquals(aggregate, pin.artifact());
+		assertEquals(1, pin.version());
+		assertEquals(ad.getInternalBom().id(), pin.serial(), "the aggregate's serialNumber is the identity's");
+		TeaAggregateArtifact entry = TeaPublicationData.dataFromRecord(head).getAggregateArtifacts().get(0);
+		assertEquals(pin.serial(), entry.serial());
+		assertEquals(1, entry.version());
+		assertEquals(head.getUuid().toString(), TeaPublicationService.systemTagValue(ad,
+				CommonVariables.TEA_PUBLICATION_TAG_KEY).orElseThrow(), "the publication uuid is the head's");
+		assertEquals("true", TeaPublicationService.systemTagValue(ad, CommonVariables.TEA_AGGREGATE_TAG_KEY)
+				.orElseThrow());
+		assertEquals("default", TeaPublicationService.systemTagValue(ad, CommonVariables.TEA_PROFILE_NAME_TAG_KEY)
+				.orElseThrow());
+		assertEquals(releaseSbomService.versionOf(pin.serial(), 1).orElseThrow().getContentDigest(),
+				TeaPublicationService.systemTagValue(ad, CommonVariables.TEA_CONTENT_DIGEST_TAG_KEY).orElseThrow());
+		assertEquals(ReleaseSbomWriter.Kind.TEA, releaseSbomService.versionOf(pin.serial(), 1).orElseThrow().getWriter());
+	}
+
+	private long auditsOf(UUID entity) {
+		EntityManager em = emf.createEntityManager();
+		try {
+			return ((Number) em.createNativeQuery("SELECT count(*) FROM rearm.audit WHERE entity_uuid = ?1")
+					.setParameter(1, entity).getSingleResult()).longValue();
+		} finally {
+			em.close();
+		}
+	}
+
+	/**
+	 * FDAW-7 row 5 (functional F-3 item 3): a head stored before the identity (its aggregateArtifacts entries
+	 * without serial and version) re-publishes UNCHANGED with exactly one head save that records the identity,
+	 * and no collection version; the next unchanged re-publish saves nothing.
+	 */
+	@Test
+	void aHeadStoredBeforeTheIdentityRecordsItOnceOnItsFirstUnchangedRepublish() throws Exception {
+		saveOrgProfile(TeaRawArtifacts.NONE, TeaProductComponents.PUBLISH_WITH_PRODUCT);
+		World w = componentRelease("pkg:generic/pump@1.0.0");
+		publish(w.release(), TeaPublishMode.PUBLISH);
+		TeaPublication stored = publicationRepository.findByRelease(w.release()).orElseThrow();
+		TeaPublicationData legacy = TeaPublicationData.dataFromRecord(stored);
+		legacy.setAggregateArtifacts(legacy.getAggregateArtifacts().stream()
+				.map(a -> new TeaAggregateArtifact(a.profileName(), a.artifact())).toList());
+		stored.setRecordData(Utils.dataToRecord(legacy));
+		publicationRepository.save(stored);
+		int revision = publicationRepository.findByRelease(w.release()).orElseThrow().getRevision();
+		long audits = auditsOf(stored.getUuid());
+
+		assertEquals(TeaPublishOutcome.UNCHANGED, publish(w.release(), TeaPublishMode.REPUBLISH).outcome());
+		TeaPublication after = publicationRepository.findByRelease(w.release()).orElseThrow();
+		assertEquals(revision + 1, after.getRevision(), "one head save");
+		assertEquals(audits + 1, auditsOf(stored.getUuid()));
+		assertEquals(1, collectionRepository.listByPublication(stored.getUuid()).size(), "no collection version");
+		assertEquals(1, TeaPublicationData.dataFromRecord(after).getAggregateArtifacts().get(0).version());
+
+		assertEquals(TeaPublishOutcome.UNCHANGED, publish(w.release(), TeaPublishMode.REPUBLISH).outcome());
+		assertEquals(revision + 1, publicationRepository.findByRelease(w.release()).orElseThrow().getRevision(),
+				"the next unchanged re-publish saves nothing");
 	}
 
 	// ---------------------------------------------------------------- 40
@@ -198,6 +261,16 @@ public class TeaPublicationIntegrationTest extends TeaPublicationIntegrationTest
 		assertEquals("1", v1.getVersion());
 		assertTrue(v1.getDigestRecords().stream().anyMatch(d -> DigestScope.AS_UPLOADED == d.scope()));
 		assertNotNull(ad.getTeaUuid(), "an in-place re-upload keeps the TEA id");
+
+		// FDAW-7 row 5: the unchanged re-publish added no version row, the change added version 2 on the same row
+		ReleaseSbomRef pin = releaseSbomService.latestPin(w.release(), "default").orElseThrow();
+		assertEquals(2, pin.version());
+		assertEquals(aggregate, pin.artifact());
+		assertEquals(2, r.collection().getEntries().stream().filter(e -> aggregate.equals(e.artifact())).findFirst()
+				.orElseThrow().revision(), "TEA's entry revision is the identity's version");
+		assertEquals(pin.version(), r.publication().getAggregateArtifacts().get(0).version());
+		assertTrue(releaseSbomService.pinOf(pin.serial(), 1).isPresent(), "version 1 is kept");
+		assertTrue(releaseSbomService.pinOf(pin.serial(), 3).isEmpty(), "no third version");
 	}
 
 	// ---------------------------------------------------------------- 41

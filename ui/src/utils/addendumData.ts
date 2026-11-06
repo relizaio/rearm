@@ -41,7 +41,12 @@ const ADDENDUM_COMPONENT_SELECTION = `
                 attestedLevelOfSupportText
                 endOfSupportDate
                 justification
-                assessedAt`
+                assessedAt
+                assertedBy
+                assertedByName
+                assessmentSource
+                supportBulkAct
+                endOfSupportUnknown { code bulkAct assertedBy assertedByName }`
 
 export const ADDENDUM_PAGE_QUERY = gql`
     query getAddendumComponentsPage($releaseUuid: ID!, $limit: Int, $after: ID) {
@@ -163,6 +168,26 @@ export interface AddendumComponent {
     endOfSupportDate: string | null
     justification: string | null
     assessedAt: string | null
+    /**
+     * Who wrote the LEVEL assessment (MANUAL, SUPPLIER, ENRICHED), lowercase-ready enum name.
+     * The level's source, not the end-of-support date's: an unknown-only sweep keeps the
+     * level's claim, so the two can differ (FDAW-14 3.7).
+     */
+    source: string | null
+    /** True when a bulk act wrote the level. */
+    bulk: boolean
+    /** The end-of-support justified unknown's code, when no date can be given. */
+    endOfSupportUnknownCode: string | null
+    /** True when a bulk act wrote the unknown. */
+    endOfSupportUnknownBulk: boolean
+    /** The level asserter's display name; null when unresolvable. */
+    assertedByName: string | null
+    /**
+     * The unknown's asserter when that is ANOTHER user than the level's, compared on the uuids
+     * (two users sharing a display name still print both); '' when that user cannot be
+     * resolved, null when absent or the same user.
+     */
+    justifiedByName: string | null
 }
 
 /**
@@ -326,6 +351,7 @@ function blankToNull (v: unknown): string | null {
 /** Map one page row to the flat, render-free shape the documents consume. */
 export function toAddendumComponent (row: any): AddendumComponent {
     const c = row?.component || {}
+    const u = c.endOfSupportUnknown || null
     return {
         sbomComponentUuid: row?.sbomComponentUuid || null,
         name: blankToNull(c.name),
@@ -337,8 +363,20 @@ export function toAddendumComponent (row: any): AddendumComponent {
         levelOfSupportEnum: blankToNull(c.attestedLevelOfSupport),
         endOfSupportDate: blankToNull(c.endOfSupportDate),
         justification: blankToNull(c.justification),
-        assessedAt: blankToNull(c.assessedAt)
+        assessedAt: blankToNull(c.assessedAt),
+        source: blankToNull(c.assessmentSource),
+        bulk: !!c.supportBulkAct,
+        endOfSupportUnknownCode: blankToNull(u?.code),
+        endOfSupportUnknownBulk: !!u?.bulkAct,
+        assertedByName: blankToNull(c.assertedByName),
+        justifiedByName: justifiedByName(c.assertedBy, u)
     }
+}
+
+/** The 3.7 equality rule, on the uuids: null when absent or the same user, '' when unresolvable. */
+function justifiedByName (levelAsserter: string | null | undefined, u: any): string | null {
+    if (!u || !u.assertedBy || u.assertedBy === levelAsserter) return null
+    return blankToNull(u.assertedByName) ?? ''
 }
 
 /**

@@ -18,6 +18,7 @@ import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.spy;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -426,7 +427,9 @@ class TeaPublicationCommitTest extends TeaPublicationServiceTestBase {
 		UUID uploaded = artifacts.values().stream()
 				.filter(a -> "pump-1.2.3-default-tea-aggregate.cdx.json".equals(a.getDisplayIdentifier())).findFirst()
 				.orElseThrow().getUuid();
-		verify(artifactService, times(1)).archiveArtifact(uploaded, WU);
+		// FDAW-7 3.3 step 5: the upload is a committed release SBOM version, never archived
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(uploaded, releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow().artifact());
 	}
 
 	@Test
@@ -454,7 +457,7 @@ class TeaPublicationCommitTest extends TeaPublicationServiceTestBase {
 	// ---------------------------------------------------------------- 84
 
 	@Test
-	void aFirstPublishWhoseCommitFailsArchivesTheUnboundAggregate() throws Exception {
+	void aFirstPublishWhoseCommitFailsKeepsThePinnedAggregateForTheRetry() throws Exception {
 		when(collections.save(any(TeaPublishedCollection.class))).thenThrow(new IllegalStateException("db down"));
 
 		TeaPublishRefusedException e = refused(TeaPublishMode.PUBLISH);
@@ -462,18 +465,25 @@ class TeaPublicationCommitTest extends TeaPublicationServiceTestBase {
 		assertEquals(TeaPublishRefusal.GENERATION_FAILED, e.reason());
 		assertEquals(1, writtenDtos.size());
 		UUID uploaded = artifacts.keySet().stream().filter(id -> !id.equals(inventoryBom)).findFirst().orElseThrow();
-		verify(artifactService, times(1)).archiveArtifact(uploaded, WU);
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		// the retry reuses the pinned version: no second upload, the same row bound
+		reset(collections);
+		wireRepositories();
+		publish(TeaPublishMode.PUBLISH);
+		assertEquals(1, writtenDtos.size(), "the retry uploads nothing");
+		assertEquals(List.of(uploaded), ReleaseData.dataFromRecord(releaseRows.get(release.getUuid())).getSyntheticArtifacts());
 	}
 
 	@Test
-	void aFirstPublishWhoseRideAlongStepFailsArchivesTheUnboundAggregate() throws Exception {
+	void aFirstPublishWhoseRideAlongStepFailsKeepsThePinnedAggregate() throws Exception {
 		profile.setRawArtifacts(TeaRawArtifacts.ALL);
 		doThrow(new IllegalStateException("db down")).when(artifactService).getArtifactDataList(any());
 
 		assertEquals(TeaPublishRefusal.GENERATION_FAILED, refused(TeaPublishMode.PUBLISH).reason());
 
 		UUID uploaded = artifacts.keySet().stream().filter(id -> !id.equals(inventoryBom)).findFirst().orElseThrow();
-		verify(artifactService, times(1)).archiveArtifact(uploaded, WU);
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(uploaded, releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow().artifact());
 		verify(publications, never()).save(any());
 	}
 

@@ -727,6 +727,23 @@ type Query {
 	# disagree. An empty release returns 0/0 rather than falling back to the org number.
 	sbomComponentSupportCoverage(orgUuid: ID!, releaseUuid: ID): SbomComponentSupportCoverage
 
+	# Count preview of bulkSetSbomComponentSupportBySelector: the mutation's own steps 1 to 5 (bounds,
+	# organization, ORGANIZATION WRITE, release scope, the count with the cap), nothing written. Gated
+	# exactly as the write, so the preview answers only those who may write.
+	supportBulkSelectorCount(orgUuid: ID!, selector: SupportBulkSelectorInput!, releaseUuid: ID): SupportBulkSelectorCount!
+	# The newest bulk support act receipts of an organization, newest first; ORGANIZATION READ.
+	# limit is clamped silently to 1..200.
+	supportBulkActs(orgUuid: ID!, limit: Int = 50): [SupportBulkAct!]!
+	# The release SBOM identity heads of a release (one per publication profile); RELEASE READ.
+	releaseSboms(releaseUuid: ID!): [ReleaseSbomHead!]!
+	# The components of a head's latest version that carry no hash, in document order, each with
+	# its hash justification when one is recorded; RELEASE READ on the head's release.
+	releaseSbomHashlessComponents(releaseSbom: ID!): [ReleaseSbomHashlessComponent!]!
+	# The hash justifications recorded on a head; RELEASE READ on the head's release.
+	releaseSbomJustifications(releaseSbom: ID!): ReleaseSbomJustifications
+	# How many hashless keys of a head's latest version a selector matches; nothing written.
+	releaseSbomHashlessSelectorCount(releaseSbom: ID!, selector: SupportBulkSelectorInput!): Int!
+
 	"""
 	THE FLEET QUESTION (D7): which units in the field outlive their software.
 
@@ -1588,8 +1605,15 @@ type Mutation {
 	#
 	# assessedAt dates the level-of-support claim and is PRESERVED across writes that do not
 	# supply it or re-assert a level, so editing a date cannot silently re-date an older
-	# attestation.
-	setSbomComponentSupport(sbomComponentUuid: ID!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String): SbomComponent
+	# attestation. On an unknown-only request (endOfSupportUnknown or clearEndOfSupportUnknown and
+	# nothing else) assessedAt dates the justified unknown and a stored level's assessedAt is
+	# preserved, as are its assessmentSource and assertedBy.
+	#
+	# endOfSupportUnknown records why no end-of-support date can be given (a JustifiedUnknownReason
+	# accepted for END_OF_SUPPORT; OTHER needs a text). A date and an unknown are exclusive: give one,
+	# or clear the stored date with clearMilestones in the same call. A new date removes a stored
+	# unknown. clearEndOfSupportUnknown removes it and needs a reason.
+	setSbomComponentSupport(sbomComponentUuid: ID!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, state: SupportState, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, clearMilestones: [SupportMilestoneType!], reason: String, endOfSupportUnknown: JustifiedUnknownInput, clearEndOfSupportUnknown: Boolean): SbomComponent
 
 	# Attest MANY components in one pass, reporting PER COMPONENT rather than as a count.
 	#
@@ -1637,7 +1661,30 @@ type Mutation {
 	# At most 1000 uuids per call (SbomComponentService.BULK_SUPPORT_MAX_IDS). A larger call
 	# is refused outright rather than truncated, because a silently truncated sweep reports
 	# success over components it never wrote. Split and reuse the batchId.
-	bulkSetSbomComponentSupport(sbomComponentUuids: [ID!]!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, reason: String, batchId: ID): SbomComponentSupportBulkResponse!
+	#
+	# endOfSupportUnknown alone makes this an END-OF-SUPPORT sweep (SupportBulkActKind
+	# END_OF_SUPPORT_UNKNOWN): an attested component is not skipped; one already holding an
+	# end-of-support date or justified unknown is (SKIPPED_HAS_END_OF_SUPPORT), and a stored level
+	# keeps its assessedAt, source and asserter. Every call is recorded once as a SupportBulkAct whose
+	# server-minted uuid the response returns as bulkAct.
+	bulkSetSbomComponentSupport(sbomComponentUuids: [ID!]!, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, reason: String, batchId: ID, endOfSupportUnknown: JustifiedUnknownInput): SbomComponentSupportBulkResponse!
+
+	# The same sweep as bulkSetSbomComponentSupport over the components a selector names: a purl
+	# type, or a type and namespace, matched on the server by exact equality. releaseUuid scopes it to
+	# one release's components; without it the scope is the organization. Gated ORGANIZATION WRITE
+	# before anything is counted; at most 1000 components per call, refused (never truncated) over that.
+	# A level, a milestone date or a justified unknown is required.
+	bulkSetSbomComponentSupportBySelector(orgUuid: ID!, selector: SupportBulkSelectorInput!, releaseUuid: ID, levelOfSupport: LevelOfSupport, justification: String, assessedAt: String, endOfGuaranteedSupportDate: String, endOfSupportDate: String, endOfLifeDate: String, supportNotes: String, supportParty: SupportParty, endOfSupportUnknown: JustifiedUnknownInput, reason: String): SbomComponentSupportBulkResponse!
+
+	# Hash justifications on one release SBOM identity head (release_sboms.uuid): why a component of
+	# its latest version carries no hash. Every key must be hashless in that version. COMPONENT WRITE
+	# on the head's release's component; an absent, foreign or unauthorized head reads
+	# release SBOM not found. At most 1000 keys. The set replaces a justified key's code and text.
+	setReleaseSbomHashJustification(releaseSbom: ID!, keys: [String!]!, code: JustifiedUnknownReason!, text: String, reason: String): ReleaseSbomJustifications!
+	clearReleaseSbomHashJustification(releaseSbom: ID!, keys: [String!]!, reason: String!): ReleaseSbomJustifications!
+	# A selector sweep over the head's hashless keys; justified keys are left as they were
+	# (skippedKeys) and the sweep is recorded once as a HASH_JUSTIFICATION SupportBulkAct.
+	bulkSetReleaseSbomHashJustificationBySelector(releaseSbom: ID!, selector: SupportBulkSelectorInput!, code: JustifiedUnknownReason!, text: String, reason: String): ReleaseSbomJustifications!
 
 	# --- Agent task boards (hub-and-spoke; see ai-plans/agentic/task-boards.md) ---
 	# Operator (JWT org-admin) board lifecycle. Boards are governance:
@@ -4529,6 +4576,15 @@ type SbomComponent {
 	assessedAt: String
 	# The user who made the attestation.
 	assertedBy: ID
+	# Their display name, resolved once per distinct user; null when unresolvable.
+	assertedByName: String
+	# Who wrote the level assessment (MANUAL, SUPPLIER, ENRICHED). supportSource below is the
+	# END_OF_SUPPORT milestone's own provenance, a different fact.
+	assessmentSource: SupportSource
+	# The bulk act (SupportBulkAct.uuid) that wrote the level, when a sweep did.
+	supportBulkAct: ID
+	# Why no end-of-support date can be given, when that is recorded instead of a date.
+	endOfSupportUnknown: JustifiedUnknown
 	# The manufacturer's stated basis for the claim -- what they checked and what they found.
 	# The part a reviewer actually reads when the dates are absent or contested.
 	justification: String
@@ -4577,6 +4633,10 @@ type SbomComponentSupportBulkResponse {
 	# sweep from 800 separate judgements -- assessmentSource is MANUAL either way.
 	# Always present, including on an empty call.
 	batchId: ID!
+	# The server-minted SupportBulkAct uuid of this call, which every row it wrote names.
+	bulkAct: ID!
+	# How many components the call matched, before the skip rules.
+	matchedCount: Int!
 }
 
 # One component's outcome from a bulk attestation.
@@ -5007,6 +5067,122 @@ enum SupportAttestationFilter {
 	UNATTESTED
 }
 
+# Why a component's end-of-support date or hash cannot be given (FDA premarket guidance V.A.4(b)).
+# The names are published taxonomy: ReARM writes them into exported SBOMs as
+# reliza:support:justifiedUnknown:endOfSupport and reliza:support:justifiedUnknown:hash.
+enum JustifiedUnknownReason {
+	NO_COMMITTED_END_OF_SUPPORT
+	COMMUNITY_PROJECT
+	SUPPLIER_PUBLISHES_NO_DATE
+	DISTRIBUTION_PUBLISHES_NO_HASH
+	VENDORED_SOURCE_NO_HASH
+	OTHER
+}
+
+# Which missing fact a justified unknown stands for: END_OF_SUPPORT accepts NO_COMMITTED_END_OF_SUPPORT,
+# COMMUNITY_PROJECT, SUPPLIER_PUBLISHES_NO_DATE, OTHER; HASH accepts DISTRIBUTION_PUBLISHES_NO_HASH,
+# VENDORED_SOURCE_NO_HASH, OTHER.
+enum JustifiedUnknownField {
+	END_OF_SUPPORT
+	HASH
+}
+
+# What a bulk support act wrote, and so which skip rule its sweep ran under.
+enum SupportBulkActKind {
+	# A level or a milestone date; an attested component is skipped whole.
+	LEVEL_OF_SUPPORT
+	# The end-of-support justified unknown alone; a component holding an end of support is skipped.
+	END_OF_SUPPORT_UNKNOWN
+	# Hash justifications on one release SBOM head; a justified key is skipped by a selector sweep.
+	HASH_JUSTIFICATION
+}
+
+enum SupportBulkSelectorForm {
+	TYPE
+	NAMESPACE
+}
+
+input JustifiedUnknownInput {
+	code: JustifiedUnknownReason!
+	# Required for OTHER; at most 512 characters. Kept in ReARM, never written into the SBOM.
+	text: String
+}
+
+# A bulk selector: a purl type ([a-z0-9.+-]{1,64}), and for NAMESPACE a purl namespace (at most 256
+# characters), each matched by exact equality.
+input SupportBulkSelectorInput {
+	form: SupportBulkSelectorForm!
+	type: String!
+	namespace: String
+}
+
+type JustifiedUnknown {
+	field: JustifiedUnknownField!
+	code: JustifiedUnknownReason!
+	text: String
+	# The bulk act that wrote it, when a sweep did.
+	bulkAct: ID
+	assertedBy: ID
+	assertedByName: String
+	assertedAt: String
+}
+
+# A release SBOM identity head: one per (release, publication profile), its serial stable across versions.
+type ReleaseSbomHead {
+	uuid: ID!
+	profileName: String!
+	latestVersion: Int!
+	# Components of the latest version without a hash.
+	hashlessCount: Int!
+}
+
+type ReleaseSbomHashlessComponent {
+	key: String!
+	name: String
+	version: String
+	justification: JustifiedUnknown
+}
+
+type ReleaseSbomJustifications {
+	releaseSbom: ID!
+	# Moves on every write; 0 before the first.
+	revision: Int!
+	hashes: [ReleaseSbomHashJustification!]!
+	# The keys a selector sweep left as they were because they were already justified; empty otherwise.
+	skippedKeys: [String!]!
+}
+
+type ReleaseSbomHashJustification {
+	key: String!
+	code: JustifiedUnknownReason!
+	text: String
+	bulkAct: ID
+	assertedBy: ID
+	assertedByName: String
+	assertedAt: String
+}
+
+# The insert-only receipt of one bulk support call.
+type SupportBulkAct {
+	uuid: ID!
+	kind: SupportBulkActKind!
+	# The selector as JSON: form (EXPLICIT, TYPE or NAMESPACE), type, canonical namespace, releaseUuid.
+	selector: String!
+	matchedCount: Int!
+	appliedCount: Int!
+	# Lower-case hex sha256 of the matched identifiers sorted and joined by LF.
+	listHash: String!
+	assertedBy: ID
+	assertedDate: String
+	release: ID
+}
+
+type SupportBulkSelectorCount {
+	matched: Int!
+	# More than 1000 matched: the write would be refused.
+	overCap: Boolean!
+}
+
 # What a bulk attestation did to one component.
 enum SupportBulkOutcome {
 	# The attestation was written.
@@ -5016,6 +5192,9 @@ enum SupportBulkOutcome {
 	# Skipped: an attestation already exists. A bulk pass never overwrites one -- that is what
 	# makes a re-run idempotent and what protects an earlier per-component judgement.
 	SKIPPED_ATTESTED
+	# Skipped by an end-of-support sweep: the component already holds an end-of-support date or
+	# justified unknown
+	SKIPPED_HAS_END_OF_SUPPORT
 	# This component's write was rejected; `message` says why. The batch continued.
 	FAILED
 }

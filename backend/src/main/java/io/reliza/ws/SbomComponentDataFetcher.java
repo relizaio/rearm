@@ -16,6 +16,7 @@ import java.util.ArrayList;
 import java.util.Comparator;
 import java.util.Deque;
 import java.util.Arrays;
+import java.util.Collection;
 import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -44,8 +45,10 @@ import com.netflix.graphql.dgs.DgsDataFetchingEnvironment;
 import com.netflix.graphql.dgs.InputArgument;
 
 import graphql.execution.DataFetcherResult;
+import lombok.extern.slf4j.Slf4j;
 
 import io.reliza.common.CommonVariables.CallType;
+import io.reliza.common.Utils;
 import io.reliza.dto.ComponentFixTargets;
 import io.reliza.dto.FindingSbomMatch;
 import io.reliza.dto.LatestFixVerdict;
@@ -55,6 +58,10 @@ import io.reliza.model.ArtifactSbomComponent;
 import io.reliza.model.ComponentData;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.DeviceSupportRisk;
+import io.reliza.model.JustifiedUnknown;
+import io.reliza.model.JustifiedUnknownField;
+import io.reliza.model.JustifiedUnknownInput;
+import io.reliza.model.JustifiedUnknownReason;
 import io.reliza.model.LevelOfSupport;
 import io.reliza.model.ReleaseBranchScope;
 import io.reliza.model.ReleaseData;
@@ -64,13 +71,18 @@ import io.reliza.model.SbomComponent;
 import io.reliza.model.SbomComponentPage;
 import io.reliza.model.SupportAttestationFilter;
 import io.reliza.model.SupportAttestationRequest;
+import io.reliza.model.SupportBulkAct;
 import io.reliza.model.SupportBulkResult;
+import io.reliza.model.SupportBulkSelector;
+import io.reliza.model.SupportBulkSelectorForm;
 import io.reliza.model.SupportData;
 import io.reliza.model.SupportMilestoneFact;
 import io.reliza.model.SupportMilestoneType;
 import io.reliza.model.SupportParty;
 import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
+import io.reliza.model.SupportTextBounds;
+import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionFunction;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.VulnerabilityRecordData;
@@ -106,6 +118,7 @@ import io.reliza.ws.VulnerabilityRecordDataLoader.VulnRecordLookup;
  * (forward edges) is reconstructed in memory by inverting parents across all
  * rows of the same release.
  */
+@Slf4j
 @DgsComponent
 public class SbomComponentDataFetcher {
 
@@ -167,7 +180,9 @@ public class SbomComponentDataFetcher {
 			UUID org,
 			UUID releaseUuid,
 			// The release's findings by component, for the findings fields.
-			ReleaseComponentFindings findings) {}
+			ReleaseComponentFindings findings,
+			// Display names of the support asserters, resolved once per distinct user (FDAW-14 3.7).
+			Map<UUID, String> asserterNames) {}
 
 	/**
 	 * The release's vulnerability findings by the component of the loaded rows each one's
@@ -339,7 +354,8 @@ public class SbomComponentDataFetcher {
 
 		ReleaseGraphContext ctx = new ReleaseGraphContext(
 				rowByComponentUuid, componentByUuid, supportByComponentUuid, forwardEdgesBySource, deviceLifecycle,
-				orgUuid, releaseUuid, new ReleaseComponentFindings(rowByComponentUuid, componentByUuid, releaseFindings));
+				orgUuid, releaseUuid, new ReleaseComponentFindings(rowByComponentUuid, componentByUuid, releaseFindings),
+				asserterNames(supportByComponentUuid.values()));
 		List<Map<String, Object>> dtos = rows.stream()
 				.map(SbomComponentDataFetcher::toDto)
 				.toList();
@@ -632,7 +648,17 @@ public class SbomComponentDataFetcher {
 			@InputArgument("supportNotes") String supportNotes,
 			@InputArgument("supportParty") SupportParty supportParty,
 			@InputArgument("reason") String reason,
-			@InputArgument("batchId") UUID batchId) throws RelizaException {
+			@InputArgument("batchId") UUID batchId,
+			@InputArgument("endOfSupportUnknown") Map<String, Object> endOfSupportUnknown) throws RelizaException {
+		// FIRST, ahead of the id-count cap: every free text bounded with no database access (FDAW-14
+		// 3.8 step 1). state and clearMilestones are deliberately absent from this mutation -- see the
+		// schema comment for why neither could ever succeed on a bulk write.
+		SupportAttestationRequest request = bounded(new SupportAttestationRequest(
+				levelOfSupport, null, supportParty, justification, parseAssessedAt(assessedAt),
+				parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate"),
+				parseIsoDate(endOfSupportDate, "endOfSupportDate"),
+				parseIsoDate(endOfLifeDate, "endOfLifeDate"),
+				supportNotes, null, reason, unknownInput(endOfSupportUnknown), false));
 		// Minted here, once, BEFORE the empty-input return, so every response carries the same
 		// id the write used and there is exactly one place this value comes from.
 		//
@@ -655,7 +681,9 @@ public class SbomComponentDataFetcher {
 		// with a short server-side TTL, not a lookup.
 		UUID effectiveBatchId = (null == batchId) ? UUID.randomUUID() : batchId;
 		if (null == sbomComponentUuids || sbomComponentUuids.isEmpty()) {
-			return bulkDto(List.of(), effectiveBatchId);
+			// No act is recorded for an empty call; the id names no receipt, as nothing was swept.
+			return bulkDto(new SbomComponentService.SupportBulkRun(UUID.randomUUID(), 0, List.of()),
+					effectiveBatchId);
 		}
 		// Bounded BEFORE anything touches the database, and before authorization, because the
 		// cost this bounds is incurred by the request existing at all. RateLimitingFilter
@@ -687,18 +715,169 @@ public class SbomComponentDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
 
-		// state and clearMilestones are deliberately absent from this mutation -- see the
-		// schema comment for why neither could ever succeed on a bulk write.
-		SupportAttestationRequest request = new SupportAttestationRequest(
+		return bulkDto(sbomComponentService.bulkSetSbomComponentSupportRun(
+				orgUuid, sbomComponentUuids, request, oud.get().getUuid(), effectiveBatchId),
+				effectiveBatchId);
+	}
+
+	/**
+	 * FDAW-14 3.4, 3.8: a bulk support sweep by ecosystem or namespace, resolved on the server and
+	 * recorded once. THE ORDER IS FIXED (F-4), and {@code supportBulkSelectorCount} runs its steps 1 to
+	 * 5: (1) selector, texts and the request's kind validated with no database access; (2) the org
+	 * loaded; (3) ORGANIZATION WRITE gated on it, the principal of the explicit form; (4) for the
+	 * release scope, the release loaded, refused when absent or of another org, RELEASE READ gated and
+	 * its component set resolved; (5) the count in that scope with {@code LIMIT cap + 1}, refused over the
+	 * cap; (6) only then the rows loaded and written. A count run before the gate would tell any caller
+	 * whether another organisation holds more than 1000 components of a type.
+	 */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Mutation", field = "bulkSetSbomComponentSupportBySelector")
+	public Map<String, Object> bulkSetSbomComponentSupportBySelector(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("selector") Map<String, Object> selector,
+			@InputArgument("releaseUuid") UUID releaseUuid,
+			@InputArgument("levelOfSupport") LevelOfSupport levelOfSupport,
+			@InputArgument("justification") String justification,
+			@InputArgument("assessedAt") String assessedAt,
+			@InputArgument("endOfGuaranteedSupportDate") String endOfGuaranteedSupportDate,
+			@InputArgument("endOfSupportDate") String endOfSupportDate,
+			@InputArgument("endOfLifeDate") String endOfLifeDate,
+			@InputArgument("supportNotes") String supportNotes,
+			@InputArgument("supportParty") SupportParty supportParty,
+			@InputArgument("endOfSupportUnknown") Map<String, Object> endOfSupportUnknown,
+			@InputArgument("reason") String reason) throws RelizaException {
+		// 1. no database access
+		SupportBulkSelector sel = selectorOf(selector);
+		SupportAttestationRequest request = bounded(new SupportAttestationRequest(
 				levelOfSupport, null, supportParty, justification, parseAssessedAt(assessedAt),
 				parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate"),
 				parseIsoDate(endOfSupportDate, "endOfSupportDate"),
 				parseIsoDate(endOfLifeDate, "endOfLifeDate"),
-				supportNotes, null, reason);
+				supportNotes, null, reason, unknownInput(endOfSupportUnknown), false));
+		refused(() -> SbomComponentService.requireSelectorFact(request));
+		// 2 to 4
+		SelectorScope scope = selectorScope(orgUuid, releaseUuid);
+		// 5 and 6: the service counts first and refuses over the cap before any row is loaded
+		SbomComponentService.SupportBulkRun run;
+		try {
+			run = sbomComponentService.bulkSetSbomComponentSupportBySelector(orgUuid, sel, releaseUuid,
+					scope.releaseComponents(), request, scope.caller().getUuid());
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
+		return bulkDto(run, run.bulkAct());
+	}
 
-		return bulkDto(sbomComponentService.bulkSetSbomComponentSupport(
-				orgUuid, sbomComponentUuids, request, oud.get().getUuid(), effectiveBatchId),
-				effectiveBatchId);
+	/** The count preview of a selector sweep (FDAW-14 3.4): the mutation's steps 1 to 5, nothing written. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "supportBulkSelectorCount")
+	public Map<String, Object> supportBulkSelectorCount(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("selector") Map<String, Object> selector,
+			@InputArgument("releaseUuid") UUID releaseUuid) throws RelizaException {
+		SupportBulkSelector sel = selectorOf(selector);
+		SelectorScope scope = selectorScope(orgUuid, releaseUuid);
+		SbomComponentService.SupportBulkSelectorCount c =
+				sbomComponentService.countSupportSelector(orgUuid, sel, scope.releaseComponents());
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("matched", c.matched());
+		dto.put("overCap", c.overCap());
+		return dto;
+	}
+
+	/** The newest bulk act receipts of an org (FDAW-14 3.8), ORGANIZATION READ, {@code limit} clamped. */
+	@PreAuthorize("isAuthenticated()")
+	@DgsData(parentType = "Query", field = "supportBulkActs")
+	public List<Map<String, Object>> supportBulkActs(
+			@InputArgument("orgUuid") UUID orgUuid,
+			@InputArgument("limit") Integer limit) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		var oud = userService.getUserDataByAuth(auth);
+		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("organization not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.READ);
+		return sbomComponentService.listSupportBulkActs(orgUuid, null == limit ? 50 : limit).stream()
+				.map(SbomComponentDataFetcher::toBulkActDto).toList();
+	}
+
+	/** The wire {@code SupportBulkAct}; {@code selector} is the stored JSON as a string. */
+	static Map<String, Object> toBulkActDto(SupportBulkAct a) {
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("uuid", a.getUuid());
+		dto.put("kind", a.getKind().name());
+		dto.put("selector", Utils.OM.writeValueAsString(a.getSelector()));
+		dto.put("matchedCount", a.getMatchedCount());
+		dto.put("appliedCount", a.getAppliedCount());
+		dto.put("listHash", a.getListHash());
+		dto.put("assertedBy", a.getAssertedBy());
+		dto.put("assertedDate", null == a.getAssertedDate() ? null : utcInstantOf(a.getAssertedDate()));
+		dto.put("release", a.getRelease());
+		return dto;
+	}
+
+	/** The caller and, for the release scope, the release's component set; gated in the fixed order. */
+	private record SelectorScope(UserData caller, Set<UUID> releaseComponents) {}
+
+	private SelectorScope selectorScope(UUID orgUuid, UUID releaseUuid) throws RelizaException {
+		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
+		UserData caller = userService.getUserDataByAuth(auth).orElseThrow();
+		RelizaObject ro = getOrganizationService.getOrganizationData(orgUuid)
+				.orElseThrow(() -> new RelizaException("organization not found"));
+		authorizationService.isUserAuthorizedForObjectGraphQL(caller, PermissionFunction.RESOURCE,
+				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
+		if (null == releaseUuid) return new SelectorScope(caller, null);
+		ReleaseData rd = sharedReleaseService.getReleaseData(releaseUuid)
+				.filter(r -> orgUuid.equals(r.getOrg()))
+				.orElseThrow(() -> new RelizaException("release not found in this organization: " + releaseUuid));
+		authorizationService.isUserAuthorizedForObjectGraphQL(caller, PermissionFunction.RESOURCE,
+				PermissionScope.RELEASE, releaseUuid, List.of(rd), CallType.READ);
+		return new SelectorScope(caller, sbomComponentService.findReleaseComponentUuids(releaseUuid));
+	}
+
+	/** A {@code SupportBulkSelectorInput} validated with no database access (3.4, 3.11). */
+	static SupportBulkSelector selectorOf(Map<String, Object> input) throws RelizaException {
+		if (null == input) throw new RelizaException("bulk selector: form is required");
+		Object form = input.get("form");
+		Object type = input.get("type");
+		Object namespace = input.get("namespace");
+		try {
+			return SupportBulkSelector.validated(
+					null == form ? null : SupportBulkSelectorForm.valueOf(form.toString()),
+					null == type ? null : type.toString(), null == namespace ? null : namespace.toString());
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
+	}
+
+	/** A {@code JustifiedUnknownInput}, or null. */
+	static JustifiedUnknownInput unknownInput(Map<String, Object> input) throws RelizaException {
+		if (null == input) return null;
+		Object code = input.get("code");
+		Object text = input.get("text");
+		try {
+			return new JustifiedUnknownInput(null == code ? null : JustifiedUnknownReason.valueOf(code.toString()),
+					null == text ? null : text.toString());
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException("justified unknown: unknown code " + code);
+		}
+	}
+
+	/** {@link SupportTextBounds#bounded(SupportAttestationRequest)}, refused as a GraphQL error. */
+	static SupportAttestationRequest bounded(SupportAttestationRequest request) throws RelizaException {
+		try {
+			return SupportTextBounds.bounded(request);
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
+	}
+
+	private static void refused(Runnable check) throws RelizaException {
+		try {
+			check.run();
+		} catch (IllegalArgumentException e) {
+			throw new RelizaException(e.getMessage());
+		}
 	}
 
 	/**
@@ -707,7 +886,8 @@ public class SbomComponentDataFetcher {
 	 * <p>Derived, not tallied alongside the loop, so a client that renders the summary and a
 	 * client that iterates the results cannot disagree about the same run.
 	 */
-	private static Map<String, Object> bulkDto(List<SupportBulkResult> results, UUID batchId) {
+	private static Map<String, Object> bulkDto(SbomComponentService.SupportBulkRun run, UUID batchId) {
+		List<SupportBulkResult> results = run.results();
 		List<Map<String, Object>> items = new ArrayList<>(results.size());
 		int applied = 0;
 		int skipped = 0;
@@ -720,7 +900,7 @@ public class SbomComponentDataFetcher {
 			items.add(dto);
 			switch (r.outcome()) {
 				case APPLIED -> applied++;
-				case SKIPPED_ROOT, SKIPPED_ATTESTED -> skipped++;
+				case SKIPPED_ROOT, SKIPPED_ATTESTED, SKIPPED_HAS_END_OF_SUPPORT -> skipped++;
 				case FAILED -> failed++;
 			}
 		}
@@ -732,6 +912,9 @@ public class SbomComponentDataFetcher {
 		// Non-null on every response, including the empty one, so a paged client can always
 		// echo it back rather than having to decide whether it got one.
 		out.put("batchId", batchId);
+		// The server-minted act of this call (FDAW-14 3.4), the bulkAct every written row names.
+		out.put("bulkAct", run.bulkAct());
+		out.put("matchedCount", run.matchedCount());
 		return out;
 	}
 
@@ -749,7 +932,25 @@ public class SbomComponentDataFetcher {
 			@InputArgument("supportNotes") String supportNotes,
 			@InputArgument("supportParty") SupportParty supportParty,
 			@InputArgument("clearMilestones") List<SupportMilestoneType> clearMilestones,
-			@InputArgument("reason") String reason) throws RelizaException {
+			@InputArgument("reason") String reason,
+			@InputArgument("endOfSupportUnknown") Map<String, Object> endOfSupportUnknown,
+			@InputArgument("clearEndOfSupportUnknown") Boolean clearEndOfSupportUnknown) throws RelizaException {
+		// FIRST: the request parsed and its texts bounded with no database access (FDAW-14 3.8 step 1).
+		//
+		// CALLER-SUPPLIED assessment instant: when the human actually assessed, which is not
+		// necessarily when they filed it. Null falls back to now inside the service. Rejected
+		// loudly if malformed rather than silently defaulted -- a wrong date on a regulatory
+		// record is worse than a refused write.
+		SupportAttestationRequest request = bounded(new SupportAttestationRequest(
+				levelOfSupport, state, supportParty, justification, parseAssessedAt(assessedAt),
+				parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate"),
+				parseIsoDate(endOfSupportDate, "endOfSupportDate"),
+				parseIsoDate(endOfLifeDate, "endOfLifeDate"),
+				supportNotes,
+				// Normalisation (null/empty -> Set.of(), defensive copy) is the compact
+				// constructor's job; doing it here too would be a second place to keep right.
+				null == clearMilestones ? null : Set.copyOf(clearMilestones),
+				reason, unknownInput(endOfSupportUnknown), Boolean.TRUE.equals(clearEndOfSupportUnknown)));
 		JwtAuthenticationToken auth = (JwtAuthenticationToken) SecurityContextHolder.getContext().getAuthentication();
 		var oud = userService.getUserDataByAuth(auth);
 		SbomComponent sc = sbomComponentService.getSbomComponent(sbomComponentUuid)
@@ -760,22 +961,7 @@ public class SbomComponentDataFetcher {
 		authorizationService.isUserAuthorizedForObjectGraphQL(oud.get(), PermissionFunction.RESOURCE,
 				PermissionScope.ORGANIZATION, orgUuid, List.of(ro), CallType.WRITE);
 
-		LocalDate eogs = parseIsoDate(endOfGuaranteedSupportDate, "endOfGuaranteedSupportDate");
-		LocalDate eos = parseIsoDate(endOfSupportDate, "endOfSupportDate");
-		LocalDate eol = parseIsoDate(endOfLifeDate, "endOfLifeDate");
 		UUID assertedBy = oud.get().getUuid();
-		// CALLER-SUPPLIED assessment instant: when the human actually assessed, which is not
-		// necessarily when they filed it. Null falls back to now inside the service. Rejected
-		// loudly if malformed rather than silently defaulted -- a wrong date on a regulatory
-		// record is worse than a refused write.
-		ZonedDateTime assessed = parseAssessedAt(assessedAt);
-		SupportAttestationRequest request = new SupportAttestationRequest(
-				levelOfSupport, state, supportParty, justification, assessed, eogs, eos, eol,
-				supportNotes,
-				// Normalisation (null/empty -> Set.of(), defensive copy) is the compact
-				// constructor's job; doing it here too would be a second place to keep right.
-				null == clearMilestones ? null : Set.copyOf(clearMilestones),
-				reason);
 		// The bounded retry against a concurrent write to the same component lives in the
 		// SERVICE now, not here. It has to: retrying without discarding the persistence
 		// context poisoned by the failed flush makes every attempt fail identically, and this
@@ -792,10 +978,10 @@ public class SbomComponentDataFetcher {
 		// Mutation response is org-scoped (no enclosing release) -> no device-EOL anchor;
 		// deviceSupportRisk resolves to UNKNOWN. The release-scoped list query (which the
 		// client refetches after save) carries the real flag.
-		return toComponentDto(updated,
-				sbomComponentService.findSupportByComponentIds(orgUuid, Set.of(sbomComponentUuid))
-						.get(sbomComponentUuid),
-				null);
+		SupportData written = sbomComponentService.findSupportByComponentIds(orgUuid, Set.of(sbomComponentUuid))
+				.get(sbomComponentUuid);
+		return toComponentDto(updated, written, null,
+				asserterNames(null == written ? List.of() : List.of(written)));
 	}
 
 	/**
@@ -870,7 +1056,7 @@ public class SbomComponentDataFetcher {
 			SbomComponent sc = ctx.componentByUuid().get(componentUuid);
 			if (sc == null) return null;
 			return toComponentDto(sc, ctx.supportByComponentUuid().get(componentUuid),
-					ctx.deviceLifecycle());
+					ctx.deviceLifecycle(), ctx.asserterNames());
 		}
 		// Defensive fallback if this resolver is reached outside the top-level
 		// query path (no localContext); behaves like the original single-row
@@ -1133,6 +1319,15 @@ public class SbomComponentDataFetcher {
 	 */
 	static Map<String, Object> toComponentDto(SbomComponent sc,
 			SupportData support, DeviceLifecycle device) {
+		return toComponentDto(sc, support, device, Map.of());
+	}
+
+	/**
+	 * As above, with the asserters' display names: {@code assertedByName} of the level and of the
+	 * end-of-support justified unknown (FDAW-14 3.7, 3.8), from a map resolved once per distinct user.
+	 */
+	static Map<String, Object> toComponentDto(SbomComponent sc,
+			SupportData support, DeviceLifecycle device, Map<UUID, String> asserterNames) {
 		Map<String, Object> dto = new LinkedHashMap<>();
 		dto.put("uuid", sc.getUuid());
 		dto.put("canonicalPurl", sc.getCanonicalPurl());
@@ -1201,6 +1396,15 @@ public class SbomComponentDataFetcher {
 		// consumer can weigh the claim's age instead of trusting it indefinitely.
 		dto.put("assessedAt", support == null ? null : support.assessedAt());
 		dto.put("assertedBy", support == null ? null : support.assertedBy());
+		dto.put("assertedByName", support == null || support.assertedBy() == null ? null
+				: asserterNames.get(support.assertedBy()));
+		// The level's own provenance (who wrote the assessment), which the addendum's Source column reads;
+		// supportSource below is the END_OF_SUPPORT milestone's, a different fact.
+		dto.put("assessmentSource", support == null || support.assessmentSource() == null ? null
+				: support.assessmentSource().name());
+		dto.put("supportBulkAct", support == null ? null : support.bulkAct());
+		dto.put("endOfSupportUnknown", support == null ? null
+				: toUnknownDto(support.endOfSupportUnknown(), JustifiedUnknownField.END_OF_SUPPORT, asserterNames));
 		dto.put("justification", support == null ? null : support.justification());
 		dto.put("attestationState", support == null ? null : support.state().name());
 		dto.put("endOfGuaranteedSupportDate", endOfGuaranteedSupport == null ? null : endOfGuaranteedSupport.toString());
@@ -1228,6 +1432,45 @@ public class SbomComponentDataFetcher {
 				? DeviceSupportRisk.UNKNOWN.name()
 				: DeviceSupportRisk.derive(endOfSupport, device).name());
 		return dto;
+	}
+
+	/** The wire {@code JustifiedUnknown}, or null. */
+	static Map<String, Object> toUnknownDto(JustifiedUnknown u, JustifiedUnknownField field,
+			Map<UUID, String> asserterNames) {
+		if (null == u) return null;
+		Map<String, Object> dto = new LinkedHashMap<>();
+		dto.put("field", field.name());
+		dto.put("code", null == u.code() ? null : u.code().name());
+		dto.put("text", u.text());
+		dto.put("bulkAct", u.bulkAct());
+		dto.put("assertedBy", u.assertedBy());
+		dto.put("assertedByName", null == u.assertedBy() ? null : asserterNames.get(u.assertedBy()));
+		dto.put("assertedAt", u.assertedAt());
+		return dto;
+	}
+
+	/**
+	 * Display names of every asserter of the level and of the end-of-support unknown among
+	 * {@code supports}, one lookup per distinct user; an unresolvable user is absent (the
+	 * {@code declarationContext} rule: never throws).
+	 */
+	private Map<UUID, String> asserterNames(Collection<SupportData> supports) {
+		Set<UUID> users = new HashSet<>();
+		for (SupportData sd : supports) {
+			if (null == sd) continue;
+			if (null != sd.assertedBy()) users.add(sd.assertedBy());
+			JustifiedUnknown u = sd.endOfSupportUnknown();
+			if (null != u && null != u.assertedBy()) users.add(u.assertedBy());
+		}
+		Map<UUID, String> names = new HashMap<>();
+		for (UUID user : users) {
+			try {
+				userService.getUserData(user).map(UserData::getName).ifPresent(n -> names.put(user, n));
+			} catch (RuntimeException e) {
+				log.warn("Could not resolve the display name of asserter {}: {}", user, e.getMessage());
+			}
+		}
+		return names;
 	}
 
 	private static Map<String, Object> toMilestoneDto(SupportMilestoneType type, SupportMilestoneFact m) {

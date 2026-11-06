@@ -117,7 +117,7 @@ class ReleaseServiceMissingSbomModeMergeTest extends ReleaseServiceMergeTestBase
 	 */
 	private void publish() throws Exception {
 		svc.generateMergedBomForPublication(product, new PublicationMergeRequest(java.util.Set.of(ArtifactBelongsTo.RELEASE),
-				false, false, FLAT, null, ExportMetadataOptions.callerSilent()), WU);
+				false, false, FLAT, null, ExportMetadataOptions.callerSilent(), null), WU);
 	}
 
 	/** The internal export of the same knobs: a placeholder request. */

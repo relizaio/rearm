@@ -982,10 +982,12 @@ public class ReleaseService {
 	 *
 	 * @param sources the belongsTo set; empty means no filter, a singleton is today's single-value
 	 *     filter, and a two-element set is the set filter only a publication can ask for
+	 * @param profileName the SBOM profile the publication is of, so its release SBOM head's hash
+	 *     justifications are injected (FDAW-14 3.5); null writes none
 	 */
 	public record PublicationMergeRequest(Set<ArtifactBelongsTo> sources, boolean tldOnly, boolean ignoreDev,
 			BomStructureType structure, List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
-			ExportMetadataOptions exportMetadata) {}
+			ExportMetadataOptions exportMetadata, String profileName) {}
 
 	/**
 	 * The aggregated SBOM a TEA publication freezes (task TEA-5): the release's merge under the
@@ -1040,7 +1042,7 @@ public class ReleaseService {
 			throw new RelizaException("Reading the merged SBOM " + id + " failed: " + e.getMessage());
 		}
 		if (null == document) throw new RelizaException("Merged SBOM " + id + " of release " + rd.getUuid() + " not found");
-		return applyExportMetadata(document, rd.getOrg(), rd.getUuid(), request.exportMetadata());
+		return applyExportMetadata(document, rd.getOrg(), rd.getUuid(), request.exportMetadata(), request.profileName());
 	}
 
 	/**
@@ -1085,7 +1087,7 @@ public class ReleaseService {
 			List<CommonVariables.ArtifactCoverageType> excludeCoverageTypes,
 			ExportMetadataOptions exportMetadata) throws RelizaException, JacksonException {
 		JsonNode mergedBom = fetchMergedReleaseBom(releaseUuid, tldOnly, ignoreDev, excludeFileComponents, belongsTo, structure, org, wu, excludeCoverageTypes);
-		return applyExportMetadata(mergedBom, org, releaseUuid, exportMetadata);
+		return applyExportMetadata(mergedBom, org, releaseUuid, exportMetadata, null);
 	}
 
 	/**
@@ -1093,7 +1095,8 @@ public class ReleaseService {
 	 * TEA-5): strip forged provenance always, inject support facts when enabled and asked, honour
 	 * the internal-metadata choice. Mutates and returns {@code mergedBom}.
 	 */
-	JsonNode applyExportMetadata(JsonNode mergedBom, UUID org, UUID releaseUuid, ExportMetadataOptions exportMetadata) {
+	JsonNode applyExportMetadata(JsonNode mergedBom, UUID org, UUID releaseUuid, ExportMetadataOptions exportMetadata,
+			String profileName) {
 		// The merged bom is assembled from component boms we did not write. A component bom
 		// uploaded with a reliza:support:* property carries it into this document unchanged,
 		// where SupportBomInjector's contract says every such property was written by us --
@@ -1125,7 +1128,10 @@ public class ReleaseService {
 		// said nothing supplies callerSilent() and this line behaves exactly as it did before
 		// the arguments existed.
 		try {
-			supportInjectionService.injectIfEnabledElseStrip(mergedBom, org, exportMetadata);
+			// A publication names its profile, so its release SBOM head's hash justifications are
+			// written too (FDAW-14 3.5); a plain export passes null and writes none.
+			supportInjectionService.injectIfEnabledElseStrip(mergedBom, org, null, exportMetadata, releaseUuid,
+					profileName);
 		} catch (Exception stripEx) {
 			// Same posture as the download path: never fail a bom export over the add-on. But
 			// unlike injection this failure is a security-control failure, so it is logged as

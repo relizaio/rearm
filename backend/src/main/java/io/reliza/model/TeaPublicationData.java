@@ -79,8 +79,17 @@ public class TeaPublicationData extends RelizaDataParent implements RelizaObject
 	@JsonProperty
 	private UUID lastPublishedBy;
 
-	/** One named aggregate of a publication: the SBOM profile name and the generated artifact row (task TEA-28). */
-	public record TeaAggregateArtifact(String profileName, UUID artifact) implements Serializable {}
+	/**
+	 * One named aggregate of a publication: the SBOM profile name and the generated artifact row (task
+	 * TEA-28), and the release SBOM serial and version it published (FDAW-7; null on a head stored before).
+	 */
+	public record TeaAggregateArtifact(String profileName, UUID artifact, UUID serial, Integer version) implements Serializable {
+
+		/** An entry without the release SBOM identity, as a head stored before FDAW-7 reads. */
+		public TeaAggregateArtifact(String profileName, UUID artifact) {
+			this(profileName, artifact, null, null);
+		}
+	}
 
 	/** The head row's revision, from the entity; not part of the record. */
 	@JsonIgnore

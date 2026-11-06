@@ -1,6 +1,6 @@
 import { describe, expect, it, vi } from 'vitest'
 import {
-    useBulkAttest, validateBulkInput, groupNotWritten,
+    useBulkAttest, validateBulkInput, groupNotWritten, classifyBulkOutcome, bulkSupportVariables, emptyBulkForm,
     BULK_BATCH_SIZE, BULK_WALK_LIMIT, BULK_MAX_IDS, SAMPLE_SIZE
 } from './useBulkAttest'
 import type { BulkLabel, BulkOutcome } from './useBulkAttest'
@@ -522,7 +522,8 @@ describe('naming what was not written', () => {
         ({ sbomComponentUuid, outcome, message })
     const outcomeOf = (results: Result[], flags: Partial<BulkOutcome> = {}): BulkOutcome => ({
         applied: results.filter(x => x.outcome === 'APPLIED').length,
-        skippedAttested: 0, skippedRoot: 0, failed: 0, unknownOutcomes: 0, results,
+        skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, failed: 0, matched: results.length,
+        bulkActs: [], unknownOutcomes: 0, results,
         aborted: false, stoppedEarly: false, error: null, retryable: false,
         concurrentWriteDetected: false, ...flags
     })
@@ -647,5 +648,63 @@ describe('naming what was not written', () => {
             expect(listed).not.toContain('id-199')
             expect(listed[0]).toBe('id-100')
         })
+    })
+})
+
+/** FDAW-14 row 17: the justified unknown on the explicit form, and the new outcome. */
+describe('the end-of-support justified unknown on a sweep', () => {
+    const base = { ...emptyBulkForm(), reason: 'deb backlog' }
+
+    it('sends exactly one of endOfSupportDate and endOfSupportUnknown, chosen by the mode', () => {
+        const date = bulkSupportVariables({ ...base, endOfSupportDate: '2030-01-01', endOfSupportUnknownCode: 'OTHER' })
+        expect(date.endOfSupportDate).toBe('2030-01-01')
+        expect(date.endOfSupportUnknown).toBeNull()
+        const unknown = bulkSupportVariables({ ...base, endOfSupportMode: 'UNKNOWN', endOfSupportDate: '2030-01-01',
+            endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT', endOfSupportUnknownText: '  ' })
+        expect(unknown.endOfSupportDate).toBeNull()
+        expect(unknown.endOfSupportUnknown).toEqual({ code: 'NO_COMMITTED_END_OF_SUPPORT', text: null })
+    })
+
+    it('an end-of-support-only sweep sends the unknown and the confirm instant, and null for every other fact', async () => {
+        const { client, mutate } = scripted([{ items: ids(3), hasMore: false }])
+        const b = useBulkAttest()
+        const at = '2026-11-06T10:00:00Z'
+        const out = await b.submit(client, ids(3), { ...base, endOfSupportMode: 'UNKNOWN',
+            endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT', assessedAt: at })
+        expect(out.applied).toBe(3)
+        const v = (mutate.mock.calls[0] as any)[0].variables
+        expect(v.endOfSupportUnknown).toEqual({ code: 'NO_COMMITTED_END_OF_SUPPORT', text: null })
+        expect(v.assessedAt).toBe(at)
+        for (const k of ['levelOfSupport', 'justification', 'supportParty', 'endOfGuaranteedSupportDate',
+            'endOfSupportDate', 'endOfLifeDate']) expect(v[k], k).toBeNull()
+        expect(v).not.toHaveProperty('supportNotes')
+    })
+
+    it('counts an unknown as something recorded, and blocks OTHER without a text', () => {
+        expect(validateBulkInput({ ...base, endOfSupportMode: 'UNKNOWN', endOfSupportUnknownCode: 'COMMUNITY_PROJECT' }))
+            .toEqual([])
+        expect(validateBulkInput({ ...base, endOfSupportMode: 'UNKNOWN', endOfSupportUnknownCode: 'OTHER' }).join(' '))
+            .toContain('Other needs a text')
+        expect(validateBulkInput({ ...base, endOfSupportMode: 'UNKNOWN', endOfSupportUnknownCode: null }).join(' '))
+            .toContain('Choose why')
+    })
+
+    it('knows SKIPPED_HAS_END_OF_SUPPORT: the counters sum and the not-written list groups it', async () => {
+        expect(classifyBulkOutcome('SKIPPED_HAS_END_OF_SUPPORT')).toBe('SKIPPED_HAS_END_OF_SUPPORT')
+        const mutate = vi.fn(async () => ({ data: { bulkSetSbomComponentSupport: {
+            bulkAct: 'act-1', matchedCount: 3, appliedCount: 1, skippedCount: 2, failedCount: 0,
+            results: [{ sbomComponentUuid: 'a', outcome: 'APPLIED', message: null },
+                { sbomComponentUuid: 'b', outcome: 'SKIPPED_HAS_END_OF_SUPPORT', message: null },
+                { sbomComponentUuid: 'c', outcome: 'SKIPPED_ATTESTED', message: null }] } } }))
+        const out = await useBulkAttest().submit({ query: vi.fn(), mutate } as any, ['a', 'b', 'c'],
+            { ...base, levelOfSupport: 'ACTIVELY_MAINTAINED' }, 'ALL')
+        expect(out.applied + out.skippedHasEndOfSupport + out.skippedAttested + out.unknownOutcomes)
+            .toBe(out.results.length)
+        expect(out.skippedHasEndOfSupport).toBe(1)
+        expect(out.unknownOutcomes).toBe(0)
+        expect(out.bulkActs).toEqual(['act-1'])
+        const groups = groupNotWritten(['a', 'b', 'c'], out, {})
+        expect(groups.map(g => g.reason)).toEqual(['SKIPPED_ATTESTED', 'SKIPPED_HAS_END_OF_SUPPORT'])
+        expect(groups[1].title).toBe('1 skipped: already hold an end of support')
     })
 })

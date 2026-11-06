@@ -6,6 +6,7 @@ import { classifyGraphqlError, isSchemaDriftError } from './graphqlDriftFallback
 import type { DriftFallbackClient } from './graphqlDriftFallback'
 import type { MutationClient } from './setSbomComponentSupport'
 import type { LevelOfSupport, SupportParty } from './supportAttestationInput'
+import { validateJustifiedUnknown } from './justifiedUnknownLabels'
 
 // One definition of the backend enums, shared with the per-component form. A local copy
 // would be a second place for them to drift from the schema, and this feature has already
@@ -45,6 +46,7 @@ export const BULK_SET_SUPPORT = gql`
         $endOfLifeDate: String
         $reason: String
         $assessedAt: String
+        $endOfSupportUnknown: JustifiedUnknownInput
     ) {
         bulkSetSbomComponentSupport(
             sbomComponentUuids: $sbomComponentUuids
@@ -56,7 +58,10 @@ export const BULK_SET_SUPPORT = gql`
             endOfLifeDate: $endOfLifeDate
             reason: $reason
             assessedAt: $assessedAt
+            endOfSupportUnknown: $endOfSupportUnknown
         ) {
+            bulkAct
+            matchedCount
             appliedCount
             skippedCount
             failedCount
@@ -80,6 +85,14 @@ export interface BulkAttestInput {
     endOfGuaranteedSupportDate?: string | null
     endOfSupportDate?: string | null
     endOfLifeDate?: string | null
+    /**
+     * End of support is a DATE or a JUSTIFIED UNKNOWN, never both (FDAW-14 3.2 item 2): the
+     * mode decides which of the two the call carries, so a date left in the picker after
+     * switching to Justified unknown is not sent.
+     */
+    endOfSupportMode?: 'DATE' | 'UNKNOWN'
+    endOfSupportUnknownCode?: string | null
+    endOfSupportUnknownText?: string | null
     reason?: string | null
     /**
      * ONE instant for the whole sweep, captured when the operator confirms.
@@ -96,7 +109,13 @@ export interface BulkOutcome {
     applied: number
     skippedAttested: number
     skippedRoot: number
+    /** A justified-unknown sweep reached a component that already holds an end of support (FDAW-14). */
+    skippedHasEndOfSupport: number
     failed: number
+    /** What the selector matched (selector form); the ids sent (explicit form). */
+    matched: number
+    /** The bulk acts the server minted: one per call, so one per batch on the explicit form. */
+    bulkActs: string[]
     results: Array<{ sbomComponentUuid: string, outcome: string, message: string | null }>
     /** Outcomes this build does not recognise, so the counters cannot silently stop summing. */
     unknownOutcomes: number
@@ -124,7 +143,7 @@ export interface BulkOutcome {
 }
 
 /** The per-item outcomes this build knows (user.graphqls SbomComponentSupportBulkResult). */
-export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 'FAILED'
+export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 'SKIPPED_HAS_END_OF_SUPPORT' | 'FAILED'
 
 /**
  * One reading of a server outcome, shared by the counters in `submit` and by
@@ -132,8 +151,57 @@ export type BulkItemOutcome = 'APPLIED' | 'SKIPPED_ATTESTED' | 'SKIPPED_ROOT' | 
  * Null for an outcome this build does not know: counted as unknown, never dropped.
  */
 export function classifyBulkOutcome (outcome: string): BulkItemOutcome | null {
-    return outcome === 'APPLIED' || outcome === 'SKIPPED_ATTESTED'
-        || outcome === 'SKIPPED_ROOT' || outcome === 'FAILED' ? outcome : null
+    return outcome === 'APPLIED' || outcome === 'SKIPPED_ATTESTED' || outcome === 'SKIPPED_ROOT'
+        || outcome === 'SKIPPED_HAS_END_OF_SUPPORT' || outcome === 'FAILED' ? outcome : null
+}
+
+/**
+ * Folds one response's per-item results into the counters, with no silent else: a future or
+ * misspelled outcome is counted as unknown so the counters keep summing to results.length.
+ * Shared by the explicit batches and the one selector call.
+ */
+export function tallyBulkResponse (out: BulkOutcome, r: any): void {
+    out.results.push(...r.results)
+    if (r.bulkAct) out.bulkActs.push(r.bulkAct)
+    for (const item of r.results) {
+        const known = classifyBulkOutcome(item.outcome)
+        if (known === 'APPLIED') out.applied += 1
+        else if (known === 'SKIPPED_ATTESTED') out.skippedAttested += 1
+        else if (known === 'SKIPPED_ROOT') out.skippedRoot += 1
+        else if (known === 'SKIPPED_HAS_END_OF_SUPPORT') out.skippedHasEndOfSupport += 1
+        else if (known === 'FAILED') out.failed += 1
+        else out.unknownOutcomes += 1
+    }
+}
+
+/**
+ * The support facts of a bulk call, the same for the explicit and the selector form. Exactly
+ * one of endOfSupportDate and endOfSupportUnknown is non-null at most, chosen by the mode.
+ */
+export function bulkSupportVariables (input: BulkAttestInput): Record<string, unknown> {
+    const unknown = input.endOfSupportMode === 'UNKNOWN' && input.endOfSupportUnknownCode
+        ? { code: input.endOfSupportUnknownCode, text: (input.endOfSupportUnknownText || '').trim() || null }
+        : null
+    return {
+        levelOfSupport: input.levelOfSupport || null,
+        justification: input.justification || null,
+        supportParty: input.party || null,
+        endOfGuaranteedSupportDate: input.endOfGuaranteedSupportDate || null,
+        endOfSupportDate: input.endOfSupportMode === 'UNKNOWN' ? null : (input.endOfSupportDate || null),
+        endOfLifeDate: input.endOfLifeDate || null,
+        endOfSupportUnknown: unknown,
+        reason: input.reason || null,
+        assessedAt: input.assessedAt || null
+    }
+}
+
+/** A fresh outcome with every counter at zero. */
+export function newBulkOutcome (): BulkOutcome {
+    return {
+        applied: 0, skippedAttested: 0, skippedRoot: 0, skippedHasEndOfSupport: 0, failed: 0, matched: 0,
+        bulkActs: [], results: [], aborted: false, error: null, concurrentWriteDetected: false,
+        stoppedEarly: false, unknownOutcomes: 0, retryable: false
+    }
 }
 
 /** How many components the confirmation shows by name. A count alone hides a wrong filter. */
@@ -143,7 +211,8 @@ export const SAMPLE_SIZE = 10
 export function emptyBulkForm (): BulkAttestInput {
     return {
         levelOfSupport: null, party: null, justification: '',
-        endOfSupportDate: null, reason: ''
+        endOfSupportDate: null, reason: '',
+        endOfSupportMode: 'DATE', endOfSupportUnknownCode: null, endOfSupportUnknownText: ''
     }
 }
 
@@ -175,11 +244,17 @@ export interface BulkLabel { name: string, version: string }
 export function validateBulkInput (input: BulkAttestInput): string[] {
     const out: string[] = []
     const hasBasis = !!(input.justification && input.justification.trim())
-    const hasDate = !!(input.endOfGuaranteedSupportDate || input.endOfSupportDate
+    const unknownMode = input.endOfSupportMode === 'UNKNOWN'
+    const hasDate = !!(input.endOfGuaranteedSupportDate || (!unknownMode && input.endOfSupportDate)
         || input.endOfLifeDate)
-    if (!input.levelOfSupport && !hasDate && !hasBasis) {
-        out.push('Record something: a level of support, a date, or a justification.')
+    const hasUnknown = unknownMode && !!input.endOfSupportUnknownCode
+    if (!input.levelOfSupport && !hasDate && !hasBasis && !hasUnknown) {
+        out.push('Record something: a level of support, a date, a justified unknown, or a justification.')
     }
+    if (unknownMode && !input.endOfSupportUnknownCode) {
+        out.push('Choose why the end-of-support date cannot be given, or switch back to Date.')
+    }
+    if (hasUnknown) out.push(...validateJustifiedUnknown(input.endOfSupportUnknownCode, input.endOfSupportUnknownText))
     // Mandatory for a sweep even though the server only demands it for un-retracting.
     // Nothing else in the record distinguishes one action across 800 components from 800
     // individual judgements: assessmentSource is MANUAL either way. reason is per-write,
@@ -199,11 +274,7 @@ export function validateBulkInput (input: BulkAttestInput): string[] {
 }
 
 function emptyOutcome (why: string): BulkOutcome {
-    return {
-        applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0, results: [],
-        aborted: true, error: why, concurrentWriteDetected: false, stoppedEarly: false,
-        unknownOutcomes: 0, retryable: false
-    }
+    return { ...newBulkOutcome(), aborted: true, error: why }
 }
 
 /**
@@ -346,11 +417,8 @@ export function useBulkAttest () {
         // message on screen through a successful submit is its own kind of wrong answer.
         error.value = null
         progress.value = 0
-        const out: BulkOutcome = {
-            applied: 0, skippedAttested: 0, skippedRoot: 0, failed: 0,
-            results: [], aborted: false, error: null, concurrentWriteDetected: false,
-            stoppedEarly: false, unknownOutcomes: 0, retryable: false
-        }
+        const out: BulkOutcome = newBulkOutcome()
+        out.matched = ids.length
         try {
             for (let i = 0; i < ids.length; i += BULK_BATCH_SIZE) {
                 // Checked between batches, never mid-batch: a batch already sent has already
@@ -360,32 +428,13 @@ export function useBulkAttest () {
                 const slice = ids.slice(i, i + BULK_BATCH_SIZE)
                 const resp = await client.mutate({
                     mutation: BULK_SET_SUPPORT,
-                    variables: {
-                        sbomComponentUuids: slice,
-                        levelOfSupport: input.levelOfSupport || null,
-                        justification: input.justification || null,
-                        supportParty: input.party || null,
-                        endOfGuaranteedSupportDate: input.endOfGuaranteedSupportDate || null,
-                        endOfSupportDate: input.endOfSupportDate || null,
-                        endOfLifeDate: input.endOfLifeDate || null,
-                        reason: input.reason || null,
-                        assessedAt: input.assessedAt || null
-                    }
+                    variables: { sbomComponentUuids: slice, ...bulkSupportVariables(input) }
                 })
                 const r = (resp.data as any)?.bulkSetSbomComponentSupport
                 if (!r) throw new Error('the server returned no result for this batch')
-                out.results.push(...r.results)
-                for (const item of r.results) {
-                    const known = classifyBulkOutcome(item.outcome)
-                    if (known === 'APPLIED') out.applied += 1
-                    else if (known === 'SKIPPED_ATTESTED') out.skippedAttested += 1
-                    else if (known === 'SKIPPED_ROOT') out.skippedRoot += 1
-                    else if (known === 'FAILED') out.failed += 1
-                    // No silent else. A future or misspelled outcome would otherwise be
-                    // counted nowhere, so the four counters would stop summing to
-                    // results.length and a batch that did something would report 0/0/0.
-                    else out.unknownOutcomes += 1
-                }
+                // No silent else inside: a future or misspelled outcome would otherwise be
+                // counted nowhere, so the counters would stop summing to results.length.
+                tallyBulkResponse(out, r)
                 progress.value = Math.min(i + slice.length, ids.length)
             }
         } catch (err: any) {
@@ -444,7 +493,8 @@ export function useBulkAttest () {
 }
 
 /** Why an entry of a sweep was not written. */
-export type NotWrittenReason = 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'FAILED' | 'UNKNOWN' | 'NO_RESULT'
+export type NotWrittenReason = 'SKIPPED_ROOT' | 'SKIPPED_ATTESTED' | 'SKIPPED_HAS_END_OF_SUPPORT' | 'FAILED'
+    | 'UNKNOWN' | 'NO_RESULT'
 
 export interface NotWrittenEntry {
     uuid: string
@@ -462,13 +512,14 @@ export interface NotWrittenGroup {
 }
 
 const NOT_WRITTEN_ORDER: NotWrittenReason[] =
-    ['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'FAILED', 'UNKNOWN', 'NO_RESULT']
+    ['SKIPPED_ROOT', 'SKIPPED_ATTESTED', 'SKIPPED_HAS_END_OF_SUPPORT', 'FAILED', 'UNKNOWN', 'NO_RESULT']
 
 function notWrittenTitle (reason: NotWrittenReason, n: number): string {
     switch (reason) {
     case 'SKIPPED_ROOT':
         return `${n} skipped: the release's own ${n === 1 ? 'component' : 'components'}`
     case 'SKIPPED_ATTESTED': return `${n} skipped: already attested`
+    case 'SKIPPED_HAS_END_OF_SUPPORT': return `${n} skipped: already hold an end of support`
     case 'FAILED': return `${n} failed`
     case 'UNKNOWN': return `${n} with a result this version cannot interpret`
     case 'NO_RESULT': return `${n} with no result`
@@ -502,6 +553,8 @@ const NOT_WRITTEN_EXPLANATION: Record<Exclude<NotWrittenReason, 'NO_RESULT'>, st
         + ' coverage gauge; the export marks them as the release\'s own.',
     SKIPPED_ATTESTED: 'They were already attested when the sweep reached them; their'
         + ' attestations were left untouched.',
+    SKIPPED_HAS_END_OF_SUPPORT: 'They already hold an end-of-support date or a justified unknown; a'
+        + ' sweep never replaces either. Change them one by one in the component editor.',
     FAILED: 'Nothing was written for them. The message beside each entry is the server\'s.',
     UNKNOWN: 'They are counted in none of the totals above. Check them before relying on'
         + ' this sweep.'
@@ -520,7 +573,7 @@ export function groupNotWritten (
     labels: Record<string, BulkLabel>
 ): NotWrittenGroup[] {
     const byReason: Record<NotWrittenReason, NotWrittenEntry[]> = {
-        SKIPPED_ROOT: [], SKIPPED_ATTESTED: [], FAILED: [], UNKNOWN: [], NO_RESULT: []
+        SKIPPED_ROOT: [], SKIPPED_ATTESTED: [], SKIPPED_HAS_END_OF_SUPPORT: [], FAILED: [], UNKNOWN: [], NO_RESULT: []
     }
     const labelOf = (uuid: string): string => {
         const l = Object.prototype.hasOwnProperty.call(labels, uuid) ? labels[uuid] : undefined
@@ -532,7 +585,7 @@ export function groupNotWritten (
         const known = classifyBulkOutcome(r.outcome)
         if (known === 'APPLIED') continue
         const uuid = r.sbomComponentUuid
-        if (known === 'SKIPPED_ROOT' || known === 'SKIPPED_ATTESTED') {
+        if (known === 'SKIPPED_ROOT' || known === 'SKIPPED_ATTESTED' || known === 'SKIPPED_HAS_END_OF_SUPPORT') {
             byReason[known].push({ uuid, label: labelOf(uuid), detail: null })
         } else if (known === 'FAILED') {
             byReason.FAILED.push({ uuid, label: labelOf(uuid), detail: r.message || 'no reason given' })

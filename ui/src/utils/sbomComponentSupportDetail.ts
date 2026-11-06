@@ -34,6 +34,7 @@ export const SBOM_COMPONENT_SUPPORT_DETAIL = gql`
                 endOfGuaranteedSupportDate
                 endOfSupportDate
                 endOfLifeDate
+                endOfSupportUnknown { code text bulkAct }
                 supportMilestones {
                     milestoneType
                     date

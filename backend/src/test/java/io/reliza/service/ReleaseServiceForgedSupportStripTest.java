@@ -104,7 +104,8 @@ class ReleaseServiceForgedSupportStripTest {
 			    "properties": [
 			      {"name": "reliza:support:disclosure", "value": "forged-marker"},
 			      {"name": "reliza:support:unidentifiedComponents", "value": "forged-count"},
-			      {"name": "reliza:support:unassessedComponents", "value": "forged-count"}
+			      {"name": "reliza:support:unassessedComponents", "value": "forged-count"},
+			      {"name": "reliza:support:justifiedUnknown:hash", "value": "DISTRIBUTION_PUBLISHES_NO_HASH"}
 			    ]
 			  },
 			  "components": [
@@ -113,6 +114,8 @@ class ReleaseServiceForgedSupportStripTest {
 			      "properties": [
 			        {"name": "reliza:support:levelOfSupport", "value": "actively maintained"},
 			        {"name": "reliza:support:justification", "value": "vendor says so"},
+			        {"name": "reliza:support:justifiedUnknown:endOfSupport", "value": "NO_COMMITTED_END_OF_SUPPORT"},
+			        {"name": "reliza:support:justifiedUnknown:hash", "value": "VENDORED_SOURCE_NO_HASH"},
 			        {"name": "some:other:property", "value": "kept"}
 			      ]
 			    }
@@ -368,6 +371,9 @@ class ReleaseServiceForgedSupportStripTest {
 				"forged status survived on the root self-component: " + served);
 		assertFalse(served.contains("forged-marker"),
 				"an uploader stamped our own disclosure marker and it survived: " + served);
+		// FDAW-13 T-11: the justified unknowns of FDAW-1 D5, on the component and in metadata.
+		assertFalse(served.contains("reliza:support:justifiedUnknown:"),
+				"an uploader's forged justified unknown survived the merged export: " + served);
 	}
 
 	/**
