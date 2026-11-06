@@ -324,10 +324,14 @@ public class ReleaseService {
 	 * deliverables, a rebuild) or, for a product, its parent releases change, or when the supplier
 	 * name of its product component changes, and rebuilt by the next export or merge (SCORE-71);
 	 * rows stored under 17 may carry a release under a former identifier or supplier, or an SBOM the
-	 * release no longer holds, and are rebuilt or dropped once.
+	 * release no longer holds, and are rebuilt or dropped once;
+	 * 19 = the default merge drops scope: excluded and generator-marked dev components, strips
+	 * personal data, local paths and credentials in URL userinfo, keeps keyless nodes and links
+	 * orphan components under the root, and records the six counts (FDAW-6); rows stored under 18
+	 * carry dev tools, excluded scope, e-mails, build paths and URL credentials and are rebuilt once.
 	 * Bump it when a rebom merge change must reach merges already stored.
 	 */
-	public static final int MERGE_VERSION = 18;
+	public static final int MERGE_VERSION = 19;
 			
 	private final ReleaseRepository repository;
 	

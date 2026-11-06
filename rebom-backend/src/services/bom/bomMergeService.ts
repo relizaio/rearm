@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectWithMetaById } from './bomCrudService';
-import { extractTldFromBom, extractDevFilteredBom, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, dropExcludedAndDevComponents, assignMissingBomRefs, stripPurlCredentials, stripPersonalDataAndLocalPaths, linkOrphanComponents, recordMergeCounts, MergeCounts, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -20,7 +20,7 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
 export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: RebomOptions, org: string): Promise<{ bom: any, nestedProductSerials: string[], listedRootKeys: string[] }> {
   try {
     let mergedBom = null
-    const { bomObjs: found, rowMeta } = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    const { bomObjs: found, rowMeta, inputCounts } = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
     // Component releases without an SBOM join as synthetic inputs, after the per-input
     // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
     // them and lists them in the root's dependencies like every other input.
@@ -49,6 +49,14 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
     // Before the file filter: the filter keys what it drops by bom-ref and assumes one
     // component per ref, and a hoisted subtree can hold file components it has to see.
     if (mergedBom) mergedBom = dedupeBomRefs(mergedBom).bom
+    // FDAW-6 3.2 (B9): after the de-dup and before the fold, so what an uploaded root folds into the
+    // release node is already clean and the declared facts written afterwards are never touched.
+    let stripped = { personalData: 0, localPaths: 0, credentials: 0 }
+    if (mergedBom) {
+      const strip = stripPersonalDataAndLocalPaths(mergedBom)
+      mergedBom = strip.bom
+      stripped = strip
+    }
     // After the de-dup (bom-refs are unique, an equal-purl copy of the root is settled) and before
     // the fill: the uploaded roots of the release's own RELEASE-attached artifacts, as rearm-saas
     // listed them, fold into the merged root, so the declared facts fill only what the upload left
@@ -81,10 +89,30 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
     // FLATTEN_UNDER_NEW_ROOT and names no root, so structure.no-orphans named each of them
     // (SCORE-64 ADR-2). After every pass that removes or renames a node, before the dangling check.
     if (mergedBom) mergedBom = linkUnfoldedRoots(mergedBom, bomObjs).bom
+    // FDAW-6 3.4b (B4): every other top-level component no entry names becomes a direct dependency
+    // of the merged root (the flat-inventory reading), counted; before the dangling check.
+    let orphansLinked = 0
+    if (mergedBom) {
+      const link = linkOrphanComponents(mergedBom)
+      mergedBom = link.bom
+      orphansLinked = link.count
+    }
     // A check on the final graph, after every pass that may repair a reference.
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     // After it: adds no dependency ref, and describes the placeholders that survived.
     if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
+    // FDAW-6 3.3: the six records, always written, this merge's counts plus what the inputs recorded.
+    if (mergedBom) {
+      const counts: MergeCounts = {
+        [DEV_COMPONENTS_EXCLUDED_PROPERTY]: inputCounts.devExcluded,
+        [EXCLUDED_SCOPE_DROPPED_PROPERTY]: inputCounts.excludedScopeDropped,
+        [PERSONAL_DATA_STRIPPED_PROPERTY]: stripped.personalData,
+        [LOCAL_PATHS_STRIPPED_PROPERTY]: stripped.localPaths,
+        [CREDENTIALS_STRIPPED_PROPERTY]: stripped.credentials + inputCounts.credentials,
+        [ORPHAN_COMPONENTS_LINKED_PROPERTY]: orphansLinked
+      }
+      mergedBom = recordMergeCounts(mergedBom, counts, bomObjs)
+    }
     return { bom: mergedBom, ...records }
   } catch (e) {
     logger.error({ err: e }, "Error During merge")
@@ -122,27 +150,40 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
 }
 
 
+/** What the per-input passes of findBomsForMerge removed or edited, summed over the inputs (FDAW-6). */
+export type InputPassCounts = { devExcluded: number, excludedScopeDropped: number, credentials: number }
+
+/**
+ * The per-input passes, in order: the top-level-only extract, the dev and excluded-scope filter
+ * (always; optional scope only under ignoreDev, FDAW-6 3.1), the purl credential strip (FDAW-6
+ * review F-13: before the rekey and the root lookups), the bom-refs of keyless nodes (3.4a).
+ */
+export function prepareMergeInput(bom: any, tldOnly: boolean, ignoreDev: boolean, counts: InputPassCounts): any {
+  let processedBom = bom
+  if (tldOnly) {
+    processedBom = extractTldFromBom(processedBom)
+  }
+  const dev = dropExcludedAndDevComponents(processedBom, { dropOptional: ignoreDev })
+  counts.devExcluded += dev.devExcluded
+  counts.excludedScopeDropped += dev.excludedScopeDropped
+  const purls = stripPurlCredentials(dev.bom)
+  counts.credentials += purls.credentials
+  return assignMissingBomRefs(purls.bom)
+}
+
 // Each row's document and, aligned by index, its meta (SCORE-69 ADR-2): rowMeta[i] is the meta of ids[i].
-async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string): Promise<{ bomObjs: any[], rowMeta: (MergeRowMeta | undefined)[] }> {
+async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string): Promise<{ bomObjs: any[], rowMeta: (MergeRowMeta | undefined)[], inputCounts: InputPassCounts }> {
   logger.info(`findBomsForMerge: ${ids}`)
   const rows = await Promise.all(ids.map(async (id) => findBomObjectWithMetaById(id, org)))
   const rowMeta: (MergeRowMeta | undefined)[] = rows.map(row => row?.meta)
   let bomRecords = rows.map(row => row?.bom)
   let bomObjs: any[] = []
+  const inputCounts: InputPassCounts = { devExcluded: 0, excludedScopeDropped: 0, credentials: 0 }
   logger.info(`bomrecords found # ${bomRecords.length}`)
   if (bomRecords && bomRecords.length) {
-    bomObjs = bomRecords.map(bomRecord => {
-      let processedBom = bomRecord;
-      if (tldOnly) {
-        processedBom = extractTldFromBom(processedBom);
-      }
-      if (ignoreDev) {
-        processedBom = extractDevFilteredBom(processedBom);
-      }
-      return processedBom;
-    });
+    bomObjs = bomRecords.map(bomRecord => prepareMergeInput(bomRecord, tldOnly, ignoreDev, inputCounts));
   }
-  return { bomObjs, rowMeta }
+  return { bomObjs, rowMeta, inputCounts }
 }
 
 export async function mergeBomObjects(bomObjects: any[], rebomOptions: RebomOptions): Promise<any> {

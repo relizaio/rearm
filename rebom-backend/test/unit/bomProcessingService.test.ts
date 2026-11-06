@@ -156,6 +156,125 @@ describe('BOM Processing Service - Unit Tests', () => {
         });
     });
 
+    // FDAW-6 T1, T2: the per-input filter of the default merge (3.1), three rules instead of one.
+    describe('dropExcludedAndDevComponents', () => {
+        const DEV = 'cdx:npm:package:development';
+        const isDev = (c: any) => (c.properties || []).some((p: any) => p.name === DEV && p.value === 'true');
+        const refs = (bom: any) => bom.components.map((c: any) => c['bom-ref']);
+
+        it('T1: removes the dev-marked and the excluded nodes of the web input, keeps the runtime ones and the root', () => {
+            const bom = loadFixture('merge/glucoview-web.input.cdx.json');
+            const dev = bom.components.filter((c: any) => isDev(c) && c.scope !== 'excluded').length;
+            const excluded = bom.components.filter((c: any) => c.scope === 'excluded').length;
+            expect(dev).toBe(12);
+            expect(excluded).toBe(2);
+
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+
+            expect(refs(result.bom)).toStrictEqual(['pkg:npm/glob@7.2.3', 'pkg:npm/@babel/code-frame@7.29.7', 'pkg:npm/@org/pkg@1.0.0']);
+            expect(result.bom.metadata.component).toBe(bom.metadata.component);
+            expect(result.devExcluded).toBe(12);
+            expect(result.excludedScopeDropped).toBe(2);
+            expect(result.optionalExcluded).toBe(0);
+            expect(result.bom.components.some((c: any) => isDev(c) || c.scope === 'excluded')).toBe(false);
+        });
+
+        it('T1: with dropOptional an optional node without a dev property goes too, counted as optional', () => {
+            const bom = loadFixture('merge/glucoview-web.input.cdx.json');
+            bom.components.push({ type: 'library', name: 'opt', version: '1.0.0', scope: 'optional', purl: 'pkg:npm/opt@1.0.0', 'bom-ref': 'pkg:npm/opt@1.0.0' });
+
+            const without = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+            expect(refs(without.bom)).toContain('pkg:npm/opt@1.0.0');
+            expect(without.optionalExcluded).toBe(0);
+
+            const withOptional = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: true });
+            expect(refs(withOptional.bom)).not.toContain('pkg:npm/opt@1.0.0');
+            expect(withOptional.optionalExcluded).toBe(1);
+            // the dev-marked optional nodes count as dev, not as optional
+            expect(withOptional.devExcluded).toBe(12);
+            expect(withOptional.excludedScopeDropped).toBe(2);
+        });
+
+        it('T1: an excluded node with a dev property counts once, as excluded scope', () => {
+            const bom = {
+                metadata: { component: { name: 'r', 'bom-ref': 'r' } },
+                components: [{ name: 't', scope: 'excluded', 'bom-ref': 't', properties: [{ name: DEV, value: 'true' }] }]
+            };
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: true });
+            expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 1, optionalExcluded: 0 });
+            expect(result.bom.components).toStrictEqual([]);
+        });
+
+        it('T1: every rule of the table reads its generator property', () => {
+            const marked = (name: string, value: string) => ({ name: `${name}-${value}`, 'bom-ref': `${name}-${value}`, properties: [{ name, value }] });
+            const bom = {
+                metadata: { component: { name: 'r', 'bom-ref': 'r' } },
+                components: [
+                    marked('cdx:maven:component_scope', 'test'), marked('cdx:maven:component_scope', 'compile'),
+                    marked('cdx:nuget:development', 'true'), marked('cdx:go:build_tag', 'testing'), marked('cdx:go:build_tag', 'linux'),
+                    marked('cdx:gradle:component_scope', 'testRuntime'), marked('cdx:gradle:component_scope', 'implementation')
+                ]
+            };
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+            expect(refs(result.bom)).toStrictEqual(['cdx:maven:component_scope-compile', 'cdx:go:build_tag-linux', 'cdx:gradle:component_scope-implementation']);
+            expect(result.devExcluded).toBe(4);
+        });
+
+        it('T2: dependency entries of dropped refs go, dropped refs leave every list, a runtime node reached only through a dropped one stays', () => {
+            const bom = {
+                metadata: { component: { name: 'root', 'bom-ref': 'root' } },
+                components: [
+                    { name: 'tool', 'bom-ref': 'tool', properties: [{ name: DEV, value: 'true' }], components: [{ name: 'inner', 'bom-ref': 'inner' }] },
+                    { name: 'lib', 'bom-ref': 'lib' },
+                    { name: 'behind', 'bom-ref': 'behind' }
+                ],
+                services: [{ name: 'svc', 'bom-ref': 'svc' }],
+                dependencies: [
+                    { ref: 'root', dependsOn: ['tool', 'lib'] },
+                    { ref: 'tool', dependsOn: ['behind', 'inner'] },
+                    { ref: 'inner', dependsOn: [] },
+                    { ref: 'lib', dependsOn: ['tool'], provides: ['tool', 'svc'] },
+                    { ref: 'svc', dependsOn: [] }
+                ]
+            };
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+            expect(refs(result.bom)).toStrictEqual(['lib', 'behind']);
+            // the nested component went with its parent, counted under the parent's rule
+            expect(result.devExcluded).toBe(2);
+            expect(result.bom.dependencies).toStrictEqual([
+                { ref: 'root', dependsOn: ['lib'] },
+                { ref: 'lib', dependsOn: [], provides: ['svc'] },
+                { ref: 'svc', dependsOn: [] }
+            ]);
+            expect(result.bom.services).toBe(bom.services);
+        });
+
+        it('T2: a root carrying scope excluded and a dev property stays, and a nested dev node goes from inside its parent', () => {
+            const bom = {
+                metadata: { component: { name: 'root', 'bom-ref': 'root', scope: 'excluded', properties: [{ name: DEV, value: 'true' }] } },
+                components: [{ name: 'lib', 'bom-ref': 'lib', components: [{ name: 'test-helper', 'bom-ref': 'th', scope: 'excluded' }, { name: 'kept', 'bom-ref': 'kept' }] }],
+                dependencies: [{ ref: 'root', dependsOn: ['lib'] }, { ref: 'lib', dependsOn: ['th', 'kept'] }, { ref: 'th', dependsOn: [] }]
+            };
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: true });
+            expect(result.bom.metadata.component).toBe(bom.metadata.component);
+            expect(result.bom.components[0].components.map((c: any) => c['bom-ref'])).toStrictEqual(['kept']);
+            expect(result.excludedScopeDropped).toBe(1);
+            expect(result.bom.dependencies).toStrictEqual([{ ref: 'root', dependsOn: ['lib'] }, { ref: 'lib', dependsOn: ['kept'] }]);
+        });
+
+        it('returns the input itself when nothing is dropped', () => {
+            const bom = loadFixture('cyclonedx-simple.json');
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+            expect(result.bom).toBe(bom);
+            expect(result).toMatchObject({ devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 0 });
+        });
+
+        it('extractDevFilteredBom is the pass with dropOptional', () => {
+            const bom = loadFixture('merge/glucoview-web.input.cdx.json');
+            expect(BomProcessingService.extractDevFilteredBom(bom)).toStrictEqual(BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: true }).bom);
+        });
+    });
+
     describe('computeBomDigest', () => {
         it('should generate consistent SHA256 digest', () => {
             const bom = loadFixture('cyclonedx-simple.json');
