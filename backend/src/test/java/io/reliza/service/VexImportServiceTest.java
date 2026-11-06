@@ -12,15 +12,28 @@ import static org.mockito.Mockito.when;
 
 import java.util.List;
 import java.util.Optional;
+import java.util.Set;
 import java.util.UUID;
 
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.mockito.ArgumentCaptor;
 
 import io.reliza.model.AnalysisScope;
+import io.reliza.model.AnalysisState;
+import io.reliza.model.IssuerClass;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.SourceFormat;
+import io.reliza.model.VexImportMode;
+import io.reliza.model.VexStatementProposalData;
 import io.reliza.model.VulnAnalysisData;
 import io.reliza.model.VulnerabilityRecordData;
+import io.reliza.model.dto.CdxVexStatement;
 import io.reliza.model.dto.ReleaseMetricsDto.VulnerabilitySeverity;
+import io.reliza.model.dto.VexImportInput;
+import io.reliza.model.dto.VexImportResult;
+import io.reliza.model.dto.VexParseEntry;
+import io.reliza.model.dto.VexParseResult;
 
 /**
  * Pins the severity-resolution chain contract: parser → existing FindingAnalysis rows →
@@ -105,6 +118,68 @@ class VexImportServiceTest {
         UUID org = UUID.randomUUID();
         when(recordService.getByAlias(org, "CVE-1")).thenReturn(Optional.empty());
         assertNull(svc.resolveSeverity(org, null, "CVE-1", List.of()));
+    }
+
+    /**
+     * Release-bound COMPONENT import where the PURL also appears in another component's
+     * release: exactly one proposal, on the uploading release's component.
+     */
+    @Test
+    void releaseBoundComponentImportTargetsOnlyUploadingComponent() throws Exception {
+        UUID org = UUID.randomUUID();
+        UUID boundRelease = UUID.randomUUID();
+        UUID otherRelease = UUID.randomUUID();
+        UUID componentA = UUID.randomUUID();
+        UUID componentB = UUID.randomUUID();
+        String purl = "pkg:npm/foo@1.2.3";
+
+        CdxVexParser parser = mock(CdxVexParser.class);
+        CdxVexStatement stmt = new CdxVexStatement("CVE-2026-0001", List.of(), List.of(purl),
+            AnalysisState.NOT_AFFECTED, null, null, null, null, List.of(),
+            VulnerabilitySeverity.HIGH, "{}");
+        when(parser.parse(any())).thenReturn(new VexParseResult(
+            List.of(new VexParseEntry(stmt, List.of())), null, 0, List.of()));
+        svc.cdxVexParser = parser;
+
+        PurlReleaseResolver purlResolver = mock(PurlReleaseResolver.class);
+        when(purlResolver.resolve(org, purl)).thenReturn(Set.of(boundRelease, otherRelease));
+        SharedReleaseService srs = mock(SharedReleaseService.class);
+        ReleaseData boundRd = mock(ReleaseData.class);
+        when(boundRd.getComponent()).thenReturn(componentA);
+        ReleaseData otherRd = mock(ReleaseData.class);
+        when(otherRd.getComponent()).thenReturn(componentB);
+        when(srs.getReleaseDataLight(boundRelease, org)).thenReturn(Optional.of(boundRd));
+        when(srs.getReleaseDataLight(otherRelease, org)).thenReturn(Optional.of(otherRd));
+        VexMatcher matcher = new VexMatcher();
+        matcher.purlReleaseResolver = purlResolver;
+        matcher.scopeTargetResolver = new ScopeTargetResolver();
+        matcher.scopeTargetResolver.sharedReleaseService = srs;
+        svc.matcher = matcher;
+
+        svc.vulnAnalysisService = mock(VulnAnalysisService.class);
+        svc.verdictResolver = new VexVerdictResolver();
+        VexStatementProposalService proposals = mock(VexStatementProposalService.class);
+        ArgumentCaptor<VexStatementProposalData> created =
+            ArgumentCaptor.forClass(VexStatementProposalData.class);
+        when(proposals.createProposal(created.capture(), any())).thenAnswer(inv -> inv.getArgument(0));
+        svc.proposalService = proposals;
+
+        VexImportInput input = new VexImportInput();
+        input.setOrg(org);
+        input.setSourceArtifact(UUID.randomUUID());
+        input.setContent("{}");
+        input.setFormat(SourceFormat.CDX_VEX);
+        input.setIssuerClass(IssuerClass.VENDOR);
+        input.setRestrictToRelease(boundRelease);
+        input.setVexScope(AnalysisScope.COMPONENT);
+        input.setVexImportMode(VexImportMode.STAGE);
+
+        VexImportResult result = svc.importPipeline(input, null);
+
+        assertEquals(1, result.getProposalsCreated());
+        assertEquals(1, created.getAllValues().size());
+        assertEquals(AnalysisScope.COMPONENT, created.getValue().getScope());
+        assertEquals(componentA, created.getValue().getScopeUuid());
     }
 
     private static <T> T any() { return org.mockito.ArgumentMatchers.any(); }
