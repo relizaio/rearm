@@ -82,7 +82,11 @@ export function submissionCancelNote (head: any): { lead: string, reason: string
     const cancels = (head?.acts ?? []).filter((a: any) => a?.kind === 'CANCEL')
     const last = cancels.length ? cancels[cancels.length - 1] : null
     if (last) {
-        return { lead: 'Cancelled on ' + submissionDateText(last.actedAt) + ' by ' + (last.actorName ?? '') + ':',
+        // The canceller by the one rule of the package screens (FDAW-4, B14, D8): the act's snapshot
+        // name; for a member with no stored name who is also the head's last actor, the head's
+        // server-resolved name (functional F-3); else 'removed user'. Never the uuid.
+        const name = last.actorName || (last.actor && last.actor === head?.lastActBy ? head?.lastActByName : null)
+        return { lead: 'Cancelled on ' + submissionDateText(last.actedAt) + ' by ' + submissionActorText(name, last.actor) + ':',
             reason: last.reasonText ?? '' }
     }
     if (head?.withdrawnDate || head?.withdrawReason) {

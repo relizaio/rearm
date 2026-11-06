@@ -286,6 +286,8 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
     it('FDAW-4 (T9): the product kinds read and the actor names validate against the CE schema of this checkout', () => {
         expect(validate(ceSchema, COMPONENT_KINDS).map(e => e.message)).toEqual([])
         expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/createdByName lastActByName withdrawnByName/)
+        // Round 4 (D8): the head's acts carry the actor, so the cancelled block can say removed user.
+        expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/acts \{[^}]*\bactor actorName\b/)
         expect(validate(ceSchema, SUBMISSION_DOCS.SubmissionsOfReleaseGql).map(e => e.message)).toEqual([])
     })
 

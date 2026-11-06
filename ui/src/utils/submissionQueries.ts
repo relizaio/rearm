@@ -51,7 +51,7 @@ const SUBMISSION_HEAD_GQL = `
     legacyState
     currentSentVersion
     versionStates { version state byVersion }
-    acts { uuid kind cause version actedAt actorName reasonText }
+    acts { uuid kind cause version actedAt actor actorName reasonText }
     settings { ${SUBMISSION_REF_GQL} }
 `
 
