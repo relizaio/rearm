@@ -294,6 +294,30 @@ class ReleaseSbomJustificationGraphqlIntegrationTest extends ReleaseSbomJustific
 				.get("key"))));
 	}
 
+	/**
+	 * Departure 7: a write that changes nothing files no audit row and does not bump the
+	 * revision. A sweep whose every matched key is already justified is exactly that write --
+	 * {@link Overwrite#SKIP_JUSTIFIED} leaves every one of them as it was, so the loop's
+	 * {@code set} list stays empty and {@code save} must never run.
+	 */
+	@Test
+	void aSelectorSweepThatMatchesOnlyAlreadyJustifiedKeysWritesNoAuditRowAndDoesNotBumpRevision() throws Exception {
+		Fix f = fixture();
+		data(asUser(f.writer(), SET, setVars(f.head(), List.of(keyOf(DEB_A), keyOf(DEB_B), keyOf(DEB_C)),
+				"VENDORED_SOURCE_NO_HASH", "x", null)), "setReleaseSbomHashJustification");
+		long revisionBefore = justificationService.current(head(f.head())).getRevision();
+		long auditBefore = count("release_sbom_justification_audit", "release_sbom = ?", f.head());
+
+		Map<String, Object> swept = data(asUser(f.writer(), SWEEP, vars("h", f.head().toString(), "s",
+				selector("TYPE", "deb", null), "c", "DISTRIBUTION_PUBLISHES_NO_HASH", "r", "debian policy")),
+				"bulkSetReleaseSbomHashJustificationBySelector");
+		assertEquals(List.of(keyOf(DEB_A), keyOf(DEB_B), keyOf(DEB_C)), swept.get("skippedKeys"));
+		assertEquals(revisionBefore, ((Number) swept.get("revision")).longValue(),
+				"every matched key is already justified: the sweep changes nothing and must not bump revision");
+		assertEquals(auditBefore, count("release_sbom_justification_audit", "release_sbom = ?", f.head()),
+				"a sweep that changes nothing must file no audit row");
+	}
+
 	@Test
 	void aSelectorOverTheCapIsRefusedWithNoRowWritten() throws Exception {
 		World w = componentRelease(null);

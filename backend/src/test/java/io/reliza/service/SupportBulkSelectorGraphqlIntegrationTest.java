@@ -15,6 +15,7 @@ import org.junit.jupiter.api.Test;
 
 import graphql.ExecutionResult;
 import io.reliza.model.Organization;
+import io.reliza.model.SupportBulkActKind;
 import io.reliza.model.UserData;
 import io.reliza.model.UserPermission.PermissionScope;
 import io.reliza.model.UserPermission.PermissionType;
@@ -108,6 +109,26 @@ class SupportBulkSelectorGraphqlIntegrationTest extends ReleaseSbomJustification
 		Organization other = testInitializer.obtainOrganization();
 		UserData foreignReader = userOf(other, PermissionScope.ORGANIZATION, other.getUuid(), PermissionType.READ_ONLY);
 		assertFalse(asUser(foreignReader, ACTS, vars("o", org.getUuid().toString(), "n", 5)).getErrors().isEmpty());
+	}
+
+	/**
+	 * T-1 (design row 23, THREAT_MODEL F-9): above 200 receipts, {@code limit: 10000} answers exactly 200,
+	 * the newest. Without the upper clamp the 201st receipt comes back too.
+	 */
+	@Test
+	void theReceiptListNeverServesMoreThanTheUpperClamp() throws Exception {
+		UserData orgWriter = userOf(org, PermissionScope.ORGANIZATION, org.getUuid(), PermissionType.READ_WRITE);
+		int cap = SbomComponentService.SUPPORT_BULK_ACTS_MAX_LIMIT;
+		for (int i = 0; i <= cap; i++) {
+			supportBulkActService.record(new SupportBulkActService.Receipt(UUID.randomUUID(), org.getUuid(),
+					SupportBulkActKind.LEVEL_OF_SUPPORT, null, null, Map.of("form", "TYPE", "type", "deb"),
+					List.of("c-" + i), 1, orgWriter.getUuid(), Map.of()));
+		}
+		assertEquals(cap + 1, count("support_bulk_acts", "org = ?", org.getUuid()));
+		List<Map<String, Object>> served = data(asUser(orgWriter, ACTS, vars("o", org.getUuid().toString(), "n", 10000)),
+				"supportBulkActs");
+		assertEquals(cap, served.size(), "limit 10000 is clamped to " + cap);
+		assertEquals(cap, supportBulkActService.listNewest(org.getUuid(), Integer.MAX_VALUE).size());
 	}
 
 	@Test

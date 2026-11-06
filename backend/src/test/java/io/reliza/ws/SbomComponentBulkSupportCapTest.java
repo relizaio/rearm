@@ -5,6 +5,7 @@
 package io.reliza.ws;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertInstanceOf;
 import static org.junit.jupiter.api.Assertions.assertNotEquals;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
@@ -330,6 +331,36 @@ class SbomComponentBulkSupportCapTest {
 		verify(other.auth()).isUserAuthorizedForObjectGraphQL(any(), any(), eq(PermissionScope.ORGANIZATION), any(),
 				any(), eq(CallType.WRITE));
 		verifyNoInteractions(other.repository());
+	}
+
+	/**
+	 * Exactly at the cap is allowed for the SELECTOR form too, same reasoning as
+	 * {@link #acceptsExactlyTheCap()} for the explicit form: an off-by-one at the selector's
+	 * {@code ids.size() > BULK_SUPPORT_MAX_IDS} check (or at the count preview's
+	 * {@code matched > BULK_SUPPORT_MAX_IDS}) would refuse the exact boundary a caller who
+	 * narrowed to the advertised limit is entitled to reach.
+	 */
+	@Test
+	void theSelectorFormAcceptsExactlyTheCap() throws Exception {
+		Wired w = wired();
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		List<String> exactlyCap = new ArrayList<>();
+		for (int i = 0; i < CAP; i++) exactlyCap.add(UUID.randomUUID().toString());
+		when(w.repository().findUuidsBySupportSelector(anyString(), anyString(), any(), any(), anyInt()))
+				.thenReturn(exactlyCap);
+
+		Map<String, Object> count = w.fetcher().supportBulkSelectorCount(w.org(), sel, null);
+		assertEquals(CAP, count.get("matched"));
+		assertEquals(false, count.get("overCap"));
+
+		// Collaborators beyond the resolved id list are not fully wired, so passing the cap
+		// guard reaches a later NPE rather than succeeding outright -- the same shape as
+		// acceptsExactlyTheCap(). The assertion here is that it is NOT the "limited to" refusal.
+		Throwable t = assertThrows(Throwable.class, () -> w.fetcher().bulkSetSbomComponentSupportBySelector(
+				w.org(), sel, null, LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null, null,
+				null, null, null, null));
+		assertFalse(t instanceof RelizaException && t.getMessage().contains("limited to"),
+				"exactly " + CAP + " matched ids must pass the cap guard, not be refused: " + t);
 	}
 
 	@Test
