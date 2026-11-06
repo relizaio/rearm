@@ -4,7 +4,7 @@ import { describe, expect, it } from 'vitest'
 import {
     PACKAGE_ARTIFACT_TYPE_OPTIONS, PACKAGE_IN_TRIAGE_FINDINGS_OPTIONS, PACKAGE_KIND_LABELS, PACKAGE_PART_LABELS,
     PACKAGE_SELECTION_OPTIONS, PACKAGE_SUPPRESSED_FINDINGS_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, packageEffectiveLine,
-    packageEnabledHelp, packageEnabledLine, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
+    PACKAGE_COMPONENT_QUESTION_HINT, packageEnabledHelp, packageEnabledLine, packageStateOf, packageFormError, packageFormFromView, packageKindLabel, packagePartFields, packageRemoveConfirm,
     packageSettingsInput, packageSourceLine, regulatoryPackagesAvailable,
     PACKAGE_MODE_OPTIONS, PACKAGE_PERSPECTIVE_MODE_OPTIONS, packageInheritConfirm, packageInheritedForm, packageModeOptions,
     packageInheritConflictHint, PACKAGE_INHERIT,
@@ -143,35 +143,53 @@ describe('the form and the save over two kinds (row 21)', () => {
         expect(values(PACKAGE_VEX_FORMAT_OPTIONS)).toEqual(['CYCLONEDX_VEX', 'OPENVEX'])
     })
 
-    it('enabled: off by default, pre-filled from the stored row or the parent, sent on every row but FOLLOW', () => {
-        expect(packageFormFromView(view(TEST_PARTS), 'ORGANIZATION').enabled).toBe(false)
-        expect(packageFormFromView(view(TEST_PARTS, { parent: { status: 'NOT_FOUND', settings: null } }), 'ORGANIZATION').enabled)
-            .toBe(false)
+    it('state: DISABLED by default, pre-filled from the stored row or the parent, sent on every row but FOLLOW, never the alias', () => {
+        expect(packageFormFromView(view(TEST_PARTS), 'ORGANIZATION').state).toBe('DISABLED')
+        expect(packageFormFromView(view(TEST_PARTS, { parent: { status: 'NOT_FOUND', settings: null } }), 'ORGANIZATION').state)
+            .toBe('DISABLED')
         const onParent = view(TEST_PARTS, { parent: { status: 'RESOLVED', source: 'ORGANIZATION', conflictingPerspectives: [],
-            settings: { sbomProfile: 'p', enabled: true, parts: [] } } })
-        expect(packageFormFromView(onParent, 'PERSPECTIVE').enabled).toBe(true)
+            settings: { sbomProfile: 'p', state: 'ENABLED', enabled: true, parts: [] } } })
+        expect(packageFormFromView(onParent, 'PERSPECTIVE').state).toBe('ENABLED')
         // A stored row with fields wins over the parent.
-        expect(packageFormFromView({ ...onParent, stored: { mode: 'OVERRIDE', enabled: false, sbomProfile: 'x', parts: [] } },
-            'COMPONENT').enabled).toBe(false)
-        // A stored FOLLOW row (enabled null) pre-fills from the parent, as its other fields do.
-        expect(packageFormFromView({ ...onParent, stored: { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', enabled: null } },
-            'COMPONENT').enabled).toBe(true)
+        expect(packageFormFromView({ ...onParent, stored: { mode: 'OVERRIDE', state: 'DISABLED', enabled: false, sbomProfile: 'x', parts: [] } },
+            'COMPONENT').state).toBe('DISABLED')
+        // A stored FOLLOW row (no state) pre-fills from the parent, as its other fields do.
+        expect(packageFormFromView({ ...onParent, stored: { mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1', state: null, enabled: null } },
+            'COMPONENT').state).toBe('ENABLED')
+        // FDAW-18: a row read with the deprecated alias only (enabled true, no state) reads ENABLED.
+        expect(packageFormFromView({ ...onParent, stored: { mode: 'OVERRIDE', enabled: true, sbomProfile: 'x', parts: [] } },
+            'COMPONENT').state).toBe('ENABLED')
+        // state wins over the alias when both are read
+        expect(packageStateOf({ state: 'DISABLED', enabled: true })).toBe('DISABLED')
+        expect(packageStateOf({ state: 'ENABLED', enabled: false })).toBe('ENABLED')
+        expect(packageStateOf(null)).toBe('DISABLED')
 
         const f = { ...packageFormFromView(onParent, 'COMPONENT'), mode: 'OVERRIDE' }
-        expect(packageSettingsInput(f, 'COMPONENT').enabled).toBe(true)
-        expect(packageSettingsInput({ ...f, enabled: false }, 'ORGANIZATION').enabled).toBe(false)
-        expect(packageSettingsInput({ ...f, mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT'))
-            .not.toHaveProperty('enabled')
+        expect(packageSettingsInput(f, 'COMPONENT').state).toBe('ENABLED')
+        expect(packageSettingsInput(f, 'COMPONENT')).not.toHaveProperty('enabled')
+        expect(packageSettingsInput({ ...f, state: 'DISABLED' }, 'ORGANIZATION').state).toBe('DISABLED')
+        expect(packageSettingsInput({ ...f, state: 'DISABLED' }, 'ORGANIZATION')).not.toHaveProperty('enabled')
+        const follow = packageSettingsInput({ ...f, mode: 'FOLLOW_PERSPECTIVE', followedPerspective: 'p1' }, 'COMPONENT')
+        expect(follow).not.toHaveProperty('state')
+        expect(follow).not.toHaveProperty('enabled')
     })
 
     it('the Enabled help names the kind and follows the value shown, and the effective line reads the resolved settings', () => {
         const off = 'Off: releases of this scope do not offer FDA premarket and no new '
             + 'submission can be made; existing submissions stay readable and can be withdrawn.'
+        const on = 'On: releases of this scope offer FDA premarket and can be submitted.'
         expect(packageEnabledHelp('FDA_PREMARKET', false)).toBe(off)
         expect(packageEnabledHelp('FDA_PREMARKET', null)).toBe(off)
-        expect(packageEnabledHelp('FDA_PREMARKET', true)).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+        expect(packageEnabledHelp('FDA_PREMARKET', true)).toBe(on)
+        // FDAW-18: at a component scope the FDA premarket switch names its Medical device tab question
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'COMPONENT')).toBe(on + ' On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', false, 'COMPONENT')).toBe(off + ' On the Medical device tab this is question 2.')
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'ORGANIZATION')).toBe(on)
+        expect(packageEnabledHelp('FDA_PREMARKET', true, 'PERSPECTIVE')).toBe(on)
+        expect(PACKAGE_COMPONENT_QUESTION_HINT).toBe('On the Medical device tab this is question 2')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'ENABLED' } })).toBe('Enabled here: on')
+        expect(packageEnabledLine({ status: 'RESOLVED', settings: { state: 'DISABLED' } })).toBe('Enabled here: off')
         expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: true } })).toBe('Enabled here: on')
-        expect(packageEnabledLine({ status: 'RESOLVED', settings: { enabled: false } })).toBe('Enabled here: off')
         expect(packageEnabledLine({ status: 'NOT_FOUND', settings: null })).toBe('Enabled here: off')
         expect(packageEnabledLine(null)).toBe('Enabled here: off')
     })
@@ -202,12 +220,12 @@ describe('the Inherit mode (UI only, never sent)', () => {
 
     it('an INHERIT form shows the parent settings whatever is stored, Enabled included', () => {
         const parent = { status: 'RESOLVED', source: 'ORGANIZATION', conflictingPerspectives: [],
-            settings: { sbomProfile: 'parent-profile', enabled: true, parts: [{ part: 'RAW_ARTIFACTS', options: { selection: 'INCLUDE',
+            settings: { sbomProfile: 'parent-profile', state: 'ENABLED', parts: [{ part: 'RAW_ARTIFACTS', options: { selection: 'INCLUDE',
                 artifactTypes: ['OTHER'] } }] } }
-        const stored = { mode: 'OVERRIDE', enabled: false, sbomProfile: 'mine', description: 'kept', parts: [] }
+        const stored = { mode: 'OVERRIDE', state: 'DISABLED', sbomProfile: 'mine', description: 'kept', parts: [] }
         const f = packageInheritedForm(view(TEST_PARTS, { parent, stored }), 'COMPONENT')
         expect(f.mode).toBe('INHERIT')
-        expect(f.enabled).toBe(true)
+        expect(f.state).toBe('ENABLED')
         expect(f.sbomProfile).toBe('parent-profile')
         expect(f.description).toBe('')
         expect(f.parts.find(p => p.part === 'RAW_ARTIFACTS')!.artifactTypes).toEqual(['OTHER'])

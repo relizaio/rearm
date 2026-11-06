@@ -7,9 +7,10 @@ import { resolve } from 'node:path'
 const src = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
 
 describe('TEA surfaces contract', () => {
-    it('ComponentView carries the TEA tab after the Device tab and before Actions and Guards, and the page banner under the title', () => {
+    it('ComponentView carries the TEA tab after the Medical device tab and before Actions and Guards, and the page banner under the title', () => {
         const cv = src('ComponentView.vue')
-        const device = cv.indexOf('<n-tab-pane name="device" tab="Device"')
+        // FDAW-18: the Device tab is relabelled Medical device; its name stays device
+        const device = cv.indexOf('<n-tab-pane name="device" tab="Medical device"')
         const tea = cv.indexOf('<n-tab-pane name="tea" tab="TEA" v-if="teaProfilesAvailable(myUser.installationType)">')
         expect(device).toBeGreaterThan(0)
         expect(tea).toBeGreaterThan(device)
@@ -340,12 +341,12 @@ describe('TEA surfaces contract', () => {
         expect(fn).toContain('packageEditor.value?.reloadCatalog()')
     })
 
-    it('ComponentView settings: one tab per Save, in order: Core Settings, License & Supplier, Device, TEA, SBOM Profiles, Regulatory, then Actions', () => {
+    it('ComponentView settings: one tab per Save, in order: Core Settings, License & Supplier, Medical device, TEA, SBOM Profiles, Regulatory, then Actions', () => {
         const cv = src('ComponentView.vue')
         const lines = [
             '<n-tab-pane name="Core Settings">',
             '<n-tab-pane name="licenseSupplier" tab="License & Supplier">',
-            '<n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">',
+            '<n-tab-pane name="device" tab="Medical device" v-if="deviceWindowSupported">',
             '<n-tab-pane name="tea" tab="TEA"',
             '<n-tab-pane name="sbomProfiles" tab="SBOM Profiles"',
             '<n-tab-pane name="regulatory" tab="Regulatory"',

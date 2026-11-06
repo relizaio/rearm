@@ -11,6 +11,9 @@ import constants from './constants'
 import { ceSchema, enumValuesOf, proSchema } from './schemaDriftSupport'
 import { outputEventTypeOptionsForEdition, TEA_OUTPUT_EVENT_TYPE_OPTIONS } from './teaOutputEvents'
 import profilesQueries from './profilesQueries'
+import { MEDICAL_DEVICE_SETUP_STATUS_QUERY, SET_UP_MEDICAL_DEVICE } from './medicalDeviceSetup'
+import { withoutAdditiveFields } from './graphqlDriftFallback'
+import { COMPONENT_DEVICE_WINDOW_QUERY } from './componentDeviceWindow'
 import submissionQueries from './submissionQueries'
 import { PACKAGE_SELECTION_OPTIONS, PACKAGE_VEX_FORMAT_OPTIONS, regulatoryPackagesAvailable } from './packageSettings'
 import {
@@ -339,5 +342,51 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
         const ce = enumValuesOf(ceSchema, 'NotificationEventTypeEnum')
         for (const v of SUBMISSION_EVENTS) expect(ce.includes(v), v).toBe(ceServesSubmissions())
         expect(enumValuesOf(ceSchema, 'ReleaseUpdateScopeEnum').includes('SUBMISSION')).toBe(ceServesSubmissions())
+    })
+})
+
+/**
+ * FDAW-18 (B5), architecture 4 row 21: the Medical device setup documents and the package settings
+ * documents with `state`, against the CE schema of this checkout (the mirror PR-B carries) and Pro.
+ */
+describe('Medical device setup documents (FDAW-18)', () => {
+    const SETUP_DOCS = { MEDICAL_DEVICE_SETUP_STATUS_QUERY, SET_UP_MEDICAL_DEVICE }
+
+    it('the status and the save validate against the CE schema of this checkout', () => {
+        for (const [name, doc] of Object.entries(SETUP_DOCS)) {
+            expect(validate(ceSchema, doc).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it.runIf(proSchema)('the status and the save validate against the Pro schema', () => {
+        for (const [name, doc] of Object.entries(SETUP_DOCS)) {
+            expect(validate(proSchema!, doc).map(e => e.message), name).toEqual([])
+        }
+    })
+
+    it('the status is an additive field: the core document asks for the component alone, so the FDA half hides on it', () => {
+        const core = withoutAdditiveFields(MEDICAL_DEVICE_SETUP_STATUS_QUERY)
+        expect(core.loc!.source.body).not.toContain('medicalDeviceSetupStatus(component')
+        expect(core.loc!.source.body).toContain('component(componentUuid: $componentUuid) { uuid }')
+        expect(validate(ceSchema, core).map(e => e.message)).toEqual([])
+    })
+
+    it('the package settings documents select state beside the deprecated enabled, and validate on CE', () => {
+        for (const name of ['PackageSettingsOfScopeGql', 'PackageSettingsOfOrgGql', 'PackageSettingsEditorViewGql']) {
+            const doc = (profilesQueries as any)[name]
+            expect(doc.loc!.source.body, name).toMatch(/\bstate\b/)
+            expect(validate(ceSchema, doc).map(e => e.message), name).toEqual([])
+        }
+        expect(enumValuesOf(ceSchema, 'PackageKindState')).toEqual(['ENABLED', 'DISABLED'])
+    })
+
+    it.runIf(proSchema)('the editor view with state validates against the Pro schema', () => {
+        expect(validate(proSchema!, profilesQueries.PackageSettingsEditorViewGql).map(e => e.message)).toEqual([])
+        expect(enumValuesOf(proSchema!, 'PackageKindState')).toEqual(['ENABLED', 'DISABLED'])
+    })
+
+    it('the device window read with the UDI fields validates on CE, full and core', () => {
+        expect(validate(ceSchema, COMPONENT_DEVICE_WINDOW_QUERY).map(e => e.message)).toEqual([])
+        expect(validate(ceSchema, withoutAdditiveFields(COMPONENT_DEVICE_WINDOW_QUERY)).map(e => e.message)).toEqual([])
     })
 })

@@ -354,6 +354,8 @@ type Query {
 	packageSettingsEffective(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): PackageSettingsResolution!
 	"The package settings editor's view of a kind at a scope: the stored row, the effective and parent resolutions, the kind."
 	packageSettingsEditorView(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): PackageSettingsEditorView!
+	"The Medical device setup status of a product (FDAW-18): the organization's three facts, the product's own FDA_PREMARKET row and state, the must-fix lines and the pending steps (READ on the component)."
+	medicalDeviceSetupStatus(component: ID!): MedicalDeviceSetupStatus!
 
 	# Regulatory packages and submissions (task TEA-29, submissions by TEA-35)
 	"The regulatory submissions of a release, every kind (READ on the release)."
@@ -1281,6 +1283,8 @@ type Mutation {
 	deleteSbomProfile(org: ID!, scope: SettingsScope!, object: ID, name: String!): Boolean!
 	"Save the package settings of a kind at a scope, wholesale (ADMIN on the scope's object)."
 	savePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!, settings: PackageSettingsInput!): PackageSettings!
+	"The Medical device setup save (FDAW-18): the device answers (WRITE on the component), the product's FDA package settings (ADMIN on the component) and the organization steps (organization ADMIN), in one transaction; each step the caller does not clear answers NOT_AUTHORIZED with the sentence naming who completes it."
+	setUpMedicalDevice(component: ID!, setup: MedicalDeviceSetupInput!): MedicalDeviceSetupResult!
 	"Remove the package settings of a kind at a scope; answers whether one existed (ADMIN on the scope's object)."
 	deletePackageSettings(org: ID!, scope: SettingsScope!, object: ID, kind: PackageKind!): Boolean!
 	"Create the release's regulatory submission of a kind: writes a FINAL version 1 with a FINALIZE act and no confirmation record (READ_WRITE on the release's component); refused when one exists: use resubmitSubmission."
@@ -3352,6 +3356,80 @@ enum MarketingReleaseLifecycleEnum {
 	RELEASE_CANDIDATE
 	GENERAL_AVAILABILITY
 	END_OF_LIFE
+}
+
+# Medical device setup (FDAW-18, B5): one save over the device answers, the product's FDA package settings
+# and the organization steps; the Java twins of the enums are nested in io.reliza.model.saas.MedicalDeviceSetup.
+
+"""A Medical device setup save. The device answers go through the component update path; fdaPremarket null leaves every package settings row alone."""
+input MedicalDeviceSetupInput {
+	"Question 1 with the 821 checkbox: NONE (not a device), MEDICAL_UNTRACKED (a device), MEDICAL_TRACKED (a device under a 21 CFR 821 tracking order)"
+	deviceClass: DeviceClass!
+	"The UDI fields; replaced whole as updateComponent does, the stored window carried across; null leaves them alone"
+	medicalProfile: MedicalProfileInput
+	deviceSupportWindow: DeviceSupportWindowInput
+	clearDeviceSupportWindow: Boolean
+	"Question 2: whether this product prepares FDA premarket submissions; null leaves the product's package settings alone"
+	fdaPremarket: PackageKindState
+	"Customize: the SBOM profile the product's FDA package names; null means the organization's"
+	fdaSbomProfile: String
+	expectedRevision: Int
+}
+
+"""The steps of a Medical device setup save, in the order the save takes them."""
+enum MedicalDeviceSetupStep {
+	ORG_SUPPORT_EXPORT
+	ORG_FDA_PROFILE
+	ORG_PACKAGE_SETTINGS
+	PRODUCT_PACKAGE_SETTINGS
+	DEVICE_ANSWERS
+}
+
+"""What a step did: UNCHANGED when no write was needed, whatever the caller's grants; NOT_AUTHORIZED when a needed write is not the caller's to make."""
+enum MedicalDeviceSetupOutcome {
+	WRITTEN
+	UNCHANGED
+	NOT_AUTHORIZED
+	NOT_REQUESTED
+}
+
+"""Whether a profile named fda resolves at the organization, and whether it includes support metadata."""
+enum MedicalDeviceProfileStatus {
+	ABSENT
+	INCLUDES_SUPPORT
+	EXCLUDES_SUPPORT
+}
+
+type MedicalDeviceSetupStepResult {
+	step: MedicalDeviceSetupStep!
+	outcome: MedicalDeviceSetupOutcome!
+	"The sentence for NOT_AUTHORIZED and WRITTEN steps; null otherwise"
+	text: String
+}
+
+type MedicalDeviceSetupStatus {
+	supportExport: SupportInjectionSetting!
+	"ABSENT: no profile named fda resolves at the organization; else whether it includes support metadata"
+	fdaProfile: MedicalDeviceProfileStatus!
+	"The SBOM profile the organization's FDA_PREMARKET package settings resolve (the built-in default when no row)"
+	orgPackageProfile: String!
+	"The product's own FDA_PREMARKET row, null when it inherits"
+	productPackage: PackageSettings
+	"The product's effective FDA_PREMARKET state"
+	productState: PackageKindState!
+	"The must-fix line when the profile the product's FDA package settings resolve excludes support metadata; empty otherwise"
+	mustFix: [String!]!
+	"The steps a save answering both questions yes would report WRITTEN today for a caller who clears every gate; empty when the product is not a device or its row is DISABLED"
+	pending: [MedicalDeviceSetupStep!]!
+	"The steps the same save would report WRITTEN for this caller: the caller's own simulated save with their gates, never a filter over pending"
+	pendingForCaller: [MedicalDeviceSetupStep!]!
+}
+
+type MedicalDeviceSetupResult {
+	component: Component!
+	steps: [MedicalDeviceSetupStepResult!]!
+	status: MedicalDeviceSetupStatus!
+	warnings: [DeviceWindowWarning!]!
 }
 
 """

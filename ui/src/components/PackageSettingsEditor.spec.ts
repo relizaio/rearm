@@ -171,7 +171,7 @@ describe('PackageSettingsEditor', () => {
     })
 
     it('INHERIT over a stored row asks "Inherit again?", then deletes without a second confirmation and reloads', async () => {
-        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 's1', mode: 'OVERRIDE', enabled: false, sbomProfile: 'mine', parts: [] },
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 's1', mode: 'OVERRIDE', state: 'DISABLED', sbomProfile: 'mine', parts: [] },
             parent: { ...resolution, settings: { ...resolution.settings, enabled: true } } })
         const w = await mountWith()
         expect(checkedMode(w)).toBe('OVERRIDE')
@@ -223,6 +223,8 @@ describe('PackageSettingsEditor', () => {
     it('the organization keeps no mode radio and its Remove, which confirms, then deletes', async () => {
         views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 's1', sbomProfile: 'default', parts: [] } })
         const w = await mountWith({ scope: 'ORGANIZATION', objectUuid: null })
+        // FDAW-18: only a component's switch names the Medical device tab question
+        expect(w.find('.package-enabled-help').text()).not.toContain('Medical device')
         expect(w.find('[data-testid="package-mode"]').exists()).toBe(false)
         expect(w.find('[data-testid="package-save"]').exists()).toBe(true)
         fire.mockResolvedValueOnce({ isConfirmed: false })
@@ -275,7 +277,8 @@ describe('PackageSettingsEditor', () => {
         expect(dialogWarning).not.toHaveBeenCalled()
         expect(operation(mutate.mock.calls[0][0])).toBe('SavePackageSettings')
         expect(mutate.mock.calls[0][0].variables.settings.mode).toBe('OVERRIDE')
-        expect(mutate.mock.calls[0][0].variables.settings.enabled).toBe(true)
+        expect(mutate.mock.calls[0][0].variables.settings.state).toBe('ENABLED')
+        expect(mutate.mock.calls[0][0].variables.settings).not.toHaveProperty('enabled')
         expect(JSON.stringify(mutate.mock.calls[0][0].variables)).not.toContain('INHERIT')
     })
 
@@ -337,15 +340,16 @@ describe('PackageSettingsEditor', () => {
         expect(sw.props('value')).toBe(false)
         await pickMode(w, 'OVERRIDE')
         expect(fields.text()).toContain('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
-            + 'existing submissions stay readable and can be withdrawn.')
+            + 'existing submissions stay readable and can be withdrawn. On the Medical device tab this is question 2.')
         await sw.vm.$emit('update:value', true)
         await w.find('[data-testid="package-save"]').trigger('click')
         await flushPromises()
-        expect(mutate.mock.calls[0][0].variables.settings.enabled).toBe(true)
+        expect(mutate.mock.calls[0][0].variables.settings.state).toBe('ENABLED')
+        expect(mutate.mock.calls[0][0].variables.settings).not.toHaveProperty('enabled')
     })
 
     it('pre-fills Enabled from the stored row, and a FOLLOW row sends no enabled and shows the followed state', async () => {
-        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'default', parts: [] } })
         const on = await mountWith()
         expect(on.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!.props('value'))
             .toBe(true)
@@ -365,7 +369,7 @@ describe('PackageSettingsEditor', () => {
     })
 
     it('a read-only editor shows the switch disabled at the stored value', async () => {
-        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'default', parts: [] } })
         const w = await mountWith({ isWritable: false })
         const sw = w.findAllComponents(NSwitch).find((c: any) => c.attributes('data-testid') === 'package-enabled')!
         expect(sw.props('value')).toBe(true)
@@ -373,21 +377,21 @@ describe('PackageSettingsEditor', () => {
     })
 
     it('the Enabled help follows the switch: Off text when off, On text once switched on', async () => {
-        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: false, sbomProfile: 'default', parts: [] } })
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'DISABLED', sbomProfile: 'default', parts: [] } })
         const w = await mountWith()
         const help = () => w.find('.package-enabled-help').text()
         expect(help()).toBe('Off: releases of this scope do not offer FDA premarket and no new submission can be made; '
-            + 'existing submissions stay readable and can be withdrawn.')
+            + 'existing submissions stay readable and can be withdrawn. On the Medical device tab this is question 2.')
         await enabledSwitch(w).vm.$emit('update:value', true)
         await flushPromises()
-        expect(help()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+        expect(help()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
     })
 
     it('the Enabled help describes the shown value when read-only: an inherited on, a reader on a stored on', async () => {
         views.FDA_PREMARKET = viewOf(FDA, { parent: { ...resolution, settings: { ...resolution.settings, enabled: true } } })
         const inherit = await mountWith()
         expect(checkedMode(inherit)).toBe('INHERIT')
-        expect(inherit.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+        expect(inherit.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
         // Override pre-filled from the parent: switched off there, the text follows.
         await pickMode(inherit, 'OVERRIDE')
         await enabledSwitch(inherit).vm.$emit('update:value', false)
@@ -395,9 +399,9 @@ describe('PackageSettingsEditor', () => {
         expect(inherit.find('.package-enabled-help').text()).toContain('Off: releases of this scope do not offer FDA premarket')
         inherit.unmount()
 
-        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', enabled: true, sbomProfile: 'default', parts: [] } })
+        views.FDA_PREMARKET = viewOf(FDA, { stored: { uuid: 'r', mode: 'OVERRIDE', state: 'ENABLED', sbomProfile: 'default', parts: [] } })
         const reader = await mountWith({ isWritable: false })
-        expect(reader.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted.')
+        expect(reader.find('.package-enabled-help').text()).toBe('On: releases of this scope offer FDA premarket and can be submitted. On the Medical device tab this is question 2.')
     })
 
     it('INHERIT at COMPONENT scope with perspectives shows the conflict hint under the source line, naming the kind', async () => {

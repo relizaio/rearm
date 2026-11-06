@@ -81,13 +81,17 @@ class SupportExportStateTest {
 	 *   <li>{@code OrganizationData} DECLARES {@code getSupportInjectionOrDefault} -- it is
 	 *       the field's home;</li>
 	 *   <li>{@code OrganizationService} WRITES it, applying the settings patch.</li>
+	 *   <li>{@code MedicalDeviceSetupService} (FDAW-18) reads the stored value to decide whether its
+	 *       save must turn the switch on (through {@code OrganizationService}) and to report it on the
+	 *       setup status; it serves no BOM.</li>
 	 * </ul>
 	 * Neither reads it to choose what a served BOM carries. A class that does, and is not the
 	 * decider, is the thing this test is looking for.
 	 */
 	private static final List<Path> SETTING_OWNERS = List.of(
 			Path.of("src/main/java/io/reliza/model/OrganizationData.java"),
-			Path.of("src/main/java/io/reliza/service/OrganizationService.java"));
+			Path.of("src/main/java/io/reliza/service/OrganizationService.java"),
+			Path.of("src/main/java/io/reliza/service/saas/MedicalDeviceSetupService.java"));
 
 	/**
 	 * The three answers, from the setting rather than from a constant.

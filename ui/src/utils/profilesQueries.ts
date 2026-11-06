@@ -81,6 +81,7 @@ const PACKAGE_SETTINGS_FIELDS_GQL = `
     kind
     mode
     followedPerspective
+    state
     enabled
     sbomProfile
     parts { part options { ${PACKAGE_PART_OPTIONS_GQL} } }
@@ -110,7 +111,7 @@ query PackageSettingsOfScope($org: ID!, $scope: SettingsScope!, $object: ID) {
 
 const PACKAGE_SETTINGS_OF_ORG = gql`
 query PackageSettingsOfOrg($org: ID!) {
-    packageSettingsOfOrg(org: $org) { uuid scope object kind mode followedPerspective enabled sbomProfile description revision }
+    packageSettingsOfOrg(org: $org) { uuid scope object kind mode followedPerspective state enabled sbomProfile description revision }
 }`
 
 const PACKAGE_SETTINGS_EDITOR_VIEW = gql`

@@ -35,9 +35,13 @@ describe('the device window panel is wired into the component page', () => {
     it('has one Save bar for the whole Device tab, gated on an actual change', () => {
         const at = source.indexOf('data-testid="component-device-save"')
         expect(at).toBeGreaterThan(-1)
-        const bar = source.slice(source.lastIndexOf('<div', at), at)
-        expect(bar).toMatch(/v-if="hasDeviceChanges && isWritable"/)
+        const bar = source.slice(source.lastIndexOf('<div class="deviceSettingsActions"', at), at)
+        // FDAW-18 (F-1): the bar also shows for a question-2 edit and for the caller's pending setup
+        expect(bar).toMatch(/v-if="\(hasDeviceChanges \|\| hasFdaChanges \|\| canCompleteSetup\) && isWritable"/)
         expect(source.slice(at, source.indexOf('>', at))).toMatch(/@click="saveDevice"/)
+        const complete = source.indexOf('data-testid="device-complete-setup"')
+        expect(complete).toBeGreaterThan(at)
+        expect(source.slice(complete, source.indexOf('>', complete))).toMatch(/@click="saveDevice"/)
         expect(source).toMatch(/@click="resetDevice"/)
         for (const gone of ['saveDeviceClass', 'saveDeviceWindow', 'Save window', 'Save device class',
             'submitDeviceClass', 'submitDeviceWindow']) {
@@ -140,8 +144,9 @@ describe('the device window panel is wired into the component page', () => {
     /** The write goes through the shared builder, which owns the clear-vs-empty rule. */
     it('builds its mutation input through deviceSaveInput', () => {
         // deviceSaveInput delegates the window part to deviceWindowMutationInput
-        // (utils/componentDeviceWindow.spec.ts runs it).
-        expect(fnBody('async function submitDevice ')).toMatch(/deviceSaveInput\(componentUuid,/)
+        // (utils/componentDeviceWindow.spec.ts runs it). FDAW-18: the updateComponent save is the
+        // fallback where the setup is not served (CE); medicalDeviceSetupInput reuses the same rule.
+        expect(fnBody('async function submitDeviceComponentOnly ')).toMatch(/deviceSaveInput\(componentUuid,/)
         // name is String! on UpdateComponentInput -- a partial without it is rejected at
         // coercion, so the panel must pass one.
         // .value on BOTH: updatedComponent is a Ref, and `updatedComponent.name` in
@@ -365,8 +370,9 @@ describe('the D7 UI surfaces can actually render and read', () => {
         // Before this, deviceClass could only be set at CREATE time, so the window panel --
         // which correctly renders only for a device -- was unreachable for every component
         // that already existed, and D7's "declare it on the product component" had no path.
-        expect(source).toMatch(/<n-select v-model:value="deviceClassEdit"/)
-        expect(source).toMatch(/DEVICE_CLASS_OPTIONS/)
+        // FDAW-18: question 1 (Yes / No with the 821 checkbox) sets the class
+        expect(source).toMatch(/data-testid="device-is-medical" :value="isDeviceComponent"\s+@update:value="setIsDevice"/)
+        expect(source).toMatch(/data-testid="device-tracked-821"/)
         // Re-read after the write: NONE retracts the window server-side, and leaving stale
         // dates in the form would show a section 524B commitment the server no longer holds.
         expect(fnBody('async function refreshAfterDeviceSave')).toMatch(/await loadDeviceWindow\(\)/)
@@ -426,13 +432,13 @@ describe('the D7 UI surfaces can actually render and read', () => {
         expect(core).toBeGreaterThan(-1)
         expect(bar).toBeGreaterThan(core)
         expect(bar).toBeLessThan(coreEnd)
-        const deviceLine = '<n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">'
+        const deviceLine = '<n-tab-pane name="device" tab="Medical device" v-if="deviceWindowSupported">'
         const device = source.indexOf(deviceLine)
         expect(device).toBeGreaterThan(coreEnd)
         const pane = source.slice(device, source.indexOf('</n-tab-pane>', device))
         expect(pane).toContain('THE DEVICE SUPPORT WINDOW LIVES HERE NOW')
         expect(pane).toContain('<div v-if="deviceWindowSupported" style="margin-top: 22px;">')
-        expect(pane).toContain('<h4>Device class</h4>')
+        expect(pane).toContain('<h4>{{ questionIsMedical(componentData?.name) }}</h4>')
         expect(pane).toContain('<div v-if="deviceWindowSupported && isDeviceComponent"')
         expect(pane).toContain('<h4>Device support window</h4>')
         expect(pane).not.toContain('class="coreSettingsActions"')
@@ -447,5 +453,57 @@ describe('the D7 UI surfaces can actually render and read', () => {
         const corePane = source.slice(core, coreEnd)
         expect(corePane).not.toContain('Device class')
         expect(corePane).not.toContain('saveDeviceWindow')
+    })
+})
+
+/**
+ * FDAW-18 (B5), architecture 4 row 18: the Medical device tab's two questions and one Save, wired.
+ */
+describe('the Medical device tab is wired into the component page (FDAW-18)', () => {
+    it('carries the questions, the defaults line, the status and Complete setup', () => {
+        for (const id of ['device-is-medical', 'device-tracked-821', 'device-fda-premarket', 'device-fda-defaults',
+            'device-fda-still-on', 'device-setup-status', 'device-complete-setup']) {
+            expect(source, id).toContain('data-testid="' + id + '"')
+        }
+        expect(source).toContain(":data-testid=\"'device-step-not-done-' + l.step\"")
+        expect(source).not.toContain('DEVICE_CLASS_OPTIONS')
+        expect(source).not.toMatch(/label: 'MEDICAL_TRACKED'/)
+        expect(source).not.toMatch(/label: 'MEDICAL_UNTRACKED'/)
+    })
+
+    it('closes on real edits only: the guard tests hasFdaChanges, never canCompleteSetup', () => {
+        const close = fnBody('const handleComponentSettingsClose')
+        expect(close).toMatch(/hasFdaChanges/)
+        expect(close).not.toMatch(/canCompleteSetup/)
+    })
+
+    it('sends one setUpMedicalDevice and counts the row write only when the device step wrote it (F-4)', () => {
+        const submit = fnBody('async function submitDevice ')
+        expect(submit).toMatch(/mutation: SET_UP_MEDICAL_DEVICE/)
+        expect(submit).toMatch(/withExpectedRevision\(medicalDeviceSetupInput\(/)
+        const guard = submit.indexOf('if (deviceStepWritten(')
+        expect(guard).toBeGreaterThan(-1)
+        const saved = submit.indexOf('revisionSaved(')
+        expect(saved).toBeGreaterThan(guard)
+        expect(submit.indexOf('revisionSaved(', saved + 1)).toBe(-1)
+        expect(submit.slice(guard, submit.indexOf('}', guard))).toContain('revisionSaved(expected)')
+        expect(submit.indexOf('await refreshAfterDeviceSave()')).toBeGreaterThan(saved)
+        expect(submit).toMatch(/setupStepNotes\.value = setupStepLines\(result\)/)
+    })
+
+    it('counts a UDI edit as a device change and re-reads the status after a save (F-6)', () => {
+        expect(source).toMatch(/deviceClassEdit\.value !== deviceClassBaseline\.value \|\| deviceWindowDirty\.value \|\| deviceProfileDirty\.value/)
+        expect(fnBody('async function refreshAfterDeviceSave')).toMatch(/await loadSetupStatus\(\)/)
+        expect(fnBody('function resetDevice')).toMatch(/fdaPremarketEdit\.value = fdaPremarketBaselineValue\.value/)
+    })
+
+    it('reads the UDI fields with the window as core fields, and the form fragment still selects no window', () => {
+        const dw = readFileSync(fileURLToPath(new URL('../utils/componentDeviceWindow.ts', import.meta.url)), 'utf8')
+        const doc = dw.slice(dw.indexOf('export const COMPONENT_DEVICE_WINDOW_QUERY'), dw.indexOf('/** One derived observation'))
+        for (const f of ['issuingAgency', 'udiBearing', 'gudidDefaults { brandName companyName gmdnCode }']) {
+            const line = doc.split('\n').find(l => l.includes(f))
+            expect(line, f).toBeDefined()
+            expect(line, f).not.toContain('#additive-field')
+        }
     })
 })
