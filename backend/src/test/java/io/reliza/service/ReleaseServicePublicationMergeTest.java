@@ -40,6 +40,7 @@ import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.exceptions.MergedSbomUnavailableException;
 import io.reliza.exceptions.MergedSbomUnavailableException.Reason;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
@@ -303,7 +304,7 @@ class ReleaseServicePublicationMergeTest {
 	}
 
 	private static PublicationMergeRequest request(Set<ArtifactBelongsTo> sources, ExportMetadataOptions metadata) {
-		return new PublicationMergeRequest(sources, false, false, BomStructureType.FLAT, null, metadata);
+		return new PublicationMergeRequest(sources, false, false, BomStructureType.FLAT, null, metadata, null);
 	}
 
 	private static PublicationMergeRequest request(Set<ArtifactBelongsTo> sources) {
@@ -403,6 +404,30 @@ class ReleaseServicePublicationMergeTest {
 		assertEquals(List.of(new ReleaseBom(cached, stored(rd, FLAT_ANY)),
 				new ReleaseBom(merged, stored(rd, FLAT_ANY).withMissingSbomMode(OMIT))), calls.get(0).reboms(),
 				"the publication's row is written beside the placeholder row of the same knobs, never over it");
+	}
+
+	/** FDAW-14 3.5 row 4: the publication's profile reaches the seam, so the head's hash justifications can. */
+	@Test
+	void thePublicationsProfileNameReachesTheInjectionSeam() throws Exception {
+		List<String> profiles = new ArrayList<>();
+		List<UUID> releases = new ArrayList<>();
+		ReflectionTestUtils.setField(svc, "supportInjectionService", new SupportInjectionService(null, null, null, null) {
+			@Override
+			public void assertExportMetadataRequestable(UUID org, ExportMetadataOptions options) {}
+
+			@Override
+			public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+					ExportMetadataOptions options, UUID releaseUuid, String profileName) {
+				profiles.add(profileName);
+				releases.add(releaseUuid);
+				return bom;
+			}
+		});
+		ReleaseData rd = release(component("firmware", ComponentType.COMPONENT), "1.0.0");
+		releaseSbom(rd);
+		publish(rd, new PublicationMergeRequest(Set.of(), false, false, BomStructureType.FLAT, null, EXCLUDE_BOTH, "fda"));
+		assertEquals(List.of("fda"), profiles);
+		assertEquals(List.of(rd.getUuid()), releases);
 	}
 
 	// ---- 24 ----
@@ -744,7 +769,7 @@ class ReleaseServicePublicationMergeTest {
 	void includeIncludeInjectsAndKeepsTheInternalMarkersAndStillSweepsTheForgery() {
 		enableInjection();
 
-		String served = svc.applyExportMetadata(mergedDocument(), ORG, UUID.randomUUID(), INCLUDE_BOTH).toString();
+		String served = svc.applyExportMetadata(mergedDocument(), ORG, UUID.randomUUID(), INCLUDE_BOTH, null).toString();
 
 		assertTrue(served.contains(LevelOfSupport.NO_LONGER_MAINTAINED.getWireValue()),
 				"the genuine attested level was not injected: " + served);
@@ -759,7 +784,7 @@ class ReleaseServicePublicationMergeTest {
 	void excludeExcludeStripsBothAndStillSweepsTheForgery() {
 		enableInjection();
 
-		String served = svc.applyExportMetadata(mergedDocument(), ORG, UUID.randomUUID(), EXCLUDE_BOTH).toString();
+		String served = svc.applyExportMetadata(mergedDocument(), ORG, UUID.randomUUID(), EXCLUDE_BOTH, null).toString();
 
 		assertFalse(served.contains(LevelOfSupport.NO_LONGER_MAINTAINED.getWireValue()),
 				"support facts injected although declined: " + served);
@@ -776,7 +801,8 @@ class ReleaseServicePublicationMergeTest {
 	void aFailingInjectorStillSweepsSilentlyAndHonoursTheInternalChoice() {
 		ReflectionTestUtils.setField(svc, "supportInjectionService", new SupportInjectionService(null, null, null, null) {
 			@Override
-			public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, ExportMetadataOptions options) {
+			public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+					ExportMetadataOptions options, UUID releaseUuid, String profileName) {
 				throw new IllegalStateException("injector outage");
 			}
 		});
@@ -784,7 +810,7 @@ class ReleaseServicePublicationMergeTest {
 				new ExportMetadataOptions(ExportMetadataChoice.INCLUDE, ExportMetadataChoice.EXCLUDE);
 
 		String served = svc.applyExportMetadata(mergedDocument(), ORG, UUID.randomUUID(),
-				includeSupportExcludeInternal).toString();
+				includeSupportExcludeInternal, null).toString();
 
 		assertForgedSwept(served);
 		assertFalse(served.contains("reliza:support:disclosure"), "a failed seam serves the document unmarked: " + served);
@@ -804,10 +830,11 @@ class ReleaseServicePublicationMergeTest {
 			}
 
 			@Override
-			JsonNode applyExportMetadata(JsonNode mergedBom, UUID org, UUID releaseUuid, ExportMetadataOptions options) {
+			JsonNode applyExportMetadata(JsonNode mergedBom, UUID org, UUID releaseUuid, ExportMetadataOptions options,
+					String profileName) {
 				seen.add(options);
 				seenRelease.add(releaseUuid);
-				return super.applyExportMetadata(mergedBom, org, releaseUuid, options);
+				return super.applyExportMetadata(mergedBom, org, releaseUuid, options, profileName);
 			}
 		};
 		ReflectionTestUtils.setField(recording, "rebomService", ReflectionTestUtils.getField(svc, "rebomService"));

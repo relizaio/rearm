@@ -54,6 +54,20 @@ for (const [edition, maybeSchema] of SCHEMAS) {
             }
         })
 
+        // FDAW-14: the justified unknown, set and cleared, and the replace-the-date call.
+        it('the justified-unknown arguments coerce', () => {
+            const replace = { ...emptyAttestationForm(), endOfSupportMode: 'UNKNOWN' as const,
+                endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT', endOfSupportUnknownText: 'asked', reason: 'r' }
+            const vars = attestationVariables('c-1', replace, { endOfSupportDate: '2030-01-01' })
+            expect(coerce('endOfSupportUnknown', vars.endOfSupportUnknown)).toEqual([])
+            expect(coerce('clearMilestones', vars.clearMilestones)).toEqual([])
+            const clear = attestationVariables('c-1', { ...emptyAttestationForm(), clearEndOfSupportUnknown: true, reason: 'r' })
+            expect(coerce('clearEndOfSupportUnknown', clear.clearEndOfSupportUnknown)).toEqual([])
+            for (const code of ['NO_COMMITTED_END_OF_SUPPORT', 'COMMUNITY_PROJECT', 'SUPPLIER_PUBLISHES_NO_DATE', 'OTHER']) {
+                expect(coerce('endOfSupportUnknown', { code, text: null }), code).toEqual([])
+            }
+        })
+
         // The assertion that would have caught the invented party values before the browser did.
         it.each(['FIRST_PARTY', 'THIRD_PARTY'])('supportParty %s is accepted', (value) => {
             expect(coerce('supportParty', value)).toEqual([])

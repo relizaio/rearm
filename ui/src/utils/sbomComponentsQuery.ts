@@ -33,6 +33,7 @@ const COMPONENT_CORE_SELECTION = `
                 supportStatus
                 supportSource
                 endOfSupportDate
+                endOfSupportUnknown { code bulkAct }
                 attestationState`
 
 /**

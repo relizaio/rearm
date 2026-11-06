@@ -492,3 +492,37 @@ describe('submission gating', () => {
         expect(f.canSubmit()).toBe(true)
     })
 })
+
+/** FDAW-14 3.9: the end-of-support justified unknown in the per-component editor. */
+describe('the justified unknown', () => {
+    it('opens on a stored unknown, showing its code and text, and is clean until changed', () => {
+        const f = useAttestationForm()
+        f.open(existing({ endOfSupportDate: null, supportMilestones: [],
+            endOfSupportUnknown: { code: 'OTHER', text: 'upstream silent', bulkAct: 'act-1' } }))
+        expect(f.form.endOfSupportMode).toBe('UNKNOWN')
+        expect(f.form.endOfSupportUnknownCode).toBe('OTHER')
+        expect(f.form.endOfSupportUnknownText).toBe('upstream silent')
+        expect(f.dirty()).toBe(false)
+        f.form.endOfSupportUnknownCode = 'COMMUNITY_PROJECT'
+        expect(f.dirty()).toBe(true)
+        expect(f.canSubmit()).toBe(true)
+    })
+
+    it('replacing a stored date needs a reason, then sends the clear and the unknown in one call', () => {
+        const f = useAttestationForm()
+        f.open(existing())
+        f.form.endOfSupportMode = 'UNKNOWN'
+        f.form.endOfSupportUnknownCode = 'SUPPLIER_PUBLISHES_NO_DATE'
+        expect(f.replacesDate()).toBe(true)
+        expect(f.errors().join(' ')).toContain('Replacing the date 2030-01-01 with a justified unknown needs a reason')
+        f.form.reason = 'the date was a guess'
+        expect(f.errors()).toEqual([])
+        const sets = f.variableSets('c-1')
+        expect(sets).toHaveLength(1)
+        expect(sets[0].clearMilestones).toEqual(['END_OF_SUPPORT'])
+        expect(sets[0].endOfSupportUnknown).toEqual({ code: 'SUPPLIER_PUBLISHES_NO_DATE', text: null })
+        expect(sets[0]).not.toHaveProperty('endOfSupportDate')
+        f.markSaved(sets)
+        expect(f.replacesDate()).toBe(false)
+    })
+})

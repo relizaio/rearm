@@ -288,6 +288,37 @@ public interface SbomComponentRepository extends CrudRepository<SbomComponent, U
 	String NON_ROOT_PREDICATE = SbomComponentSupportRepository.NON_ROOT_CLAUSE;
 
 	/**
+	 * The purl without qualifiers, subpath or version: a canonical purl percent-encodes {@code @} inside
+	 * a namespace or a name, so the first {@code @} is the version separator (FDAW-14 3.4).
+	 */
+	String SELECTOR_VERSIONLESS =
+			"split_part(split_part(split_part(sc.canonical_purl, '#', 1), '?', 1), '@', 1)";
+
+	/**
+	 * The non-root components of an org whose canonical purl has exactly the selector's type and, when
+	 * one is given, exactly its namespace (the stored percent-encoded spelling), within the release's
+	 * component set when one is given (FDAW-1 F-22 item 3, FDAW-14 3.4). The query text is CONSTANT: the
+	 * only inputs are bound parameters compared by equality, the release set is a comma-joined list of
+	 * uuids the server resolved itself (the {@link #RELEASE_PAGE_WHERE} binding), and the only patterns
+	 * are the literal {@code 'pkg:%'} and the constant POSIX expression that extracts the namespace, so a
+	 * {@code %} or {@code _} in a selector matches only itself. {@code :lim} is the caller's cap plus one:
+	 * the count runs before any component row is loaded and refuses over the cap.
+	 */
+	@Query(value = "SELECT CAST(sc.uuid AS text) FROM rearm.sbom_components sc"
+			+ " WHERE sc.org = CAST(:orgUuidAsString AS uuid)"
+			+ " AND sc.canonical_purl LIKE 'pkg:%'"
+			+ " AND split_part(split_part(" + SELECTOR_VERSIONLESS + ", '/', 1), ':', 2) = CAST(:type AS text)"
+			+ " AND (CAST(:namespace AS text) IS NULL OR substring(" + SELECTOR_VERSIONLESS
+			+ " from '^pkg:[^/]+/(.+)/[^/]+$') = CAST(:namespace AS text))"
+			+ " AND (CAST(:componentUuids AS text) IS NULL"
+			+ " OR sc.uuid = ANY(CAST(string_to_array(CAST(:componentUuids AS text), ',') AS uuid[])))\n"
+			+ NON_ROOT_PREDICATE
+			+ " ORDER BY sc.uuid LIMIT :lim", nativeQuery = true)
+	List<String> findUuidsBySupportSelector(@Param("orgUuidAsString") String orgUuidAsString,
+			@Param("type") String type, @Param("namespace") String namespace,
+			@Param("componentUuids") String componentUuids, @Param("lim") int lim);
+
+	/**
 	 * Shared WHERE body for the release component page and its count.
 	 *
 	 * <p>ONE body for both, because a page whose total is computed by a second predicate

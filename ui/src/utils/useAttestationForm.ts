@@ -4,6 +4,8 @@ import {
     validateAttestation,
     isEmptyAttestation,
     attestationVariables,
+    replacesStoredDate,
+    unknownChanged,
     MILESTONE_FIELD_TO_TYPE,
     MILESTONE_TYPE_TO_FIELD,
     type AttestationForm,
@@ -22,6 +24,8 @@ export interface ExistingAttestation {
     endOfLifeDate?: string | null
     supportNotes?: string | null
     supportMilestones?: Array<{ milestoneType: string, date?: string | null, notes?: string | null }>
+    /** The stored end-of-support justified unknown (FDAW-14), when no date can be given. */
+    endOfSupportUnknown?: { code: string, text?: string | null, bulkAct?: string | null } | null
 }
 
 const MILESTONE_FIELDS = [
@@ -73,6 +77,18 @@ export function useAttestationForm () {
         // happen by itself: state is preserved when omitted, so saving without this leaves
         // the row withdrawn and still uncounted while every other field updates.
         form.state = existing.attestationState === 'WITHDRAWN' ? 'ATTESTED' : null
+        // A row that holds an unknown opens on it, showing the current code and text; a new
+        // choice replaces them (3.2a rule 2).
+        if (existing.endOfSupportUnknown?.code) {
+            form.endOfSupportMode = 'UNKNOWN'
+            form.endOfSupportUnknownCode = existing.endOfSupportUnknown.code
+            form.endOfSupportUnknownText = existing.endOfSupportUnknown.text ?? ''
+        }
+    }
+
+    /** Choosing Justified unknown on a row that holds a date: the editor offers the replace, with a reason. */
+    function replacesDate (): boolean {
+        return replacesStoredDate(form, seededRef.value as any)
     }
 
     /** Re-asserting a withdrawn claim is a reversal; the audit row is its only trace. */
@@ -186,6 +202,11 @@ export function useAttestationForm () {
                 }
             }
             if (set.state !== undefined) seeded.attestationState = set.state
+            if (set.endOfSupportUnknown !== undefined) seeded.endOfSupportUnknown = set.endOfSupportUnknown
+            if (set.clearEndOfSupportUnknown) seeded.endOfSupportUnknown = null
+            if (Array.isArray(set.clearMilestones) && set.clearMilestones.includes('END_OF_SUPPORT')) {
+                seeded.endOfSupportDate = null
+            }
         }
         seededRef.value = { ...seeded }
         // Re-seed ONLY the milestones that landed. Re-seeding all of them would overwrite a
@@ -226,6 +247,10 @@ export function useAttestationForm () {
                     + ' the note is stored against the date, so set the date first.')
             }
         }
+        if (replacesDate() && !form.reason.trim()) {
+            out.push(`Replacing the date ${seededRef.value?.endOfSupportDate} with a justified unknown needs a`
+                + ' reason: the audit row is the only record that the date was removed.')
+        }
         if (needsJustificationDecision()) {
             out.push('A date changed. Confirm the recorded basis still holds, or revise it --'
                 + ' it was written for the previous dates.')
@@ -246,6 +271,7 @@ export function useAttestationForm () {
             || (form.party ?? null) !== (seeded.supportParty ?? null)
             || editedMilestoneNotes().length > 0
             || form.clearJustification || form.clearMilestones.length > 0
+            || form.clearEndOfSupportUnknown || unknownChanged(form, seeded as any)
     }
 
     /**
@@ -275,6 +301,8 @@ export function useAttestationForm () {
     /** Milestone types whose notes the operator has edited. */
     function editedMilestoneNotes (): string[] {
         return Object.keys(form.milestoneNotes)
+            // No date is sent in UNKNOWN mode, so the END_OF_SUPPORT notes have nothing to ride on.
+            .filter(t => !(t === 'END_OF_SUPPORT' && form.endOfSupportMode === 'UNKNOWN'))
             .filter(t => (form.milestoneNotes as any)[t].trim() !== storedNote(t))
     }
 
@@ -333,6 +361,7 @@ export function useAttestationForm () {
         canUseNothingPublished,
         open,
         isUnRetract,
+        replacesDate,
         milestoneChanged,
         needsJustificationDecision,
         confirmJustification,

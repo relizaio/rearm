@@ -9,7 +9,8 @@ function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
         purl: 'pkg:maven/org.apache/log4j-core@2.14.1', attestationState: 'ATTESTED',
         levelOfSupport: 'actively maintained', levelOfSupportEnum: 'ACTIVELY_MAINTAINED',
         endOfSupportDate: '2030-01-01',
-        justification: null, assessedAt: '2026-09-01T00:00:00Z', ...over
+        justification: null, assessedAt: '2026-09-01T00:00:00Z', source: null, bulk: false, endOfSupportUnknownCode: null, endOfSupportUnknownBulk: false,
+        assertedByName: null, justifiedByName: null, ...over
     }
 }
 
@@ -158,5 +159,44 @@ describe('addendumFileStem', () => {
 
     it('is the stem both file names are built from', () => {
         expect(ADDENDUM_TITLE).toBe('FDA software support addendum')
+    })
+})
+
+describe('the FDAW-14 columns', () => {
+    const at = (name: string) => ADDENDUM_COLUMNS.indexOf(name)
+    const unknown = (bulk: boolean) => ({ endOfSupportDate: null, endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT',
+        endOfSupportUnknownBulk: bulk })
+
+    it('has ten columns ending Source and Asserted by, and every row has ten cells', () => {
+        expect(ADDENDUM_COLUMNS).toHaveLength(10)
+        expect(ADDENDUM_COLUMNS.slice(-2)).toEqual(['Source', 'Asserted by'])
+        expect(addendumRow(comp())).toHaveLength(10)
+    })
+
+    it('reads the Source grammar of 3.7, the same five cases as the server', () => {
+        const source = (over: Partial<AddendumComponent>) => addendumRow(comp(over))[at('Source')]
+        expect(source({ source: 'MANUAL' })).toBe('manual')
+        expect(source({ source: 'MANUAL', bulk: true })).toBe('manual (bulk)')
+        expect(source({ source: 'MANUAL', bulk: true, ...unknown(true) })).toBe('manual (bulk); bulk justification')
+        expect(source({ source: 'MANUAL', ...unknown(false) })).toBe('manual; justification')
+        expect(source({ source: 'SUPPLIER' })).toBe('supplier')
+        expect(source({ source: 'MANUAL', attestationState: 'WITHDRAWN' })).toBeNull()
+    })
+
+    it('reads the Asserted by grammar, the same five cases as the server', () => {
+        const by = (over: Partial<AddendumComponent>) => addendumRow(comp({ source: 'MANUAL', ...over }))[at('Asserted by')]
+        expect(by({ assertedByName: 'A', justifiedByName: 'B' })).toBe('A; justification: B')
+        expect(by({ assertedByName: 'A', justifiedByName: null })).toBe('A')
+        expect(by({ assertedByName: 'A' })).toBe('A')
+        expect(by({ assertedByName: 'A', justifiedByName: '' })).toBe('A; justification: ')
+        expect(by({ assertedByName: 'B', levelOfSupport: null })).toBe('B')
+        expect(by({ assertedByName: null })).toBeNull()
+        expect(by({ assertedByName: 'A', attestationState: 'WITHDRAWN' })).toBeNull()
+    })
+
+    it('prints not available with the code for an end-of-support unknown', () => {
+        expect(addendumRow(comp(unknown(false)))[at('End of support')]).toBe('not available: NO_COMMITTED_END_OF_SUPPORT')
+        expect(addendumRow(comp({ ...unknown(false), endOfSupportDate: '2030-01-01' }))[at('End of support')])
+            .toBe('2030-01-01')
     })
 })

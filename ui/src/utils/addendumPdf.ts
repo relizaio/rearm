@@ -24,9 +24,10 @@ pdfMake.vfs = pdfFonts.vfs
  * '*' means "share the remaining space". Justification and PURL get the stars because they
  * are the two unbounded fields -- a justification is up to 8,000 characters of operator
  * prose. Everything else is a date, a short token or a name, and giving those fixed widths
- * is what stops the two wide columns from being squeezed into a ribbon.
+ * is what stops the two wide columns from being squeezed into a ribbon. The ten columns of
+ * FDAW-14 (Source, Asserted by) leave about 200 units of the landscape A4 body to the stars.
  */
-const COLUMN_WIDTHS = [110, 55, '*', 85, 62, '*', 62, 92]
+const COLUMN_WIDTHS = [95, 50, '*', 80, 75, '*', 55, 80, 70, 80]
 
 /**
  * Coerce a value for a table cell.

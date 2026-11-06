@@ -434,8 +434,9 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 
 		assertEquals(TeaPublishOutcome.UNCHANGED, r.outcome());
 		assertEquals(1, writtenDtos.size(), "no upload: the row was found by its tag pair");
-		assertEquals(List.of(new TeaAggregateArtifact("default", row1)), head().getAggregateArtifacts(),
-				"the head records the list again");
+		var pin = releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow();
+		assertEquals(List.of(new TeaAggregateArtifact("default", row1, pin.serial(), pin.version())),
+				head().getAggregateArtifacts(), "the head records the list again, with the identity (FDAW-7)");
 	}
 
 	// ---------------------------------------------------------------- 4.6, failure paths
@@ -452,7 +453,7 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 	}
 
 	@Test
-	void aFirstPublishWhoseSecondUploadFailsArchivesTheFirstRowAndWritesNothing() throws Exception {
+	void aFirstPublishWhoseSecondUploadFailsKeepsTheFirstPinnedRowAndWritesNoPublication() throws Exception {
 		names("default", "top");
 		uploadFails(1);
 
@@ -462,7 +463,9 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 		assertTrue(e.getMessage().contains("storing the TEA aggregate top failed"), e.getMessage());
 		assertEquals(1, writtenDtos.size());
 		UUID first = artifacts.keySet().stream().filter(id -> !id.equals(inventoryBom)).findFirst().orElseThrow();
-		verify(artifactService, times(1)).archiveArtifact(first, WU);
+		// FDAW-7 3.3 step 5: the first row is a committed release SBOM version, never an orphan
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(first, releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow().artifact());
 		verify(publications, never()).save(any());
 		verify(collections, never()).save(any());
 		assertTrue(service.getPublicationOfRelease(release.getUuid()).isEmpty());
@@ -473,9 +476,12 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 		return artifacts.keySet().stream().filter(id -> !id.equals(inventoryBom)).toList();
 	}
 
-	/** Design 3.3 step 6: every row the failed act created is archived, each once, the first and the last alike. */
+	/**
+	 * FDAW-7 3.3 step 5 (was TEA-28 3.3 step 6, archive each once): the rows of a failed act are release SBOM
+	 * versions that committed in their own transaction, so none is archived and the next act reuses them.
+	 */
 	@Test
-	void aFirstPublishWhoseThirdUploadFailsArchivesBothEarlierRowsEachOnce() throws Exception {
+	void aFirstPublishWhoseThirdUploadFailsKeepsBothEarlierRowsAndTheRetryReusesThem() throws Exception {
 		names("default", "top", "third");
 		uploadFails(2);
 
@@ -485,15 +491,21 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 		assertTrue(e.getMessage().contains("storing the TEA aggregate third failed"), e.getMessage());
 		List<UUID> rows = uploadedAggregates();
 		assertEquals(2, rows.size(), "default and top were uploaded");
-		for (UUID row : rows) verify(artifactService, times(1)).archiveArtifact(row, WU);
-		verify(artifactService, times(2)).archiveArtifact(any(), any());
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(2, sbomStore.versionRows.size(), "one version row per uploaded name");
 		verify(publications, never()).save(any());
 		verify(collections, never()).save(any());
+
+		uploadFails(-1);
+		publish(TeaPublishMode.PUBLISH);
+		assertEquals(3, writtenDtos.size(), "the retry uploads only the third name");
+		assertEquals(rows.get(0), releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow().artifact());
+		assertEquals(rows.get(1), releaseSbomService.latestPin(release.getUuid(), "top").orElseThrow().artifact());
 	}
 
-	/** Design 3.3 step 6 and 4.6: a commit that fails after every upload archives every unbound row. */
+	/** FDAW-7 3.3 step 5: a commit that fails after every upload archives no row; each is a pinned version. */
 	@Test
-	void aFirstPublishOfTwoNamesWhoseCommitFailsArchivesBothRows() throws Exception {
+	void aFirstPublishOfTwoNamesWhoseCommitFailsArchivesNoPinnedRow() throws Exception {
 		names("default", "top");
 		tldOnlyDocuments.put(release.getUuid(), bom("pkg:generic/top@1"));
 		doThrow(new IllegalStateException("db down")).when(collections).save(any(TeaPublishedCollection.class));
@@ -502,8 +514,8 @@ class TeaPublicationProfilesTest extends TeaPublicationServiceTestBase {
 
 		List<UUID> rows = uploadedAggregates();
 		assertEquals(2, rows.size(), "both names were uploaded before the commit");
-		for (UUID row : rows) verify(artifactService, times(1)).archiveArtifact(row, WU);
-		verify(artifactService, times(2)).archiveArtifact(any(), any());
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(2, sbomStore.headRows.size(), "a release SBOM head per name");
 		assertTrue(service.getPublicationOfRelease(release.getUuid()).isEmpty());
 	}
 

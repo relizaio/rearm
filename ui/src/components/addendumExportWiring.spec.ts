@@ -260,10 +260,10 @@ describe('the export modal states the support gate once, and sends it through th
 describe('the addendum column set', () => {
     // Named here so a column added to the renderer without a matching header, or reordered
     // against the row builder, fails rather than shipping a shifted document.
-    it('is the eight documented columns, in order', () => {
+    it('is the ten documented columns, in order (FDAW-14 appends Source and Asserted by)', () => {
         expect(ADDENDUM_COLUMNS).toEqual([
             'Component', 'Version', 'PURL', 'Level of support', 'End of support',
-            'Justification', 'Attestation state', 'Last assessed'
+            'Justification', 'Attestation state', 'Last assessed', 'Source', 'Asserted by'
         ])
     })
 })

@@ -45,6 +45,11 @@ import java.util.Set;
  * <p>{@code assessedAt} is when the HUMAN did the assessment and is caller-supplied;
  * null falls back to now. It is not the same fact as the audit row's
  * {@code assertedDate}, which is when the system recorded the write.
+ *
+ * <p>{@link #endOfSupportUnknown()} is the justified unknown that stands in for an end-of-support
+ * date (FDAW-14 3.2); it and {@code endOfSupportDate} are alternatives, never both in one request.
+ * {@link #clearEndOfSupportUnknown()} removes a stored one and, like a milestone removal, needs a
+ * {@code reason}.
  */
 public record SupportAttestationRequest(
 		LevelOfSupport levelOfSupport,
@@ -57,11 +62,37 @@ public record SupportAttestationRequest(
 		LocalDate endOfLifeDate,
 		String supportNotes,
 		Set<SupportMilestoneType> clearMilestones,
-		String reason) {
+		String reason,
+		JustifiedUnknownInput endOfSupportUnknown,
+		boolean clearEndOfSupportUnknown) {
 
 	public SupportAttestationRequest {
 		clearMilestones = (null == clearMilestones || clearMilestones.isEmpty())
 				? Set.of()
 				: Collections.unmodifiableSet(EnumSet.copyOf(clearMilestones));
+	}
+
+	/** A request that carries no justified unknown: every write path that predates FDAW-14. */
+	public SupportAttestationRequest(LevelOfSupport levelOfSupport, SupportState state, SupportParty party,
+			String justification, ZonedDateTime assessedAt, LocalDate endOfGuaranteedSupportDate,
+			LocalDate endOfSupportDate, LocalDate endOfLifeDate, String supportNotes,
+			Set<SupportMilestoneType> clearMilestones, String reason) {
+		this(levelOfSupport, state, party, justification, assessedAt, endOfGuaranteedSupportDate,
+				endOfSupportDate, endOfLifeDate, supportNotes, clearMilestones, reason, null, false);
+	}
+
+	/**
+	 * Whether this request's only fact is the end-of-support justified unknown (FDAW-14 3.2 item 8):
+	 * the unknown set or cleared, and level, the three dates, justification, party, notes and state all
+	 * null, no milestone cleared; {@code assessedAt} and {@code reason} may be given. Read on the BOUNDED
+	 * request: a supplied {@code ""} justification or note is the clear of a basis or a note, a change to
+	 * the claim, so such a request is not unknown-only. The one predicate both the write rule and the
+	 * bulk kind derivation call.
+	 */
+	public boolean isUnknownOnly() {
+		return (null != endOfSupportUnknown || clearEndOfSupportUnknown)
+				&& null == levelOfSupport && null == endOfGuaranteedSupportDate && null == endOfSupportDate
+				&& null == endOfLifeDate && null == justification && null == party && null == supportNotes
+				&& null == state && clearMilestones.isEmpty();
 	}
 }

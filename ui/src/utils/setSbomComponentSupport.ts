@@ -32,6 +32,8 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
         $clearMilestones: [SupportMilestoneType!]
         $state: SupportState
         $reason: String
+        $endOfSupportUnknown: JustifiedUnknownInput
+        $clearEndOfSupportUnknown: Boolean
     ) {
         setSbomComponentSupport(
             sbomComponentUuid: $sbomComponentUuid
@@ -45,6 +47,8 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
             clearMilestones: $clearMilestones
             state: $state
             reason: $reason
+            endOfSupportUnknown: $endOfSupportUnknown
+            clearEndOfSupportUnknown: $clearEndOfSupportUnknown
         ) {
             uuid
             supportStatus
@@ -53,6 +57,7 @@ export const SET_SBOM_COMPONENT_SUPPORT = gql`
             attestedLevelOfSupport
             justification
             attestationState
+            endOfSupportUnknown { code text bulkAct }
         }
     }`
 

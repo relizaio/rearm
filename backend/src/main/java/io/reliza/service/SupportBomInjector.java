@@ -31,6 +31,8 @@ import io.reliza.common.Utils;
 import io.reliza.model.ArtifactData.SpecVersion;
 import io.reliza.model.DeviceLifecycle;
 import io.reliza.model.DeviceSupportRisk;
+import io.reliza.model.JustifiedUnknown;
+import io.reliza.model.JustifiedUnknownReason;
 import io.reliza.model.SbomComponent;
 import io.reliza.model.SupportData;
 import io.reliza.model.SupportMilestoneFact;
@@ -141,6 +143,23 @@ public final class SupportBomInjector {
 	 * fact, never derived from {@code isRoot}.
 	 */
 	static final String PROP_SELF = "reliza:support:selfComponent";
+	/**
+	 * The justified unknowns of the FDA baseline (FDAW-1 D5): on a component that lacks its
+	 * end-of-support date or its hash, the {@link io.reliza.model.JustifiedUnknownReason} name
+	 * the manufacturer recorded for why the fact cannot be given. Nothing writes them yet: the
+	 * writes from {@code SupportData} and the release SBOM's hash justifications land with
+	 * FDAW-14. The fda profile of {@code rearm bomutils score} reads them, counting such a
+	 * component as {@code justified} on {@code fda.component.end-of-support} and
+	 * {@code fda.baseline.component-hash}. Under {@link #RELIZA_SUPPORT_PREFIX}, so
+	 * {@link #stripReservedEverywhere} and {@link #stripOnly} already remove every copy an upload
+	 * carried, with no code of their own: a justification in a document ReARM produces can only
+	 * be ReARM's. Declared ahead of their writer so the taxonomy rows publish the names before a
+	 * CLI release reads them ({@code CyclonedxTaxonomyDocSyncTest} needs an emitted literal at or
+	 * under every documented name).
+	 */
+	static final String PROP_JUSTIFIED_END_OF_SUPPORT = "reliza:support:justifiedUnknown:endOfSupport";
+	/** See {@link #PROP_JUSTIFIED_END_OF_SUPPORT}: the hash's justification, same rules. */
+	static final String PROP_JUSTIFIED_HASH = "reliza:support:justifiedUnknown:hash";
 	/**
 	 * How many component nodes of a disclosed document carry {@link #PROP_SELF} (SCORE-58
 	 * ADR-8). Same stamping rule as {@link #PROP_UNIDENTIFIED}; a self node is in neither other
@@ -616,9 +635,25 @@ public final class SupportBomInjector {
 	 */
 	public static JsonNode inject(JsonNode bom, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
 			DeviceLifecycle device, DeclarationContext declarationContext) {
+		return inject(bom, factsByKey, asOf, device, declarationContext, Map.of());
+	}
+
+	/**
+	 * As above, additionally writing {@link #PROP_JUSTIFIED_HASH} = the code's name on every node whose
+	 * {@code hashes} is absent or empty and whose {@link #componentKey} is in
+	 * {@code hashJustificationsByKey} (FDAW-1 D5, FDAW-14 3.5): the release SBOM head's hash
+	 * justifications. Independent of a support row (a node with no {@code sbom_components} row can be
+	 * justified), applied to {@code metadata.component} and every nested node as the support facts are,
+	 * and never beside a hash. Nothing is stamped in {@code metadata.properties} for hashes.
+	 */
+	public static JsonNode inject(JsonNode bom, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
+			DeviceLifecycle device, DeclarationContext declarationContext,
+			Map<String, JustifiedUnknownReason> hashJustificationsByKey) {
 		if (bom == null || !bom.isObject() || factsByKey == null) {
 			return bom;
 		}
+		Map<String, JustifiedUnknownReason> hashCodes =
+				null == hashJustificationsByKey ? Map.of() : hashJustificationsByKey;
 		// reliza:support:* and reliza:device:* are server-owned namespaces. Strip EVERY occurrence
 		// anywhere in the tree BEFORE we write our own -- not just the component array but pedigree,
 		// services, metadata.tools.components, vulnerabilities, etc. -- so an uploader cannot spoof
@@ -629,7 +664,7 @@ public final class SupportBomInjector {
 		stripInboundDeclarations((ObjectNode) bom);
 		stripInboundSignature((ObjectNode) bom);
 		stripAssignedBomRefs(bom);
-		injectInto(bom.get("components"), factsByKey, asOf, device);
+		injectInto(bom.get("components"), factsByKey, asOf, device, hashCodes);
 		// metadata.component is the root self-component (injected too if matched). The
 		// document-level disclosure marker is ALWAYS stamped so the download is labelled
 		// non-attested current-state -- creating metadata if the BOM somehow lacks it.
@@ -639,8 +674,8 @@ public final class SupportBomInjector {
 			metaObj = (ObjectNode) metadata;
 			JsonNode root = metaObj.get("component");
 			if (root != null && root.isObject()) {
-				applyToComponent((ObjectNode) root, factsByKey, asOf, device);
-				injectInto(root.get("components"), factsByKey, asOf, device);
+				applyToComponent((ObjectNode) root, factsByKey, asOf, device, hashCodes);
+				injectInto(root.get("components"), factsByKey, asOf, device, hashCodes);
 			}
 		} else {
 			metaObj = ((ObjectNode) bom).putObject("metadata");
@@ -1326,15 +1361,15 @@ public final class SupportBomInjector {
 	}
 
 	private static void injectInto(JsonNode components, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
-			DeviceLifecycle device) {
+			DeviceLifecycle device, Map<String, JustifiedUnknownReason> hashCodes) {
 		if (components == null || !components.isArray()) {
 			return;
 		}
 		for (JsonNode c : components) {
 			if (c.isObject()) {
-				applyToComponent((ObjectNode) c, factsByKey, asOf, device);
+				applyToComponent((ObjectNode) c, factsByKey, asOf, device, hashCodes);
 			}
-			injectInto(c.get("components"), factsByKey, asOf, device);
+			injectInto(c.get("components"), factsByKey, asOf, device, hashCodes);
 		}
 	}
 
@@ -1422,7 +1457,7 @@ public final class SupportBomInjector {
 	}
 
 	private static void applyToComponent(ObjectNode component, Map<String, ComponentSupportFacts> factsByKey, LocalDate asOf,
-			DeviceLifecycle device) {
+			DeviceLifecycle device, Map<String, JustifiedUnknownReason> hashCodes) {
 		// reliza:support:* was already stripped tree-wide by stripReservedEverywhere; here we
 		// only (re)write on a component we actually attest.
 		String key = componentKey(component);
@@ -1431,6 +1466,13 @@ public final class SupportBomInjector {
 		// (SCORE-58 ADR-4); an operator's statement on it is still written below (ADR-2).
 		if (selfComponent(component, key, facts)) {
 			addProperty(properties(component), PROP_SELF, "true");
+		}
+		// Also before the early return: a hash justification belongs to the release SBOM head, not to a
+		// support row, so a node no one attested can carry one. Only where the fact is absent: a node
+		// with a hash passes as today and is never also justified (D5).
+		JustifiedUnknownReason hashCode = key == null ? null : hashCodes.get(key);
+		if (null != hashCode && !hasHash(component)) {
+			addProperty(properties(component), PROP_JUSTIFIED_HASH, hashCode.name());
 		}
 		SupportData support = emittableSupport(facts);
 		if (support == null) {
@@ -1456,6 +1498,12 @@ public final class SupportBomInjector {
 		emitMilestone(props, SupportMilestoneType.END_OF_GUARANTEED_SUPPORT, eogsM);
 		emitMilestone(props, SupportMilestoneType.END_OF_SUPPORT, eosM);
 		emitMilestone(props, SupportMilestoneType.END_OF_LIFE, eolM);
+		// The end-of-support justified unknown, only when no end-of-support date was emitted: the fact
+		// wins (D5). The code only: its free text and its bulk act stay in ReARM.
+		JustifiedUnknown eosUnknown = support.endOfSupportUnknown();
+		if (null != eosUnknown && null != eosUnknown.code() && (null == eosM || null == eosM.dateValue())) {
+			addProperty(props, PROP_JUSTIFIED_END_OF_SUPPORT, eosUnknown.code().name());
+		}
 		addProperty(props, PROP_STATUS, status.name());
 		// The ATTESTED level is emitted ALONGSIDE the derived status, never instead of it, and
 		// the two are deliberately NOT reconciled here. A maintainer can publish a far-future
@@ -1509,6 +1557,36 @@ public final class SupportBomInjector {
 			addProperty(props, PROP_DEVICE_SUPPORT_RISK, deviceSupportRisk.name());
 		}
 		// notes is internal-only and is DELIBERATELY never emitted, for any milestone.
+	}
+
+	/** Whether a node carries at least one hash: a {@code hashes} array that is present and not empty. */
+	static boolean hasHash(JsonNode component) {
+		JsonNode hashes = component.get("hashes");
+		return hashes != null && hashes.isArray() && !hashes.isEmpty();
+	}
+
+	/** One component node of a document as the hash half reads it (FDAW-14 3.3). */
+	public record DocumentNode(String key, String name, String version, boolean hashed) {}
+
+	/**
+	 * Every keyed component node of {@code bom} in document order, at every depth, {@code metadata.component}
+	 * included: the walk {@link #inject} makes, so a key a justification is written for is exactly a key
+	 * the injector can emit it on.
+	 */
+	public static List<DocumentNode> documentNodes(JsonNode bom) {
+		List<DocumentNode> out = new ArrayList<>();
+		if (bom == null || !bom.isObject()) {
+			return out;
+		}
+		for (ObjectNode n : collectComponentNodes((ObjectNode) bom)) {
+			String key = componentKey(n);
+			if (key == null) continue;
+			JsonNode name = n.get("name");
+			JsonNode version = n.get("version");
+			out.add(new DocumentNode(key, name != null && name.isTextual() ? name.asText() : null,
+					version != null && version.isTextual() ? version.asText() : null, hasHash(n)));
+		}
+		return out;
 	}
 
 	/** Emit one milestone's CDX date plus its own per-milestone source/lastAssessed provenance. */

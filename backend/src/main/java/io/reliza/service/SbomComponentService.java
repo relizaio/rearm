@@ -72,9 +72,15 @@ import io.reliza.model.SbomComponentPage;
 import io.reliza.model.SbomComponentSupport;
 import io.reliza.model.SbomComponentSupportAudit;
 import io.reliza.model.SupportAttestationFilter;
+import io.reliza.model.JustifiedUnknown;
+import io.reliza.model.JustifiedUnknownField;
+import io.reliza.model.JustifiedUnknownInput;
 import io.reliza.model.SupportAttestationRequest;
+import io.reliza.model.SupportBulkAct;
+import io.reliza.model.SupportBulkActKind;
 import io.reliza.model.SupportBulkOutcome;
 import io.reliza.model.SupportBulkResult;
+import io.reliza.model.SupportBulkSelector;
 import io.reliza.model.SupportData;
 import io.reliza.model.SupportMilestoneFact;
 import io.reliza.model.SupportMilestoneType;
@@ -82,6 +88,7 @@ import io.reliza.model.SupportParty;
 import io.reliza.model.SupportSource;
 import io.reliza.model.SupportState;
 import io.reliza.model.SupportStatus;
+import io.reliza.model.SupportTextBounds;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.Rebom.ParsedBom;
 import io.reliza.model.Rebom.ParsedBomComponent;
@@ -151,6 +158,7 @@ public class SbomComponentService {
 	@Autowired @Lazy private AcollectionService acollectionService;
 	@Autowired private ReleaseRepository releaseRepository;
 	@Autowired private ComponentKindPolicy componentKindPolicy;
+	@Autowired private SupportBulkActService supportBulkActService;
 
 	/**
 	 * Self-injection so {@link #processPendingReconciles(int)} can call the
@@ -2811,7 +2819,7 @@ private static int currentReconcileFailureCount(Release r) {
 	@Transactional
 	public SbomComponentSupport setSbomComponentSupport(UUID sbomComponentUuid,
 			SupportAttestationRequest request, UUID assertedBy) {
-		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, null);
+		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, null, null);
 	}
 
 	/** How many times a single attestation write is retried against a concurrent writer. */
@@ -2886,10 +2894,19 @@ private static int currentReconcileFailureCount(Release r) {
 	 * @param batchId the sweep this write belongs to, or null when it is not part of one. Only
 	 *        reaches the audit row; it is never part of the attestation itself, so it cannot
 	 *        appear in an exported BOM.
+	 * @param bulkAct the server-minted {@code support_bulk_acts.uuid} of the bulk call this write
+	 *        belongs to, null for a single write (FDAW-14 3.2 item 5). Unlike {@code batchId} it goes
+	 *        into the payload: {@code SupportData.bulkAct} when the call carried a level,
+	 *        {@code JustifiedUnknown.bulkAct} when it carried the unknown. Never emitted; a
+	 *        client-supplied id never reaches it.
 	 */
 	private SbomComponentSupport applySupport(UUID sbomComponentUuid,
-			SupportAttestationRequest request, SupportSource source, UUID assertedBy,
-			UUID batchId) {
+			SupportAttestationRequest unboundedRequest, SupportSource source, UUID assertedBy,
+			UUID batchId, UUID bulkAct) {
+		// Bounds first, before any read: the stored-result invariant of FDAW-14 3.2 item 1, so a caller
+		// that is not the resolver is bounded too. The bound keeps presence: "" stays the clear signal.
+		SupportAttestationRequest request = SupportTextBounds.bounded(unboundedRequest);
+		validateEndOfSupportUnknown(request);
 		SbomComponent sc = sbomComponentRepository.findById(sbomComponentUuid)
 				.orElseThrow(() -> new IllegalArgumentException(
 						"sbom component not found: " + sbomComponentUuid));
@@ -2918,18 +2935,29 @@ private static int currentReconcileFailureCount(Release r) {
 		//
 		// Scoped to fresh rows only: a partial write against an EXISTING attestation is the
 		// PATCH contract and must keep working with any subset of fields, including none.
+		//
+		// A justified unknown alone is that something too (FDAW-14 3.2 item 6): "I looked, upstream
+		// commits to no end of support" is an assessment of the row.
 		if (null == existing
 				&& null == request.levelOfSupport()
 				&& null == request.endOfGuaranteedSupportDate()
 				&& null == request.endOfSupportDate()
 				&& null == request.endOfLifeDate()
-				&& (null == request.justification() || request.justification().isBlank())) {
+				&& (null == request.justification() || request.justification().isBlank())
+				&& null == request.endOfSupportUnknown()) {
 			throw new IllegalArgumentException(
 					"a first attestation must record something: supply a levelOfSupport, a"
-							+ " milestone date, or a justification");
+							+ " milestone date, a justification, or a justified unknown");
 		}
 		Map<SupportMilestoneType, SupportMilestoneFact> existingByType =
 				existing == null ? Map.of() : existing.milestones();
+		// A stored end-of-support DATE is never silently superseded by a justified unknown (FDAW-14 3.2
+		// item 2): the same request must remove the milestone, with the reason a removal needs.
+		if (null != request.endOfSupportUnknown()
+				&& existingByType.containsKey(SupportMilestoneType.END_OF_SUPPORT)
+				&& !request.clearMilestones().contains(SupportMilestoneType.END_OF_SUPPORT)) {
+			throw new IllegalArgumentException(END_OF_SUPPORT_DATE_OR_UNKNOWN);
+		}
 
 		Map<SupportMilestoneType, LocalDate> staged = new EnumMap<>(SupportMilestoneType.class);
 		if (request.endOfGuaranteedSupportDate() != null) {
@@ -3033,8 +3061,20 @@ private static int currentReconcileFailureCount(Release r) {
 		// there IS a level and this call does not re-assert it. On a row with no level the
 		// field dates the assessment generally -- and the injector now publishes it as a
 		// standalone disclosure -- so freezing it there would publish a stale date forever.
+		//
+		// AN UNKNOWN-ONLY WRITE NEVER RE-DATES OR RE-ATTRIBUTES THE LEVEL (FDAW-14 3.2 item 8). When the
+		// request's only fact is the end-of-support justified unknown and the stored row holds a level,
+		// the level claim -- levelOfSupport, assessedAt, assertedBy, assessmentSource -- stays as its
+		// asserter left it, even when the request carries an assessedAt: that instant dates the unknown
+		// (thisAssessment) and nothing else, and the caller is named on the unknown and on the audit row
+		// only. Otherwise an end-of-support sweep by one user over up to 1000 rows another user attested
+		// would name the sweeper as attester of every level in the addendum and the SBOM declarations.
+		boolean keepsLevelClaim = request.isUnknownOnly() && null != existing
+				&& null != existing.levelOfSupport();
 		String assessedAt;
-		if (null != request.assessedAt()
+		if (keepsLevelClaim && null != existing.assessedAt()) {
+			assessedAt = existing.assessedAt();
+		} else if (null != request.assessedAt()
 				|| null == existing || null == existing.assessedAt()
 				|| null == existing.levelOfSupport() || null != request.levelOfSupport()) {
 			assessedAt = thisAssessment;
@@ -3072,17 +3112,23 @@ private static int currentReconcileFailureCount(Release r) {
 				// record-level assessment source unconditionally. An ENRICHED touch on a
 				// human-attested "nothing published" row would erase the only evidence a
 				// human attested it, and drop it out of countAttestedNonRootByOrg. Decide
-				// the precedence rule there; today MANUAL is the only writer.
-				source,
+				// the precedence rule there; today MANUAL is the only writer. The first
+				// exception is the unknown-only clause (keepsLevelClaim, above): an unknown-only
+				// write keeps the stored source and asserter of a level.
+				keepsLevelClaim ? existing.assessmentSource() : source,
 				assessedAt,
-				assertedBy,
+				keepsLevelClaim ? existing.assertedBy() : assertedBy,
 				// justification is the level-of-support basis ONLY. A milestone removal's
 				// reason goes on the audit row, so a clear can no longer overwrite it.
 				// Supplied-wins, with blank normalised to null so an explicit clear does not
 				// store whitespace that would later read as a basis.
 				request.justification() != null || existing == null
 						? blankToNull(request.justification()) : existing.justification(),
-				merged);
+				merged,
+				mergedUnknowns(existing, request, bulkAct, assertedBy, thisAssessment),
+				// The bulk label of the LEVEL: set by the call that carried a level, kept otherwise; a
+				// single re-assessment of the level is no longer a bulk claim.
+				null != request.levelOfSupport() ? bulkAct : (null == existing ? null : existing.bulkAct()));
 
 		// INVARIANT ON THE STORED RESULT, not on the request. A negative claim about a named
 		// third party's project must carry its basis: that is the substantiation record, the
@@ -3157,6 +3203,49 @@ private static int currentReconcileFailureCount(Release r) {
 
 	private static String blankToNull(String value) {
 		return (null == value || value.isBlank()) ? null : value;
+	}
+
+	static final String END_OF_SUPPORT_DATE_OR_UNKNOWN =
+			"end of support: give the date or the justified unknown, not both";
+
+	/**
+	 * The end-of-support justified unknown's request rules that need no read (FDAW-14 3.2 items 1, 2,
+	 * 4): an accepted code, OTHER with a text, never beside a date, and a clear with a reason. The text
+	 * is already bounded.
+	 */
+	private static void validateEndOfSupportUnknown(SupportAttestationRequest request) {
+		JustifiedUnknownInput unknown = request.endOfSupportUnknown();
+		if (null != unknown) {
+			JustifiedUnknownField.END_OF_SUPPORT.validate(unknown.code(), unknown.text());
+			if (null != request.endOfSupportDate()) throw new IllegalArgumentException(END_OF_SUPPORT_DATE_OR_UNKNOWN);
+			if (request.clearEndOfSupportUnknown()) {
+				throw new IllegalArgumentException("justified unknown: cannot set and clear it in one call");
+			}
+		}
+		if (request.clearEndOfSupportUnknown() && (null == request.reason() || request.reason().isBlank())) {
+			throw new IllegalArgumentException("justified unknown: clearing it needs a reason");
+		}
+	}
+
+	/**
+	 * The stored unknowns after this write: an explicit clear removes the end-of-support unknown, a
+	 * date set in this write supersedes it (the fact wins, FDAW-14 3.2 item 3; the previous audit row
+	 * keeps it), and a supplied one replaces it, dated {@code thisAssessment} and naming the caller and
+	 * the call's bulk act.
+	 */
+	private static Map<JustifiedUnknownField, JustifiedUnknown> mergedUnknowns(SupportData existing,
+			SupportAttestationRequest request, UUID bulkAct, UUID assertedBy, String thisAssessment) {
+		Map<JustifiedUnknownField, JustifiedUnknown> unknowns = new EnumMap<>(JustifiedUnknownField.class);
+		if (null != existing) unknowns.putAll(existing.unknowns());
+		if (request.clearEndOfSupportUnknown() || null != request.endOfSupportDate()) {
+			unknowns.remove(JustifiedUnknownField.END_OF_SUPPORT);
+		}
+		JustifiedUnknownInput in = request.endOfSupportUnknown();
+		if (null != in) {
+			unknowns.put(JustifiedUnknownField.END_OF_SUPPORT,
+					new JustifiedUnknown(in.code(), in.text(), bulkAct, assertedBy, thisAssessment));
+		}
+		return unknowns;
 	}
 
 	/**
@@ -3412,6 +3501,117 @@ private static int currentReconcileFailureCount(Release r) {
 	 */
 	public static final int BULK_SUPPORT_MAX_IDS = 1000;
 
+	/** The most bulk act receipts one {@code supportBulkActs} read returns (FDAW-14 3.8); clamped, not refused. */
+	public static final int SUPPORT_BULK_ACTS_MAX_LIMIT = 200;
+
+	/**
+	 * The selector over-cap refusal (FDAW-14 3.11): the explicit form's first clause verbatim, then
+	 * where the selector matched too many and how to narrow it.
+	 */
+	public static String selectorOverCap(SupportBulkSelector selector, boolean releaseScope) {
+		return "a bulk support attestation is limited to " + BULK_SUPPORT_MAX_IDS + " components per call;"
+				+ " the selector " + selector.describe() + " matches more than " + BULK_SUPPORT_MAX_IDS + " in "
+				+ (releaseScope ? "this release" : "the organization")
+				+ ". Narrow it by namespace or to this release, or use Shown components.";
+	}
+
+	/** What one bulk call did: its server-minted act, how many components it matched, the per-row outcomes. */
+	public record SupportBulkRun(UUID bulkAct, int matchedCount, List<SupportBulkResult> results) {}
+
+	/** The selector count preview (FDAW-14 3.4): {@code matched} is {@code cap + 1} when over the cap. */
+	public record SupportBulkSelectorCount(int matched, boolean overCap) {}
+
+	/**
+	 * The kind of a bulk support request (FDAW-14 3.2a), explicit and selector form alike: an
+	 * end-of-support sweep when its only fact is the justified unknown, an assessment sweep otherwise.
+	 */
+	public static SupportBulkActKind bulkKindOf(SupportAttestationRequest request) {
+		return request.isUnknownOnly() ? SupportBulkActKind.END_OF_SUPPORT_UNKNOWN : SupportBulkActKind.LEVEL_OF_SUPPORT;
+	}
+
+	/**
+	 * Refuses a selector sweep that carries no level, no milestone date and no justified unknown
+	 * (FDAW-14 3.2a, 3.11), with no database access. The explicit form keeps today's contract, where a
+	 * justification alone is a sweep.
+	 */
+	public static void requireSelectorFact(SupportAttestationRequest request) {
+		if (null == request.levelOfSupport() && null == request.endOfGuaranteedSupportDate()
+				&& null == request.endOfSupportDate() && null == request.endOfLifeDate()
+				&& null == request.endOfSupportUnknown()) {
+			throw new IllegalArgumentException(
+					"a bulk assessment needs a level of support, a milestone date or a justified unknown");
+		}
+	}
+
+	/**
+	 * The non-root components of the org matching the selector, within {@code releaseComponents} when
+	 * given (the release scope), at most {@code BULK_SUPPORT_MAX_IDS + 1}: the bounded count every
+	 * selector path runs FIRST, after the caller's gate and before any component row is loaded
+	 * (FDAW-1 F-22 item 3). Exact equality on the parsed purl fields, never a pattern from the input.
+	 */
+	public List<UUID> resolveSupportSelector(UUID orgUuid, SupportBulkSelector selector,
+			Collection<UUID> releaseComponents) {
+		String comps = null == releaseComponents ? null : joinUuids(releaseComponents);
+		return sbomComponentRepository.findUuidsBySupportSelector(orgUuid.toString(), selector.type(),
+				selector.namespace(), comps, BULK_SUPPORT_MAX_IDS + 1).stream().map(UUID::fromString).toList();
+	}
+
+	/** The count preview: the same bounded query, nothing written. */
+	public SupportBulkSelectorCount countSupportSelector(UUID orgUuid, SupportBulkSelector selector,
+			Collection<UUID> releaseComponents) {
+		int matched = resolveSupportSelector(orgUuid, selector, releaseComponents).size();
+		return new SupportBulkSelectorCount(matched, matched > BULK_SUPPORT_MAX_IDS);
+	}
+
+	/**
+	 * A bulk support sweep by selector (FDAW-14 3.4): counted within the scope and refused over the cap
+	 * before any component row is loaded, any audit written or any act recorded; then the existing
+	 * per-row loop under the request's kind, with {@code batchId} = {@code bulkAct} = the act minted
+	 * here, and one receipt. The caller has gated the org (ORGANIZATION WRITE) and, for the release
+	 * scope, the release, and passes the release's component set.
+	 */
+	public SupportBulkRun bulkSetSbomComponentSupportBySelector(UUID orgUuid, SupportBulkSelector selector,
+			UUID releaseUuid, Collection<UUID> releaseComponents, SupportAttestationRequest unboundedRequest,
+			UUID assertedBy) {
+		SupportAttestationRequest request = SupportTextBounds.bounded(unboundedRequest);
+		requireSelectorFact(request);
+		List<UUID> ids = resolveSupportSelector(orgUuid, selector, releaseComponents);
+		if (ids.size() > BULK_SUPPORT_MAX_IDS) {
+			throw new IllegalArgumentException(selectorOverCap(selector, null != releaseUuid));
+		}
+		UUID act = UUID.randomUUID();
+		SupportBulkRun run = runBulk(orgUuid, ids, request, assertedBy, act, act);
+		recordBulkAct(run, orgUuid, releaseUuid, selector.receipt(releaseUuid), ids, request, assertedBy, null);
+		return run;
+	}
+
+	/** The newest receipts of an org; the caller gates ORGANIZATION READ. */
+	public List<SupportBulkAct> listSupportBulkActs(UUID orgUuid, int limit) {
+		return supportBulkActService.listNewest(orgUuid, limit);
+	}
+
+	private void recordBulkAct(SupportBulkRun run, UUID orgUuid, UUID releaseUuid, Map<String, Object> selector,
+			Collection<UUID> ids, SupportAttestationRequest request, UUID assertedBy, UUID echoedBatchId) {
+		int applied = (int) run.results().stream().filter(r -> SupportBulkOutcome.APPLIED == r.outcome()).count();
+		Map<String, Object> values = new LinkedHashMap<>();
+		values.put("levelOfSupport", null == request.levelOfSupport() ? null : request.levelOfSupport().name());
+		values.put("party", null == request.party() ? null : request.party().name());
+		values.put("justification", request.justification());
+		values.put("supportNotes", request.supportNotes());
+		values.put("endOfGuaranteedSupportDate", Objects.toString(request.endOfGuaranteedSupportDate(), null));
+		values.put("endOfSupportDate", Objects.toString(request.endOfSupportDate(), null));
+		values.put("endOfLifeDate", Objects.toString(request.endOfLifeDate(), null));
+		JustifiedUnknownInput unknown = request.endOfSupportUnknown();
+		values.put("code", null == unknown ? null : unknown.code().name());
+		values.put("text", null == unknown ? null : unknown.text());
+		values.put("reason", request.reason());
+		values.put("assessedAt", null == request.assessedAt() ? null : utcInstant(request.assessedAt()));
+		if (null != echoedBatchId) values.put("batchId", echoedBatchId.toString());
+		supportBulkActService.record(new SupportBulkActService.Receipt(run.bulkAct(), orgUuid,
+				bulkKindOf(request), releaseUuid, null, selector,
+				ids.stream().map(UUID::toString).toList(), applied, assertedBy, values));
+	}
+
 	/**
 	 * The names this build understands for an enum, for the coverage query's validity
 	 * predicates. Derived rather than hardcoded so the SQL cannot drift from the Java.
@@ -3440,7 +3640,22 @@ private static int currentReconcileFailureCount(Release r) {
 	public List<SupportBulkResult> bulkSetSbomComponentSupport(UUID orgUuid,
 			Collection<UUID> sbomComponentUuids, SupportAttestationRequest request, UUID assertedBy,
 			UUID batchId) {
-		if (null == sbomComponentUuids || sbomComponentUuids.isEmpty()) return List.of();
+		return bulkSetSbomComponentSupportRun(orgUuid, sbomComponentUuids, request, assertedBy, batchId).results();
+	}
+
+	/**
+	 * The explicit-id form with its receipt (FDAW-14 3.4 r2): the act uuid is minted HERE, per call, and
+	 * is the {@code bulkAct} of every row the call writes; the per-row audit {@code batch_id} stays the
+	 * client-echoed {@code batchId}, so the n calls of one browser sweep stay correlated as today, and the
+	 * receipt records that id in {@code record_data.batchId}. The echoed id never reaches a stored
+	 * regulatory row.
+	 */
+	public SupportBulkRun bulkSetSbomComponentSupportRun(UUID orgUuid,
+			Collection<UUID> sbomComponentUuids, SupportAttestationRequest unboundedRequest, UUID assertedBy,
+			UUID batchId) {
+		if (null == sbomComponentUuids || sbomComponentUuids.isEmpty()) {
+			return new SupportBulkRun(UUID.randomUUID(), 0, List.of());
+		}
 		// Bound here as well as at the resolver. The resolver's check exists to refuse before
 		// authorization and before any DB touch, with a message a GraphQL caller can act on;
 		// this one exists so the bound is a property of the WRITE, not of one entry point into
@@ -3450,10 +3665,26 @@ private static int currentReconcileFailureCount(Release r) {
 					+ BULK_SUPPORT_MAX_IDS + " components per call; " + sbomComponentUuids.size()
 					+ " were supplied");
 		}
-
+		SupportAttestationRequest request = SupportTextBounds.bounded(unboundedRequest);
 		// Deduplicated: a uuid repeated in the input would otherwise be written twice, and the
 		// second pass re-asserts and re-dates the attestation the first one just made.
 		Set<UUID> requested = new LinkedHashSet<>(sbomComponentUuids);
+		UUID act = UUID.randomUUID();
+		SupportBulkRun run = runBulk(orgUuid, requested, request, assertedBy, batchId, act);
+		Map<String, Object> explicit = new LinkedHashMap<>();
+		explicit.put("form", SupportBulkSelector.EXPLICIT_RECEIPT_FORM);
+		recordBulkAct(run, orgUuid, null, explicit, requested, request, assertedBy, batchId);
+		return run;
+	}
+
+	/**
+	 * The per-row loop of every bulk form, under the skip rule of the request's kind (FDAW-14 3.2a).
+	 * {@code ids} are distinct; {@code batchId} reaches the audit rows only, {@code bulkAct} the payload.
+	 */
+	private SupportBulkRun runBulk(UUID orgUuid, Collection<UUID> ids, SupportAttestationRequest request,
+			UUID assertedBy, UUID batchId, UUID bulkAct) {
+		SupportBulkActKind kind = bulkKindOf(request);
+		Set<UUID> requested = new LinkedHashSet<>(ids);
 		Map<UUID, SbomComponent> components = findSbomComponentsByIds(requested, orgUuid);
 
 		// "Already attested" MUST mean what the coverage gauge means, or a bulk sweep cannot
@@ -3467,6 +3698,9 @@ private static int currentReconcileFailureCount(Release r) {
 		// Rows this pass would UN-RETRACT. Tracked separately because they need a reason and
 		// an ordinary fresh attestation does not -- see the guard in the loop.
 		Set<UUID> withdrawn = new HashSet<>();
+		// Rows that already hold an end-of-support date or justified unknown, in any state: an
+		// end-of-support sweep considers that field done, whoever considered it (FDAW-14 3.2a).
+		Set<UUID> hasEndOfSupport = new HashSet<>();
 		Map<UUID, String> unreadable = new LinkedHashMap<>();
 		for (SupportPayloadRow existing : sbomComponentSupportRepository
 				.findRawByComponentUuids(orgUuid.toString(), joinUuids(components.keySet()))) {
@@ -3476,6 +3710,10 @@ private static int currentReconcileFailureCount(Release r) {
 					alreadyAttested.add(existing.getComponentUuid());
 				} else if (SupportState.WITHDRAWN == sd.state()) {
 					withdrawn.add(existing.getComponentUuid());
+				}
+				if (sd.milestones().containsKey(SupportMilestoneType.END_OF_SUPPORT)
+						|| sd.unknowns().containsKey(JustifiedUnknownField.END_OF_SUPPORT)) {
+					hasEndOfSupport.add(existing.getComponentUuid());
 				}
 			} catch (RuntimeException e) {
 				// Never treat an unreadable payload as "not assessed" -- that is the read-path
@@ -3512,7 +3750,14 @@ private static int currentReconcileFailureCount(Release r) {
 						"existing attestation cannot be read by this build: " + unreadable.get(uuid)));
 				continue;
 			}
-			if (alreadyAttested.contains(uuid)) {
+			// An end-of-support sweep never replaces a stored date or a stored justification, and
+			// otherwise reaches attested rows by PATCH: it is WRITEUP 6.6's second step, which has to
+			// reach rows that already hold a level. An assessment sweep keeps today's whole-row skip.
+			if (SupportBulkActKind.END_OF_SUPPORT_UNKNOWN == kind && hasEndOfSupport.contains(uuid)) {
+				results.add(SupportBulkResult.skipped(uuid, SupportBulkOutcome.SKIPPED_HAS_END_OF_SUPPORT));
+				continue;
+			}
+			if (SupportBulkActKind.LEVEL_OF_SUPPORT == kind && alreadyAttested.contains(uuid)) {
 				results.add(SupportBulkResult.skipped(uuid, SupportBulkOutcome.SKIPPED_ATTESTED));
 				continue;
 			}
@@ -3539,8 +3784,14 @@ private static int currentReconcileFailureCount(Release r) {
 				// This is not the incoherent case the mutation refuses: a bulk WITHDRAWN would
 				// conjure an assessment and retract it in one call. Asserting ATTESTED is just
 				// what "attest these components" means.
-				self.setSbomComponentSupportIsolated(uuid, withAttestedState(request), assertedBy,
-						batchId);
+				//
+				// An end-of-support sweep forces it only on a WITHDRAWN row it re-attests: on every
+				// other row the stored state is ATTESTED already (or the fresh row defaults to it),
+				// and leaving state null keeps the request unknown-only, so the level claim of an
+				// attested row stays as its asserter left it (FDAW-14 3.2 item 8).
+				SupportAttestationRequest write = SupportBulkActKind.LEVEL_OF_SUPPORT == kind
+						|| withdrawn.contains(uuid) ? withAttestedState(request) : request;
+				self.setSbomComponentSupportIsolated(uuid, write, assertedBy, batchId, bulkAct);
 				results.add(SupportBulkResult.applied(uuid));
 			} catch (IllegalArgumentException e) {
 				// Validation messages are written FOR a user and name the field at fault.
@@ -3578,7 +3829,7 @@ private static int currentReconcileFailureCount(Release r) {
 				entityManager.clear();
 			}
 		}
-		return results;
+		return new SupportBulkRun(bulkAct, requested.size(), results);
 	}
 
 	/** The request as a positive attestation, whatever the stored state was. */
@@ -3586,7 +3837,7 @@ private static int currentReconcileFailureCount(Release r) {
 		return new SupportAttestationRequest(r.levelOfSupport(), SupportState.ATTESTED, r.party(),
 				r.justification(), r.assessedAt(), r.endOfGuaranteedSupportDate(),
 				r.endOfSupportDate(), r.endOfLifeDate(), r.supportNotes(), r.clearMilestones(),
-				r.reason());
+				r.reason(), r.endOfSupportUnknown(), r.clearEndOfSupportUnknown());
 	}
 
 	/**
@@ -3600,7 +3851,14 @@ private static int currentReconcileFailureCount(Release r) {
 	@Transactional(propagation = Propagation.REQUIRES_NEW)
 	public SbomComponentSupport setSbomComponentSupportIsolated(UUID sbomComponentUuid,
 			SupportAttestationRequest request, UUID assertedBy, UUID batchId) {
-		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, batchId);
+		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, batchId, null);
+	}
+
+	/** As above, for a bulk loop: {@code bulkAct} is the call's server-minted act (FDAW-14 3.2 item 5). */
+	@Transactional(propagation = Propagation.REQUIRES_NEW)
+	public SbomComponentSupport setSbomComponentSupportIsolated(UUID sbomComponentUuid,
+			SupportAttestationRequest request, UUID assertedBy, UUID batchId, UUID bulkAct) {
+		return applySupport(sbomComponentUuid, request, SupportSource.MANUAL, assertedBy, batchId, bulkAct);
 	}
 
 	/** Coverage counts for the support-disclosure completeness metric. */

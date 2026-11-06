@@ -37,6 +37,8 @@ import graphql.language.ObjectTypeExtensionDefinition;
 import graphql.language.Type;
 import graphql.language.TypeName;
 import graphql.parser.Parser;
+import graphql.parser.ParserEnvironment;
+import graphql.parser.ParserOptions;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
@@ -67,7 +69,9 @@ class SbomUpdateGuardMetaNotExposedTest {
 		List<Document> docs = new ArrayList<>();
 		try (Stream<Path> files = Files.list(Paths.get("src/main/resources/schema"))) {
 			for (Path p : files.filter(f -> f.toString().endsWith(".graphqls")).sorted().toList()) {
-				docs.add(Parser.parse(Files.readString(p)));
+				// SDL options, as the runtime schema loader uses: user.graphqls is past the 15,000-token query default
+				docs.add(new Parser().parseDocument(ParserEnvironment.newParserEnvironment().document(Files.readString(p))
+						.parserOptions(ParserOptions.getDefaultSdlParserOptions()).build()));
 			}
 		}
 		assertTrue(docs.size() >= 3, "schema, user and programmatic files");
