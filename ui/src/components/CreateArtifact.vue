@@ -67,7 +67,7 @@
                             <template #trigger>
                                 <span>Scope <n-icon :component="QuestionCircle20Regular" size="14" style="vertical-align: middle;" /></span>
                             </template>
-                            How broadly this VEX claim applies. Organization is the safe default — most VEX statements apply across every release containing the affected component. Pick a narrower scope only when the claim is build-specific.
+                            How broadly this VEX claim applies. Component (default) covers every release of this release's component. Branch and Release narrow it further. Organization applies the claim to every release in the organization that contains the affected package.
                         </n-tooltip>
                     </template>
                     <n-select v-model:value="artifact.vexScope" :options="vexScopeOptions" />
