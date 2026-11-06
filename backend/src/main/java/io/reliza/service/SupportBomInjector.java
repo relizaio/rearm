@@ -238,6 +238,27 @@ public final class SupportBomInjector {
 	 */
 	static final String COMPONENTS_WITHOUT_SBOM_PROPERTY = "reliza:export:componentsWithoutSbom";
 	/**
+	 * rebom's records on every merged release and product BOM of what the default merge left out,
+	 * removed or added (FDAW-6, design 3.3): written by its last pass into {@code metadata.properties},
+	 * always, {@code "0"} included, each this merge's count plus what its inputs recorded. Components
+	 * the generator marked as development, test or build tools that were left out.
+	 */
+	static final String DEV_COMPONENTS_EXCLUDED_PROPERTY = "reliza:export:devComponentsExcluded";
+	/** See {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}: components with {@code scope: excluded} that were left out. */
+	static final String EXCLUDED_SCOPE_DROPPED_PROPERTY = "reliza:export:excludedScopeDropped";
+	/** See {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}: personal-data properties and fields (maintainer e-mails, npm handles) removed or edited. */
+	static final String PERSONAL_DATA_STRIPPED_PROPERTY = "reliza:export:personalDataStripped";
+	/** See {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}: local build paths and {@code file:} references removed. */
+	static final String LOCAL_PATHS_STRIPPED_PROPERTY = "reliza:export:localPathsStripped";
+	/** See {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}: URL fields whose credential userinfo was removed. */
+	static final String CREDENTIALS_STRIPPED_PROPERTY = "reliza:export:credentialsStripped";
+	/** See {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}: top-level components in no dependency entry, linked under the root. */
+	static final String ORPHAN_COMPONENTS_LINKED_PROPERTY = "reliza:export:orphanComponentsLinked";
+	/** The six records of {@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}, in the order rebom writes them. */
+	static final List<String> MERGE_COUNT_PROPERTIES = List.of(DEV_COMPONENTS_EXCLUDED_PROPERTY,
+			EXCLUDED_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY,
+			CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY);
+	/**
 	 * ReARM's statement, inside the signed payload of a merged JSON export, that the served
 	 * document carries a root signature ({@code "true"}) or not ({@code "false"}); written last on
 	 * the egress by {@link SbomExportSigningService} (SCORE-31 ADR-8, SCORE-33 section 3.5).
@@ -293,11 +314,21 @@ public final class SupportBomInjector {
 	 * {@link #SIGNATURE_KEY_ID_PROPERTY} are here because they say whether the served document is
 	 * signed, by which key, or why not (SCORE-33 section 3.5): stripping them would leave a reader
 	 * unable to tell a pre-signing export from an unsigned one.
+	 *
+	 * <p>The six {@link #MERGE_COUNT_PROPERTIES} are here for the reason the file count is (FDAW-6
+	 * design 3.3): each says how the served document differs from its inputs, components left out
+	 * ({@link #DEV_COMPONENTS_EXCLUDED_PROPERTY}, {@link #EXCLUDED_SCOPE_DROPPED_PROPERTY}), fields
+	 * removed ({@link #PERSONAL_DATA_STRIPPED_PROPERTY}, {@link #LOCAL_PATHS_STRIPPED_PROPERTY},
+	 * {@link #CREDENTIALS_STRIPPED_PROPERTY}) or dependency edges added
+	 * ({@link #ORPHAN_COMPONENTS_LINKED_PROPERTY}); the default export declines internal metadata, and
+	 * a reader of it must still see them.
 	 */
 	private static final Set<String> DOCUMENT_RECORD_PROPERTIES = Set.of(FILE_COMPONENTS_EXCLUDED_PROPERTY,
 			DANGLING_REFS_DROPPED_PROPERTY, SBOM_MISSING_PROPERTY, COMPONENTS_WITHOUT_SBOM_PROPERTY,
 			DROPPED_LICENSE_PROPERTY, FOLDED_ROOT_PROPERTY, SIGNED_PROPERTY, UNSIGNED_REASON_PROPERTY,
-			SIGNATURE_KEY_ID_PROPERTY);
+			SIGNATURE_KEY_ID_PROPERTY, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY,
+			PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY,
+			ORPHAN_COMPONENTS_LINKED_PROPERTY);
 	/**
 	 * The document-level attestation block (CycloneDX 1.6+), server-owned exactly like the
 	 * reliza namespaces above -- and NOT reachable by the property sweep, which walks property
@@ -594,6 +625,7 @@ public final class SupportBomInjector {
 		// our provenance on any document that passes through here. See the class javadoc for the
 		// exact scope of that guarantee: it is not every served document.
 		stripReservedEverywhere(bom);
+		stripMergeCountCopies(bom);
 		stripInboundDeclarations((ObjectNode) bom);
 		stripInboundSignature((ObjectNode) bom);
 		stripAssignedBomRefs(bom);
@@ -720,10 +752,31 @@ public final class SupportBomInjector {
 			return false;
 		}
 		stripReservedEverywhere(bom);
+		stripMergeCountCopies(bom);
 		stripInboundDeclarations((ObjectNode) bom);
 		stripInboundSignature((ObjectNode) bom);
 		stripAssignedBomRefs(bom);
 		return true;
+	}
+
+	/**
+	 * Remove every copy of the six {@link #MERGE_COUNT_PROPERTIES} from every node but the document's
+	 * own {@code metadata.properties} (FDAW-6 T17): rebom writes them there and nowhere else, so a copy on
+	 * a component, a service, the root or a tool arrived in an uploaded document and would otherwise be
+	 * served as a record of the merge. Not in {@link #isReservedNamespace}: that sweep runs document wide
+	 * and would take rebom's own records with it.
+	 */
+	private static void stripMergeCountCopies(JsonNode bom) {
+		Set<String> names = Set.copyOf(MERGE_COUNT_PROPERTIES);
+		for (Map.Entry<String, JsonNode> field : bom.properties()) {
+			if (!"metadata".equals(field.getKey())) {
+				stripPropertiesNamedEverywhere(field.getValue(), names);
+				continue;
+			}
+			for (Map.Entry<String, JsonNode> m : field.getValue().properties()) {
+				if (!"properties".equals(m.getKey())) stripPropertiesNamedEverywhere(m.getValue(), names);
+			}
+		}
 	}
 
 	/**
@@ -1225,6 +1278,8 @@ public final class SupportBomInjector {
 	 *   <li><b>{@code reliza:export:foldedRoot}</b> on the release node -- the record of an uploaded
 	 *       root that described the release and was folded into it ({@link #DOCUMENT_RECORD_PROPERTIES}):
 	 *       what explains where the node's description, supplier and licence came from.</li>
+	 *   <li><b>the six {@code reliza:export:*} merge counts</b> ({@link #MERGE_COUNT_PROPERTIES}) on the
+	 *       document -- what the default merge left out, removed or linked ({@link #DOCUMENT_RECORD_PROPERTIES}).</li>
 	 *   <li><b>{@code reliza:bomref:*} bom-refs and the {@code reliza:claim:} /
 	 *       {@code reliza:evidence:} / {@code reliza:assessor:} refs inside
 	 *       {@code declarations}</b> -- these are reference IDENTIFIERS, not properties, and they

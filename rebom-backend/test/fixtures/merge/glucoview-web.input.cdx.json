@@ -1,0 +1,2949 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:6f1c0f3e-5a2b-4c11-9e4d-0a1b2c3d4e01",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-04T10:00:00Z",
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "version": "12.9.0",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@12.9.0",
+          "type": "application",
+          "publisher": "OWASP Foundation",
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@12.9.0"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/Acme/glucoview-web@2.4.0",
+      "group": "Acme",
+      "name": "glucoview-web",
+      "version": "2.4.0",
+      "description": "GlucoView clinician dashboard (insulin dosing decision support)",
+      "purl": "pkg:generic/Acme/glucoview-web@2.4.0",
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package.json"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "pkg:npm/vite@5.4.8",
+      "type": "library",
+      "name": "vite",
+      "version": "5.4.8",
+      "description": "Native-ESM powered web dev build tool",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "16aac8b50e034f5342e33094a8c07873801939130a21ad26f3f51154267bece67f41235e279e1b535beb1400db0ecbb07c83dc8249d1926a9a9107209cbe0689"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/vite@5.4.8",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/vite/-/vite-5.4.8.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/vite/-/vite-5.4.8.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/vite"
+        },
+        {
+          "name": "cdx:npm:binPaths",
+          "value": "/home/acme/scratch/fda-polish/samples/glucoview-web/node_modules/.bin/vite"
+        },
+        {
+          "name": "cdx:npm:bin",
+          "value": "vite"
+        },
+        {
+          "name": "cdx:npm:has_binary",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2020-04-21T05:05:15.476Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-21T06:38:55.491Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2024-09-25T04:33:15.453Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "vitebot"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "vitejs.twitter@gmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "soda, npm@haoqun.me, vitebot, vitejs.twitter@gmail.com, yyx990803, yyx990803@gmail.com, patak, hey.patak@gmail.com, antfu, anthonyfu117@hotmail.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "soda, npm@haoqun.me, vitebot, vitejs.twitter@gmail.com, yyx990803, yyx990803@gmail.com, patak, hey.patak@gmail.com, antfu, anthonyfu117@hotmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "762"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "4.56"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "1.16"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "576"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "3.93"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "5.4.7"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2024-09-20T15:10:21.162Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "vitebot"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-FqrItQ4DT1NC4zCUqMB4c4AZORMKIa0m8/URVCZ77OZ/QSNeJ54bU1vrFADbDsuwfIPcgknRkmqakQcgnL4GiQ=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "af548ce1c211b2785478d3ba3e8da51e39a287e8"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/vite@5.4.8"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "web"
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/jest@29.7.0",
+      "type": "library",
+      "name": "jest",
+      "version": "29.7.0",
+      "description": "Delightful JavaScript Testing.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "348cb7a00169f6c85d6b5f61cb81cad0745358ab4f26619d9efcb0bb4d673aa342daf660f99f9fbc90f1a4c400f3c79bd88f4471a7dc763620b03b619d84ef1b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/jest@29.7.0",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/jest/-/jest-29.7.0.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/jest/-/jest-29.7.0.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/jest"
+        },
+        {
+          "name": "cdx:npm:binPaths",
+          "value": "/home/acme/scratch/fda-polish/samples/glucoview-web/node_modules/.bin/jest"
+        },
+        {
+          "name": "cdx:npm:bin",
+          "value": "jest"
+        },
+        {
+          "name": "cdx:npm:has_binary",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2012-02-22T15:25:44.365Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-09-18T13:58:07.334Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2023-09-12T06:44:08.561Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "simenb"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "sbekkhus91@gmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "simenb, sbekkhus91@gmail.com, cpojer, christoph.pojer@gmail.com, rickhanlonii, rickhanlonii@gmail.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "simenb, sbekkhus91@gmail.com, cpojer, christoph.pojer@gmail.com, rickhanlonii, rickhanlonii@gmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "6"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "6"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "6"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "384"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "18.81"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "3.07"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "348"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "6.13"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "29.6.4"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2023-08-24T11:11:28.041Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "simenb"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-NIy3oAFp9shda19hy4HK0HRTWKtPJmGdnvywu01nOqNC2vZg+Z+fvJDxpMQA88eb2I9EcafcdjYgsDthnYTvGw=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "994676fc24177f088f1c5e3737f5697204ff2613"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "test"
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/eslint@8.57.1",
+      "type": "library",
+      "name": "eslint",
+      "version": "8.57.1",
+      "description": "An AST-based pattern checker for JavaScript.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "ca9a30c83c69552629917afd58fbf63c0642b4d8a9d4cbf92935b4482bab5efffd88ea5cac7f4f6aa504964b2a101ea90a1a87183442153cab6651a19cb34688"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/eslint@8.57.1",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/eslint/-/eslint-8.57.1.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/eslint/-/eslint-8.57.1.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/eslint"
+        },
+        {
+          "name": "cdx:npm:binPaths",
+          "value": "/home/acme/scratch/fda-polish/samples/glucoview-web/node_modules/.bin/eslint"
+        },
+        {
+          "name": "cdx:npm:bin",
+          "value": "eslint"
+        },
+        {
+          "name": "cdx:npm:has_binary",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:deprecated",
+          "value": "This version is no longer supported. Please see https://eslint.org/version-support for other options."
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2013-07-04T17:01:29.347Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-30T14:12:27.351Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2024-09-16T15:20:44.208Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "eslintbot"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "nicholas@eslint.org"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "openjsfoundation, npm@openjsf.org, eslintbot, nicholas@eslint.org"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "openjsfoundation, npm@openjsf.org, eslintbot, nicholas@eslint.org"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "4"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "4"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "4"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "434"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "9.79"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "12.88"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "366"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.76"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "9.10.0"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2024-09-06T20:26:32.540Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "eslintbot"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-ypowyDxpVSYpkXr9WPv2PAZCtNip1Mv5KTW0SCurXv/9iOpcrH9PaqUElksqEB6pChqHGDRCFTyrZlGhnLNGiA=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "7df109654aba7e3bbe5c8eae533c5e461d3c6ca9"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/core@7.29.7",
+      "type": "library",
+      "group": "@babel",
+      "name": "core",
+      "version": "7.29.7",
+      "description": "Babel compiler core.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "4601c10afb636ce2b681748d04d22436811cf6aa1512d6aede18fc804a8a42e2f71d90226ca6ab585108dcb7e6e8460a90b6a53a1f1e4ab8fd6fe721f47fd504"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/core@7.29.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/core/-/core-7.29.7.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/core"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:36:15.121Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:07:55.618Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-05-25T11:16:53.499Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "236"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.02"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "11.48"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "226"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "7.29.6"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-05-25T10:55:07.654Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-RgHBCvtjbOK2gXSNBNIkNoEc9qoVEtau3hj8gEqKQuL3HZAibKarWFEI3Lfm6EYKkLalOh8eSrj9b+ch9H/VBA=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "80c10b17248082968b57a857b91640971f2070f7"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2fcore@7.29.7"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/generator@7.29.12",
+      "type": "library",
+      "group": "@babel",
+      "name": "generator",
+      "version": "7.29.12",
+      "description": "Turns an AST into code.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d96efa9a18eba5014ed652b97bc22f1980760f4619ed2d91d59d818ced99518b96f9a99ca4aff3eb453a6599b3b24c286bbb09e97a213ff5a0f07e4ac5723f20"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/generator@7.29.12",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.12.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/generator/-/generator-7.29.12.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/generator"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:35:01.103Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:07:27.995Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-29T16:43:29.020Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "222"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.01"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "12.17"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "219"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.10"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-10-29T16:35:35.276Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-2W76mhjrpQFO1lK5e8IvGYB2D0YZ7S2R1Z2BjO2ZUYuW+amcpK/z60U6ZZmzskwoa7sJ6XohP/Wg8H5KxXI/IA=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "682e578704a8681589f434e7d0cc64296ebb6c63"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2fgenerator@7.29.12"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/parser@7.29.12",
+      "type": "library",
+      "group": "@babel",
+      "name": "parser",
+      "version": "7.29.12",
+      "description": "A JavaScript parser",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "589ec9069fd0e3ecff226c9db48ee34ba355728e7efbadf613105e9925fe62c6fe1b5942c10e41568dd263e8c618e7195c8e1971c6d94944892cd056e9e12926"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/parser@7.29.12",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.12.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/parser/-/parser-7.29.12.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/parser"
+        },
+        {
+          "name": "cdx:npm:binPaths",
+          "value": "/home/acme/scratch/fda-polish/samples/glucoview-web/node_modules/.bin/parser"
+        },
+        {
+          "name": "cdx:npm:bin",
+          "value": "parser"
+        },
+        {
+          "name": "cdx:npm:has_binary",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2018-05-24T19:20:36.538Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:09:08.009Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-29T16:43:44.930Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "260"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.01"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "8.89"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "257"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.10"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-10-29T16:34:19.761Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-WJ7JBp/Q4+z/ImydtI7jS6NVco5++632ExBemSX+Ysb+G1lCwQ5BVo3SY+jGGOcZXI4ZccbZSUSJLNBW6eEpJg=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "1932edf93ff6602b0665817067946c689b6fe423"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2fparser@7.29.12"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "parse"
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/types@7.29.11",
+      "type": "library",
+      "group": "@babel",
+      "name": "types",
+      "version": "7.29.11",
+      "description": "Babel Types is a Lodash-esque utility library for AST nodes",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "582b1e996e340a973a828b82d52ad8e8f05a67ea0b46511563d5c1bd9048ee297f1f252b6f69c9e74e70135307105c8364d9eb58312ecb88cbe745951df4d349"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/types@7.29.11",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/types/-/types-7.29.11.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/types/-/types-7.29.11.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/types"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:34:55.832Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:07:44.913Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-23T22:45:13.368Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "215"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.33"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "11.98"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "211"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.03"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.8"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-10-23T14:49:30.970Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-WCsemW40Cpc6gouC1SrY6PBaZ+oLRlEVY9XBvZBI7il/HyUrb2nJ505wE1MHEFyDZNnrWDEuy4jL50WVHfTTSQ=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "774cffe8cac2ca494f1334e4052002c96bf628fc"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2ftypes@7.29.11"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/template@7.29.7",
+      "type": "library",
+      "group": "@babel",
+      "name": "template",
+      "version": "7.29.7",
+      "description": "Generate an AST from a string template.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "a6eabe19fdf9a08db815e375d4b92851016abfdbb035e5a9c57662fc98b7ad1228280cca9f145a67e1a48f4bca4bd6428931127e783537d2f23b25efa3e9be1a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/template@7.29.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/template/-/template-7.29.7.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/template"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:35:33.711Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-06-16T14:03:20.322Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-05-25T11:16:25.858Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "111"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.04"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "16.62"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "108"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.0-rc.6"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-05-25T10:23:31.421Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-puq+Gf35oI24FeN11LkoUQFqv9uwNeWpxXZi/Ji3rRIoKAzKnxRaZ+Gkj0vKS9ZCiTESfng1N9LyOyXvo+m+Gg=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "4d9d4004f645cdd304de958c725162784ecac700"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2ftemplate@7.29.7"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "template"
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/traverse@7.29.12",
+      "type": "library",
+      "group": "@babel",
+      "name": "traverse",
+      "version": "7.29.12",
+      "description": "The Babel Traverse module maintains the overall tree state, and is responsible for replacing, removing, and adding nodes",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "32c7177bf34065c3a4604b116a31d916ddf29ec6f6d8f522e824eba7953bf91632711f41cbce269fd985379e1881f2138aa2b8845c7726eded652cb37e94b97b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/traverse@7.29.12",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.12.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/traverse/-/traverse-7.29.12.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/traverse"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:36:00.929Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:08:12.923Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-29T16:43:30.858Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "227"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.01"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "12.79"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "224"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.10"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-10-29T16:34:47.326Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-MscXe/NAZcOkYEsRajHZFt3ynsb22PUi6CTrp5U7+RYycR9By84mn9mFN54YgfITiqK4hFx3Ju3tZSyzfpS5ew=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "60f3196a8bded1e2b2d2efb7e47a99086733865f"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2ftraverse@7.29.12"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@bcoe/v8-coverage@0.2.3",
+      "type": "library",
+      "group": "@bcoe",
+      "name": "v8-coverage",
+      "version": "0.2.3",
+      "description": "Helper functions for V8 coverage files.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "d21610f120780dbe73bd90786b174c1c6c046908e467316342237d2d562f2050769d25075bdb58a715ab88fad60c0488c626976b1f3744470bc6e49d9c63d9b7"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40bcoe/v8-coverage@0.2.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@bcoe/v8-coverage/-/v8-coverage-0.2.3.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@bcoe/v8-coverage"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2019-01-20T06:24:14.742Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2025-01-15T17:30:44.481Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2019-09-06T22:00:51.652Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "bcoe"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "bencoe@gmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "bcoe, ben@npmjs.com, bencoe@gmail.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "bcoe, ben@npmjs.com, bencoe@gmail.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "3"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "3"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "3"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "8"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "102.67"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "3"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "0.2.2"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2019-09-06T21:59:09.061Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "bcoe"
+        },
+        {
+          "name": "cdx:npm:compressedCadence",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-0hYQ8SB4Db5zvZB4axdMHGwEaQjkZzFjQiN9LVYvIFB2nSUHW9tYpxWriPrWDASIxiaXax83REcLxuSdnGPZtw=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "75a2e8b51cb758a7553d6804a5932d7aace75c39"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/helpers@7.29.10",
+      "type": "library",
+      "group": "@babel",
+      "name": "helpers",
+      "version": "7.29.10",
+      "description": "Collection of helper functions used by Babel transforms.",
+      "scope": "optional",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "10c0b1dc0199dd67c097a86dec0c90a0f9b62e1f8119810c75ce10e877fbb9208339916e2eae38a8dc0bfa26a29bc565c98851028e17e37fb079a74af1907862"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/helpers@7.29.10",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.10.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/helpers/-/helpers-7.29.10.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/helpers"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:36:09.655Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T12:07:25.593Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-07T09:51:46.135Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, hello+npm@nicr.dev, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "184"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "26.53"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "13.99"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "178"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "1.90"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.5"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-09-10T21:14:07.827Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-EMCx3AGZ3WfAl6ht7AyQoPm2Lh+BGYEMdc4Q6Hf7uSCDOZFuLq44qNwL+iaim8VlyYhRAo4X43+weadK8ZB4Yg=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "d662b4a2d66cc6cf02bc50e8aced023fbc8649e9"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2fhelpers@7.29.10"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/semver@6.3.2",
+      "type": "library",
+      "name": "semver",
+      "version": "6.3.2",
+      "description": "The semantic version parser used by npm.",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "198ac2003c29bbac95e4e02f721910dbb679c3033158010c83934d5a3c8787fe436e8145a9b75bbd8348bd9a2e429c57c9e30fa133a1d2f74f60a95fd19b3075"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC",
+            "url": "https://opensource.org/licenses/ISC",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/semver@6.3.2",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/semver/-/semver-6.3.2.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/semver/-/semver-6.3.2.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/semver"
+        },
+        {
+          "name": "cdx:npm:binPaths",
+          "value": "/home/acme/scratch/fda-polish/samples/glucoview-web/node_modules/.bin/semver"
+        },
+        {
+          "name": "cdx:npm:bin",
+          "value": "semver"
+        },
+        {
+          "name": "cdx:npm:has_binary",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2011-02-12T00:20:25.690Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-11-02T19:47:44.481Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-11-02T19:47:36.521Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "saquibkhan, saquibkhan@github.com, npm-cli-ops, npm-cli+bot@github.com, reggi, reggi@github.com, martinrrm, martin.ruiz.mares@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "saquibkhan, saquibkhan@github.com, npm-cli-ops, npm-cli+bot@github.com, reggi, reggi@github.com, martinrrm, martin.ruiz.mares@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "122"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.11"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "15.03"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "119"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.01"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "7.8.6"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-11-02T17:05:43.359Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-GYrCADwpu6yV5OAvchkQ27Z5wwMxWAEMg5NNWjyHh/5DboFFqbdbvYNIvZouQpxXyeMPoTOh0vdPYKlf0ZswdQ=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "f50413fbe5a686c6379385b2e8789b61c124a3c7"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/semver@6.3.2"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@types/node@26.6.6",
+      "type": "library",
+      "group": "@types",
+      "name": "node",
+      "version": "26.6.6",
+      "description": "TypeScript definitions for node",
+      "scope": "excluded",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "333423fbc2b1dd7238d0e994004e90a21e7c64c36cb4d34cc27da77dddea5ac7deee70cd4aa24dcdeb389e3873e801f0ad21ce7df48bc1753ac9be3be10e1aa2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40types/node@26.6.6",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@types/node/-/node-26.6.6.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@types/node/-/node-26.6.6.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@types/node"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2016-05-17T18:26:38.670Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-28T18:36:37.419Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-10-28T18:36:36.455Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "types"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "types, ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "types, ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "2382"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "18.99"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "2380"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "8019.94"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "26.6.5"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-10-09T18:46:47.657Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "types"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-MzQj+8Kx3XI40OmUAE6Qoh58ZMNstNNMwn2nfd3qWsfe7nDNSqJNzes4njhz6AHwrSHOffSLwXU6yb474Q4aog=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "9ed7b5817e728ed9216ef7c5b7d373fe3b777104"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@types/babel__core@7.20.5",
+      "type": "library",
+      "group": "@types",
+      "name": "babel__core",
+      "version": "7.20.5",
+      "description": "TypeScript definitions for @babel/core",
+      "scope": "excluded",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "aa8429ad9bf3e70405270303a9eb1e4575afdeba8cbe18296d715f5725a16f1f57e3b3ce200ea2ffe75779f12664aa0080e69375a22035232a30853ad72472cc"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40types/babel__core@7.20.5",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "cdx:npm:package:development",
+          "value": "true"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@types/babel__core/-/babel__core-7.20.5.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@types/babel__core"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2018-07-25T22:30:03.389Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-04T08:17:09.908Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2023-11-20T23:44:10.721Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "types"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "types, ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "types, ts-npm-types@microsoft.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "33"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "14.00"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "47.99"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "31"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.29"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "7.20.4"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2023-11-06T23:39:08.818Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "types"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-qoQprZvz5wQFJwMDqeseRXWv3rqMvhgpbXFfVyWhbx9X47POIA6i/+dXefEmZKoAgOaTdaIgNSMqMIU61yRyzA=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "3df15f27ba85319caa07ba08d0721889bb39c017"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/glob@7.2.3",
+      "type": "library",
+      "name": "glob",
+      "version": "7.2.3",
+      "description": "a little globber",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "9c5474ccba54d9809a471c28089bcbe94bc21f6245c85548bf04cbb087f6d40b8794cb240358614dd93e2e5609b4e958b7dbfa76fb330f604646a04bfa240af5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "ISC",
+            "url": "https://opensource.org/licenses/ISC",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/glob@7.2.3",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/glob/-/glob-7.2.3.tgz",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/glob/-/glob-7.2.3.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/glob"
+        },
+        {
+          "name": "cdx:npm:deprecated",
+          "value": "Old versions of glob are not supported, and contain widely publicized security vulnerabilities, which have been fixed in the current version. Please update. Support for old versions may be purchased (at exorbitant rates) by contacting i@izs.me"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2011-01-02T22:10:36.356Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-28T04:08:39.781Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2022-05-15T14:44:04.854Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "isaacs"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "i@izs.me"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "isaacs, i@izs.me"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "isaacs, i@izs.me"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "188"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "1.90"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "8.96"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "120"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.21"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.3"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2022-05-13T17:08:32.787Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "isaacs"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "b8df0fb802bbfa8e89bd1d938b4e16578ed44f2b"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        },
+        {
+          "name": "cdx:foo:repository",
+          "value": "git+ssh://git@github.com/org/repo.git"
+        }
+      ],
+      "author": "Sindre Sorhus <sindresorhus@gmail.com> (https://sindresorhus.com)"
+    },
+    {
+      "bom-ref": "pkg:npm/@babel/code-frame@7.29.7",
+      "type": "library",
+      "group": "@babel",
+      "name": "code-frame",
+      "version": "7.29.7",
+      "description": "Generate errors that contain a code frame that point to source locations.",
+      "hashes": [
+        {
+          "alg": "SHA-512",
+          "content": "02ea7b69439fa5b01483644e38937a230e5ff43301973bb4988926fe66a52d014dfd84203b8f300a3d0ac5adec10726f3d5160eec891faa4489f05dddaa8502b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:npm/%40babel/code-frame@7.29.7",
+      "externalReferences": [
+        {
+          "url": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz",
+          "type": "distribution"
+        },
+        {
+          "type": "vcs",
+          "url": "https://deploy:s3cret@git.example.com/org/repo.git"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://registry.npmjs.org/@babel/code-frame/-/code-frame-7.29.7.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@babel/code-frame"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2017-10-30T18:34:05.205Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-09-18T13:47:36.176Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2026-05-25T11:15:38.208Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "hzoo, hi@henryzoo.com, existentialism, bng412@gmail.com, nicolo-ribaudo, nicolo.ribaudo@gmail.com, jlhwung, jlhwung@gmail.com, github actions, npm-oidc-no-reply@github.com"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "10"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "101"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "0.04"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "13.87"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "97"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.00"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.0-rc.6"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2026-05-25T10:22:44.479Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "GitHub Actions"
+        },
+        {
+          "name": "cdx:npm:trustedPublishing",
+          "value": "true"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-Aup7aUOfpbAUg2ROOJN6Iw5f9DMBlzu0mIkm/malLQFN/YQgO48wCj0Kxa3sEHJvPVFg7siR+qRInwXd2qhQKw=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "f2fbbfea87c44a21590ec515b778b2c26d8866e7"
+        },
+        {
+          "name": "cdx:npm:provenanceUrl",
+          "value": "https://registry.npmjs.org/-/npm/v1/attestations/@babel%2fcode-frame@7.29.7"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "authors": [
+        {
+          "name": "The Babel Team",
+          "email": "team@babel.example"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:npm/@org/pkg@1.0.0",
+      "type": "library",
+      "name": "pkg",
+      "version": "1.0.0",
+      "purl": "pkg:npm/@org/pkg@1.0.0",
+      "externalReferences": [
+        {
+          "type": "distribution",
+          "url": "https://npm.pkg.github.com/@org/pkg/-/pkg-1.0.0.tgz"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "package-lock.json"
+        },
+        {
+          "name": "ResolvedUrl",
+          "value": "https://x-access-token:ghp_example@npm.pkg.github.com/@org/pkg/-/pkg-1.0.0.tgz"
+        },
+        {
+          "name": "LocalNodeModulesPath",
+          "value": "node_modules/@nodelib/fs.scandir"
+        },
+        {
+          "name": "cdx:npm:packageCreatedTime",
+          "value": "2011-01-02T22:10:36.356Z"
+        },
+        {
+          "name": "cdx:npm:lastModifiedTime",
+          "value": "2026-10-28T04:08:39.781Z"
+        },
+        {
+          "name": "cdx:npm:publishTime",
+          "value": "2022-05-15T14:44:04.854Z"
+        },
+        {
+          "name": "cdx:npm:publisher",
+          "value": "org-ci"
+        },
+        {
+          "name": "cdx:npm:publisherEmail",
+          "value": "ci@org.example"
+        },
+        {
+          "name": "cdx:npm:maintainerSet",
+          "value": "org-ci, ci@org.example"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSet",
+          "value": "isaacs, i@izs.me"
+        },
+        {
+          "name": "cdx:npm:maintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:priorMaintainerSetCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapCount",
+          "value": "2"
+        },
+        {
+          "name": "cdx:npm:maintainerOverlapRatio",
+          "value": "1.00"
+        },
+        {
+          "name": "cdx:npm:versionCount",
+          "value": "188"
+        },
+        {
+          "name": "cdx:npm:releaseGapDays",
+          "value": "1.90"
+        },
+        {
+          "name": "cdx:npm:releaseGapBaselineDays",
+          "value": "8.96"
+        },
+        {
+          "name": "cdx:npm:releaseGapSampleSize",
+          "value": "120"
+        },
+        {
+          "name": "cdx:npm:releaseCadenceCompressionRatio",
+          "value": "0.21"
+        },
+        {
+          "name": "cdx:npm:priorVersion",
+          "value": "8.0.3"
+        },
+        {
+          "name": "cdx:npm:priorPublishTime",
+          "value": "2022-05-13T17:08:32.787Z"
+        },
+        {
+          "name": "cdx:npm:priorPublisher",
+          "value": "isaacs"
+        },
+        {
+          "name": "cdx:npm:artifactIntegrity",
+          "value": "sha512-nFR0zLpU2YCaRxwoCJvL6UvCH2JFyFVIvwTLsIf21AuHlMskA1hhTdk+LlYJtOlYt9v6dvszD2BGRqBL+iQK9Q=="
+        },
+        {
+          "name": "cdx:npm:artifactShasum",
+          "value": "b8df0fb802bbfa8e89bd1d938b4e16578ed44f2b"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "group": "@org"
+    }
+  ],
+  "dependencies": [
+    {
+      "ref": "pkg:generic/Acme/glucoview-web@2.4.0",
+      "dependsOn": [
+        "pkg:npm/glob@7.2.3",
+        "pkg:npm/@babel/code-frame@7.29.7",
+        "pkg:npm/@org/pkg@1.0.0",
+        "pkg:npm/vite@5.4.8",
+        "pkg:npm/jest@29.7.0",
+        "pkg:npm/eslint@8.57.1"
+      ]
+    },
+    {
+      "ref": "pkg:npm/jest@29.7.0",
+      "dependsOn": [
+        "pkg:npm/@babel/core@7.29.7",
+        "pkg:npm/@types/babel__core@7.20.5",
+        "pkg:npm/@bcoe/v8-coverage@0.2.3"
+      ]
+    },
+    {
+      "ref": "pkg:npm/@babel/core@7.29.7",
+      "dependsOn": [
+        "pkg:npm/@babel/code-frame@7.29.7",
+        "pkg:npm/@babel/generator@7.29.12",
+        "pkg:npm/@babel/helpers@7.29.10",
+        "pkg:npm/@babel/parser@7.29.12",
+        "pkg:npm/@babel/template@7.29.7",
+        "pkg:npm/@babel/traverse@7.29.12",
+        "pkg:npm/@babel/types@7.29.11",
+        "pkg:npm/semver@6.3.2"
+      ]
+    },
+    {
+      "ref": "pkg:npm/vite@5.4.8",
+      "dependsOn": [
+        "pkg:npm/@types/node@26.6.6"
+      ]
+    },
+    {
+      "ref": "pkg:npm/eslint@8.57.1",
+      "dependsOn": [
+        "pkg:npm/glob@7.2.3"
+      ]
+    },
+    {
+      "ref": "pkg:npm/@babel/generator@7.29.12",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/parser@7.29.12",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/types@7.29.11",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/template@7.29.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/traverse@7.29.12",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@bcoe/v8-coverage@0.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/helpers@7.29.10",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/semver@6.3.2",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@types/node@26.6.6",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@types/babel__core@7.20.5",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/glob@7.2.3",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@babel/code-frame@7.29.7",
+      "dependsOn": []
+    },
+    {
+      "ref": "pkg:npm/@org/pkg@1.0.0",
+      "dependsOn": []
+    }
+  ]
+}

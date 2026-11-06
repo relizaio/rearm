@@ -5,6 +5,7 @@ package io.reliza.service;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -14,6 +15,9 @@ import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.nio.charset.StandardCharsets;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -173,10 +177,23 @@ class ReleaseBomMergeVersionCacheTest {
 				null);
 	}
 
+	/** FDAW-6 T16 (design 3.6): the default-export rules moved them to 19, and the history says so. */
 	@Test
-	void theMergeVersionIsEighteen() {
-		assertEquals(18, ReleaseService.MERGE_VERSION,
-				"18 = a release's stored merged rows are dropped when its merge finds nothing to merge, and the stored rows"
+	void theRulesAreAtNineteenAndTheHistoryListsTheDefaultExport() throws Exception {
+		String source = Files.readString(Path.of("src/main/java/io/reliza/service/ReleaseService.java"),
+				StandardCharsets.UTF_8);
+		assertTrue(source.contains("\t * 19 = the default merge drops scope"), "the javadoc line of 19");
+		assertTrue(source.contains("(FDAW-6)"), "the javadoc names the task");
+	}
+
+	@Test
+	void theMergeVersionIsNineteen() {
+		assertEquals(19, ReleaseService.MERGE_VERSION,
+				"19 = the default merge drops scope: excluded and generator-marked dev components, strips personal data,"
+				+ " local paths and credentials in URL userinfo, keeps keyless nodes and links orphan components under the"
+				+ " root, and records the six counts (FDAW-6); rows stored under 18 carry dev tools, excluded scope, e-mails,"
+				+ " build paths and URL credentials and are rebuilt once,"
+				+ " after 18 = a release's stored merged rows are dropped when its merge finds nothing to merge, and the stored rows"
 				+ " of a release and of every product above it are emptied, in the writer's transaction, when its preferred"
 				+ " PURL identifier, its inventory (artifacts, source code entry, deliverables, a rebuild) or, for a product,"
 				+ " its parent releases change, or when the supplier name of its product component changes, and rebuilt by"

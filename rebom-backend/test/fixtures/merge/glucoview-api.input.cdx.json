@@ -1,0 +1,1118 @@
+{
+  "bomFormat": "CycloneDX",
+  "specVersion": "1.6",
+  "serialNumber": "urn:uuid:6f1c0f3e-5a2b-4c11-9e4d-0a1b2c3d4e02",
+  "version": 1,
+  "metadata": {
+    "timestamp": "2026-11-04T10:00:00Z",
+    "tools": {
+      "components": [
+        {
+          "group": "@cyclonedx",
+          "name": "cdxgen",
+          "version": "12.9.0",
+          "purl": "pkg:npm/%40cyclonedx/cdxgen@12.9.0",
+          "type": "application",
+          "publisher": "OWASP Foundation",
+          "authors": [
+            {
+              "name": "OWASP Foundation"
+            }
+          ],
+          "bom-ref": "pkg:npm/@cyclonedx/cdxgen@12.9.0"
+        }
+      ]
+    },
+    "component": {
+      "type": "application",
+      "bom-ref": "pkg:generic/Acme/glucoview-api@2.4.0",
+      "group": "Acme",
+      "name": "glucoview-api",
+      "version": "2.4.0",
+      "description": "GlucoView dosing engine API",
+      "purl": "pkg:generic/Acme/glucoview-api@2.4.0",
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "pyproject.toml"
+        }
+      ]
+    }
+  },
+  "components": [
+    {
+      "bom-ref": "libdosecalc@3.1",
+      "type": "library",
+      "name": "libdosecalc",
+      "version": "3.1",
+      "description": "Vendored C dose-calculation library (copied into src/native)"
+    },
+    {
+      "type": "library",
+      "group": "vendor-a",
+      "name": "dosetables",
+      "version": "1.0",
+      "description": "Vendored dose lookup tables (copied into src/native/tables)"
+    },
+    {
+      "bom-ref": "pkg:pypi/black@24.8.0",
+      "type": "library",
+      "authors": [
+        {
+          "name": "\u0141ukasz Langa <lukasz@langa.pl>"
+        }
+      ],
+      "name": "black",
+      "version": "24.8.0",
+      "description": "The uncompromising code formatter.",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "09cdeb74d494ec023ded657f7092ba518e8cf78fa8386155e4a03fdcc44679e6"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/black@24.8.0",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/47/6e/74e29edf1fba3887ed7066930a87f698ffdcd52c5dbc263eabb06061672d/black-24.8.0-cp310-cp310-macosx_10_9_x86_64.whl",
+          "comment": "black-24.8.0-cp310-cp310-macosx_10_9_x86_64.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements-dev.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-08-02T17:47:26.911765Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "09cdeb74d494ec023ded657f7092ba518e8cf78fa8386155e4a03fdcc44679e6, 81c6742da39f33b08e791da38410f32e27d632260e599df7245cccee2064afeb, 707a1ca89221bc8a1a64fb5e15ef39cd755633daa672a9db7498d1c19de66a42, d6417535d99c37cee4091a2f24eb2b6d5ec42b144d50f1f2e436d9fe1916fe1a, fb6e2c0b86bbd43dee042e48059c9ad7830abd5c94b0bc518c0eeec57c3eddc1, 837fd281f1908d0076844bc2b801ad2d369c78c45cf800cad7b61686051041af, 62e8730977f0b77998029da7971fa896ceefa2c4c4933fcd593fa599ecbf97a4, 72901b4913cbac8972ad911dc4098d5753704d1f3c56e44ae8dce99eecb0e3af, 7c046c1d1eeb7aea9335da62472481d3bbf3fd986e093cffd35f4385c94ae368, 649f6d84ccbae73ab767e206772cc2d7a393a001070a4c814a546afd0d423aed, 2b59b250fdba5f9a9cd9d0ece6e6d993d91ce877d121d161e4698af3eb9c1018, 6e55d30d44bed36593c3163b9bc63bf58b3b30e4611e4d88a0c3c239930ed5b2, 505289f17ceda596658ae81b61ebbe2d9b25aa78067035184ed0a9d855d18afd, b19c9ad992c7883ad84c9b22aaa73562a16b819c1d8db7a1a1a49fb7ec13c7d2, 1f13f7f386f86f8121d76599114bb8c17b69d962137fc70efe56137727c7047e, f490dbd59680d809ca31efdae20e634f3fae27fba3ce0ba3208333b713bc3920, eab4dd44ce80dea27dc69db40dab62d4ca96112f87996bca68cd75639aeb2e4c, 3c4285573d4897a7610054af5a890bde7c65cb466040c5f0c8b732812d7f0e5e, 9e84e33b37be070ba135176c123ae52a51f82306def9f7d063ee302ecab2cf47, 73bbf84ed136e45d451a260c6b73ed674652f90a2b3211d6a35e78054563a9bb, 972085c618ee94f402da1af548a4f218c754ea7e5dc70acb168bfaca4c2542ed, 2500945420b6784c38b9ee885af039f5e7471ef284ab03fa35ecdde4688cd83f"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "476e74e29edf1fba3887ed7066930a87f698ffdcd52c5dbc263eabb06061672d, ab49575cb6c3faee690b05c9d11ee2e8dba8fbd6d6c134496e644c1feb1b47da, 7ab4d34099e95c437b53d01c4aa37cf93944b233066eb034ccf7897fa4e5f286, 87a06d2e4175ef364b8c4b64f8441ba041ed65c63ea1db2720d61494ac711c15, 08a60a3aa89de9c283556146dc6dbda20cd63a9c94160a6fbdebaf0918e4a3e1, db94b803d810e14588bb297e565821a947c108390a079e21dbdcb9ab6956cd7a, a5b5f485e1bbe31f768e2e5210f52ea3f432256201289fd1a3c0afda693776b0, a869a000fc3736f89d1bdc7f4a879f8aaf516fb03613bb51a0154070383d95d9, a2a805fb14195cfef32b7c8d4585a44b7499c2a4b205e1662c427b941ed87054, 41778d9ce42673e5cb9988f6df73c1c5c1d4e9e788053cccd7f5fb14ef100982, cc94eff1ddad2ce1d3cc26c162b3693043c6b6b575f538f602f26fe846dfdc75, 28ea18b8d86a9ca19a6942e4e16759b2fa5fc02bbc0eb33c1b866fcd387640ab, 9fd4ae03761ddecc1a37d7e743b89cccbcf3317479ff4b88cfd8818079f890d0, 144b4dfe67eed7f9b1ddca2ec8e4418ea74f0d1dc84d36ea874d618ffa1af7d4, 971495b3f91f857034686cae0e73006b8391d76a8142d339b42970eaaf0416ea, 955468b8883c8aa258a6dde958cd5bdfada8382bec47c5162f4a01e66d839af1, 13b2b3f24fdbb46f0e7ef6238e131f13572ee8279b70f237f221dd168a9dba1a, d93531010981e4a05202a84a3116423970fd1a59d2eda4ac0b3570fbb7029ddc, 27253f706b4f044dd569a20a4835c3b733dedea38d83d2ee0beb8178a6d44945, 637279375cd8277cbf1c5670914e6bd4c1b15dea2c8f8e906dc21c448d0535f0, 271e83fa8a787180e1632c3d831f7e58994d7aaf23a0961320d21e84f922f919, 04b046fb0d4e00372f4a86a6f8efa3cb193c9f64863615e39010b1477e010578"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "4bff8318e5aa32f165c6c642d3d5413f, ed6c5f52e691417f4ee47ef95d2c8d7a, 7979c066db932b7528f3f85f2cac16c7, f1e5132180e67a27ebb4b501bcd69815, 2dad7d808a671faa38f565a02978bacf, 433926e16b0b98900641c08cc8655d31, 7e5e951b482ef1937cb37842998bcc8f, 5af3d4d7a58170e452f83014aca999c1, 11920c23f65414268739da3343c3efa9, f88a7d3b2d0046aa08f37ce03579afce, 6795b3ed01db360588d48346839d4b68, 675aa083343721c015a0c78e19ba25a1, 647eaebf2d522e351790aa160e581f7a, fe54e9a718abd4d74069f71f89723012, a9981334ee6a27ae1272e66d4d9ecf6c, cdb2ab6aff2f1a5c6bcc8890cfe2c550, 257824fabc09aa5434ce11e19807a232, e767209f5839eda31727bea81971a1e3, fd110a3994b2a017eb6ae59dda91a98b, 26f65fb7c19b195444f785cde831db54, 59907440de926854661707af1eee30bb, bdbca9759c0b6b51ea8fe6a3690fc5f2"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/cryptography@43.0.1",
+      "type": "library",
+      "authors": [
+        {
+          "name": "The cryptography developers <cryptography-dev@python.org> <The Python Cryptographic Authority and individual contributors <cryptography-dev@python.org>>"
+        }
+      ],
+      "name": "cryptography",
+      "version": "43.0.1",
+      "description": "cryptography is a package which provides cryptographic recipes and primitives to Python developers.",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8385d98f6a3bf8bb2d65a73e17ed87a3ba84f6991c155691c51112075f9ffc5d"
+        }
+      ],
+      "licenses": [
+        {
+          "expression": "Apache-2.0 OR BSD-3-Clause"
+        }
+      ],
+      "purl": "pkg:pypi/cryptography@43.0.1",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/58/28/b92c98a04ba762f8cdeb54eba5c4c84e63cac037a7c5e70117d337b15ad6/cryptography-43.0.1-cp37-abi3-macosx_10_9_universal2.whl",
+          "comment": "cryptography-43.0.1-cp37-abi3-macosx_10_9_universal2.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-09-03T20:04:14.466826Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "8385d98f6a3bf8bb2d65a73e17ed87a3ba84f6991c155691c51112075f9ffc5d, 27e613d7077ac613e399270253259d9d53872aaf657471473ebfc9a52935c062, 68aaecc4178e90719e95298515979814bda0cbada1256a4485414860bd7ab962, de41fd81a41e53267cb020bb3a7212861da53a7d39f863585d13ea11049cf277, f98bf604c82c416bc829e490c700ca1553eafdf2912a91e23a79d97d9801372a, 61ec41068b7b74268fa86e3e9e12b9f0c21fcf65434571dbb13d954bceb08042, 014f58110f53237ace6a408b5beb6c427b64e084eb451ef25a28308270086494, 2bd51274dcd59f09dd952afb696bf9c61a7a49dfc764c04dd33ef7a6b502a1e2, 666ae11966643886c2987b3b721899d250855718d6d9ce41b521252a17985f4d, ac119bb76b9faa00f48128b7f5679e1d8d437365c5d26f1c2c3f0da4ce1b553d, 1bbcce1a551e262dfbafb6e6252f1ae36a248e615ca44ba302df077a846a8806, 58d4e9129985185a06d849aa6df265bdd5a74ca6e1b736a77959b498e0505b85, d03a475165f3134f773d1388aeb19c2d25ba88b6a9733c5c590b9ff7bbfa2e0c, 511f4273808ab590912a93ddb4e3914dfd8a388fed883361b02dea3791f292e1, 80eda8b3e173f0f247f711eef62be51b599b5d425c429b5d4ca6a05e9e856baa, 38926c50cff6f533f8a2dae3d7f19541432610d114a70808f0926d5aaa7121e4, a575913fb06e05e6b4b814d7f7468c2c660e8bb16d8d5a1faf9b33ccc569dd47, d75601ad10b059ec832e78823b348bfa1a59f6b8d545db3a24fd44362a1564cb, ea25acb556320250756e53f9e20a4177515f012c9eaea17eb7587a8c4d8ae034, c1332724be35d23a854994ff0b66530119500b6053d0bd3363265f7e5e77288d, fba1007b3ef89946dbbb515aeeb41e30203b004f0b4b00e5e16078b518563289, 5b43d1ea6b378b54a1dc99dd8a2b5be47658fe9a7ce0a58ff0b55f4b43ef2b84, 88cce104c36870d70c49c7c8fd22885875d950d9ee6ab54df2745f83ba0dc365, 9d3cdb25fa98afdd3d0892d132b8d7139e2c087da1712041f6b762e4f807cc96, e710bf40870f4db63c3d7d929aa9e09e4e7ee219e703f949ec4073b4294f6172, 7c05650fe8023c5ed0d46793d4b7d7e6cd9c04e68eabe5b0aeea836e37bdcec2, 203e92a75716d8cfb491dc47c79e17d0d9207ccffcbcb35f598fbe463ae3444d"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "5828b92c98a04ba762f8cdeb54eba5c4c84e63cac037a7c5e70117d337b15ad6, 33131193774705783ba364121aa2a60132fa31a668b8ababd5edfa1662354ccd, 5e4b39bb3c4c8cfb3e94e736b8d8859ce5c81536e91a1033b1d26770c4249000, cedc1471d4d56608e1013237af334b8a4c35d53895694fbb73882d1c4fd3f55e, ad437a9920135b0d5437cc2f8f529fa757431eb6a7736ddfadfdee1cc5890800, cc429ab8467af6c0b76f3d9b8f01d1cf25b9c9f3f2151f4acfab888d21c55a72, a465430509e31700286ec02868a2457d2111d03ccefc20349d24e58d171ae0a7, bb18a04b6467e6e09df8c73b91dcee8878f4a438a43a3603dc3cd6f8003b92d8, cc730eacbdc437202edcbdc07f3576ed8fb8b0ab79d27bf2c5d822d758a72faa, 8ab6bc54b371f02cffd35ff8dc6baba88304d7cf8e83632566b4b42e00383e03, 000e8217e348a1fa417ec4c78cd3cdf24154f5e76fd7597343a35bd403650dfd, 3ded38b6be7254d8f7251fde8054af597ee8afa14f911da67a9410a45f602fc3, 64f3b7946c3887cf7436f002f4cbb1e6aec77b8d299b86be48eeadfefb937c4b, ac7eebda4dd4ae098a0990753efbb4b50954f1d03003846b943ea85070782da7, 43f6feebbd78a3e341e3913846a3bb2c29d0b09b1b3af1573c6baabc2533e147, bd4cab0b9407d5247576290b4fd8abd06b7f51bd414f04eef0f2800675512d61, 0536e532a671998d6fcfdb9122da16434347a58a6bae9465e527e450e0bc60a5, b3c6c09cee6968add5ff868525c3815e5dccc0e3c6e89eec58dc9135d3c40e88, 18234175dcd935e1649865e1af7bd0b827cc9d9769a586dcc84f7cbe96839086, ea45967da50269954b993d4484bf85026c7377bd551651ebdabba94905972556, dfe6ccd29a1f9a6b71294e1e9f530c4d779d5dd37c8bb736c05d5fb6d98a971b, a280fb7d668f1be5e4443b7ac191f68390be24f7c2ebd36011741f62c7645eb2, b2aa782e42ccf854943dfce72fb94a8d62220f22084ff07076a638bc3f34f3cc, 3efd70f3e849ad4d6cca2118ee6938e0b52326d02406f10912356151dd4b6868, 21b04ecefa99519eaa32af49a3ad002bb3e795f9e6eb32221fd87736247fa3cb, 8c422948dd87b237565c77b28b674d972c7f983ffa3977dc8b8ad0736f6a7d97, deba0664727028b37e249e73879348cc46d45c5c1a2a2e81e8166462953c5755"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "7474442e029171c6f1f3ef827a7d385a, 6c75e2c56a3f442f89a9ed359f5ccc74, a7c13bc8df859982782e8c046e4b36ed, 322158bbbad094e2d0fe773a994fcadc, 55c0ee709c73ee1b9466c78b7013a5fb, 32028939a4e55a623ee0e58a111087b0, 415eff0e5320e56406d7fe0fc5064126, a26a414738e6f024887ed5d9a92c3c4e, 1fba58d9e800b2b23f28a83e07a90cf3, 91315020212e416019c494ea44cdc3b6, 5c10490c7bf3efd049221cef12a2d2a1, 84fb793aa89b176871de92af9e112a24, f8fd464c6fef51085a15285f73f30744, 0ac99ec214366ef436da2237c48cba04, 2a4557c1a603156bd50b5432e84fe67e, 13af717f6e862d51b468370268e46373, 4836cca6e81e5305028f245ad1860255, b8d8aa7f036e209da46c6fa85cff2820, 3e3012ca185d29129db6a645138506f6, f623243900417dbe4c5e2e8e735ab7a5, 3f5798eac1c29dd008246420838e46cb, b01ccfd1be5a45696aefe0fa2dda9968, 957765927107fe670c2ff85a34ad1a22, 60bb701f558e21061641ab42ecd901e4, 26c80dcf8f21646d378faa7bbf05ed36, d8e0940cf47c3e9febd78cebb204ca04, 098045b2e33051979efab7a0a9880e0f"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/fastapi@0.115.0",
+      "type": "framework",
+      "authors": [
+        {
+          "name": "=?utf-8?q?Sebasti=C3=A1n_Ram=C3=ADrez?= <tiangolo@gmail.com>"
+        }
+      ],
+      "name": "fastapi",
+      "version": "0.115.0",
+      "description": "FastAPI framework, high performance, easy to learn, fast to code, ready for production",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "17ea427674467486e997206a5ab25760f6b09e069f099b96f5b55a32fb6f1631"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/fastapi@0.115.0",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/06/ab/a1f7eed031aeb1c406a6e9d45ca04bff401c8a25a30dd0e4fd2caae767c3/fastapi-0.115.0-py3-none-any.whl",
+          "comment": "fastapi-0.115.0-py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-09-17T19:18:10.962038Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "17ea427674467486e997206a5ab25760f6b09e069f099b96f5b55a32fb6f1631, f93b4ca3529a8ebc6fc3fcf710e5efa8de3df9b41570958abf1d97d843138004"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "06aba1f7eed031aeb1c406a6e9d45ca04bff401c8a25a30dd0e4fd2caae767c3, 7b5ebf0471f14bf6ebfbee8208148a3396d1a23298531a6cc10776c59f4c0f87"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "be230f0ccf9bbcc734f926267acc5418, 1be069a4db82af6acedf769e61c2aaeb"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "framework"
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/numpy@1.26.4",
+      "type": "framework",
+      "authors": [
+        {
+          "name": "Travis E. Oliphant et al."
+        }
+      ],
+      "name": "numpy",
+      "version": "1.26.4",
+      "description": "Fundamental package for array computing in Python",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9ff0f4f29c51e2803569d7a51c2304de5554655a60c5d776e35b4a41413830d0"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD License",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Unstated License"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        },
+        {
+          "license": {
+            "id": "Apache-2.0",
+            "url": "https://opensource.org/licenses/Apache-2.0",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/numpy@1.26.4",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/a7/94/ace0fdea5241a27d13543ee117cbc65868e82213fb31a8eb7fe9ff23f313/numpy-1.26.4-cp310-cp310-macosx_10_9_x86_64.whl",
+          "comment": "numpy-1.26.4-cp310-cp310-macosx_10_9_x86_64.whl",
+          "type": "distribution"
+        },
+        {
+          "type": "distribution",
+          "url": "file:///home/acme/wheels/numpy.whl"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-02-05T23:48:01.194769Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "9ff0f4f29c51e2803569d7a51c2304de5554655a60c5d776e35b4a41413830d0, 2e4ee3380d6de9c9ec04745830fd9e2eccb3e6cf790d39d7b98ffd19b0dd754a, d209d8969599b27ad20994c8e41936ee0964e6da07478d6c35016bc386b66ad4, ffa75af20b44f8dba823498024771d5ac50620e6915abac414251bd971b4529f, 62b8e4b1e28009ef2846b4c7852046736bab361f7aeadeb6a5b89ebec3c7055a, a4abb4f9001ad2858e7ac189089c42178fcce737e4169dc61321660f1a96c7d2, bfe25acf8b437eb2a8b2d49d443800a5f18508cd811fea3181723922a8a82b07, b97fe8060236edf3662adfc2c633f56a08ae30560c56310562cb4f95500022d5, 4c66707fabe114439db9068ee468c26bbdf909cac0fb58686a42a24de1760c71, edd8b5fe47dab091176d21bb6de568acdd906d1887a4584a15a9a96a1dca06ef, 7ab55401287bfec946ced39700c053796e7cc0e3acbef09993a9ad2adba6ca6e, 666dbfb6ec68962c033a450943ded891bed2d54e6755e35e5835d63f4f6931d5, 96ff0b2ad353d8f990b63294c8986f1ec3cb19d749234014f4e7eb0112ceba5a, 60dedbb91afcbfdc9bc0b1f3f402804070deed7392c23eb7a7f07fa857868e8a, 1af303d6b2210eb850fcf03064d364652b7120803a0b872f5211f5234b399f20, cd25bcecc4974d09257ffcd1f098ee778f7834c3ad767fe5db785be9a4aa9cb2, b3ce300f3644fb06443ee2222c2201dd3a89ea6040541412b8fa189341847218, 03a8c78d01d9781b28a6989f6fa1bb2c4f2d51201cf99d3dd875df6fbd96b23b, 9fad7dcb1aac3c7f0584a5a8133e3a43eeb2fe127f47e3632d43d677c66c102b, 675d61ffbfa78604709862923189bad94014bef562cc35cf61d3a07bba02a7ed, ab47dbe5cc8210f55aa58e4805fe224dac469cde56b9f731a4c098b91917159a, 1dda2e7b4ec9dd512f84935c5f126c8bd8b9f2fc001e9f54af255e8c5f16b0e0, 50193e430acfc1346175fcbdaa28ffec49947a06918b7b92130744e81e640110, 08beddf13648eb95f8d867350f6a018a4be2e5ad54c8d8caed89ebca558b2818, 7349ab0fa0c429c82442a27a9673fc802ffdb7c7775fad780226cb234965e53c, 52b8b60467cd7dd1e9ed082188b4e6bb35aa5cdd01777621a1658910745b90be, d5241e0a80d808d70546c697135da2c613f30e28251ff8307eb72ba696945764, f870204a840a60da0b12273ef34f7051e98c3b5961b61b0c2c1be6dfd64fbcd3, 679b0076f67ecc0138fd2ede3a8fd196dddc2ad3254069bcb9faf9a79b1cebcd, 47711010ad8555514b434df65f7d7b076bb8261df1ca9bb78f53d3b2db02e95c, a354325ee03388678242a4d7ebcd08b5c727033fcff3b2f536aea978e15ee9e6, 3373d5d70a5fe74a2c1bb6d2cfd9609ecf686d47a2d7b1d37a8f3b6bf6003aea, afedb719a9dcfc7eaf2287b839d8198e06dcd4cb5d276a3df279231138e83d30, 95a7476c59002f2f6c590b9b7b998306fba6a5aa646b1e22ddfeaf8f78c3a29c, 7e50d0a0cc3189f9cb0aeb3a6a6af18c16f59f004b866cd2be1c14b36134a4a0, 2a02aba9ed12e4ac4eb3ea9421c420301a0c6460d9830d74a9df87efa4912010"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "a794ace0fdea5241a27d13543ee117cbc65868e82213fb31a8eb7fe9ff23f313, 20f7b24208eba89f9d1b58c1668bc6c8c4fd472b20c45573cb767f59d49fb0f6, fca54beee6488160798683eed5bdb7eead455892c3b4e1f78d79d8d3f3b084ac, 4bd7ecf66c1cd12dc28b4040b15ab4d17b773b87fa9d29ca16125de01adb36cd, 24036f229fe3187546435c4f6f89f6d26c129d4f5bed40552899fcf1f0bf9e50, 39fe39ada9b094f01f5a35486577c848fe274e374bbf8d8f472e1423a0bbd26d, d5ef6ad11d51197aad206a9ad2286dc1aac6a378059e06e8cf22cd08ed4f20dc, 1977538f202862b9183f54108557bfda67e17603fc560c384559e769321c9d92, 1157baae43d14fe163fa0e4c47f307b6b2511ab8d7d30177c491960504252053, 1a2e151484f49fd03944c4a3ad9c418ed193cfd02724e138ac8a9505d056c582, 79ae7e5b85136806f9dadf4878bf73cf223fe5c2636818ba3ab1c585d0403164, 3ad0edc009c27b406c4f9cbc79274d6e46d634d139075492ad055e3d68445925, 09bf2b1aaf8f525f2923ff6cfcf134ae5e750e279ac65ebf386c75a0cf6da06a, dfa04e0f14d847cfc2a633a1c8621d00724f3206cfeddeb66d35698c4e2cf3d2, d2b7a734c733286e10a7f1a8ad1ae8c90f2d33bf604a96548e0a4a3a6739b468, 3f6b5610004206cf7f8e7ad91c5a85a8c71b2f2f8051a0c0c4d5916b76d6cbb2, 95128f2020a8e8b8383ac0177dc9570aad031a3beb12e38847f7129bacd96228, 755bca6c8bd14007e5ca171c7c03102d17b4f4e0ceb53957e8c44343a9546dcc, 79f897f10e6755e2a7d027ca783f63044d5b1bc1ae7acb12afe6a9b4286eac17, 0f50de23fde84e45f5c4fda2488c759b69990fd4512387a8632860f3ac9cd225, 4c0c9c603826b6465e82591e05ca230dfc13376da512b25ccd0894709b054ed0, 768c2ba3902e1a0fc1c74962ea9bb33a534bb05984ad7ff9515bf8d07527cadd, 284a46d9e65106879492374999e76eb85f87b15328e06bd1550668f79f7b18c6, 162e86f24451c2d530c88daf997cb8d6ac622c1d40d19f5a031ed68a4b73a374, 7d24ce71dc08f06534269f66e73c04f5709ee024a1afe92a7b6e1d73f158e1f8, ae8cab03a7c25741f9ebc92684a20125fbc9fc1b8e1e700beb9197d750fdff88, 6d64c3bcdf822269421d85fe0d64ba972003f9bb4aa9a419da64b86856c9961f, 5430c2a907b9443cf42b90c17ad10c1e8fa801975f01cb9764f3f8eb8aea638b, 431201a563fc44c07095996d0129b8899daf89e4742146f7044cdbdb3101c57f, 16ee9df80b06680aaa23fc6c31211387e0db349e0e36d6a63ba3bd78c5acdf11, 287d4b92e2fe20b214ffca36107f1a3e75ef4c488430e64de2d9af5db3a4637d, b542054082bd8220bbf6f297f982f0a8f5479fcbc55c8b511d928df07b965869, 3f723df6c1c06fc83d9cfe381cccb4be2532bbd38bf93fbc9fad087b6687f1c0, 8e02570545bac308b58ffb21adda0f4e220ba716fb658a63c151daecc3293350, f45ffafd8c51235f60d49f7a88e2275e13971e90555b67da52dd6416caec32fe, 656e09db70a523a96d25e115e71cc56a6f9031e7b8cd166c1ac8438307c14058"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "90f33cdd8934cd07192d6ede114d8d4d, 63ac60767f6724490e587f6010bd6839, ad4e82b225aaaf5898ea9798b50978d8, d428e3da2df4fa359313348302cf003a, 89937c3bb596193f8ca9eae2ff84181e, de4f9da0a4e6dfd4cec39c7ad5139803, 2c1f73fd9b3acf4b9b0c23e985cdd38f, 920ad1f50e478b1a877fe7b7a46cc520, 719d1ff12db38903dcfd6749078fb11d, eb601e80194d2e1c00d8daedd8dc68c4, 71a7ab11996fa370dc28e28731bd5c32, eb0cdd03e1ee2eb45c57c7340c98cf48, 9d4ae1b0b27a625400f81ed1846a5667, 1b6771350d2f496157430437a895ba4b, 1e4a18612ee4d0e54e0833574ebc6d25, 5fd325dd8704023c1110835d7a1b095a, d95ce582923d24dbddbc108aa5fd2128, 6f16f3d70e0d95ce2b032167c546cc95, 5369536d4c45fbe384147ff23185b48a, 1ceb224096686831ad731e472b65e96a, cd8d3c00bbc89f9bc07e2df762f9e2ae, 5bd81ce840bb2e42befe01efb0402b79, 2cc3b0757228078395da3efa3dc99f23, 305155bd5ae879344c58968879584ed1, ec2310f67215743e9c5d16b6c9fb87b6, 406aea6081c1affbebdb6ad56b5deaf4, fee12f0a3cbac7bbf1a1c2d82d3b02a9, baf4b7143c7b9ce170e62b33380fb573, 376ff29f90b7840ae19ecd59ad1ddf53, 86785b3a7cd156c08c2ebc26f7816fb3, ab8a9ab69f16b7005f238cda76bc0bac, fafa4453e820c7ff40907e5dc79d8199, 7f13e2f07bd3e4a439ade0e4d27905c6, 928954b41c1cd0e856f1a31d41722661, 57bbd5c0b3848d804c416cbcab4a0ae8, 19550cbe7bedd96a928da9d4ad69509d"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Unstated License, Permissive"
+        }
+      ],
+      "tags": [
+        "framework"
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/pydantic@2.9.2",
+      "type": "library",
+      "authors": [
+        {
+          "name": "Samuel Colvin <s@muelcolvin.com>"
+        },
+        {
+          "name": " Eric Jolibois <em.jolibois@gmail.com>"
+        },
+        {
+          "name": " Hasan Ramezani <hasan.r67@gmail.com>"
+        },
+        {
+          "name": " Adrian Garcia Badaracco <1755071+adriangb@users.noreply.github.com>"
+        },
+        {
+          "name": " Terrence Dorsey <terry@pydantic.dev>"
+        },
+        {
+          "name": " David Montague <david@pydantic.dev>"
+        },
+        {
+          "name": " Serge Matveenko <lig@countzero.co>"
+        },
+        {
+          "name": " Marcelo Trylesinski <marcelotryle@gmail.com>"
+        },
+        {
+          "name": " Sydney Runkle <sydneymarierunkle@gmail.com>"
+        },
+        {
+          "name": " David Hewitt <mail@davidhewitt.io>"
+        },
+        {
+          "name": " Alex Hall <alex.mojaki@gmail.com>"
+        }
+      ],
+      "name": "pydantic",
+      "version": "2.9.2",
+      "description": "Data validation using Python type hints",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "f048cec7b26778210e28a0459867920654d48e5e62db0958433636cde4254f12"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/pydantic@2.9.2",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/df/e4/ba44652d562cbf0bf320e0f3810206149c8a4e99cdbf66da82e97ab53a15/pydantic-2.9.2-py3-none-any.whl",
+          "comment": "pydantic-2.9.2-py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-09-17T15:59:51.827231Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "f048cec7b26778210e28a0459867920654d48e5e62db0958433636cde4254f12, d155cef71265d1e9807ed1c32b4c8deec042a44a50a4188b25ac67ecd81a9c0f"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "dfe4ba44652d562cbf0bf320e0f3810206149c8a4e99cdbf66da82e97ab53a15, a9b7d9e3f12af310e1120c21603644a1cd86f59060e040ec5c3a80b8f05fae30"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "fabf720ee977eea4594fd50db459ecce, 84624d794e7d2b528fe1d34eeeeb481a"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "validation"
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/pytest@8.3.3",
+      "type": "library",
+      "authors": [
+        {
+          "name": "Holger Krekel"
+        },
+        {
+          "name": " Bruno Oliveira"
+        },
+        {
+          "name": " Ronny Pfannschmidt"
+        },
+        {
+          "name": " Floris Bruynooghe"
+        },
+        {
+          "name": " Brianna Laugher"
+        },
+        {
+          "name": " Florian Bruhin"
+        },
+        {
+          "name": " Others (See AUTHORS)"
+        }
+      ],
+      "name": "pytest",
+      "version": "8.3.3",
+      "description": "pytest: simple powerful testing with Python",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "a6853c7375b2663155079443d2e45de913a911a11d669df02a50814944db57b2"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/pytest@8.3.3",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/6b/77/7440a06a8ead44c7757a64362dd22df5760f9b12dc5f11b6188cd2fc27a0/pytest-8.3.3-py3-none-any.whl",
+          "comment": "pytest-8.3.3-py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements-dev.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-09-10T10:52:12.540803Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "a6853c7375b2663155079443d2e45de913a911a11d669df02a50814944db57b2, 70b98107bd648308a7952b06e6ca9a50bc660be218d53c257cc1fc94fda10181"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "6b777440a06a8ead44c7757a64362dd22df5760f9b12dc5f11b6188cd2fc27a0, 8b6c62bbd536103af674e227c41a8f3dcd022d591f6eed5facb5a0f31ee33bbc"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "f7cead3f0ec27a59aac4441abe3a40ff, 71466867181a5a7aefdb298b7146bcad"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/python-jose@3.3.0",
+      "type": "library",
+      "authors": [
+        {
+          "name": "Michael Davis <mike.philip.davis@gmail.com>"
+        }
+      ],
+      "name": "python-jose",
+      "version": "3.3.0",
+      "description": "JOSE implementation in Python",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "9b1376b023f8b298536eedd47ae1089bcdb848f1535ab30555cd92002d78923a"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/python-jose@3.3.0",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/bd/2d/e94b2f7bab6773c70efc70a61d66e312e1febccd9e0db6b9e0adf58cbad1/python_jose-3.3.0-py2.py3-none-any.whl",
+          "comment": "python_jose-3.3.0-py2.py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2021-06-05T03:30:38.099013Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "9b1376b023f8b298536eedd47ae1089bcdb848f1535ab30555cd92002d78923a, 55779b5e6ad599c6336191246e95eb2293a9ddebd555f796a65f838f07e5d78a"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "bd2de94b2f7bab6773c70efc70a61d66e312e1febccd9e0db6b9e0adf58cbad1, e419b2c86504116dc5f0635d29f802da858404d77d930a25633d2e86a64a35b3"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "ba988940fcc426a9277f55329985f5c7, 60aaf59164e95a6ab160305b13a57d9a"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "security"
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/six@1.16.0",
+      "type": "library",
+      "authors": [
+        {
+          "name": "Benjamin Peterson <benjamin@python.org>"
+        }
+      ],
+      "name": "six",
+      "version": "1.16.0",
+      "description": "Python 2 and 3 compatibility utilities",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/six@1.16.0",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/d9/5a/e7c31adbe875f2abbb91bd84cf2dc52d792b5a01506781dbcf25c91daf11/six-1.16.0-py2.py3-none-any.whl",
+          "comment": "six-1.16.0-py2.py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2021-05-05T14:18:17.237677Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "8abb2f1d86890a2dfb989f9a77cfcfd3e47c2a354b01111771326f8aa26e0254, 1e61c37477a1626458e36f7b1d82aa5c9b094fa4802892072e49de9c60c4c926"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "d95ae7c31adbe875f2abbb91bd84cf2dc52d792b5a01506781dbcf25c91daf11, 7139171f1c67cd00715f190ba0b100d606d440a28c93c7714febeca8b79af85e"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "529d7fd7e14612ccde86417b4402d6f3, a7c927740e4964dd29b72cebfc1429bb"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/sqlalchemy@2.0.35",
+      "type": "framework",
+      "authors": [
+        {
+          "name": "Mike Bayer <mike_mp@zzzcomputing.com>"
+        }
+      ],
+      "name": "SQLAlchemy",
+      "version": "2.0.35",
+      "description": "Database Abstraction Library",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "67219632be22f14750f0d1c70e62f204ba69d28f62fd6432ba05ab295853de9b"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT",
+            "url": "https://opensource.org/licenses/MIT",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Permissive"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "true"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/sqlalchemy@2.0.35",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/1a/61/19395d0ae78c94f6f80c8adf39a142f3fe56cfb2235d8f2317d6dae1bf0e/SQLAlchemy-2.0.35-cp310-cp310-macosx_10_9_x86_64.whl",
+          "comment": "SQLAlchemy-2.0.35-cp310-cp310-macosx_10_9_x86_64.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-09-16T21:29:05.376235Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "67219632be22f14750f0d1c70e62f204ba69d28f62fd6432ba05ab295853de9b, 4668bd8faf7e5b71c0319407b608f278f279668f358857dbfd10ef1954ac9f90, cb8bea573863762bbf45d1e13f87c2d2fd32cee2dbd50d050f83f87429c9e1ea, f552023710d4b93d8fb29a91fadf97de89c5926c6bd758897875435f2a939f33, 016b2e665f778f13d3c438651dd4de244214b527a275e0acf1d44c05bc6026a9, 7befc148de64b6060937231cbff8d01ccf0bfd75aa26383ffdf8d82b12ec04ff, 22b83aed390e3099584b839b93f80a0f4a95ee7f48270c97c90acd40ee646f0b, a29762cd3d116585278ffb2e5b8cc311fb095ea278b96feef28d0b423154858e, e21f66748ab725ade40fa7af8ec8b5019c68ab00b929f6643e1b1af461eddb60, 8a6219108a15fc6d24de499d0d515c7235c617b2540d97116b663dade1a54d62, 042622a5306c23b972192283f4e22372da3b8ddf5f7aac1cc5d9c9b222ab3ff6, 627dee0c280eea91aed87b20a1f849e9ae2fe719d52cbf847c0e0ea34464b3f7, 4fdcd72a789c1c31ed242fd8c1bcd9ea186a98ee8e5408a50e610edfef980d71, 89b64cd8898a3a6f642db4eb7b26d1b28a497d4022eccd7717ca066823e9fb01, 6a93c5a0dfe8d34951e8a6f499a9479ffb9258123551fa007fc708ae2ac2bc5e, c68fe3fcde03920c46697585620135b4ecfdfc1ed23e75cc2c2ae9f8502c10b8, eb60b026d8ad0c97917cb81d3662d0b39b8ff1335e3fabb24984c6acd0c900a2, 6921ee01caf375363be5e9ae70d08ce7ca9d7e0e8983183080211a062d299468, 8cdf1a0dbe5ced887a9b127da4ffd7354e9c1a3b9bb330dce84df6b70ccb3a8d, 93a71c8601e823236ac0e5d087e4f397874a421017b3318fd92c0b14acf2b6db, e04b622bb8a88f10e439084486f2f6349bf4d50605ac3e445869c7ea5cf0fa8c, 1b56961e2d31389aaadf4906d453859f35302b4eb818d34a26fab72596076bb8, 0f9f3f9a3763b9c4deb8c5d09c4cc52ffe49f9876af41cc1b2ad0138878453cf, 25b0f63e7fcc2a6290cb5f7f5b4fc4047843504983a28856ce9b35d8f7de03cc, f021d334f2ca692523aaf7bbf7592ceff70c8594fad853416a81d66b35e3abf9, 05c3f58cf91683102f2f0265c0db3bd3892e9eedabe059720492dbaa4f922da1, 032d979ce77a6c2432653322ba4cbeabf5a6837f704d16fa38b5a05d8e21fa00, 2e795c2f7d7249b75bb5f479b432a51b59041580d20599d4e112b5f2046437a3, cc32b2990fc34380ec2f6195f33a76b6cdaa9eecf09f0c9404b74fc120aef36f, 9509c4123491d0e63fb5e16199e09f8e262066e58903e84615c301dde8fa2e87, 3655af10ebcc0f1e4e06c5900bb33e080d6a1fa4228f502121f28a3b1753cde5, 4c31943b61ed8fdd63dfd12ccc919f2bf95eefca133767db6fbbd15da62078ec, a62dd5d7cc8626a3634208df458c5fe4f21200d96a74d122c83bc2015b333bc1, 0630774b0977804fba4b6bbea6852ab56c14965a2b0c7fc7282c5f7d90a1ae72, 8d625eddf7efeba2abfd9c014a22c0f6b3796e0ffb48f5d5ab106568ef01ff5a, ada603db10bb865bbe591939de854faf2c60f43c9b763e90f653224138f910d9, c41411e192f8d3ea39ea70e0fae48762cd11a2244e03751a98bd3c0ca9a4e936, d299797d75cd747e7797b1b41817111406b8b10a4f88b6e8fe5b5e59598b43b0, 0375a141e1c0878103eb3d719eb6d5aa444b490c96f3fedab8471c7f6ffe70ee, ccae5de2a0140d8be6838c331604f91d6fafd0735dbdcee1ac78fc8fbaba76b4, 2a275a806f73e849e1c309ac11108ea1a14cd7058577aba962cd7190e27c9e3c, 732e026240cdd1c1b2e3ac515c7a23820430ed94292ce33806a95869c46bd139, 890da8cd1941fa3dab28c5bac3b9da8502e7e366f895b3b8e500896f12f94d11, c0d8326269dbf944b9201911b0d9f3dc524d64779a07518199a58384c3d37a44, b76d63495b0508ab9fc23f8152bac63205d2a704cd009a2b0722f4c8e0cba8e0, 69683e02e8a9de37f17985905a5eca18ad651bf592314b4d3d799029797d0eb3, aee110e4ef3c528f3abbc3c2018c121e708938adeeff9006428dd7c8555e9b3f, 2ab3f0336c0387662ce6221ad30ab3a5e6499aab01b9790879b6578fd9b8faa1, e11d7ea4d24f0a262bccf9a7cd6284c976c5369dac21db237cff59586045ab9f"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "1a6119395d0ae78c94f6f80c8adf39a142f3fe56cfb2235d8f2317d6dae1bf0e, e68206b5fcbe5d49043e40cf4e01e3b33c471c8d9292d478420b08538cae8928, 68d17fb7ee46949a5fb34005795b1fc06a8fef67587a66da731c14e545f7eb5b, 7effa1eacd78b31e52a5073e9924fb4722ecc2a72f093ca8181ed81fc61aed2e, 21aeddfecf149a6d16af87408bca7bd108eef7ef23d376cc8464317efb3cea3f, cc513e84d42121662a160bacd311cfacb29c1e6a229d59dd8edb09caa8ab283b, 3e7a039c78105958da3fc361887f0a82c974cb6fa5bba965c1689ec778be1c01, a250f31e927d32f9729f69d150ffe47e7cf51e3e0bb2148fc400b3e93a92ca4c, c3469215a35bf98c3a2528e987791e6180eb51624d2c7d5cb8e2d96a6450b657, 1e69919673c5101a0c633658d58b11b454b251ca82300941fba801201434755d, 67eaa6b0597cbda12796be2302153369dbbe90573fdab3bc4885f8efac499247, 8cd697bdc8d714fb21762f2092511f380f18cdb2d985d516071fa925bb433a90, 87d28c2adaf2ade4f6f1b725acd0b0be9210bb6a2df41024729a8eec6a86fe5a, 7eaeea05d0bfa8f2b25ae34591895147152854fc950f491c4ce362ae06035db8, fe5d8ad6df01398388a766163d27960b3365f1bbd8bb7b05b5cad321a8b69b25, ff688557efc0c32c8e2c147cb6512237448b8ed594a57cd015fda67f8e56bb3f, 2f2bfff87e6db0da31212c98bbc445f83fb608ea92b96bda3f3f10e373bac76c, 68924bb761bd82764d5827bf6b6095168c40fb5dbbd23670203aef2f96ba6bc6, 2246068a65db6dc253c6f25a7598d99e0a1d60b14f661f9d09ef6c73c718fa4e, 6e3659830dafe40dda592304debd4cd86e583f63472f3a62c9e2695a5795e786, 0050844c50c6996f9c7f000c959dd1a7436a6c94e449ee113046a1d19e470089, dfd2336b18cac68eecb67de474fc15c85f13be4e615c6f5bae87ea38c6734ce0, f0f3ee1e62fabdc10910b5ef720ae08e59bc785f26652876af3a50b89b97b412, 6063a3cef44a52979169d884f3583d0640e64b3c28122c096474a1d7cfcaf1f3, 703e781abc2f2570f5e788704da20ad443f29e241f4c1d8d1a4f3a311b2e31a4, fe5621e090ec706c06bd419c20d651c72fd6e1e126c061272fe1bce2274844cd, 94e8bbb58a8277b14cda5d0a0e3a160d2f8c0ebefff61ec2d6d435438375c2e7, 12c403e2e87a508401bc143625a356d2d51e2d1a99b4310f1411478be92ce6c8, 9e72a14a9035c9cc24480a32ddc84163d0c93c34da9fdc7445c71274f0bceefa, 8ce9b71866e58969d8537f0c02052c8aa6fbdd95bd5fde68cd8d41f400960cef, b0135fbe4e4c3b224ae6c73702b3b497c3fd40b71c82b87af3bcc97eefe4062b, dabb38c09ba518abc7da92d6bf638143cfe6298c12e5df0f1b37538e4ea46feb, c2737d133479bc602dfb993bafe109727cf8684b3119e9bdee8c8510ebface91, d954bef04ac2ad5becdcc9f9de6f80d7bf0f679a5d288b1de95507b9823644d6, 197f95df57d4763477c23ef2c72ca2fdb0ac3dbf4cc473052b3728cd586185ea, 9738ec497616369b9d1dabd90f80a9a7da2f5e07b8a1ea934a283cbd19a9f3eb, 30999d8513d54b9455ebd10d6e1089e0742578e64c144f5dbbf1f8b74bb0f851, b3bb1e31ed9b69080d5d962497189628c3f695e3186949640635db5aa3190ab2, a20c9e6f99e0e7ae3e01a159b91f8adef6a32d893a8b21196d9d2d1591280ae5, d14c3a538c077057a449441b3e10a62ff1608eaa6e0910e681b2664ce0bcf961, 4ef0ac290c05f9118cff70e48abd598bcb0dfb725a7ad0aeebaaa0d781d75367, 8fa76ddbcefb0ada3dbc9bc9260de32f9cd85b1eb5ea35c12344472a028a606e, 087b6fae14cf33ebc54423f0e9c7de793dd2debe3ffd44b399a4905adb4b1225, d70cfa68271e608bf4a86c131044966a9f63bc7c6f44e93535be70c7562ff19e, f12965d6441a2875c9e960703fb730c651f0a62505a16e968e6f99f5dd5bb925, 13cbc354d16eb4b9af27a8ef16ef476118497f61f99bf21cf177ec85d9a23d3f, 560a3025867277836c325a0f69d3e43cfd35e72f877f472d4c4791d32c264d13, 0ec633c706449cdd92b1b6d756b247761e27d32230fd6b2de5f44c4c3e5632b2, 36484f190a83525f5cefefa44f6adc9e6386c4de5218d686c27eda92eb1f5424"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "34904f15d2af2787397b33ebaec0fb60, 31213fac8491c180a5fd2cfd428e792a, 8961454fe65bcedd4bf0b1650fcf7f2a, 352a13dcbf3500884cdf0d571426e160, 0c56478d5434be3fa65a6c3774e5c75f, dc48ad61a7b925add5254f0e5290ee64, 00f0f3b66a5a897573183b0657b703d6, eb598bf194ceec0147077545b23d7d20, ac1a0e2558d9bfe227e9827e5ca875a8, 92e926f12229f6b1a81a8a7c8a2a1e0a, 27454e6df92e707aebdd1e29f77d93e9, f63b431df0e832fc937cbea0d489bb78, d83697b978ab2de24deeea119a7d97e0, 6ab171f8e52512460112ff150f3e18e7, f540b210bff3e813c9eed394894e2097, 519ddd1c0a3f1fc99f98a6bf49872301, 95e99d8ce76f02e659e2a55870545982, 7af072cf8102da24020c29e6b4d9eba2, 871f93d71e1f648f4488d94f7a9e2c2d, e5e4d3551a3d1fc97bcfa23bf5278420, f2facf26486372c66d26015a821171ce, 0ebb10c2513ad795e2f35e8e411ac0e4, 0aa15b942cd97f2aaa52c78b614b2954, 44ad4000eb6f2d2910d922bd32e53369, 35274ccfd606bcd430853ba410964b4f, 731aef7eed46c325fe0ec6ba0a6ee639, f177dbf02c33c38b494a98f5cde811c8, 7a829bc31a8ec4a828439bbbf5b8110f, decf1e84e9d39cdb9930cefc0ad77f48, 017fa12577618fefd950a282d16240b0, ac7cc3eb084d4832e4301ac5c211d852, 8671cf88709d1095cad6eb2417f4d90c, 5aa9b204ec8c1260d5e512e20599fca7, 5c152153979b1d149f49583f5170a048, cf40605fe4edb20ed97b40afedb72c19, 4f4f6a16ed2e4563b89da8ed668049e8, 8b880be99d7fd0fb4a656ee291ae6260, 7d68a5e70ccc60c65e8638193729edf3, 21abf4be4d1327c28af41f2ced7f5e13, 9b056567e117d64edd2ec725e417377e, 963c0d7c122262d84fc9910bfc478f70, 41d4a7632c32d51453260971cf7ca123, 77f229606ddb16caefda8f6684ec4d0f, 11c8ab4f9ecba272e11672e8d31e1910, 7efa440e44de8a633513d1275e3a053e, 5d567fbaa38f95a236013820f601e1b3, 7aa5e8ca1286991207c5494a9fb6ce5c, ba5aca5d5bf45d2d90df7875c74c707f, 9cdbb77746e7d113b9d2c2af1be6700d"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Permissive"
+        }
+      ],
+      "tags": [
+        "framework"
+      ]
+    },
+    {
+      "bom-ref": "pkg:pypi/uvicorn@0.30.6",
+      "type": "library",
+      "authors": [
+        {
+          "name": "Tom Christie <tom@tomchristie.com>"
+        },
+        {
+          "name": " Marcelo Trylesinski <marcelotryle@gmail.com>"
+        }
+      ],
+      "name": "uvicorn",
+      "version": "0.30.6",
+      "description": "The lightning-fast ASGI server.",
+      "hashes": [
+        {
+          "alg": "SHA-256",
+          "content": "65fd46fe3fda5bdc1b03b94eb634923ff18cd35b2f084813ea79d1f103f711b5"
+        }
+      ],
+      "licenses": [
+        {
+          "license": {
+            "name": "BSD License",
+            "properties": [
+              {
+                "name": "cdx:license:category",
+                "value": "Unstated License"
+              },
+              {
+                "name": "cdx:license:foss",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:osiApproved",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:fsfLibre",
+                "value": "false"
+              },
+              {
+                "name": "cdx:license:deprecated",
+                "value": "false"
+              }
+            ]
+          }
+        }
+      ],
+      "purl": "pkg:pypi/uvicorn@0.30.6",
+      "externalReferences": [
+        {
+          "url": "https://files.pythonhosted.org/packages/f5/8e/cdc7d6263db313030e4c257dd5ba3909ebc4e4fb53ad62d5f09b1a2f5458/uvicorn-0.30.6-py3-none-any.whl",
+          "comment": "uvicorn-0.30.6-py3-none-any.whl",
+          "type": "distribution"
+        }
+      ],
+      "properties": [
+        {
+          "name": "SrcFile",
+          "value": "requirements.txt"
+        },
+        {
+          "name": "cdx:pypi:publishTime",
+          "value": "2024-08-13T09:27:33.536958Z"
+        },
+        {
+          "name": "cdx:pypi:versionCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:uploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:priorUploaderSetCount",
+          "value": "0"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestSha256",
+          "value": "65fd46fe3fda5bdc1b03b94eb634923ff18cd35b2f084813ea79d1f103f711b5, 4b15decdda1e72be08209e860a1e10e92439ad5b97cf44cc945fcbee66fc5788"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestBlake2b256",
+          "value": "f58ecdc7d6263db313030e4c257dd5ba3909ebc4e4fb53ad62d5f09b1a2f5458, 5a015e637e7aa9dd031be5376b9fb749ec20b86f5a5b6a49b87fabd374d5fa9f"
+        },
+        {
+          "name": "cdx:pypi:artifactDigestMd5",
+          "value": "9cfd1546710dc60e32cfab79f631f5ba, d75153180f8c19a1bf8299818d3acdb2"
+        },
+        {
+          "name": "cdx:license:category",
+          "value": "Unstated License"
+        }
+      ]
+    },
+    {
+      "type": "library",
+      "group": "vendor-b",
+      "name": "dosetables",
+      "version": "1.0",
+      "description": "Vendored dose lookup tables (second copy)"
+    },
+    {
+      "bom-ref": "pkg:apk/alpine/musl@1.2.4?distro=alpine-3.19",
+      "type": "library",
+      "publisher": "Natanael Copa <ncopa@alpinelinux.org>",
+      "name": "musl",
+      "version": "1.2.4",
+      "licenses": [
+        {
+          "license": {
+            "id": "MIT"
+          }
+        }
+      ],
+      "purl": "pkg:apk/alpine/musl@1.2.4?distro=alpine-3.19",
+      "properties": [
+        {
+          "name": "syft:package:type",
+          "value": "apk"
+        },
+        {
+          "name": "syft:location:0:path",
+          "value": "/lib/apk/db/installed"
+        }
+      ]
+    }
+  ],
+  "services": [
+    {
+      "bom-ref": "service-dose-api",
+      "name": "dose-api",
+      "version": "2.4.0",
+      "provider": {
+        "name": "Example Corp",
+        "contact": [
+          {
+            "name": "Ops",
+            "email": "ops@example.com",
+            "phone": "+1 555 0100"
+          }
+        ]
+      },
+      "endpoints": [
+        "https://svc:secret@api.example.com/v1",
+        "https://api.example.com/v2"
+      ]
+    }
+  ]
+}
