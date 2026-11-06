@@ -109,7 +109,7 @@ class AddArtifactManualRebomOptionsIntegrationTest extends SbomScoreGraphqlTestB
 		writer = userService.getUserData(u.getUuid()).orElseThrow();
 		// a real artifact row to attach, so the resolver's attach step runs as it does after an upload
 		stored = artifact(org.getUuid(), ArtifactType.BOM, BomFormat.CYCLONEDX, true);
-		doReturn(stored).when(uploads).uploadArtifact(any(), any(), any(), any(), any());
+		doReturn(stored).when(uploads).uploadArtifact(any(), any(), any(), any(), any(), any());
 	}
 
 	private UUID deliverable(String publisher, boolean withSha256) throws RelizaException {
@@ -169,7 +169,7 @@ class AddArtifactManualRebomOptionsIntegrationTest extends SbomScoreGraphqlTestB
 		releaseDatafetcher.addArtifactManual(dfe, null);
 
 		ArgumentCaptor<RebomOptions> sent = ArgumentCaptor.forClass(RebomOptions.class);
-		verify(uploads).uploadArtifact(any(), any(), sent.capture(), any(), any());
+		verify(uploads).uploadArtifact(any(), any(), sent.capture(), any(), any(), any());
 		return sent.getValue();
 	}
 

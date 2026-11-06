@@ -31,6 +31,7 @@ import io.reliza.model.ReleaseData;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.repositories.ReleaseRepository;
+import io.reliza.service.ArtifactRetentionLock;
 import io.reliza.service.ArtifactService;
 import io.reliza.service.SharedReleaseService;
 
@@ -119,6 +120,8 @@ public class OssReleaseServiceSyntheticGuardTest {
 		ReflectionTestUtils.setField(svc, "artifactService", mock(ArtifactService.class));
 		// main's foreign-attachment check runs first (SCORE-47 ADR-18); it passes here
 		ReflectionTestUtils.setField(svc, "artifactAttachmentGuard", mock(io.reliza.service.ArtifactAttachmentGuard.class));
+		// FDAW-5: the retention lock without a hook (nothing pinned), as on CE
+		ReflectionTestUtils.setField(svc, "artifactRetentionLock", new ArtifactRetentionLock());
 		doReturn(r).when(svc).saveRelease(any(Release.class), any(ReleaseData.class), any());
 		return svc;
 	}

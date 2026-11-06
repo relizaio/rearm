@@ -2183,6 +2183,8 @@ enum SubmissionRefusal {
 	EDITION_UNSUPPORTED
 	"The kind is not switched on in the component's effective package settings"
 	KIND_DISABLED
+	"A REFERENCED artifact left the release's inventory or was archived while the package was being composed; repeat the act"
+	INVENTORY_CHANGED
 }
 
 """The options of one package part; a null field takes the part's default."""

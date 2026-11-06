@@ -55,6 +55,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.PlatformTransactionManager;
@@ -215,6 +216,10 @@ public class ReleaseService {
 
 	@Autowired
 	private ComponentLockService componentLockService;
+
+	@Lazy
+	@Autowired
+	private ArtifactRetentionLock artifactRetentionLock;
 
 	@Autowired
 	private VersionAssignmentService versionAssignmentService;
@@ -2711,6 +2716,9 @@ public class ReleaseService {
 			ReleaseData rd = ReleaseData.dataFromRecord(rOpt.get());
 			assertNotSynthetic(rd, artifactUuid);
 			assertNotSynthetic(rd, replaceArtifactUuid);
+			// FDAW-5 (C4): the backstop of the check before the upload, under the same row lock an act's
+			// commit takes; a refusal rolls the upload's row back with it.
+			artifactRetentionLock.assertNotReplaceable(rd.getOrg(), releaseUuid, List.of(replaceArtifactUuid));
 				List<UUID> artifacts = rd.getArtifacts();
 				artifacts.remove(replaceArtifactUuid);
 				artifacts.add(artifactUuid);

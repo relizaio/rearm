@@ -44,7 +44,10 @@ import io.reliza.common.CommonVariables.TagRecord;
 import io.reliza.common.Utils;
 import io.reliza.common.Utils.ArtifactBelongsTo;
 import io.reliza.common.Utils.StripBom;
+import io.reliza.exceptions.ArtifactRetainedException;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.ArtifactPin;
+import io.reliza.model.PackageKind;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
 import io.reliza.model.RearmIdentifier;
@@ -58,6 +61,7 @@ import io.reliza.model.ReleaseData.ReleaseUpdateScope;
 import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.Rebom.RebomOptions;
+import io.reliza.repositories.ReleaseRepository;
 import io.reliza.service.oss.OssReleaseService;
 import io.reliza.service.oss.OssReleaseService.AcollectionMode;
 import jakarta.persistence.EntityManager;
@@ -80,6 +84,9 @@ class SyntheticArtifactServiceTest {
 	private OssReleaseService oss;
 	private ArtifactService artifactService;
 	private EntityManager entityManager;
+	private ReleaseRepository releaseRepository;
+	/** FDAW-5: the hook of the real retention lock; answers no pins unless a case scripts it. */
+	private ArtifactRetentionHook retentionHook;
 
 	private final Map<UUID, Release> releaseRows = new HashMap<>();
 	private final Map<UUID, ArtifactData> artifacts = new HashMap<>();
@@ -96,7 +103,15 @@ class SyntheticArtifactServiceTest {
 		ReflectionTestUtils.setField(service, "sharedReleaseService", shared);
 		ReflectionTestUtils.setField(service, "ossReleaseService", oss);
 		ReflectionTestUtils.setField(service, "artifactService", artifactService);
+		releaseRepository = mock(ReleaseRepository.class);
+		ReflectionTestUtils.setField(service, "releaseRepository", releaseRepository);
+		retentionHook = mock(ArtifactRetentionHook.class);
+		ArtifactRetentionLock lock = new ArtifactRetentionLock();
+		ReflectionTestUtils.setField(lock, "hook", retentionHook);
+		ReflectionTestUtils.setField(service, "artifactRetentionLock", lock);
 		when(shared.getRelease(any(UUID.class)))
+				.thenAnswer(inv -> Optional.ofNullable(releaseRows.get(inv.<UUID>getArgument(0))));
+		when(releaseRepository.findByIdWriteLocked(any(UUID.class)))
 				.thenAnswer(inv -> Optional.ofNullable(releaseRows.get(inv.<UUID>getArgument(0))));
 		when(shared.getReleaseData(any(UUID.class))).thenAnswer(inv -> Optional
 				.ofNullable(releaseRows.get(inv.<UUID>getArgument(0))).map(ReleaseData::dataFromRecord));
@@ -341,6 +356,47 @@ class SyntheticArtifactServiceTest {
 		verify(artifactService, never()).archiveArtifact(any(), any());
 	}
 
+	// ---- FDAW-5: the retention lock in remove (design T1) ----
+
+	private static ArtifactPin pin(UUID artifact, UUID release, int version) {
+		return new ArtifactPin(artifact, UUID.randomUUID(), PackageKind.FDA_PREMARKET, version, release,
+				"pump 3.1.4 (" + release + ")");
+	}
+
+	@Test
+	void removeOfAnArtifactAVersionOfThisReleasePinsIsRefusedAndWritesNothing() throws Exception {
+		ArtifactData s = artifact(ORG);
+		ReleaseData rd = release(List.of(), s.getUuid());
+		ArtifactPin p = pin(s.getUuid(), rd.getUuid(), 1);
+		when(retentionHook.pinsOf(eq(ORG), argThat(c -> c.contains(s.getUuid())))).thenReturn(List.of(p));
+
+		ArtifactRetainedException e = assertThrows(ArtifactRetainedException.class,
+				() -> service.remove(rd.getUuid(), s.getUuid(), WU));
+
+		assertEquals(rd.getUuid(), e.release());
+		assertEquals(List.of(p), e.pins());
+		assertEquals("artifact " + s.getUuid() + " cannot be removed from release " + rd.getUuid()
+				+ ": it is pinned by package version FDA_PREMARKET v1 of release pump 3.1.4 (" + rd.getUuid()
+				+ "); a file a package version pins is retained", e.getMessage());
+		verify(oss, never()).saveRelease(any(Release.class), any(ReleaseData.class), any(), anyBoolean(), any(AcollectionMode.class));
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(List.of(s.getUuid()), stored(rd.getUuid()).getSyntheticArtifacts());
+	}
+
+	@Test
+	void removeOfAnArtifactOnlyAnotherReleasesVersionPinsUnbindsItAndNeverArchives() throws Exception {
+		ArtifactData s = artifact(ORG);
+		ReleaseData rd = release(List.of(), s.getUuid());
+		when(shared.gatherReleasesForArtifact(s.getUuid(), ORG)).thenReturn(List.of());
+		when(retentionHook.pinsOf(eq(ORG), any())).thenReturn(List.of(pin(s.getUuid(), UUID.randomUUID(), 1)));
+
+		assertTrue(service.remove(rd.getUuid(), s.getUuid(), WU));
+
+		assertEquals(List.of(), stored(rd.getUuid()).getSyntheticArtifacts());
+		verify(oss).saveRelease(any(Release.class), any(ReleaseData.class), eq(WU), eq(false), eq(AcollectionMode.SKIP));
+		verify(artifactService, never()).archiveArtifact(any(), any());
+	}
+
 	// ---- TEA-5 round 3: upload, stageBind, and the refresh in bind and remove ----
 
 	@Test
@@ -452,10 +508,12 @@ class SyntheticArtifactServiceTest {
 		assertTrue(service.remove(rd.getUuid(), s.getUuid(), WU));
 
 		Release row = releaseRows.get(rd.getUuid());
-		InOrder order = inOrder(shared, entityManager, oss);
-		order.verify(shared).getRelease(rd.getUuid());
+		// FDAW-5 (C1): the read is the write-locked one, so the pin check and an act's commit serialize
+		InOrder order = inOrder(releaseRepository, entityManager, oss);
+		order.verify(releaseRepository).findByIdWriteLocked(rd.getUuid());
 		order.verify(entityManager).refresh(row);
 		order.verify(oss).saveRelease(eq(row), any(ReleaseData.class), any(), eq(false), eq(AcollectionMode.SKIP));
+		verify(shared, never()).getRelease(rd.getUuid());
 		assertEquals(ReleaseLifecycle.CANCELLED, saved(rd.getUuid()).getLifecycle());
 	}
 
