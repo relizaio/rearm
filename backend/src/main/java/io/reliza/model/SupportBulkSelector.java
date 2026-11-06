@@ -49,7 +49,7 @@ public record SupportBulkSelector(SupportBulkSelectorForm form, String type, Str
 		if (SupportBulkSelectorForm.TYPE == form) return new SupportBulkSelector(form, type, null);
 		if (null == namespace || namespace.isBlank()) throw new IllegalArgumentException(NAMESPACE_REQUIRED);
 		String ns = namespace.strip();
-		if (ns.length() > SupportTextBounds.MAX_NAMESPACE_LENGTH || ns.chars().anyMatch(c -> c < 0x20)) {
+		if (ns.length() > SupportTextBounds.MAX_NAMESPACE_LENGTH || SupportTextBounds.holdsControlCharacter(ns, false)) {
 			throw new IllegalArgumentException(NAMESPACE_REFUSED);
 		}
 		return new SupportBulkSelector(form, type, canonicalNamespace(type, ns));

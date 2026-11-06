@@ -248,6 +248,7 @@ class SbomComponentBulkSupportCapTest {
 				new Case(null, LONG, null, null, "supportNotes is longer than 2048 characters"),
 				new Case(null, null, null, LONG, "reason is longer than 2048 characters"),
 				new Case(null, null, null, BELL, "reason holds a control character"),
+				new Case(null, null, null, "a\u202Eb", "reason holds a control character"),
 				new Case(null, null, unknown("OTHER", "t".repeat(513)), null,
 						"justified unknown: the text is longer than 512 characters or holds a control character"));
 		for (Case c : cases) {

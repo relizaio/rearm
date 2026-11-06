@@ -39,6 +39,14 @@ class SupportBulkSelectorTest {
 		e = assertThrows(IllegalArgumentException.class,
 				() -> SupportBulkSelector.validated(SupportBulkSelectorForm.NAMESPACE, "npm", "a\u0001"));
 		assertEquals("bulk selector: namespace is longer than 256 characters or holds a control character", e.getMessage());
+		// FDAW-49 row 5: the namespace goes through the shared rule (DEL, C1, FORMAT), still one line
+		for (String ns : new String[] {"a\u202Eb", "a\u007Fb", "a\u0085b", "a\tb"}) {
+			e = assertThrows(IllegalArgumentException.class,
+					() -> SupportBulkSelector.validated(SupportBulkSelectorForm.NAMESPACE, "npm", ns), ns);
+			assertEquals("bulk selector: namespace is longer than 256 characters or holds a control character", e.getMessage());
+		}
+		assertEquals(SupportBulkSelector.canonicalNamespace("maven", "org.na\u00EFve"),
+				SupportBulkSelector.validated(SupportBulkSelectorForm.NAMESPACE, "maven", "org.na\u00EFve").namespace());
 		e = assertThrows(IllegalArgumentException.class,
 				() -> SupportBulkSelector.validated(null, "npm", null));
 		assertEquals("bulk selector: form is required", e.getMessage());
