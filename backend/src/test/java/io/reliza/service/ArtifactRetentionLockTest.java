@@ -67,6 +67,13 @@ class ArtifactRetentionLockTest {
 	}
 
 	@Test
+	void aNullArtifactIsNeverArchivableRefusedAndNeverReachesTheHook() {
+		lock.assertNotArchivable(ORG, null);
+
+		verify(hook, never()).pinsOf(any(), any());
+	}
+
+	@Test
 	void anEmptyArtifactListNeverReachesTheHook() {
 		assertSame(Retention.NONE, lock.pinsOf(ORG, List.of()));
 		assertSame(Retention.NONE, lock.assertNotUnbindable(ORG, R1, List.of()));
