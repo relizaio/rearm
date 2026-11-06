@@ -53,4 +53,14 @@ describe('linkOrphanComponents (FDAW-6 T6)', () => {
         delete bom.metadata.component['bom-ref'];
         expect(linkOrphanComponents(bom).bom).toBe(bom);
     });
+
+    it('two top-level components sharing the same bom-ref are linked once, not doubled', () => {
+        const bom = {
+            metadata: { component: { name: 'root', 'bom-ref': 'root' } },
+            components: [{ name: 'a', 'bom-ref': 'dup' }, { name: 'a2', 'bom-ref': 'dup' }]
+        };
+        const r = linkOrphanComponents(bom);
+        expect(r.count).toBe(1);
+        expect(r.bom.dependencies).toStrictEqual([{ ref: 'root', dependsOn: ['dup'] }]);
+    });
 });

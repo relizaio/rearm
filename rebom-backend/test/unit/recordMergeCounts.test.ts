@@ -49,6 +49,7 @@ describe('recordMergeCounts (FDAW-6 T7)', () => {
         expect(countOf(undefined, LOCAL_PATHS_STRIPPED_PROPERTY)).toBe(0);
         expect(countOf({ metadata: { properties: [{ name: LOCAL_PATHS_STRIPPED_PROPERTY, value: 'seven' }] } }, LOCAL_PATHS_STRIPPED_PROPERTY)).toBe(0);
         expect(countOf({ metadata: { properties: [{ name: LOCAL_PATHS_STRIPPED_PROPERTY, value: '-3' }] } }, LOCAL_PATHS_STRIPPED_PROPERTY)).toBe(0);
+        expect(countOf({ metadata: { properties: [{ name: LOCAL_PATHS_STRIPPED_PROPERTY, value: '' }] } }, LOCAL_PATHS_STRIPPED_PROPERTY)).toBe(0);
         expect(info.mock.calls.some(c => c[1] === 'merge count record: an input carries a non-numeric value, read as 0')).toBe(true);
         info.mockRestore();
     });

@@ -51,4 +51,19 @@ describe('assignMissingBomRefs (FDAW-6 T5)', () => {
         const input = doc([{ name: 'a', 'bom-ref': 'a' }]);
         expect(assignMissingBomRefs(input)).toBe(input);
     });
+
+    it('leaves a node whose name is the empty string without a bom-ref', () => {
+        const input = doc([{ type: 'library', name: '' }]);
+        const out = assignMissingBomRefs(input);
+        expect(out).toBe(input);
+        expect(out.components[0]).not.toHaveProperty('bom-ref');
+    });
+
+    it('a version of the empty string is read the same as no version: <name> with no @, and reused by a sibling of the same name', () => {
+        const out = assignMissingBomRefs(doc([
+            { name: 'x', version: '' },
+            { name: 'x' }
+        ]));
+        expect(out.components.map((c: any) => c['bom-ref'])).toStrictEqual(['x', 'x']);
+    });
 });

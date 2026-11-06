@@ -71,6 +71,15 @@ describe('stripPersonalDataAndLocalPaths (FDAW-6 T3)', () => {
         expect(onProperties(prop('cdx:foo:source', 'file:../vendor/x.tgz'))).toMatchObject({ kept: [], localPaths: 1 });
         expect(onProperties(prop('cdx:foo:source', 'FILE:///x'))).toMatchObject({ kept: [], localPaths: 1 });
 
+        // S7 (SrcFile shape) is a `pathRules` rule and does not apply to a service, unlike S1/S8/S10
+        const svc = stripPersonalDataAndLocalPaths({
+            metadata: { component: { name: 'root', 'bom-ref': 'root' } },
+            components: [],
+            services: [{ name: 's', 'bom-ref': 's', properties: [prop('SrcFile', '/usr/local/lib/x.py')] }]
+        });
+        expect(svc.bom.services[0].properties).toStrictEqual([prop('SrcFile', '/usr/local/lib/x.py')]);
+        expect(svc.localPaths).toBe(0);
+
         const refs = stripPersonalDataAndLocalPaths(doc({ externalReferences: [
             { type: 'distribution', url: 'file:///home/acme/wheels/numpy.whl' },
             { type: 'distribution', url: 'https://files.example.org/numpy.whl' }
@@ -285,5 +294,14 @@ describe('stripPurlCredentials (FDAW-6 T3, review F-12, F-13)', () => {
         expect(r.bom.dependencies[0]).toStrictEqual({ ref: 'pkg:npm/x@1.0?belongsto=RELEASE&vcs_url=https%3A%2F%2Fh.example%2Fr.git', dependsOn: ['pkg:npm/y@1?vcs_url=https://h.example/y#2'] });
         const clean = { metadata: { component: { name: 'a', purl: 'pkg:npm/a@1' } }, components: [{ name: 'b', purl: 'pkg:npm/b@1' }] };
         expect(stripPurlCredentials(clean)).toStrictEqual({ bom: clean, credentials: 0 });
+    });
+
+    it('never edits a bom-ref that is not purl-shaped, even one that carries a query string that looks like a URL qualifier', () => {
+        const ref = 'urn:custom:thing?repository_url=https://u:p@h.example/x';
+        const bom = {
+            metadata: { component: { name: 'root', 'bom-ref': 'root' } },
+            components: [{ name: 'x', 'bom-ref': ref }]
+        };
+        expect(stripPurlCredentials(bom)).toStrictEqual({ bom, credentials: 0 });
     });
 });

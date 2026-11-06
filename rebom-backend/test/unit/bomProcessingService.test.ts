@@ -262,6 +262,17 @@ describe('BOM Processing Service - Unit Tests', () => {
             expect(result.bom.dependencies).toStrictEqual([{ ref: 'root', dependsOn: ['lib'] }, { ref: 'lib', dependsOn: ['kept'] }]);
         });
 
+        it('T2: the root keeps its own dependency entry even when a dropped node shares its bom-ref', () => {
+            const bom = {
+                metadata: { component: { name: 'root', 'bom-ref': 'root' } },
+                components: [{ name: 'dup', 'bom-ref': 'root', properties: [{ name: DEV, value: 'true' }] }],
+                dependencies: [{ ref: 'root', dependsOn: [] }]
+            };
+            const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
+            expect(result.bom.dependencies).toStrictEqual([{ ref: 'root', dependsOn: [] }]);
+            expect(result.devExcluded).toBe(1);
+        });
+
         it('returns the input itself when nothing is dropped', () => {
             const bom = loadFixture('cyclonedx-simple.json');
             const result = BomProcessingService.dropExcludedAndDevComponents(bom, { dropOptional: false });
