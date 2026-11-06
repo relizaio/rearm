@@ -137,7 +137,9 @@ class TeaPublicationComponentRowTest extends TeaPublicationServiceTestBase {
 
 		assertEquals(TeaPublishRefusal.COMPONENT_ARCHIVED, e.reason(), e.getMessage());
 		assertNoCommitWrite();
-		verify(artifactService, times(1)).archiveArtifact(uploadedAggregate(), WU);
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(uploadedAggregate(), releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow()
+				.artifact(), "the pinned version is kept (FDAW-7 3.3 step 5)");
 		assertTrue(heads.isEmpty());
 	}
 
@@ -149,7 +151,9 @@ class TeaPublicationComponentRowTest extends TeaPublicationServiceTestBase {
 
 		assertEquals(TeaPublishRefusal.RELEASE_ARCHIVED, e.reason(), e.getMessage());
 		assertNoCommitWrite();
-		verify(artifactService, times(1)).archiveArtifact(uploadedAggregate(), WU);
+		verify(artifactService, never()).archiveArtifact(any(), any());
+		assertEquals(uploadedAggregate(), releaseSbomService.latestPin(release.getUuid(), "default").orElseThrow()
+				.artifact(), "the pinned version is kept (FDAW-7 3.3 step 5)");
 		assertTrue(heads.isEmpty());
 	}
 

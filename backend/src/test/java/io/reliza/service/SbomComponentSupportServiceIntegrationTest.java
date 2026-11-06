@@ -12,6 +12,7 @@ import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
+import java.time.Instant;
 import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.sql.Connection;
@@ -21,6 +22,7 @@ import java.time.ZonedDateTime;
 import java.time.temporal.ChronoUnit;
 import java.util.List;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.Map;
 import java.util.Set;
 import java.util.UUID;
@@ -48,6 +50,10 @@ import io.reliza.model.WhoUpdated;
 import io.reliza.model.dto.CreateComponentDto;
 import io.reliza.model.dto.ReleaseDto;
 import io.reliza.model.LevelOfSupport;
+import io.reliza.model.JustifiedUnknown;
+import io.reliza.model.JustifiedUnknownField;
+import io.reliza.model.JustifiedUnknownInput;
+import io.reliza.model.JustifiedUnknownReason;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.Organization;
 import io.reliza.model.SbomComponent;
@@ -2134,5 +2140,313 @@ public class SbomComponentSupportServiceIntegrationTest {
 
 		assertEquals(Set.of(real.getUuid()), found.keySet(),
 				"a 3001-id lookup must return the one real row, not fail on parameter count");
+	}
+
+	// ------------------------------------------------------------------ FDAW-14 row 2: the end-of-support unknown
+
+	private static JustifiedUnknownInput unknown(JustifiedUnknownReason code, String text) {
+		return new JustifiedUnknownInput(code, text);
+	}
+
+	/** Only the unknown, as the dialog's end-of-support sweep sends it. */
+	private static SupportAttestationRequest unknownOnly(JustifiedUnknownInput u, ZonedDateTime assessedAt) {
+		return new SupportAttestationRequest(null, null, null, null, assessedAt, null, null, null, null,
+				Set.of(), null, u, false);
+	}
+
+	private static SupportAttestationRequest level(LevelOfSupport l, String justification, ZonedDateTime assessedAt) {
+		return new SupportAttestationRequest(l, null, null, justification, assessedAt, null, null, null, null,
+				Set.of(), null);
+	}
+
+	private List<SbomComponentSupportAudit> auditOf(UUID componentUuid) {
+		return auditRepository.findBySbomComponentUuidOrderByAssertedDateDesc(componentUuid);
+	}
+
+	private SbomComponent fresh(UUID org, String name) {
+		return newComponent(org, "pkg:npm/fdaw14-" + name + "@1.0.0?t=" + UUID.randomUUID());
+	}
+
+	@Test
+	void anEndOfSupportUnknownPersistsAuditsAndCountsForEachAcceptedCode() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID orgUuid = org.getUuid();
+		UUID attester = UUID.randomUUID();
+		int n = 0;
+		for (JustifiedUnknownReason code : JustifiedUnknownField.END_OF_SUPPORT.accepted()) {
+			SbomComponent sc = fresh(orgUuid, "accepted-" + code);
+			sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+					unknownOnly(unknown(code, JustifiedUnknownReason.OTHER == code ? "why" : null), null), attester);
+			n++;
+			SbomComponentSupport row = supportRepository.findBySbomComponentUuid(sc.getUuid()).orElseThrow();
+			JustifiedUnknown u = row.getSupportData().endOfSupportUnknown();
+			assertNotNull(u, code + " must persist");
+			assertEquals(code, u.code());
+			assertEquals(attester, u.assertedBy());
+			assertNotNull(u.assertedAt());
+			assertNull(u.bulkAct(), "a single write names no bulk act");
+			assertEquals(SupportSource.MANUAL, row.getSupportData().assessmentSource());
+			List<SbomComponentSupportAudit> audit = auditOf(sc.getUuid());
+			assertEquals(1, audit.size());
+			assertEquals(row.getRevision(), audit.get(0).getSupportRevision());
+			assertEquals(code, audit.get(0).getSupportData().endOfSupportUnknown().code());
+			// a second unknown write bumps the revision and files its own after-image
+			sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+					unknownOnly(unknown(code, JustifiedUnknownReason.OTHER == code ? "why again" : null), null), attester);
+			assertEquals(row.getRevision() + 1,
+					supportRepository.findBySbomComponentUuid(sc.getUuid()).orElseThrow().getRevision());
+			assertEquals(2, auditOf(sc.getUuid()).size());
+		}
+		assertEquals(n, sbomComponentService.getSupportCoverage(orgUuid).attested(),
+				"an unknown alone is an assessment of the row and counts as coverage");
+	}
+
+	@Test
+	void anInvalidUnknownIsRefusedWithTheExactTextAndWritesNothing() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(org.getUuid(), "invalid");
+		Map<SupportAttestationRequest, String> refused = new LinkedHashMap<>();
+		refused.put(unknownOnly(unknown(JustifiedUnknownReason.OTHER, null), null),
+				"justified unknown: the code OTHER needs a text");
+		refused.put(unknownOnly(unknown(JustifiedUnknownReason.DISTRIBUTION_PUBLISHES_NO_HASH, null), null),
+				"justified unknown: the code DISTRIBUTION_PUBLISHES_NO_HASH is not accepted for END_OF_SUPPORT"
+						+ " (accepted: NO_COMMITTED_END_OF_SUPPORT, COMMUNITY_PROJECT, SUPPLIER_PUBLISHES_NO_DATE, OTHER)");
+		refused.put(unknownOnly(unknown(JustifiedUnknownReason.OTHER, "x".repeat(513)), null),
+				"justified unknown: the text is longer than 512 characters or holds a control character");
+		refused.put(unknownOnly(unknown(JustifiedUnknownReason.OTHER, "bell\u0007"), null),
+				"justified unknown: the text is longer than 512 characters or holds a control character");
+		refused.put(new SupportAttestationRequest(null, null, null, null, null, null, LocalDate.now(), null, null,
+				Set.of(), null, unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), false),
+				"end of support: give the date or the justified unknown, not both");
+		refused.put(new SupportAttestationRequest(null, null, null, null, null, null, null, null, null,
+				Set.of(), null, null, false),
+				"a first attestation must record something: supply a levelOfSupport, a milestone date,"
+						+ " a justification, or a justified unknown");
+		refused.put(new SupportAttestationRequest(LevelOfSupport.ACTIVELY_MAINTAINED, null, null,
+				"j".repeat(2049), null, null, null, null, null, Set.of(), null), "justification is longer than 2048 characters");
+		refused.put(new SupportAttestationRequest(LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null,
+				null, null, null, "n".repeat(2049), Set.of(), null), "supportNotes is longer than 2048 characters");
+		refused.put(new SupportAttestationRequest(LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null,
+				null, null, null, null, Set.of(), "r".repeat(2049)), "reason is longer than 2048 characters");
+		refused.put(new SupportAttestationRequest(LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null,
+				null, null, null, null, Set.of(), "bell\u0007"), "reason holds a control character");
+		refused.forEach((request, text) -> {
+			IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+					() -> sbomComponentService.setSbomComponentSupport(sc.getUuid(), request, attester));
+			assertEquals(text, e.getMessage());
+			assertTrue(supportRepository.findBySbomComponentUuid(sc.getUuid()).isEmpty(), "no row: " + text);
+			assertTrue(auditOf(sc.getUuid()).isEmpty(), "no audit: " + text);
+			// the bound holds on the explicit bulk form too: one row, nothing written
+			if (text.startsWith("reason") || text.startsWith("justification") || text.startsWith("supportNotes")) {
+				IllegalArgumentException b = assertThrows(IllegalArgumentException.class,
+						() -> sbomComponentService.bulkSetSbomComponentSupportRun(org.getUuid(),
+								List.of(sc.getUuid()), request, attester, null));
+				assertEquals(text, b.getMessage());
+				assertTrue(supportRepository.findBySbomComponentUuid(sc.getUuid()).isEmpty());
+			}
+		});
+	}
+
+	@Test
+	void boundedTextsAtTheLimitAreStoredStrippedAndABlankReasonIsNull() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(org.getUuid(), "limit");
+		String j = "j".repeat(2048);
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(
+				LevelOfSupport.ABANDONED, null, null, "  " + j + "  ", null, null, LocalDate.now().plusYears(1), null,
+				"n".repeat(2048), Set.of(), "   "), attester);
+		assertEquals(j, supportOf(sc.getUuid()).justification(), "stripped, 2048 accepted");
+		assertNull(auditOf(sc.getUuid()).get(0).getReason(), "a whitespace-only reason is stored as null");
+	}
+
+	@Test
+	void aDateOnARowHoldingTheUnknownSupersedesItInOneWrite() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(org.getUuid(), "supersede");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), null), attester);
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				dates(null, LocalDate.now().plusYears(2), null, null), attester);
+		assertNull(supportOf(sc.getUuid()).endOfSupportUnknown(), "the fact wins");
+		List<SbomComponentSupportAudit> audit = auditOf(sc.getUuid());
+		assertEquals(2, audit.size());
+		assertTrue(audit.stream().anyMatch(a -> null != a.getSupportData().endOfSupportUnknown()),
+				"the previous after-image keeps the unknown");
+		assertTrue(audit.stream().anyMatch(a -> null == a.getSupportData().endOfSupportUnknown()
+				&& null != a.getSupportData().milestoneDate(SupportMilestoneType.END_OF_SUPPORT)));
+	}
+
+	@Test
+	void clearingTheUnknownNeedsAReasonAndAudits() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(org.getUuid(), "clear");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), null), attester);
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+				sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null, null,
+						null, null, null, null, null, null, null, Set.of(), null, null, true), attester));
+		assertEquals("justified unknown: clearing it needs a reason", e.getMessage());
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null, null,
+				null, null, null, null, null, null, null, Set.of(), "upstream published a date", null, true), attester);
+		assertNull(supportOf(sc.getUuid()).endOfSupportUnknown());
+		assertEquals("upstream published a date", auditOf(sc.getUuid()).get(0).getReason());
+	}
+
+	@Test
+	void anUnknownBesideAStoredDateNeedsTheDateClearedInTheSameCall() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(org.getUuid(), "date-then-unknown");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				dates(null, LocalDate.now().plusYears(1), null, null), attester);
+		IllegalArgumentException e = assertThrows(IllegalArgumentException.class, () ->
+				sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+						unknownOnly(unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), null), attester));
+		assertEquals("end of support: give the date or the justified unknown, not both", e.getMessage());
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null, null, null,
+				null, null, null, null, null, null, Set.of(SupportMilestoneType.END_OF_SUPPORT), "date withdrawn by vendor",
+				unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), false), attester);
+		SupportData after = supportOf(sc.getUuid());
+		assertNotNull(after.endOfSupportUnknown());
+		assertNull(after.milestoneDate(SupportMilestoneType.END_OF_SUPPORT));
+	}
+
+	@Test
+	void aWithdrawnRowUnderABulkUnknownNeedsAReason() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID orgUuid = org.getUuid();
+		UUID attester = UUID.randomUUID();
+		SbomComponent sc = fresh(orgUuid, "withdrawn");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				level(LevelOfSupport.ACTIVELY_MAINTAINED, null, null), attester);
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null,
+				SupportState.WITHDRAWN, null, null, null, null, null, null, null, Set.of(), "wrong component"), attester);
+		int before = auditOf(sc.getUuid()).size();
+		SupportAttestationRequest bulk = unknownOnly(unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), null);
+		List<SupportBulkResult> r = sbomComponentService.bulkSetSbomComponentSupport(orgUuid,
+				List.of(sc.getUuid()), bulk, attester, null);
+		assertEquals(SupportBulkOutcome.FAILED, r.get(0).outcome());
+		assertEquals(before, auditOf(sc.getUuid()).size(), "no write");
+		SupportAttestationRequest withReason = new SupportAttestationRequest(null, null, null, null, null, null,
+				null, null, null, Set.of(), "re-assessed", unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), false);
+		r = sbomComponentService.bulkSetSbomComponentSupport(orgUuid, List.of(sc.getUuid()), withReason, attester, null);
+		assertEquals(SupportBulkOutcome.APPLIED, r.get(0).outcome());
+		SupportData after = supportOf(sc.getUuid());
+		assertEquals(SupportState.ATTESTED, after.state());
+		assertNotNull(after.endOfSupportUnknown());
+		assertEquals("re-assessed", auditOf(sc.getUuid()).get(0).getReason());
+	}
+
+	@Test
+	void aStoredPayloadWithoutTheNewKeysParsesWithNoUnknownAndNoBulkAct() {
+		SupportData d = SupportData.parse("{\"levelOfSupport\":\"ACTIVELY_MAINTAINED\",\"state\":\"ATTESTED\"}");
+		assertTrue(d.unknowns().isEmpty());
+		assertNull(d.bulkAct());
+	}
+
+	/** (r3, F-7; r4, F-8) An unknown-only write keeps the level's date, source and asserter. */
+	@Test
+	void anUnknownOnlyWriteKeepsTheLevelClaimAndDatesTheUnknown() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID a = UUID.randomUUID();
+		UUID b = UUID.randomUUID();
+		ZonedDateTime t0 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(10).truncatedTo(ChronoUnit.SECONDS);
+		ZonedDateTime t1 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(2).truncatedTo(ChronoUnit.SECONDS);
+		ZonedDateTime t2 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(1).truncatedTo(ChronoUnit.SECONDS);
+		SbomComponent sc = fresh(org.getUuid(), "keep-level");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), level(LevelOfSupport.ACTIVELY_MAINTAINED, null, t0), a);
+		String storedT0 = supportOf(sc.getUuid()).assessedAt();
+
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), t1), b);
+		SupportData after = supportOf(sc.getUuid());
+		assertEquals(storedT0, after.assessedAt(), "the level's assessedAt is byte-equal");
+		assertEquals(a, after.assertedBy(), "the level's asserter is kept");
+		assertEquals(SupportSource.MANUAL, after.assessmentSource());
+		assertEquals(b, after.endOfSupportUnknown().assertedBy());
+		assertEquals(t1.toInstant().toString(), Instant.parse(after.endOfSupportUnknown().assertedAt()).toString());
+		SbomComponentSupportAudit latest = auditOf(sc.getUuid()).get(0);
+		assertEquals(b, latest.getAssertedBy(), "the audit names who wrote this call");
+
+		// without assessedAt: the unknown is dated now and T0 still kept
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), null), b);
+		after = supportOf(sc.getUuid());
+		assertEquals(storedT0, after.assessedAt());
+		assertTrue(Instant.parse(after.endOfSupportUnknown().assertedAt())
+				.isAfter(Instant.now().minusSeconds(120)));
+
+		// a clear with a reason and assessedAt T2 keeps T0
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null, null, null,
+				null, t2, null, null, null, null, Set.of(), "reason", null, true), b);
+		assertEquals(storedT0, supportOf(sc.getUuid()).assessedAt());
+
+		// the unknown with a level re-dates and re-attributes (today's rule)
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(
+				LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, t1, null, null, null, null, Set.of(), null,
+				unknown(JustifiedUnknownReason.COMMUNITY_PROJECT, null), false), b);
+		after = supportOf(sc.getUuid());
+		assertNotEquals(storedT0, after.assessedAt());
+		assertEquals(b, after.assertedBy());
+	}
+
+	@Test
+	void anUnknownOnlyWriteOnARowWithoutALevelDatesAndAttributesTheRow() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID a = UUID.randomUUID();
+		UUID b = UUID.randomUUID();
+		ZonedDateTime t1 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(2).truncatedTo(ChronoUnit.SECONDS);
+		SbomComponent milestonesOnly = fresh(org.getUuid(), "milestones-only");
+		sbomComponentService.setSbomComponentSupport(milestonesOnly.getUuid(),
+				dates(null, null, LocalDate.now().plusYears(3), null), a);
+		sbomComponentService.setSbomComponentSupport(milestonesOnly.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), t1), b);
+		SupportData m = supportOf(milestonesOnly.getUuid());
+		assertEquals(b, m.assertedBy());
+		assertEquals(t1.toInstant(), Instant.parse(m.assessedAt()));
+
+		SbomComponent freshRow = fresh(org.getUuid(), "fresh-unknown");
+		sbomComponentService.setSbomComponentSupport(freshRow.getUuid(),
+				unknownOnly(unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), t1), b);
+		SupportData f = supportOf(freshRow.getUuid());
+		assertEquals(b, f.assertedBy());
+		assertEquals(t1.toInstant(), Instant.parse(f.assessedAt()));
+	}
+
+	/** (r5, F-11) A blank justification is not unknown-only: it re-dates and clears the basis. */
+	@Test
+	void aBlankJustificationBesideTheUnknownIsTheExplicitClear() {
+		Organization org = testInitializer.obtainOrganization();
+		UUID a = UUID.randomUUID();
+		ZonedDateTime t0 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(10).truncatedTo(ChronoUnit.SECONDS);
+		ZonedDateTime t1 = ZonedDateTime.now(ZoneOffset.UTC).minusDays(2).truncatedTo(ChronoUnit.SECONDS);
+		SbomComponent sc = fresh(org.getUuid(), "blank-basis");
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(),
+				level(LevelOfSupport.ACTIVELY_MAINTAINED, "vendor roadmap", t0), a);
+		sbomComponentService.setSbomComponentSupport(sc.getUuid(), new SupportAttestationRequest(null, null, null,
+				"", t1, null, null, null, null, Set.of(), null,
+				unknown(JustifiedUnknownReason.NO_COMMITTED_END_OF_SUPPORT, null), false), a);
+		SupportData after = supportOf(sc.getUuid());
+		assertNull(after.justification(), "the explicit clear still clears");
+		assertEquals(t1.toInstant(), Instant.parse(after.assessedAt()), "not unknown-only: re-dated");
+
+		// the clear semantics through the bounded path: "" clears, absent keeps
+		SbomComponent kept = fresh(org.getUuid(), "kept-basis");
+		sbomComponentService.setSbomComponentSupport(kept.getUuid(),
+				level(LevelOfSupport.ACTIVELY_MAINTAINED, "basis", null), a);
+		sbomComponentService.setSbomComponentSupport(kept.getUuid(),
+				dates(null, LocalDate.now().plusYears(1), null, "n"), a);
+		assertEquals("basis", supportOf(kept.getUuid()).justification(), "absent keeps");
+		LocalDate eos = supportOf(kept.getUuid()).milestoneDate(SupportMilestoneType.END_OF_SUPPORT);
+		sbomComponentService.setSbomComponentSupport(kept.getUuid(), dates(null, eos, null, ""), a);
+		assertEquals("", supportOf(kept.getUuid()).milestones().get(SupportMilestoneType.END_OF_SUPPORT).notes(),
+				"a blank note is the explicit erase");
+		sbomComponentService.setSbomComponentSupport(kept.getUuid(), dates(null, eos, null, "n"), a);
+		sbomComponentService.setSbomComponentSupport(kept.getUuid(), dates(null, eos, null, null), a);
+		assertEquals("n", supportOf(kept.getUuid()).milestones().get(SupportMilestoneType.END_OF_SUPPORT).notes());
 	}
 }

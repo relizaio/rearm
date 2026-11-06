@@ -32,6 +32,13 @@ public enum SupportBulkOutcome {
 	SKIPPED_ATTESTED,
 
 	/**
+	 * Skipped by an end-of-support sweep: the component already holds an end-of-support date or
+	 * justified unknown (FDAW-14 3.2a). Whoever considered that field, it is considered; a sweep never
+	 * replaces a stored date or a stored justification.
+	 */
+	SKIPPED_HAS_END_OF_SUPPORT,
+
+	/**
 	 * This component's write was rejected or failed. The batch continues; the reason is on
 	 * the result. Isolated in its own transaction so a failure here cannot roll back the
 	 * components that already succeeded.

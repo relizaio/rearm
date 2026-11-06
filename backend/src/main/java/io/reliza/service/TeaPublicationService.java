@@ -32,24 +32,19 @@ import io.reliza.common.CommonVariables.Removable;
 import io.reliza.common.CommonVariables.StatusEnum;
 import io.reliza.common.CommonVariables.TableName;
 import io.reliza.common.CommonVariables.TagRecord;
-import io.reliza.common.SidPurlUtils;
 import io.reliza.common.Utils;
-import io.reliza.common.Utils.ArtifactBelongsTo;
-import io.reliza.common.Utils.StripBom;
 import io.reliza.exceptions.MergedSbomUnavailableException;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.exceptions.TeaPublishRefusedException;
 import io.reliza.exceptions.TeaPublishRefusedException.TeaPublishRefusal;
 import io.reliza.model.ArtifactData;
 import io.reliza.model.ArtifactData.ArtifactType;
-import io.reliza.model.ArtifactData.BomFormat;
 import io.reliza.model.ArtifactData.DigestRecord;
 import io.reliza.model.ArtifactData.DigestScope;
 import io.reliza.model.ArtifactData.StoredIn;
 import io.reliza.model.Component;
 import io.reliza.model.ComponentData;
 import io.reliza.model.ComponentData.ComponentType;
-import io.reliza.model.OrganizationData;
 import io.reliza.model.ParentRelease;
 import io.reliza.model.RearmIdentifier;
 import io.reliza.model.RearmIdentifierType;
@@ -60,6 +55,8 @@ import io.reliza.model.ReleaseData.ReleaseStatus;
 import io.reliza.model.ReleaseData.ReleaseUpdateAction;
 import io.reliza.model.ReleaseData.ReleaseUpdateEvent;
 import io.reliza.model.ReleaseData.ReleaseUpdateScope;
+import io.reliza.model.ReleaseSbomRef;
+import io.reliza.model.ReleaseSbomWriter;
 import io.reliza.model.SbomProfileData;
 import io.reliza.model.SbomProfileData.SbomInternalMetadata;
 import io.reliza.model.SbomProfileData.SbomSupportMetadata;
@@ -79,9 +76,7 @@ import io.reliza.model.TeaPublishedCollectionData;
 import io.reliza.model.TeaPublishedCollectionData.TeaArtifactOrigin;
 import io.reliza.model.TeaPublishedCollectionData.TeaPublishedEntry;
 import io.reliza.model.WhoUpdated;
-import io.reliza.model.dto.ArtifactDto;
 import io.reliza.model.dto.ExportMetadataOptions;
-import io.reliza.model.Rebom.RebomOptions;
 import io.reliza.model.tea.TeaArtifactType;
 import io.reliza.model.tea.TeaChecksumType;
 import io.reliza.model.DigestAlgorithm;
@@ -110,7 +105,6 @@ import jakarta.persistence.EntityManager;
 import jakarta.persistence.PersistenceContext;
 import lombok.extern.slf4j.Slf4j;
 import tools.jackson.databind.JsonNode;
-import tools.jackson.databind.node.ObjectNode;
 
 /**
  * The TEA publication engine (task TEA-5): the explicit publish act per release. A publish
@@ -235,7 +229,6 @@ public class TeaPublicationService {
 
 	@Autowired private SharedReleaseService sharedReleaseService;
 	@Autowired private GetComponentService getComponentService;
-	@Autowired private GetOrganizationService getOrganizationService;
 	@Autowired private TeaProfileResolver teaProfileResolver;
 	@Autowired private SbomProfileResolver sbomProfileResolver;
 	@Autowired private TeaProfileService teaProfileService;
@@ -250,6 +243,7 @@ public class TeaPublicationService {
 	@Autowired private AuditService auditService;
 	@Autowired private TeaPublishLock teaPublishLock;
 	@Autowired private ComponentRepository componentRepository;
+	@Autowired private ReleaseSbomService releaseSbomService;
 
 	/**
 	 * The most an interactive act waits, in total, for other acts on its releases (round 4, T-9):
@@ -726,16 +720,8 @@ public class TeaPublicationService {
 	record Act(TeaPublicationData publication, TeaPublishedCollectionData collection, TeaPublishOutcome outcome,
 			List<TeaRideAlongOutcome> rideAlongs, boolean changed) {}
 
-	/**
-	 * The aggregates an act uploaded and has not bound yet, in upload order: the commit binds them, a
-	 * failure archives them. A re-publish's in-place bump of a bound row is never one.
-	 */
-	private static final class Orphans {
-		final List<UUID> artifacts = new ArrayList<>();
-	}
-
-	/** One name's generated document and its content digest (3.3 step 1). */
-	private record NamedDocument(TeaNamedRecipe recipe, JsonNode document, String digest) {}
+	/** One name's generated document (3.3 step 1); the release SBOM identity digests it. */
+	private record NamedDocument(TeaNamedRecipe recipe, JsonNode document) {}
 
 	/**
 	 * Steps 5 (component id excepted) to 11 for one release under {@code resolved}, under the
@@ -753,22 +739,20 @@ public class TeaPublicationService {
 		List<NamedDocument> documents = new ArrayList<>();
 		for (TeaNamedRecipe nr : recipes) {
 			JsonNode document = TeaCollectionAssembler.stripRebomProducerLink(generate(ctx, mergeRequestOf(nr.recipe()), wu));
-			documents.add(new NamedDocument(nr, document, TeaCollectionAssembler.contentDigest(document)));
+			documents.add(new NamedDocument(nr, document));
 		}
 
 		// 2. the publication uuid, chosen before any upload: every uploaded row and the TEI carry it
 		UUID publicationUuid = head.map(TeaPublicationData::getUuid).orElseGet(() -> recoveredPublicationUuid(ctx));
-		Orphans orphans = new Orphans();
 		try {
-			// 7. 3: per name, unchanged or a new revision of that name's aggregate
+			// 7. 3: per name, the release SBOM identity's version of that name's aggregate (FDAW-7 3.4): its
+			// rows commit on their own, so a failure later in the act never archives a pinned artifact
 			List<TeaPublishedEntry> entries = new ArrayList<>();
 			List<TeaAggregateArtifact> aggregates = new ArrayList<>();
 			for (NamedDocument nd : documents) {
-				ArtifactData existing = aggregateOf(head, rd, nd.recipe().name());
-				TeaPublishedEntry aggregate = aggregateEntry(ctx, nd.recipe(), existing, publicationUuid, nd.document(),
-						nd.digest(), orphans, wu);
-				entries.add(aggregate);
-				aggregates.add(new TeaAggregateArtifact(nd.recipe().name(), aggregate.artifact()));
+				ReleaseSbomRef pin = ensureAggregate(held, ctx, nd, publicationUuid, wu);
+				entries.add(aggregateEntry(ctx, nd.recipe(), pin, wu));
+				aggregates.add(new TeaAggregateArtifact(nd.recipe().name(), pin.artifact(), pin.serial(), pin.version()));
 			}
 
 			// 8. 4: ride-alongs, after the aggregates
@@ -782,10 +766,8 @@ public class TeaPublicationService {
 					publicationUuid, resolved, cascadeOf, aggregates, tei, entries, comment, wu);
 			return proxy().commitPublication(held, commit, outcomes);
 		} catch (TeaPublishRefusedException e) {
-			archiveOrphans(ctx, orphans, wu);
 			throw e;
 		} catch (RelizaException | RuntimeException e) {
-			archiveOrphans(ctx, orphans, wu);
 			log.error("TEA publication of release {}: the act failed after the aggregate was stored", ctx.label(), e);
 			throw new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, rd.getUuid(),
 					"Release " + ctx.label() + ": publishing on TEA failed: " + e.getMessage());
@@ -828,46 +810,15 @@ public class TeaPublicationService {
 	}
 
 	/**
-	 * The named aggregate row of (release, {@code name}) (3.1, D1): the head's list entry of that name,
-	 * else the first bound row carrying the system tags {@code teaAggregate=true} and
-	 * {@code teaProfileName=<name>}, else none (a fresh row).
+	 * The merge request of a recipe: the four adapters, the structure, the two metadata switches and the
+	 * profile name, which selects the release SBOM head whose hash justifications are injected (FDAW-14 3.5).
 	 */
-	private ArtifactData aggregateOf(Optional<TeaPublicationData> head, ReleaseData rd, String name) {
-		Optional<UUID> listed = head.flatMap(h -> h.getAggregateArtifacts().stream()
-				.filter(a -> null != a && name.equals(a.profileName()) && null != a.artifact()).findFirst())
-				.map(TeaAggregateArtifact::artifact);
-		if (listed.isPresent()) {
-			Optional<ArtifactData> ad = artifactService.getArtifactData(listed.get());
-			if (ad.isPresent()) return ad.get();
-		}
-		return syntheticArtifactService.findByTags(rd, Map.of(CommonVariables.TEA_AGGREGATE_TAG_KEY, "true",
-				CommonVariables.TEA_PROFILE_NAME_TAG_KEY, name)).orElse(null);
-	}
-
-	/** The merge request of a recipe: the four adapters, the structure and the two metadata switches. */
 	public static PublicationMergeRequest mergeRequestOf(SbomProfileData recipe) {
 		return new PublicationMergeRequest(recipe.belongsToFilter(), recipe.tldOnly(), recipe.ignoreDev(),
 				recipe.getStructure(), recipe.excludeCoverageTypes(),
 				ExportMetadataOptions.fromCallerInput(SbomSupportMetadata.INCLUDE == recipe.getSupportMetadata(),
-						SbomInternalMetadata.INCLUDE == recipe.getInternalMetadata()));
-	}
-
-	/**
-	 * An act that fails after an upload leaves the aggregates it created and no release holds: archive
-	 * each (3.5 step 7), best effort; the act's refusal stands either way. A re-publish's in-place bump
-	 * is on a bound row and is never an orphan.
-	 */
-	private void archiveOrphans(ReleaseContext ctx, Orphans orphans, WhoUpdated wu) {
-		for (UUID orphan : orphans.artifacts) {
-			log.warn("TEA publication of release {}: archiving the unbound aggregate {} of the failed act", ctx.label(),
-					orphan);
-			try {
-				artifactService.archiveArtifact(orphan, wu);
-			} catch (RuntimeException e) {
-				log.error("TEA publication of release {}: archiving the unbound aggregate {} failed", ctx.label(), orphan,
-						e);
-			}
-		}
+						SbomInternalMetadata.INCLUDE == recipe.getInternalMetadata()),
+				recipe.getName());
 	}
 
 	private JsonNode generate(ReleaseContext ctx, PublicationMergeRequest mr, WhoUpdated wu)
@@ -888,81 +839,44 @@ public class TeaPublicationService {
 	}
 
 	/**
-	 * Step 7: one named aggregate's entry (task TEA-28, 3.3 step 3). An equal content digest system tag
-	 * reuses the stored revision and uploads nothing; otherwise a new revision goes up under the
-	 * aggregate's own serial number with the version plus one (version 1 and a fresh serial the first
-	 * time), and what rebom stored is checked against what was sent. The entry is named after the
-	 * profile (D3) and records the profile it was shaped by.
+	 * Step 7, the upload half (FDAW-7 3.4): the release SBOM identity of (release, profile name) under the
+	 * act's lease, as the TEA writer with this publication's uuid and the recipe. Equal content reuses the
+	 * identity's latest version and uploads nothing; otherwise a new revision goes up under the identity's
+	 * serial with the version plus one, read back by the identity service. Uploaded only: the commit binds it.
 	 */
-	private TeaPublishedEntry aggregateEntry(ReleaseContext ctx, TeaNamedRecipe named, ArtifactData existing,
-			UUID publicationUuid, JsonNode document, String digest, Orphans orphans, WhoUpdated wu)
-			throws TeaPublishRefusedException, RelizaException {
+	private ReleaseSbomRef ensureAggregate(Lease held, ReleaseContext ctx, NamedDocument nd, UUID publicationUuid,
+			WhoUpdated wu) throws TeaPublishRefusedException {
+		String profileName = nd.recipe().name();
+		try {
+			return releaseSbomService.ensureVersion(ctx.rd(), profileName, nd.document(), held,
+					ReleaseSbomWriter.tea(publicationUuid, nd.recipe().recipe()), wu).pin();
+		} catch (RelizaException e) {
+			log.error("TEA publication of release {}: storing the aggregate {} failed", ctx.label(), profileName, e);
+			throw new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, ctx.rd().getUuid(),
+					"Release " + ctx.label() + ": storing the TEA aggregate " + profileName + " failed: "
+							+ e.getMessage());
+		}
+	}
+
+	/**
+	 * Step 7, the entry half: one named aggregate's entry from the pin's stored row (task TEA-28, 3.3
+	 * step 3), named after the profile (D3) and recording the profile it was shaped by.
+	 */
+	private TeaPublishedEntry aggregateEntry(ReleaseContext ctx, TeaNamedRecipe named, ReleaseSbomRef pin,
+			WhoUpdated wu) throws TeaPublishRefusedException, RelizaException {
 		UUID release = ctx.rd().getUuid();
 		String profileName = named.name();
-		ArtifactData stored;
-		if (null != existing && systemTagValue(existing, CommonVariables.TEA_CONTENT_DIGEST_TAG_KEY)
-				.filter(digest::equals).isPresent()) {
-			stored = existing;
-		} else {
-			UUID serial;
-			int version;
-			if (null != existing && null != existing.getInternalBom()) {
-				serial = existing.getInternalBom().id();
-				version = parseRevision(existing.getVersion()).orElse(0) + 1;
-			} else {
-				serial = UUID.randomUUID();
-				version = 1;
-			}
-			ObjectNode doc = (ObjectNode) document.deepCopy();
-			doc.put("serialNumber", "urn:uuid:" + serial);
-			doc.put("version", version);
-			JsonNode metadata = doc.get("metadata");
-			ObjectNode md = metadata instanceof ObjectNode m ? m : doc.putObject("metadata");
-			md.put("timestamp", Instant.now().toString());
-			byte[] bytes = Utils.OM.writeValueAsBytes(doc);
-			String fileName = ctx.cd().getName() + "-" + ctx.rd().getVersion() + "-" + profileName
-					+ "-tea-aggregate.cdx.json";
-			List<TagRecord> tags = new ArrayList<>(List.of(
-					new TagRecord(CommonVariables.TEA_AGGREGATE_TAG_KEY, "true", Removable.NO),
-					new TagRecord(CommonVariables.TEA_PROFILE_NAME_TAG_KEY, profileName, Removable.NO),
-					new TagRecord(CommonVariables.TEA_PUBLICATION_TAG_KEY, publicationUuid.toString(), Removable.NO),
-					new TagRecord(CommonVariables.TEA_CONTENT_DIGEST_TAG_KEY, digest, Removable.NO)));
-			ArtifactDto dto = ArtifactDto.builder().uuid(null == existing ? null : existing.getUuid())
-					.type(ArtifactType.BOM).bomFormat(BomFormat.CYCLONEDX).displayIdentifier(fileName)
-					.storedIn(StoredIn.REARM).tags(tags).build();
-			OrganizationData od = getOrganizationService.getOrganizationData(ctx.rd().getOrg()).orElse(null);
-			String preferredPurl = SidPurlUtils.pickPreferredPurl(ctx.rd().getIdentifiers())
-					.map(RearmIdentifier::getIdValue).orElse(null);
-			RebomOptions options = new RebomOptions(ctx.cd().getName(), null == od ? null : od.getName(),
-					ctx.rd().getVersion(), ArtifactBelongsTo.SYNTHETIC, null, StripBom.FALSE, preferredPurl);
-			UUID written;
-			try {
-				// uploaded only: the commit binds it, in the act's one write to the release row
-				written = syntheticArtifactService.upload(release, dto, new NamedBytes(bytes, fileName), options, wu);
-			} catch (RelizaException | RuntimeException e) {
-				log.error("TEA publication of release {}: storing the aggregate {} failed", ctx.label(), profileName, e);
-				throw new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, release,
-						"Release " + ctx.label() + ": storing the TEA aggregate " + profileName + " failed: "
-								+ e.getMessage());
-			}
-			if (null == existing) orphans.artifacts.add(written);
-			stored = artifactService.getArtifactData(written).orElse(null);
-			if (null == stored || null == stored.getInternalBom() || !serial.equals(stored.getInternalBom().id())
-					|| parseRevision(stored.getVersion()).orElse(-1) != version) {
-				throw new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, release,
-						"Release " + ctx.label() + ": rebom stored the aggregate under another serial or version "
-								+ "(sent " + serial + " version " + version + ")");
-			}
-		}
+		ArtifactData stored = artifactService.getArtifactData(pin.artifact()).orElseThrow(
+				() -> new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, release, "Release "
+						+ ctx.label() + ": the TEA aggregate " + pin.artifact() + " cannot be read back"));
 		Optional<String> sha = digestOf(stored, DigestScope.AS_UPLOADED);
 		if (sha.isEmpty()) {
 			throw new TeaPublishRefusedException(TeaPublishRefusal.GENERATION_FAILED, release,
 					"Release " + ctx.label() + ": the TEA aggregate " + stored.getUuid()
 							+ " has no retained upload digest, so its bytes cannot be served as published");
 		}
-		int revision = parseRevision(stored.getVersion()).orElseThrow(() -> new TeaPublishRefusedException(
-				TeaPublishRefusal.GENERATION_FAILED, release, "Release " + ctx.label() + ": the TEA aggregate "
-						+ stored.getUuid() + " has a version that is not an integer"));
+		// the revision is the identity's version, which the identity service read back from the stored row
+		int revision = pin.version();
 		UUID teaUuid = null != stored.getTeaUuid() ? stored.getTeaUuid() : artifactService.ensureTeaUuid(stored.getUuid(), wu);
 		List<TeaChecksumDocument> checksums = List.of(new TeaChecksumDocument(TeaChecksumType.SHA_256,
 				sha.get().toLowerCase()));
@@ -1122,7 +1036,7 @@ public class TeaPublicationService {
 				.distinct().toList();
 	}
 
-	private static Optional<String> digestOf(ArtifactData ad, DigestScope scope) {
+	static Optional<String> digestOf(ArtifactData ad, DigestScope scope) {
 		if (null == ad.getDigestRecords()) return Optional.empty();
 		return ad.getDigestRecords().stream()
 				.filter(d -> null != d && scope == d.scope() && DigestAlgorithm.SHA_256 == d.algo()

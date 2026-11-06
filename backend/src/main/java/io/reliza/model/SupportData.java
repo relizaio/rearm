@@ -72,6 +72,15 @@ import io.reliza.common.Utils;
  * component attested as "nothing published") belongs here as an additional
  * field when that slice is built. Because this is JSONB, adding it is a code
  * change and not a migration, so it is deliberately not pre-built.
+ *
+ * <p>{@code unknowns} holds the justified unknowns of this component (FDAW-1 D5, FDAW-14 3.2): only
+ * {@link JustifiedUnknownField#END_OF_SUPPORT} may appear, because a hash justification is per release
+ * SBOM, not per component. {@code bulkAct} is the {@code support_bulk_acts.uuid} of the server-minted
+ * bulk act that wrote the level, null for a single write: the "labelled as bulk" fact the addendum's
+ * Source column prints. Both are additive keys (the V83 evolution rule): a payload written before
+ * them reads with {@code unknowns} empty and {@code bulkAct} null. A Pro build older than FDAW-14 that
+ * re-serialises a row drops both keys from the current state (the audit keeps the history): no Pro
+ * rollback across FDAW-14 without re-entering justified unknowns.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record SupportData(
@@ -87,7 +96,9 @@ public record SupportData(
 		String assessedAt,
 		UUID assertedBy,
 		String justification,
-		Map<SupportMilestoneType, SupportMilestoneFact> milestones) implements Serializable {
+		Map<SupportMilestoneType, SupportMilestoneFact> milestones,
+		Map<JustifiedUnknownField, JustifiedUnknown> unknowns,
+		UUID bulkAct) implements Serializable {
 
 
 	public SupportData {
@@ -98,6 +109,25 @@ public record SupportData(
 		milestones = (null == milestones || milestones.isEmpty())
 				? Map.of()
 				: Collections.unmodifiableMap(new EnumMap<>(milestones));
+		if (null != unknowns && unknowns.containsKey(JustifiedUnknownField.HASH)) {
+			throw new IllegalArgumentException("a hash justification is per release SBOM, not per component");
+		}
+		unknowns = (null == unknowns || unknowns.isEmpty())
+				? Map.of()
+				: Collections.unmodifiableMap(new EnumMap<>(unknowns));
+	}
+
+	/** An attestation with no justified unknown and no bulk act: every writer that predates FDAW-14. */
+	public SupportData(LevelOfSupport levelOfSupport, SupportState state, SupportParty party,
+			SupportSource assessmentSource, String assessedAt, UUID assertedBy, String justification,
+			Map<SupportMilestoneType, SupportMilestoneFact> milestones) {
+		this(levelOfSupport, state, party, assessmentSource, assessedAt, assertedBy, justification, milestones,
+				null, null);
+	}
+
+	/** The end-of-support justified unknown, or null when this attestation carries none. */
+	public JustifiedUnknown endOfSupportUnknown() {
+		return unknowns.get(JustifiedUnknownField.END_OF_SUPPORT);
 	}
 
 	/**

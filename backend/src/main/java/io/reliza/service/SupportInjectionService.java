@@ -17,6 +17,8 @@ import java.util.UUID;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.context.annotation.Lazy;
 import org.springframework.stereotype.Service;
 
 import lombok.extern.slf4j.Slf4j;
@@ -27,6 +29,7 @@ import com.github.packageurl.PackageURL;
 import io.reliza.common.Utils;
 import io.reliza.exceptions.RelizaException;
 import io.reliza.model.DeviceLifecycle;
+import io.reliza.model.JustifiedUnknownReason;
 import io.reliza.model.SupportExportState;
 import io.reliza.model.SupportInjectionSetting;
 import io.reliza.model.SbomComponent;
@@ -64,15 +67,28 @@ public class SupportInjectionService {
 	private final SbomComponentSupportRepository sbomComponentSupportRepository;
 	private final GetOrganizationService getOrganizationService;
 	private final UserService userService;
+	/** The hash justifications of a publication's release SBOM head (FDAW-14 3.5); null in hand-built rigs. */
+	private final ReleaseSbomJustificationService releaseSbomJustificationService;
 
+	/** For the hand-built unit rigs, which serve no publication's hash justifications. */
 	SupportInjectionService(SbomComponentRepository sbomComponentRepository,
 			SbomComponentSupportRepository sbomComponentSupportRepository,
 			GetOrganizationService getOrganizationService,
 			UserService userService) {
+		this(sbomComponentRepository, sbomComponentSupportRepository, getOrganizationService, userService, null);
+	}
+
+	@Autowired
+	SupportInjectionService(SbomComponentRepository sbomComponentRepository,
+			SbomComponentSupportRepository sbomComponentSupportRepository,
+			GetOrganizationService getOrganizationService,
+			UserService userService,
+			@Lazy ReleaseSbomJustificationService releaseSbomJustificationService) {
 		this.sbomComponentRepository = sbomComponentRepository;
 		this.sbomComponentSupportRepository = sbomComponentSupportRepository;
 		this.getOrganizationService = getOrganizationService;
 		this.userService = userService;
+		this.releaseSbomJustificationService = releaseSbomJustificationService;
 	}
 
 	/**
@@ -130,8 +146,20 @@ public class SupportInjectionService {
 	 */
 	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
 			ExportMetadataOptions options) {
+		return injectIfEnabledElseStrip(bom, orgUuid, device, options, null, null);
+	}
+
+	/**
+	 * As above, for a publication of a release SBOM identity: with injection enabled the hash
+	 * justifications of the head {@code (releaseUuid, profileName)} are written too (FDAW-14 3.5). A null
+	 * release or profile (a plain export, a download) writes none. A failure to read them falls into the
+	 * strip-and-mark fallback exactly as a support-facts failure does, so an outage cannot serve a stale
+	 * or forged justification.
+	 */
+	public JsonNode injectIfEnabledElseStrip(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+			ExportMetadataOptions options, UUID releaseUuid, String profileName) {
 		final ExportMetadataOptions opts = (null == options) ? ExportMetadataOptions.callerSilent() : options;
-		JsonNode served = supportDecision(bom, orgUuid, device, opts);
+		JsonNode served = supportDecision(bom, orgUuid, device, opts, releaseUuid, profileName);
 		if (opts.internalMetadataDeclined()) {
 			served = SupportBomInjector.stripInternalMarkers(served);
 		}
@@ -140,7 +168,7 @@ public class SupportInjectionService {
 
 	/** The support half of the decision above, split out so the internal strip reads as a step. */
 	private JsonNode supportDecision(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
-			ExportMetadataOptions opts) {
+			ExportMetadataOptions opts, UUID releaseUuid, String profileName) {
 		// DECLINED and DISABLED strip identically but say different things, and the difference
 		// is who decided. A caller that sent includeSupportMetadata=false is not making a
 		// support statement, so there is nothing for the marker to qualify and stamping one
@@ -155,7 +183,11 @@ public class SupportInjectionService {
 			return stripForgedProvenanceAndMark(bom);
 		}
 		try {
-			return injectCurrentSupport(bom, orgUuid, device);
+			// Inside the try: a failed justification read takes the same fallback as a failed facts read.
+			Map<String, JustifiedUnknownReason> hashCodes =
+					null == releaseUuid || null == profileName || null == releaseSbomJustificationService
+							? Map.of() : releaseSbomJustificationService.hashCodesFor(releaseUuid, profileName);
+			return injectCurrentSupport(bom, orgUuid, device, hashCodes);
 		} catch (RuntimeException e) {
 			// THE STRIP MUST SURVIVE A FAILED INJECTION, and the fallback belongs HERE so no
 			// egress can forget it.
@@ -330,6 +362,12 @@ public class SupportInjectionService {
 	 * device-related is emitted; the raw component milestone dates still are).
 	 */
 	public JsonNode injectCurrentSupport(JsonNode bom, UUID orgUuid, DeviceLifecycle device) {
+		return injectCurrentSupport(bom, orgUuid, device, Map.of());
+	}
+
+	/** As above, with the hash justifications of the publication's release SBOM head (FDAW-14 3.5). */
+	public JsonNode injectCurrentSupport(JsonNode bom, UUID orgUuid, DeviceLifecycle device,
+			Map<String, JustifiedUnknownReason> hashJustificationsByKey) {
 		// Rows are resolved even for an organization that attests nothing: the injector marks a
 		// node whose row is a root as the organization's own (reliza:support:selfComponent), and
 		// trusts rebom's stamp only for a node it holds no row for (SCORE-58 ADR-4, built as
@@ -341,7 +379,8 @@ public class SupportInjectionService {
 		// read and a user lookup whose result emitDeclarations would discard. This is the
 		// common case: most orgs attest nothing, and every export they take goes through here.
 		DeclarationContext declarations = orgAttests && !facts.isEmpty() ? declarationContext(orgUuid, facts) : null;
-		return SupportBomInjector.inject(bom, facts, LocalDate.now(ZoneOffset.UTC), device, declarations);
+		return SupportBomInjector.inject(bom, facts, LocalDate.now(ZoneOffset.UTC), device, declarations,
+				hashJustificationsByKey);
 	}
 
 	/**

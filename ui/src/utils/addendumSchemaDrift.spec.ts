@@ -53,3 +53,12 @@ describe('the addendum documents', () => {
         expect(errorsAgainst(proSchema as GraphQLSchema, doc)).toEqual([])
     })
 })
+
+// FDAW-14 row 14: the selection names the Source and Asserted by facts; dropping one fails here.
+describe('the addendum component selection', () => {
+    const body = (ADDENDUM_PAGE_QUERY as any).loc.source.body as string
+    it.each(['assertedBy', 'assertedByName', 'assessmentSource', 'supportBulkAct',
+        'endOfSupportUnknown { code bulkAct assertedBy assertedByName }'])('selects %s', field => {
+        expect(body).toContain(field)
+    })
+})

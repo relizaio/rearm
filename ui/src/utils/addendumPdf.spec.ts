@@ -18,7 +18,8 @@ function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
         purl: 'pkg:maven/org.apache/log4j-core@2.14.1', attestationState: 'ATTESTED',
         levelOfSupport: 'actively maintained', levelOfSupportEnum: 'ACTIVELY_MAINTAINED',
         endOfSupportDate: '2030-01-01', justification: null,
-        assessedAt: '2026-09-01T00:00:00Z', ...over
+        assessedAt: '2026-09-01T00:00:00Z', source: null, bulk: false, endOfSupportUnknownCode: null, endOfSupportUnknownBulk: false,
+        assertedByName: null, justifiedByName: null, ...over
     }
 }
 

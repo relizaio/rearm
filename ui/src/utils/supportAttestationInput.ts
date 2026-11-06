@@ -1,6 +1,7 @@
 // Form state -> setSbomComponentSupport variables, honouring the mutation's PATCH contract.
 
 import type { SupportAttestationFilter } from './sbomComponentsQuery'
+import { validateJustifiedUnknown } from './justifiedUnknownLabels'
 
 export type LevelOfSupport = 'ACTIVELY_MAINTAINED' | 'NO_LONGER_MAINTAINED' | 'ABANDONED'
 /**
@@ -54,6 +55,16 @@ export interface AttestationForm {
      * exactly this reason; the single-component form has to as well.
      */
     state: 'ATTESTED' | null
+    /**
+     * End of support is a DATE or a JUSTIFIED UNKNOWN (FDAW-14 3.9). In UNKNOWN mode the
+     * date is never sent; on a row that holds a date, the unknown REPLACES it, which sends
+     * clearMilestones [END_OF_SUPPORT] with the unknown and a reason in one call.
+     */
+    endOfSupportMode: 'DATE' | 'UNKNOWN'
+    endOfSupportUnknownCode: string | null
+    endOfSupportUnknownText: string
+    /** Remove the stored unknown; needs a reason. */
+    clearEndOfSupportUnknown: boolean
 }
 
 export function emptyAttestationForm (): AttestationForm {
@@ -72,8 +83,35 @@ export function emptyAttestationForm (): AttestationForm {
         reason: '',
         clearMilestones: [],
         clearJustification: false,
-        state: null
+        state: null,
+        endOfSupportMode: 'DATE',
+        endOfSupportUnknownCode: null,
+        endOfSupportUnknownText: '',
+        clearEndOfSupportUnknown: false
     }
+}
+
+/** The stored unknown of a baseline, as the detail query returns it. */
+function storedUnknown (baseline?: Partial<Record<string, unknown>> | null): { code: string, text: string } | null {
+    const u = baseline?.endOfSupportUnknown as any
+    return u && u.code ? { code: u.code, text: (u.text ?? '').trim() } : null
+}
+
+/**
+ * True when this save replaces a STORED end-of-support date with a justified unknown: the
+ * one path where the unknown and a clear of END_OF_SUPPORT travel together, with a reason.
+ */
+export function replacesStoredDate (form: AttestationForm, baseline?: Partial<Record<string, unknown>> | null): boolean {
+    return form.endOfSupportMode === 'UNKNOWN' && !!form.endOfSupportUnknownCode && !form.clearEndOfSupportUnknown
+        && !!baseline?.endOfSupportDate
+}
+
+/** True when the form's unknown differs from the stored one (a new choice replaces it, 3.2a rule 2). */
+export function unknownChanged (form: AttestationForm, baseline?: Partial<Record<string, unknown>> | null): boolean {
+    if (form.endOfSupportMode !== 'UNKNOWN' || !form.endOfSupportUnknownCode || form.clearEndOfSupportUnknown) return false
+    const stored = storedUnknown(baseline)
+    return !stored || stored.code !== form.endOfSupportUnknownCode
+        || stored.text !== (form.endOfSupportUnknownText ?? '').trim()
 }
 
 /**
@@ -131,16 +169,29 @@ export function attestationVariables (
         vars.justification = text(form.justification)
     }
     if (text(form.reason)) vars.reason = text(form.reason)
+    const unknownMode = form.endOfSupportMode === 'UNKNOWN'
     for (const field of Object.keys(MILESTONE_FIELD_TO_TYPE)) {
         const value = (form as any)[field] as string | null
         if (!value) continue
+        // A date and an unknown are alternatives: in UNKNOWN mode the date is never sent.
+        if (unknownMode && field === 'endOfSupportDate') continue
         // Never set a milestone this save is also clearing: the server refuses the pair, and
         // a seeded form holds the stored date, so a clear would otherwise always collide.
         if (form.clearMilestones.includes(MILESTONE_FIELD_TO_TYPE[field])) continue
         if (unchanged(field, value)) continue
         vars[field] = value
     }
-    if (form.clearMilestones.length) vars.clearMilestones = form.clearMilestones
+    const clears = [...form.clearMilestones]
+    if (form.clearEndOfSupportUnknown) {
+        vars.clearEndOfSupportUnknown = true
+    } else if (unknownChanged(form, baseline)) {
+        const t = (form.endOfSupportUnknownText ?? '').trim()
+        vars.endOfSupportUnknown = { code: form.endOfSupportUnknownCode, text: t || null }
+        // Replace the date with a justified unknown: one call, the clear and the unknown
+        // together (3.2 item 2, r2). Without the clear the server refuses the pair.
+        if (replacesStoredDate(form, baseline) && !clears.includes('END_OF_SUPPORT')) clears.push('END_OF_SUPPORT')
+    }
+    if (clears.length) vars.clearMilestones = clears
     if (form.state) vars.state = form.state
     return vars
 }
@@ -174,6 +225,17 @@ export function validateAttestation (form: AttestationForm): string[] {
     if (negative && !form.justification.trim() && !form.clearJustification) {
         errors.push(`A level of ${form.levelOfSupport} is a negative claim about someone`
             + " else's project, so it needs a justification recording its basis.")
+    }
+    if (form.clearEndOfSupportUnknown && !hasReason) {
+        errors.push('Clearing the justified unknown needs a reason: the audit row is the only'
+            + ' record that it happened.')
+    }
+    if (form.endOfSupportMode === 'UNKNOWN' && !form.clearEndOfSupportUnknown) {
+        if (!form.endOfSupportUnknownCode) {
+            errors.push('Choose why the end-of-support date cannot be given, or switch back to Date.')
+        } else {
+            errors.push(...validateJustifiedUnknown(form.endOfSupportUnknownCode, form.endOfSupportUnknownText))
+        }
     }
     if (negative && form.clearJustification) {
         errors.push(`You cannot clear the justification while setting ${form.levelOfSupport}:`

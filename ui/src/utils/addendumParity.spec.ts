@@ -23,13 +23,16 @@ function comp (over: Partial<AddendumComponent> = {}): AddendumComponent {
         purl: 'pkg:maven/org.apache/log4j-core@2.14.1', attestationState: 'ATTESTED',
         levelOfSupport: 'actively maintained', levelOfSupportEnum: 'ACTIVELY_MAINTAINED',
         endOfSupportDate: '2030-01-01', justification: null,
-        assessedAt: '2026-09-01T00:00:00Z', ...over
+        assessedAt: '2026-09-01T00:00:00Z', source: null, bulk: false, endOfSupportUnknownCode: null, endOfSupportUnknownBulk: false,
+        assertedByName: null, justifiedByName: null, ...over
     }
 }
 
 /** Deliberately awkward: every branch of addendumRow, plus CSV-hostile characters. */
 const COMPONENTS: AddendumComponent[] = [
-    comp({ sbomComponentUuid: 'a', name: 'zeta', group: null }),
+    comp({ sbomComponentUuid: 'a', name: 'zeta', group: null, source: 'MANUAL', bulk: true,
+        endOfSupportDate: null, endOfSupportUnknownCode: 'NO_COMMITTED_END_OF_SUPPORT', endOfSupportUnknownBulk: true,
+        assertedByName: 'A', justifiedByName: 'B' }),
     comp({ sbomComponentUuid: 'b', name: 'alpha', group: 'org.example',
         levelOfSupport: null, justification: 'no upstream date published, and we asked' }),
     comp({ sbomComponentUuid: 'c', name: 'withdrawn-one', attestationState: 'WITHDRAWN',
@@ -184,5 +187,16 @@ describe('CSV and PDF are the same document in two encodings', () => {
         const differing = csvDataRows.flatMap((r, i) =>
             r.map((c, j) => (c === (pdfDataRows[i] || [])[j] ? null : `${i}:${j}`)).filter(Boolean))
         expect(differing).toEqual([`${formulaIdx}:5`])
+    })
+
+    // FDAW-14 row 14: the Asserted by cell goes through the same encoders as every other cell.
+    it('neutralises a formula-leading Asserted by value in the CSV and keeps it as text in the PDF', () => {
+        const hostile = { ...DATA, components: [comp({ sbomComponentUuid: 'z', name: 'named', source: 'MANUAL',
+            assertedByName: '+SUM(1,2)' })], totalComponents: 1, attestedComponents: 1, unassessedComponents: 0 }
+        const csv = parseCsv(renderAddendumCsv(hostile))
+        const at = ADDENDUM_COLUMNS.indexOf('Asserted by')
+        const header = csv.findIndex(r => r[0] === ADDENDUM_COLUMNS[0] && r[1] === ADDENDUM_COLUMNS[1])
+        expect(csv[header + 1][at]).toBe("'+SUM(1,2)")
+        expect(JSON.stringify(buildAddendumDocDefinition(hostile))).toContain('"+SUM(1,2)"')
     })
 })

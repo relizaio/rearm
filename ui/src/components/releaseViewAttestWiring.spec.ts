@@ -111,3 +111,41 @@ describe('the attestation form is wired into ReleaseView', () => {
         expect(code).toMatch(/isRoot[\s\S]{0,200}openAttestForm|openAttestForm[\s\S]{0,200}isRoot/)
     })
 })
+
+/** FDAW-14 row 16: organization write gates the support half, not the hash half. By source. */
+describe('organization write gates the bulk support controls', () => {
+    it('imports hasOrgWrite and orgWriteSentence and computes canWriteOrg with it', () => {
+        expect(source).toMatch(/import\s+\{[^}]*\bhasOrgWrite\b[^}]*\}\s+from\s+'@\/utils\/orgWrite'/)
+        expect(code).toMatch(/const canWriteOrg[^=]*= computed\(\(\)[^=]*=>\s*hasOrgWrite\(/)
+        expect(code).toMatch(/orgWriteSentence\('Attest all shown'\)/)
+    })
+
+    it('renders Attest all shown disabled with the sentence for a caller without it', () => {
+        const at = source.indexOf('Attest all shown\n')
+        const button = source.slice(source.lastIndexOf('<n-button', at), at)
+        expect(button).toContain(':disabled="!canWriteOrg"')
+        expect(button).toContain('ATTEST_ALL_ORG_WRITE_SENTENCE')
+        const line = source.slice(source.indexOf('data-testid="attest-all-org-write"') - 200,
+            source.indexOf('data-testid="attest-all-org-write"') + 200)
+        expect(line).toContain('!canWriteOrg')
+        expect(line).toContain('{{ ATTEST_ALL_ORG_WRITE_SENTENCE }}')
+    })
+
+    it('offers Bulk assessment under isWritable, so a reader sees neither control', () => {
+        const at = source.indexOf('data-testid="bulk-assessment"')
+        const button = source.slice(source.lastIndexOf('<n-button', at), at)
+        expect(button).toMatch(/v-if="[^"]*isWritable[^"]*"/)
+        expect(button).not.toContain('canWriteOrg')
+    })
+
+    it('disables the support half with the sentence at its top, and leaves Missing hashes enabled', () => {
+        const support = source.slice(source.indexOf("bulkStage === 'compose' && bulkTab === 'support'"))
+        expect(support.slice(0, 400)).toContain('v-if="!canWriteOrg"')
+        expect(support.slice(0, 400)).toContain('BULK_ASSESSMENT_ORG_WRITE_SENTENCE')
+        expect(support).toContain(':disabled="bulk.collecting.value || !canWriteOrg"')
+        const hashes = source.slice(source.indexOf("bulkStage === 'compose' && bulkTab === 'hashes'"))
+        const block = hashes.slice(0, hashes.indexOf('</div>'))
+        expect(block).toContain('<missing-hashes-panel')
+        expect(block).not.toContain('canWriteOrg')
+    })
+})

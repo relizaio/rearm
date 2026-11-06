@@ -52,7 +52,9 @@ describe('toAddendumComponent', () => {
             purl: 'pkg:maven/org.apache/log4j-core@2.14.1', attestationState: 'ATTESTED',
             levelOfSupport: 'actively maintained', levelOfSupportEnum: 'ACTIVELY_MAINTAINED',
             endOfSupportDate: '2030-01-01',
-            justification: null, assessedAt: '2026-09-01T00:00:00Z'
+            justification: null, assessedAt: '2026-09-01T00:00:00Z',
+            source: null, bulk: false, endOfSupportUnknownCode: null, endOfSupportUnknownBulk: false,
+            assertedByName: null, justifiedByName: null
         })
     })
 
@@ -60,6 +62,22 @@ describe('toAddendumComponent', () => {
         const c = toAddendumComponent({ component: { name: '  ', justification: '' } })
         expect(c.name).toBeNull()
         expect(c.justification).toBeNull()
+    })
+
+    it('derives justifiedByName from the uuids, not the names (FDAW-14 3.7)', () => {
+        const row = (assertedBy: string | null, u: any) => toAddendumComponent({ component: {
+            assessmentSource: 'MANUAL', supportBulkAct: 'act-1', assertedBy, assertedByName: 'Sam', endOfSupportUnknown: u } })
+        const sameName = row('user-a', { code: 'OTHER', bulkAct: null, assertedBy: 'user-b', assertedByName: 'Sam' })
+        expect(sameName.justifiedByName).toBe('Sam')
+        expect(sameName.assertedByName).toBe('Sam')
+        expect(sameName.source).toBe('MANUAL')
+        expect(sameName.bulk).toBe(true)
+        expect(sameName.endOfSupportUnknownCode).toBe('OTHER')
+        expect(sameName.endOfSupportUnknownBulk).toBe(false)
+        expect(row('user-a', { code: 'OTHER', assertedBy: 'user-a', assertedByName: 'Sam' }).justifiedByName).toBeNull()
+        expect(row('user-a', { code: 'OTHER', assertedBy: null }).justifiedByName).toBeNull()
+        expect(row('user-a', { code: 'OTHER', assertedBy: 'user-b', assertedByName: null }).justifiedByName).toBe('')
+        expect(row('user-a', null).justifiedByName).toBeNull()
     })
 
     it('survives a row with no component object at all', () => {

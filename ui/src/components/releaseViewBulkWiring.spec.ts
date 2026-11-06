@@ -123,7 +123,8 @@ describe('the bulk sweep is wired into ReleaseView', () => {
      */
     it('freezes the form during the walk and re-validates at the write', () => {
         const form = source.slice(source.indexOf('<n-form label-placement="top" '))
-        expect(form.slice(0, 120)).toContain(':disabled="bulk.collecting.value"')
+        // FDAW-14: and for a caller without organization write, whose support half is disabled
+        expect(form.slice(0, 120)).toContain(':disabled="bulk.collecting.value || !canWriteOrg"')
         expect(functionBody('runBulkAttest')).toMatch(/bulkErrors\.value\.length/)
     })
 

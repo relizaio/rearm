@@ -30,6 +30,7 @@ import java.time.ZonedDateTime;
 import java.util.ArrayList;
 import java.util.EnumSet;
 import java.util.HashMap;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.LinkedList;
 import java.util.List;
@@ -174,13 +175,18 @@ abstract class TeaPublicationServiceTestBase {
 	EntityManager entityManager;
 	TeaPublishLock teaPublishLock;
 	ComponentRepository componentRepository;
+	/** FDAW-7: the release SBOM identity, a real service over in-memory tables and the mocks above. */
+	ReleaseSbomStoreFixture sbomStore;
+	ReleaseSbomService releaseSbomService;
+	RebomService rebomService;
 	/** Every lease the mocked lock handed out, in order; each a spy over a lease that holds nothing. */
 	final List<TeaPublishLock.Lease> leases = new ArrayList<>();
 
 	/** In-memory state the mocks read and write. */
 	final Map<UUID, Release> releaseRows = new HashMap<>();
 	final Map<UUID, ComponentData> components = new HashMap<>();
-	final Map<UUID, ArtifactData> artifacts = new HashMap<>();
+	/** The stored rows in insert order, so a test reads its uploads in upload order (FDAW-7 T-1). */
+	final Map<UUID, ArtifactData> artifacts = new LinkedHashMap<>();
 	final Map<UUID, TeaPublication> heads = new HashMap<>();
 	final Map<String, TeaPublishedCollection> collectionRows = new HashMap<>();
 	final Map<UUID, UUID> teaIds = new HashMap<>();
@@ -247,7 +253,6 @@ abstract class TeaPublicationServiceTestBase {
 		componentRepository = mock(ComponentRepository.class);
 		ReflectionTestUtils.setField(service, "sharedReleaseService", shared);
 		ReflectionTestUtils.setField(service, "getComponentService", getComponentService);
-		ReflectionTestUtils.setField(service, "getOrganizationService", getOrganizationService);
 		ReflectionTestUtils.setField(service, "teaProfileResolver", resolver);
 		ReflectionTestUtils.setField(service, "sbomProfileResolver", sbomResolver);
 		ReflectionTestUtils.setField(service, "teaProfileService", teaProfileService);
@@ -264,6 +269,24 @@ abstract class TeaPublicationServiceTestBase {
 		ReflectionTestUtils.setField(service, "entityManager", entityManager);
 		ReflectionTestUtils.setField(service, "teaPublishLock", teaPublishLock);
 		ReflectionTestUtils.setField(service, "componentRepository", componentRepository);
+		rebomService = mock(RebomService.class);
+		sbomStore = new ReleaseSbomStoreFixture();
+		releaseSbomService = spy(sbomStore.service(synthetic, artifactService, getOrganizationService,
+				getComponentService, rebomService));
+		ReflectionTestUtils.setField(releaseSbomService, "self", releaseSbomService);
+		ReflectionTestUtils.setField(service, "releaseSbomService", releaseSbomService);
+		// the real mergeSystemTags on the in-memory row: same-key tags replaced, the rest kept
+		when(artifactService.mergeSystemTags(any(UUID.class), any(), any())).thenAnswer(inv -> {
+			ArtifactData ad = artifacts.get(inv.<UUID>getArgument(0));
+			if (null == ad) throw new RelizaException("Artifact not found: " + inv.getArgument(0));
+			List<TagRecord> merged = inv.getArgument(1);
+			Set<String> keys = merged.stream().map(TagRecord::key).collect(Collectors.toSet());
+			List<TagRecord> tags = new ArrayList<>(null == ad.getTags() ? List.of() : ad.getTags());
+			tags.removeIf(t -> keys.contains(t.key()));
+			tags.addAll(merged);
+			ad.setTags(tags);
+			return null;
+		});
 		// the component row readFresh refreshes: built from the in-memory data on every read
 		when(componentRepository.findById(any(UUID.class)))
 				.thenAnswer(inv -> Optional.ofNullable(components.get(inv.<UUID>getArgument(0))).map(TeaPublicationServiceTestBase::componentRow));

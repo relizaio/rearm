@@ -15,10 +15,41 @@ import java.util.ArrayList;
 import java.util.List;
 import java.util.UUID;
 
-import org.junit.jupiter.api.Test;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.CALLS_REAL_METHODS;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.when;
 
+import java.util.LinkedHashMap;
+import java.util.Map;
+import java.util.Optional;
+
+import org.junit.jupiter.api.Test;
+import org.springframework.security.access.AccessDeniedException;
+import org.springframework.test.util.ReflectionTestUtils;
+
+import io.reliza.common.CommonVariables.CallType;
 import io.reliza.exceptions.RelizaException;
+import io.reliza.model.JustifiedUnknownReason;
+import io.reliza.model.LevelOfSupport;
+import io.reliza.model.OrganizationData;
+import io.reliza.model.ReleaseData;
+import io.reliza.model.UserData;
+import io.reliza.model.UserPermission.PermissionScope;
+import io.reliza.repositories.SbomComponentRepository;
+import io.reliza.service.AuthorizationService;
+import io.reliza.service.GetOrganizationService;
+import io.reliza.service.ReleaseSbomJustificationService;
 import io.reliza.service.SbomComponentService;
+import io.reliza.service.SharedReleaseService;
+import io.reliza.service.UserService;
 
 /**
  * The server-side bound on one bulk support attestation.
@@ -50,7 +81,7 @@ class SbomComponentBulkSupportCapTest {
 	private static RelizaException callWith(int idCount) {
 		SbomComponentDataFetcher fetcher = new SbomComponentDataFetcher();
 		return assertThrows(RelizaException.class, () -> fetcher.bulkSetSbomComponentSupport(
-				ids(idCount), null, null, null, null, null, null, null, null, null, null));
+				ids(idCount), null, null, null, null, null, null, null, null, null, null, null));
 	}
 
 	@Test
@@ -80,7 +111,7 @@ class SbomComponentBulkSupportCapTest {
 	private static Object assertDoesNotThrowResults(SbomComponentDataFetcher fetcher) {
 		try {
 			return fetcher.bulkSetSbomComponentSupport(List.of(), null, null, null, null, null,
-					null, null, null, null, null).get("results");
+					null, null, null, null, null, null).get("results");
 		} catch (RelizaException e) {
 			throw new AssertionError("an empty bulk call must not be treated as a violation", e);
 		}
@@ -105,7 +136,7 @@ class SbomComponentBulkSupportCapTest {
 		// Collaborators are null, so passing the guard fails LATER with an NPE. Asserting on
 		// that distinction is what makes this a unit test of the guard alone.
 		Throwable t = assertThrows(Throwable.class, () -> fetcher.bulkSetSbomComponentSupport(
-				ids(CAP), null, null, null, null, null, null, null, null, null, null));
+				ids(CAP), null, null, null, null, null, null, null, null, null, null, null));
 		assertInstanceOf(NullPointerException.class, t,
 				"a call of exactly " + CAP + " ids must pass the guard and reach a collaborator,"
 						+ " not be refused: " + t);
@@ -119,7 +150,7 @@ class SbomComponentBulkSupportCapTest {
 		SbomComponentDataFetcher fetcher = new SbomComponentDataFetcher();
 		RelizaException e = assertThrows(RelizaException.class,
 				() -> fetcher.bulkSetSbomComponentSupport(dupes, null, null, null, null, null,
-						null, null, null, null, null));
+						null, null, null, null, null, null));
 		assertTrue(e.getMessage().contains("limited to"),
 				"1001 copies of one uuid is still 1001 ids on the wire: " + e.getMessage());
 	}
@@ -137,13 +168,13 @@ class SbomComponentBulkSupportCapTest {
 	void anEmptyCallStillMintsAndReturnsABatchId() throws Exception {
 		SbomComponentDataFetcher fetcher = new SbomComponentDataFetcher();
 		Object first = fetcher.bulkSetSbomComponentSupport(List.of(), null, null, null, null,
-				null, null, null, null, null, null).get("batchId");
+				null, null, null, null, null, null, null).get("batchId");
 		assertNotNull(first, "batchId is declared ID! -- it must be present on every response");
 		assertInstanceOf(UUID.class, first, "the response must carry a real uuid, not a string"
 				+ " that happens to look like one");
 
 		Object second = fetcher.bulkSetSbomComponentSupport(List.of(), null, null, null, null,
-				null, null, null, null, null, null).get("batchId");
+				null, null, null, null, null, null, null).get("batchId");
 		assertNotEquals(first, second, "each unpaged call is its own sweep and must mint its"
 				+ " own id -- a shared or constant id would merge unrelated sweeps in the audit");
 	}
@@ -154,6 +185,190 @@ class SbomComponentBulkSupportCapTest {
 		UUID supplied = UUID.randomUUID();
 		SbomComponentDataFetcher fetcher = new SbomComponentDataFetcher();
 		assertEquals(supplied, fetcher.bulkSetSbomComponentSupport(List.of(), null, null, null,
-				null, null, null, null, null, null, supplied).get("batchId"));
+				null, null, null, null, null, null, supplied, null).get("batchId"));
+	}
+
+	// ------------------------------------------------------------------ FDAW-14 row 9: bounds, gate, count order
+
+	private static final String LONG = "x".repeat(2049);
+	private static final String BELL = "a\u0007";
+
+	private static Map<String, Object> selector(String form, String type, String namespace) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("form", form);
+		m.put("type", type);
+		if (null != namespace) m.put("namespace", namespace);
+		return m;
+	}
+
+	private static Map<String, Object> unknown(String code, String text) {
+		Map<String, Object> m = new LinkedHashMap<>();
+		m.put("code", code);
+		m.put("text", text);
+		return m;
+	}
+
+	/** One-argument-at-a-time selector mutation call; null collaborators, so reaching any is an NPE. */
+	private static Object selectorCall(SbomComponentDataFetcher f, Map<String, Object> sel, String justification,
+			String notes, Map<String, Object> unknown, String reason, boolean level) throws RelizaException {
+		return f.bulkSetSbomComponentSupportBySelector(UUID.randomUUID(), sel, null,
+				level ? LevelOfSupport.ACTIVELY_MAINTAINED : null, justification, null, null, null, null,
+				notes, null, unknown, reason);
+	}
+
+	@Test
+	void theSelectorMutationAndCountRefuseBadInputBeforeAnyCollaborator() {
+		SbomComponentDataFetcher f = new SbomComponentDataFetcher();
+		Map<Map<String, Object>, String> bad = new LinkedHashMap<>();
+		bad.put(selector("TYPE", "np%", null), "bulk selector: type must match [a-z0-9.+-]{1,64}");
+		bad.put(selector("NAMESPACE", "npm", null), "bulk selector: namespace is required for the NAMESPACE form");
+		bad.put(selector("NAMESPACE", "npm", "n".repeat(257)),
+				"bulk selector: namespace is longer than 256 characters or holds a control character");
+		bad.put(selector("NAMESPACE", "npm", "a\u0001"),
+				"bulk selector: namespace is longer than 256 characters or holds a control character");
+		bad.forEach((sel, text) -> {
+			assertEquals(text, assertThrows(RelizaException.class,
+					() -> selectorCall(f, sel, null, null, null, null, true)).getMessage());
+			assertEquals(text, assertThrows(RelizaException.class,
+					() -> f.supportBulkSelectorCount(UUID.randomUUID(), sel, null)).getMessage());
+		});
+		assertEquals("a bulk assessment needs a level of support, a milestone date or a justified unknown",
+				assertThrows(RelizaException.class, () -> selectorCall(f, selector("TYPE", "deb", null), "basis", null,
+						null, null, false)).getMessage());
+	}
+
+	@Test
+	void everyTextBoundRefusesBeforeAuthorisationOnAllThreeSupportVerbs() {
+		SbomComponentDataFetcher f = new SbomComponentDataFetcher();
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		record Case(String justification, String notes, Map<String, Object> unknown, String reason, String text) {}
+		List<Case> cases = List.of(
+				new Case(LONG, null, null, null, "justification is longer than 2048 characters"),
+				new Case(null, LONG, null, null, "supportNotes is longer than 2048 characters"),
+				new Case(null, null, null, LONG, "reason is longer than 2048 characters"),
+				new Case(null, null, null, BELL, "reason holds a control character"),
+				new Case(null, null, unknown("OTHER", "t".repeat(513)), null,
+						"justified unknown: the text is longer than 512 characters or holds a control character"));
+		for (Case c : cases) {
+			assertEquals(c.text(), assertThrows(RelizaException.class,
+					() -> selectorCall(f, sel, c.justification(), c.notes(), c.unknown(), c.reason(), true)).getMessage());
+			// ahead of the explicit form's id-count cap: CAP + 1 ids still get the bound's text
+			assertEquals(c.text(), assertThrows(RelizaException.class, () -> f.bulkSetSbomComponentSupport(ids(CAP + 1),
+					LevelOfSupport.ACTIVELY_MAINTAINED, c.justification(), null, null, null, null,
+					c.notes(), null, c.reason(), null, c.unknown())).getMessage());
+			assertEquals(c.text(), assertThrows(RelizaException.class, () -> f.setSbomComponentSupport(UUID.randomUUID(),
+					LevelOfSupport.ACTIVELY_MAINTAINED, c.justification(), null, null, null, null, null,
+					c.notes(), null, null, c.reason(), c.unknown(), null)).getMessage());
+		}
+		// at the limit the bound passes and the next step (a null collaborator) is reached
+		assertInstanceOf(NullPointerException.class, assertThrows(Throwable.class,
+				() -> selectorCall(f, sel, "x".repeat(2048), null, null, "r".repeat(2048), true)));
+	}
+
+	/** Mocked collaborators: the gate, then the scope, then the count, in that order. */
+	private record Wired(SbomComponentDataFetcher fetcher, AuthorizationService auth, SbomComponentService service,
+			SbomComponentRepository repository, SharedReleaseService releases, UUID org) {}
+
+	private static Wired wired() throws Exception {
+		SbomComponentDataFetcher f = new SbomComponentDataFetcher();
+		UserService users = mock(UserService.class);
+		when(users.getUserDataByAuth(any())).thenReturn(Optional.of(mock(UserData.class)));
+		GetOrganizationService orgs = mock(GetOrganizationService.class);
+		UUID org = UUID.randomUUID();
+		OrganizationData od = new OrganizationData();
+		od.setUuid(org);
+		when(orgs.getOrganizationData(org)).thenReturn(Optional.of(od));
+		AuthorizationService auth = mock(AuthorizationService.class);
+		SbomComponentRepository repo = mock(SbomComponentRepository.class);
+		// real methods, collaborators injected: the service's own count-then-cap order is under test too
+		SbomComponentService service = mock(SbomComponentService.class, CALLS_REAL_METHODS);
+		ReflectionTestUtils.setField(service, "sbomComponentRepository", repo);
+		SharedReleaseService releases = mock(SharedReleaseService.class);
+		ReflectionTestUtils.setField(f, "userService", users);
+		ReflectionTestUtils.setField(f, "getOrganizationService", orgs);
+		ReflectionTestUtils.setField(f, "authorizationService", auth);
+		ReflectionTestUtils.setField(f, "sbomComponentService", service);
+		ReflectionTestUtils.setField(f, "sharedReleaseService", releases);
+		return new Wired(f, auth, service, repo, releases, org);
+	}
+
+	@Test
+	void theGateRunsBeforeTheCountAndTheCapBeforeAnyRow() throws Exception {
+		Wired w = wired();
+		doThrow(new AccessDeniedException("forbidden")).when(w.auth()).isUserAuthorizedForObjectGraphQL(any(), any(),
+				eq(PermissionScope.ORGANIZATION), any(), any(), eq(CallType.WRITE));
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		assertThrows(AccessDeniedException.class, () -> w.fetcher().supportBulkSelectorCount(w.org(), sel, null));
+		assertThrows(AccessDeniedException.class, () -> w.fetcher().bulkSetSbomComponentSupportBySelector(w.org(), sel,
+				null, LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null, null, null, null, null,
+				null));
+		verifyNoInteractions(w.repository());
+
+		Wired ok = wired();
+		List<String> overCap = new ArrayList<>();
+		for (int i = 0; i <= CAP; i++) overCap.add(UUID.randomUUID().toString());
+		when(ok.repository().findUuidsBySupportSelector(anyString(), anyString(), any(), any(), anyInt()))
+				.thenReturn(overCap);
+		RelizaException e = assertThrows(RelizaException.class, () -> ok.fetcher().bulkSetSbomComponentSupportBySelector(
+				ok.org(), sel, null, LevelOfSupport.ACTIVELY_MAINTAINED, null, null, null, null, null,
+				null, null, null, null));
+		assertEquals("a bulk support attestation is limited to 1000 components per call; the selector TYPE deb matches"
+				+ " more than 1000 in the organization. Narrow it by namespace or to this release, or use Shown components.",
+				e.getMessage());
+		verify(ok.repository()).findUuidsBySupportSelector(anyString(), eq("deb"), any(), any(), eq(CAP + 1));
+		verify(ok.repository(), never()).findAllById(any());
+
+		// a release of another org: refused after the org gate, before the count
+		Wired other = wired();
+		UUID release = UUID.randomUUID();
+		ReleaseData rd = mock(ReleaseData.class);
+		when(rd.getUuid()).thenReturn(release);
+		when(rd.getOrg()).thenReturn(UUID.randomUUID());
+		when(other.releases().getReleaseData(release)).thenReturn(Optional.of(rd));
+		e = assertThrows(RelizaException.class, () -> other.fetcher().supportBulkSelectorCount(other.org(), sel, release));
+		assertEquals("release not found in this organization: " + release, e.getMessage());
+		verify(other.auth()).isUserAuthorizedForObjectGraphQL(any(), any(), eq(PermissionScope.ORGANIZATION), any(),
+				any(), eq(CallType.WRITE));
+		verifyNoInteractions(other.repository());
+	}
+
+	@Test
+	void theHashVerbsBoundKeysAndTextsBeforeTheHead() throws Exception {
+		ReleaseSbomJustificationDataFetcher f = new ReleaseSbomJustificationDataFetcher();
+		ReleaseSbomJustificationService service = mock(ReleaseSbomJustificationService.class);
+		ReflectionTestUtils.setField(f, "releaseSbomJustificationService", service);
+		UUID head = UUID.randomUUID();
+		String keysRequired = "keys: at least one component key is required";
+		String keyRefused = "component key is longer than 2048 characters or holds a control character";
+		JustifiedUnknownReason code = JustifiedUnknownReason.DISTRIBUTION_PUBLISHES_NO_HASH;
+		Map<String, Object> sel = selector("TYPE", "deb", null);
+		assertEquals(keysRequired, assertThrows(RelizaException.class,
+				() -> f.setReleaseSbomHashJustification(head, List.of(), code, null, null)).getMessage());
+		assertEquals(keysRequired, assertThrows(RelizaException.class,
+				() -> f.clearReleaseSbomHashJustification(head, List.of(), "r")).getMessage());
+		for (String key : List.of("k".repeat(2049), "pkg:deb/a\u0001@1")) {
+			assertEquals(keyRefused, assertThrows(RelizaException.class,
+					() -> f.setReleaseSbomHashJustification(head, List.of(key), code, null, null)).getMessage());
+			assertEquals(keyRefused, assertThrows(RelizaException.class,
+					() -> f.clearReleaseSbomHashJustification(head, List.of(key), "r")).getMessage());
+		}
+		assertEquals("reason is longer than 2048 characters", assertThrows(RelizaException.class,
+				() -> f.setReleaseSbomHashJustification(head, List.of("pkg:deb/a@1"), code, null, LONG)).getMessage());
+		assertEquals("reason is longer than 2048 characters", assertThrows(RelizaException.class,
+				() -> f.clearReleaseSbomHashJustification(head, List.of("pkg:deb/a@1"), LONG)).getMessage());
+		assertEquals("reason is longer than 2048 characters", assertThrows(RelizaException.class,
+				() -> f.bulkSetReleaseSbomHashJustificationBySelector(head, sel, code, null, LONG)).getMessage());
+		assertEquals("justified unknown: the code OTHER needs a text", assertThrows(RelizaException.class,
+				() -> f.bulkSetReleaseSbomHashJustificationBySelector(head, sel, JustifiedUnknownReason.OTHER, null,
+						null)).getMessage());
+		List<String> overCap = new ArrayList<>();
+		for (int i = 0; i <= CAP; i++) overCap.add("pkg:deb/debian/p" + i + "@1");
+		RelizaException e = assertThrows(RelizaException.class,
+				() -> f.setReleaseSbomHashJustification(head, overCap, code, null, null));
+		assertEquals(ReleaseSbomJustificationService.explicitOverCap(CAP + 1), e.getMessage());
+		verifyNoInteractions(service);
+		// a 2048-character key and reason pass the bound: the head lookup (the next step) is reached
+		assertThrows(NullPointerException.class, () -> f.setReleaseSbomHashJustification(head,
+				List.of("k".repeat(2048)), code, null, "r".repeat(2048)));
 	}
 }

@@ -42,8 +42,42 @@ export const PROSE_SLOT_LABELS = {
 
 export const ADDENDUM_COLUMNS = [
     'Component', 'Version', 'PURL', 'Level of support', 'End of support',
-    'Justification', 'Attestation state', 'Last assessed'
+    'Justification', 'Attestation state', 'Last assessed', 'Source', 'Asserted by'
 ]
+
+/**
+ * The words of the Source, Asserted by and End of support cells (FDAW-14 3.7). The server's
+ * FdaDocumentStrings holds the same strings; the parity fixtures pin them by text.
+ */
+export const SOURCE_BULK_SUFFIX = ' (bulk)'
+export const SOURCE_JUSTIFICATION = '; justification'
+export const SOURCE_BULK_JUSTIFICATION = '; bulk justification'
+export const ASSERTED_BY_JUSTIFICATION = '; justification: '
+export const NOT_AVAILABLE_PREFIX = 'not available: '
+
+/** The date, else `not available: <CODE>` for a justified unknown, else empty. */
+function endOfSupportCell (c: AddendumComponent): string | null {
+    if (c.endOfSupportDate) return c.endOfSupportDate
+    return c.endOfSupportUnknownCode ? NOT_AVAILABLE_PREFIX + c.endOfSupportUnknownCode : null
+}
+
+/** `manual`, `manual (bulk)`, then `; justification` or `; bulk justification` for an unknown. */
+function sourceCell (c: AddendumComponent): string | null {
+    let s = ''
+    if (c.source) {
+        s += c.source.toLowerCase()
+        if (c.bulk) s += SOURCE_BULK_SUFFIX
+    }
+    if (c.endOfSupportUnknownCode) s += c.endOfSupportUnknownBulk ? SOURCE_BULK_JUSTIFICATION : SOURCE_JUSTIFICATION
+    return s || null
+}
+
+/** The level's asserter; `<A>; justification: <B>` when another user justified the unknown. */
+function assertedByCell (c: AddendumComponent): string | null {
+    const a = c.assertedByName || ''
+    if (c.justifiedByName == null) return a || null
+    return a + ASSERTED_BY_JUSTIFICATION + c.justifiedByName
+}
 
 /**
  * The value stated when a component carries no live attestation.
@@ -100,10 +134,12 @@ export function addendumRow (c: AddendumComponent): unknown[] {
         c.version,
         c.purl,
         live ? (c.levelOfSupport || LEVEL_NOT_STATED) : NOT_ASSESSED,
-        live ? c.endOfSupportDate : null,
+        live ? endOfSupportCell(c) : null,
         live && !c.levelOfSupport ? c.justification : null,
         live ? 'ATTESTED' : (c.attestationState || NOT_ASSESSED),
-        live ? c.assessedAt : null
+        live ? c.assessedAt : null,
+        live ? sourceCell(c) : null,
+        live ? assertedByCell(c) : null
     ]
 }
 

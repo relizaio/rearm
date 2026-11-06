@@ -714,9 +714,23 @@
                 :mask-closable="!bulk.submitting.value"
                 :closable="!bulk.submitting.value"
                 :close-on-esc="!bulk.submitting.value"
-                title="Attest every component matching this filter">
-                <!-- COMPOSE -->
-                <div v-if="bulkStage === 'compose'">
+                title="Bulk support assessment">
+                <!-- COMPOSE: the support half (ORGANIZATION WRITE) and the Missing hashes half
+                     (COMPONENT WRITE, FDAW-14 3.9) -->
+                <!-- A radio row rather than n-tabs: the page's own tab set is the first n-tabs. -->
+                <n-radio-group v-if="bulkStage === 'compose'" v-model:value="bulkTab" size="small"
+                    style="margin-bottom: 12px;" data-testid="bulk-half">
+                    <n-radio-button value="support" label="Support" />
+                    <n-radio-button value="hashes" label="Missing hashes" data-testid="bulk-missing-hashes-tab" />
+                </n-radio-group>
+                <div v-if="bulkStage === 'compose' && bulkTab === 'hashes'">
+                    <missing-hashes-panel v-if="updatedRelease?.uuid" :release-uuid="updatedRelease.uuid" />
+                </div>
+                <div v-if="bulkStage === 'compose' && bulkTab === 'support'">
+                    <n-alert v-if="!canWriteOrg" type="info" :show-icon="true" style="margin-bottom: 12px;"
+                        data-testid="bulk-support-org-write">
+                        {{ BULK_ASSESSMENT_ORG_WRITE_SENTENCE }}
+                    </n-alert>
                     <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
                         This writes the same attestation to every component matching the
                         current filter. There is no bulk undo: correcting it means
@@ -727,7 +741,27 @@
                          trips while this stage stays mounted, so an edit made after the
                          click would be written by a confirmation the operator already
                          approved against different values. -->
-                    <n-form label-placement="top" :disabled="bulk.collecting.value">
+                    <n-form label-placement="top" :disabled="bulk.collecting.value || !canWriteOrg">
+                        <n-form-item label="Components">
+                            <n-radio-group v-model:value="bulkSelector.form" size="small"
+                                data-testid="bulk-selector-form">
+                                <n-radio-button v-for="o in SELECTOR_FORM_OPTIONS" :key="o.value"
+                                    :value="o.value" :label="o.label" />
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-space v-if="bulkSelector.form !== 'EXPLICIT'" style="margin-bottom: 12px;">
+                            <n-input v-model:value="bulkSelector.type" size="small" style="width: 220px;"
+                                placeholder="Ecosystem (purl type), e.g. deb" />
+                            <n-input v-if="bulkSelector.form === 'NAMESPACE'" v-model:value="bulkSelector.namespace"
+                                size="small" style="width: 220px;" placeholder="Namespace, e.g. debian" />
+                        </n-space>
+                        <n-form-item v-if="bulkSelector.form !== 'EXPLICIT'" label="Scope">
+                            <n-radio-group v-model:value="bulkSelector.scope" size="small"
+                                data-testid="bulk-selector-scope">
+                                <n-radio v-for="o in SELECTOR_SCOPE_OPTIONS" :key="o.value" :value="o.value"
+                                    :label="o.label" />
+                            </n-radio-group>
+                        </n-form-item>
                         <n-form-item label="Level of support">
                             <n-select v-model:value="bulkForm.levelOfSupport"
                                 :options="LEVEL_OPTIONS" placeholder="Not stated" />
@@ -742,11 +776,27 @@
                                 placeholder="Must be true of EVERY component in the selection." />
                         </n-form-item>
                         <n-form-item label="End of support (optional)">
+                            <n-radio-group v-model:value="bulkForm.endOfSupportMode" size="small"
+                                data-testid="bulk-eos-mode">
+                                <n-radio value="DATE" label="Date" />
+                                <n-radio value="UNKNOWN" label="Justified unknown" />
+                            </n-radio-group>
+                        </n-form-item>
+                        <n-form-item v-if="bulkForm.endOfSupportMode !== 'UNKNOWN'" :show-label="false">
                             <n-date-picker v-model:formatted-value="bulkForm.endOfSupportDate"
                                 value-format="yyyy-MM-dd" type="date" clearable
                                 style="width: 100%;" />
                         </n-form-item>
-                        <n-alert v-if="bulkForm.endOfSupportDate" type="warning"
+                        <template v-else>
+                            <n-form-item label="Why the end-of-support date cannot be given">
+                                <n-select v-model:value="bulkForm.endOfSupportUnknownCode"
+                                    :options="END_OF_SUPPORT_UNKNOWN_OPTIONS" placeholder="Choose a reason" />
+                            </n-form-item>
+                            <n-form-item label="Explanation (required for Other; stays in ReARM)">
+                                <n-input v-model:value="bulkForm.endOfSupportUnknownText" type="textarea" :rows="2" />
+                            </n-form-item>
+                        </template>
+                        <n-alert v-if="bulkForm.endOfSupportMode !== 'UNKNOWN' && bulkForm.endOfSupportDate" type="warning"
                             :show-icon="false" style="font-size: 12px; margin-bottom: 12px;">
                             This one date will be published as a manufacturer-stated
                             end-of-support fact for every component in the selection, and it
@@ -765,6 +815,36 @@
                 </div>
 
                 <!-- CONFIRM: the count alone cannot catch a filter that silently reset -->
+                <div v-else-if="bulkStage === 'confirm' && bulkSelector.form !== 'EXPLICIT'">
+                    <n-alert :type="bulkSelectorCount?.overCap ? 'error' : 'warning'" :show-icon="true"
+                        style="margin-bottom: 12px;">
+                        <div style="font-size: 14px; font-weight: 600;" data-testid="bulk-selector-count">
+                            {{ bulkSelectorCountLine }}
+                        </div>
+                        <div style="font-size: 12px; margin-top: 6px;">
+                            Selector <strong>{{ bulkSelector.form === 'TYPE' ? 'ecosystem' : 'namespace' }}
+                                {{ selectorLabel(bulkSelector) }}</strong>,
+                            {{ bulkSelector.scope === 'RELEASE' ? 'in this release'
+                                : 'across the organization, every product' }}.
+                            There is no bulk undo.
+                        </div>
+                    </n-alert>
+                    <n-alert type="default" :show-icon="false" style="font-size: 12px;">
+                        Writing: level
+                        <strong>{{ bulkForm.levelOfSupport || 'not stated' }}</strong>;
+                        justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>;
+                        claim is about
+                        <strong>{{ partyLabel(bulkForm.party) }}</strong>
+                        <span v-if="bulkForm.endOfSupportMode === 'UNKNOWN'">; end of support not available
+                            (<strong>{{ justifiedUnknownLabel(bulkForm.endOfSupportUnknownCode) }}</strong>)</span>
+                        <span v-else-if="bulkForm.endOfSupportDate">; end of support
+                            <strong>{{ bulkForm.endOfSupportDate }}</strong></span>.
+                        <div style="margin-top: 4px;">
+                            Audit reason (not exported):
+                            <strong>"{{ bulkForm.reason }}"</strong>
+                        </div>
+                    </n-alert>
+                </div>
                 <div v-else-if="bulkStage === 'confirm'">
                     <n-alert type="warning" :show-icon="true" style="margin-bottom: 12px;">
                         <div style="font-size: 14px; font-weight: 600;">
@@ -793,7 +873,9 @@
                         justification <strong>"{{ bulkForm.justification || '(none)' }}"</strong>;
                         claim is about
                         <strong>{{ partyLabel(bulkForm.party) }}</strong>
-                        <span v-if="bulkForm.endOfSupportDate">; end of support
+                        <span v-if="bulkForm.endOfSupportMode === 'UNKNOWN'">; end of support not available
+                            (<strong>{{ justifiedUnknownLabel(bulkForm.endOfSupportUnknownCode) }}</strong>)</span>
+                        <span v-else-if="bulkForm.endOfSupportDate">; end of support
                             <strong>{{ bulkForm.endOfSupportDate }}</strong></span>.
                         <div style="margin-top: 4px;">
                             Audit reason (not exported):
@@ -814,11 +896,18 @@
                     <n-alert
                         :type="bulkResult.failed || bulkResult.aborted ? 'warning' : 'success'"
                         :show-icon="true">
-                        {{ bulkResult.applied }} attested.
+                        <span data-testid="bulk-result-counts">{{ bulkResult.matched }} matched,
+                            {{ bulkResult.applied }} attested.</span>
                         <span v-if="bulkResult.skippedRoot">
                             {{ bulkResult.skippedRoot }} skipped as the release's own
                             {{ bulkResult.skippedRoot === 1 ? 'component' : 'components' }}.</span>
+                        <span v-if="bulkResult.skippedHasEndOfSupport">
+                            {{ bulkResult.skippedHasEndOfSupport }} skipped: already hold an end of support.</span>
                         <span v-if="bulkResult.failed"> {{ bulkResult.failed }} failed.</span>
+                        <div v-if="bulkResult.bulkActs.length" style="font-size: 12px; margin-top: 4px;"
+                            data-testid="bulk-result-act">
+                            Bulk act {{ bulkResult.bulkActs.join(', ') }}
+                        </div>
                     </n-alert>
                     <!-- Not hidden: on a fresh UNATTESTED walk this should be zero, so a
                          non-zero count means a colleague attested one of these between the
@@ -885,20 +974,25 @@
                             @click="bulkModalOpen = false">
                             {{ bulkStage === 'done' ? 'Close' : 'Cancel' }}
                         </n-button>
-                        <n-button v-if="bulkStage === 'compose'" size="small" type="primary"
-                            :disabled="bulkErrors.length > 0 || bulk.collecting.value"
+                        <n-button v-if="bulkStage === 'compose' && bulkTab === 'support'" size="small" type="primary"
+                            :disabled="bulkErrors.length > 0 || bulk.collecting.value || !canWriteOrg"
                             :loading="bulk.collecting.value"
                             @click="collectBulkTargets">Review selection</n-button>
                         <n-button v-if="bulkStage === 'confirm' && !bulk.submitting.value"
                             size="small" @click="bulkBackToCompose">Back</n-button>
                         <n-button v-if="bulkStage === 'confirm'" size="small" type="error"
-                            :disabled="bulk.submitting.value || !bulkCollected.ids.length
-                                || bulkErrors.length > 0"
+                            :disabled="bulk.submitting.value || bulkErrors.length > 0
+                                || (bulkSelector.form === 'EXPLICIT' ? !bulkCollected.ids.length
+                                    : (!bulkSelectorCount || bulkSelectorCount.overCap || !bulkSelectorCount.matched))"
                             :loading="bulk.submitting.value"
+                            data-testid="bulk-confirm"
                             @click="runBulkAttest">
-                            Attest {{ bulkCollected.ids.length }} components
+                            <template v-if="bulkSelector.form === 'EXPLICIT'">
+                                Attest {{ bulkCollected.ids.length }} components</template>
+                            <template v-else>Apply to {{ bulkSelectorCount?.matched ?? 0 }} components</template>
                         </n-button>
-                        <n-button v-if="bulkStage === 'confirm' && bulk.submitting.value"
+                        <n-button v-if="bulkStage === 'confirm' && bulk.submitting.value
+                                && bulkSelector.form === 'EXPLICIT'"
                             size="small" @click="bulk.requestCancel()">Stop after this batch</n-button>
                     </n-space>
                 </template>
@@ -941,7 +1035,29 @@
                          component-level box was a lie about the storage model -- a
                          notes-only edit went nowhere, and notes saved with one date landed
                          on that milestone alone. -->
-                    <n-form-item v-for="m in MILESTONE_FIELDS" :key="m.type" :label="m.label">
+                    <!-- End of support is a date OR a justified unknown (FDAW-14 3.9). -->
+                    <n-form-item label="End of support is">
+                        <n-radio-group v-model:value="attestForm.form.endOfSupportMode" size="small"
+                            data-testid="attest-eos-mode">
+                            <n-radio value="DATE" label="Date" />
+                            <n-radio value="UNKNOWN" label="Justified unknown" />
+                        </n-radio-group>
+                    </n-form-item>
+                    <template v-if="attestForm.form.endOfSupportMode === 'UNKNOWN'">
+                        <n-alert v-if="attestForm.replacesDate()" type="warning" :show-icon="true"
+                            style="margin-bottom: 12px;" data-testid="attest-replace-date">
+                            Replace the date {{ attestForm.form.endOfSupportDate }} with a justified unknown
+                        </n-alert>
+                        <n-form-item label="Why the end-of-support date cannot be given">
+                            <n-select v-model:value="attestForm.form.endOfSupportUnknownCode"
+                                :options="END_OF_SUPPORT_UNKNOWN_OPTIONS" placeholder="Choose a reason" />
+                        </n-form-item>
+                        <n-form-item label="Explanation (required for Other; stays in ReARM)">
+                            <n-input v-model:value="attestForm.form.endOfSupportUnknownText" type="textarea" :rows="2" />
+                        </n-form-item>
+                    </template>
+                    <n-form-item v-for="m in MILESTONE_FIELDS.filter(x => x.type !== 'END_OF_SUPPORT'
+                            || attestForm.form.endOfSupportMode !== 'UNKNOWN')" :key="m.type" :label="m.label">
                         <n-space vertical style="width: 100%;">
                             <n-date-picker
                                 v-model:formatted-value="attestForm.form[m.field]"
@@ -970,6 +1086,8 @@
 
                     <n-form-item v-if="attestForm.isUnRetract()
                         || attestForm.form.clearJustification
+                        || attestForm.form.clearEndOfSupportUnknown
+                        || attestForm.replacesDate()
                         || attestForm.form.clearMilestones.length"
                         label="Reason for this edit (audit only, never exported)">
                         <n-input v-model:value="attestForm.form.reason"
@@ -1014,6 +1132,10 @@
                         </div>
                         <n-checkbox v-model:checked="attestForm.form.clearJustification">
                             Clear the justification
+                        </n-checkbox>
+                        <n-checkbox v-model:checked="attestForm.form.clearEndOfSupportUnknown"
+                            data-testid="attest-clear-unknown" style="margin-left: 12px;">
+                            Clear the justified unknown
                         </n-checkbox>
                         <n-form-item label="Clear dates" style="margin-top: 8px;">
                             <n-select v-model:value="attestForm.form.clearMilestones"
@@ -1625,9 +1747,24 @@
                                 v-if="sbomViewMode === 'list' && isWritable
                                     && sbomAppliedFilter === 'UNATTESTED'"
                                 size="small" type="primary" ghost
+                                :disabled="!canWriteOrg"
+                                :title="canWriteOrg ? '' : ATTEST_ALL_ORG_WRITE_SENTENCE"
                                 @click="openBulkAttest">
                                 Attest all shown
                             </n-button>
+                            <!-- Under isWritable, not canWriteOrg: its Missing hashes half is
+                                 COMPONENT WRITE (F-32). The support half gates itself. -->
+                            <n-button
+                                v-if="sbomViewMode === 'list' && isWritable"
+                                size="small" ghost data-testid="bulk-assessment"
+                                @click="openBulkAttest">
+                                Bulk assessment
+                            </n-button>
+                            <div v-if="sbomViewMode === 'list' && isWritable && sbomAppliedFilter === 'UNATTESTED'
+                                    && !canWriteOrg"
+                                data-testid="attest-all-org-write" style="flex-basis: 100%; font-size: 12px;">
+                                {{ ATTEST_ALL_ORG_WRITE_SENTENCE }}
+                            </div>
                             <n-radio-group v-model:value="sbomViewMode" size="small" @update:value="handleSbomViewModeChange">
                                 <n-radio-button value="list" label="List" />
                                 <n-radio-button value="tree" label="Tree" />
@@ -2388,6 +2525,12 @@ import submissionQueries from '@/utils/submissionQueries'
 import { coverageDisplay } from '@/utils/supportCoverageDisplay'
 import type { CoverageDisplay } from '@/utils/supportCoverageDisplay'
 import { useBulkAttest, validateBulkInput, emptyBulkForm, groupNotWritten } from '@/utils/useBulkAttest'
+import { hasOrgWrite, orgWriteSentence } from '@/utils/orgWrite'
+import { SELECTOR_FORM_OPTIONS, SELECTOR_SCOPE_OPTIONS, SELECTOR_OVER_CAP_TEXT, emptySelectorChoice, fetchSelectorCount,
+    isSelectorForm, selectorCountText, selectorLabel, submitBySelector, validateSelector } from '@/utils/bulkSelectorForm'
+import type { BulkSelectorChoice, SelectorCount } from '@/utils/bulkSelectorForm'
+import { END_OF_SUPPORT_CODES, justifiedUnknownLabel, justifiedUnknownOptions } from '@/utils/justifiedUnknownLabels'
+import MissingHashesPanel from '@/components/MissingHashesPanel.vue'
 import type { BulkAttestInput, BulkCollectResult, BulkOutcome, NotWrittenGroup } from '@/utils/useBulkAttest'
 import { useAttestationForm } from '@/utils/useAttestationForm'
 import type { LevelOfSupport, SupportMilestoneType, SupportParty } from '@/utils/supportAttestationInput'
@@ -4785,6 +4928,14 @@ const isWritable : ComputedRef<boolean> = computed((): boolean => {
     return componentPermission?.type === 'READ_WRITE'
 })
 
+// Organization write (FDAW-14 3.9): the right a bulk support sweep needs. A product-scoped
+// writer is isWritable but not this; the controls are rendered disabled with the sentence and
+// the server's refusal stays the authority.
+const canWriteOrg: ComputedRef<boolean> = computed((): boolean =>
+    hasOrgWrite(Object.values(myUser?.permissions?.permissions || {}), release.value?.orgDetails?.uuid))
+const ATTEST_ALL_ORG_WRITE_SENTENCE = orgWriteSentence('Attest all shown')
+const BULK_ASSESSMENT_ORG_WRITE_SENTENCE = orgWriteSentence('A bulk support assessment')
+
 const canUpdateLifecycle: ComputedRef<boolean> = computed((): boolean => {
     const orguuid = updatedRelease.value.orgDetails?.uuid
     if (!orguuid) return false
@@ -5040,6 +5191,15 @@ const bulkResult: Ref<BulkOutcome | null> = ref(null)
 const bulkAppliedLabel: ComputedRef<string> = computed(
     (): string => filterLabel(bulkCollected.value.filter))
 const bulkAssessedAt: Ref<string> = ref('')
+/** Shown components (the walk), By ecosystem or By namespace, and the release scope (FDAW-14 3.9). */
+const bulkSelector: BulkSelectorChoice = reactive(emptySelectorChoice())
+const bulkSelectorCount: Ref<SelectorCount | null> = ref(null)
+const bulkTab: Ref<'support' | 'hashes'> = ref('support')
+const bulkSelectorCountLine: ComputedRef<string> = computed((): string => bulkSelectorCount.value
+    ? (bulkSelectorCount.value.overCap ? SELECTOR_OVER_CAP_TEXT
+        : selectorCountText(bulkSelectorCount.value.matched, bulkSelector.scope))
+    : '')
+const END_OF_SUPPORT_UNKNOWN_OPTIONS = justifiedUnknownOptions(END_OF_SUPPORT_CODES)
 
 /** Failures grouped by message: 800 identical validation errors are one line, not 800. */
 const bulkFailureGroups: ComputedRef<Record<string, number>> = computed(() => {
@@ -5072,7 +5232,7 @@ function partyLabel (value: SupportParty | null): string {
 }
 
 const bulkErrors: ComputedRef<string[]> = computed(
-    (): string[] => validateBulkInput(bulkForm))
+    (): string[] => [...validateSelector(bulkSelector), ...validateBulkInput(bulkForm)])
 
 function bulkBackToCompose () { bulkStage.value = 'compose' }
 
@@ -5094,6 +5254,9 @@ function openBulkAttest () {
     bulkResult.value = null
     bulkCollected.value = emptyBulkSelection()
     if (!resuming) Object.assign(bulkForm, emptyBulkForm())
+    if (!resuming) Object.assign(bulkSelector, emptySelectorChoice())
+    bulkSelectorCount.value = null
+    bulkTab.value = 'support'
     bulkModalOpen.value = true
 }
 
@@ -5115,6 +5278,23 @@ async function collectBulkTargets () {
     // screen renders the CURRENT filter beside them. A confirmation describing a different
     // set than it will write is the one failure this stage exists to prevent.
     const gen = ++bulkGen
+    // The selector forms do not walk: the confirm stage shows the server's count for the same
+    // selector and scope the write will send, and over the cap the confirm is disabled.
+    if (isSelectorForm(bulkSelector)) {
+        bulk.error.value = null
+        bulkSelectorCount.value = null
+        try {
+            const count = await fetchSelectorCount(graphqlClient as any, updatedRelease.value.orgDetails.uuid,
+                bulkSelector, updatedRelease.value.uuid)
+            if (gen !== bulkGen) return
+            bulkSelectorCount.value = count
+            bulkCollected.value = emptyBulkSelection()
+            bulkStage.value = 'confirm'
+        } catch (err: any) {
+            if (gen === bulkGen) bulk.error.value = commonFunctions.parseGraphQLError(err?.message || String(err))
+        }
+        return
+    }
     const res = await bulk.collect(graphqlClient as any, updatedRelease.value.uuid,
         sbomAppliedFilter.value, sbomAppliedSearch.value)
     if (gen !== bulkGen) return
@@ -5138,8 +5318,21 @@ async function runBulkAttest () {
     // One instant for the whole sweep, captured HERE -- at the moment the operator confirms,
     // not per write. The sweep is one act of assessment.
     bulkAssessedAt.value = new Date().toISOString().replace(/\.\d{3}Z$/, 'Z')
-    bulkResult.value = await bulk.submit(graphqlClient as any, bulkCollected.value.ids,
-        { ...bulkForm, assessedAt: bulkAssessedAt.value }, bulkCollected.value.filter)
+    // The same assessedAt with every form, the selector forms included (r3, F-7).
+    if (isSelectorForm(bulkSelector)) {
+        if (bulkSelectorCount.value?.overCap || bulk.submitting.value) return
+        // The composable's flag, so the modal locks and a second click cannot send a second sweep.
+        bulk.submitting.value = true
+        try {
+            bulkResult.value = await submitBySelector(graphqlClient as any, updatedRelease.value.orgDetails.uuid,
+                bulkSelector, updatedRelease.value.uuid, { ...bulkForm, assessedAt: bulkAssessedAt.value })
+        } finally {
+            bulk.submitting.value = false
+        }
+    } else {
+        bulkResult.value = await bulk.submit(graphqlClient as any, bulkCollected.value.ids,
+            { ...bulkForm, assessedAt: bulkAssessedAt.value }, bulkCollected.value.filter)
+    }
     bulkStage.value = 'done'
     // The gauge and the list both moved. Reported separately from the write, same as the
     // per-component path below: a stale list after 800 successful attestations is not a
@@ -5486,6 +5679,13 @@ const sbomComponentsTableFields: DataTableColumns<any> = [
             const els: any[] = [h(NTag, { size: 'small', type: tag.type, round: true }, () => tag.label)]
             if (c.endOfSupportDate && !withdrawn) {
                 els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;' }, `EOS ${c.endOfSupportDate}`))
+            } else if (c.endOfSupportUnknown && !withdrawn) {
+                // The justified unknown of FDAW-14 3.9: the label, and a bulk tag when a sweep wrote it.
+                els.push(h('span', { style: 'margin-left: 6px; font-size: 11px; color: #999;',
+                    'data-testid': 'eos-unknown' }, `not available (${justifiedUnknownLabel(c.endOfSupportUnknown.code)})`))
+                if (c.endOfSupportUnknown.bulkAct) {
+                    els.push(h(NTag, { size: 'tiny', style: 'margin-left: 4px;' }, () => 'bulk'))
+                }
             }
             // The device check is a second, independent verdict -- see DEVICE_RISK_LABEL. The
             // backend only ever returns a flagged value on a PRODUCT (device) release, so this
