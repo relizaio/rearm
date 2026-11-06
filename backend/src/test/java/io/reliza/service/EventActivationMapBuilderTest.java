@@ -26,9 +26,14 @@ import io.reliza.model.dto.notifications.InstanceRef;
 import io.reliza.model.dto.UpdateStatus;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.NewVulnAffectsReleasesPayload;
+import io.reliza.model.dto.notifications.ReleaseRef;
+import io.reliza.model.dto.notifications.ReleaseSubmissionPayload;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
+import io.reliza.model.PackageKind;
+import io.reliza.model.SubmissionActOutcome;
+import io.reliza.model.SubmissionState;
 import io.reliza.model.dto.notifications.VexStateChangedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload;
 import io.reliza.model.dto.notifications.VulnerabilityRecordUpdatedPayload.ChangeType;
@@ -221,6 +226,51 @@ class EventActivationMapBuilderTest {
         assertEquals("PRODUCT", items.get(0).get("componentType"));
         assertEquals("CONVERGED", items.get(0).get("status"));
         assertEquals("26.02.4.14", items.get(0).get("version"));
+    }
+
+    /**
+     * FDAW-8 (FDAW-1 F-1 item 2): the CEL values of a submission event after the state rename,
+     * which the release note declares: FINAL replaces ACTIVE, CANCELLED replaces WITHDRAWN.
+     */
+    @Test
+    void releaseSubmissionCreatedExposesTheFinalStateAndTheAct() {
+        UUID releaseUuid = UUID.randomUUID();
+        UUID submission = UUID.randomUUID();
+        ReleaseSubmissionPayload payload = new ReleaseSubmissionPayload(submissionRelease(releaseUuid), submission,
+                PackageKind.FDA_PREMARKET, SubmissionState.FINAL, 1, SubmissionActOutcome.CREATED);
+
+        Map<String, Object> event = castEvent(builder.buildForEvent(
+                eventOf(NotificationEventType.RELEASE_SUBMISSION_CREATED, payload)));
+
+        assertEquals("RELEASE_SUBMISSION_CREATED", event.get("type"));
+        assertEquals("FINAL", event.get("submissionState"));
+        assertEquals("CREATED", event.get("submissionAct"));
+        assertEquals("FDA_PREMARKET", event.get("submissionKind"));
+        assertEquals(1, event.get("submissionVersion"));
+        assertEquals(submission.toString(), event.get("submission"));
+        assertEquals(releaseUuid.toString(), event.get("releaseUuid"));
+    }
+
+    @Test
+    void releaseSubmissionWithdrawnExposesTheCancelledStateAndTheCancelledAct() {
+        UUID releaseUuid = UUID.randomUUID();
+        ReleaseSubmissionPayload payload = new ReleaseSubmissionPayload(submissionRelease(releaseUuid),
+                UUID.randomUUID(), PackageKind.FDA_PREMARKET, SubmissionState.CANCELLED, 2,
+                SubmissionActOutcome.CANCELLED);
+
+        Map<String, Object> event = castEvent(builder.buildForEvent(
+                eventOf(NotificationEventType.RELEASE_SUBMISSION_WITHDRAWN, payload)));
+
+        assertEquals("RELEASE_SUBMISSION_WITHDRAWN", event.get("type"));
+        assertEquals("CANCELLED", event.get("submissionState"));
+        assertEquals("CANCELLED", event.get("submissionAct"));
+        assertEquals(2, event.get("submissionVersion"));
+        assertEquals(releaseUuid.toString(), event.get("releaseUuid"));
+    }
+
+    private static ReleaseRef submissionRelease(UUID releaseUuid) {
+        return new ReleaseRef(releaseUuid, "1.4.2", UUID.randomUUID(), "widget", ComponentType.PRODUCT,
+                UUID.randomUUID(), "main", ReleaseLifecycle.ASSEMBLED, null, null, null, null, null);
     }
 
     private NotificationOutboxEvent eventOf(NotificationEventType type, Object payload) {

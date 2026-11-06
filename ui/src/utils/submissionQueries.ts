@@ -47,6 +47,10 @@ const SUBMISSION_HEAD_GQL = `
     withdrawnDate
     withdrawnBy
     withdrawReason
+    legacyState
+    currentSentVersion
+    versionStates { version state byVersion }
+    acts { uuid kind cause version actedAt actorName reasonText }
     settings { ${SUBMISSION_REF_GQL} }
 `
 

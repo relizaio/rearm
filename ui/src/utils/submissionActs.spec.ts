@@ -13,7 +13,7 @@ const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
 const operation = (opts: any) => (opts.query ?? opts.mutation)?.definitions?.[0]?.name?.value
 const NAMES = { componentName: '<img src=x onerror=alert(1)>', releaseVersion: '1.2.0' }
-const HEAD = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2 }
+const HEAD = { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2 }
 const PREVIEW = { canSubmit: true, refusal: null, message: null, nextVersion: 1, head: null,
     settings: { row: null, revision: 0, source: 'DEFAULT' }, sbomProfile: { name: 'default', row: null, revision: 0, source: 'DEFAULT' },
     plan: [{ part: 'AGGREGATE_SBOM', requirement: 'REQUIRED', selection: 'INCLUDE', generatorPresent: true }] }
@@ -22,7 +22,7 @@ const NULL_TEXT = "The field at path '/resubmitSubmission' was declared as a non
     + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
     + "non-nullable type is 'SubmissionActResult' within parent type 'Mutation'"
 const TITLES = ['Error!', 'Cannot create this submission', 'Cannot resubmit this submission', 'Create submission?', 'Resubmit?',
-    'Withdraw submission?', 'Submission']
+    'Cancel submission?', 'Submission']
 
 let preview: any = PREVIEW
 const query = vi.fn(async (opts: any) => {
@@ -54,7 +54,7 @@ describe('useSubmissionActs', () => {
         mutate.mockResolvedValue({ data: {
             createSubmission: { outcome: 'CREATED', version: { version: 1 } },
             resubmitSubmission: { outcome: 'RESUBMITTED', version: { version: 3 } },
-            withdrawSubmission: { outcome: 'WITHDRAWN', version: null },
+            withdrawSubmission: { outcome: 'CANCELLED', version: null },
         } })
     })
 
@@ -125,12 +125,14 @@ describe('useSubmissionActs', () => {
         everyCallIsOneObject()
     })
 
-    it('withdraw shows the warning confirm with a required reason and sends no preview', async () => {
+    it('withdraw shows the cancel confirm with a required reason and sends no preview', async () => {
         fire.mockResolvedValueOnce({ isConfirmed: true, value: 'superseded' })
         await acts().withdraw(HEAD, NAMES)
         expect(query).not.toHaveBeenCalled()
         const confirm = fire.mock.calls[0][0]
-        expect(confirm.title).toBe('Withdraw submission?')
+        expect(confirm.title).toBe('Cancel submission?')
+        expect(confirm.confirmButtonText).toBe('Cancel submission')
+        expect(fire.mock.calls[1][0].text).toBe('Cancelled.')
         expect(confirm.icon).toBe('warning')
         expect(confirm.inputValidator(' ')).toBe('A reason is required')
         expect(operation(mutate.mock.calls[0][0])).toBe('WithdrawSubmission')
@@ -138,7 +140,7 @@ describe('useSubmissionActs', () => {
         mutate.mockResolvedValueOnce({ data: { withdrawSubmission: { outcome: 'UNCHANGED', version: null } } })
         fire.mockResolvedValueOnce({ isConfirmed: true, value: 'again' })
         await acts().withdraw(HEAD, NAMES)
-        expect(fire.mock.calls.at(-1)![0].text).toBe('Already withdrawn.')
+        expect(fire.mock.calls.at(-1)![0].text).toBe('Already cancelled.')
         everyCallIsOneObject()
     })
 

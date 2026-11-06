@@ -8,7 +8,8 @@ vi.mock('./fetchClient', () => ({ fetchWithAuth: vi.fn(), fetchArrayBufferWithAu
 const {
     canCreateSubmission, manifestDownloadRef, manifestFileName, submissionActErrorText, submissionCreateConfirm,
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
-    submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm,
+    submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
+    submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
 } = await import('./submissions')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
@@ -20,8 +21,8 @@ const releases = [
     { uuid: 'r2', version: '1.1.0', lifecycle: 'DRAFT', createdDate: '2026-10-05T00:00:00Z' },
 ]
 const heads = [
-    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2 },
-    { uuid: 's9', release: 'r-other', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 1,
+    { uuid: 's1', release: 'r1', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2 },
+    { uuid: 's9', release: 'r-other', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 1,
         lastActDate: '2026-09-01T00:00:00Z' },
 ]
 
@@ -37,7 +38,7 @@ describe('the product page rows (row 30)', () => {
 
     it('lists heads of releases outside the list with their releaseVersion', () => {
         expect(submissionOtherRows(releases, heads)).toEqual([{ uuid: 's9', release: 'r-other', releaseVersion: '0.9.0',
-            kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 1, lastActDate: '2026-09-01T00:00:00Z' }])
+            kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 1, lastActDate: '2026-09-01T00:00:00Z' }])
     })
 
     it('allows a create at ASSEMBLED and above only', () => {
@@ -118,10 +119,10 @@ describe('the confirmations and the act error text (row 31)', () => {
         expect(r.text).toContain('<b>x</b> 1.2.0')
         expect(r.text).toContain('A resubmission always writes a new version, equal content or not.')
         const w = submissionWithdrawConfirm({ kind: 'FDA_PREMARKET', latestVersion: 2 }, names)
-        expect(w.title).toBe('Withdraw submission?')
-        expect(w.confirmButtonText).toBe('Withdraw')
-        expect(w.text).toContain('<b>x</b> 1.2.0 at v2')
-        expect(w.text).toContain('Every version and document is kept; the submission is marked withdrawn and can be resubmitted later.')
+        expect(w.title).toBe('Cancel submission?')
+        expect(w.confirmButtonText).toBe('Cancel submission')
+        expect(w.text).toContain('Cancels the FDA premarket submission of <b>x</b> 1.2.0 at v2.')
+        expect(w.text).toContain('Every version and document is kept; the version is marked cancelled and a resubmission writes a new version.')
         for (const t of [c.title, r.title, w.title]) expect(t).not.toContain('<b>')
     })
 
@@ -152,7 +153,50 @@ describe('the History text (row 35)', () => {
             .toBe('Submission FDA_PREMARKET v1 -> FDA_PREMARKET v2')
         expect(submissionHistoryText({ oldValue: 'WITHDRAWN', newValue: 'ACTIVE v3' })).toBe('Submission WITHDRAWN -> ACTIVE v3')
         expect(submissionHistoryText({ oldValue: 'ACTIVE v2', newValue: 'WITHDRAWN' })).toBe('Submission ACTIVE v2 -> WITHDRAWN')
+        // FDAW-8: the shapes written since FINAL and CANCELLED; the rows above stay in older release histories
+        expect(submissionHistoryText({ oldValue: 'CANCELLED', newValue: 'FINAL v3' })).toBe('Submission CANCELLED -> FINAL v3')
+        expect(submissionHistoryText({ oldValue: 'FINAL v2', newValue: 'CANCELLED' })).toBe('Submission FINAL v2 -> CANCELLED')
         expect(submissionHistoryText({ oldValue: null, newValue: null, objectId: 'x' })).toBe('x')
         expect(submissionHistoryText({ oldValue: '', newValue: 'FDA_PREMARKET v1' })).toBe('Submission FDA_PREMARKET v1')
+    })
+})
+
+describe('the head state texts (FDAW-8)', () => {
+    it('labels the six states and the CANCELLED outcome', () => {
+        expect(SUBMISSION_STATE_LABELS).toEqual({ FINAL: 'Final', SENT: 'Sent', AMENDED: 'Amended', SUPERSEDED: 'Superseded',
+            WITHDRAWN: 'Withdrawn', CANCELLED: 'Cancelled' })
+        expect(SUBMISSION_ACT_LABELS.CANCELLED).toBe('Cancelled')
+    })
+
+    it('reads FINAL without a confirmation record, a migrated head as legacy, and any other state as its label', () => {
+        expect(submissionStateText({ state: 'FINAL', legacyState: null })).toBe('Final (no confirmation record) - not sent')
+        expect(submissionStateText({ state: 'FINAL', legacyState: 'ACTIVE' })).toBe('Final (legacy, no confirmation record) - not sent')
+        const d = '2026-09-03T00:00:00Z'
+        expect(submissionStateText({ state: 'CANCELLED', legacyState: 'WITHDRAWN', withdrawnDate: d }))
+            .toBe('Cancelled (legacy: withdrawn ' + submissionDateText(d) + ')')
+        expect(submissionStateText({ state: 'CANCELLED', legacyState: null })).toBe('Cancelled')
+        expect(submissionStateText({ state: 'SUPERSEDED' })).toBe('Superseded')
+        expect(submissionStateText({ state: 'SOMETHING_NEW' })).toBe('SOMETHING_NEW')
+    })
+
+    it('colours FINAL and SENT green, CANCELLED and WITHDRAWN amber, the rest plain', () => {
+        for (const s of ['FINAL', 'SENT']) expect(submissionStateTagType(s), s).toBe('success')
+        for (const s of ['CANCELLED', 'WITHDRAWN']) expect(submissionStateTagType(s), s).toBe('warning')
+        for (const s of ['AMENDED', 'SUPERSEDED', null]) expect(submissionStateTagType(s as any), String(s)).toBe('default')
+    })
+
+    it('notes a cancelled head from its newest CANCEL act, a legacy one from the triple, and nothing otherwise', () => {
+        const acts = [
+            { kind: 'CANCEL', actedAt: '2026-10-01T00:00:00Z', actorName: 'Ann', reasonText: 'older' },
+            { kind: 'FINALIZE', actedAt: '2026-10-02T00:00:00Z', actorName: 'Ann', reasonText: 'again' },
+            { kind: 'CANCEL', actedAt: '2026-10-03T00:00:00Z', actorName: 'Bob', reasonText: 'newest' },
+        ]
+        expect(submissionCancelNote({ state: 'CANCELLED', acts })).toEqual({
+            lead: 'Cancelled on ' + submissionDateText('2026-10-03T00:00:00Z') + ' by Bob:', reason: 'newest' })
+        expect(submissionCancelNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
+            withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'old' }))
+            .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
+        expect(submissionCancelNote({ state: 'FINAL', acts })).toBeNull()
+        expect(submissionCancelNote({ state: 'CANCELLED', acts: [] })).toBeNull()
     })
 })

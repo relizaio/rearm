@@ -5,6 +5,8 @@
 package io.reliza.model;
 
 import java.time.ZonedDateTime;
+import java.util.ArrayList;
+import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 
@@ -19,8 +21,10 @@ import lombok.EqualsAndHashCode;
 
 /**
  * The head of a regulatory submission (task TEA-35): one per release and package kind, mutable by
- * design (state, latest version, last act, withdrawal), audited on every update. Its versions are
- * immutable rows of their own ({@link SubmissionVersionData}). {@code createdDate} is the first act's.
+ * design (state, latest version, last act), audited on every update. Its versions are immutable rows
+ * of their own ({@link SubmissionVersionData}); the append-only act record ({@link SubmissionActData})
+ * is the record of who did what, and the head is its view (FDAW-1 D2): {@code versionStates} holds
+ * each version's state and {@code state} the latest version's. {@code createdDate} is the first act's.
  */
 @Data
 @EqualsAndHashCode(callSuper = true)
@@ -40,8 +44,21 @@ public class SubmissionData extends RelizaDataParent implements RelizaObject {
 	private ComponentType componentType;
 	@JsonProperty
 	private PackageKind kind;
+	/** The latest version's state (the column). */
 	@JsonProperty
 	private SubmissionState state;
+	/** The state the head held before V107 migrated it; null on a head created since (FDAW-1 D6). */
+	@JsonProperty
+	private SubmissionLegacyState legacyState;
+	/**
+	 * Each version's state, in version order, as the acts left it; null on a head V107 migrated and
+	 * no act has saved since ({@link #versionStatesOrDerived()} answers it then).
+	 */
+	@JsonProperty
+	private List<VersionState> versionStates;
+	/** The version recorded as sent to the agency; null while none is (no act writes SENT yet). */
+	@JsonProperty
+	private Integer currentSentVersion;
 	/** 0 before the first version. */
 	@JsonProperty
 	private int latestVersion;
@@ -53,11 +70,13 @@ public class SubmissionData extends RelizaDataParent implements RelizaObject {
 	private UUID lastActBy;
 	@JsonProperty
 	private SubmissionActOutcome lastActKind;
-	/** Set by a withdrawal, cleared by a resubmission that re-activates the head. */
+	/** Read-only since FDAW-8; written by no act (the withdrawal of a head from before V107). */
 	@JsonProperty
 	private ZonedDateTime withdrawnDate;
+	/** Read-only since FDAW-8; written by no act. */
 	@JsonProperty
 	private UUID withdrawnBy;
+	/** Read-only since FDAW-8; written by no act. */
 	@JsonProperty
 	private String withdrawReason;
 	/** The settings applied at the latest version. */
@@ -68,8 +87,29 @@ public class SubmissionData extends RelizaDataParent implements RelizaObject {
 	@JsonIgnore
 	private int revision;
 
+	/**
+	 * One version's state. {@code byVersion} is the version that superseded or amended this one, null
+	 * otherwise.
+	 */
+	public record VersionState(int version, SubmissionState state, Integer byVersion) {}
+
 	public Map<String, Object> toRecordData() {
 		return Utils.dataToRecord(this);
+	}
+
+	/**
+	 * The stored {@code versionStates}, or, on a migrated head that no act has saved since (null list,
+	 * FDAW-1 D6 item 5), the view the migration implies: every earlier version SUPERSEDED by the
+	 * latest, the latest in the head's state. A new list each call; empty before the first version.
+	 */
+	public List<VersionState> versionStatesOrDerived() {
+		if (null != versionStates) return new ArrayList<>(versionStates);
+		List<VersionState> derived = new ArrayList<>();
+		for (int v = 1; v < latestVersion; v++) {
+			derived.add(new VersionState(v, SubmissionState.SUPERSEDED, latestVersion));
+		}
+		if (latestVersion > 0) derived.add(new VersionState(latestVersion, state, null));
+		return derived;
 	}
 
 	/**

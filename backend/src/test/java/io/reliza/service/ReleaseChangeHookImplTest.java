@@ -495,7 +495,7 @@ class ReleaseChangeHookImplTest {
         UUID submission = UUID.randomUUID();
 
         hook.onReleaseSubmissionCreated(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
-                SubmissionState.ACTIVE, 2, SubmissionActOutcome.RESUBMITTED));
+                SubmissionState.FINAL, 2, SubmissionActOutcome.RESUBMITTED));
 
         NotificationOutboxEvent saved = captureSaved();
         assertEquals(NotificationEventType.RELEASE_SUBMISSION_CREATED, saved.getEventType());
@@ -506,7 +506,7 @@ class ReleaseChangeHookImplTest {
                 data.keySet(), "the payload's six fields and the stamped affected releases, and no other key");
         assertEquals(submission.toString(), String.valueOf(data.get("submission")));
         assertEquals("FDA_PREMARKET", data.get("kind"));
-        assertEquals("ACTIVE", data.get("state"));
+        assertEquals("FINAL", data.get("state"));
         assertEquals(2, ((Number) data.get("version")).intValue());
         assertEquals("RESUBMITTED", data.get("act"));
         assertEquals("myapp", release(saved).get("componentName"));
@@ -523,9 +523,9 @@ class ReleaseChangeHookImplTest {
         UUID submission = UUID.randomUUID();
 
         hook.onReleaseSubmissionWithdrawn(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
-                SubmissionState.WITHDRAWN, 2, SubmissionActOutcome.WITHDRAWN));
+                SubmissionState.CANCELLED, 2, SubmissionActOutcome.CANCELLED));
         hook.onReleaseSubmissionWithdrawn(rd, new SubmissionNotice(submission, PackageKind.FDA_PREMARKET,
-                SubmissionState.WITHDRAWN, 3, SubmissionActOutcome.WITHDRAWN));
+                SubmissionState.CANCELLED, 3, SubmissionActOutcome.CANCELLED));
 
         ArgumentCaptor<NotificationOutboxEvent> captor = ArgumentCaptor.forClass(NotificationOutboxEvent.class);
         verify(outboxRepo, times(2)).save(captor.capture());
@@ -533,7 +533,7 @@ class ReleaseChangeHookImplTest {
         assertEquals(NotificationEventType.RELEASE_SUBMISSION_WITHDRAWN, rows.get(0).getEventType());
         assertEquals("submission-withdrawn:" + submission + ":2", rows.get(0).getDedupKey());
         assertEquals("submission-withdrawn:" + submission + ":3", rows.get(1).getDedupKey());
-        assertEquals("WITHDRAWN", rows.get(0).getRecordData().get("act"));
+        assertEquals("CANCELLED", rows.get(0).getRecordData().get("act"));
     }
 
     private void stubComponent(ComponentType type) {
