@@ -49,6 +49,11 @@
             <AppenderRef ref="AsyncConsole"/>
         </Logger>
 
+        <!-- Flyway: migration progress and the server's messages (DB: ...) -->
+        <Logger name="org.flywaydb" level="info" additivity="false">
+            <AppenderRef ref="AsyncConsole"/>
+        </Logger>
+
         <!-- Root Logger -->
         <Root level="info">
             <AppenderRef ref="AsyncConsole"/>

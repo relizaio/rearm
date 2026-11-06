@@ -81,6 +81,16 @@ spring:
       # Surface long-held connections (e.g. the advisory-lock scheduled
       # jobs) in the logs without aborting them.
       leak-detection-threshold: ${DB_LEAK_DETECTION_MS:60000}
+  flyway:
+    # Run on every connection Flyway opens. RAISE NOTICE lines of a data migration
+    # (counts, row uuids) reach the client only when the session's client_min_messages
+    # admits them; a role or database default above NOTICE silently drops them
+    # (FDAW-47: V107's counts were missing from the 2026-11-06 deploy log). The server
+    # default is NOTICE, so this is a no-op where nothing raised it. Flyway logs each
+    # as "DB: <text>" and io.reliza.common.MigrationNoticeLogger as
+    # "migration V<n> notice: <text>".
+    init-sqls:
+      - SET client_min_messages TO NOTICE
   jpa:
 #    show-sql: true
     hibernate:
