@@ -3,6 +3,7 @@
 */
 package io.reliza.service;
 
+import java.time.LocalDate;
 import java.time.ZoneOffset;
 import java.time.ZonedDateTime;
 import java.time.format.DateTimeFormatter;
@@ -607,208 +608,255 @@ public class ComponentService {
 	 */
 	@Transactional
 	public Component updateComponent (ComponentDto cdto, WhoUpdated wu) throws RelizaException {
-		Component comp = null;
 		Optional<Component> op = lockAndRefresh(cdto.getUuid());
-		if (op.isPresent()) {
-			comp = op.get();
-			// TPF-61: a save prepared from an older read is refused and nothing is written. Compared with the row
-			// lockAndRefresh just locked and refreshed: only there is the stored revision the committed one.
-			assertExpectedRevision(comp, cdto.getExpectedRevision());
-			ComponentData cd = ComponentData.dataFromRecord(comp);
-			if (StringUtils.isNotEmpty(cdto.getName())) {
-				String previousName = cd.getName();
-				if (!cdto.getName().equals(previousName)) {
-					// Auto-record the rename so the component's CLE history
-					// surfaces a componentRenamed event at the TEA layer. Done
-					// here (not in saveComponent) so non-rename updates don't
-					// pollute the audit list. Idempotent — equal-string updates
-					// are skipped above.
-					cd.addUpdateEvent(new ComponentData.ComponentUpdateEvent(
-							ComponentData.ComponentUpdateScope.NAME,
-							ComponentData.ComponentUpdateAction.CHANGED,
-							previousName,
-							cdto.getName(),
-							java.time.ZonedDateTime.now(),
-							wu));
-				}
-				cd.setName(cdto.getName());
+		return op.isPresent() ? applyUpdateToLockedRow(op.get(), cdto, wu) : null;
+	}
+
+	/** What {@link #updateDeviceAnswersIfChanged} did: the component row, and whether it was written. */
+	public record DeviceAnswersWrite(Component component, boolean written) {}
+
+	/**
+	 * The device answers of the Medical device setup save (FDAW-18, 3.4): {@code cdto} carries the uuid and
+	 * only {@code deviceClass}, {@code medicalProfile}, {@code deviceSupportWindow} /
+	 * {@code clearDeviceSupportWindow} and {@code expectedRevision}. Compared with the row after taking its
+	 * lock (F-11): when every device field already equals the request nothing is written, no revision is
+	 * checked or bumped and the row is answered as stored; otherwise the rest of {@link #updateComponent}'s
+	 * body runs, the same method, so merge, clear, retraction and warning semantics are identical.
+	 */
+	@Transactional
+	public DeviceAnswersWrite updateDeviceAnswersIfChanged (ComponentDto cdto, WhoUpdated wu) throws RelizaException {
+		Component locked = lockAndRefresh(cdto.getUuid())
+				.orElseThrow(() -> new RelizaException("Component not found"));
+		if (!deviceAnswersDiffer(ComponentData.dataFromRecord(locked), cdto)) return new DeviceAnswersWrite(locked, false);
+		return new DeviceAnswersWrite(applyUpdateToLockedRow(locked, cdto, wu), true);
+	}
+
+	/**
+	 * Whether the device answers of {@code cdto} would change the stored component: the device class, the
+	 * medical profile without its window (only when the request carries one; null leaves it alone), and the
+	 * window as {@link #applyDeviceSupportWindowPatch} and {@link #retractWindowOnDeviceClassNone} would leave it.
+	 */
+	static boolean deviceAnswersDiffer (ComponentData stored, ComponentDto cdto) {
+		if (null != cdto.getDeviceClass() && cdto.getDeviceClass() != stored.getDeviceClass()) return true;
+		ComponentData.MedicalProfile sp = stored.getMedicalProfile();
+		ComponentData.MedicalProfile rp = cdto.getMedicalProfile();
+		if (null != rp) {
+			if (null == sp) return true;
+			if (rp.getIssuingAgency() != sp.getIssuingAgency() || rp.isUdiBearing() != sp.isUdiBearing()
+					|| !Objects.equals(rp.getGudidDefaults(), sp.getGudidDefaults())) {
+				return true;
 			}
-			if (null != cdto.getVersionSchema()) {
-				cd.setVersionSchema(cdto.getVersionSchema());
+		}
+		ComponentData.DeviceSupportWindow storedWindow = null == sp ? null : sp.getDeviceSupportWindow();
+		if (ComponentData.DeviceClass.NONE == cdto.getDeviceClass() && null != storedWindow) return true;
+		if (Boolean.TRUE.equals(cdto.getClearDeviceSupportWindow())) return null != storedWindow;
+		ComponentData.DeviceSupportWindow patch = cdto.getDeviceSupportWindow();
+		if (null == patch) return false;
+		if (null == storedWindow) return true;
+		LocalDate eos = null == patch.getEos() ? storedWindow.getEos() : patch.getEos();
+		LocalDate eol = null == patch.getEol() ? storedWindow.getEol() : patch.getEol();
+		return !Objects.equals(eos, storedWindow.getEos()) || !Objects.equals(eol, storedWindow.getEol());
+	}
+
+	/** The body of {@link #updateComponent} after the row lock, shared with {@link #updateDeviceAnswersIfChanged}. */
+	private Component applyUpdateToLockedRow (Component comp, ComponentDto cdto, WhoUpdated wu) throws RelizaException {
+		// TPF-61: a save prepared from an older read is refused and nothing is written. Compared with the row
+		// lockAndRefresh just locked and refreshed: only there is the stored revision the committed one.
+		assertExpectedRevision(comp, cdto.getExpectedRevision());
+		ComponentData cd = ComponentData.dataFromRecord(comp);
+		if (StringUtils.isNotEmpty(cdto.getName())) {
+			String previousName = cd.getName();
+			if (!cdto.getName().equals(previousName)) {
+				// Auto-record the rename so the component's CLE history
+				// surfaces a componentRenamed event at the TEA layer. Done
+				// here (not in saveComponent) so non-rename updates don't
+				// pollute the audit list. Idempotent — equal-string updates
+				// are skipped above.
+				cd.addUpdateEvent(new ComponentData.ComponentUpdateEvent(
+						ComponentData.ComponentUpdateScope.NAME,
+						ComponentData.ComponentUpdateAction.CHANGED,
+						previousName,
+						cdto.getName(),
+						java.time.ZonedDateTime.now(),
+						wu));
 			}
-			if (null != cdto.getFeatureBranchVersioning()) {
-				cd.setFeatureBranchVersioning(cdto.getFeatureBranchVersioning());
+			cd.setName(cdto.getName());
+		}
+		if (null != cdto.getVersionSchema()) {
+			cd.setVersionSchema(cdto.getVersionSchema());
+		}
+		if (null != cdto.getFeatureBranchVersioning()) {
+			cd.setFeatureBranchVersioning(cdto.getFeatureBranchVersioning());
+		}
+		if (null != cdto.getVcs()) {
+			cd.setVcs(cdto.getVcs());
+		}
+		if (null != cdto.getRepoPath()) {
+			cd.setRepoPath(cdto.getRepoPath());
+		}
+		if (null != cdto.getKind()) {
+			// BOARD_DOCUMENT marks a board's document series (board-documents.md D1): only the board that
+			// creates the component sets it, and nothing turns one kind into the other afterwards.
+			if (cdto.getKind() != cd.getKind()
+					&& (ComponentKind.BOARD_DOCUMENT == cdto.getKind() || ComponentKind.BOARD_DOCUMENT == cd.getKind())) {
+				throw new RelizaException("Boards set the BOARD_DOCUMENT kind: a component's kind cannot be changed to or from it");
 			}
-			if (null != cdto.getVcs()) {
-				cd.setVcs(cdto.getVcs());
-			}
-			if (null != cdto.getRepoPath()) {
-				cd.setRepoPath(cdto.getRepoPath());
-			}
-			if (null != cdto.getKind()) {
-				// BOARD_DOCUMENT marks a board's document series (board-documents.md D1): only the board that
-				// creates the component sets it, and nothing turns one kind into the other afterwards.
-				if (cdto.getKind() != cd.getKind()
-						&& (ComponentKind.BOARD_DOCUMENT == cdto.getKind() || ComponentKind.BOARD_DOCUMENT == cd.getKind())) {
-					throw new RelizaException("Boards set the BOARD_DOCUMENT kind: a component's kind cannot be changed to or from it");
-				}
-				cd.setKind(cdto.getKind());
-			}
-			if (null != cdto.getAuthentication()) {
-				cd.setAuthentication(cdto.getAuthentication());
-			}
-			if (null != cdto.getDefaultConfig()) {
-				cd.setDefaultConfig(cdto.getDefaultConfig());
-			}
-			if(null != cdto.getVersionType()){
-				cd.setVersionType(cdto.getVersionType());
-			}
-			if(null != cdto.getMarketingVersionSchema()){
-				cd.setMarketingVersionSchema(cdto.getMarketingVersionSchema());
-			}
-			if (null != cdto.getApprovalPolicy()) {
-				// Setting a per-component policy that differs from what's
-				// stored: stale per-rule refs (disables / output-overrides)
-				// target the previous policy's rule UUIDs and have no meaning
-				// under the new one. Drop them rather than orphan them. This
-				// covers manual→manual switches and the org-rule→manual
-				// transition (cd.approvalPolicy null prior). The refs block
-				// further down will reapply explicitly if cdto carries them.
-				if (!cdto.getApprovalPolicy().equals(cd.getApprovalPolicy())) {
-					cd.setGlobalInputEventRefs(null);
-				}
-				cd.setApprovalPolicy(cdto.getApprovalPolicy());
-			} else if (Boolean.TRUE.equals(cdto.getClearApprovalPolicy()) && null != cd.getApprovalPolicy()) {
-				// Explicit clear path — UI sends this flag when the operator
-				// hits the clearable X on the policy dropdown. Drop the refs
-				// alongside, since they're tied to the cleared policy's rules.
+			cd.setKind(cdto.getKind());
+		}
+		if (null != cdto.getAuthentication()) {
+			cd.setAuthentication(cdto.getAuthentication());
+		}
+		if (null != cdto.getDefaultConfig()) {
+			cd.setDefaultConfig(cdto.getDefaultConfig());
+		}
+		if(null != cdto.getVersionType()){
+			cd.setVersionType(cdto.getVersionType());
+		}
+		if(null != cdto.getMarketingVersionSchema()){
+			cd.setMarketingVersionSchema(cdto.getMarketingVersionSchema());
+		}
+		if (null != cdto.getApprovalPolicy()) {
+			// Setting a per-component policy that differs from what's
+			// stored: stale per-rule refs (disables / output-overrides)
+			// target the previous policy's rule UUIDs and have no meaning
+			// under the new one. Drop them rather than orphan them. This
+			// covers manual→manual switches and the org-rule→manual
+			// transition (cd.approvalPolicy null prior). The refs block
+			// further down will reapply explicitly if cdto carries them.
+			if (!cdto.getApprovalPolicy().equals(cd.getApprovalPolicy())) {
 				cd.setGlobalInputEventRefs(null);
-				cd.setApprovalPolicy(null);
 			}
-			// Every uuid a rule names resolves to exactly one action, and every rule uuid to one
-			// rule: a list carrying a uuid twice is refused for every caller (task TEA-7, round 3,
-			// T-5). This is the one writer of both lists.
-			if (null != cdto.getReleaseInputTriggers()) {
-				cdto.getReleaseInputTriggers().forEach(t -> {
-					if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
-				});
-				Utils.requireDistinctUuids(cdto.getReleaseInputTriggers().stream().map(ComponentData.ReleaseInputEvent::getUuid)
-						.toList(), "Rule", "component");
-				cd.setReleaseInputTriggers(cdto.getReleaseInputTriggers());
+			cd.setApprovalPolicy(cdto.getApprovalPolicy());
+		} else if (Boolean.TRUE.equals(cdto.getClearApprovalPolicy()) && null != cd.getApprovalPolicy()) {
+			// Explicit clear path — UI sends this flag when the operator
+			// hits the clearable X on the policy dropdown. Drop the refs
+			// alongside, since they're tied to the cleared policy's rules.
+			cd.setGlobalInputEventRefs(null);
+			cd.setApprovalPolicy(null);
+		}
+		// Every uuid a rule names resolves to exactly one action, and every rule uuid to one
+		// rule: a list carrying a uuid twice is refused for every caller (task TEA-7, round 3,
+		// T-5). This is the one writer of both lists.
+		if (null != cdto.getReleaseInputTriggers()) {
+			cdto.getReleaseInputTriggers().forEach(t -> {
+				if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
+			});
+			Utils.requireDistinctUuids(cdto.getReleaseInputTriggers().stream().map(ComponentData.ReleaseInputEvent::getUuid)
+					.toList(), "Rule", "component");
+			cd.setReleaseInputTriggers(cdto.getReleaseInputTriggers());
+		}
+		if (null != cdto.getOutputTriggers()) {
+			cdto.getOutputTriggers().forEach(t -> {
+				if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
+			});
+			Utils.requireDistinctUuids(cdto.getOutputTriggers().stream().map(ComponentData.ReleaseOutputEvent::getUuid)
+					.toList(), "Output event", "component");
+			cd.setOutputTriggers(cdto.getOutputTriggers());
+		}
+		if (null != cdto.getGlobalInputEventRefs()) {
+			// one ref per global rule (task TEA-7, round 5, rule A extended): the engine and the
+			// stamps read refs by the rule's uuid
+			Utils.requireDistinctUuids(cdto.getGlobalInputEventRefs().stream().filter(java.util.Objects::nonNull)
+					.map(ComponentData.GlobalInputEventRef::getUuid).toList(), "Global rule ref", "component");
+			cd.setGlobalInputEventRefs(cdto.getGlobalInputEventRefs());
+		}
+		if (null != cdto.getStatus()) {
+			cd.setStatus(cdto.getStatus());
+		}
+		if (null != cdto.getIdentifiers()) {
+			RearmIdentifier.validateVocabulary(cdto.getIdentifiers());
+			cd.setIdentifiers(cdto.getIdentifiers());
+		}
+		if (null != cdto.getNature()) cd.setNature(cdto.getNature());
+		if (null != cdto.getActionGuards()) cd.setActionGuards(cdto.getActionGuards());
+		if (null != cdto.getDeviceClass()) {
+			// Setting deviceClass to NONE retracts the device window with it. Left behind,
+			// the window stays RESOLVABLE -- the resolver reads the profile, not the class
+			// -- so a component that is no longer a device would keep stamping a device
+			// commitment onto its releases' exports. Recorded as a REMOVED event rather
+			// than deleted quietly: withdrawing a regulatory claim is itself a fact.
+			retractWindowOnDeviceClassNone(cd, cdto.getDeviceClass(), wu);
+			cd.setDeviceClass(cdto.getDeviceClass());
+		}
+		if (null != cdto.getMedicalProfile()) {
+			// CARRY THE WINDOW ACROSS THE PROFILE REPLACEMENT. MedicalProfileInput has no
+			// deviceSupportWindow field, so this assignment replaces the whole profile with
+			// one that cannot carry it: without this, toggling udiBearing would silently
+			// retract a declared regulatory commitment. Exactly the failure
+			// ShippedProductService.update guards against on the batch side.
+			ComponentData.DeviceSupportWindow carried = (null == cd.getMedicalProfile())
+					? null : cd.getMedicalProfile().getDeviceSupportWindow();
+			cd.setMedicalProfile(cdto.getMedicalProfile());
+			if (null != carried && null == cd.getMedicalProfile().getDeviceSupportWindow()) {
+				cd.getMedicalProfile().setDeviceSupportWindow(carried);
 			}
-			if (null != cdto.getOutputTriggers()) {
-				cdto.getOutputTriggers().forEach(t -> {
-					if (null == t.getUuid()) t.setUuid(UUID.randomUUID());
-				});
-				Utils.requireDistinctUuids(cdto.getOutputTriggers().stream().map(ComponentData.ReleaseOutputEvent::getUuid)
-						.toList(), "Output event", "component");
-				cd.setOutputTriggers(cdto.getOutputTriggers());
+		}
+		applyDeviceSupportWindowPatch(cd, cdto, wu);
+		if (null != cdto.getBranchSuffixMode()) {
+			// INHERIT clears the override (defers to org setting) — store as null for a cleaner record
+			cd.setBranchSuffixMode(cdto.getBranchSuffixMode() == io.reliza.common.CommonVariables.BranchSuffixMode.INHERIT
+					? null : cdto.getBranchSuffixMode());
+		}
+		if (null != cdto.getSidPurlOverride()) {
+			SidPurlOverride incoming = cdto.getSidPurlOverride();
+			// Normalize INHERIT → null so we can compare against the stored value, which
+			// the factory and update path both keep null-canonicalized.
+			SidPurlOverride normalized = incoming == SidPurlOverride.INHERIT ? null : incoming;
+			// Only enforce org-mode policy when the override is actually changing.
+			// Otherwise a saved-when-FLEXIBLE component can never be edited again
+			// after the org flips to STRICT/DISABLED — the dto sends the stored override
+			// on every save, and validateSidOverrideAgainstOrg would reject it.
+			if (!java.util.Objects.equals(normalized, cd.getSidPurlOverride())) {
+				validateSidOverrideAgainstOrg(cd.getOrg(), incoming);
 			}
-			if (null != cdto.getGlobalInputEventRefs()) {
-				// one ref per global rule (task TEA-7, round 5, rule A extended): the engine and the
-				// stamps read refs by the rule's uuid
-				Utils.requireDistinctUuids(cdto.getGlobalInputEventRefs().stream().filter(java.util.Objects::nonNull)
-						.map(ComponentData.GlobalInputEventRef::getUuid).toList(), "Global rule ref", "component");
-				cd.setGlobalInputEventRefs(cdto.getGlobalInputEventRefs());
-			}
-			if (null != cdto.getStatus()) {
-				cd.setStatus(cdto.getStatus());
-			}
-			if (null != cdto.getIdentifiers()) {
-				RearmIdentifier.validateVocabulary(cdto.getIdentifiers());
-				cd.setIdentifiers(cdto.getIdentifiers());
-			}
-			if (null != cdto.getNature()) cd.setNature(cdto.getNature());
-			if (null != cdto.getActionGuards()) cd.setActionGuards(cdto.getActionGuards());
-			if (null != cdto.getDeviceClass()) {
-				// Setting deviceClass to NONE retracts the device window with it. Left behind,
-				// the window stays RESOLVABLE -- the resolver reads the profile, not the class
-				// -- so a component that is no longer a device would keep stamping a device
-				// commitment onto its releases' exports. Recorded as a REMOVED event rather
-				// than deleted quietly: withdrawing a regulatory claim is itself a fact.
-				retractWindowOnDeviceClassNone(cd, cdto.getDeviceClass(), wu);
-				cd.setDeviceClass(cdto.getDeviceClass());
-			}
-			if (null != cdto.getMedicalProfile()) {
-				// CARRY THE WINDOW ACROSS THE PROFILE REPLACEMENT. MedicalProfileInput has no
-				// deviceSupportWindow field, so this assignment replaces the whole profile with
-				// one that cannot carry it: without this, toggling udiBearing would silently
-				// retract a declared regulatory commitment. Exactly the failure
-				// ShippedProductService.update guards against on the batch side.
-				ComponentData.DeviceSupportWindow carried = (null == cd.getMedicalProfile())
-						? null : cd.getMedicalProfile().getDeviceSupportWindow();
-				cd.setMedicalProfile(cdto.getMedicalProfile());
-				if (null != carried && null == cd.getMedicalProfile().getDeviceSupportWindow()) {
-					cd.getMedicalProfile().setDeviceSupportWindow(carried);
+			cd.setSidPurlOverride(normalized);
+		}
+		if (null != cdto.getSidAuthoritySegments()) {
+			List<String> segments = cdto.getSidAuthoritySegments();
+			// Validate non-empty segments (symmetry with applySidPurlPatch and
+			// PerspectiveService.updateSidPurl); empty list clears.
+			if (!segments.isEmpty()
+					&& !segments.equals(cd.getSidAuthoritySegments())) {
+				var vr = io.reliza.common.SidPurlUtils.validateAuthoritySegments(segments);
+				if (!vr.valid()) {
+					throw new RelizaException("sidAuthoritySegments invalid: " + vr.error());
 				}
 			}
-			applyDeviceSupportWindowPatch(cd, cdto, wu);
-			if (null != cdto.getBranchSuffixMode()) {
-				// INHERIT clears the override (defers to org setting) — store as null for a cleaner record
-				cd.setBranchSuffixMode(cdto.getBranchSuffixMode() == io.reliza.common.CommonVariables.BranchSuffixMode.INHERIT
-						? null : cdto.getBranchSuffixMode());
-			}
-			if (null != cdto.getSidPurlOverride()) {
-				SidPurlOverride incoming = cdto.getSidPurlOverride();
-				// Normalize INHERIT → null so we can compare against the stored value, which
-				// the factory and update path both keep null-canonicalized.
-				SidPurlOverride normalized = incoming == SidPurlOverride.INHERIT ? null : incoming;
-				// Only enforce org-mode policy when the override is actually changing.
-				// Otherwise a saved-when-FLEXIBLE component can never be edited again
-				// after the org flips to STRICT/DISABLED — the dto sends the stored override
-				// on every save, and validateSidOverrideAgainstOrg would reject it.
-				if (!java.util.Objects.equals(normalized, cd.getSidPurlOverride())) {
-					validateSidOverrideAgainstOrg(cd.getOrg(), incoming);
-				}
-				cd.setSidPurlOverride(normalized);
-			}
-			if (null != cdto.getSidAuthoritySegments()) {
-				List<String> segments = cdto.getSidAuthoritySegments();
-				// Validate non-empty segments (symmetry with applySidPurlPatch and
-				// PerspectiveService.updateSidPurl); empty list clears.
-				if (!segments.isEmpty()
-						&& !segments.equals(cd.getSidAuthoritySegments())) {
-					var vr = io.reliza.common.SidPurlUtils.validateAuthoritySegments(segments);
-					if (!vr.valid()) {
-						throw new RelizaException("sidAuthoritySegments invalid: " + vr.error());
-					}
-				}
-				cd.setSidAuthoritySegments(segments.isEmpty() ? null : segments);
-			}
-			if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
-			// Read before the patch: a PRODUCT component's supplier change invalidates (SCORE-71 ADR-9).
-			String supplierBefore = cd.getSupplierName();
-			DeclaredComponentFields.patch(cd, cdto.getLicenseExpression(), cdto.getLicenseUrl(), cdto.getSupplierName())
-					.applyTo(cd);
-			if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
-			// Durable owner (RFC Phase 4b): validate the ref synchronously (no DB
-			// FK backs it) against the component's org before storing. Null = no
-			// change; an invalid ref throws before any save.
-			// clearOwner wins over owner: an explicit "remove it" should not be
-			// silently ignored because a stale owner object rode along in the
-			// same payload.
-			if (Boolean.TRUE.equals(cdto.getClearOwner())) {
-				cd.setOwner(null);
-			} else if (null != cdto.getOwner()) {
-				componentOwnershipService.validateOwner(cdto.getOwner(), cd.getOrg());
-				cd.setOwner(cdto.getOwner());
-			}
-			// Contacts are operator free text rendered back into the team UI, so
-			// HTML-sanitize at this chokepoint (covers every updateComponent caller,
-			// not just the GraphQL boundary) before they hit the JSONB record.
-			if (null != cdto.getContacts()) cd.setContacts(ComponentData.sanitizeContacts(cdto.getContacts()));
-			// sidPurl collision check after all field mutations have been applied so the
-			// candidate {cd} reflects exactly what would be saved (name, sidPurlOverride,
-			// sidAuthoritySegments, isInternal). Pass cd.getUuid() as excludeUuid so the
-			// candidate's own pre-update DB row isn't compared against itself.
-			checkSidCollision(cd, cd.getUuid());
-			Map<String,Object> componentData = Utils.dataToRecord(cd);
-			comp = saveComponent(comp, componentData, wu, WiringWrite.WRITE);
-			// The supplier is in every release's node facts; a nested product row rebuilt alone
-			// after it would be written apart in the products above (SCORE-71 ADR-9).
-			if (ComponentType.PRODUCT == cd.getType() && !Objects.equals(supplierBefore, cd.getSupplierName())) {
-				releaseService.invalidateMergedSbomRowsOfComponent(cd);
-			}
+			cd.setSidAuthoritySegments(segments.isEmpty() ? null : segments);
+		}
+		if (null != cdto.getIsInternal()) cd.setIsInternal(cdto.getIsInternal());
+		// Read before the patch: a PRODUCT component's supplier change invalidates (SCORE-71 ADR-9).
+		String supplierBefore = cd.getSupplierName();
+		DeclaredComponentFields.patch(cd, cdto.getLicenseExpression(), cdto.getLicenseUrl(), cdto.getSupplierName())
+				.applyTo(cd);
+		if (null != cdto.getLeads()) cd.setLeads(cdto.getLeads());
+		// Durable owner (RFC Phase 4b): validate the ref synchronously (no DB
+		// FK backs it) against the component's org before storing. Null = no
+		// change; an invalid ref throws before any save.
+		// clearOwner wins over owner: an explicit "remove it" should not be
+		// silently ignored because a stale owner object rode along in the
+		// same payload.
+		if (Boolean.TRUE.equals(cdto.getClearOwner())) {
+			cd.setOwner(null);
+		} else if (null != cdto.getOwner()) {
+			componentOwnershipService.validateOwner(cdto.getOwner(), cd.getOrg());
+			cd.setOwner(cdto.getOwner());
+		}
+		// Contacts are operator free text rendered back into the team UI, so
+		// HTML-sanitize at this chokepoint (covers every updateComponent caller,
+		// not just the GraphQL boundary) before they hit the JSONB record.
+		if (null != cdto.getContacts()) cd.setContacts(ComponentData.sanitizeContacts(cdto.getContacts()));
+		// sidPurl collision check after all field mutations have been applied so the
+		// candidate {cd} reflects exactly what would be saved (name, sidPurlOverride,
+		// sidAuthoritySegments, isInternal). Pass cd.getUuid() as excludeUuid so the
+		// candidate's own pre-update DB row isn't compared against itself.
+		checkSidCollision(cd, cd.getUuid());
+		Map<String,Object> componentData = Utils.dataToRecord(cd);
+		comp = saveComponent(comp, componentData, wu, WiringWrite.WRITE);
+		// The supplier is in every release's node facts; a nested product row rebuilt alone
+		// after it would be written apart in the products above (SCORE-71 ADR-9).
+		if (ComponentType.PRODUCT == cd.getType() && !Objects.equals(supplierBefore, cd.getSupplierName())) {
+			releaseService.invalidateMergedSbomRowsOfComponent(cd);
 		}
 		return comp;
 	}
