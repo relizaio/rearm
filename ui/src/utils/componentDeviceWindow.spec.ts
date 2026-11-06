@@ -29,11 +29,24 @@ describe('reading the declared window', () => {
         expect(r.assertedBy).toBe('u1')
     })
 
+    /** FDAW-18, F-6: the UDI fields come with the window, so a date-only save can leave them alone. */
+    it('reads the UDI fields of the profile with the window', async () => {
+        const r = await loadComponentDeviceWindow(client({
+            data: { component: { uuid: 'c1', medicalProfile: { issuingAgency: 'GS1', udiBearing: true,
+                gudidDefaults: { brandName: 'Acme', companyName: null, gmdnCode: '123' },
+                deviceSupportWindow: null } } }
+        }), 'c1')
+        expect(r.window).toEqual({ eos: null, eol: null })
+        expect(r.profile).toEqual({ issuingAgency: 'GS1', udiBearing: true,
+            gudidDefaults: { brandName: 'Acme', companyName: null, gmdnCode: '123' } })
+    })
+
     it('reports not-declared when the component declares nothing', async () => {
         const r = await loadComponentDeviceWindow(client({
             data: { component: { uuid: 'c1', medicalProfile: null } } }), 'c1')
         expect(r.supported).toBe(true)
         expect(r.window).toEqual({ eos: null, eol: null })
+        expect(r.profile).toEqual({ issuingAgency: null, udiBearing: null, gudidDefaults: null })
     })
 
     /**

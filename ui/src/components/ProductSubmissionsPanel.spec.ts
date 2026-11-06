@@ -197,9 +197,9 @@ describe('ProductSubmissionsPanel', () => {
 })
 
 // Task FDAW-4 (B18, T6, T7): Create only for a kind switched on for the product; otherwise what to set
-// up, with a link to the settings modal's Regulatory pane.
+// up, with a link to the settings modal's pane. FDAW-18 (row 20): the link opens the Medical device pane.
 describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
-    const SETUP_TO = { path: ROUTE.path, query: { tab: 'submissions', componentSettingsView: 'true', componentSettingsTab: 'regulatory' } }
+    const SETUP_TO = { path: ROUTE.path, query: { tab: 'submissions', componentSettingsView: 'true', componentSettingsTab: 'device' } }
     const setupLinks = (w: any) => w.findAllComponents(RouterLinkStub)
         .filter((l: any) => l.attributes('data-testid') === 'submission-setup-link')
 
@@ -211,7 +211,7 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         answers()
     })
 
-    it('T6: switched off, a writer gets no Create but Not set up with the Regulatory link', async () => {
+    it('T6: switched off, a writer gets no Create but Not set up with the Medical device link', async () => {
         enabledKinds = []
         const { w } = await mountPanel({ canConfigure: true })
         const assembled = rowOf(w, '1.1.0')
@@ -220,10 +220,10 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         const cell = assembled.find('[data-testid="submission-not-set-up-FDA_PREMARKET"]')
         expect(cell.exists()).toBe(true)
         expect(cell.text().replace(/\s+/g, ' ')).toBe('Not set up: FDA premarket is switched off for this product. '
-            + 'Switch it on under Settings > Regulatory')
+            + 'Set it up under Settings > Medical device')
         const link = setupLinks(w).find((l: any) => cell.element.contains(l.element))!
         expect(link.props('to')).toEqual(SETUP_TO)
-        expect(link.text()).toBe('Switch it on under Settings > Regulatory')
+        expect(link.text()).toBe('Set it up under Settings > Medical device')
         w.unmount()
     })
 
@@ -240,7 +240,7 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         enabledKinds = []
         const { w } = await mountPanel({ canConfigure: false })
         const cell = rowOf(w, '1.1.0').find('[data-testid="submission-not-set-up-FDA_PREMARKET"]')
-        expect(cell.text()).toContain('(an organization administrator does this)')
+        expect(cell.text()).toContain('(the organization steps need an organization administrator)')
         expect(setupLinks(w).some((l: any) => cell.element.contains(l.element))).toBe(true)
         w.unmount()
     })
@@ -271,8 +271,8 @@ describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
         })
         const { w } = await mountPanel({ canConfigure: false })
         const none = w.find('[data-testid="submissions-none"]')
-        expect(none.text().replace(/\s+/g, ' ')).toBe('No submission yet. No regulatory package kind is switched on for this '
-            + 'product; set one up under Settings > Regulatory. (an organization administrator does this)')
+        expect(none.text().replace(/\s+/g, ' ')).toBe('No submission yet. widget is not set up for FDA premarket submissions: '
+            + 'set it up under Settings > Medical device (one save). (the organization steps need an organization administrator)')
         const link = setupLinks(w).find((l: any) => none.element.contains(l.element))!
         expect(link.props('to')).toEqual(SETUP_TO)
         w.unmount()

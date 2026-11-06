@@ -23,12 +23,19 @@ import {
  * dates (EOS_BEFORE_EOL). A backend that has the window but not the warning answers the core
  * document, `withoutAdditiveFields(COMPONENT_DEVICE_WINDOW_QUERY)`, and the panel shows the
  * window with no warning.
+ *
+ * <p>FDAW-18, F-6: the UDI fields of the profile are read with the window. `updateComponent` replaces
+ * the profile whole, so the Medical device tab sends it only when one of them changed, and needs the
+ * stored values as its baseline. Core fields in both schemas, so no additive marker.
  */
 export const COMPONENT_DEVICE_WINDOW_QUERY = gql`
     query componentDeviceWindow($componentUuid: ID!) {
         component(componentUuid: $componentUuid) {
             uuid
             medicalProfile {
+                issuingAgency
+                udiBearing
+                gudidDefaults { brandName companyName gmdnCode }
                 deviceSupportWindow {
                     eos eol assertedBy assessedAt source
                     warnings { code message }  #additive-field
@@ -43,6 +50,15 @@ export interface DeviceWindowWarning {
     message: string
 }
 
+/** The UDI fields of the stored medical profile (FDAW-18, F-6); all null when there is no profile. */
+export interface DeviceProfileRead {
+    issuingAgency: string | null
+    udiBearing: boolean | null
+    gudidDefaults: { brandName: string | null, companyName: string | null, gmdnCode: string | null } | null
+}
+
+export const NO_DEVICE_PROFILE: DeviceProfileRead = { issuingAgency: null, udiBearing: null, gudidDefaults: null }
+
 /** What the panel needs to render, plus whether this backend can answer at all. */
 export interface ComponentWindowResult {
     /** False on a backend whose schema lacks the field -- the panel must hide, not error. */
@@ -52,10 +68,13 @@ export interface ComponentWindowResult {
     assessedAt: string | null
     /** What is unusual about the stored dates; empty when nothing is, or when degraded. */
     warnings: DeviceWindowWarning[]
+    /** The UDI fields read with the window. */
+    profile: DeviceProfileRead
 }
 
 export const NOT_DECLARED: ComponentWindowResult = {
-    supported: true, window: { eos: null, eol: null }, assertedBy: null, assessedAt: null, warnings: []
+    supported: true, window: { eos: null, eol: null }, assertedBy: null, assessedAt: null, warnings: [],
+    profile: NO_DEVICE_PROFILE
 }
 
 /**
@@ -79,16 +98,25 @@ export async function loadComponentDeviceWindow (
             fullQuery: COMPONENT_DEVICE_WINDOW_QUERY,
             coreQuery: withoutAdditiveFields(COMPONENT_DEVICE_WINDOW_QUERY),
             variables: { componentUuid },
-            extractPath: (d: any) => d?.component?.medicalProfile?.deviceSupportWindow ?? null,
+            extractPath: (d: any) => d?.component?.medicalProfile ?? null,
             fetchPolicy: 'no-cache'
         })
-        const w = r.data
+        const mp = r.data
+        const w = mp?.deviceSupportWindow ?? null
+        const g = mp?.gudidDefaults
         return {
             supported: true,
             window: { eos: w?.eos ?? null, eol: w?.eol ?? null },
             assertedBy: w?.assertedBy ?? null,
             assessedAt: w?.assessedAt ?? null,
-            warnings: deviceWindowWarningsOf(w)
+            warnings: deviceWindowWarningsOf(w),
+            profile: !mp ? NO_DEVICE_PROFILE : {
+                issuingAgency: mp.issuingAgency ?? null,
+                udiBearing: typeof mp.udiBearing === 'boolean' ? mp.udiBearing : null,
+                gudidDefaults: !g ? null : {
+                    brandName: g.brandName ?? null, companyName: g.companyName ?? null, gmdnCode: g.gmdnCode ?? null
+                }
+            }
         }
     } catch (e: any) {
         if (isSchemaDriftError(e)) {

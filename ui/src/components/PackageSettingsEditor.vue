@@ -43,7 +43,8 @@
                 <div data-testid="package-fields" :data-inherited="inherits ? 'true' : undefined">
                     <n-form-item label-for="package-enabled">
                         <template #label><FieldLabel label="Enabled" :tip="enabledHelp" /></template>
-                        <n-switch data-testid="package-enabled" v-model:value="shown.enabled" :disabled="readOnly" />
+                        <n-switch data-testid="package-enabled" :value="shown.state === 'ENABLED'" :disabled="readOnly"
+                            @update:value="setEnabled" />
                         <span class="text-muted package-enabled-help">{{ enabledHelp }}</span>
                     </n-form-item>
                     <n-form-item label-for="package-sbom-profile">
@@ -160,7 +161,7 @@ const dialog = useDialog()
 const kinds = ref<any[]>([])
 const kind = ref<string | null>(null)
 const view = ref<any>(null)
-const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, enabled: false, sbomProfile: 'default', description: '', parts: [] })
+const form = ref<PackageSettingsForm>({ mode: null, followedPerspective: null, state: 'DISABLED', sbomProfile: 'default', description: '', parts: [] })
 const catalog = ref<any[]>([])
 const catalogError = ref<string | null>(null)
 const loading = ref(false)
@@ -199,7 +200,11 @@ const sourceLine = computed(() => packageSourceLine(view.value, allNames.value, 
 const effectiveLine = computed(() => packageEffectiveLine(view.value?.effective, allNames.value))
 const effectiveEnabledLine = computed(() => packageEnabledLine(view.value?.effective))
 // Follows the value the switch shows, the read-only INHERIT display included.
-const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.enabled))
+const enabledHelp = computed(() => packageEnabledHelp(kind.value, shown.value.state === 'ENABLED', props.scope))
+/** The switch flips the row's state (FDAW-18); the form never holds the deprecated enabled alias. */
+function setEnabled (on: boolean): void {
+    shown.value.state = on ? 'ENABLED' : 'DISABLED'
+}
 const inheritHint = computed(() => packageInheritConflictHint(props.scope, form.value.mode, props.perspectiveOptions.length,
     view.value, kind.value))
 const formError = computed(() => view.value ? packageFormError(form.value) : null)

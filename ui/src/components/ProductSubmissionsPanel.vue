@@ -14,8 +14,8 @@
             No release in this feature set yet
         </p>
         <p v-if="!loadFailed && loaded && !heads.length && noKindOn" data-testid="submissions-none" class="text-muted">
-            No submission yet. No regulatory package kind is switched on for this product; set one up under
-            <RouterLink data-testid="submission-setup-link" :to="setupRoute">Settings &gt; Regulatory</RouterLink>.{{
+            {{ submissionsNotSetUpLead(componentName) }}<RouterLink data-testid="submission-setup-link"
+                :to="setupRoute">{{ MEDICAL_DEVICE_SETUP_LINK_TEXT }}</RouterLink>{{ SUBMISSIONS_NOT_SET_UP_TAIL }}{{
                 canConfigure ? '' : ' ' + ADMIN_DOES_THIS }}
         </p>
         <p v-else-if="!loadFailed && loaded && !heads.length" data-testid="submissions-none" class="text-muted">
@@ -44,6 +44,10 @@ import profilesQueries from '@/utils/profilesQueries'
 import submissionQueries from '@/utils/submissionQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
+import {
+    MEDICAL_DEVICE_SETUP_LINK_TEXT, SUBMISSIONS_ADMIN_DOES_THIS, SUBMISSIONS_NOT_SET_UP_CELL_LINK, SUBMISSIONS_NOT_SET_UP_TAIL,
+    submissionsNotSetUpCell, submissionsNotSetUpLead
+} from '@/utils/medicalDeviceSetup'
 import {
     CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
     submissionOtherRows, submissionReleaseRows, submissionStateTagType, submissionStateText,
@@ -85,12 +89,12 @@ const loaded = ref(false)
 // read yet, or the read failed), when every kind is offered and the server's gate decides.
 const enabledKinds = ref<string[] | null>(null)
 
-// The settings modal's Regulatory pane (ComponentView opens it on componentSettingsView=true and picks
-// the pane from componentSettingsTab); editable by organization administrators only.
-const ADMIN_DOES_THIS = '(an organization administrator does this)'
+// The settings modal's Medical device pane (FDAW-18; ComponentView opens it on componentSettingsView=true and
+// picks the pane from componentSettingsTab): one save, whose organization steps need an organization administrator.
+const ADMIN_DOES_THIS = SUBMISSIONS_ADMIN_DOES_THIS
 const route = useRoute()
 const setupRoute = computed(() => ({ path: route?.path, query: { ...(route?.query ?? {}),
-    componentSettingsView: 'true', componentSettingsTab: 'regulatory' } }))
+    componentSettingsView: 'true', componentSettingsTab: 'device' } }))
 const noKindOn = computed(() => enabledKinds.value !== null && enabledKinds.value.length === 0)
 
 const acts = useSubmissionActs({ client: graphqlClient, reload: () => read() })
@@ -115,9 +119,9 @@ function dateText (d: string | null | undefined): string {
 }
 
 function notSetUpCell (kind: string) {
-    const children: any[] = ['Not set up: ' + packageKindLabel(kind) + ' is switched off for this product. ',
+    const children: any[] = [submissionsNotSetUpCell(packageKindLabel(kind)) + ' ',
         h(RouterLink, { to: setupRoute.value, 'data-testid': 'submission-setup-link' },
-            () => 'Switch it on under Settings > Regulatory')]
+            () => SUBMISSIONS_NOT_SET_UP_CELL_LINK)]
     if (!props.canConfigure) children.push(' ' + ADMIN_DOES_THIS)
     return h('div', { class: 'text-muted', 'data-testid': 'submission-not-set-up-' + kind }, children)
 }

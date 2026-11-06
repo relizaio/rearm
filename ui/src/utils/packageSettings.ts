@@ -74,16 +74,35 @@ export function packagePartLabel (part: string | null | undefined): string {
     return (part && PACKAGE_PART_LABELS[part]) || part || ''
 }
 
-/** The help text of the Enabled switch, naming the kind and describing the value the switch shows. */
-export function packageEnabledHelp (kind: string | null | undefined, enabled: boolean | null | undefined): string {
-    if (enabled === true) return 'On: releases of this scope offer ' + packageKindLabel(kind) + ' and can be submitted.'
-    return 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
-        + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
+/** FDAW-18: the switch of a product's FDA premarket row is question 2 of its Medical device tab. */
+export const PACKAGE_COMPONENT_QUESTION_HINT = 'On the Medical device tab this is question 2'
+
+/**
+ * The help text of the Enabled switch, naming the kind and describing the value the switch shows; at a
+ * COMPONENT scope the FDA premarket switch also names the Medical device tab question it answers (FDAW-18).
+ */
+export function packageEnabledHelp (kind: string | null | undefined, enabled: boolean | null | undefined,
+    scope?: PackageScope | null): string {
+    const line = enabled === true
+        ? 'On: releases of this scope offer ' + packageKindLabel(kind) + ' and can be submitted.'
+        : 'Off: releases of this scope do not offer ' + packageKindLabel(kind)
+            + ' and no new submission can be made; existing submissions stay readable and can be withdrawn.'
+    return scope === 'COMPONENT' && kind === 'FDA_PREMARKET' ? line + ' ' + PACKAGE_COMPONENT_QUESTION_HINT + '.' : line
+}
+
+/**
+ * The switch of a settings row (FDAW-18): `state`, ENABLED or DISABLED; a row read without `state` but with
+ * the deprecated `enabled` alias true reads ENABLED; anything else, a FOLLOW row included, DISABLED.
+ */
+export function packageStateOf (settings: any): 'ENABLED' | 'DISABLED' {
+    if (settings?.state === 'ENABLED') return 'ENABLED'
+    if (settings?.state == null && settings?.enabled === true) return 'ENABLED'
+    return 'DISABLED'
 }
 
 /** The effective on/off of a kind at a scope, from the resolver's settings; off when nothing resolves. */
 export function packageEnabledLine (resolution: any): string {
-    return 'Enabled here: ' + (resolution?.settings?.enabled === true ? 'on' : 'off')
+    return 'Enabled here: ' + (packageStateOf(resolution?.settings) === 'ENABLED' ? 'on' : 'off')
 }
 
 export const PACKAGE_FIELD_HELP: Record<string, string> = {
@@ -151,7 +170,8 @@ export interface PackagePartForm {
 export interface PackageSettingsForm {
     mode: string | null
     followedPerspective: string | null
-    enabled: boolean
+    /** The switch, as the server stores it (FDAW-18): ENABLED or DISABLED. */
+    state: 'ENABLED' | 'DISABLED'
     sbomProfile: string
     description: string
     parts: PackagePartForm[]
@@ -165,7 +185,7 @@ function partOptions (settings: any, part: string): any {
  * What the form starts from. The parts come from the kind's descriptor in its order; each part's
  * options from the stored row when it carries fields (not FOLLOW), else the parent's settings, else
  * nothing, with nulls filled as the server fills them. A REQUIRED part is INCLUDE whatever a row says.
- * `enabled` comes the same way and is off by default (the built-in default).
+ * `state` comes the same way and is DISABLED by default (the built-in default).
  */
 export function packageFormFromView (view: any, scope: PackageScope): PackageSettingsForm {
     const stored = view?.stored
@@ -192,7 +212,7 @@ export function packageFormFromView (view: any, scope: PackageScope): PackageSet
     return {
         mode,
         followedPerspective: scope === 'COMPONENT' ? (stored?.followedPerspective ?? null) : null,
-        enabled: base?.enabled === true,
+        state: packageStateOf(base),
         sbomProfile: (storedHasFields ? stored?.sbomProfile : null) ?? view?.parent?.settings?.sbomProfile ?? 'default',
         description: stored?.description ?? '',
         parts,
@@ -204,7 +224,7 @@ export function packageInheritedForm (view: any, scope: PackageScope): PackageSe
     return packageFormFromView({ kind: view?.kind, parent: view?.parent, stored: null }, scope)
 }
 
-/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only (no `enabled`). */
+/** The PackageSettingsInput a save sends: a FOLLOW row sends its mode and perspective only (no `state`); never the `enabled` alias. */
 export function packageSettingsInput (form: PackageSettingsForm, scope: PackageScope): Record<string, any> {
     if (form.mode === PACKAGE_INHERIT) throw new Error('INHERIT is not stored: inheriting again removes the row')
     if (scope === 'COMPONENT' && form.mode === 'FOLLOW_PERSPECTIVE') {
@@ -212,7 +232,7 @@ export function packageSettingsInput (form: PackageSettingsForm, scope: PackageS
     }
     const out: Record<string, any> = {}
     if (scope === 'COMPONENT') out.mode = 'OVERRIDE'
-    out.enabled = form.enabled === true
+    out.state = form.state === 'ENABLED' ? 'ENABLED' : 'DISABLED'
     out.sbomProfile = form.sbomProfile
     const description = (form.description ?? '').trim()
     out.description = description || null

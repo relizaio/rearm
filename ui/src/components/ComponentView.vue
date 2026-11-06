@@ -589,8 +589,8 @@
                                         <div v-if="updatedComponent && componentData && !declaredLicenseSupported"
                                             class="text-muted" style="margin-top: 22px;" data-testid="component-license-unsupported">{{ UNSUPPORTED_NOTE }}</div>
                                     </n-tab-pane>
-                                    <n-tab-pane name="device" tab="Device" v-if="deviceWindowSupported">
-                                        <!-- The Device tab: its own tab, apart from Core Settings. The window panel
+                                    <n-tab-pane name="device" tab="Medical device" v-if="deviceWindowSupported">
+                                        <!-- The Medical device tab (FDAW-18; the Device tab of FDAW-3, relabelled, the name kept): its own tab, apart from Core Settings. The window panel
                                              was once nested INSIDE coreSettingsActions, whose v-if is
                                              "hasCoreSettingsChanges && isWritable" -- the unsaved-changes action
                                              bar. So the panel appeared only after you had already edited some OTHER
@@ -610,28 +610,68 @@
                                                  the field -- a CE mirror before the deferred sync.
                                                  Offering an editor whose save the server would
                                                  reject is worse than not offering it. -->
-                                        <!-- The device class itself, editable. Until this
-                                             existed, deviceClass could ONLY be set at
-                                             creation (CreateComponent.vue), so the window
-                                             panel below -- which correctly renders only for
-                                             a device -- was unreachable for every component
-                                             that already existed. D7 puts the section 524B
-                                             commitment on the product component, so the
-                                             component has to be able to become a device. -->
+                                        <!-- Question 1, the device class (FDAW-18): Yes / No plus the 21 CFR 821
+                                             checkbox, mapped to deviceClass by deviceClassFromAnswers. Until the
+                                             class was editable here it could ONLY be set at creation
+                                             (CreateComponent.vue), so the window panel below -- which correctly
+                                             renders only for a device -- was unreachable for every component
+                                             that already existed. D7 puts the section 524B commitment on the
+                                             product component, so the component has to be able to become a device. -->
                                         <div v-if="deviceWindowSupported" style="margin-top: 22px;">
-                                            <h4>Device class</h4>
-                                            <n-space align="end" style="margin-bottom: 8px;">
-                                                <n-select v-model:value="deviceClassEdit"
-                                                    :options="DEVICE_CLASS_OPTIONS" style="width: 240px;"
-                                                    :disabled="!isWritable || savingDevice" />
-                                            </n-space>
-                                            <div class="text-muted" style="font-size: 12px; max-width: 720px;">
-                                                Setting this to anything but <strong>NONE</strong> makes the
-                                                component a device and reveals its support window below.
-                                                Setting it back to NONE <strong>retracts any declared
-                                                window</strong>: the window lives in the medical profile
-                                                that NONE removes.
+                                            <h4>{{ questionIsMedical(componentData?.name) }}</h4>
+                                            <n-radio-group data-testid="device-is-medical" :value="isDeviceComponent"
+                                                @update:value="setIsDevice" :disabled="!isWritable || savingDevice">
+                                                <n-radio :value="true" label="Yes" />
+                                                <n-radio :value="false" label="No" />
+                                            </n-radio-group>
+                                            <div v-if="isDeviceComponent" style="margin-top: 8px;">
+                                                <n-checkbox data-testid="device-tracked-821" :checked="deviceClassEdit === 'MEDICAL_TRACKED'"
+                                                    @update:checked="setTracked" :disabled="!isWritable || savingDevice">
+                                                    {{ QUESTION_TRACKED_821 }}
+                                                </n-checkbox>
                                             </div>
+                                            <div class="text-muted" style="font-size: 12px; max-width: 720px; margin-top: 6px;">
+                                                Answering No <strong>retracts any declared window</strong>: the
+                                                window lives in the medical profile that a non-device has none of.
+                                            </div>
+                                            <div v-if="fdaHalfShown && !isDeviceComponent && setupStatus?.productState === 'ENABLED'"
+                                                data-testid="device-fda-still-on" class="text-muted" style="font-size: 12px; margin-top: 6px;">
+                                                {{ fdaStillOnLine(componentData?.name) }}
+                                            </div>
+                                        </div>
+
+                                        <!-- FDAW-18, F-6: the UDI fields, read with the window and sent whole only
+                                             when one of them changed (updateComponent replaces the profile whole).
+                                             Where the setup is not served (CE) the tab saves through FDAW-3's
+                                             updateComponent, which sends no profile, so the fields are not offered. -->
+                                        <div v-if="deviceWindowSupported && isDeviceComponent && setupSupported" style="margin-top: 22px;"
+                                            data-testid="device-udi-fields">
+                                            <n-space vertical style="max-width: 720px;">
+                                                <n-space align="center">
+                                                    <span class="text-muted" style="font-size: 12px; width: 140px;">Issuing agency</span>
+                                                    <n-select v-model:value="deviceProfile.issuingAgency" clearable style="width: 200px;"
+                                                        :options="ISSUING_AGENCY_OPTIONS" :disabled="!isWritable || savingDevice" />
+                                                </n-space>
+                                                <n-space align="center">
+                                                    <span class="text-muted" style="font-size: 12px; width: 140px;">UDI-bearing component</span>
+                                                    <n-switch v-model:value="deviceProfile.udiBearing" :disabled="!isWritable || savingDevice" />
+                                                </n-space>
+                                                <n-space align="center">
+                                                    <span class="text-muted" style="font-size: 12px; width: 140px;">Brand name</span>
+                                                    <n-input v-model:value="deviceProfile.brandName" :maxlength="512" style="width: 360px;"
+                                                        :disabled="!isWritable || savingDevice" />
+                                                </n-space>
+                                                <n-space align="center">
+                                                    <span class="text-muted" style="font-size: 12px; width: 140px;">Company name</span>
+                                                    <n-input v-model:value="deviceProfile.companyName" :maxlength="512" style="width: 360px;"
+                                                        :disabled="!isWritable || savingDevice" />
+                                                </n-space>
+                                                <n-space align="center">
+                                                    <span class="text-muted" style="font-size: 12px; width: 140px;">GMDN code</span>
+                                                    <n-input v-model:value="deviceProfile.gmdnCode" :maxlength="512" style="width: 360px;"
+                                                        :disabled="!isWritable || savingDevice" />
+                                                </n-space>
+                                            </n-space>
                                         </div>
 
                                         <div v-if="deviceWindowSupported && isDeviceComponent"
@@ -680,18 +720,66 @@
                                             style="font-size: 12px; margin-top: 8px; max-width: 720px;">
                                             {{ deviceWindowError }}
                                         </n-alert>
-                                        <!-- FDAW-3, B8: one Save for the whole tab, like Core Settings. Class
-                                             and dates go in one updateComponent (the server applies the
-                                             class before the window). -->
-                                        <div class="deviceSettingsActions" v-if="hasDeviceChanges && isWritable" style="margin-top: 20px;">
+                                        <!-- FDAW-18, question 2: the product's FDA premarket package settings, for a
+                                             device, on a Pro backend that answers the setup status. -->
+                                        <div v-if="fdaHalfShown && isDeviceComponent" style="margin-top: 22px;">
+                                            <h4>{{ QUESTION_FDA_PREMARKET }}</h4>
+                                            <n-radio-group data-testid="device-fda-premarket" v-model:value="fdaPremarketEdit"
+                                                :disabled="!isWritable || savingDevice">
+                                                <n-radio value="ENABLED" label="Yes" />
+                                                <n-radio value="DISABLED" label="No" />
+                                            </n-radio-group>
+                                            <div v-if="fdaPremarketEdit === 'ENABLED'" data-testid="device-fda-defaults"
+                                                class="text-muted" style="font-size: 12px; margin-top: 6px;">
+                                                <template v-if="fdaCustomized">
+                                                    {{ fdaCustomizedLine(setupStatus?.productPackage?.sbomProfile) }}
+                                                    <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Edit</n-button>
+                                                </template>
+                                                <template v-else>
+                                                    {{ fdaDefaultsLine(setupStatus?.orgPackageProfile || 'default') }}
+                                                    <n-button text type="primary" size="small" @click="componentSettingsTab = 'regulatory'">Customize</n-button>
+                                                </template>
+                                            </div>
+                                            <!-- The organization steps as the status reads them; the bar follows the
+                                                 caller's own pending steps only (F-10), these lines follow the store. -->
+                                            <div data-testid="device-setup-status" style="font-size: 12px; margin-top: 10px; max-width: 720px;">
+                                                <div v-for="l in setupStatusLines(setupStatus)" :key="l.step"
+                                                    :data-testid="'device-setup-line-' + l.step">
+                                                    {{ l.done ? '\u2713' : 'not done:' }} {{ l.text }}
+                                                </div>
+                                                <n-alert v-if="setupStatus?.mustFix?.length" type="warning" :show-icon="true"
+                                                    data-testid="device-setup-must-fix" style="margin-top: 6px;">
+                                                    <div v-for="m in setupStatus.mustFix" :key="m">{{ m }}</div>
+                                                    <router-link :to="{ name: 'OrgSettings', params: { orguuid: componentData?.org },
+                                                        query: { tab: 'adminSettings', adminTab: 'sbomProfiles' } }">
+                                                        Organization Settings > SBOM Profiles
+                                                    </router-link>
+                                                </n-alert>
+                                                <div v-for="l in setupStepNotes" :key="l.step" :data-testid="'device-step-not-done-' + l.step"
+                                                    class="text-muted" style="margin-top: 4px;">
+                                                    not done: {{ l.text }}
+                                                </div>
+                                            </div>
+                                        </div>
+                                        <!-- FDAW-3, B8 / FDAW-18: one Save for the whole tab, like Core Settings: one
+                                             setUpMedicalDevice (on CE, where the setup is not served, one
+                                             updateComponent). "Complete setup" when only the caller's pending
+                                             setup steps show the bar. -->
+                                        <div class="deviceSettingsActions" v-if="(hasDeviceChanges || hasFdaChanges || canCompleteSetup) && isWritable" style="margin-top: 20px;">
                                             <n-space>
-                                                <n-button type="success" data-testid="component-device-save" @click="saveDevice" :loading="savingDevice">
+                                                <n-button v-if="hasDeviceChanges || hasFdaChanges" type="success" data-testid="component-device-save" @click="saveDevice" :loading="savingDevice">
                                                     <template #icon>
                                                         <n-icon><Check /></n-icon>
                                                     </template>
-                                                    Save Changes
+                                                    Save
                                                 </n-button>
-                                                <n-button type="warning" @click="resetDevice" :disabled="savingDevice">
+                                                <n-button v-else type="success" data-testid="device-complete-setup" @click="saveDevice" :loading="savingDevice">
+                                                    <template #icon>
+                                                        <n-icon><Check /></n-icon>
+                                                    </template>
+                                                    Complete setup
+                                                </n-button>
+                                                <n-button v-if="hasDeviceChanges || hasFdaChanges" type="warning" @click="resetDevice" :disabled="savingDevice">
                                                     <template #icon>
                                                         <n-icon><X /></n-icon>
                                                     </template>
@@ -1495,6 +1583,13 @@ import ComponentRevisionConflict from './ComponentRevisionConflict.vue'
 import { loadComponentForForm, useComponentRevision, withExpectedRevision } from '@/utils/componentRevision'
 import graphqlQueries from '../utils/graphqlQueries'
 import { loadComponentDeviceWindow, deviceSaveInput, type DeviceWindowWarning } from '@/utils/componentDeviceWindow'
+import {
+    MEDICAL_DEVICE_SAVED, QUESTION_FDA_PREMARKET, QUESTION_TRACKED_821, SET_UP_MEDICAL_DEVICE, completeSetupOffered,
+    deviceClassFromAnswers, deviceProfileDiffers, deviceProfileFormOf, deviceStepWritten, fdaCustomizedLine,
+    fdaDefaultsLine, fdaPremarketBaseline, fdaStillOnLine, isCustomized, loadMedicalDeviceSetupStatus,
+    medicalDeviceSetupInput, questionIsMedical, setupStatusLines, setupStepLines, EMPTY_DEVICE_PROFILE,
+    type DeviceProfileForm, type SetupStepLine
+} from '@/utils/medicalDeviceSetup'
 import { EOS_FIELD_LABEL, EOL_FIELD_LABEL } from '@/utils/deviceDateLabels'
 import {
     COMPONENT_SAVED, COMPONENT_TOOLTIP, EXPRESSION_HINT, EXPRESSION_PLACEHOLDER, SUPPLIER_HINT, SUPPLIER_PLACEHOLDER,
@@ -1521,6 +1616,8 @@ onMounted(async () => {
     deviceClassEdit.value = componentData.value?.deviceClass || 'NONE'
     deviceClassBaseline.value = deviceClassEdit.value
     await loadDeviceWindow()
+    // FDAW-18: the setup status, after the window (never throws).
+    await loadSetupStatus()
     await loadTeaBanner()
     // Never throws (it catches every read error), so the settings modal below always opens.
     await loadComponentLicense()
@@ -1741,10 +1838,8 @@ const deviceWindowWarnings: Ref<DeviceWindowWarning[]> = ref([])
 /** FDAW-3, B8: the Device tab's one Save, class and window together. */
 const savingDevice: Ref<boolean> = ref(false)
 
-const DEVICE_CLASS_OPTIONS = [
-    { label: 'NONE -- not a device', value: 'NONE' },
-    { label: 'MEDICAL_UNTRACKED', value: 'MEDICAL_UNTRACKED' },
-    { label: 'MEDICAL_TRACKED', value: 'MEDICAL_TRACKED' }
+const ISSUING_AGENCY_OPTIONS = [
+    { label: 'GS1', value: 'GS1' }, { label: 'HIBCC', value: 'HIBCC' }, { label: 'ICCBBA', value: 'ICCBBA' }
 ]
 const deviceClassEdit: Ref<string> = ref('NONE')
 const deviceClassBaseline: Ref<string> = ref('NONE')
@@ -1760,6 +1855,61 @@ const deviceClassBaseline: Ref<string> = ref('NONE')
 const isDeviceComponent: ComputedRef<boolean> = computed((): boolean =>
     !!deviceClassEdit.value && deviceClassEdit.value !== 'NONE')
 
+/** FDAW-18, question 1: Yes keeps the 821 answer, No is NONE. */
+function setIsDevice (isDevice: boolean): void {
+    deviceClassEdit.value = deviceClassFromAnswers(isDevice, isDevice && deviceClassEdit.value === 'MEDICAL_TRACKED')
+}
+
+function setTracked (tracked: boolean): void {
+    deviceClassEdit.value = deviceClassFromAnswers(true, tracked)
+}
+
+/** FDAW-18, F-6: the UDI fields as edited, and as last read with the window. */
+const deviceProfile = reactive<DeviceProfileForm>({ ...EMPTY_DEVICE_PROFILE })
+const deviceProfileBaseline = reactive<DeviceProfileForm>({ ...EMPTY_DEVICE_PROFILE })
+const deviceProfileDirty: ComputedRef<boolean> = computed((): boolean =>
+    deviceProfileDiffers(deviceProfile, deviceProfileBaseline))
+
+/**
+ * FDAW-18: the setup status (the organization steps, the product's row, the caller's pending steps).
+ * Answered only by a Pro backend that serves the setup; anything else hides the FDA half, and the tab's
+ * Save falls back to FDAW-3's updateComponent.
+ */
+const setupStatus: Ref<any> = ref(null)
+const setupSupported: Ref<boolean> = ref(false)
+const fdaPremarketEdit: Ref<'ENABLED' | 'DISABLED'> = ref('ENABLED')
+const fdaPremarketBaselineValue: Ref<'ENABLED' | 'DISABLED'> = ref('ENABLED')
+/** The steps the last save could not make, with the server's sentence each. */
+const setupStepNotes: Ref<SetupStepLine[]> = ref([])
+const fdaHalfShown: ComputedRef<boolean> = computed((): boolean =>
+    setupSupported.value && regulatoryPackagesAvailable(myUser.installationType))
+const hasFdaChanges: ComputedRef<boolean> = computed((): boolean =>
+    fdaHalfShown.value && fdaPremarketEdit.value !== fdaPremarketBaselineValue.value)
+/** F-1, F-10: the bar offers "Complete setup" for the caller's own pending steps, with no edit held. */
+const canCompleteSetup: ComputedRef<boolean> = computed((): boolean => fdaHalfShown.value
+    && completeSetupOffered(setupStatus.value, { isDevice: isDeviceComponent.value, fdaPremarket: fdaPremarketEdit.value }))
+const fdaCustomized: ComputedRef<boolean> = computed((): boolean =>
+    isCustomized(setupStatus.value?.productPackage, setupStatus.value?.orgPackageProfile))
+
+function takeSetupStatus (status: any): void {
+    setupStatus.value = status
+    fdaPremarketBaselineValue.value = fdaPremarketBaseline(status)
+    fdaPremarketEdit.value = fdaPremarketBaselineValue.value
+}
+
+async function loadSetupStatus (): Promise<void> {
+    if (!componentUuid) return
+    try {
+        const r = await loadMedicalDeviceSetupStatus(graphqlClient as any, componentUuid)
+        setupSupported.value = r.supported
+        takeSetupStatus(r.status)
+    } catch (e: any) {
+        // A failed read hides the FDA half; the device half still saves (the window panel's rule).
+        setupSupported.value = false
+        takeSetupStatus(null)
+    }
+}
+
 
 const deviceWindowDirty: ComputedRef<boolean> = computed((): boolean =>
     deviceWindow.eos !== deviceWindowBaseline.eos || deviceWindow.eol !== deviceWindowBaseline.eol)
@@ -1774,6 +1924,8 @@ async function loadDeviceWindow (): Promise<void> {
         deviceWindowBaseline.eos = r.window.eos
         deviceWindowBaseline.eol = r.window.eol
         deviceWindowWarnings.value = r.warnings
+        Object.assign(deviceProfile, deviceProfileFormOf(r.profile))
+        Object.assign(deviceProfileBaseline, deviceProfileFormOf(r.profile))
     } catch (e: any) {
         // A real failure hides the panel rather than showing an empty editable one: an operator
         // must never be able to "declare" a window against a backend we could not read.
@@ -1796,6 +1948,7 @@ async function refreshAfterDeviceSave (): Promise<void> {
     deviceClassBaseline.value = componentData.value?.deviceClass || 'NONE'
     deviceClassEdit.value = deviceClassBaseline.value
     await loadDeviceWindow()
+    await loadSetupStatus()
     await loadComponentLicense()
     originalComponent.value = commonFunctions.deepCopy(updatedComponent.value)
 }
@@ -1871,15 +2024,17 @@ async function saveComponentLicense (): Promise<void> {
     }
 }
 
-/** Whether the Device tab holds an unsaved draft: the class, the dates, or both. */
+/** Whether the Medical device tab holds an unsaved device draft: the class, the dates or the UDI fields. */
 const hasDeviceChanges: ComputedRef<boolean> = computed((): boolean =>
-    deviceClassEdit.value !== deviceClassBaseline.value || deviceWindowDirty.value)
+    deviceClassEdit.value !== deviceClassBaseline.value || deviceWindowDirty.value || deviceProfileDirty.value)
 
 /** Discard the Device tab's draft: back to what the server last confirmed. */
 function resetDevice (): void {
     deviceClassEdit.value = deviceClassBaseline.value
     deviceWindow.eos = deviceWindowBaseline.eos
     deviceWindow.eol = deviceWindowBaseline.eol
+    Object.assign(deviceProfile, deviceProfileBaseline)
+    fdaPremarketEdit.value = fdaPremarketBaselineValue.value
     deviceWindowError.value = null
 }
 
@@ -1893,6 +2048,55 @@ async function saveDevice (): Promise<void> {
 }
 
 async function submitDevice (expected: number | null): Promise<void> {
+    if (!setupSupported.value) {
+        await submitDeviceComponentOnly(expected)
+        return
+    }
+    // FDAW-18: one setUpMedicalDevice; the server writes each step the caller clears and names the rest.
+    const setup = withExpectedRevision(medicalDeviceSetupInput({
+        deviceClass: deviceClassEdit.value, deviceClassBaseline: deviceClassBaseline.value,
+        window: deviceWindow, windowBaseline: deviceWindowBaseline,
+        profile: deviceProfile, profileBaseline: deviceProfileBaseline,
+        fdaShown: fdaHalfShown.value, fdaPremarket: fdaPremarketEdit.value,
+        productPackage: setupStatus.value?.productPackage, orgPackageProfile: setupStatus.value?.orgPackageProfile ?? null
+    }), expected)
+    savingDevice.value = true
+    deviceWindowError.value = null
+    try {
+        const resp: any = await graphqlClient.mutate({
+            mutation: SET_UP_MEDICAL_DEVICE,
+            variables: { component: componentUuid, setup },
+            fetchPolicy: 'no-cache'
+        })
+        const result = resp?.data?.setUpMedicalDevice
+        // F-4: count the write of the component row only when this save made one; an UNCHANGED device
+        // step left the row as it was, and counting it would refuse the next save as stale.
+        if (deviceStepWritten(result)) {
+            revisionSaved(expected)
+        }
+        await refreshAfterDeviceSave()
+        setupStepNotes.value = setupStepLines(result)
+        const warnings: DeviceWindowWarning[] = Array.isArray(result?.warnings) ? result.warnings : []
+        if (warnings.length) {
+            notify('warning', 'Saved with a warning', warnings.map((w: DeviceWindowWarning) => w.message).join(' '))
+        } else {
+            notify('success', 'Saved', MEDICAL_DEVICE_SAVED)
+        }
+    } catch (e: any) {
+        // extractGraphQLErrorMessage, not parseGraphQLError: the latter never unwraps
+        // graphQLErrors[], so under Apollo's CombinedGraphQLErrors the SERVER's text -- the
+        // device-class refusal the walkthrough quotes -- would never reach the panel.
+        // A stale-revision refusal shows the panel instead, and keeps the draft as the user set
+        // it, so Force resends it.
+        if (revisionRefused(e, (rev) => submitDevice(rev))) return
+        deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
+    } finally {
+        savingDevice.value = false
+    }
+}
+
+/** FDAW-3's save, where the setup is not served (CE): class and window in ONE updateComponent. */
+async function submitDeviceComponentOnly (expected: number | null): Promise<void> {
     // name is REQUIRED: UpdateComponentInput.name is String!, so a {uuid, window} partial is
     // rejected at variable coercion before the resolver runs.
     const input = deviceSaveInput(componentUuid, componentData.value?.name || updatedComponent.value?.name,
@@ -1917,12 +2121,7 @@ async function submitDevice (expected: number | null): Promise<void> {
             notify('success', 'Saved', 'Device settings saved')
         }
     } catch (e: any) {
-        // extractGraphQLErrorMessage, not parseGraphQLError: the latter never unwraps
-        // graphQLErrors[], so under Apollo's CombinedGraphQLErrors the SERVER's text -- the
-        // device-class refusal the walkthrough quotes -- would never reach the panel.
-        // A stale-revision refusal shows the panel instead, and keeps the draft as the user set
-        // it, so Force resends it.
-        if (revisionRefused(e, (rev) => submitDevice(rev))) return
+        if (revisionRefused(e, (rev) => submitDeviceComponentOnly(rev))) return
         deviceWindowError.value = commonFunctions.extractGraphQLErrorMessage(e)
     } finally {
         savingDevice.value = false
@@ -2248,7 +2447,8 @@ const hasComponentChanges = function() {
 }
 
 const handleComponentSettingsClose = async function(show: boolean) {
-    if (!show && (hasComponentChanges() || hasTriggerChanges.value || hasDeviceChanges.value)) {
+    // FDAW-18: real edits only; a pending "Complete setup" is not an unsaved change.
+    if (!show && (hasComponentChanges() || hasTriggerChanges.value || hasDeviceChanges.value || hasFdaChanges.value)) {
         const confirmed = await commonFunctions.confirmUnsavedChanges()
         if (!confirmed) {
             // Prevent closing by setting it back to true
