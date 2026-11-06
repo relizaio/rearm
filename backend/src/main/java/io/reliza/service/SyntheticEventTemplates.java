@@ -14,6 +14,9 @@ import io.reliza.model.ReleaseData.ReleaseLifecycle;
 import io.reliza.model.NotificationEventType;
 import io.reliza.model.NotificationOutboxEvent;
 import io.reliza.model.NotificationSeverity;
+import io.reliza.model.PackageKind;
+import io.reliza.model.SubmissionActOutcome;
+import io.reliza.model.SubmissionState;
 import io.reliza.model.dto.notifications.AffectedComponent;
 import io.reliza.model.dto.notifications.AffectedRelease;
 import io.reliza.model.dto.notifications.ApprovalRequestEntryRef;
@@ -267,11 +270,9 @@ public final class SyntheticEventTemplates {
             case RELEASE_TEA_HIDDEN -> new ReleaseTeaPublicationPayload(sampleRelease(), UUID.randomUUID(),
                     io.reliza.service.TeaPublicationService.TeaPublicationState.HIDDEN, null, null, null, 0);
             case RELEASE_SUBMISSION_CREATED -> new ReleaseSubmissionPayload(sampleRelease(), UUID.randomUUID(),
-                    io.reliza.model.PackageKind.FDA_PREMARKET, io.reliza.model.SubmissionState.ACTIVE, 1,
-                    io.reliza.model.SubmissionActOutcome.CREATED);
+                    PackageKind.FDA_PREMARKET, SubmissionState.FINAL, 1, SubmissionActOutcome.CREATED);
             case RELEASE_SUBMISSION_WITHDRAWN -> new ReleaseSubmissionPayload(sampleRelease(), UUID.randomUUID(),
-                    io.reliza.model.PackageKind.FDA_PREMARKET, io.reliza.model.SubmissionState.WITHDRAWN, 1,
-                    io.reliza.model.SubmissionActOutcome.WITHDRAWN);
+                    PackageKind.FDA_PREMARKET, SubmissionState.CANCELLED, 1, SubmissionActOutcome.CANCELLED);
             case RELEASE_BOM_DIFF -> new ReleaseBomDiffPayload(
                     sampleRelease(),
                     List.of(new BomComponentChange("pkg:npm/left-pad@1.3.0", "1.3.0")),

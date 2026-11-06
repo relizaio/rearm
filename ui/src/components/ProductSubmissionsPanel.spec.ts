@@ -1,9 +1,9 @@
 // @vitest-environment happy-dom
 //
 // The product page's Submissions tab (task TEA-30, design 4.6 row 32): three releases of the feature
-// set (an ASSEMBLED one with an ACTIVE head v2, a DRAFT one without, and, round 4, a
-// GENERAL_AVAILABILITY one with a WITHDRAWN head) and a head on a release of another feature set; the
-// actions only for a writer, Withdraw only on an ACTIVE head, Create disabled below ASSEMBLED; the
+// set (an ASSEMBLED one with a FINAL head v2, a DRAFT one without, and, round 4, a
+// GENERAL_AVAILABILITY one with a CANCELLED head) and a head on a release of another feature set; the
+// actions only for a writer, Cancel only on a FINAL head, Create disabled below ASSEMBLED; the
 // filters passed to the server; the release links; a failed read showing the refusal entry alone;
 // the branches and refresh-token props.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
@@ -29,12 +29,12 @@ const RELEASES = [
     { uuid: 'r3', version: '0.8.0', lifecycle: 'GENERAL_AVAILABILITY', createdDate: '2026-09-15T00:00:00Z' },
 ]
 const HEADS = [
-    { uuid: 's1', release: 'r1', releaseVersion: '1.0.0', kind: 'FDA_PREMARKET', state: 'ACTIVE', latestVersion: 2,
+    { uuid: 's1', release: 'r1', releaseVersion: '1.0.0', kind: 'FDA_PREMARKET', state: 'FINAL', latestVersion: 2,
         lastActKind: 'RESUBMITTED', lastActDate: '2026-10-02T00:00:00Z' },
-    { uuid: 's3', release: 'r3', releaseVersion: '0.8.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 3,
-        lastActKind: 'WITHDRAWN', lastActDate: '2026-09-20T00:00:00Z' },
-    { uuid: 's9', release: 'r-old', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'WITHDRAWN', latestVersion: 1,
-        lastActKind: 'WITHDRAWN', lastActDate: '2026-09-01T00:00:00Z' },
+    { uuid: 's3', release: 'r3', releaseVersion: '0.8.0', kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 3,
+        lastActKind: 'CANCELLED', lastActDate: '2026-09-20T00:00:00Z' },
+    { uuid: 's9', release: 'r-old', releaseVersion: '0.9.0', kind: 'FDA_PREMARKET', state: 'CANCELLED', latestVersion: 1,
+        lastActKind: 'WITHDRAWN', lastActDate: '2026-09-01T00:00:00Z', legacyState: 'WITHDRAWN' },
 ]
 const NULL_TEXT = "The field at path '/submissionsOfComponent' was declared as a non null type, but the code involved "
     + 'in retrieving data has wrongly returned a null value.  The graphql specification requires that the parent '
@@ -94,10 +94,10 @@ describe('ProductSubmissionsPanel', () => {
     it('shows the head and its actions for a writer, and Create disabled with the lifecycle title on a DRAFT', async () => {
         const { w } = await mountPanel()
         const assembled = rowOf(w, '1.0.0')
-        expect(assembled.find('[data-testid="submission-state"]').text()).toBe('Active')
+        expect(assembled.find('[data-testid="submission-state"]').text()).toBe('Final (no confirmation record) - not sent')
         expect(assembled.text()).toContain('v2')
         expect(assembled.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
-        expect(assembled.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
+        expect(assembled.find('[data-testid="submission-withdraw"]').text()).toBe('Cancel')
         expect(assembled.find('[data-testid="submission-create"]').exists()).toBe(false)
         const draft = rowOf(w, '1.1.0')
         const create = draft.find('[data-testid="submission-create"]')
@@ -109,11 +109,11 @@ describe('ProductSubmissionsPanel', () => {
         w.unmount()
     })
 
-    it('offers Resubmit and no Withdraw on a WITHDRAWN head', async () => {
+    it('offers Resubmit and no Cancel on a CANCELLED head', async () => {
         const { w } = await mountPanel()
         const cell = rowOf(w, '0.8.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
         expect(cell.exists()).toBe(true)
-        expect(cell.find('[data-testid="submission-state"]').text()).toBe('Withdrawn')
+        expect(cell.find('[data-testid="submission-state"]').text()).toBe('Cancelled')
         expect(cell.text()).toContain('v3')
         expect(cell.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
         expect(cell.find('[data-testid="submission-withdraw"]').exists()).toBe(false)
@@ -136,7 +136,7 @@ describe('ProductSubmissionsPanel', () => {
         const { w } = await mountPanel()
         const other = w.find('[data-testid="submissions-other-rows"]')
         expect(other.text()).toContain('0.9.0')
-        expect(other.text()).toContain('Withdrawn')
+        expect(other.text()).toContain('Cancelled')
         const links = w.findAllComponents(RouterLinkStub)
         expect(links.map((l: any) => l.props('to'))).toContainEqual({ name: 'ReleaseView', params: { uuid: 'r1' } })
         expect(links.map((l: any) => l.props('to'))).toContainEqual({ name: 'ReleaseView', params: { uuid: 'r-old' } })
@@ -150,9 +150,9 @@ describe('ProductSubmissionsPanel', () => {
         await select(w, 'submissions-kind').vm.$emit('update:value', 'FDA_PREMARKET')
         await flushPromises()
         expect(calls('SubmissionsOfComponent').at(-1)![0].variables).toEqual({ component: 'c1', kind: 'FDA_PREMARKET', state: null })
-        await select(w, 'submissions-state').vm.$emit('update:value', 'WITHDRAWN')
+        await select(w, 'submissions-state').vm.$emit('update:value', 'CANCELLED')
         await flushPromises()
-        expect(calls('SubmissionsOfComponent').at(-1)![0].variables).toEqual({ component: 'c1', kind: 'FDA_PREMARKET', state: 'WITHDRAWN' })
+        expect(calls('SubmissionsOfComponent').at(-1)![0].variables).toEqual({ component: 'c1', kind: 'FDA_PREMARKET', state: 'CANCELLED' })
         await select(w, 'submissions-kind').vm.$emit('update:value', '')
         await flushPromises()
         expect(calls('SubmissionsOfComponent').at(-1)![0].variables.kind).toBeNull()

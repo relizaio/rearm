@@ -12,6 +12,7 @@ import io.reliza.exceptions.SubmissionRefusedException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.SubmissionActData;
 import io.reliza.model.SubmissionActResult;
 import io.reliza.model.SubmissionData;
 import io.reliza.model.SubmissionPreview;
@@ -60,4 +61,7 @@ public interface SubmissionHook {
 	List<SubmissionVersionData> listVersions(UUID org, UUID submission);
 
 	Optional<SubmissionVersionData> getVersion(UUID org, UUID submission, int version);
+
+	/** The head's act record, oldest first (FDAW-1 D2). */
+	List<SubmissionActData> listActs(UUID org, UUID submission);
 }

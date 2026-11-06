@@ -121,7 +121,7 @@ export function useSubmissionActs (deps: SubmissionActsDeps) {
                 showCancelButton: true, cancelButtonText: 'Cancel', confirmButtonColor: '#d33' })
             if (!answer?.isConfirmed) return
             await act(submissionQueries.WithdrawSubmissionGql, { submission: head.uuid, reason: reasonOf(answer.value) },
-                'withdrawSubmission', r => r?.outcome === 'UNCHANGED' ? 'Already withdrawn.' : 'Withdrawn.')
+                'withdrawSubmission', r => r?.outcome === 'UNCHANGED' ? 'Already cancelled.' : 'Cancelled.')
         } finally {
             busy.value = false
         }

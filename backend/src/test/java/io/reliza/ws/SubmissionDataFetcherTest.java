@@ -60,9 +60,12 @@ import io.reliza.exceptions.SubmissionRefusedException;
 import io.reliza.model.ComponentData;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
+import io.reliza.model.SubmissionActData;
+import io.reliza.model.SubmissionActKind;
 import io.reliza.model.SubmissionActOutcome;
 import io.reliza.model.SubmissionActResult;
 import io.reliza.model.SubmissionData;
+import io.reliza.model.SubmissionData.VersionState;
 import io.reliza.model.SubmissionPreview;
 import io.reliza.model.SubmissionRefusal;
 import io.reliza.model.SubmissionState;
@@ -250,10 +253,10 @@ class SubmissionDataFetcherTest {
 
 	@Test
 	void theComponentListThePreviewAndTheSinglesUseTheirScopes() throws Exception {
-		fetcher.submissionsOfComponent(ud, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.ACTIVE);
+		fetcher.submissionsOfComponent(ud, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.FINAL);
 		verify(auth).isUserAuthorizedForObjectGraphQL(ud, PermissionFunction.RESOURCE, PermissionScope.COMPONENT,
 				cd.getUuid(), List.of(cd), CallType.READ);
-		verify(hook).listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.ACTIVE);
+		verify(hook).listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.FINAL);
 		fetcher.submissionPreview(ud, rd.getUuid(), PackageKind.FDA_PREMARKET);
 		verify(hook).preview(rd.getUuid(), PackageKind.FDA_PREMARKET);
 		SubmissionVersionData v = new SubmissionVersionData();
@@ -283,6 +286,31 @@ class SubmissionDataFetcherTest {
 		assertNull(fetcher.latestOf(empty), "no version yet");
 		verify(hook, never()).getVersion(ORG, empty.getUuid(), 0);
 		verifyNoInteractions(auth);
+	}
+
+	/**
+	 * FDAW-8 T-14: versionStates and acts are children of a head the caller already read. They resolve
+	 * from the head and the hook with no check of their own; a reader of another component is refused by
+	 * the root's RELEASE READ before any child, so the act record is never read for them.
+	 */
+	@Test
+	void theVersionStatesAndTheActsResolveFromTheHeadAndTheHook() throws Exception {
+		head.setState(SubmissionState.FINAL);
+		SubmissionActData act = new SubmissionActData();
+		act.setKind(SubmissionActKind.FINALIZE);
+		when(hook.listActs(ORG, head.getUuid())).thenReturn(List.of(act));
+		assertEquals(List.of(new VersionState(1, SubmissionState.SUPERSEDED, 2),
+				new VersionState(2, SubmissionState.FINAL, null)), fetcher.versionStatesOf(head));
+		assertEquals(List.of(act), fetcher.actsOf(head));
+		verify(hook).listActs(ORG, head.getUuid());
+		verifyNoInteractions(auth);
+	}
+
+	@Test
+	void aReaderOfAnotherComponentIsRefusedBeforeTheActsAreRead() throws Exception {
+		denyEverything();
+		assertThrows(AccessDeniedException.class, () -> fetcher.submission(ud, head.getUuid()));
+		verify(hook, never()).listActs(any(), any());
 	}
 
 	@Test
@@ -384,12 +412,12 @@ class SubmissionDataFetcherTest {
 	void theKeysComponentListPassesTheKindAndStateFilters() throws Exception {
 		keyOfTheRequest();
 		DgsDataFetchingEnvironment dfe = programmatic();
-		when(hook.listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.WITHDRAWN))
+		when(hook.listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.CANCELLED))
 				.thenReturn(List.of(head));
 		assertEquals(List.of(head), fetcher.submissionsOfComponentProgrammatic(cd.getUuid(), PackageKind.FDA_PREMARKET,
-				SubmissionState.WITHDRAWN, dfe));
+				SubmissionState.CANCELLED, dfe));
 		fetcher.submissionsOfComponentProgrammatic(cd.getUuid(), null, null, dfe);
-		verify(hook).listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.WITHDRAWN);
+		verify(hook).listOfComponent(ORG, cd.getUuid(), PackageKind.FDA_PREMARKET, SubmissionState.CANCELLED);
 		verify(hook).listOfComponent(ORG, cd.getUuid(), null, null);
 	}
 
@@ -458,6 +486,8 @@ class SubmissionDataFetcherTest {
 		assertEquals(List.of(), fetcher.versionsOf(head));
 		assertNull(fetcher.latestOf(head));
 		assertNull(fetcher.releaseVersionOf(head));
+		assertEquals(List.of(), fetcher.versionStatesOf(head));
+		assertEquals(List.of(), fetcher.actsOf(head));
 		assertEquals(List.of(), fetcher.regulatoryKindsOf(cd));
 		verifyNoInteractions(auth, shared, components);
 	}

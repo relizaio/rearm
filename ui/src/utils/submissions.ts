@@ -12,14 +12,19 @@ import { artifactDownloadRef, ArtifactDownloadRef } from './artifactDownload'
 export const submissionsAvailable = regulatoryPackagesAvailable
 
 export const SUBMISSION_STATE_LABELS: Record<string, string> = {
-    ACTIVE: 'Active',
+    FINAL: 'Final',
+    SENT: 'Sent',
+    AMENDED: 'Amended',
+    SUPERSEDED: 'Superseded',
     WITHDRAWN: 'Withdrawn',
+    CANCELLED: 'Cancelled',
 }
 
 export const SUBMISSION_ACT_LABELS: Record<string, string> = {
     CREATED: 'Created',
     RESUBMITTED: 'Resubmitted',
     WITHDRAWN: 'Withdrawn',
+    CANCELLED: 'Cancelled',
     UNCHANGED: 'Unchanged',
 }
 
@@ -38,6 +43,52 @@ export const PART_SKIP_REASON_LABELS: Record<string, string> = {
 /** A label from one of the tables; an unknown value renders itself. */
 export function labelOf (table: Record<string, string>, value: string | null | undefined): string {
     return (value && table[value]) || value || ''
+}
+
+/** A date as the submission panels show it; empty for none. */
+export function submissionDateText (d: string | null | undefined): string {
+    return d ? new Date(d).toLocaleString('en-CA') : ''
+}
+
+/**
+ * The head's state as its tag reads (FDAW-8). Every FINAL version of the one-click acts has no
+ * confirmation record and is not sent; a head the FINAL/CANCELLED migration moved says so.
+ */
+export function submissionStateText (head: any): string {
+    const state = head?.state
+    if (state === 'FINAL') {
+        return head?.legacyState === 'ACTIVE' ? 'Final (legacy, no confirmation record) - not sent'
+            : 'Final (no confirmation record) - not sent'
+    }
+    if (state === 'CANCELLED' && head?.legacyState === 'WITHDRAWN') {
+        return 'Cancelled (legacy: withdrawn ' + submissionDateText(head?.withdrawnDate) + ')'
+    }
+    return labelOf(SUBMISSION_STATE_LABELS, state)
+}
+
+/** The tag type of a head's state: settled states green, cancelled or withdrawn ones amber. */
+export function submissionStateTagType (state: string | null | undefined): 'success' | 'warning' | 'default' {
+    if (state === 'FINAL' || state === 'SENT') return 'success'
+    if (state === 'CANCELLED' || state === 'WITHDRAWN') return 'warning'
+    return 'default'
+}
+
+/**
+ * The note under a cancelled head: the newest CANCEL act's date, actor and reason, or, for a head
+ * withdrawn before the migration (no CANCEL act), the read-only withdrawal triple. Null otherwise.
+ */
+export function submissionCancelNote (head: any): { lead: string, reason: string } | null {
+    if (head?.state !== 'CANCELLED' && head?.state !== 'WITHDRAWN') return null
+    const cancels = (head?.acts ?? []).filter((a: any) => a?.kind === 'CANCEL')
+    const last = cancels.length ? cancels[cancels.length - 1] : null
+    if (last) {
+        return { lead: 'Cancelled on ' + submissionDateText(last.actedAt) + ' by ' + (last.actorName ?? '') + ':',
+            reason: last.reasonText ?? '' }
+    }
+    if (head?.withdrawnDate || head?.withdrawReason) {
+        return { lead: 'Withdrawn on ' + submissionDateText(head.withdrawnDate) + ':', reason: head.withdrawReason ?? '' }
+    }
+    return null
 }
 
 /** The lifecycles a submission may be created at: ASSEMBLED and above (the server decides again). */
@@ -230,11 +281,11 @@ export function submissionResubmitConfirm (preview: any, kind: string, n: Submis
 
 export function submissionWithdrawConfirm (head: any, n: SubmissionNames): SubmissionConfirm {
     return {
-        title: 'Withdraw submission?',
-        text: 'Withdraws the ' + packageKindLabel(head?.kind) + ' submission of ' + releaseLabel(n) + ' at v'
-            + (head?.latestVersion ?? '') + '. Every version and document is kept; the submission is marked withdrawn '
-            + 'and can be resubmitted later.',
-        confirmButtonText: 'Withdraw',
+        title: 'Cancel submission?',
+        text: 'Cancels the ' + packageKindLabel(head?.kind) + ' submission of ' + releaseLabel(n) + ' at v'
+            + (head?.latestVersion ?? '') + '. Every version and document is kept; the version is marked cancelled '
+            + 'and a resubmission writes a new version.',
+        confirmButtonText: 'Cancel submission',
     }
 }
 

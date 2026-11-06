@@ -11,6 +11,8 @@ public enum SubmissionRefusal {
 	PROFILE_CONFLICT, PROFILE_NOT_FOUND, PART_GENERATOR_MISSING, PART_MISSING, PART_FAILED, GENERATION_FAILED,
 	/** The text is longer than 2048 characters or holds a control character other than TAB, LF and CR. */
 	REASON_INVALID,
+	/** The acting user is not a current member of the release's organization (FDAW-8, FDAW-1 F-26). */
+	ACTOR_NOT_MEMBER,
 	/** The edition has no submissions (CE): the shared fetcher's answer when no hook is present. */
 	EDITION_UNSUPPORTED,
 	/** The kind is not switched on in the component's effective package settings. */

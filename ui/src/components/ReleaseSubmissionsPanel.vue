@@ -10,17 +10,17 @@
             <div :data-testid="'submission-head-' + k" class="submission-head">
                 <strong>{{ packageKindLabel(k) }}</strong>
                 <template v-if="headOf(k)">
-                    <n-tag size="small" :type="headOf(k).state === 'ACTIVE' ? 'success' : 'warning'" data-testid="submission-state"
-                        style="margin-left: 8px;">{{ labelOf(SUBMISSION_STATE_LABELS, headOf(k).state) }}</n-tag>
+                    <n-tag size="small" :type="submissionStateTagType(headOf(k).state)" data-testid="submission-state"
+                        style="margin-left: 8px;">{{ submissionStateText(headOf(k)) }}</n-tag>
                     <span style="margin-left: 8px;">v{{ headOf(k).latestVersion }}</span>
                     <span class="text-muted" style="margin-left: 8px;">
                         {{ labelOf(SUBMISSION_ACT_LABELS, headOf(k).lastActKind) }} on {{ dateText(headOf(k).lastActDate) }}
                         by <span data-testid="submission-actor" :title="headOf(k).lastActBy ?? ''">{{
                             submissionActorText(headOf(k).lastActByName, headOf(k).lastActBy) }}</span>
                     </span>
-                    <div v-if="headOf(k).state === 'WITHDRAWN'" class="submission-withdrawn">
-                        Withdrawn on {{ dateText(headOf(k).withdrawnDate) }}:
-                        <span data-testid="submission-withdraw-reason" style="white-space: pre-wrap;">{{ headOf(k).withdrawReason }}</span>
+                    <div v-if="submissionCancelNote(headOf(k))" class="submission-withdrawn">
+                        {{ submissionCancelNote(headOf(k))?.lead }}
+                        <span data-testid="submission-withdraw-reason" style="white-space: pre-wrap;">{{ submissionCancelNote(headOf(k))?.reason }}</span>
                     </div>
                 </template>
                 <span v-else class="text-muted" style="margin-left: 8px;">No submission</span>
@@ -30,8 +30,8 @@
                         @click="startCreate(k)">Create</n-button>
                     <n-button v-if="headOf(k)" size="tiny" data-testid="submission-resubmit" :loading="acts.busy.value"
                         :disabled="acts.busy.value" @click="startResubmit(headOf(k))">Resubmit</n-button>
-                    <n-button v-if="headOf(k)?.state === 'ACTIVE'" size="tiny" type="error" data-testid="submission-withdraw"
-                        :disabled="acts.busy.value" @click="acts.withdraw(headOf(k), actNames)">Withdraw</n-button>
+                    <n-button v-if="headOf(k)?.state === 'FINAL'" size="tiny" type="error" data-testid="submission-withdraw"
+                        :disabled="acts.busy.value" @click="acts.withdraw(headOf(k), actNames)">Cancel</n-button>
                 </n-space>
             </div>
             <!-- The newest version's parts, downloads and manifest in the open, without the chevron
@@ -105,8 +105,9 @@ import submissionQueries from '@/utils/submissionQueries'
 import { graphqlRefusalText } from '@/utils/graphqlErrorText'
 import { packageKindLabel } from '@/utils/packageSettings'
 import {
-    CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, SUBMISSION_STATE_LABELS, canCreateSubmission, labelOf,
-    manifestDownloadRef, submissionActorText, submissionPartRows, submissionVersionRows,
+    CREATE_LIFECYCLE_REASON, SUBMISSION_ACT_LABELS, canCreateSubmission, labelOf,
+    manifestDownloadRef, submissionActorText, submissionCancelNote, submissionPartRows, submissionStateTagType,
+    submissionStateText, submissionVersionRows,
 } from '@/utils/submissions'
 import { ArtifactDownloadRef, artifactDownloadUrl, downloadArtifactBytes, saveBlob } from '@/utils/artifactDownload'
 import { useSubmissionActs } from '@/utils/submissionActs'

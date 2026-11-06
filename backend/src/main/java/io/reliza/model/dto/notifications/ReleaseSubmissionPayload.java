@@ -21,7 +21,7 @@ import io.reliza.model.SubmissionState;
  * with the uuids named here.
  *
  * @param version the version written, or the one a withdrawal tombstones
- * @param act CREATED, RESUBMITTED or WITHDRAWN
+ * @param act CREATED, RESUBMITTED or CANCELLED (WITHDRAWN on a row stored before FDAW-8)
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public record ReleaseSubmissionPayload(
@@ -39,7 +39,8 @@ public record ReleaseSubmissionPayload(
     @JsonIgnore
     public String headline() {
         String name = null == release ? "release" : (release.componentName() + " " + release.version());
-        String what = SubmissionActOutcome.WITHDRAWN == act ? "withdrawn"
+        String what = SubmissionActOutcome.CANCELLED == act ? "cancelled"
+                : SubmissionActOutcome.WITHDRAWN == act ? "withdrawn"
                 : SubmissionActOutcome.RESUBMITTED == act ? "resubmitted" : "created";
         return "Release " + name + ": " + kind + " submission v" + version + " " + what;
     }
