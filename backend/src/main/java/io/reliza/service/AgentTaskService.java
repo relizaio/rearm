@@ -57,6 +57,8 @@ import io.reliza.model.AgentTaskData.HopUsage;
 import io.reliza.model.AgentTaskData.HoldLevel;
 import io.reliza.model.AgentTaskData.SignOff;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
+import io.reliza.model.AgentTaskData.SplitRequest;
+import io.reliza.model.AgentTaskData.SplitRequestState;
 import io.reliza.model.AgentTaskData.TaskAssignment;
 import io.reliza.model.AgentTaskData.TaskHold;
 import io.reliza.model.AgentTaskData.TaskReturn;
@@ -198,6 +200,12 @@ public class AgentTaskService {
 	public static final int TITLE_MAX = 120;
 	/** The rest goes in the description, kept whole up to this, so events and exports stay a sane size. */
 	public static final int DESCRIPTION_MAX = 4000;
+	/** A split child's externalRef or sourceUrl (task SPLIT-9, D9): longer than any tracker reference or URL in use. */
+	public static final int URL_MAX = 2000;
+	/** A split child's tag value (task SPLIT-9, D9): shown beside a key of at most 40 characters on one line. */
+	public static final int TAG_VALUE_MAX = 200;
+	/** The children one split request may propose (task SPLIT-9, D9). */
+	public static final int PROPOSED_CHILDREN_MAX = 20;
 
 	/**
 	 * A new task's title, trimmed, and its description, checked (task fceb1e57): a title of at most
@@ -219,6 +227,56 @@ public class AgentTaskService {
 					+ description.length() + ")");
 		}
 		return t;
+	}
+
+	/**
+	 * Split children checked with the split's rules, the board-independent ones (task SPLIT-9, D9): shared by the
+	 * seat's {@code split} and a hop's SPLIT return, so a proposal the split would refuse is refused when it is made.
+	 * Each child's title and description by the register's {@link #checkedTitle}, every sibling index in range and
+	 * not the child itself, an externalRef and a sourceUrl of at most {@link #URL_MAX} (the externalRef then parsed),
+	 * a group by its key rule, tags by {@link #checkedTags} with each value at most {@link #TAG_VALUE_MAX}. The board's
+	 * own facts (the group exists and is open, the tracker sources, the ladder, the component) wait for the split.
+	 *
+	 * @return the children as stored: the title trimmed, the externalRef canonical, the group key lower-cased, the
+	 *         tag keys normalised; a null group or tags stays null, so the child still inherits the parent's
+	 */
+	static List<SplitChild> checkSplitChildren(List<SplitChild> children) throws RelizaException {
+		List<SplitChild> out = new ArrayList<>();
+		for (int j = 0; j < children.size(); j++) {
+			SplitChild c = children.get(j);
+			if (null == c || StringUtils.isBlank(c.title())) throw new RelizaException("Every split child requires a title");
+			String title = checkedTitle(c.title(), c.description());
+			for (Integer i : c.dependsOnSiblingIndexes()) {
+				if (null == i || i < 0 || i >= children.size() || i == j) {
+					throw new RelizaException("Invalid dependsOnSiblingIndexes entry " + i + " for split child " + j);
+				}
+			}
+			String ref = StringUtils.isBlank(c.externalRef()) ? null : c.externalRef();
+			if (null != ref) {
+				if (ref.length() > URL_MAX) {
+					throw new RelizaException("An externalRef is at most " + URL_MAX + " characters (this one is "
+							+ ref.length() + ")");
+				}
+				ref = TrackerRef.parse(ref).canonical();
+			}
+			if (null != c.sourceUrl() && c.sourceUrl().length() > URL_MAX) {
+				throw new RelizaException("A sourceUrl is at most " + URL_MAX + " characters (this one is "
+						+ c.sourceUrl().length() + ")");
+			}
+			String group = StringUtils.isBlank(c.group()) ? null : AgentTaskGroupService.checkedGroupKey(c.group());
+			List<CommonVariables.TagRecord> tags = null == c.tags() ? null : checkedTags(c.tags());
+			if (null != tags) {
+				for (CommonVariables.TagRecord t : tags) {
+					if (null != t.value() && t.value().length() > TAG_VALUE_MAX) {
+						throw new RelizaException("A tag value is at most " + TAG_VALUE_MAX + " characters (tag "
+								+ t.key() + ")");
+					}
+				}
+			}
+			out.add(new SplitChild(title, ref, c.sourceUrl(), c.workLevel(), c.producesComponent(),
+					c.dependsOnSiblingIndexes(), c.description(), group, tags));
+		}
+		return out;
 	}
 
 	/** As above, with a description. */
@@ -822,6 +880,17 @@ public class AgentTaskService {
 			Integer orderIndex, List<UUID> dependsOn, UUID producesComponent, Integer level,
 			List<RequiredInput> addRequiredInputs, boolean setStrength, Double requiredStrength,
 			AgentActor actor, WhoUpdated wu) throws RelizaException {
+		return authorize(taskUuid, board, roleName, orderIndex, dependsOn, producesComponent, level, addRequiredInputs,
+				setStrength, requiredStrength, null, actor, wu);
+	}
+
+	/** As above, with the coordinator's note (task SPLIT-9, D7): the seat's authorize. */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData authorize(UUID taskUuid, AgentBoardData board, String roleName,
+			Integer orderIndex, List<UUID> dependsOn, UUID producesComponent, Integer level,
+			List<RequiredInput> addRequiredInputs, boolean setStrength, Double requiredStrength, String note,
+			AgentActor actor, WhoUpdated wu) throws RelizaException {
+		checkedNote(note);
 		if (setStrength) {
 			if (null == requiredStrength) {
 				throw new RelizaException("The coordinator can raise a task's strength requirement but not"
@@ -842,7 +911,7 @@ public class AgentTaskService {
 			}
 		}
 		AgentTaskData td = authorize(taskUuid, board, roleName, orderIndex, dependsOn, producesComponent,
-				level, addRequiredInputs, actor, wu);
+				level, addRequiredInputs, note, actor, wu);
 		return setStrength ? setRequiredStrength(taskUuid, requiredStrength, actor, wu) : td;
 	}
 
@@ -850,6 +919,32 @@ public class AgentTaskService {
 	public AgentTaskData authorize(UUID taskUuid, AgentBoardData board, String roleName,
 			Integer orderIndex, List<UUID> dependsOn, UUID producesComponent, Integer level,
 			List<RequiredInput> addRequiredInputs, AgentActor actor, WhoUpdated wu) throws RelizaException {
+		return authorize(taskUuid, board, roleName, orderIndex, dependsOn, producesComponent, level, addRequiredInputs,
+				null, actor, wu);
+	}
+
+	/**
+	 * A coordinator's note, checked and folded to one line (task SPLIT-9, D7, F-10) as {@code unlinkPr} treats its
+	 * note: at most {@link #DESCRIPTION_MAX} characters, every whitespace run, a line break included, one space. Null
+	 * for a blank note.
+	 */
+	static String checkedNote(String note) throws RelizaException {
+		if (null != note && note.length() > DESCRIPTION_MAX) {
+			throw new RelizaException("note is at most " + DESCRIPTION_MAX + " characters");
+		}
+		return StringUtils.isBlank(note) ? null : note.strip().replaceAll("(?U)\\s+", " ");
+	}
+
+	/**
+	 * @param note the coordinator's note (task SPLIT-9, D7): on the AUTHORIZE status row and, when the task carries a
+	 *        split request, the reason it is declined; null for none. Checked before anything is written.
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData authorize(UUID taskUuid, AgentBoardData board, String roleName,
+			Integer orderIndex, List<UUID> dependsOn, UUID producesComponent, Integer level,
+			List<RequiredInput> addRequiredInputs, String note, AgentActor actor, WhoUpdated wu) throws RelizaException {
+		// First: a refused note writes and settles nothing (task SPLIT-9, F-10).
+		note = checkedNote(note);
 		AgentTaskData td = lockedTask(taskUuid);
 		answeredByActing(td, actor, "authorized", "for " + roleName, wu);
 		requireStatus(td, taskUuid, TaskStatus.PENDING_INTAKE, TaskStatus.AWAITING_COORDINATOR);
@@ -910,7 +1005,11 @@ public class AgentTaskService {
 		// that does not stand, in the actor's name. Posted after the commit, board after task.
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		routingService.settleCheckpoint(td, board, rc, actor, "authorized for " + rc.getName(), effects);
-		td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.AUTHORIZE, actor);
+		// A split request is declined by the same verb (task SPLIT-9, D7), settled before the transition so the
+		// funnel's lapse finds nothing to lapse.
+		routingService.settleSplitRequest(td, rc.getName(), actor, null != note ? note : "authorized for " + rc.getName(),
+				effects);
+		td.transitionStatus(TaskStatus.QUEUED, StatusTrigger.AUTHORIZE, actor, note);
 		AgentTaskData saved = saveData(td, wu);
 		if (!effects.isEmpty()) boardEffectsApplier.applyAfterCommit(effects, wu);
 		return saved;
@@ -1242,6 +1341,7 @@ public class AgentTaskService {
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		if (null != named) {
 			routingService.settleCheckpoint(td, boardOf(td), named, actor, "hold lifted to " + named.getName(), effects);
+			routingService.settleSplitRequest(td, named.getName(), actor, "hold lifted to " + named.getName(), effects);
 		}
 		AgentTaskData routed = routeAfterHop(td, lastSignOff(td), override, effects, wu);
 		if (StringUtils.isNotBlank(note) || null != override) {
@@ -1600,19 +1700,21 @@ public class AgentTaskService {
 	public List<AgentTaskData> split(UUID taskUuid, AgentBoardData board,
 			List<SplitChild> children, AgentActor actor, WhoUpdated wu) throws RelizaException {
 		if (children == null || children.isEmpty()) throw new RelizaException("Split requires children");
+		children = checkSplitChildren(children);
 		// The board before the parent: each child's registration stamps its key under the board
 		// lock, and taking that after the parent's task lock would invert the board-before-task order.
 		AgentBoardData lockedBoard = agentBoardService.lockBoard(board.getUuid());
 		AgentTaskData td = lockedTask(taskUuid);
 		requireStatus(td, taskUuid, TaskStatus.PENDING_INTAKE, TaskStatus.QUEUED, TaskStatus.AWAITING_COORDINATOR);
-		// A split at the design checkpoint pins the reviewed design on every child (task SPLIT-5, D7).
+		// Every split pins the parent's newest handed-over design on every child, whatever the status or the
+		// checkpoint record says (task SPLIT-9, D1, D2); a PENDING checkpoint is still settled below (SPLIT-5, D7).
 		boolean atCheckpoint = td.checkpointPending();
-		List<RequiredInput> carried = atCheckpoint ? carriedDesign(td.getDesignCheckpoint().design()) : null;
+		List<UUID> design = routingService.reviewedDesign(td, agentBoardService.listRoleConfigs(lockedBoard.getUuid()));
+		List<RequiredInput> carried = carriedDesign(design);
 		// A child names its own group and tags or inherits the parent's (task-groups-and-tags.md D9).
 		String parentGroup = lockedBoard.groupByUuid(td.getGroup()).map(AgentBoardData.TaskGroup::key).orElse(null);
 		List<AgentTaskData> created = new ArrayList<>();
 		for (SplitChild c : children) {
-			if (StringUtils.isBlank(c.title())) throw new RelizaException("Every split child requires a title");
 			// split children inherit the parent's level unless the coordinator names another
 			Integer childLevel = null != c.workLevel() ? c.workLevel() : td.getWorkLevel();
 			AgentTaskData child = register(lockedBoard, c.externalRef(), c.title(), c.description(),
@@ -1630,34 +1732,37 @@ public class AgentTaskService {
 			List<Integer> depList = children.get(i).dependsOnSiblingIndexes();
 			if (depList.isEmpty()) continue;
 			List<UUID> deps = new ArrayList<>();
-			for (Integer d : depList) {
-				int idx = d;
-				if (idx < 0 || idx >= created.size() || idx == i) {
-					throw new RelizaException("Invalid dependsOnSiblingIndexes entry " + idx
-							+ " for split child " + i);
-				}
-				deps.add(created.get(idx).getUuid());
-			}
+			// In range and not the child itself: checkSplitChildren refused anything else.
+			for (Integer d : depList) deps.add(created.get(d).getUuid());
 			AgentTaskData child = lockedTask(created.get(i).getUuid());
 			validateDependencies(child, deps);
 			child.setDependsOn(deps);
 			created.set(i, saveData(child, wu));
 		}
+		String keys = created.stream().map(AgentTaskData::keyOrUuid).collect(Collectors.joining(", "));
+		String splitNote = created.size() + " children: " + keys;
 		if (atCheckpoint) {
 			td.setDesignCheckpoint(td.getDesignCheckpoint().withSettled(AgentTaskData.DesignCheckpointState.SPLIT, actor,
-					created.size() + " children: "
-							+ created.stream().map(AgentTaskData::keyOrUuid).collect(Collectors.joining(", "))));
+					splitNote));
+		}
+		if (td.splitRequested()) {
+			td.setSplitRequest(td.getSplitRequest().withSettled(SplitRequestState.SPLIT, actor, splitNote));
 		}
 		// Written even when the task already waits on the coordinator (a task returned as too big): SPLIT is a
 		// recording trigger, so the split stays in the history (RD3-16 architecture-2 §1).
 		td.transitionStatus(TaskStatus.AWAITING_COORDINATOR, StatusTrigger.SPLIT, actor);
+		// What the children received, posted after the commit (task SPLIT-9, D3).
+		BoardEffects effects = new BoardEffects(td.getBoard());
+		effects.info("Task " + taskLabel(td) + " split into " + splitNote + "; "
+				+ (null == carried ? "no design round to carry" : "each carries " + routingService.roundsLine(design)));
 		saveData(td, wu);
+		boardEffectsApplier.applyAfterCommit(effects, wu);
 		return created;
 	}
 
 	/**
-	 * What each child of a split at the design checkpoint carries (task SPLIT-5, D7): every release of the record's
-	 * design, pinned at floor ASSEMBLED. Null when none of them is a document any more.
+	 * What each child of a split carries (task SPLIT-5, D7; SPLIT-9, D1): every release of the design, pinned at floor
+	 * ASSEMBLED. Null when none of them is a document any more.
 	 */
 	private List<RequiredInput> carriedDesign(List<UUID> design) {
 		List<RequiredInput> carried = new ArrayList<>();
@@ -3392,6 +3497,13 @@ public class AgentTaskService {
 					tr.usage(), tr.outputs()));
 		}
 		td.setReturns(returns);
+		// The split request is the worker's account too (task SPLIT-9, 3.4): its role, state, times and the
+		// coordinator's note stay, the requester's session, why and proposal go.
+		SplitRequest sr = td.getSplitRequest();
+		if (null != sr) {
+			td.setSplitRequest(new SplitRequest(sr.requestedAt(), sr.role(), sr.roleUuid(), null, null, List.of(),
+					sr.state(), sr.settledBy(), sr.settledAt(), sr.note()));
+		}
 		return td;
 	}
 
@@ -3936,16 +4048,57 @@ public class AgentTaskService {
 	@Transactional(rollbackFor = RelizaException.class)
 	public AgentTaskData returnTask(UUID taskUuid, UUID sessionUuid, TaskReturnReason reason,
 			String description, List<UUID> outputs, WhoUpdated wu) throws RelizaException {
+		return returnTask(taskUuid, sessionUuid, reason, description, outputs, null, wu);
+	}
+
+	/**
+	 * As above, with the children a SPLIT return proposes (task SPLIT-9, D4, D9): the request is recorded on the task
+	 * as {@code splitRequest}, REQUESTED, for the coordinator to split or send on. Every field is checked before
+	 * anything is written: the description of any reason at most {@link #DESCRIPTION_MAX}, a SPLIT description
+	 * required and folded to one line, a proposal only with SPLIT, at most {@link #PROPOSED_CHILDREN_MAX} children, each
+	 * by the split's own rules ({@link #checkSplitChildren}).
+	 *
+	 * @param proposedChildren the proposal; null for none
+	 */
+	@Transactional(rollbackFor = RelizaException.class)
+	public AgentTaskData returnTask(UUID taskUuid, UUID sessionUuid, TaskReturnReason reason,
+			String description, List<UUID> outputs, List<SplitChild> proposedChildren, WhoUpdated wu)
+			throws RelizaException {
 		if (reason == null) throw new RelizaException("Return requires a reason");
 		if (reason == TaskReturnReason.OTHER && StringUtils.isBlank(description)) {
 			throw new RelizaException("Return reason OTHER requires a description");
+		}
+		if (null != description && description.length() > DESCRIPTION_MAX) {
+			throw new RelizaException("A description is at most " + DESCRIPTION_MAX + " characters (this one is "
+					+ description.length() + ")");
+		}
+		List<SplitChild> proposed = null;
+		if (reason == TaskReturnReason.SPLIT) {
+			if (StringUtils.isBlank(description)) {
+				throw new RelizaException("Return reason SPLIT requires a description: say in one line why the task"
+						+ " should be split");
+			}
+			// One line, as unlinkPr folds its note: the row, the record, the ALERT and the payload carry the same.
+			description = description.strip().replaceAll("(?U)\\s+", " ");
+			if (null != proposedChildren && proposedChildren.size() > PROPOSED_CHILDREN_MAX) {
+				throw new RelizaException("A split request proposes at most " + PROPOSED_CHILDREN_MAX + " children");
+			}
+			proposed = null == proposedChildren ? List.of() : checkSplitChildren(proposedChildren);
+		} else if (null != proposedChildren) {
+			throw new RelizaException("proposedChildren needs reason SPLIT");
 		}
 		AgentTaskData td = lockedTask(taskUuid);
 		TaskAssignment a = requireAssignmentBySession(td, taskUuid, sessionUuid);
 		List<UUID> declared = validateOutputs(td, a, sessionUuid, outputs, null);
 		HopUsage usage = hopUsageWithAllowance(td, a, taskUuid, sessionUuid);
+		ZonedDateTime returnedAt = ZonedDateTime.now();
 		td.addReturn(new TaskReturn(a.role(), a.roleUuid(), a.agent(), a.session(), reason, description,
-				ZonedDateTime.now(), usage, declared));
+				returnedAt, usage, declared));
+		if (null != proposed) {
+			// One record, rewritten by each SPLIT return (D4); the return row above stays the hop-log entry.
+			td.setSplitRequest(new SplitRequest(returnedAt, a.role(), a.roleUuid(), a.session(), description, proposed,
+					SplitRequestState.REQUESTED, null, null, null));
+		}
 		td.setAssignment(null);
 		BoardEffects effects = new BoardEffects(td.getBoard());
 		// A hop that returns to wait on the investigations it commissioned (task RD4-12) waits for them, not for the
@@ -3964,7 +4117,7 @@ public class AgentTaskService {
 					+ " again once the report is in");
 		} else {
 			td.transitionStatus(TaskStatus.AWAITING_COORDINATOR, StatusTrigger.RETURN, AgentActor.ofSession(sessionUuid));
-			returnEvent(effects, td, a.role(), reason, description);
+			returnEvent(effects, td, a.role(), reason, description, proposed);
 		}
 		// A returned hop spent what it spent, so it is flagged like a sign-off.
 		alertIfOverAllowance(td, a.role(), usage, effects);
@@ -3981,7 +4134,7 @@ public class AgentTaskService {
 	 * own routing offered the wrong role, or the holding session simply closed.
 	 */
 	private void returnEvent(BoardEffects effects, AgentTaskData td, String role, TaskReturnReason reason,
-			String description) {
+			String description, List<SplitChild> proposed) {
 		if (reason == TaskReturnReason.SESSION_CLOSED) {
 			effects.info("Task " + taskLabel(td) + " unassigned"
 					+ (StringUtils.isBlank(description) ? "" : ": " + description));
@@ -3990,9 +4143,18 @@ public class AgentTaskService {
 		// On a board with a blind review role the description stays on the task, where the blind
 		// read redacts it; the board feed, which every key on the board reads, carries only the
 		// reason (task 0192a587, round 2, T-4).
-		boolean withDescription = StringUtils.isNotBlank(description) && !boardHasBlindRole(td.getBoard());
+		boolean blind = boardHasBlindRole(td.getBoard());
+		boolean withDescription = StringUtils.isNotBlank(description) && !blind;
 		String message = "Task " + taskLabel(td) + " returned by " + role + " (" + reason + ")"
 				+ (withDescription ? ": " + StringUtils.abbreviate(description.strip(), 200) : "");
+		// A split request names what it proposes (task SPLIT-9, D6): the titles, cut, unless the board reviews blind.
+		if (reason == TaskReturnReason.SPLIT) {
+			message += SplitRequest.proposesClause(proposed);
+			if (!blind && null != proposed && !proposed.isEmpty()) {
+				message += ": " + StringUtils.abbreviate(
+						proposed.stream().map(SplitChild::title).collect(Collectors.joining("; ")), 200);
+			}
+		}
 		if (reason == TaskReturnReason.ROLE_MISMATCH) effects.info(message);
 		else effects.alert(message);
 	}
@@ -4224,7 +4386,7 @@ public class AgentTaskService {
 				saveData(td, wu);
 				// Only once the release is saved: a task that failed to release posts nothing.
 				BoardEffects effects = byBoard.computeIfAbsent(td.getBoard(), BoardEffects::new);
-				returnEvent(effects, td, a.role(), TaskReturnReason.SESSION_CLOSED, closeNote);
+				returnEvent(effects, td, a.role(), TaskReturnReason.SESSION_CLOSED, closeNote, null);
 				alertIfOverAllowance(td, a.role(), usage, effects);
 			} catch (Exception e) {
 				log.error("Failed to release assignment on task {} for closing session {}",

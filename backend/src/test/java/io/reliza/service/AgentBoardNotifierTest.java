@@ -17,6 +17,7 @@ import static org.mockito.Mockito.when;
 import java.lang.reflect.Field;
 import java.time.ZonedDateTime;
 import java.util.LinkedHashMap;
+import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.UUID;
@@ -26,6 +27,7 @@ import org.junit.jupiter.api.Test;
 import io.reliza.common.Utils;
 import io.reliza.model.AgentBoardData;
 import io.reliza.model.AgentTaskData;
+import io.reliza.model.AgentTaskInput;
 import io.reliza.model.AgentTaskData.HoldKind;
 import io.reliza.model.AgentTaskData.HoldLevel;
 import io.reliza.model.AgentTaskData.TaskHold;
@@ -103,6 +105,40 @@ class AgentBoardNotifierTest {
 		notifier.returned(td, new AgentTaskData.TaskReturn("coder", null, null, null,
 				AgentTaskData.TaskReturnReason.TASK_UNCLEAR, "scope?", ZonedDateTime.now(), null, null));
 		verify(self).write(any(), eq(NotificationEventType.AGENT_TASK_RETURNED), any(), any(), any());
+	}
+
+	/** T-2 of task SPLIT-9: a split request tells people the why and the count of proposed children, never the titles. */
+	@Test
+	void aSplitReturnTellsTheCountNeverTheTitles() throws Exception {
+		AgentBoardNotifier notifier = new AgentBoardNotifier();
+		AgentBoardNotifier self = mock(AgentBoardNotifier.class);
+		AgentBoardService boards = mock(AgentBoardService.class);
+		when(boards.getBoardData(any())).thenReturn(Optional.empty());
+		inject(notifier, "self", self);
+		inject(notifier, "agentBoardService", boards);
+		AgentTaskData td = new AgentTaskData();
+		org.springframework.test.util.ReflectionTestUtils.setField(td, "uuid", UUID.randomUUID());
+		td.setOrg(UUID.randomUUID());
+		td.setTitle("too big");
+		td.setSplitRequest(new AgentTaskData.SplitRequest(ZonedDateTime.now(), "coder", null, null,
+				"too big: two repositories", List.of(new AgentTaskInput.SplitChild("secret A", null, null, null, null, null),
+						new AgentTaskInput.SplitChild("secret B", null, null, null, null, null)),
+				AgentTaskData.SplitRequestState.REQUESTED, null, null, null));
+		AgentTaskData.TaskReturn split = new AgentTaskData.TaskReturn("coder", null, null, null,
+				AgentTaskData.TaskReturnReason.SPLIT, "too big: two repositories", ZonedDateTime.now(), null, null);
+		notifier.returned(td, split);
+		td.setSplitRequest(new AgentTaskData.SplitRequest(ZonedDateTime.now(), "coder", null, null,
+				"too big: two repositories", null, AgentTaskData.SplitRequestState.REQUESTED, null, null, null));
+		notifier.returned(td, split);
+
+		org.mockito.ArgumentCaptor<AgentBoardEventPayload> sent = org.mockito.ArgumentCaptor.forClass(AgentBoardEventPayload.class);
+		verify(self, org.mockito.Mockito.times(2)).write(any(), eq(NotificationEventType.AGENT_TASK_RETURNED), any(),
+				sent.capture(), any());
+		assertEquals("SPLIT", sent.getAllValues().get(0).kind());
+		assertEquals("Returned by coder (SPLIT): too big: two repositories; proposes 2 children",
+				sent.getAllValues().get(0).message());
+		assertEquals("Returned by coder (SPLIT): too big: two repositories; proposes no children",
+				sent.getAllValues().get(1).message());
 	}
 
 	@Test

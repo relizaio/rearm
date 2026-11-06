@@ -152,7 +152,11 @@ as an input on your task. If you cannot go on without it, return your hop with
 waiting on the investigation, and offers it back to you once the report is in.
 If the investigation is cancelled instead, the task comes back with no report:
 its reports returned list the cancel and its note. Ask again, go on without it,
-or return the hop.
+or return the hop. A task too big for your pass, or whose design recommends a
+split not yet made, is returned with `--reason SPLIT`, one line why and, when
+you can, `--children-json` with the children you propose (a CLI without that
+flag on `return` sends the request without a proposal); the coordinator splits
+it or sends it back with a note you read in `task brief`.
 
 ## Name the task by its key
 

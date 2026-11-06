@@ -26,6 +26,7 @@ import com.fasterxml.jackson.annotation.JsonProperty;
 import io.reliza.common.CommonVariables;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentTaskInput.ResolvedInput;
+import io.reliza.model.AgentTaskInput.SplitChild;
 import io.reliza.common.Utils;
 import lombok.AccessLevel;
 import lombok.Data;
@@ -94,7 +95,12 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		 * ended there.
 		 */
 		PARKED_FOR_OPERATOR,
-		OTHER
+		OTHER,
+		/**
+		 * The hop finds the task too big for its role's pass and asks the coordinator to split it (task SPLIT-9);
+		 * the request is recorded on the task as {@code splitRequest}.
+		 */
+		SPLIT
 	}
 
 	/**
@@ -1213,6 +1219,71 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		return null != designCheckpoint && designCheckpoint.pending();
 	}
 
+	/** Where a split request stands (task SPLIT-9): waiting on the coordinator, or settled one way or another. */
+	public enum SplitRequestState {
+		REQUESTED,
+		/** The coordinator split the task. */
+		SPLIT,
+		/** The coordinator sent the task on to a role (authorize, or a lifted hold naming a role), with a note. */
+		DECLINED,
+		/**
+		 * The task left the coordinator by a verb that was not a decision on the request (routed by routing, hold
+		 * lifted without a role, completed, cancelled); the note names the verb.
+		 */
+		LAPSED
+	}
+
+	/**
+	 * A role's request that the task be split (task SPLIT-9, D4): a return with reason SPLIT. One record, rewritten
+	 * by each such return; the return row in {@code returns} stays the hop-log entry.
+	 *
+	 * @param requestedAt when the return was made
+	 * @param role the returning hop's role
+	 * @param session the returning session; null on a blind read
+	 * @param description the one-line why; null on a blind read
+	 * @param proposedChildren the children the requester proposes, in the split's own shape; empty when none (and on a
+	 *        blind read)
+	 * @param settledBy who split, declined or lapsed it; null while REQUESTED
+	 * @param note the coordinator's note, the split's "n children: keys", or the verb that lapsed it
+	 */
+	@JsonIgnoreProperties(ignoreUnknown = true)
+	public static record SplitRequest(ZonedDateTime requestedAt, String role, UUID roleUuid, UUID session,
+			String description, List<SplitChild> proposedChildren, SplitRequestState state, AgentActor settledBy,
+			ZonedDateTime settledAt, String note) implements Serializable {
+		private static final long serialVersionUID = 20261103L;
+
+		public SplitRequest {
+			if (null == proposedChildren) proposedChildren = List.of();
+		}
+
+		/** "; proposes 2 children" or "; proposes no children": a request's clause in the ALERT and the payload (D6). */
+		public static String proposesClause(List<SplitChild> proposed) {
+			return null == proposed || proposed.isEmpty() ? "; proposes no children"
+					: "; proposes " + proposed.size() + " children";
+		}
+
+		/** Whether it still waits on the coordinator. */
+		public boolean requested() {
+			return SplitRequestState.REQUESTED == state;
+		}
+
+		/** The same record, settled by {@code by} now. */
+		public SplitRequest withSettled(SplitRequestState settled, AgentActor by, String why) {
+			return new SplitRequest(requestedAt, role, roleUuid, session, description, proposedChildren, settled, by,
+					ZonedDateTime.now(), why);
+		}
+	}
+
+	/** The newest split request a hop made on this task (task SPLIT-9); null when none was ever made. */
+	@JsonProperty
+	private SplitRequest splitRequest;
+
+	/** Whether the task carries a split request the coordinator has not settled. */
+	@JsonIgnore
+	public boolean splitRequested() {
+		return null != splitRequest && splitRequest.requested();
+	}
+
 	/** Every session that ever held the assignment (accumulates; boards link to sessions through this). */
 	@JsonProperty
 	private List<UUID> sessions = new ArrayList<>();
@@ -1309,6 +1380,12 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 			throw new IllegalStateException("A transition from " + to + " to itself (" + trigger
 					+ ") changes nothing; its caller should not have made it");
 		}
+		// A split request never outlives the wait (task SPLIT-9, D7): every way out of AWAITING_COORDINATOR that is
+		// not a hold and did not decide on the request lapses it here, the one funnel every status change crosses.
+		// The verbs that decide (authorize or a lift naming a role, split) settle it before they transition.
+		if (splitRequested() && TaskStatus.AWAITING_COORDINATOR != to && TaskStatus.ON_HOLD != to) {
+			splitRequest = splitRequest.withSettled(SplitRequestState.LAPSED, actor, lapseNote(to, note));
+		}
 		if (this.statusHistory == null) this.statusHistory = new ArrayList<>();
 		// The row leaving a hold keeps the PRs linked under it (task RD4-19): every release clears the hold after
 		// this row, so they would otherwise go with it.
@@ -1317,6 +1394,14 @@ public class AgentTaskData extends RelizaDataParent implements RelizaObject {
 		this.statusHistory.add(new StatusChange(this.status, to, ZonedDateTime.now(), trigger, actor,
 				StringUtils.isBlank(note) ? null : note, linkedUnderHold));
 		this.status = to;
+	}
+
+	/** The verb that took the task away from a split request, in the words of the lapsed record's note. */
+	private String lapseNote(TaskStatus to, String note) {
+		if (TaskStatus.QUEUED == to) return "routed to " + role + (StringUtils.isBlank(note) ? "" : ": " + note);
+		if (TaskStatus.COMPLETED == to) return "completed";
+		if (TaskStatus.CANCELLED == to) return "cancelled";
+		return null == to ? null : to.name().toLowerCase();
 	}
 
 	public void addSignOff(SignOff s) {
