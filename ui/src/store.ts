@@ -54,10 +54,12 @@ const AGENT_BOARD_SELECTION = `
     noProgressRepeatsToStop
     humanQueueAgeMinutes
     coordinatorStopLift
+    architectCheckpointWaiver
     deliveryPolicy { mode awaitDeclaration merge { by method atTestedHead requireDeclaration order } }
     effectiveDeliveryPolicy { merge { by method atTestedHead requireDeclaration order } }
     effectiveDeliveryPolicy { mode awaitDeclaration }
     effectiveCoordinatorStopLift
+    effectiveArchitectCheckpointWaiver
     eventRetentionDays
     staleness { roleUnstaffedMinutes hopNoProgressMinutes deliveryStuckMinutes seatSilentMinutes repeatMinutes investigationOverdueMinutes }
     ladder { levels { number name description } prompt }
@@ -109,9 +111,10 @@ const AGENT_TASK_SELECTION = `
     requireHumanReview
     assignment { session agent role assignedAt promptVersion }
     stale { rule since minutes message }
-    signOffs { role roleUuid agent session assignedAt signedOffAt outcome note promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
+    signOffs { role roleUuid agent session assignedAt signedOffAt outcome note noSplit promptVersion reviewedBy { kind uuid name } outputs reviewedInputs { release specification round promotedTo } refusedPromotions { release specification round reason } usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     returns { role agent session reason description returnedAt outputs usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete } }
     designCheckpoint { reachedAt afterRole beforeRole design state settledBy { kind uuid name } settledAt note }
+    designCheckpointWaiver { bySession byAgent role roleUuid at designRound note standing }
     splitRequest { requestedAt role roleUuid session description proposedChildren { title description dependsOnSiblingIndexes workLevel } state settledBy { kind uuid name } settledAt note }
     usage { inputTokens outputTokens cacheReadTokens cacheWriteTokens requests turns reports derivedCostMicros costComplete }
     documents {
@@ -196,6 +199,7 @@ const AGENT_TASK_SELECTION = `
     orderSetBy { kind uuid name }
     orderSetAt
     requiredRolesSkipped
+    rolesSkippedByCondition { role roleUuid reason at by { kind uuid name } waives live }
     reopenedAt
     reopenCount
     reopens { role at reason by { kind uuid name } }
@@ -3012,6 +3016,7 @@ const storeObject : any = {
                                     required
                                 }
                                 commissions { roles intake defaultBudgetMicros review }
+                                runWhen { taggedAny taggedNone }
                             }
                         }
                     }`,
@@ -3323,6 +3328,7 @@ const storeObject : any = {
                             humanGate
                             producesOutputs { specification scope required }
                             commissions { roles intake defaultBudgetMicros review }
+                            runWhen { taggedAny taggedNone }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
@@ -3417,6 +3423,7 @@ const storeObject : any = {
                                 requireDistinctAgent
                                 blindReview
                                 coordinatorCheckpoint
+                                runWhen { taggedAny taggedNone }
                                 active
                                 requiredCapabilities
                                 kind
@@ -3458,6 +3465,7 @@ const storeObject : any = {
                             necessity
                             humanGate
                             commissions { roles intake defaultBudgetMicros review }
+                            runWhen { taggedAny taggedNone }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory

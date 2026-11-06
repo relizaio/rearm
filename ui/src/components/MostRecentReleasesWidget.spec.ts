@@ -1,7 +1,8 @@
 // @vitest-environment happy-dom
 //
-// RD4-10: the home page's most-recent-releases widget lists software only. Both reads it makes (the
-// org's, and a perspective's) send the software kinds; the full page asks for every kind.
+// RD4-10, TPF-157: the most-recent-releases widget lists software only on the home page and on the full
+// page. Both reads it makes (the org's, and a perspective's) send the software kinds; no caller can ask
+// for every kind.
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { flushPromises, mount } from '@vue/test-utils'
 
@@ -47,9 +48,13 @@ describe('MostRecentReleasesWidget', () => {
         expect(call.variables.componentKinds).toBe(SOFTWARE_KINDS)
     })
 
-    it('asks for every kind when the caller wants the rounds', async () => {
-        const call = await variablesOf({ perspectiveUuid: 'default', includeDocuments: true, showFullPageIcon: false })
-        expect(call.variables.componentKinds).toBeNull()
+    it('a stray includeDocuments binding changes nothing', async () => {
+        const home = await variablesOf({ perspectiveUuid: 'default', includeDocuments: true, showFullPageIcon: false })
+        expect(home.variables.componentKinds).toBe(SOFTWARE_KINDS)
+        expect(home.variables.componentKinds).not.toContain('BOARD_DOCUMENT')
+        query.mockClear()
+        const perspective = await variablesOf({ perspectiveUuid: 'p1', includeDocuments: true, showFullPageIcon: false })
+        expect(perspective.variables.componentKinds).toBe(SOFTWARE_KINDS)
     })
 
     it('the queries carry the argument', async () => {
@@ -61,11 +66,16 @@ describe('MostRecentReleasesWidget', () => {
         }
     })
 
-    it('the full page passes includeDocuments, and the home page does not', async () => {
+    it('neither the full page nor the home page passes include-documents', async () => {
         const { readFileSync } = await import('node:fs')
         const { resolve } = await import('node:path')
         const src = (f: string) => readFileSync(resolve(__dirname, f), 'utf8')
-        expect(src('MostRecentReleasesPage.vue')).toContain(':include-documents="true"')
+        const page = src('MostRecentReleasesPage.vue')
+        expect(page).not.toContain('include-documents')
+        const lines = page.split('\n')
+        const at = lines.findIndex((l) => l.includes(':component-type="componentTypeValue"'))
+        expect(at).toBeGreaterThanOrEqual(0)
+        expect(lines.slice(at + 1).find((l) => l.trim() !== '')?.trim()).toBe('/>')
         expect(src('AppHome.vue')).not.toContain('include-documents')
     })
 })
