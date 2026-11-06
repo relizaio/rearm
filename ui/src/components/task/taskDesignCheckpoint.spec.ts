@@ -155,6 +155,23 @@ describe('the store\'s selections', () => {
         const presets = store.slice(store.indexOf('agentTaskRolePresetsOfOrg'))
         expect(presets.slice(0, presets.indexOf('`', presets.indexOf('`') + 1))).not.toContain('coordinatorCheckpoint')
     })
+
+    // T-114 (task TPF-156): the passed-over record on the task, not on the card; the condition on the four role reads.
+    it('selects the passed-over record on the task after requiredRolesSkipped, not on the card', () => {
+        const literal = (start: number) => store.slice(start, store.indexOf('`', store.indexOf('`', start) + 1))
+        const task = literal(store.indexOf('const AGENT_TASK_SELECTION = `'))
+        const line = 'rolesSkippedByCondition { role roleUuid reason at by { kind uuid name } waives live }'
+        expect(task).toContain(line)
+        expect(task.indexOf(line)).toBeGreaterThan(task.indexOf('requiredRolesSkipped\n'))
+        const card = literal(store.indexOf('const AGENT_TASK_CARD_SELECTION = `'))
+        expect(card).not.toContain('rolesSkippedByCondition')
+    })
+
+    it('selects the runWhen condition on the three role queries and the presets query', () => {
+        expect(store.match(/^\s*runWhen \{ taggedAny taggedNone \}$/gm)).toHaveLength(4)
+        const presets = store.slice(store.indexOf('agentTaskRolePresetsOfOrg'))
+        expect(presets.slice(0, presets.indexOf('`', presets.indexOf('`') + 1))).toContain('runWhen { taggedAny taggedNone }')
+    })
 })
 
 // The architect's waiver (task TPF-153, T-10): the chip, the hop row and the sign-off's --no-split tag, for a

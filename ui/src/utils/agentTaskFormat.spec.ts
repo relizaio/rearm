@@ -229,3 +229,39 @@ describe('hopHistory: the split request row', () => {
         expect(hopHistory(null)).toEqual([])
     })
 })
+
+// The passed-over rows in the hop log (task TPF-156, T-112): one row per entry of rolesSkippedByCondition, at its at.
+describe('hopHistory: the passed-over rows', () => {
+    const skip = (role: string, at: string | null) => ({ role, roleUuid: null, reason: 'runWhen not met: no mutation tag', at,
+        by: { kind: 'SYSTEM', uuid: null, name: 'routing' }, waives: [], live: true })
+    const task = (over: Record<string, any> = {}) => structuredClone({
+        signOffs: [
+            { role: 'coder', signedOffAt: '2026-11-05T10:00:00Z', outcome: 'PASSED' },
+            { role: 'tester', signedOffAt: '2026-11-05T12:00:00Z', outcome: 'PASSED' },
+        ],
+        returns: [],
+        rolesSkippedByCondition: [skip('mutant_coder', '2026-11-05T11:00:00Z'), skip('mutant_tester', '2026-11-05T11:00:00Z')],
+        ...over,
+    })
+
+    it('places each entry at its at, between the hops around it, with its record', () => {
+        const t = task()
+        const h = hopHistory(t)
+        expect(h.map(e => e.kind)).toEqual(['signoff', 'condition_skip', 'condition_skip', 'signoff'])
+        expect(h[1]).toEqual({ kind: 'condition_skip', rec: t.rolesSkippedByCondition[0], at: '2026-11-05T11:00:00Z' })
+        expect(h[2]).toEqual({ kind: 'condition_skip', rec: t.rolesSkippedByCondition[1], at: '2026-11-05T11:00:00Z' })
+    })
+
+    it('has no row for an empty list or none', () => {
+        expect(hopHistory(task({ rolesSkippedByCondition: [] })).map(e => e.kind)).toEqual(['signoff', 'signoff'])
+        expect(hopHistory(task({ rolesSkippedByCondition: undefined })).map(e => e.kind)).toEqual(['signoff', 'signoff'])
+        expect(hopHistory(task({ rolesSkippedByCondition: null })).map(e => e.kind)).toEqual(['signoff', 'signoff'])
+    })
+
+    it('sorts an entry with a null at as compareHopTimes sorts a null: before every dated hop', () => {
+        const h = hopHistory(task({ rolesSkippedByCondition: [skip('mutant_coder', null)] }))
+        expect(h.map(e => e.kind)).toEqual(['condition_skip', 'signoff', 'signoff'])
+        expect(h[0].at).toBeNull()
+        expect(compareHopTimes(null, '2026-11-05T10:00:00Z')).toBeLessThan(0)
+    })
+})

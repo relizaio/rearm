@@ -77,6 +77,16 @@
                             v-if="c.workLevel != null"> · level {{ c.workLevel }}</template></li>
                     </ol>
                 </template>
+                <!-- A role routing passed over because its runWhen was not met (task TPF-156): muted, one row per entry; the
+                     reason is routing's text, never a worker's. -->
+                <template v-else-if="e.kind === 'condition_skip'">
+                    <n-tag size="tiny" :bordered="false" data-testid="hop-passed-over" class="hist__muted"
+                           :class="{ 'hist__history': e.rec.live === false }">passed over</n-tag>
+                    <span class="hist__role hist__muted" :class="{ 'hist__history': e.rec.live === false }">{{ e.rec.role }}</span>
+                    <span class="hist__time hist__time--wrap hist__muted" :class="{ 'hist__history': e.rec.live === false }"><agent-time :at="e.rec.at"/> &middot; by routing: {{ e.rec.reason }}<template
+                        v-if="e.rec.waives?.length">; waives {{ e.rec.waives.join(', ') }}</template><template
+                        v-if="e.rec.live === false"> (since ran)</template></span>
+                </template>
                 <template v-else>
                     <n-tag size="tiny" :bordered="false" type="warning">returned</n-tag>
                     <span v-if="!e.rec.session" class="hist__role">{{ e.rec.role }}</span>

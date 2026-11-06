@@ -127,7 +127,7 @@ export function missingRequiredRoles (task: any, roles: any[] | null | undefined
 }
 
 export type HopEntry = {
-    kind: 'signoff' | 'return' | 'checkpoint' | 'split_request', rec: any, at: string | null, phase?: ReturnType<typeof checkpointPhase>
+    kind: 'signoff' | 'return' | 'checkpoint' | 'split_request' | 'condition_skip', rec: any, at: string | null, phase?: ReturnType<typeof checkpointPhase>
 }
 
 /**
@@ -140,6 +140,8 @@ export type HopEntry = {
  * The split request's one row (task SPLIT-13) comes last of all: it sits at the later of its requestedAt and
  * the newest SPLIT return's returnedAt -- the return that wrote it -- so it follows that return however the
  * server stamps the two. A settled request keeps that place; its settlement is in the row's words.
+ *
+ * A conditional role routing passed over (task TPF-156) is one row per entry of rolesSkippedByCondition, at its at.
  */
 export function hopHistory (task: any): HopEntry[] {
     if (!task) return []
@@ -163,6 +165,7 @@ export function hopHistory (task: any): HopEntry[] {
         }
         rows.push({ kind: 'split_request', rec: sr, at })
     }
+    for (const rec of task.rolesSkippedByCondition ?? []) rows.push({ kind: 'condition_skip', rec, at: rec.at ?? null })
     return rows.sort((a, b) => compareHopTimes(a.at, b.at))
 }
 
