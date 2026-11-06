@@ -2068,7 +2068,7 @@
                             :is-writable="isWritable"
                             :installation-type="myUser?.installationType"
                             :names="teaPerspectiveNames()"
-                            :user-label="resolveUserById"
+                            :component-type="updatedRelease?.componentDetails?.type"
                             :narrative-override="releaseNarrativeBaseline"
                             :org-narrative="orgNarrativeDefault"
                             @narrative-saved="onSubmissionNarrativeSaved" />
@@ -3986,7 +3986,7 @@ watch(exportBomType, (bomType: string): void => {
 })
 
 const selectedRebomType: Ref<string> = ref('')
-const tldOnly: Ref<boolean> = ref(true)
+const tldOnly: Ref<boolean> = ref(false)
 const ignoreDev: Ref<boolean> = ref(false)
 const vdrIncludeSuppressed: Ref<boolean> = ref(false)
 const vdrSnapshotType: Ref<string> = ref('NONE')

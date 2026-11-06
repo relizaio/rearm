@@ -123,9 +123,9 @@ describe('ReleaseSubmissionsPanel', () => {
         w.unmount()
     })
 
-    it('expands v2: a download per generated part with a version, none for SKIPPED or no version recorded', async () => {
+    it('the newest version v2 is in the open: a download per generated part with a version, none for SKIPPED or no version recorded', async () => {
         const w = await mountPanel()
-        const parts = w.find('[data-testid="submission-parts-FDA_PREMARKET-2"]')
+        const parts = w.find('[data-testid="submission-latest-FDA_PREMARKET"] [data-testid="submission-parts-FDA_PREMARKET-2"]')
         expect(parts.exists()).toBe(true)
         const buttons = parts.findAll('[data-testid="submission-download"]')
         expect(buttons).toHaveLength(1)
@@ -138,6 +138,18 @@ describe('ReleaseSubmissionsPanel', () => {
         await flushPromises()
         expect(downloadArtifactBytes).toHaveBeenCalledWith(artifactDownloadUrl(A1, true, 1))
         expect(saveBlob.mock.calls[0][1]).toBe('widget-sbom.cdx.json')
+        w.unmount()
+    })
+
+    // FDAW-4 (B13, T2): the history keeps its chevrons; expanding v1 still shows v1's parts.
+    it('expanding v1 in the history shows v1\'s parts', async () => {
+        const w = await mountPanel()
+        expect(w.find('[data-testid="submission-parts-FDA_PREMARKET-1"]').exists()).toBe(false)
+        const table = w.find('[data-testid="submission-versions-FDA_PREMARKET"]')
+        const v1 = table.findAll('tbody tr').find((r: any) => r.findAll('td')[1]?.text() === 'v1')!
+        await v1.find('.n-data-table-expand-trigger').trigger('click')
+        await flushPromises()
+        expect(w.find('[data-testid="submission-parts-FDA_PREMARKET-1"]').exists()).toBe(true)
         w.unmount()
     })
 
@@ -462,5 +474,100 @@ describe('ReleaseSubmissionsPanel', () => {
             expect((w.find('[data-testid="narrative-text"] textarea').element as HTMLTextAreaElement).value).toBe('Own text')
             w.unmount()
         })
+    })
+})
+
+// Task FDAW-4: the newest version in the open (B13, T2, T3) and the actors as names (B14, T4).
+describe('ReleaseSubmissionsPanel: the newest version and the actors (FDAW-4)', () => {
+    const U = 'd961c662-0000-4000-8000-000000000001'
+    let heads: any[] = []
+
+    beforeEach(() => {
+        query.mockReset()
+        mutate.mockReset()
+        fire.mockReset()
+        heads = HEADS
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfRelease': return { data: { submissionsOfRelease: heads } }
+            case 'SubmissionPreview': return { data: { submissionPreview: { canSubmit: true, nextVersion: 1, parts: [] } } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+        mutate.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'CreateSubmission': return { data: { createSubmission: { outcome: 'CREATED', version: { version: 1 } } } }
+            case 'ResubmitSubmission': return { data: { resubmitSubmission: { outcome: 'RESUBMITTED', version: { version: 2 } } } }
+            default: throw new Error('unexpected mutation ' + operation(opts))
+            }
+        })
+        fire.mockResolvedValue({ isConfirmed: true, value: 'why' })
+    })
+
+    it('T2: the latest block renders before the history, headed Latest: v2, with parts, downloads and the manifest; no row expanded', async () => {
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const kind = w.find('[data-testid="submission-kind-FDA_PREMARKET"]')
+        const latest = kind.find('[data-testid="submission-latest-FDA_PREMARKET"]')
+        expect(latest.exists()).toBe(true)
+        const html = kind.html()
+        expect(html.indexOf('submission-latest-FDA_PREMARKET')).toBeLessThan(html.indexOf('submission-versions-FDA_PREMARKET'))
+        expect(latest.text()).toContain('Latest: v2')
+        expect(latest.find('[data-testid="submission-parts-FDA_PREMARKET-2"]').exists()).toBe(true)
+        expect(latest.findAll('[data-testid="submission-download"]')).toHaveLength(1)
+        expect(latest.find('[data-testid="submission-manifest-download"]').exists()).toBe(true)
+        expect(latest.find('[data-testid="submission-manifest-show"]').exists()).toBe(true)
+        expect(kind.findAll('tr.n-data-table-tr--expanded-content')).toHaveLength(0)
+        expect(kind.findAll('[data-testid="submission-versions-FDA_PREMARKET"] [data-testid^="submission-parts-"]')).toHaveLength(0)
+        w.unmount()
+    })
+
+    it('T2: without a version at latestVersion, the block shows the highest version the head lists', async () => {
+        heads = [{ ...HEADS[0], latestVersion: 7 }]
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(w.find('[data-testid="submission-latest-FDA_PREMARKET"]').text()).toContain('Latest: v2')
+        w.unmount()
+    })
+
+    it('T3: after a Create the re-read shows v1 without a click, after a Resubmit v2', async () => {
+        heads = []
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        expect(w.find('[data-testid="submission-latest-FDA_PREMARKET"]').exists()).toBe(false)
+        heads = [{ ...HEADS[0], latestVersion: 1, lastActKind: 'CREATED', versions: [v(1)] }]
+        await w.find('[data-testid="submission-create"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['CreateSubmission'])
+        let latest = w.find('[data-testid="submission-latest-FDA_PREMARKET"]')
+        expect(latest.text()).toContain('Latest: v1')
+        expect(latest.find('[data-testid="submission-parts-FDA_PREMARKET-1"]').exists()).toBe(true)
+        heads = [{ ...HEADS[0], latestVersion: 2, versions: [v(1), v(2)] }]
+        await w.find('[data-testid="submission-resubmit"]').trigger('click')
+        await flushPromises()
+        expect(mutate.mock.calls.map(c => operation(c[0]))).toEqual(['CreateSubmission', 'ResubmitSubmission'])
+        latest = w.find('[data-testid="submission-latest-FDA_PREMARKET"]')
+        expect(latest.text()).toContain('Latest: v2')
+        expect(latest.find('[data-testid="submission-parts-FDA_PREMARKET-2"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('T4: the head line names the actor, the uuid only in the title; a version without a name reads removed user', async () => {
+        heads = [{ ...HEADS[0], lastActBy: U, lastActByName: 'Ada Lovelace',
+            versions: [v(1, { createdBy: U, createdByName: null }), { ...V2, createdBy: U, createdByName: 'Ada Lovelace' }] }]
+        const w = await mountPanel({ kinds: ['FDA_PREMARKET'] })
+        const head = w.find('[data-testid="submission-head-FDA_PREMARKET"]')
+        expect(head.text().replace(/\s+/g, ' ')).toContain('by Ada Lovelace')
+        const actor = head.find('[data-testid="submission-actor"]')
+        expect(actor.text()).toBe('Ada Lovelace')
+        expect(actor.attributes('title')).toBe(U)
+        const table = w.find('[data-testid="submission-versions-FDA_PREMARKET"]')
+        const byCells = table.findAll('[data-testid="submission-actor"]')
+        expect(byCells.map((c: any) => c.text())).toEqual(['Ada Lovelace', 'removed user'])
+        expect(byCells.every((c: any) => c.attributes('title') === U)).toBe(true)
+        expect(w.text()).not.toContain(U)
+        w.unmount()
+    })
+
+    it('T4: the panel takes no userLabel prop any more', () => {
+        expect(Object.keys((Panel as any).props ?? {})).not.toContain('userLabel')
     })
 })

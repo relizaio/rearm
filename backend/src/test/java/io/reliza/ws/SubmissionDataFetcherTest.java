@@ -276,6 +276,10 @@ class SubmissionDataFetcherTest {
 		fetcher.latestOf(head);
 		verify(hook).getVersion(ORG, head.getUuid(), 2);
 		assertEquals("1.2.0", fetcher.releaseVersionOf(head));
+		cd.setType(ComponentData.ComponentType.PRODUCT);
+		when(hook.regulatoryKindsOfComponent(cd)).thenReturn(List.of(PackageKind.FDA_PREMARKET));
+		assertEquals(List.of(PackageKind.FDA_PREMARKET), fetcher.regulatoryKindsOf(cd));
+		verify(hook).regulatoryKindsOfComponent(cd);
 		SubmissionData empty = new SubmissionData();
 		empty.setUuid(UUID.randomUUID());
 		empty.setOrg(ORG);
@@ -484,6 +488,7 @@ class SubmissionDataFetcherTest {
 		assertNull(fetcher.releaseVersionOf(head));
 		assertEquals(List.of(), fetcher.versionStatesOf(head));
 		assertEquals(List.of(), fetcher.actsOf(head));
+		assertEquals(List.of(), fetcher.regulatoryKindsOf(cd));
 		verifyNoInteractions(auth, shared, components);
 	}
 
