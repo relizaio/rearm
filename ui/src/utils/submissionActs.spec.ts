@@ -85,6 +85,37 @@ describe('useSubmissionActs', () => {
         everyCallIsOneObject()
     })
 
+    // FDAW-4 (B18, T8): a KIND_DISABLED preview is explained with the client sentence, and the page re-reads.
+    it('a KIND_DISABLED preview on create shows the client sentence, not the server text, and reloads', async () => {
+        preview = { ...PREVIEW, canSubmit: false, refusal: 'KIND_DISABLED', message: 'Release widget 1.2.0: server text' }
+        await acts().create('r1', 'FDA_PREMARKET', { ...NAMES, componentType: 'PRODUCT' })
+        expect(fire.mock.calls).toEqual([[{ title: 'Cannot create this submission',
+            text: 'FDA premarket is switched off for this product; switch it on under Settings > Regulatory and try again.',
+            icon: 'error' }]])
+        expect(reload).toHaveBeenCalledTimes(1)
+        expect(mutate).not.toHaveBeenCalled()
+        everyCallIsOneObject()
+    })
+
+    it('a KIND_DISABLED preview on resubmit words the head\'s component type and reloads', async () => {
+        preview = { ...PREVIEW, canSubmit: false, refusal: 'KIND_DISABLED', message: 'server text', head: HEAD }
+        await acts().resubmit({ ...HEAD, componentType: 'COMPONENT' }, NAMES)
+        expect(fire.mock.calls).toEqual([[{ title: 'Cannot resubmit this submission',
+            text: 'FDA premarket is switched off for this component; switch it on under Settings > Regulatory and try again.',
+            icon: 'error' }]])
+        expect(reload).toHaveBeenCalledTimes(1)
+        expect(mutate).not.toHaveBeenCalled()
+        everyCallIsOneObject()
+    })
+
+    it('any other refused preview keeps the server message and does not reload', async () => {
+        preview = { ...PREVIEW, canSubmit: false, refusal: 'LIFECYCLE_TOO_LOW', message: 'server text' }
+        await acts().create('r1', 'FDA_PREMARKET', { ...NAMES, componentType: 'PRODUCT' })
+        await acts().resubmit(HEAD, NAMES)
+        expect(fire.mock.calls.map(c => c[0].text)).toEqual(['server text', 'server text'])
+        expect(reload).not.toHaveBeenCalled()
+    })
+
     it('create confirms with an optional reason; cancel sends nothing; a blank reason is null; reload after', async () => {
         fire.mockResolvedValueOnce({ isConfirmed: false })
         await acts().create('r1', 'FDA_PREMARKET', NAMES)

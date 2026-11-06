@@ -10,6 +10,7 @@ const {
     submissionHistoryText, submissionOtherRows, submissionPartRows, submissionReasonError, submissionReleaseRows,
     submissionResubmitConfirm, submissionVersionRows, submissionWithdrawConfirm, submissionStateText,
     submissionStateTagType, submissionCancelNote, submissionDateText, SUBMISSION_STATE_LABELS, SUBMISSION_ACT_LABELS,
+    submissionActorText, submissionKindDisabledText,
 } = await import('./submissions')
 const { TEA_ACT_GATEWAY_TEXT } = await import('./teaPublication')
 
@@ -198,5 +199,56 @@ describe('the head state texts (FDAW-8)', () => {
             .toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
         expect(submissionCancelNote({ state: 'FINAL', acts })).toBeNull()
         expect(submissionCancelNote({ state: 'CANCELLED', acts: [] })).toBeNull()
+    })
+})
+
+// Task FDAW-4 (T5): the actor as the page shows it (B14) and the KIND_DISABLED explanation (B18).
+describe('the actor text and the switched-off kind sentence (FDAW-4)', () => {
+    const U = 'd961c662-0000-4000-8000-000000000001'
+
+    it('submissionActorText: the name; removed user for a uuid without one; nothing for neither', () => {
+        expect(submissionActorText('Ada Lovelace', U)).toBe('Ada Lovelace')
+        expect(submissionActorText(null, U)).toBe('removed user')
+        expect(submissionActorText('', U)).toBe('removed user')
+        expect(submissionActorText(null, null)).toBe('')
+        expect(submissionActorText(undefined, undefined)).toBe('')
+    })
+
+    it('submissionKindDisabledText names the kind, product or component, and the setting', () => {
+        expect(submissionKindDisabledText('FDA_PREMARKET', 'PRODUCT'))
+            .toBe('FDA premarket is switched off for this product; switch it on under Settings > Regulatory and try again.')
+        expect(submissionKindDisabledText('FDA_PREMARKET', 'COMPONENT'))
+            .toBe('FDA premarket is switched off for this component; switch it on under Settings > Regulatory and try again.')
+    })
+
+    // Round 4 (D8, T5) and functional F-3: the cancelled block names the canceller by the same rule.
+    it('submissionCancelNote names the canceller through submissionActorText, never the uuid', () => {
+        const at = '2026-10-03T00:00:00Z'
+        const other = 'aaaaaaaa-0000-4000-8000-000000000002'
+        const noName = submissionCancelNote({ state: 'CANCELLED', lastActBy: other, lastActByName: 'Someone Else',
+            acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: null, reasonText: 'recalled' }] })
+        expect(noName).toEqual({ lead: 'Cancelled on ' + submissionDateText(at) + ' by removed user:', reason: 'recalled' })
+        expect(noName!.lead).not.toContain(U)
+        const named = submissionCancelNote({ state: 'CANCELLED',
+            acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: 'Bob', reasonText: 'r' }] })
+        expect(named!.lead).toBe('Cancelled on ' + submissionDateText(at) + ' by Bob:')
+        const legacy = submissionCancelNote({ state: 'CANCELLED', legacyState: 'WITHDRAWN', acts: [],
+            withdrawnDate: '2026-09-03T00:00:00Z', withdrawReason: 'old' })
+        expect(legacy).toEqual({ lead: 'Withdrawn on ' + submissionDateText('2026-09-03T00:00:00Z') + ':', reason: 'old' })
+    })
+
+    it('F-3: a canceller with no stored name who is the head\'s last actor reads as the head\'s resolved name', () => {
+        const at = '2026-10-03T00:00:00Z'
+        const note = submissionCancelNote({ state: 'CANCELLED', lastActBy: U, lastActByName: 'ada@org.example',
+            acts: [{ kind: 'CANCEL', actedAt: at, actor: U, actorName: '', reasonText: 'r' }] })
+        expect(note!.lead).toBe('Cancelled on ' + submissionDateText(at) + ' by ada@org.example:')
+        expect(note!.lead).not.toContain(U)
+    })
+
+    it('submissionVersionRows carries createdByName', () => {
+        const rows = submissionVersionRows({ versions: [version(1, { createdBy: U, createdByName: 'Ada Lovelace' }),
+            version(2, { createdBy: U })] })
+        expect(rows.map(r => r.createdByName)).toEqual([null, 'Ada Lovelace'])
+        expect(rows.map(r => r.createdBy)).toEqual([U, U])
     })
 })

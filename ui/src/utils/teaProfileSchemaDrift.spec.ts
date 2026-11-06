@@ -223,6 +223,8 @@ const SUBMISSION_DOCS = {
 const RELEASES_OF_BRANCH = submissionQueries.SubmissionReleasesOfBranchGql
 // The release page's offered kinds (Release.regulatoryPackageKinds): Pro-only, sent behind submissionsAvailable.
 const RELEASE_KINDS = submissionQueries.ReleaseRegulatoryPackageKindsGql
+// The product tab's switched-on kinds (Component.regulatoryPackageKinds, FDAW-4): Pro-only, sent behind submissionsAvailable.
+const COMPONENT_KINDS = submissionQueries.ComponentRegulatoryPackageKindsGql
 
 const ceServesSbomProfiles = () => Boolean(ceSchema.getQueryType()?.getFields().sbomProfileCatalog)
 const ceServesPackageSettings = () => Boolean(ceSchema.getQueryType()?.getFields().packageKinds)
@@ -235,6 +237,7 @@ const ceFieldOf = (type: string, field: string) => {
 }
 const ceHasPackageEnabled = () => ceFieldOf('PackageSettings', 'enabled')
 const ceHasReleaseKinds = () => ceFieldOf('Release', 'regulatoryPackageKinds')
+const ceHasComponentKinds = () => ceFieldOf('Component', 'regulatoryPackageKinds')
 
 describe('SBOM profile, package settings and submission documents (TEA-30) and their gates', () => {
     it('row 23: the TEA editor documents select the channel fields and profiles only (no recipe field on TeaProfile)', () => {
@@ -277,10 +280,20 @@ describe('SBOM profile, package settings and submission documents (TEA-30) and t
             expect(doc.loc!.source.body, name).toMatch(/\benabled\b/)
         }
         expect(validate(ceSchema, RELEASE_KINDS).length === 0).toBe(ceHasReleaseKinds())
+        expect(validate(ceSchema, COMPONENT_KINDS).length === 0).toBe(ceHasComponentKinds())
+    })
+
+    it('FDAW-4 (T9): the product kinds read and the actor names validate against the CE schema of this checkout', () => {
+        expect(validate(ceSchema, COMPONENT_KINDS).map(e => e.message)).toEqual([])
+        expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/createdByName lastActByName withdrawnByName/)
+        // Round 4 (D8): the head's acts carry the actor, so the cancelled block can say removed user.
+        expect(SUBMISSION_DOCS.SubmissionsOfReleaseGql.loc!.source.body).toMatch(/acts \{[^}]*\bactor actorName\b/)
+        expect(validate(ceSchema, SUBMISSION_DOCS.SubmissionsOfReleaseGql).map(e => e.message)).toEqual([])
     })
 
     it.runIf(proSchema)('the offered-kinds read validates against the Pro schema, and SubmissionRefusal has KIND_DISABLED', () => {
         expect(validate(proSchema!, RELEASE_KINDS).map(e => e.message)).toEqual([])
+        expect(validate(proSchema!, COMPONENT_KINDS).map(e => e.message)).toEqual([])
         expect(enumValuesOf(proSchema!, 'SubmissionRefusal')).toContain('KIND_DISABLED')
     })
 

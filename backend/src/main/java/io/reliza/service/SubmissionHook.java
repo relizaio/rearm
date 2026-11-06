@@ -9,6 +9,7 @@ import java.util.Optional;
 import java.util.UUID;
 
 import io.reliza.exceptions.SubmissionRefusedException;
+import io.reliza.model.ComponentData;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SubmissionActData;
@@ -48,6 +49,12 @@ public interface SubmissionHook {
 	 * plus any kind it already holds a submission of (so a switched-off kind's history stays visible).
 	 */
 	List<PackageKind> regulatoryKindsOfRelease(ReleaseData rd);
+
+	/**
+	 * The package kinds switched on for the component (its effective package settings), in catalog
+	 * order; unlike {@link #regulatoryKindsOfRelease}, held kinds are not added.
+	 */
+	List<PackageKind> regulatoryKindsOfComponent(ComponentData cd);
 
 	List<SubmissionData> listOfComponent(UUID org, UUID component, PackageKind kindOrNull, SubmissionState stateOrNull);
 

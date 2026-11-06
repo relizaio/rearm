@@ -9,6 +9,7 @@
 import { beforeEach, describe, expect, it, vi } from 'vitest'
 import { defineComponent, h, ref } from 'vue'
 import { flushPromises, mount, RouterLinkStub } from '@vue/test-utils'
+import { routeLocationKey } from 'vue-router'
 import { NNotificationProvider, NSelect } from 'naive-ui'
 
 const query = vi.fn()
@@ -40,6 +41,10 @@ const NULL_TEXT = "The field at path '/submissionsOfComponent' was declared as a
     + 'field be set to null, or if that is non nullable that it bubble up null to its parent and so on. The '
     + "non-nullable type is '[Submission!]' within parent type 'Query'"
 let failing = false
+// The product's switched-on kinds (Component.regulatoryPackageKinds, FDAW-4): on by default, as today.
+let enabledKinds: string[] = ['FDA_PREMARKET']
+let kindsFailing = false
+const ROUTE = { path: '/componentsOfOrg/o1/c1', query: { tab: 'submissions' }, params: {}, name: 'ComponentsOfOrg' }
 
 function answers () {
     query.mockImplementation(async (opts: any) => {
@@ -53,6 +58,9 @@ function answers () {
         case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
         case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: HEADS } }
         case 'SubmissionReleasesOfBranch': return { data: { releases: RELEASES } }
+        case 'ComponentRegulatoryPackageKinds':
+            if (kindsFailing) throw new Error('kinds read refused')
+            return { data: { component: { uuid: 'c1', regulatoryPackageKinds: enabledKinds } } }
         default: throw new Error('unexpected query ' + operation(opts))
         }
     })
@@ -64,7 +72,7 @@ async function mountPanel (props: Record<string, any> = {}) {
     const w = mount(defineComponent({
         render: () => h(NNotificationProvider, () => h(Panel, { orgUuid: 'o1', componentUuid: 'c1', componentName: 'widget',
             isWritable: true, installationType: 'SAAS', ...props, branches: branches.value, refreshToken: token.value })),
-    }), { attachTo: document.body, global: { stubs: { RouterLink: RouterLinkStub } } })
+    }), { attachTo: document.body, global: { stubs: { RouterLink: RouterLinkStub }, provide: { [routeLocationKey as symbol]: ROUTE } } })
     await flushPromises()
     return { w, branches, token }
 }
@@ -78,6 +86,8 @@ describe('ProductSubmissionsPanel', () => {
     beforeEach(() => {
         query.mockReset()
         failing = false
+        enabledKinds = ['FDA_PREMARKET']
+        kindsFailing = false
         answers()
     })
 
@@ -185,3 +195,112 @@ describe('ProductSubmissionsPanel', () => {
         w.unmount()
     })
 })
+
+// Task FDAW-4 (B18, T6, T7): Create only for a kind switched on for the product; otherwise what to set
+// up, with a link to the settings modal's Regulatory pane.
+describe('ProductSubmissionsPanel: a kind that is not set up (FDAW-4)', () => {
+    const SETUP_TO = { path: ROUTE.path, query: { tab: 'submissions', componentSettingsView: 'true', componentSettingsTab: 'regulatory' } }
+    const setupLinks = (w: any) => w.findAllComponents(RouterLinkStub)
+        .filter((l: any) => l.attributes('data-testid') === 'submission-setup-link')
+
+    beforeEach(() => {
+        query.mockReset()
+        failing = false
+        enabledKinds = ['FDA_PREMARKET']
+        kindsFailing = false
+        answers()
+    })
+
+    it('T6: switched off, a writer gets no Create but Not set up with the Regulatory link', async () => {
+        enabledKinds = []
+        const { w } = await mountPanel({ canConfigure: true })
+        const assembled = rowOf(w, '1.1.0')
+        expect(assembled.find('[data-testid="submission-create"]').exists()).toBe(false)
+        expect(w.find('[data-testid="submission-create"]').exists()).toBe(false)
+        const cell = assembled.find('[data-testid="submission-not-set-up-FDA_PREMARKET"]')
+        expect(cell.exists()).toBe(true)
+        expect(cell.text().replace(/\s+/g, ' ')).toBe('Not set up: FDA premarket is switched off for this product. '
+            + 'Switch it on under Settings > Regulatory')
+        const link = setupLinks(w).find((l: any) => cell.element.contains(l.element))!
+        expect(link.props('to')).toEqual(SETUP_TO)
+        expect(link.text()).toBe('Switch it on under Settings > Regulatory')
+        w.unmount()
+    })
+
+    it('T6: a head on a switched-off kind keeps its cell (Resubmit and Withdraw stay)', async () => {
+        enabledKinds = []
+        const { w } = await mountPanel({ canConfigure: true })
+        const active = rowOf(w, '1.0.0').find('[data-testid="submission-cell-FDA_PREMARKET"]')
+        expect(active.find('[data-testid="submission-resubmit"]').exists()).toBe(true)
+        expect(active.find('[data-testid="submission-withdraw"]').exists()).toBe(true)
+        w.unmount()
+    })
+
+    it('T6: for a non-administrator the sentence names the administrator, link kept', async () => {
+        enabledKinds = []
+        const { w } = await mountPanel({ canConfigure: false })
+        const cell = rowOf(w, '1.1.0').find('[data-testid="submission-not-set-up-FDA_PREMARKET"]')
+        expect(cell.text()).toContain('(an organization administrator does this)')
+        expect(setupLinks(w).some((l: any) => cell.element.contains(l.element))).toBe(true)
+        w.unmount()
+    })
+
+    it('T6: switched on, Create is offered as before; a reader sees No submission either way', async () => {
+        const { w } = await mountPanel({ canConfigure: true })
+        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(w.find('[data-testid^="submission-not-set-up-"]').exists()).toBe(false)
+        w.unmount()
+        enabledKinds = []
+        const reader = await mountPanel({ isWritable: false })
+        const cell = rowOf(reader.w, '1.1.0')
+        expect(cell.text()).toContain('No submission')
+        expect(reader.w.find('[data-testid^="submission-not-set-up-"]').exists()).toBe(false)
+        reader.w.unmount()
+    })
+
+    it('T6: with no head and no kind on, the empty line says what to set up, with the same link', async () => {
+        enabledKinds = []
+        query.mockImplementation(async (opts: any) => {
+            switch (operation(opts)) {
+            case 'PackageKinds': return { data: { packageKinds: [{ kind: 'FDA_PREMARKET', parts: [] }] } }
+            case 'SubmissionsOfComponent': return { data: { submissionsOfComponent: [] } }
+            case 'SubmissionReleasesOfBranch': return { data: { releases: RELEASES } }
+            case 'ComponentRegulatoryPackageKinds': return { data: { component: { uuid: 'c1', regulatoryPackageKinds: [] } } }
+            default: throw new Error('unexpected query ' + operation(opts))
+            }
+        })
+        const { w } = await mountPanel({ canConfigure: false })
+        const none = w.find('[data-testid="submissions-none"]')
+        expect(none.text().replace(/\s+/g, ' ')).toBe('No submission yet. No regulatory package kind is switched on for this '
+            + 'product; set one up under Settings > Regulatory. (an organization administrator does this)')
+        const link = setupLinks(w).find((l: any) => none.element.contains(l.element))!
+        expect(link.props('to')).toEqual(SETUP_TO)
+        w.unmount()
+    })
+
+    it('T7: the kinds read goes out with the product uuid beside the three reads, and again on a token bump', async () => {
+        const { w, token } = await mountPanel()
+        expect(calls('ComponentRegulatoryPackageKinds')).toHaveLength(1)
+        expect(calls('ComponentRegulatoryPackageKinds')[0][0].variables).toEqual({ componentUuid: 'c1' })
+        expect(calls('ComponentRegulatoryPackageKinds')[0][0].fetchPolicy).toBe('no-cache')
+        expect(calls('PackageKinds')).toHaveLength(1)
+        expect(calls('SubmissionsOfComponent')).toHaveLength(1)
+        expect(calls('SubmissionReleasesOfBranch')).toHaveLength(1)
+        token.value++
+        await flushPromises()
+        expect(calls('ComponentRegulatoryPackageKinds')).toHaveLength(2)
+        w.unmount()
+    })
+
+    it('T7: a failed kinds read leaves today\'s cells (Create offered) and logs', async () => {
+        kindsFailing = true
+        const error = vi.spyOn(console, 'error').mockImplementation(() => {})
+        const { w } = await mountPanel()
+        expect(rowOf(w, '1.1.0').find('[data-testid="submission-create"]').exists()).toBe(true)
+        expect(w.find('[data-testid^="submission-not-set-up-"]').exists()).toBe(false)
+        expect(error.mock.calls.some(c => String(c[0]?.message ?? c[0]).includes('kinds read refused'))).toBe(true)
+        error.mockRestore()
+        w.unmount()
+    })
+})
+

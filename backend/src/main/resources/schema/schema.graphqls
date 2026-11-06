@@ -203,6 +203,8 @@ type Component {
 	every other kind and for a document no board owns. The board page checks the board's permissions.
 	"""
 	agentBoard: AgentBoardRef
+	"The regulatory package kinds switched on for this component (its effective package settings); empty on ReARM CE"
+	regulatoryPackageKinds: [PackageKind!]!
 }
 
 """A freeform stakeholder contact for someone who is not a registered ReARM user."""
@@ -2312,6 +2314,8 @@ type SubmissionVersion {
 	kind: PackageKind!
 	createdDate: DateTime
 	createdBy: ID
+	"The creator, as a reader knows them: their name, else their email in this organization while a current member; null otherwise"
+	createdByName: String
 	reason: String
 	settings: SubmissionSettingsRef
 	sbomProfile: SubmissionProfileRef
@@ -2354,6 +2358,12 @@ type Submission {
 	versionStates: [SubmissionVersionState!]!
 	"The head's act record, oldest first."
 	acts: [SubmissionAct!]!
+	"The creator, as a reader knows them: their name, else their email in this organization while a current member; null otherwise"
+	createdByName: String
+	"The last actor, resolved as createdByName is"
+	lastActByName: String
+	"The withdrawing user, resolved as createdByName is"
+	withdrawnByName: String
 	settings: SubmissionSettingsRef
 	versions: [SubmissionVersion!]!
 	latest: SubmissionVersion
