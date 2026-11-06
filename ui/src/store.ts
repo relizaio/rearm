@@ -199,6 +199,7 @@ const AGENT_TASK_SELECTION = `
     orderSetBy { kind uuid name }
     orderSetAt
     requiredRolesSkipped
+    rolesSkippedByCondition { role roleUuid reason at by { kind uuid name } waives live }
     reopenedAt
     reopenCount
     reopens { role at reason by { kind uuid name } }
@@ -3015,6 +3016,7 @@ const storeObject : any = {
                                     required
                                 }
                                 commissions { roles intake defaultBudgetMicros review }
+                                runWhen { taggedAny taggedNone }
                             }
                         }
                     }`,
@@ -3326,6 +3328,7 @@ const storeObject : any = {
                             humanGate
                             producesOutputs { specification scope required }
                             commissions { roles intake defaultBudgetMicros review }
+                            runWhen { taggedAny taggedNone }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory
@@ -3420,6 +3423,7 @@ const storeObject : any = {
                                 requireDistinctAgent
                                 blindReview
                                 coordinatorCheckpoint
+                                runWhen { taggedAny taggedNone }
                                 active
                                 requiredCapabilities
                                 kind
@@ -3461,6 +3465,7 @@ const storeObject : any = {
                             necessity
                             humanGate
                             commissions { roles intake defaultBudgetMicros review }
+                            runWhen { taggedAny taggedNone }
                             requiredStrength
                             strengthHeadroom
                             strengthCategory

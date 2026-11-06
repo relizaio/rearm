@@ -795,3 +795,99 @@ describe('the board settings form: the architect\'s waiver', () => {
         expect(template.slice(template.lastIndexOf('<n-button', button), button)).toContain('v-if="currentBoard && canConfigure(currentBoard)"')
     })
 })
+
+// A role's runWhen condition in the role form (task TPF-156, T-110): two chip lists after the necessity group, locked
+// and cleared while the role is not OPTIONAL or carries the coordinator checkpoint, seeded empty, always sent; the
+// preset form has none; the roles and presets tables show a chip beside the necessity.
+describe('the role form: runs when', () => {
+    const tagOf = (testid: string) => {
+        const at = template.indexOf(`data-testid="${testid}"`)
+        expect(at).toBeGreaterThan(-1)
+        const open = template.lastIndexOf('<n-dynamic-tags', at)
+        expect(open).toBeGreaterThan(-1)
+        return template.slice(open, template.indexOf('/>', at))
+    }
+
+    it('(a, l) binds both lists to the draft, each disabled by the lock rule', () => {
+        const any = tagOf('role-run-when-any')
+        expect(any).toContain('v-model:value="editingRole.runWhenAny"')
+        expect(any).toContain(':disabled="runWhenLocked(editingRole)"')
+        const none = tagOf('role-run-when-none')
+        expect(none).toContain('v-model:value="editingRole.runWhenNone"')
+        expect(none).toContain(':disabled="runWhenLocked(editingRole)"')
+        expect(source).toMatch(/\bNDynamicTags\b[^\n]*from 'naive-ui'/)
+    })
+
+    it('(b) sits after the necessity group and before the human gate', () => {
+        const group = template.indexOf('data-testid="role-run-when"')
+        expect(group).toBeGreaterThan(-1)
+        const required = template.indexOf('v-model:value="editingRole.necessity"')
+        expect(template.indexOf('value="REQUIRED"', required)).toBeLessThan(group)
+        const gate = template.indexOf('human gate', required)
+        expect(gate).toBeGreaterThan(group)
+        expect(template.indexOf('data-testid="role-run-when-any"')).toBeGreaterThan(group)
+        expect(template.indexOf('data-testid="role-run-when-none"')).toBeLessThan(gate)
+    })
+
+    it('(c, l) a watch on the lock rule clears both lists when the group locks', () => {
+        const at = source.indexOf('watch(() => editingRole.value && runWhenLocked(editingRole.value)')
+        expect(at).toBeGreaterThan(-1)
+        const body = source.slice(at, source.indexOf('\n})\n', at))
+        expect(body).toContain('if (locked && editingRole.value)')
+        expect(body).toContain('editingRole.value.runWhenAny = []')
+        expect(body).toContain('editingRole.value.runWhenNone = []')
+    })
+
+    it('(d) a new role is seeded with two empty lists', () => {
+        const add = source.slice(source.indexOf('function startAddRole'), source.indexOf('async function saveRole'))
+        expect(add).toContain('runWhenAny: [], runWhenNone: []')
+    })
+
+    it('(e) saveRole always sends runWhen, for every kind', () => {
+        const save = source.slice(source.indexOf('async function saveRole'), source.indexOf('const presetColumns'))
+        const line = save.split('\n').find(l => l.includes('runWhen:'))
+        expect(line?.trim()).toBe('runWhen: runWhenPatch(editingRole.value),')
+        expect(line).not.toContain("kind === 'HUMAN'")
+    })
+
+    it('(f) the Edit button\'s draft reads the role\'s condition', () => {
+        expect(source).toContain('commissions: commissionsDraftOf(r), ...runWhenDraftOf(r) }')
+    })
+
+    it('(g) leaves the preset form without it', () => {
+        expect(template).not.toContain('editingPreset.runWhen')
+        const savePreset = source.slice(source.indexOf('async function savePreset'))
+        expect(savePreset.slice(0, savePreset.indexOf('\n}\n'))).not.toContain('runWhen')
+    })
+
+    it('(h) the necessity cell shows the chip; both tables share the cell', () => {
+        const cell = source.slice(source.indexOf('const necessityCell'), source.indexOf('const gateCell'))
+        expect(cell).toContain("'data-testid': 'role-run-when-chip'")
+        expect(cell).toContain("'runs when ' + runWhenLabel(r.runWhen)")
+        expect(cell).toContain("type: 'info'")
+        const roleCols = source.slice(source.indexOf('const roleColumns'), source.indexOf('onMounted(refreshBoards)'))
+        expect(roleCols).toContain('...governanceColumns(),')
+        const presetCols = source.slice(source.indexOf('const presetColumns'))
+        expect(presetCols.slice(0, presetCols.indexOf('\n]\n'))).toContain('...governanceColumns(),')
+    })
+
+    it('(i) the form opens only for a person who may configure the board', () => {
+        expect(template).toContain('<n-button v-if="canConfigure(currentBoard)" class="addbtn" size="small" dashed @click="startAddRole">+ Add role</n-button>')
+        const edit = source.slice(source.indexOf('const roleColumns'), source.indexOf('onMounted(refreshBoards)'))
+        expect(edit).toContain("render: (r: any) => !canConfigure(currentBoard.value) ? null : h(NButton")
+    })
+
+    it('(j) the Pass column\'s hint names the condition', () => {
+        const cols = source.slice(source.indexOf('const governanceColumns'), source.indexOf('const roleColumns'))
+        const pass = cols.slice(cols.indexOf("hintHeader('Pass'"), cols.indexOf("key: 'necessity'"))
+        expect(pass).toContain('runWhen condition')
+    })
+
+    it('(k) the help names the verb per state and the checkpoint role', () => {
+        const group = template.slice(template.indexOf('data-testid="role-run-when"'), template.indexOf('human gate', template.indexOf('data-testid="role-run-when"')))
+        const help = group.replace(/\s+/g, ' ')
+        expect(help).toContain('task hold then task lifthold')
+        expect(help).toContain('never the role carrying the coordinator checkpoint')
+        expect(template.replace(/\s+/g, ' ')).not.toContain('authorize --role runs')
+    })
+})

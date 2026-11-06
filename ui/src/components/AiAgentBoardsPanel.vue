@@ -726,6 +726,31 @@
                             </n-radio-button>
                         </n-radio-group>
                     </div>
+                    <!-- Runs when (task TPF-156, backend TPF-155): routing queues an OPTIONAL role only on a task whose tags meet the
+                         condition; a REQUIRED role never carries one, so the two lists are cleared and disabled while necessity is
+                         REQUIRED or the coordinator-checkpoint box is on (C13). The server lower-cases and checks the keys and refuses a
+                         REQUIRED role, or the flagged role, with a condition. -->
+                    <div data-testid="role-run-when">
+                        <div class="flabel" style="margin-bottom: 4px">runs when</div>
+                        <n-space :size="18" wrap>
+                            <div>
+                                <div class="flabel" style="margin-bottom: 2px">tagged any of</div>
+                                <n-dynamic-tags v-model:value="editingRole.runWhenAny" :disabled="runWhenLocked(editingRole)"
+                                                data-testid="role-run-when-any"/>
+                            </div>
+                            <div>
+                                <div class="flabel" style="margin-bottom: 2px">tagged none of</div>
+                                <n-dynamic-tags v-model:value="editingRole.runWhenNone" :disabled="runWhenLocked(editingRole)"
+                                                data-testid="role-run-when-none"/>
+                            </div>
+                        </n-space>
+                        <n-text depth="3" style="font-size: 11.5px; display: block; margin-top: 4px;">
+                            Tag keys. Empty: the role runs on every task. Routing reads the task's tags when it reaches the role and
+                            passes it over otherwise. To run it on a task anyway the coordinator names the role: task hold then task lifthold
+                            --role while the task is queued, task authorize --role while it awaits the coordinator, task reopen --role --reason
+                            once it is completed. OPTIONAL roles only, never the role carrying the coordinator checkpoint.
+                        </n-text>
+                    </div>
                     <div>
                         <div class="flabel" style="margin-bottom: 4px">human gate</div>
                         <n-radio-group v-model:value="editingRole.humanGate" size="small">
@@ -1005,7 +1030,7 @@ import { computed, defineComponent, h, nextTick, onBeforeUnmount, onMounted, pro
 import type { ComputedRef } from 'vue'
 import { RouterLink, useRoute, useRouter } from 'vue-router'
 import { useStore } from 'vuex'
-import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification, NText } from 'naive-ui'
+import { NAlert, NButton, NCard, NCheckbox, NCollapse, NCollapseItem, NDataTable, NDynamicTags, NIcon, NInput, NInputNumber, NModal, NRadioButton, NRadioGroup, NSelect, NSpace, NSpin, NTabPane, NTabs, NTag, NTooltip, DataTableColumns, useNotification, NText } from 'naive-ui'
 import { QuestionCircle20Regular } from '@vicons/fluent'
 import AiAgentTaskPertView from '@/components/AiAgentTaskPertView.vue'
 import AiAgentTaskTimelineView from '@/components/AiAgentTaskTimelineView.vue'
@@ -1066,6 +1091,7 @@ import RoleStrengthEditor from '@/components/RoleStrengthEditor.vue'
 import { mergeOutputs, strengthDraft, strengthInput, strengthSummary } from '@/utils/roleStrength'
 import { OUTPUT_TYPE_OPTIONS } from '@/utils/agentTaskOptions'
 import { commissionsDraftOf, commissionsPatch } from '@/utils/agentInvestigation'
+import { runWhenDraftOf, runWhenLabel, runWhenLocked, runWhenPatch } from '@/utils/agentRunWhen'
 import RoleCommissionsEditor from './RoleCommissionsEditor.vue'
 import { holdChip } from '@/utils/agentOperatorQuestion'
 
@@ -1260,6 +1286,14 @@ const mergeByHelp = computed(() => MERGE_BY_OPTIONS.find(o => o.value === editin
 const editingBoardIsNew = ref(false)
 const editingRole = ref<any>(null)
 const editingRoleIsNew = ref(false)
+// The runWhen lists are cleared the moment the group locks (task TPF-156): necessity leaves OPTIONAL or the
+// coordinator-checkpoint box is ticked, so the form never sends a REQUIRED or a flagged role with a condition.
+watch(() => editingRole.value && runWhenLocked(editingRole.value), (locked) => {
+    if (locked && editingRole.value) {
+        editingRole.value.runWhenAny = []
+        editingRole.value.runWhenNone = []
+    }
+})
 const saving = ref(false)
 const selectedTask = ref<any>(null)
 const agentNames = ref<Record<string, string>>({})
@@ -1745,9 +1779,17 @@ const kindCell = (r: any) => h(NTag,
     { size: 'tiny', bordered: false, type: r.kind === 'HUMAN' ? 'info' : 'default' },
     { default: () => (r.kind === 'HUMAN' ? '\u270b human' : 'agent') })
 
-const necessityCell = (r: any) => (r.necessity === 'REQUIRED'
-    ? h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'required' })
-    : h('span', { class: 'cellmuted' }, 'optional'))
+// The necessity, then the runWhen condition when the role carries one (task TPF-156): `optional runs when tagged mutation`.
+const necessityCell = (r: any) => {
+    const label = runWhenLabel(r.runWhen)
+    return [
+        r.necessity === 'REQUIRED'
+            ? h(NTag, { size: 'tiny', bordered: false, type: 'error' }, { default: () => 'required' })
+            : h('span', { class: 'cellmuted' }, 'optional'),
+        label ? h(NTag, { size: 'tiny', bordered: false, type: 'info', style: 'margin-left:4px', 'data-testid': 'role-run-when-chip' },
+            { default: () => 'runs when ' + runWhenLabel(r.runWhen) }) : null,
+    ]
+}
 
 const gateCell = (r: any) => (!r.humanGate || r.humanGate === 'NONE'
     ? h('span', { class: 'cellmuted' }, 'none')
@@ -1762,7 +1804,8 @@ const governanceColumns = (): DataTableColumns<any> => [
     },
     {
         title: hintHeader('Pass', 'OPTIONAL: the coordinator may skip this role — routing is its judgment.'
-            + ' REQUIRED: unskippable — no task completes without a passing sign-off in this role.'),
+            + ' REQUIRED: unskippable — no task completes without a passing sign-off in this role.'
+            + ' An OPTIONAL role may carry a runWhen condition: routing queues it only on tasks whose tags meet it.'),
         key: 'necessity', width: 95, render: necessityCell,
     },
     {
@@ -1793,7 +1836,7 @@ const roleColumns: DataTableColumns<any> = [
         // Editing a role's prompt is configuring the board (task d8e7bd7e): hidden without CONFIGURATION_WRITE.
         render: (r: any) => !canConfigure(currentBoard.value) ? null : h(NButton, { size: 'tiny', quaternary: true, onClick: () => { editingRoleIsNew.value = false; editingRole.value = { ...r, hopDollars: microsToDollars(r.hopBudgetMicros),
             producesOutputTypes: (r.producesOutputs ?? []).map((p: any) => p?.specification).filter(Boolean),
-            strength: strengthDraft(r), commissions: commissionsDraftOf(r) } } }, { default: () => 'Edit' }),
+            strength: strengthDraft(r), commissions: commissionsDraftOf(r), ...runWhenDraftOf(r) } } }, { default: () => 'Edit' }),
     },
 ]
 
@@ -2143,7 +2186,7 @@ async function saveBoard () {
 function startAddRole () {
     editingRoleIsNew.value = true
     const maxOrder = Math.max(0, ...roles.value.map(r => r.orderIndex ?? 0))
-    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, coordinatorCheckpoint: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null), commissions: commissionsDraftOf(null) }
+    editingRole.value = { name: '', prompt: '', orderIndex: maxOrder + 10, wipLimit: 0, requireDistinctAgent: false, blindReview: false, coordinatorCheckpoint: false, active: true, kind: 'AGENTIC', necessity: 'OPTIONAL', humanGate: 'NONE', producesOutputTypes: [], strength: strengthDraft(null), commissions: commissionsDraftOf(null), runWhenAny: [], runWhenNone: [] }
 }
 
 async function saveRole () {
@@ -2178,6 +2221,9 @@ async function saveRole () {
                 // Who it may commission for a report (task RD4-12): the whole block, or null for nobody. A HUMAN
                 // role holds no session to commission from, so it sends nothing.
                 ...(editingRole.value.kind === 'HUMAN' ? {} : { commissions: commissionsPatch(editingRole.value.commissions) }),
+                // The runWhen condition (task TPF-156): always sent, for every kind, the lists or null, so a cleared form
+                // clears the stored condition; leaving it out would leave it unchanged.
+                runWhen: runWhenPatch(editingRole.value),
             },
         })
         notification.success({ content: `Role ${editingRole.value.name} saved`, duration: 3000 })
