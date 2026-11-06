@@ -4437,8 +4437,8 @@ type AgentBoardEventPage {
 
 enum AgentSignOffOutcome { PASSED REJECTED }
 
-"""Why an assigned agent handed the task back to the coordinator. SESSION_CLOSED is system-generated on any session-close path; PARKED_FOR_OPERATOR is system-generated when the session working the task parks its hop for the operator, which ends the hop."""
-enum AgentTaskReturnReason { TASK_UNCLEAR ROLE_MISMATCH MISSING_CAPABILITY BLOCKED_ON_DEPENDENCY NEEDS_HUMAN SESSION_CLOSED PARKED_FOR_OPERATOR OTHER }
+"""Why an assigned agent handed the task back to the coordinator. SESSION_CLOSED is system-generated on any session-close path; PARKED_FOR_OPERATOR is system-generated when the session working the task parks its hop for the operator, which ends the hop. SPLIT asks the coordinator to split the task; the request, with any proposed children, is recorded as `AgentTask.splitRequest` (task SPLIT-9)."""
+enum AgentTaskReturnReason { TASK_UNCLEAR ROLE_MISMATCH MISSING_CAPABILITY BLOCKED_ON_DEPENDENCY NEEDS_HUMAN SESSION_CLOSED PARKED_FOR_OPERATOR OTHER SPLIT }
 
 type AgentBoardPause {
 	level: AgentBoardPauseLevel
@@ -5594,6 +5594,46 @@ type AgentTaskDesignCheckpoint {
 	note: String
 }
 
+"""Where a task's split request stands (task SPLIT-9): waiting on the coordinator, split, declined with a note, or lapsed."""
+enum AgentTaskSplitRequestState { REQUESTED SPLIT DECLINED LAPSED }
+
+"""A proposed child of a split request (task SPLIT-9): the output mirror of AgentTaskSplitChildInput."""
+type AgentTaskSplitChild {
+	title: String!
+	description: String
+	externalRef: String
+	sourceUrl: String
+	dependsOnSiblingIndexes: [Int!]!
+	producesComponent: ID
+	workLevel: Int
+	group: String
+	tags: [TagRecord]
+}
+
+"""
+A role's request that the task be split (task SPLIT-9): a return with reason SPLIT. Rewritten by each such return;
+settled SPLIT by the coordinator's split, DECLINED by its authorize or lift naming a role, with the note, or LAPSED
+when the task left the coordinator any other way (routed by routing, hold lifted without a role, completed,
+cancelled), the note naming the verb. Only the server writes it.
+"""
+type AgentTaskSplitRequest {
+	requestedAt: DateTime!
+	role: String!
+	roleUuid: ID
+	"""The requesting session; null on a blind read."""
+	session: ID
+	"""The one-line why; null on a blind read."""
+	description: String
+	"""The children the requester proposes, in the split's own shape; empty when none, and on a blind read."""
+	proposedChildren: [AgentTaskSplitChild!]!
+	state: AgentTaskSplitRequestState!
+	"""Who split, declined or lapsed it; null while REQUESTED."""
+	settledBy: AgentActor
+	settledAt: DateTime
+	"""The coordinator's note, the split's "n children: keys", or the verb that lapsed it."""
+	note: String
+}
+
 type AgentTaskReturn {
 	role: String
 	"""The role config row `role` named at the time. Null on hops recorded before this field existed."""
@@ -6116,6 +6156,8 @@ type AgentTask {
 	returns: [AgentTaskReturn]
 	"""The design checkpoint the task last reached (task SPLIT-5); null when it never reached one."""
 	designCheckpoint: AgentTaskDesignCheckpoint
+	"""The newest split request a hop made on the task (task SPLIT-9); null when none was ever made."""
+	splitRequest: AgentTaskSplitRequest
 	"""Assignments a person ended by unassigning the task, oldest first (task RD3-4)."""
 	unassignments: [AgentTaskUnassignment]
 	parentTask: ID

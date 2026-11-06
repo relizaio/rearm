@@ -200,6 +200,10 @@ public class AgentDesignCheckpointIntegrationTest extends AgentDesignCheckpointT
 		assertEquals(DesignCheckpointState.SPLIT, cp.state());
 		assertEquals(COORD, cp.settledBy());
 		assertEquals("2 children: " + children.get(0).keyOrUuid() + ", " + children.get(1).keyOrUuid(), cp.note());
+		// Task SPLIT-9's T-9 (a): the split says what the children carry.
+		assertEquals(List.of("Task " + pending.label() + " split into 2 children: " + children.get(0).keyOrUuid() + ", "
+				+ children.get(1).keyOrUuid() + "; each carries ARCHITECTURE round 1 (ASSEMBLED), " + TM
+				+ " round 1 (ASSEMBLED)"), messages(r, BoardEventKind.INFO, " split into "));
 		for (AgentTaskData c : children) {
 			List<RequiredInput> pinned = reload(c).getRequiredInputs();
 			assertEquals(2, pinned.size(), pinned.toString());

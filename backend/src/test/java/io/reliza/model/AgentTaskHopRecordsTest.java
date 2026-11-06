@@ -11,6 +11,7 @@ import java.util.*;
 
 import org.junit.jupiter.api.Test;
 
+import io.reliza.common.Utils;
 import io.reliza.model.AgentTaskData.*;
 import io.reliza.model.ReleaseData.ReleaseLifecycle;
 
@@ -58,6 +59,21 @@ public class AgentTaskHopRecordsTest {
 		assertEveryComponentSet(full);
 		HopUsage filled = new HopUsage(10, 20, 30, 40, 2, 2, 2, 50L, List.of(UUID.randomUUID()), false, null, at);
 		assertOnlyUsageReplaced(full, full.withUsage(filled), filled);
+	}
+
+	/** T-1 (task SPLIT-9): a SPLIT return row is a return like any other, kept whole by withUsage and read back. */
+	@Test
+	void aSplitReturnRowKeepsEveryComponent() throws Exception {
+		ZonedDateTime at = ZonedDateTime.now();
+		TaskReturn split = new TaskReturn("tester", UUID.randomUUID(), UUID.randomUUID(), UUID.randomUUID(),
+				TaskReturnReason.SPLIT, "too big: two repositories", at, HopUsage.empty(), List.of(UUID.randomUUID()));
+		assertEveryComponentSet(split);
+		HopUsage filled = new HopUsage(1, 2, 3, 4, 1, 1, 1, 5L, List.of(UUID.randomUUID()), false, null, at);
+		assertOnlyUsageReplaced(split, split.withUsage(filled), filled);
+		TaskReturn read = Utils.OM.convertValue(Utils.OM.convertValue(split, Map.class),
+				TaskReturn.class);
+		assertEquals(TaskReturnReason.SPLIT, read.reason());
+		assertEquals("too big: two repositories", read.description());
 	}
 
 	static List<String> names(Class<? extends Record> record) {
