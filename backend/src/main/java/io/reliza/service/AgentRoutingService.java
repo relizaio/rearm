@@ -33,6 +33,7 @@ import io.reliza.model.AgentTaskData.QuestionFrame;
 import io.reliza.model.AgentTaskData.Reopen;
 import io.reliza.model.AgentTaskData.SignOff;
 import io.reliza.model.AgentTaskData.SignOffOutcome;
+import io.reliza.model.AgentTaskData.SplitRequestState;
 import io.reliza.model.AgentTaskData.StatusTrigger;
 import io.reliza.model.AgentTaskData.TaskStatus;
 import io.reliza.model.AgentTaskInput.InputKind;
@@ -40,6 +41,7 @@ import io.reliza.model.AgentTaskInput.InputResolution;
 import io.reliza.model.AgentTaskInput.InputScope;
 import io.reliza.model.AgentTaskInput.RequiredInput;
 import io.reliza.model.AgentTaskRoleConfigData;
+import io.reliza.model.AgentTaskRoleConfigData.AgentCapability;
 import io.reliza.model.AgentTaskRoleConfigData.ProducedOutput;
 import io.reliza.model.AgentTaskRoleConfigData.RoleNecessity;
 import io.reliza.model.BoardReviewItemIndex;
@@ -483,13 +485,28 @@ public class AgentRoutingService {
 	 * have moved. Cancelled and rejected rounds are no one's next step.
 	 */
 	private Optional<ReleaseData> newestRoundOf(AgentTaskData td, RearmSpecificationType spec) {
+		return newestRoundOf(td, spec, 0, null);
+	}
+
+	/**
+	 * As above, at least {@code minMaturity} ({@link AgentTaskInputService#maturity}) and, when {@code publishers} is
+	 * not null, published by one of those roles (the round's {@code DocumentRef.publishedByRole}, names as stored; a
+	 * round without one is skipped). A round that fails either is skipped and the walk goes on to the previous round
+	 * of the spec (task SPLIT-9, D2).
+	 */
+	private Optional<ReleaseData> newestRoundOf(AgentTaskData td, RearmSpecificationType spec, int minMaturity,
+			Set<String> publishers) {
 		List<UUID> linked = null == td.getReleases() ? List.of() : td.getReleases();
 		for (int i = linked.size() - 1; i >= 0; i--) {
 			Optional<ReleaseData> ord = sharedReleaseService.getReleaseData(linked.get(i));
 			if (ord.isEmpty()) continue;
 			DocumentRef doc = ord.get().getDocument();
 			if (null == doc || doc.specification() != spec || !td.getUuid().equals(doc.task()) || doc.superseded()) continue;
-			if (AgentTaskInputService.maturity(ord.get().getLifecycle()) < 0) continue;
+			int maturity = AgentTaskInputService.maturity(ord.get().getLifecycle());
+			if (maturity < 0 || maturity < minMaturity) continue;
+			if (null != publishers && (null == doc.publishedByRole() || !publishers.contains(doc.publishedByRole()))) {
+				continue;
+			}
 			return ord;
 		}
 		return Optional.empty();
@@ -1466,26 +1483,77 @@ public class AgentRoutingService {
 	 * only: a child's pinned inputs are not its rounds.
 	 */
 	private List<UUID> designBefore(AgentTaskData td, List<AgentTaskRoleConfigData> roles, AgentTaskRoleConfigData rc) {
-		Set<RearmSpecificationType> specs = new LinkedHashSet<>();
-		for (AgentTaskRoleConfigData r : roles) {
-			if (r.getOrderIndex() >= rc.getOrderIndex() || null == r.getProducesOutputs()) continue;
-			for (ProducedOutput o : r.getProducesOutputs()) {
-				if (null == o.specification() || INDEX_KINDS.contains(o.specification())
-						|| RearmSpecificationType.BOARD_INVESTIGATION_REPORT == o.specification()) {
-					continue;
-				}
-				specs.add(o.specification());
-			}
-		}
 		List<UUID> design = new ArrayList<>();
-		for (RearmSpecificationType spec : specs) {
+		for (RearmSpecificationType spec : designSpecsBefore(roles, rc.getOrderIndex()).keySet()) {
 			newestRoundOf(td, spec).map(ReleaseData::getUuid).filter(u -> !design.contains(u)).ifPresent(design::add);
 		}
 		return design;
 	}
 
+	/**
+	 * The design every split pins on its children (task SPLIT-9, D2): for each design document the active roles before
+	 * the build boundary produce, the task's newest round at or above ASSEMBLED, not superseded, published by one of
+	 * those roles. The boundary is the role carrying {@code coordinatorCheckpoint}, else the first active role holding
+	 * {@code CODE_PUSH}, else none (every active role's prose counts). A round some other role published, or one with
+	 * no {@code publishedByRole}, is skipped for the previous round of its spec (F-9). Empty when nothing qualifies.
+	 */
+	public List<UUID> reviewedDesign(AgentTaskData td, List<AgentTaskRoleConfigData> roles) {
+		List<AgentTaskRoleConfigData> active = roles.stream().filter(AgentTaskRoleConfigData::isActive)
+				.sorted(Comparator.comparingInt(AgentTaskRoleConfigData::getOrderIndex)).toList();
+		AgentTaskRoleConfigData boundary = active.stream().filter(AgentTaskRoleConfigData::isCoordinatorCheckpoint)
+				.findFirst()
+				.orElseGet(() -> active.stream().filter(r -> null != r.getRequiredCapabilities()
+						&& r.getRequiredCapabilities().contains(AgentCapability.CODE_PUSH))
+						.findFirst().orElse(null));
+		int floor = AgentTaskInputService.maturity(ReleaseLifecycle.ASSEMBLED);
+		List<UUID> design = new ArrayList<>();
+		for (Map.Entry<RearmSpecificationType, Set<String>> e
+				: designSpecsBefore(active, null == boundary ? null : boundary.getOrderIndex()).entrySet()) {
+			newestRoundOf(td, e.getKey(), floor, e.getValue()).map(ReleaseData::getUuid)
+					.filter(u -> !design.contains(u)).ifPresent(design::add);
+		}
+		return design;
+	}
+
+	/**
+	 * Every design document the roles ordered before {@code boundaryOrderIndex} produce (all of them when it is null)
+	 * -- every produced type but the indexes and the investigation report -- in role order, each with the names of the
+	 * roles producing it.
+	 */
+	private static Map<RearmSpecificationType, Set<String>> designSpecsBefore(List<AgentTaskRoleConfigData> roles,
+			Integer boundaryOrderIndex) {
+		Map<RearmSpecificationType, Set<String>> specs = new LinkedHashMap<>();
+		for (AgentTaskRoleConfigData r : roles) {
+			if (null != boundaryOrderIndex && r.getOrderIndex() >= boundaryOrderIndex) continue;
+			if (null == r.getProducesOutputs()) continue;
+			for (ProducedOutput o : r.getProducesOutputs()) {
+				if (null == o.specification() || INDEX_KINDS.contains(o.specification())
+						|| RearmSpecificationType.BOARD_INVESTIGATION_REPORT == o.specification()) {
+					continue;
+				}
+				specs.computeIfAbsent(o.specification(), k -> new LinkedHashSet<>()).add(r.getName());
+			}
+		}
+		return specs;
+	}
+
+	/**
+	 * A split request the coordinator answered by sending the task to a role (task SPLIT-9, D7): DECLINED in
+	 * {@code by}'s name with {@code note}, and the INFO saying so. Nothing when the task carries no REQUESTED record.
+	 *
+	 * @return whether the record was written
+	 */
+	public boolean settleSplitRequest(AgentTaskData td, String toRole, AgentActor by, String note,
+			BoardEffects effects) {
+		if (!td.splitRequested()) return false;
+		td.setSplitRequest(td.getSplitRequest().withSettled(SplitRequestState.DECLINED, by, note));
+		effects.info("Task " + label(td) + ": " + (null == by ? "someone" : by.display())
+				+ " declined the split request, sent to " + toRole + ": " + note);
+		return true;
+	}
+
 	/** "ARCHITECTURE round 2 (READY_TO_SHIP), THREAT_MODEL round 1 (READY_TO_SHIP)": the rounds the ALERT names. */
-	private String roundsLine(List<UUID> design) {
+	public String roundsLine(List<UUID> design) {
 		List<String> parts = new ArrayList<>();
 		for (UUID r : design) {
 			sharedReleaseService.getReleaseData(r).ifPresent(rd -> parts.add(roundLabel(rd) + " (" + rd.getLifecycle() + ")"));

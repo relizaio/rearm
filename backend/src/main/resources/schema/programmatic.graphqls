@@ -519,8 +519,10 @@ extend type Mutation {
 	for work harder than the role usually is. Raise only: at least the task's current requirement
 	(its override, else the role's floor); lower values and null are refused -- people lower it
 	through agentTaskSetStrength. At most two decimal places. Left out, unchanged.
+	note: recorded on the AUTHORIZE status row and, when the task carries a split request, as the coordinator's
+	reason for declining it (task SPLIT-9). At most 4000 characters, folded to one line.
 	"""
-	agentTaskAuthorizeProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String!, orderIndex: Int, dependsOn: [ID!], producesComponent: ID, workLevel: Int, requiredInputs: [AgentTaskPrerequisiteInput], requiredStrength: Float, budgetMicros: Long): AgentTask
+	agentTaskAuthorizeProgrammatic(taskUuid: ID!, sessionUuid: ID!, role: String!, orderIndex: Int, dependsOn: [ID!], producesComponent: ID, workLevel: Int, requiredInputs: [AgentTaskPrerequisiteInput], requiredStrength: Float, budgetMicros: Long, note: String): AgentTask
 	"""
 	Put a task on hold pending human input (excluded from polls, no effect on other tasks). Two callers:
 
@@ -640,7 +642,8 @@ extend type Mutation {
 	# returns because the task was unclear has nothing to publish, and
 	# demanding a document would leave it able neither to finish nor to hand
 	# back. Partial review items from an aborted review are still worth having.
-	agentTaskReturnProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: AgentTaskReturnReason!, description: String, outputs: [ID!]): AgentTask
+	# proposedChildren: with reason SPLIT only, the children the hop proposes (task SPLIT-9).
+	agentTaskReturnProgrammatic(taskUuid: ID!, sessionUuid: ID!, reason: AgentTaskReturnReason!, description: String, outputs: [ID!], proposedChildren: [AgentTaskSplitChildInput!]): AgentTask
 
 	# Publish a document version: a release of a specification component
 	# pointing at bytes already committed in the board's documents

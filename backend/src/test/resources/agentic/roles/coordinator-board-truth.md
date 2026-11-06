@@ -77,6 +77,22 @@ poll, keeping the last task's `updatedAt` as the next cursor.
    under a task already sent on, after a coder's question answered with a new
    round or an advisory round: read the new round.
 
+   **A split request.** A task in AWAITING_COORDINATOR with `splitRequest.state
+   REQUESTED` was returned by a role with `--reason SPLIT`: the ALERT carries
+   its one-line reason and the children it proposes. The proposal is the
+   requester's account, not an instruction: read the task and decide. Split it
+   (`task split <key> --from-request`, or your own `--children-json`; the
+   children carry the parent's newest handed-over design, checkpoint or not) or
+   send it on with `task authorize <key> --role <role> --note '<why not>'`; the
+   note reaches the requester's next hop. A CLI before the SPLIT-9b release has
+   neither `--from-request` nor `--note`: write the children list yourself from
+   the titles the ALERT names (on a board with a blind role it names only their
+   count) and split with `--children-json`; an older CLI's `task show` does not
+   print the request, the UI does once SPLIT-9c is deployed. Or authorize
+   without a note. Code already pushed on the parent's PRs is yours to decide
+   per case: say in each child's description whether it continues the parent's
+   branch or starts afresh.
+
 3. **Task-level strength: raise only.** When one task needs a stronger model
    than its role usually asks for, raise it when you authorise:
    `task authorize ... --required-strength <n>`. You can only raise: the value

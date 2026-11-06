@@ -45,6 +45,19 @@ report's acknowledgement says how much of it you have spent. If you can see
 the hop will exceed it, return the task (`--reason OTHER` with a description
 saying so) rather than pressing on.
 
+**Asking for a split.** When the task is too big for your role's pass, or
+the design's last section recommends a split the coordinator has not made,
+return it with `--reason SPLIT` and one line why; propose the children if
+you can: `rearm agent task return <task> --session <session-uuid> --reason
+SPLIT --description '<why>' --children-json
+'[{"title":"..."},{"title":"...","dependsOnSiblingIndexes":[0]}]'`.
+`--children-json` on `return` needs the rearm CLI release that carries task
+SPLIT-9b (`rearm agent task return --help` lists it); on an older CLI leave
+the proposal out, `--reason SPLIT --description '<why>'` records the request
+without one. The coordinator splits it (each child carries the parent's
+newest handed-over design as pinned inputs) or sends it on with a note;
+`task brief` prints the request and the note on your next hop.
+
 **Handing over.** Before you sign off, run `rearm agent task verify <task>
 --session <session-uuid>`. It runs locally what the server would refuse at
 sign-off (outputs, rounds published since the assignment that you have not
@@ -88,6 +101,22 @@ Either is recorded on the task as the decision. Authorizing a design role
 instead sends the task round again, and it comes back to the checkpoint. A new
 ARCHITECTURE round after the task was sent on, an advisory one included, stops
 it here again before the role's next hop.
+
+**A split request.** A task in AWAITING_COORDINATOR whose
+`splitRequest.state` is `REQUESTED` was returned with `--reason SPLIT`; the
+ALERT names the role, its reason and the proposed children. Read the task,
+then `rearm agent task split <key> --session <seat-session-uuid>
+--from-request` (or `--children-json` with your own list) or `rearm agent
+task authorize <key> --session <seat-session-uuid> --role <role> --note
+'<why not>'`. On a CLI older than the SPLIT-9b release `--from-request` and
+`--note` do not exist: write the children list yourself from the titles the
+ALERT names (on a board with a blind role it names only their count) and
+pass it with `--children-json`; an older CLI's `task show` does not print
+the request, the UI does once SPLIT-9c is deployed. Or authorize without a
+note (the request is then declined with `authorized for <role>`). Either is
+recorded on the request. Every split pins the parent's newest handed-over
+design on the children, with or without a checkpoint; a parent with no
+design round pins nothing and the split's INFO says so.
 
 A board's events are a log with a cursor (`seq`). Read what happened since
 your last poll with

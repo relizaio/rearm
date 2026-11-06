@@ -144,7 +144,7 @@ class ReleaseServiceProductMissingSbomMergeTest extends ReleaseServiceMergeTestB
 		assertNull(sent.missingSbomComponents());
 		assertEquals(new ReleaseNodeFacts("Example Org", null, null, null), sent.releaseNode());
 		assertEquals(Integer.valueOf(ReleaseService.MERGE_VERSION), sent.mergeVersion());
-		assertEquals(18, ReleaseService.MERGE_VERSION);
+		assertEquals(19, ReleaseService.MERGE_VERSION);
 		verify(rebomService).mergeAndStoreBoms(eq(componentMergeIds()), any(), eq(ORG));
 		@SuppressWarnings("unchecked")
 		ArgumentCaptor<List<ReleaseBom>> stored = ArgumentCaptor.forClass(List.class);

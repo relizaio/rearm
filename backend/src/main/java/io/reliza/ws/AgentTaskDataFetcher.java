@@ -640,6 +640,7 @@ public class AgentTaskDataFetcher {
 			@InputArgument("dependsOn") List<String> dependsOnRaw,
 			@InputArgument("producesComponent") String producesComponentRaw,
 			@InputArgument("workLevel") Integer workLevel,
+			@InputArgument("note") String note,
 			DgsDataFetchingEnvironment dfe) throws RelizaException {
 		ProgKeyContext ctx = authorizeProgrammaticOrg(dfe);
 		AgentTaskData td = requireOrgTask(ctx, taskUuid);
@@ -662,7 +663,7 @@ public class AgentTaskDataFetcher {
 		AgentTaskData authorized = agentTaskService.authorize(taskUuid, board, role, orderIndex, dependsOn,
 				producesComponent, workLevel,
 				refuseQuestions(parseRequiredInputs(dfe.getArgument("requiredInputs"), "requiredInputs"), "requiredInputs"),
-				setStrength, rawStrength instanceof Number n ? n.doubleValue() : null,
+				setStrength, rawStrength instanceof Number n ? n.doubleValue() : null, note,
 				AgentActor.ofSession(sessionUuid), ctx.wu());
 		return seedBudget ? agentTaskService.setBudget(taskUuid, budget, AgentActor.ofSession(sessionUuid), ctx.wu())
 				: authorized;
@@ -851,8 +852,14 @@ public class AgentTaskDataFetcher {
 			throw new RelizaException("PARKED_FOR_OPERATOR returns are system-generated only: park the hop with task hold"
 					+ " --operator --question");
 		}
+		// A proposal is a split request's (task SPLIT-9, D9); refused before the service, which refuses it too.
+		List<Map<String, Object>> rawChildren = dfe.getArgument("proposedChildren");
+		if (null != rawChildren && rr != TaskReturnReason.SPLIT) {
+			throw new RelizaException("proposedChildren needs reason SPLIT");
+		}
 		return agentTaskService.returnTask(taskUuid, sessionUuid, rr, description,
-				null != outputs ? outputs : List.of(), ctx.wu());
+				null != outputs ? outputs : List.of(), null == rawChildren ? null : toSplitChildren(rawChildren),
+				ctx.wu());
 	}
 
 	@DgsData(parentType = "Mutation", field = "agentTaskBindExternalRefProgrammatic")

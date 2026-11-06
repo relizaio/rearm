@@ -162,6 +162,7 @@ class GraphQlSchemaEnumSyncTest {
 			entry("AgentTaskHoldStop", AgentTaskData.HoldStop.class),
 			entry("AgentTaskKind", AgentTaskData.TaskKind.class),
 			entry("AgentTaskReturnReason", AgentTaskData.TaskReturnReason.class),
+			entry("AgentTaskSplitRequestState", AgentTaskData.SplitRequestState.class),
 			entry("AgentTaskStatus", AgentTaskData.TaskStatus.class),
 			entry("ArtifactBelonging", DeliverableData.BelongsToOrganization.class),
 			entry("ArtifactStoredIn", ArtifactData.StoredIn.class),

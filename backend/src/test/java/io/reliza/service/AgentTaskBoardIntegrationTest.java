@@ -1505,6 +1505,13 @@ public class AgentTaskBoardIntegrationTest {
 		AgentTaskData parent = agentTaskService.getTaskData(t.getUuid()).orElseThrow();
 		assertEquals(TaskStatus.AWAITING_COORDINATOR, parent.getStatus());
 		assertEquals(2, parent.getChildTasks().size());
+		// T-6 of task SPLIT-9: the split says the children carry no design, and the return was no split request.
+		assertNull(parent.getSplitRequest());
+		String keys = children.get(0).keyOrUuid() + ", " + children.get(1).keyOrUuid();
+		assertTrue(agentBoardService.recentEvents(board(r).getUuid()).stream().anyMatch(ev ->
+				AgentBoardData.BoardEventKind.INFO == ev.kind() && ev.message().equals("Task " + parent.label()
+						+ " split into 2 children: " + keys + "; no design round to carry")),
+				agentBoardService.recentEvents(board(r).getUuid()).toString());
 		assertEquals(returned.getStatusHistory().size() + 1, parent.getStatusHistory().size(), "one row, for the split");
 		AgentTaskData.StatusChange row = parent.getStatusHistory().get(parent.getStatusHistory().size() - 1);
 		assertEquals(StatusTrigger.SPLIT, row.trigger());

@@ -12,7 +12,8 @@ Reference text for operators, kept in the repository — not seeded, not served.
 ## Ask for a document on a return
 
 When a hop returns a task, ask for a review item document unless the reason is
-`SESSION_CLOSED` or `BLOCKED_ON_DEPENDENCY` — those have nothing to write down.
+`SESSION_CLOSED`, `BLOCKED_ON_DEPENDENCY` or `SPLIT` — those have nothing to write
+down (a SPLIT carries its proposal).
 Nothing is enforced on returns, so this is your call: partial review items from an
 aborted review are worth far more to the next hop than a free-text reason.
 

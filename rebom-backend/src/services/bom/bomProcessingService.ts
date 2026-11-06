@@ -102,67 +102,118 @@ const DEV_DEPENDENCY_PATTERNS = {
   }
 };
 
-function isDevDependency(component: any): boolean {
-  if (component.scope === 'optional' || component.scope === 'excluded') {
-    return true;
-  }
-  
-  if (!component.properties || !Array.isArray(component.properties)) {
-    return false;
-  }
-
+/** A generator-written dev, test or build classification: a DEV_DEPENDENCY_PATTERNS property matches. */
+function isDevMarked(component: any): boolean {
+  if (!Array.isArray(component?.properties)) return false
   for (const [ecosystem, pattern] of Object.entries(DEV_DEPENDENCY_PATTERNS)) {
-    const property = component.properties.find((prop: any) => 
-      prop.name === pattern.propertyName
-    );
-    
+    const property = component.properties.find((prop: any) => prop?.name === pattern.propertyName)
     if (property && pattern.devValues.includes(property.value)) {
-      logger.debug(`Component ${component['bom-ref']} marked as dev dependency (${ecosystem}): ${property.name}=${property.value}`);
-      return true;
+      logger.debug(`Component ${component['bom-ref']} marked as dev dependency (${ecosystem}): ${property.name}=${property.value}`)
+      return true
     }
   }
-  
-  return false;
+  return false
 }
 
-export function extractDevFilteredBom(bom: any): any {
-  logger.info(`Filtering dev dependencies - original components: ${bom.components?.length || 0}`);
-  
-  if (!bom.components || !Array.isArray(bom.components)) {
-    logger.warn('No components found in BOM for dev filtering');
-    return bom;
-  }
+/** Metadata property of a merged BOM (FDAW-6 3.3): how many generator-marked dev components were left out. */
+export const DEV_COMPONENTS_EXCLUDED_PROPERTY = 'reliza:export:devComponentsExcluded'
+/** Metadata property of a merged BOM (FDAW-6 3.3): how many `scope: excluded` components were left out. */
+export const EXCLUDED_SCOPE_DROPPED_PROPERTY = 'reliza:export:excludedScopeDropped'
 
-  const prodComponents = bom.components.filter((component: any) => !isDevDependency(component));
-  const filteredComponentRefs = new Set(prodComponents.map((comp: any) => comp['bom-ref']));
-  
-  logger.info(`After dev filtering - remaining components: ${prodComponents.length}`);
-  
-  let newDependencies = [];
-  if (bom.dependencies && Array.isArray(bom.dependencies)) {
-    newDependencies = bom.dependencies.map((dep: any) => {
-      if (!dep.dependsOn || !Array.isArray(dep.dependsOn)) {
-        return dep;
+export type DevExclusionResult = {
+  bom: any,
+  devExcluded: number,
+  excludedScopeDropped: number,
+  optionalExcluded: number
+}
+
+type DevDropRule = 'excluded' | 'dev' | 'optional'
+
+/** The rule of FDAW-6 3.1 that drops a component, in precedence order, or undefined when it stays. */
+function devDropRule(component: any, dropOptional: boolean): DevDropRule | undefined {
+  if (component?.scope === 'excluded') return 'excluded'
+  if (isDevMarked(component)) return 'dev'
+  if (dropOptional && component?.scope === 'optional') return 'optional'
+  return undefined
+}
+
+/** Every node of a subtree, the node itself included. */
+function subtreeOf(component: any): any[] {
+  const out: any[] = [component]
+  if (Array.isArray(component?.components)) for (const c of component.components) out.push(...subtreeOf(c))
+  return out
+}
+
+/**
+ * FDAW-6 3.1 (B6, B10): leaves out of one input the components the generator itself put outside the
+ * shipped inventory, for every merge: `scope: excluded` (always), a DEV_DEPENDENCY_PATTERNS
+ * property (always) and, with `dropOptional` (the profile excludes optional dependencies, ignoreDev),
+ * `scope: optional`. A component matching several rules counts once, under the first in that order.
+ * The root (`metadata.component`) is never dropped; `components[]` is walked at any depth and a
+ * dropped component takes its nested components with it, each counted under the dropped node's rule.
+ * Every dependency entry whose `ref` is a dropped ref goes and every dropped ref leaves every
+ * `dependsOn` and `provides`; nothing is re-evaluated transitively. Services are untouched. Pure:
+ * with nothing to drop it returns the input itself.
+ */
+export function dropExcludedAndDevComponents(bom: any, opts: { dropOptional: boolean }): DevExclusionResult {
+  const none = { bom, devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 0 }
+  if (!bom || typeof bom !== 'object' || !Array.isArray(bom.components)) return none
+  const counts: Record<DevDropRule, number> = { excluded: 0, dev: 0, optional: 0 }
+  const dropped = new Set<string>()
+  const filter = (components: any[]): any[] => {
+    let changed = false
+    const kept: any[] = []
+    for (const component of components) {
+      const rule = devDropRule(component, opts.dropOptional)
+      if (rule) {
+        changed = true
+        for (const node of subtreeOf(component)) {
+          counts[rule]++
+          const ref = bomRefOf(node)
+          if (ref) dropped.add(ref)
+        }
+        continue
       }
-      
-      const filteredDependsOn = dep.dependsOn.filter((ref: string) => 
-        filteredComponentRefs.has(ref)
-      );
-      
-      return {
-        ...dep,
-        dependsOn: filteredDependsOn
-      };
-    }).filter((dep: any) => {
-      return filteredComponentRefs.has(dep.ref) || dep.ref === bom.metadata?.component?.['bom-ref'];
-    });
+      if (Array.isArray(component?.components)) {
+        const nested = filter(component.components)
+        if (nested !== component.components) {
+          changed = true
+          kept.push({ ...component, components: nested })
+          continue
+        }
+      }
+      kept.push(component)
+    }
+    return changed ? kept : components
   }
+  const components = filter(bom.components)
+  if (components === bom.components) return none
+  // The root keeps its ref even when a dropped node shares it.
+  const rootRef = bomRefOf(bom.metadata?.component)
+  if (rootRef) dropped.delete(rootRef)
 
-  return {
-    ...bom,
-    components: prodComponents,
-    dependencies: newDependencies
-  };
+  const out: any = { ...bom, components }
+  if (Array.isArray(bom.dependencies)) {
+    out.dependencies = bom.dependencies
+      .filter((dep: any) => !(typeof dep?.ref === 'string' && dropped.has(dep.ref)))
+      .map((dep: any) => {
+        let next = dep
+        for (const key of ['dependsOn', 'provides']) {
+          if (!Array.isArray(dep?.[key]) || !dep[key].some((r: any) => dropped.has(r))) continue
+          next = next === dep ? { ...dep } : next
+          next[key] = dep[key].filter((r: any) => !dropped.has(r))
+        }
+        return next
+      })
+  }
+  const total = counts.excluded + counts.dev + counts.optional
+  logger.info(`Dev and excluded-scope filter: ${total} components left out (excluded scope ${counts.excluded}, dev ${counts.dev}, optional ${counts.optional})`)
+  return { bom: out, devExcluded: counts.dev, excludedScopeDropped: counts.excluded, optionalExcluded: counts.optional }
+}
+
+/** The filter of the `ignoreDev` knob: dev, excluded and optional components left out (FDAW-6 3.1). */
+export function extractDevFilteredBom(bom: any): any {
+  return dropExcludedAndDevComponents(bom, { dropOptional: true }).bom
 }
 
 /**
@@ -1968,14 +2019,7 @@ export function linkUnfoldedRoots(bom: any, inputs: any[]): UnfoldedRootLinkResu
     const ref = bomRefOf(c)
     if (ref) topLevel.add(ref)
   }
-  const resolvable = componentBomRefs(bom)
-  if (Array.isArray(bom.services)) bom.services.forEach((s: any) => serviceBomRefs(s, resolvable))
-  const named = new Set<string>()
-  for (const dep of dependencies) {
-    if (typeof dep?.ref !== 'string' || !resolvable.has(dep.ref)) continue
-    named.add(dep.ref)
-    if (Array.isArray(dep?.dependsOn)) dep.dependsOn.forEach((r: any) => { if (typeof r === 'string') named.add(r) })
-  }
+  const named = namedByResolvableEntries(bom)
 
   const seen = new Set<string>()
   const linked: string[] = []
@@ -2009,12 +2053,7 @@ export function linkUnfoldedRoots(bom: any, inputs: any[]): UnfoldedRootLinkResu
   for (const bomRef of linked) logger.info({ bomRef }, 'unfolded input root linked under the merged root')
   logger.info(`unfolded root link: ${linked.length} input roots linked under the merged root`)
 
-  const index = dependencies.findIndex((d: any) => d?.ref === rootRef)
-  const out = index < 0
-    ? [{ ref: rootRef, dependsOn: linked }, ...dependencies]
-    : dependencies.map((d: any, i: number) => i !== index ? d
-      : { ...d, dependsOn: [...(Array.isArray(d.dependsOn) ? d.dependsOn : []), ...linked] })
-  return { bom: { ...bom, dependencies: out }, count: linked.length }
+  return { bom: { ...bom, dependencies: appendUnderRoot(dependencies, rootRef, linked) }, count: linked.length }
 }
 
 export type UnknownCompositionsResult = {
@@ -2073,6 +2112,669 @@ export function declareUnknownCompositions(bom: any, requested: MissingSbomCompo
   properties.push({ name: COMPONENTS_WITHOUT_SBOM_PROPERTY, value: String(dependencies.length) })
   metadata.properties = properties
   return { bom: { ...bom, metadata, compositions }, count: dependencies.length }
+}
+
+// ---------------------------------------------------------------------------------------------
+// FDAW-6 3.2 (B9): personal data, local paths and URL credentials out of the merged document.
+// A closed catalogue by exact name and by shape; a value is never traced across fields.
+// ---------------------------------------------------------------------------------------------
+
+/** Metadata property of a merged BOM (FDAW-6 3.3): personal-data properties and fields removed or edited. */
+export const PERSONAL_DATA_STRIPPED_PROPERTY = 'reliza:export:personalDataStripped'
+/** Metadata property of a merged BOM (FDAW-6 3.3): local-path properties and `file:` references removed. */
+export const LOCAL_PATHS_STRIPPED_PROPERTY = 'reliza:export:localPathsStripped'
+/** Metadata property of a merged BOM (FDAW-6 3.3, D10): URL fields whose credential userinfo was removed. */
+export const CREDENTIALS_STRIPPED_PROPERTY = 'reliza:export:credentialsStripped'
+/** Metadata property of a merged BOM (FDAW-6 3.3): top-level components linked under the root by linkOrphanComponents. */
+export const ORPHAN_COMPONENTS_LINKED_PROPERTY = 'reliza:export:orphanComponentsLinked'
+
+/** The six always-written records of FDAW-6 3.3, in the order recordMergeCounts writes them. */
+export const MERGE_COUNT_PROPERTIES = [
+  DEV_COMPONENTS_EXCLUDED_PROPERTY,
+  EXCLUDED_SCOPE_DROPPED_PROPERTY,
+  PERSONAL_DATA_STRIPPED_PROPERTY,
+  LOCAL_PATHS_STRIPPED_PROPERTY,
+  CREDENTIALS_STRIPPED_PROPERTY,
+  ORPHAN_COMPONENTS_LINKED_PROPERTY
+] as const
+
+/** S1: properties that name people (npm maintainers and publishers, PyPI uploaders), removed whole. */
+export const PERSONAL_DATA_PROPERTY_NAMES: ReadonlySet<string> = new Set([
+  'cdx:npm:publisherEmail',
+  'cdx:npm:maintainerSet',
+  'cdx:npm:priorMaintainerSet',
+  'cdx:npm:publisher',
+  'cdx:npm:priorPublisher',
+  'cdx:pypi:uploaderSet',
+  'cdx:pypi:priorUploaderSet'
+])
+
+/** S6: properties that carry a path of the machine the generator ran on, removed whole. */
+export const LOCAL_PATH_PROPERTY_NAMES: ReadonlySet<string> = new Set([
+  'cdx:npm:binPaths',
+  'LocalNodeModulesPath'
+])
+
+/**
+ * S2/S4: an e-mail address token. The local part has no `/`, `:` or `@` and starts the value or
+ * follows whitespace or one of `< ( [ " ' , ; :`; the domain is dotted labels ending in a letter-only
+ * label of two or more and ends the value or is followed by whitespace or one of `> ) ] " ' , ; .`.
+ * So an `@` in a URL, a scoped path segment, a scp-style git reference or a `name@version` token is
+ * not an address. No nested quantifier: linear on any input.
+ */
+export const ADDRESS_PATTERN = /(?:^|(?<=[\s<(\["',;:]))[A-Za-z0-9._%+-]+@(?:[A-Za-z0-9-]+\.)+[A-Za-z]{2,}(?=$|[\s>)\]"',;.])/
+
+/**
+ * S10: a URL token, a scheme, `://` and the authority up to the first `/`, `?`, `#` or whitespace.
+ * Bounded on the left by any character that cannot be part of a scheme, so it is found at the start
+ * of a value, inside free text and after `=` (FDAW-6 departure: wider than ADDRESS_PATTERN's bound).
+ * Group 1 is the scheme, group 2 the authority. Single character classes only: linear on any input.
+ */
+export const CREDENTIAL_URL_PATTERN = /(?<![A-Za-z0-9+.-])([A-Za-z][A-Za-z0-9+.-]*):\/\/([^\/?#\s]*)/
+
+/** Schemes in which any userinfo is a credential: HTTP has no key-based login. */
+const HTTP_SCHEMES = new Set(['http', 'https', 'git+http', 'git+https'])
+
+/** The three URL-valued purl qualifiers the purl specification defines. */
+const URL_PURL_QUALIFIERS = new Set(['repository_url', 'download_url', 'vcs_url'])
+
+/** The properties named SrcFile whose value is an absolute local path are removed (S7). */
+const SRC_FILE_PROPERTY = 'SrcFile'
+const ABSOLUTE_LOCAL_PATH = /^(?:\/|~\/|\\\\|[A-Za-z]:\\)/
+
+/**
+ * The userinfo of an authority (everything before its last `@`, RFC 3986) when it is a credential:
+ * a userinfo with a password (`user:pass`), any userinfo in an HTTP scheme, or a userinfo that itself
+ * carries a raw `@` in any scheme (malformed: RFC 3986 encodes it, so a hand-written `u:p@ss@host` or
+ * `git@token@host` is read as hiding a secret). Undefined otherwise.
+ */
+function credentialUserinfo(scheme: string, authority: string): string | undefined {
+  const at = authority.lastIndexOf('@')
+  if (at <= 0) return undefined
+  const userinfo = authority.slice(0, at)
+  if (userinfo.includes(':') || userinfo.includes('@') || HTTP_SCHEMES.has(scheme.toLowerCase())) return userinfo
+  return undefined
+}
+
+/**
+ * Every URL token of a string with its credential userinfo removed (S10). Returns the string itself
+ * when no token carries a credential.
+ */
+export function stripUrlCredentials(value: string): string {
+  if (typeof value !== 'string' || !value.includes('://')) return value
+  const pattern = new RegExp(CREDENTIAL_URL_PATTERN.source, 'g')
+  let changed = false
+  const out = value.replace(pattern, (whole: string, scheme: string, authority: string) => {
+    const userinfo = credentialUserinfo(scheme, authority)
+    if (userinfo === undefined) return whole
+    changed = true
+    return `${scheme}://${authority.slice(userinfo.length + 1)}`
+  })
+  return changed ? out : value
+}
+
+/** True when a string carries a URL with a credential userinfo (the test T8 runs on the output). */
+export function carriesUrlCredential(value: unknown): boolean {
+  return typeof value === 'string' && stripUrlCredentials(value) !== value
+}
+
+/** True when a string carries an e-mail address token. */
+export function carriesAddress(value: unknown): boolean {
+  return typeof value === 'string' && ADDRESS_PATTERN.test(value)
+}
+
+/**
+ * S4: `author` or `publisher` with every address token removed, `<...>` tokens holding one removed
+ * whole; separators (`,`, `;`, whitespace) collapse only where a token was removed. Returns the value
+ * itself when nothing matched, '' when nothing but separators is left.
+ */
+export function stripAddressTokens(value: string): string {
+  if (typeof value !== 'string' || !value.includes('@')) return value
+  const ranges: Array<[number, number]> = []
+  for (const m of value.matchAll(/<[^<>]*>/g)) {
+    if (ADDRESS_PATTERN.test(m[0].slice(1, -1))) ranges.push([m.index!, m.index! + m[0].length])
+  }
+  for (const m of value.matchAll(new RegExp(ADDRESS_PATTERN.source, 'g'))) {
+    const at = m.index!
+    if (!ranges.some(([s, e]) => at >= s && at < e)) ranges.push([at, at + m[0].length])
+  }
+  if (!ranges.length) return value
+  ranges.sort((a, b) => a[0] - b[0])
+  const pieces: string[] = []
+  let from = 0
+  for (const [s, e] of ranges) {
+    pieces.push(value.slice(from, s))
+    from = e
+  }
+  pieces.push(value.slice(from))
+  const SEP_TAIL = /[\s,;]+$/
+  const SEP_HEAD = /^[\s,;]+/
+  let out = pieces[0]
+  for (let i = 1; i < pieces.length; i++) {
+    const left = out.replace(SEP_TAIL, '')
+    const right = pieces[i].replace(SEP_HEAD, '')
+    if (!left) { out = right; continue }
+    if (!right) { out = out + pieces[i]; continue }
+    const separators = out.slice(left.length) + pieces[i].slice(0, pieces[i].length - right.length)
+    const sep = separators.match(/[,;]/)
+    out = left + (sep ? `${sep[0]} ` : ' ') + right
+  }
+  return out.replace(SEP_TAIL, '').replace(SEP_HEAD, '').trim()
+}
+
+export type PersonalDataStripResult = {
+  bom: any,
+  personalData: number,
+  localPaths: number,
+  credentials: number
+}
+
+type StripCounts = { personalData: number, localPaths: number, credentials: number }
+
+/**
+ * One `properties[]` list (S1, S6, S7, S8, S10, S2 in that order, one count per property). A
+ * property no removal rule took is edited by S10 first; S2 then tests the edited value, so a
+ * credential URL without a path is not read as an address (FDAW-6 review F-14). `pathRules` is false
+ * on a service (S6 and S7 do not apply there).
+ */
+function stripProperties(properties: any, counts: StripCounts, pathRules: boolean): any {
+  if (!Array.isArray(properties)) return properties
+  let changed = false
+  const kept: any[] = []
+  for (const p of properties) {
+    const name = p?.name
+    const value = p?.value
+    if (typeof name === 'string' && PERSONAL_DATA_PROPERTY_NAMES.has(name)) {
+      counts.personalData++; changed = true; continue
+    }
+    if (pathRules && typeof name === 'string' && LOCAL_PATH_PROPERTY_NAMES.has(name)) {
+      counts.localPaths++; changed = true; continue
+    }
+    if (pathRules && name === SRC_FILE_PROPERTY && typeof value === 'string' && ABSOLUTE_LOCAL_PATH.test(value)) {
+      counts.localPaths++; changed = true; continue
+    }
+    if (typeof value === 'string' && /^file:/i.test(value)) {
+      counts.localPaths++; changed = true; continue
+    }
+    const edited = typeof value === 'string' ? stripUrlCredentials(value) : value
+    if (carriesAddress(edited)) {
+      counts.personalData++; changed = true; continue
+    }
+    if (edited !== value) {
+      counts.credentials++; changed = true
+      kept.push({ ...p, value: edited })
+      continue
+    }
+    kept.push(p)
+  }
+  return changed ? kept : properties
+}
+
+/**
+ * S4's address-token edit on the `name` of a contact, an author or an organizational entity (FDAW-6
+ * departure: PyPI metadata writes `Name <address>` into `authors[].name`, 19 of the walkthrough's
+ * aggregate do): counted once as personal data; the field removed when nothing is left.
+ */
+function stripNameField(entry: any, next: any, counts: StripCounts): any {
+  const name = entry?.name
+  if (typeof name !== 'string') return next
+  const edited = stripAddressTokens(name)
+  if (edited === name) return next
+  counts.personalData++
+  const out = next === entry ? { ...entry } : next
+  if (edited === '') delete out.name
+  else out.name = edited
+  return out
+}
+
+/**
+ * S3/S5: `email` and `phone` out of every entry, an address token out of its `name`; an entry left
+ * empty goes; undefined when the list empties.
+ */
+function stripContactList(list: any, counts: StripCounts): any {
+  if (!Array.isArray(list)) return list
+  let changed = false
+  const kept: any[] = []
+  for (const entry of list) {
+    if (!entry || typeof entry !== 'object') { kept.push(entry); continue }
+    let next = stripNameField(entry, entry, counts)
+    for (const field of ['email', 'phone']) {
+      if (field in entry) {
+        counts.personalData++
+        if (next === entry) next = { ...entry }
+        delete next[field]
+      }
+    }
+    if (next !== entry) {
+      changed = true
+      if (Object.keys(next).length === 0) continue
+    }
+    kept.push(next)
+  }
+  if (!changed) return list
+  return kept.length ? kept : undefined
+}
+
+/** S10 over a list of URL strings. */
+function stripUrlList(list: any, counts: StripCounts): any {
+  return mapIfChanged(list, (u: any) => {
+    if (typeof u !== 'string') return u
+    const next = stripUrlCredentials(u)
+    if (next !== u) counts.credentials++
+    return next
+  })
+}
+
+/** S5 and S10 on an organizational entity (supplier, manufacturer, provider), and S4's edit on its name. */
+function stripOrganizationalEntity(entity: any, counts: StripCounts): any {
+  if (!entity || typeof entity !== 'object') return entity
+  let next = stripNameField(entity, entity, counts)
+  const contact = stripContactList(entity.contact, counts)
+  if (contact !== entity.contact) {
+    next = { ...next }
+    if (contact === undefined) delete next.contact
+    else next.contact = contact
+  }
+  const url = stripUrlList(entity.url, counts)
+  if (url !== entity.url) next = { ...next, url }
+  return next
+}
+
+/** S8 and S10 on `externalReferences[]`: a `file:` reference goes, a credential userinfo leaves the url. */
+function stripExternalReferences(list: any, counts: StripCounts): any {
+  if (!Array.isArray(list)) return list
+  let changed = false
+  const kept: any[] = []
+  for (const ref of list) {
+    const url = ref?.url
+    if (typeof url === 'string' && /^file:/i.test(url)) {
+      counts.localPaths++; changed = true; continue
+    }
+    if (typeof url === 'string') {
+      const next = stripUrlCredentials(url)
+      if (next !== url) {
+        counts.credentials++; changed = true
+        kept.push({ ...ref, url: next })
+        continue
+      }
+    }
+    kept.push(ref)
+  }
+  return changed ? kept : list
+}
+
+/** S10 on `licenses[].license.url`. */
+function stripLicenseUrls(licenses: any, counts: StripCounts): any {
+  return mapIfChanged(licenses, (entry: any) => {
+    const url = entry?.license?.url
+    if (typeof url !== 'string') return entry
+    const next = stripUrlCredentials(url)
+    if (next === url) return entry
+    counts.credentials++
+    return { ...entry, license: { ...entry.license, url: next } }
+  })
+}
+
+/** Writes `value` at `key` of a lazily copied node; undefined removes the key. */
+function setOrDelete(node: any, copy: any, key: string, value: any): any {
+  const out = copy ?? { ...node }
+  if (value === undefined) delete out[key]
+  else out[key] = value
+  return out
+}
+
+/** One component (the root, a component at any depth, a tool): S1 to S8 and S10. The purl is never read. */
+function stripComponent(component: any, counts: StripCounts): any {
+  if (!component || typeof component !== 'object') return component
+  let copy: any = null
+  const properties = stripProperties(component.properties, counts, true)
+  if (properties !== component.properties) copy = setOrDelete(component, copy, 'properties', properties)
+  for (const field of ['author', 'publisher']) {
+    const value = component[field]
+    if (typeof value !== 'string') continue
+    const next = stripAddressTokens(value)
+    if (next === value) continue
+    counts.personalData++
+    copy = setOrDelete(component, copy, field, next === '' ? undefined : next)
+  }
+  if (Array.isArray(component.authors)) {
+    const authors = stripContactList(component.authors, counts)
+    if (authors !== component.authors) copy = setOrDelete(component, copy, 'authors', authors)
+  }
+  for (const field of ['supplier', 'manufacturer']) {
+    const entity = stripOrganizationalEntity(component[field], counts)
+    if (entity !== component[field]) copy = setOrDelete(component, copy, field, entity)
+  }
+  const refs = stripExternalReferences(component.externalReferences, counts)
+  if (refs !== component.externalReferences) copy = setOrDelete(component, copy, 'externalReferences', refs)
+  const licenses = stripLicenseUrls(component.licenses, counts)
+  if (licenses !== component.licenses) copy = setOrDelete(component, copy, 'licenses', licenses)
+  if (Array.isArray(component.components)) {
+    const nested = mapIfChanged(component.components, (c: any) => stripComponent(c, counts))
+    if (nested !== component.components) copy = setOrDelete(component, copy, 'components', nested)
+  }
+  return copy ?? component
+}
+
+/** One service at any depth: S1, S2, S8 and S10 on its properties, S5 and S10 on its provider, S10 on endpoints and references. */
+function stripService(service: any, counts: StripCounts): any {
+  if (!service || typeof service !== 'object') return service
+  let copy: any = null
+  const properties = stripProperties(service.properties, counts, false)
+  if (properties !== service.properties) copy = setOrDelete(service, copy, 'properties', properties)
+  const provider = stripOrganizationalEntity(service.provider, counts)
+  if (provider !== service.provider) copy = setOrDelete(service, copy, 'provider', provider)
+  const endpoints = stripUrlList(service.endpoints, counts)
+  if (endpoints !== service.endpoints) copy = setOrDelete(service, copy, 'endpoints', endpoints)
+  const refs = stripExternalReferences(service.externalReferences, counts)
+  if (refs !== service.externalReferences) copy = setOrDelete(service, copy, 'externalReferences', refs)
+  if (Array.isArray(service.services)) {
+    const nested = mapIfChanged(service.services, (s: any) => stripService(s, counts))
+    if (nested !== service.services) copy = setOrDelete(service, copy, 'services', nested)
+  }
+  return copy ?? service
+}
+
+/**
+ * FDAW-6 3.2 (B9) on the merged document: S1 to S8 and S10 over `metadata.component`, every
+ * component at any depth, `metadata.tools` (components and services, or the legacy list; ReARM's own
+ * entry, isRearmToolEntry, is left as rebom wrote it) and every service at any depth. Purls and bom-refs are not read here: their credentials leave per input
+ * (stripPurlCredentials). Pure: with nothing to strip it returns the input itself; otherwise a copy
+ * sharing every untouched subtree.
+ */
+export function stripPersonalDataAndLocalPaths(bom: any): PersonalDataStripResult {
+  const counts: StripCounts = { personalData: 0, localPaths: 0, credentials: 0 }
+  if (!bom || typeof bom !== 'object') return { bom, ...counts }
+  let out: any = null
+  const set = (key: string, value: any) => { out = out ?? { ...bom }; out[key] = value }
+
+  const metadata = bom.metadata
+  if (metadata && typeof metadata === 'object') {
+    let meta: any = null
+    const root = stripComponent(metadata.component, counts)
+    if (root !== metadata.component) meta = { ...(meta ?? metadata), component: root }
+    // ReARM's own tool entry is rebom's statement, attached after the inputs, with ReARM's corporate
+    // contact: not an upload's personal data, and counting it would put 1 on every document.
+    const stripTool = (t: any) => (isRearmToolEntry(t) ? t : stripComponent(t, counts))
+    const tools = metadata.tools
+    if (Array.isArray(tools)) {
+      const next = mapIfChanged(tools, stripTool)
+      if (next !== tools) meta = { ...(meta ?? metadata), tools: next }
+    } else if (tools && typeof tools === 'object') {
+      let t: any = null
+      const comps = mapIfChanged(tools.components, stripTool)
+      if (comps !== tools.components) t = { ...tools, components: comps }
+      const svcs = mapIfChanged(tools.services, (s: any) => stripService(s, counts))
+      if (svcs !== tools.services) t = { ...(t ?? tools), services: svcs }
+      if (t) meta = { ...(meta ?? metadata), tools: t }
+    }
+    if (meta) set('metadata', meta)
+  }
+  const components = mapIfChanged(bom.components, (c: any) => stripComponent(c, counts))
+  if (components !== bom.components) set('components', components)
+  const services = mapIfChanged(bom.services, (s: any) => stripService(s, counts))
+  if (services !== bom.services) set('services', services)
+
+  if (counts.personalData || counts.localPaths || counts.credentials) {
+    logger.info(`Personal data and local path strip: ${counts.personalData} personal-data, ${counts.localPaths} local-path, ${counts.credentials} credential fields removed or edited`)
+  }
+  return { bom: out ?? bom, ...counts }
+}
+
+/**
+ * S10 on one purl-shaped string (FDAW-6 review F-12): string surgery on the encoded value of each
+ * `repository_url`, `download_url` and `vcs_url` qualifier only. The value is decoded with
+ * decodeURIComponent (a `+` stays a `+`) for the test; when it carries a credential userinfo, the
+ * userinfo's bytes, from after `://` (raw or `%3A%2F%2F`) up to and including the last `@` (raw or
+ * `%40`) before the authority ends, are cut from the encoded value. Every other byte is kept.
+ */
+export function stripPurlQualifierCredentials(purl: string): string {
+  if (typeof purl !== 'string') return purl
+  const hashAt = purl.indexOf('#')
+  const head = hashAt < 0 ? purl : purl.slice(0, hashAt)
+  const subpath = hashAt < 0 ? '' : purl.slice(hashAt)
+  const queryAt = head.indexOf('?')
+  if (queryAt < 0) return purl
+  const pairs = head.slice(queryAt + 1).split('&')
+  let changed = false
+  const edited = pairs.map((pair) => {
+    const eq = pair.indexOf('=')
+    if (eq < 0) return pair
+    const key = pair.slice(0, eq)
+    if (!URL_PURL_QUALIFIERS.has(key.toLowerCase())) return pair
+    const encoded = pair.slice(eq + 1)
+    let decoded: string
+    try { decoded = decodeURIComponent(encoded) } catch { decoded = encoded }
+    const m = new RegExp(`^${CREDENTIAL_URL_PATTERN.source}`).exec(decoded)
+    if (!m || credentialUserinfo(m[1], m[2]) === undefined) return pair
+    const sep = /:\/\/|%3A%2F%2F/i.exec(encoded)
+    if (!sep) return pair
+    const authStart = sep.index + sep[0].length
+    const endMatch = /\/|%2F|\?|%3F|#|%23/i.exec(encoded.slice(authStart))
+    const authEnd = endMatch ? authStart + endMatch.index : encoded.length
+    const authority = encoded.slice(authStart, authEnd)
+    let cut = -1
+    for (const m2 of authority.matchAll(/@|%40/gi)) cut = m2.index! + m2[0].length
+    if (cut < 0) return pair
+    changed = true
+    return `${key}=${encoded.slice(0, authStart)}${encoded.slice(authStart + cut)}`
+  })
+  if (!changed) return purl
+  return `${head.slice(0, queryAt)}?${edited.join('&')}${subpath}`
+}
+
+export type PurlCredentialResult = {
+  bom: any,
+  credentials: number
+}
+
+/**
+ * S10 on purls, per input (FDAW-6 review F-13): before the engine, the rekey and every pass that finds
+ * an input's root by its bom-ref, so the inputs those passes read carry the same bom-ref as the
+ * merged node. Every node at any depth, `metadata.component` included: the `purl` and a purl-shaped
+ * (`pkg:`) `bom-ref` lose a credential userinfo in their three URL qualifiers
+ * (stripPurlQualifierCredentials); a renamed bom-ref is re-pointed everywhere in the input
+ * (renameReferences). One count per node edited. Pure: the input itself when nothing changed.
+ */
+export function stripPurlCredentials(bom: any): PurlCredentialResult {
+  if (!bom || typeof bom !== 'object') return { bom, credentials: 0 }
+  let credentials = 0
+  const renamed = new Map<string, string>()
+  const visit = (node: any): any => {
+    if (!node || typeof node !== 'object') return node
+    let copy: any = null
+    let edited = false
+    if (typeof node.purl === 'string') {
+      const purl = stripPurlQualifierCredentials(node.purl)
+      if (purl !== node.purl) { copy = { ...node, purl }; edited = true }
+    }
+    const ref = bomRefOf(node)
+    if (ref && ref.startsWith('pkg:')) {
+      const next = stripPurlQualifierCredentials(ref)
+      if (next !== ref) {
+        copy = { ...(copy ?? node), 'bom-ref': next }
+        edited = true
+        renamed.set(ref, next)
+      }
+    }
+    if (edited) credentials++
+    if (Array.isArray(node.components)) {
+      const nested = mapIfChanged(node.components, visit)
+      if (nested !== node.components) copy = { ...(copy ?? node), components: nested }
+    }
+    return copy ?? node
+  }
+  let out: any = bom
+  const root = visit(bom.metadata?.component)
+  if (root !== bom.metadata?.component) out = { ...out, metadata: { ...bom.metadata, component: root } }
+  const components = mapIfChanged(bom.components, visit)
+  if (components !== bom.components) out = { ...out, components }
+  if (!credentials) return { bom, credentials: 0 }
+  if (renamed.size) out = renameReferences(out, renamed)
+  logger.info(`Purl credential strip: ${credentials} nodes lost a credential userinfo from a URL qualifier`)
+  return { bom: out, credentials }
+}
+
+// ---------------------------------------------------------------------------------------------
+// FDAW-6 3.4 (B4): keyless components stay, and every listed component is in the graph.
+// ---------------------------------------------------------------------------------------------
+
+/**
+ * FDAW-6 3.4a, per input after the dev filter: every component at any depth with no bom-ref gets
+ * `<name>@<version>` (`<name>` without a version). When that string is already the bom-ref of
+ * another node of the input with the same name and version it is reused (the engine and the de-dup
+ * fold the two, as they do any two purl-less nodes of one name and version); when it belongs to a
+ * node of another name or version (or a service), `#2`, `#3`... is appended until free. A node
+ * without a name is left as it is. Logged at info per node. Pure: the input itself when nothing changed.
+ */
+export function assignMissingBomRefs(bom: any): any {
+  if (!bom || typeof bom !== 'object') return bom
+  // Every bom-ref of the input and what holds it: a component (at any depth, the root included) or a service.
+  const holders = new Map<string, { node: any, service: boolean }>()
+  const note = (node: any, service: boolean) => {
+    const ref = bomRefOf(node)
+    if (ref && !holders.has(ref)) holders.set(ref, { node, service })
+  }
+  const collect = (node: any) => {
+    if (!node || typeof node !== 'object') return
+    note(node, false)
+    if (Array.isArray(node.components)) node.components.forEach(collect)
+  }
+  collect(bom.metadata?.component)
+  if (Array.isArray(bom.components)) bom.components.forEach(collect)
+  const collectServices = (s: any) => {
+    if (!s || typeof s !== 'object') return
+    note(s, true)
+    if (Array.isArray(s.services)) s.services.forEach(collectServices)
+  }
+  if (Array.isArray(bom.services)) bom.services.forEach(collectServices)
+
+  const versionOf = (n: any) => (n?.version === undefined || n?.version === null || n?.version === '' ? null : n.version)
+  const reusable = (node: any, holder: { node: any, service: boolean }) =>
+    !holder.service && holder.node?.name === node.name && versionOf(holder.node) === versionOf(node)
+  let assigned = 0
+  const visit = (node: any): any => {
+    if (!node || typeof node !== 'object') return node
+    let copy: any = null
+    if (!bomRefOf(node) && typeof node.name === 'string' && node.name !== '') {
+      const version = versionOf(node)
+      const base = version === null ? node.name : `${node.name}@${version}`
+      let ref = base
+      for (let n = 2; holders.has(ref) && !reusable(node, holders.get(ref)!); n++) ref = `${base}#${n}`
+      if (!holders.has(ref)) holders.set(ref, { node, service: false })
+      copy = { ...node, 'bom-ref': ref }
+      assigned++
+      logger.info({ name: node.name, bomRef: ref }, 'keyless component given a bom-ref')
+    }
+    if (Array.isArray(node.components)) {
+      const nested = mapIfChanged(node.components, visit)
+      if (nested !== node.components) copy = { ...(copy ?? node), components: nested }
+    }
+    return copy ?? node
+  }
+  const components = mapIfChanged(bom.components, visit)
+  if (!assigned) return bom
+  return { ...bom, components }
+}
+
+/**
+ * The refs the dependency graph names (FDAW-6 3.4b, shared with linkUnfoldedRoots): `ref` and
+ * `dependsOn[]` of every entry whose own `ref` resolves to a component or service of the document;
+ * an entry with an unresolvable ref names nothing (dropDanglingRefs removes it).
+ */
+function namedByResolvableEntries(bom: any): Set<string> {
+  const resolvable = componentBomRefs(bom)
+  if (Array.isArray(bom?.services)) bom.services.forEach((s: any) => serviceBomRefs(s, resolvable))
+  const named = new Set<string>()
+  for (const dep of Array.isArray(bom?.dependencies) ? bom.dependencies : []) {
+    if (typeof dep?.ref !== 'string' || !resolvable.has(dep.ref)) continue
+    named.add(dep.ref)
+    if (Array.isArray(dep?.dependsOn)) dep.dependsOn.forEach((r: any) => { if (typeof r === 'string') named.add(r) })
+  }
+  return named
+}
+
+/** `refs` appended to the merged root's entry (the first with its ref; created at index 0 when absent). */
+function appendUnderRoot(dependencies: any[], rootRef: string, refs: string[]): any[] {
+  const index = dependencies.findIndex((d: any) => d?.ref === rootRef)
+  return index < 0
+    ? [{ ref: rootRef, dependsOn: refs }, ...dependencies]
+    : dependencies.map((d: any, i: number) => i !== index ? d
+      : { ...d, dependsOn: [...(Array.isArray(d.dependsOn) ? d.dependsOn : []), ...refs] })
+}
+
+export type OrphanLinkResult = {
+  bom: any,
+  count: number
+}
+
+/**
+ * FDAW-6 3.4b, on the merged document after linkUnfoldedRoots and before dropDanglingRefs: every
+ * top-level component (`components[]` only) with a bom-ref that no resolvable dependency entry names
+ * as `ref` or in `dependsOn`, and that is not the merged root, is appended in component order to the
+ * merged root's `dependsOn`. Under FLAT the merged root is the release, and a component an input
+ * lists without any edge is, on everything the document knows, its direct dependency. Pure: the
+ * input itself when nothing is linked.
+ */
+export function linkOrphanComponents(bom: any): OrphanLinkResult {
+  const none = { bom, count: 0 }
+  if (!bom || typeof bom !== 'object' || !Array.isArray(bom.components) || !bom.components.length) return none
+  const rootRef = bomRefOf(bom.metadata?.component)
+  if (!rootRef) return none
+  const named = namedByResolvableEntries(bom)
+  const linked: string[] = []
+  const seen = new Set<string>()
+  for (const c of bom.components) {
+    const ref = bomRefOf(c)
+    if (!ref || ref === rootRef || named.has(ref) || seen.has(ref)) continue
+    seen.add(ref)
+    linked.push(ref)
+  }
+  if (!linked.length) return none
+  logger.info(`orphan link: ${linked.length} top-level components in no dependency entry linked under the merged root`)
+  const dependencies: any[] = Array.isArray(bom.dependencies) ? bom.dependencies : []
+  return { bom: { ...bom, dependencies: appendUnderRoot(dependencies, rootRef, linked) }, count: linked.length }
+}
+
+// ---------------------------------------------------------------------------------------------
+// FDAW-6 3.3: the six records, always written.
+// ---------------------------------------------------------------------------------------------
+
+/** The count a BOM records under `property` in metadata.properties; 0 when absent or not a non-negative integer (logged). */
+export function countOf(bom: any, property: string): number {
+  const props = bom?.metadata?.properties
+  if (!Array.isArray(props)) return 0
+  const prop = props.find((p: any) => p?.name === property)
+  if (!prop) return 0
+  const raw = typeof prop.value === 'string' ? prop.value.trim() : String(prop.value)
+  if (!/^\d+$/.test(raw)) {
+    logger.info({ property, value: prop.value }, 'merge count record: an input carries a non-numeric value, read as 0')
+    return 0
+  }
+  return parseInt(raw, 10)
+}
+
+export type MergeCounts = Partial<Record<(typeof MERGE_COUNT_PROPERTIES)[number], number>>
+
+/**
+ * FDAW-6 3.3, the last pass of a merge: writes the six MERGE_COUNT_PROPERTIES into
+ * metadata.properties, each this merge's count plus the sum of the inputs' values (a product merge's
+ * inputs are merged rows that record what they did), `"0"` included; an entry of the same name is
+ * replaced, never doubled.
+ */
+export function recordMergeCounts(bom: any, counts: MergeCounts, inputs: any[]): any {
+  if (!bom || typeof bom !== 'object') return bom
+  const metadata = { ...(bom.metadata || {}) }
+  const names = new Set<string>(MERGE_COUNT_PROPERTIES)
+  const properties = Array.isArray(metadata.properties)
+    ? metadata.properties.filter((p: any) => !names.has(p?.name))
+    : []
+  for (const name of MERGE_COUNT_PROPERTIES) {
+    const inherited = (Array.isArray(inputs) ? inputs : []).reduce((sum: number, b: any) => sum + countOf(b, name), 0)
+    properties.push({ name, value: String((counts[name] ?? 0) + inherited) })
+  }
+  metadata.properties = properties
+  return { ...bom, metadata }
 }
 
 export function establishPurl(origPurl: string | undefined, rebomOverride: RebomOptions): string {
