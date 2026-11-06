@@ -103,7 +103,10 @@ public class AgentBoardNotifier {
 		AgentBoardEventPayload p = new AgentBoardEventPayload(td.getBoard(), boardName(td.getBoard()), td.getUuid(),
 				td.label(), tr.reason().name(),
 				"Returned by " + tr.role() + " (" + tr.reason() + ")"
-						+ (null == tr.description() || tr.description().isBlank() ? "" : ": " + tr.description().strip()),
+						+ (null == tr.description() || tr.description().isBlank() ? "" : ": " + tr.description().strip())
+						// A split request's count, never its titles, whatever the board's blind setting (task SPLIT-9, D6).
+						+ (TaskReturnReason.SPLIT == tr.reason() ? AgentTaskData.SplitRequest.proposesClause(
+								null == td.getSplitRequest() ? null : td.getSplitRequest().proposedChildren()) : ""),
 				null, null, AgentBoardEventPayload.taskLink(td.getUuid()), null);
 		afterCommit(td.getOrg(), NotificationEventType.AGENT_TASK_RETURNED,
 				"board:return:" + td.getUuid() + ":" + tr.returnedAt(), p);
