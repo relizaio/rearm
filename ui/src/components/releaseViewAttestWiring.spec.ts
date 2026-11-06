@@ -148,4 +148,16 @@ describe('organization write gates the bulk support controls', () => {
         expect(block).toContain('<missing-hashes-panel')
         expect(block).not.toContain('canWriteOrg')
     })
+
+    /**
+     * The form inside the support half is disabled for a caller without organization write,
+     * but "Review selection" is a separate footer button with its own :disabled -- disabling
+     * the inputs does not stop a click on a button outside the form. Without !canWriteOrg
+     * here too, that caller could still advance to the confirm stage with the form's defaults.
+     */
+    it('also disables Review selection for a caller without organization write', () => {
+        const at = source.indexOf('Review selection</n-button>')
+        const button = source.slice(source.lastIndexOf('<n-button', at), at)
+        expect(button).toContain('!canWriteOrg')
+    })
 })
