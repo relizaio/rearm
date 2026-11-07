@@ -356,6 +356,8 @@ public class CommonVariables {
 	public static final String SYNTHETIC_ARTIFACT_TAG_KEY = "syntheticArtifact";
 	/** System tag naming the release a synthetic artifact was generated for (value: the release uuid). */
 	public static final String SYNTHETIC_OF_RELEASE_TAG_KEY = "syntheticOfRelease";
+	/** System tag on a generated part of a submission draft, until Finalize binds it (value: the draft uuid). */
+	public static final String SUBMISSION_DRAFT_TAG_KEY = "submissionDraft";
 	/** System tag on the generated aggregated SBOM a TEA publication serves (value {@code true}; task TEA-5). */
 	public static final String TEA_AGGREGATE_TAG_KEY = "teaAggregate";
 	/** System tag naming the TEA publication a generated aggregate belongs to (value: the publication uuid). */
