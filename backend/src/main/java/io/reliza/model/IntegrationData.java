@@ -140,6 +140,16 @@ public class IntegrationData extends RelizaDataParent implements RelizaObject {
 	private String disabledReason; // operator-facing reason set when a channel is auto-disabled (e.g. bad webhook URL); null when enabled or manually disabled
 	@JsonProperty
 	private DependencyTrackVersion dtrackVersion; // DEPENDENCYTRACK integrations only; null == not detected yet (see getEffectiveDtrackVersion)
+	// KEV integrations only (FDAW-2): the header of the catalog the last successful sync applied and
+	// the instant it did, RFC-3339 UTC strings. Written only by the sync's in-place stamp
+	// (IntegrationRepository.stampKevCatalogState), never by an admin mutation; null until the first
+	// sync, and for a source that publishes no header (VulnCheck has no catalog version or date).
+	@JsonProperty
+	private String kevCatalogVersion;
+	@JsonProperty
+	private String kevCatalogDateReleased;
+	@JsonProperty
+	private String kevSyncedAt;
 
 	/** What an undetected Dependency-Track is taken to be: the current generation. */
 	public static final DependencyTrackVersion DEFAULT_DTRACK_VERSION = DependencyTrackVersion.V5;

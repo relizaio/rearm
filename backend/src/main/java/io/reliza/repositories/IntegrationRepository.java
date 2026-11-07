@@ -68,4 +68,23 @@ public interface IntegrationRepository extends CrudRepository<Integration, UUID>
 	int stampDtrackVersion(@Param("uuid") UUID uuid, @Param("detected") String detected, @Param("known") String known,
 			@Param("uri") String uri);
 
+	/**
+	 * Store the header of the KEV catalog a sync just applied for this integration (FDAW-2) in place:
+	 * the three keys only, merged into record_data -- no revision, no last_updated_date, no audit row,
+	 * secret and isEnabled untouched (scheduler bookkeeping, as {@link #stampDtrackVersion} writes it).
+	 * A null value writes a JSON null, which reads back as absent. Written after the catalog apply has
+	 * committed; a failed apply never reaches it.
+	 *
+	 * @return the rows updated: 1, or 0 when the row is gone
+	 */
+	@Modifying(flushAutomatically = true)
+	@Transactional
+	@Query(value = "UPDATE rearm.integrations SET record_data = record_data || jsonb_build_object("
+			+ "'kevCatalogVersion', cast(:catalogVersion as text), "
+			+ "'kevCatalogDateReleased', cast(:dateReleased as text), "
+			+ "'kevSyncedAt', cast(:syncedAt as text)) "
+			+ "WHERE uuid = :uuid", nativeQuery = true)
+	int stampKevCatalogState(@Param("uuid") UUID uuid, @Param("catalogVersion") String catalogVersion,
+			@Param("dateReleased") String dateReleased, @Param("syncedAt") String syncedAt);
+
 }

@@ -4,6 +4,7 @@
 package io.reliza.service.kev;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
@@ -87,7 +88,11 @@ class VulnCheckKevConnectorTest {
 	@Test
 	void paginatesAndFansOutCveArray() throws Exception {
 		ExchangeFunction ex = req -> req.url().toString().contains("page=1") ? json(PAGE1) : json(PAGE2);
-		List<KevAssertionData> entries = newConnector(ex).fetchCatalog("tok");
+		KevCatalogFetch fetch = newConnector(ex).fetchCatalog("tok");
+		// FDAW-2: VulnCheck publishes no catalog header.
+		assertNull(fetch.catalogVersion());
+		assertNull(fetch.dateReleased());
+		List<KevAssertionData> entries = fetch.entries();
 
 		// 2 CVEs from the page-1 entry's array + 1 from page-2 = 3 assertions.
 		assertEquals(3, entries.size());

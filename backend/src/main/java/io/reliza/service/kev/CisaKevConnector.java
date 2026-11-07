@@ -5,6 +5,8 @@ package io.reliza.service.kev;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.Instant;
+import java.time.format.DateTimeParseException;
 import java.util.ArrayList;
 import java.util.List;
 
@@ -89,7 +91,7 @@ public class CisaKevConnector implements KevSourceConnector {
 	}
 
 	@Override
-	public List<KevAssertionData> fetchCatalog(String credential) {
+	public KevCatalogFetch fetchCatalog(String credential) {
 		// Public feed — no auth, credential is ignored. Primary first; on any
 		// failure (fetch, parse, or empty catalog) fall back to the backup
 		// mirror. Only when BOTH fail is an error logged — a primary blip with
@@ -104,12 +106,12 @@ public class CisaKevConnector implements KevSourceConnector {
 		} catch (Exception backupFailure) {
 			log.error("CISA KEV fetch aborted: primary {} and backup {} both failed", feedUrl, backupFeedUrl,
 					backupFailure);
-			return List.of();
+			return KevCatalogFetch.EMPTY;
 		}
 	}
 
 	/** Fetch one feed URL and parse it; throws on any failure incl. an empty catalog. */
-	private List<KevAssertionData> fetchAndParse(String url) throws Exception {
+	private KevCatalogFetch fetchAndParse(String url) throws Exception {
 		String body = webClient.get()
 				// URI.create: pass the configured URL byte-for-byte, no template re-encoding
 				.uri(URI.create(url))
@@ -135,7 +137,22 @@ public class CisaKevConnector implements KevSourceConnector {
 		for (CisaKevEntry e : catalog.vulnerabilities()) {
 			entries.add(toAssertionData(e));
 		}
-		return entries;
+		return new KevCatalogFetch(entries, catalog.catalogVersion(), parseDateReleased(catalog.dateReleased()));
+	}
+
+	/**
+	 * The feed's dateReleased, an ISO instant ("2026-11-04T17:58:23.6436Z"); null when absent or
+	 * malformed (one WARN). A bad header never stops the catalog apply and never reaches a document
+	 * unparsed (FDAW-2).
+	 */
+	static Instant parseDateReleased(String raw) {
+		if (null == raw || raw.isBlank()) return null;
+		try {
+			return Instant.parse(raw.trim());
+		} catch (DateTimeParseException e) {
+			log.warn("CISA KEV feed dateReleased is not an ISO instant; the catalog date is left unset");
+			return null;
+		}
 	}
 
 	private static KevAssertionData toAssertionData(CisaKevEntry e) {

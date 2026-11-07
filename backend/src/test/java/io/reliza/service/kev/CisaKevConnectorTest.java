@@ -6,10 +6,12 @@ package io.reliza.service.kev;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertNotNull;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 
 import java.lang.reflect.Field;
 import java.time.Duration;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -109,7 +111,7 @@ class CisaKevConnectorTest {
 
 	@Test
 	void parsesFeedAndMapsRansomwareToThreeStateEnum() throws Exception {
-		List<KevAssertionData> entries = withFeed(FEED_JSON).fetchCatalog(null);
+		List<KevAssertionData> entries = withFeed(FEED_JSON).fetchCatalog(null).entries();
 
 		assertEquals(3, entries.size());
 		KevAssertionData first = entries.get(0);
@@ -124,20 +126,47 @@ class CisaKevConnectorTest {
 		assertEquals(KevRansomwareStatus.UNSPECIFIED, entries.get(2).getRansomwareStatus());
 	}
 
+	// ---------- FDAW-2: the catalog header the VDR names ----------
+
+	@Test
+	void theCatalogHeaderIsMappedIntoTheFetch() throws Exception {
+		String feed = FEED_JSON.replace("\"catalogVersion\": \"2026.06.11\",",
+				"\"catalogVersion\": \"2026.06.11\", \"dateReleased\": \"2026-06-11T15:01:22.6427Z\",");
+		KevCatalogFetch fetch = withFeed(feed).fetchCatalog(null);
+		assertEquals("2026.06.11", fetch.catalogVersion());
+		assertEquals(Instant.parse("2026-06-11T15:01:22.6427Z"), fetch.dateReleased());
+		assertEquals(3, fetch.entries().size());
+	}
+
+	@Test
+	void aMalformedDateReleasedIsNull_andTheEntriesStillReturn() throws Exception {
+		String feed = FEED_JSON.replace("\"catalogVersion\": \"2026.06.11\",",
+				"\"catalogVersion\": \"2026.06.11\", \"dateReleased\": \"June 11th\",");
+		KevCatalogFetch fetch = withFeed(feed).fetchCatalog(null);
+		assertNull(fetch.dateReleased());
+		assertEquals("2026.06.11", fetch.catalogVersion());
+		assertEquals(3, fetch.entries().size());
+	}
+
+	@Test
+	void anAbsentDateReleasedIsNull() throws Exception {
+		assertNull(withFeed(FEED_JSON).fetchCatalog(null).dateReleased());
+	}
+
 	@Test
 	void fetchFailureReturnsEmptyList() throws Exception {
 		assertTrue(newConnector(req -> Mono.error(new RuntimeException("connection refused")))
-				.fetchCatalog(null).isEmpty());
+				.fetchCatalog(null).entries().isEmpty());
 	}
 
 	@Test
 	void malformedJsonReturnsEmptyList() throws Exception {
-		assertTrue(withFeed("<html>maintenance</html>").fetchCatalog(null).isEmpty());
+		assertTrue(withFeed("<html>maintenance</html>").fetchCatalog(null).entries().isEmpty());
 	}
 
 	@Test
 	void emptyCatalogReturnsEmptyList() throws Exception {
-		assertTrue(withFeed("{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}").fetchCatalog(null).isEmpty());
+		assertTrue(withFeed("{\"catalogVersion\":\"x\",\"vulnerabilities\":[]}").fetchCatalog(null).entries().isEmpty());
 	}
 
 	// ---------- CISA WAF hardening: User-Agent + transient backoff ----------
@@ -179,7 +208,7 @@ class CisaKevConnectorTest {
 		});
 		connector.retryFirstBackoff = Duration.ofMillis(1); // don't sleep for real
 
-		List<KevAssertionData> entries = connector.fetchCatalog(null);
+		List<KevAssertionData> entries = connector.fetchCatalog(null).entries();
 
 		assertEquals(3, entries.size());
 		assertEquals(3, attempts.get(), "expected 2 retries after the initial attempt");
@@ -198,7 +227,7 @@ class CisaKevConnectorTest {
 		});
 		connector.retryFirstBackoff = Duration.ofMillis(1);
 
-		assertTrue(connector.fetchCatalog(null).isEmpty());
+		assertTrue(connector.fetchCatalog(null).entries().isEmpty());
 		assertEquals(2, attempts.get(), "403 must not be retried: one attempt per feed");
 	}
 
@@ -212,7 +241,7 @@ class CisaKevConnectorTest {
 		connector.retryFirstBackoff = Duration.ofMillis(1);
 
 		// Fail-closed: exhausted retries return an empty list, never throw.
-		assertTrue(connector.fetchCatalog(null).isEmpty());
+		assertTrue(connector.fetchCatalog(null).entries().isEmpty());
 		assertEquals(8, attempts.get()); // (initial + 3 backoff retries) per feed
 	}
 
@@ -237,7 +266,7 @@ class CisaKevConnectorTest {
 		});
 		connector.retryFirstBackoff = Duration.ofMillis(1);
 
-		List<KevAssertionData> entries = connector.fetchCatalog(null);
+		List<KevAssertionData> entries = connector.fetchCatalog(null).entries();
 
 		assertEquals(3, entries.size(), "catalog must be served from the backup feed");
 		assertEquals(1, primaryAttempts.get());
@@ -259,7 +288,7 @@ class CisaKevConnectorTest {
 					.build());
 		});
 
-		assertEquals(3, connector.fetchCatalog(null).size());
+		assertEquals(3, connector.fetchCatalog(null).entries().size());
 	}
 
 	@Test
@@ -275,7 +304,7 @@ class CisaKevConnectorTest {
 					.build());
 		});
 
-		assertEquals(3, connector.fetchCatalog(null).size());
+		assertEquals(3, connector.fetchCatalog(null).entries().size());
 		assertEquals(0, backupAttempts.get(), "healthy primary must not fan out to the backup");
 	}
 }

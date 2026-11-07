@@ -47,6 +47,9 @@ public class SubmissionVersionData {
 	private SubmissionSettingsRef settings;
 	@JsonProperty
 	private SubmissionProfileRef sbomProfile;
+	/** The release SBOM this version pins (FDAW-7 3.7); null when the aggregate is excluded or skipped, and on every version stored before. */
+	@JsonProperty
+	private ReleaseSbomRef releaseSbom;
 	/** Manifest order; RAW_ARTIFACTS holds one record per referenced artifact. */
 	@JsonProperty
 	private List<SubmissionPartRecord> parts = new ArrayList<>();

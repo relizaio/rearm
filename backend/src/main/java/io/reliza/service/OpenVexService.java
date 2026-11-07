@@ -87,6 +87,15 @@ public class OpenVexService {
 	 */
 	public String generateOpenVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle) throws Exception {
+		return generateOpenVex(releaseData, includeSuppressed, includeInTriage, upToDate, targetLifecycle, null);
+	}
+
+	/**
+	 * {@link #generateOpenVex} with the document's {@code @id} given (FDAW-2, B1): a package build
+	 * passes a fresh one so no two builds share an identity. Null keeps {@link #buildOpenVexDocId}.
+	 */
+	public String generateOpenVex(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime upToDate, ReleaseLifecycle targetLifecycle, String docId) throws Exception {
 		ZonedDateTime cutOffDate = releaseService.computeLifecycleCutoffDate(releaseData, upToDate, targetLifecycle);
 		VdrSnapshotType snapshotType = null;
 		String snapshotValue = null;
@@ -97,7 +106,7 @@ public class OpenVexService {
 			snapshotType = VdrSnapshotType.DATE;
 		}
 		return generateOpenVexWithSnapshot(releaseData, includeSuppressed, includeInTriage,
-				cutOffDate, snapshotType, snapshotValue);
+				cutOffDate, snapshotType, snapshotValue, docId);
 	}
 
 	/**
@@ -106,13 +115,20 @@ public class OpenVexService {
 	 */
 	public String generateOpenVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue) throws Exception {
+		return generateOpenVexWithSnapshot(releaseData, includeSuppressed, includeInTriage, cutOffDate, snapshotType,
+				snapshotValue, null);
+	}
+
+	/** {@link #generateOpenVexWithSnapshot} with the {@code @id} given; null keeps {@link #buildOpenVexDocId}. */
+	public String generateOpenVexWithSnapshot(ReleaseData releaseData, Boolean includeSuppressed, Boolean includeInTriage,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue, String docId) throws Exception {
 		Bom vexBom = releaseService.buildCdxVexBom(releaseData, includeSuppressed, includeInTriage,
 				cutOffDate, snapshotType, snapshotValue);
 		String productPurl = SidPurlUtils.pickPreferredPurl(releaseData.getIdentifiers())
 				.map(RearmIdentifier::getIdValue)
 				.orElse(null);
 		Map<String, Object> doc = buildOpenVexDocument(vexBom, releaseData.getUuid(), productPurl,
-				cutOffDate, snapshotType, snapshotValue, includeSuppressed, includeInTriage);
+				cutOffDate, snapshotType, snapshotValue, includeSuppressed, includeInTriage, docId);
 		return objectMapper.writerWithDefaultPrettyPrinter().writeValueAsString(doc);
 	}
 
@@ -126,9 +142,17 @@ public class OpenVexService {
 	static Map<String, Object> buildOpenVexDocument(Bom vexBom, UUID releaseUuid, String productPurl,
 			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue,
 			Boolean includeSuppressed, Boolean includeInTriage) {
+		return buildOpenVexDocument(vexBom, releaseUuid, productPurl, cutOffDate, snapshotType, snapshotValue,
+				includeSuppressed, includeInTriage, null);
+	}
+
+	/** {@link #buildOpenVexDocument} with the {@code @id} given; null keeps {@link #buildOpenVexDocId}. */
+	static Map<String, Object> buildOpenVexDocument(Bom vexBom, UUID releaseUuid, String productPurl,
+			ZonedDateTime cutOffDate, VdrSnapshotType snapshotType, String snapshotValue,
+			Boolean includeSuppressed, Boolean includeInTriage, String docId) {
 		Map<String, Object> doc = new LinkedHashMap<>();
 		doc.put("@context", OPENVEX_CONTEXT);
-		doc.put("@id", buildOpenVexDocId(releaseUuid, snapshotType, snapshotValue, cutOffDate,
+		doc.put("@id", null != docId ? docId : buildOpenVexDocId(releaseUuid, snapshotType, snapshotValue, cutOffDate,
 				includeSuppressed, includeInTriage));
 		doc.put("author", OPENVEX_AUTHOR);
 		doc.put("timestamp", (cutOffDate != null ? cutOffDate : ZonedDateTime.now()).toInstant().toString());
