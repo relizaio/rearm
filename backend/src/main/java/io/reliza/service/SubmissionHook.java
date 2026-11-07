@@ -10,11 +10,13 @@ import java.util.UUID;
 
 import io.reliza.exceptions.SubmissionRefusedException;
 import io.reliza.model.ComponentData;
+import io.reliza.model.NewVersionReason;
 import io.reliza.model.PackageKind;
 import io.reliza.model.ReleaseData;
 import io.reliza.model.SubmissionActData;
 import io.reliza.model.SubmissionActResult;
 import io.reliza.model.SubmissionData;
+import io.reliza.model.SubmissionDraftData;
 import io.reliza.model.SubmissionPreview;
 import io.reliza.model.SubmissionState;
 import io.reliza.model.SubmissionVersionData;
@@ -35,6 +37,22 @@ public interface SubmissionHook {
 			WhoUpdated wu) throws SubmissionRefusedException;
 
 	SubmissionActResult withdraw(UUID org, UUID submission, String reason, WhoUpdated wu)
+			throws SubmissionRefusedException;
+
+	/** A draft of the release's next version of {@code kind}, with one START_DRAFT act and one release event. */
+	SubmissionActResult startDraft(UUID release, PackageKind kind, NewVersionReason category, String reasonText,
+			UUID replacesSubmission, Integer replacesVersion, WhoUpdated wu) throws SubmissionRefusedException;
+
+	SubmissionActResult discardDraft(UUID draft, String reason, WhoUpdated wu) throws SubmissionRefusedException;
+
+	SubmissionActResult confirmDraft(UUID draft, int expectedRevision, WhoUpdated wu)
+			throws SubmissionRefusedException;
+
+	SubmissionActResult returnDraftToEditing(UUID draft, String reason, WhoUpdated wu)
+			throws SubmissionRefusedException;
+
+	/** A FINAL head only; anything else is refused NOT_FINAL. */
+	SubmissionActResult cancelSubmission(UUID org, UUID submission, String reason, WhoUpdated wu)
 			throws SubmissionRefusedException;
 
 	SubmissionPreview preview(UUID release, PackageKind kind);
@@ -64,4 +82,12 @@ public interface SubmissionHook {
 
 	/** The head's act record, oldest first (FDAW-1 D2). */
 	List<SubmissionActData> listActs(UUID org, UUID submission);
+
+	/** By uuid alone: the fetcher checks the answer's organization against the caller before anything else. */
+	Optional<SubmissionDraftData> getDraft(UUID draft);
+
+	List<SubmissionDraftData> listDraftsOfRelease(UUID org, UUID release);
+
+	/** The draft's act record, oldest first. */
+	List<SubmissionActData> listActsOfDraft(UUID org, UUID draft);
 }
