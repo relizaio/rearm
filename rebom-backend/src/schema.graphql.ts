@@ -134,6 +134,21 @@ const typeDefs = gql`
     """
     excludeFileComponents: Boolean
     """
+    True on a merged BOM that kept the components of scope excluded (see the
+    RebomOptions input); null or false when they were left out.
+    """
+    keepExcludedScope: Boolean
+    """
+    True on a merged BOM that kept personal data (see the RebomOptions input); null or
+    false when it was stripped.
+    """
+    keepPersonalData: Boolean
+    """
+    True on a merged BOM that kept local paths (see the RebomOptions input); null or
+    false when they were stripped.
+    """
+    keepLocalPaths: Boolean
+    """
     The merge rule set a merged BOM was built with (see the RebomOptions input); null on
     merges stored before rebom de-duplicated bom-refs.
     """
@@ -340,6 +355,11 @@ input RebomOptions {
     # Merge only: leave components of type file out of the merged BOM. Null or false
     # keeps them. The merged document then carries reliza:export:fileComponentsExcluded.
     excludeFileComponents: Boolean
+    # Merge only (FDAW-19): a profile keeps what the default merge leaves out. Null or false runs the
+    # pass; true skips it and the pass's reliza:export:* record is then absent from the document.
+    keepExcludedScope: Boolean
+    keepPersonalData: Boolean
+    keepLocalPaths: Boolean
     # Merge only: the caller's version of the merge rules, stored verbatim with the merged
     # BOM so the caller can tell merges built before a rule change; rebom does not read it.
     mergeVersion: Int

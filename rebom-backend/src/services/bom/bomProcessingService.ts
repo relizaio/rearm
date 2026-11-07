@@ -119,6 +119,8 @@ function isDevMarked(component: any): boolean {
 export const DEV_COMPONENTS_EXCLUDED_PROPERTY = 'reliza:export:devComponentsExcluded'
 /** Metadata property of a merged BOM (FDAW-6 3.3): how many `scope: excluded` components were left out. */
 export const EXCLUDED_SCOPE_DROPPED_PROPERTY = 'reliza:export:excludedScopeDropped'
+/** Metadata property of a merged BOM (FDAW-19 3.2): how many `scope: optional` components an ignoreDev merge left out. */
+export const OPTIONAL_SCOPE_DROPPED_PROPERTY = 'reliza:export:optionalScopeDropped'
 
 export type DevExclusionResult = {
   bom: any,
@@ -130,8 +132,8 @@ export type DevExclusionResult = {
 type DevDropRule = 'excluded' | 'dev' | 'optional'
 
 /** The rule of FDAW-6 3.1 that drops a component, in precedence order, or undefined when it stays. */
-function devDropRule(component: any, dropOptional: boolean): DevDropRule | undefined {
-  if (component?.scope === 'excluded') return 'excluded'
+function devDropRule(component: any, dropOptional: boolean, dropExcluded: boolean): DevDropRule | undefined {
+  if (dropExcluded && component?.scope === 'excluded') return 'excluded'
   if (isDevMarked(component)) return 'dev'
   if (dropOptional && component?.scope === 'optional') return 'optional'
   return undefined
@@ -148,14 +150,16 @@ function subtreeOf(component: any): any[] {
  * FDAW-6 3.1 (B6, B10): leaves out of one input the components the generator itself put outside the
  * shipped inventory, for every merge: `scope: excluded` (always), a DEV_DEPENDENCY_PATTERNS
  * property (always) and, with `dropOptional` (the profile excludes optional dependencies, ignoreDev),
- * `scope: optional`. A component matching several rules counts once, under the first in that order.
+ * `scope: optional`; `dropExcluded` false (a profile keeping the excluded scope, FDAW-19 3.2) skips
+ * the first rule. A component matching several rules counts once, under the first in that order.
  * The root (`metadata.component`) is never dropped; `components[]` is walked at any depth and a
  * dropped component takes its nested components with it, each counted under the dropped node's rule.
  * Every dependency entry whose `ref` is a dropped ref goes and every dropped ref leaves every
  * `dependsOn` and `provides`; nothing is re-evaluated transitively. Services are untouched. Pure:
  * with nothing to drop it returns the input itself.
  */
-export function dropExcludedAndDevComponents(bom: any, opts: { dropOptional: boolean }): DevExclusionResult {
+export function dropExcludedAndDevComponents(bom: any, opts: { dropOptional: boolean, dropExcluded?: boolean }): DevExclusionResult {
+  const dropExcluded = opts.dropExcluded ?? true
   const none = { bom, devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 0 }
   if (!bom || typeof bom !== 'object' || !Array.isArray(bom.components)) return none
   const counts: Record<DevDropRule, number> = { excluded: 0, dev: 0, optional: 0 }
@@ -164,7 +168,7 @@ export function dropExcludedAndDevComponents(bom: any, opts: { dropOptional: boo
     let changed = false
     const kept: any[] = []
     for (const component of components) {
-      const rule = devDropRule(component, opts.dropOptional)
+      const rule = devDropRule(component, opts.dropOptional, dropExcluded)
       if (rule) {
         changed = true
         for (const node of subtreeOf(component)) {
@@ -2128,14 +2132,18 @@ export const CREDENTIALS_STRIPPED_PROPERTY = 'reliza:export:credentialsStripped'
 /** Metadata property of a merged BOM (FDAW-6 3.3): top-level components linked under the root by linkOrphanComponents. */
 export const ORPHAN_COMPONENTS_LINKED_PROPERTY = 'reliza:export:orphanComponentsLinked'
 
-/** The six always-written records of FDAW-6 3.3, in the order recordMergeCounts writes them. */
+/**
+ * The records of a merge, in the order recordMergeCounts writes them: the six of FDAW-6 3.3, written
+ * whenever their pass ran, and the seventh of FDAW-19 3.2, written only by an ignoreDev merge.
+ */
 export const MERGE_COUNT_PROPERTIES = [
   DEV_COMPONENTS_EXCLUDED_PROPERTY,
   EXCLUDED_SCOPE_DROPPED_PROPERTY,
   PERSONAL_DATA_STRIPPED_PROPERTY,
   LOCAL_PATHS_STRIPPED_PROPERTY,
   CREDENTIALS_STRIPPED_PROPERTY,
-  ORPHAN_COMPONENTS_LINKED_PROPERTY
+  ORPHAN_COMPONENTS_LINKED_PROPERTY,
+  OPTIONAL_SCOPE_DROPPED_PROPERTY
 ] as const
 
 /** S1: properties that name people (npm maintainers and publishers, PyPI uploaders), removed whole. */
@@ -2269,13 +2277,17 @@ export type PersonalDataStripResult = {
   credentials: number
 }
 
-type StripCounts = { personalData: number, localPaths: number, credentials: number }
+/** Which rule groups of the strip run (FDAW-19 3.2): S1 to S5, S6 to S8. S10 has no switch (F-9). */
+export type StripRules = { personalData: boolean, localPaths: boolean }
+
+type StripCounts = { personalData: number, localPaths: number, credentials: number, rules: StripRules }
 
 /**
  * One `properties[]` list (S1, S6, S7, S8, S10, S2 in that order, one count per property). A
  * property no removal rule took is edited by S10 first; S2 then tests the edited value, so a
  * credential URL without a path is not read as an address (FDAW-6 review F-14). `pathRules` is false
- * on a service (S6 and S7 do not apply there).
+ * on a service (S6 and S7 do not apply there). A rule group switched off leaves its properties to
+ * the S10 edit like any other.
  */
 function stripProperties(properties: any, counts: StripCounts, pathRules: boolean): any {
   if (!Array.isArray(properties)) return properties
@@ -2284,20 +2296,20 @@ function stripProperties(properties: any, counts: StripCounts, pathRules: boolea
   for (const p of properties) {
     const name = p?.name
     const value = p?.value
-    if (typeof name === 'string' && PERSONAL_DATA_PROPERTY_NAMES.has(name)) {
+    if (counts.rules.personalData && typeof name === 'string' && PERSONAL_DATA_PROPERTY_NAMES.has(name)) {
       counts.personalData++; changed = true; continue
     }
-    if (pathRules && typeof name === 'string' && LOCAL_PATH_PROPERTY_NAMES.has(name)) {
+    if (pathRules && counts.rules.localPaths && typeof name === 'string' && LOCAL_PATH_PROPERTY_NAMES.has(name)) {
       counts.localPaths++; changed = true; continue
     }
-    if (pathRules && name === SRC_FILE_PROPERTY && typeof value === 'string' && ABSOLUTE_LOCAL_PATH.test(value)) {
+    if (pathRules && counts.rules.localPaths && name === SRC_FILE_PROPERTY && typeof value === 'string' && ABSOLUTE_LOCAL_PATH.test(value)) {
       counts.localPaths++; changed = true; continue
     }
-    if (typeof value === 'string' && /^file:/i.test(value)) {
+    if (counts.rules.localPaths && typeof value === 'string' && /^file:/i.test(value)) {
       counts.localPaths++; changed = true; continue
     }
     const edited = typeof value === 'string' ? stripUrlCredentials(value) : value
-    if (carriesAddress(edited)) {
+    if (counts.rules.personalData && carriesAddress(edited)) {
       counts.personalData++; changed = true; continue
     }
     if (edited !== value) {
@@ -2368,12 +2380,15 @@ function stripUrlList(list: any, counts: StripCounts): any {
 /** S5 and S10 on an organizational entity (supplier, manufacturer, provider), and S4's edit on its name. */
 function stripOrganizationalEntity(entity: any, counts: StripCounts): any {
   if (!entity || typeof entity !== 'object') return entity
-  let next = stripNameField(entity, entity, counts)
-  const contact = stripContactList(entity.contact, counts)
-  if (contact !== entity.contact) {
-    next = { ...next }
-    if (contact === undefined) delete next.contact
-    else next.contact = contact
+  let next = entity
+  if (counts.rules.personalData) {
+    next = stripNameField(entity, entity, counts)
+    const contact = stripContactList(entity.contact, counts)
+    if (contact !== entity.contact) {
+      next = { ...next }
+      if (contact === undefined) delete next.contact
+      else next.contact = contact
+    }
   }
   const url = stripUrlList(entity.url, counts)
   if (url !== entity.url) next = { ...next, url }
@@ -2387,7 +2402,7 @@ function stripExternalReferences(list: any, counts: StripCounts): any {
   const kept: any[] = []
   for (const ref of list) {
     const url = ref?.url
-    if (typeof url === 'string' && /^file:/i.test(url)) {
+    if (counts.rules.localPaths && typeof url === 'string' && /^file:/i.test(url)) {
       counts.localPaths++; changed = true; continue
     }
     if (typeof url === 'string') {
@@ -2429,17 +2444,19 @@ function stripComponent(component: any, counts: StripCounts): any {
   let copy: any = null
   const properties = stripProperties(component.properties, counts, true)
   if (properties !== component.properties) copy = setOrDelete(component, copy, 'properties', properties)
-  for (const field of ['author', 'publisher']) {
-    const value = component[field]
-    if (typeof value !== 'string') continue
-    const next = stripAddressTokens(value)
-    if (next === value) continue
-    counts.personalData++
-    copy = setOrDelete(component, copy, field, next === '' ? undefined : next)
-  }
-  if (Array.isArray(component.authors)) {
-    const authors = stripContactList(component.authors, counts)
-    if (authors !== component.authors) copy = setOrDelete(component, copy, 'authors', authors)
+  if (counts.rules.personalData) {
+    for (const field of ['author', 'publisher']) {
+      const value = component[field]
+      if (typeof value !== 'string') continue
+      const next = stripAddressTokens(value)
+      if (next === value) continue
+      counts.personalData++
+      copy = setOrDelete(component, copy, field, next === '' ? undefined : next)
+    }
+    if (Array.isArray(component.authors)) {
+      const authors = stripContactList(component.authors, counts)
+      if (authors !== component.authors) copy = setOrDelete(component, copy, 'authors', authors)
+    }
   }
   for (const field of ['supplier', 'manufacturer']) {
     const entity = stripOrganizationalEntity(component[field], counts)
@@ -2480,11 +2497,12 @@ function stripService(service: any, counts: StripCounts): any {
  * component at any depth, `metadata.tools` (components and services, or the legacy list; ReARM's own
  * entry, isRearmToolEntry, is left as rebom wrote it) and every service at any depth. Purls and bom-refs are not read here: their credentials leave per input
  * (stripPurlCredentials). Pure: with nothing to strip it returns the input itself; otherwise a copy
- * sharing every untouched subtree.
+ * sharing every untouched subtree. `rules` removes rule groups from the walk, never the walk: S10
+ * lives inside it and runs under every combination (FDAW-19 decision 14, review item F-9).
  */
-export function stripPersonalDataAndLocalPaths(bom: any): PersonalDataStripResult {
-  const counts: StripCounts = { personalData: 0, localPaths: 0, credentials: 0 }
-  if (!bom || typeof bom !== 'object') return { bom, ...counts }
+export function stripPersonalDataAndLocalPaths(bom: any, rules: StripRules = { personalData: true, localPaths: true }): PersonalDataStripResult {
+  const counts: StripCounts = { personalData: 0, localPaths: 0, credentials: 0, rules }
+  if (!bom || typeof bom !== 'object') return { bom, personalData: 0, localPaths: 0, credentials: 0 }
   let out: any = null
   const set = (key: string, value: any) => { out = out ?? { ...bom }; out[key] = value }
 
@@ -2518,7 +2536,7 @@ export function stripPersonalDataAndLocalPaths(bom: any): PersonalDataStripResul
   if (counts.personalData || counts.localPaths || counts.credentials) {
     logger.info(`Personal data and local path strip: ${counts.personalData} personal-data, ${counts.localPaths} local-path, ${counts.credentials} credential fields removed or edited`)
   }
-  return { bom: out ?? bom, ...counts }
+  return { bom: out ?? bom, personalData: counts.personalData, localPaths: counts.localPaths, credentials: counts.credentials }
 }
 
 /**
@@ -2737,7 +2755,7 @@ export function linkOrphanComponents(bom: any): OrphanLinkResult {
 }
 
 // ---------------------------------------------------------------------------------------------
-// FDAW-6 3.3: the six records, always written.
+// FDAW-6 3.3, FDAW-19 3.2: the records of the passes that ran.
 // ---------------------------------------------------------------------------------------------
 
 /** The count a BOM records under `property` in metadata.properties; 0 when absent or not a non-negative integer (logged). */
@@ -2757,12 +2775,24 @@ export function countOf(bom: any, property: string): number {
 export type MergeCounts = Partial<Record<(typeof MERGE_COUNT_PROPERTIES)[number], number>>
 
 /**
- * FDAW-6 3.3, the last pass of a merge: writes the six MERGE_COUNT_PROPERTIES into
- * metadata.properties, each this merge's count plus the sum of the inputs' values (a product merge's
- * inputs are merged rows that record what they did), `"0"` included; an entry of the same name is
- * replaced, never doubled.
+ * The sum of an inherited count over the inputs whose row rebom stored from its own merge (FDAW-19
+ * decision 15, review item F-10). Any other input, an upload or a placeholder, adds nothing: its
+ * value is never read, so countOf's non-numeric line never logs it.
  */
-export function recordMergeCounts(bom: any, counts: MergeCounts, inputs: any[]): any {
+export function inheritedCountOf(name: string, inputs: any[], rowMeta: ReadonlyArray<MergeRowMeta | undefined>): number {
+  return (Array.isArray(inputs) ? inputs : []).reduce((sum: number, b: any, i: number) => (isRebomMergeOutput(rowMeta[i]) ? sum + countOf(b, name) : sum), 0)
+}
+
+/**
+ * FDAW-6 3.3, the last pass of a merge: writes into metadata.properties each of the
+ * MERGE_COUNT_PROPERTIES present in `counts` (absent means the pass did not run in this merge: no
+ * entry and nothing inherited), this merge's count plus inheritedCountOf (a product merge's inputs
+ * are merged rows that record what they did), `"0"` included. Every entry of a listed name is
+ * removed first, so a record is replaced, never doubled, and a skipped pass leaves no stale count.
+ * Each input that is no merge output and carries listed names gets one log line, by name, never by value.
+ * `rowMeta` is aligned with `inputs` by index; placeholders past its end have no meta.
+ */
+export function recordMergeCounts(bom: any, counts: MergeCounts, inputs: any[], rowMeta: ReadonlyArray<MergeRowMeta | undefined>): any {
   if (!bom || typeof bom !== 'object') return bom
   const metadata = { ...(bom.metadata || {}) }
   const names = new Set<string>(MERGE_COUNT_PROPERTIES)
@@ -2770,8 +2800,15 @@ export function recordMergeCounts(bom: any, counts: MergeCounts, inputs: any[]):
     ? metadata.properties.filter((p: any) => !names.has(p?.name))
     : []
   for (const name of MERGE_COUNT_PROPERTIES) {
-    const inherited = (Array.isArray(inputs) ? inputs : []).reduce((sum: number, b: any) => sum + countOf(b, name), 0)
-    properties.push({ name, value: String((counts[name] ?? 0) + inherited) })
+    const count = counts[name]
+    if (count === undefined) continue
+    properties.push({ name, value: String(count + inheritedCountOf(name, inputs, rowMeta)) })
+  }
+  for (const [i, input] of (Array.isArray(inputs) ? inputs : []).entries()) {
+    const carriedProperties = input?.metadata?.properties
+    if (isRebomMergeOutput(rowMeta[i]) || !Array.isArray(carriedProperties)) continue
+    const carried = MERGE_COUNT_PROPERTIES.filter(name => carriedProperties.some((p: any) => p?.name === name))
+    if (carried.length) logger.info({ properties: carried }, 'merge count record: an uploaded input carries merge count properties, ignored')
   }
   metadata.properties = properties
   return { ...bom, metadata }

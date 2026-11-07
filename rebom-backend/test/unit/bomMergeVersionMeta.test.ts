@@ -50,6 +50,43 @@ describe('mergeVersion in the stored meta', () => {
     });
 });
 
+/** FDAW-19 row 6: the three keep options are stored on the merge row only when sent, and served. */
+describe('the keep options in the stored meta', () => {
+    const KEEP = ['keepExcludedScope', 'keepPersonalData', 'keepLocalPaths'];
+
+    it('round-trips the three through the nested meta, false included', () => {
+        const meta = createTestRebomOptions({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true });
+
+        const nested = toNestedMeta(meta);
+        expect(nested.merge).toMatchObject({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true });
+        expect(fromNestedMeta(nested)).toMatchObject({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true });
+    });
+
+    it('writes one sent alone and none of the others', () => {
+        const nested = toNestedMeta(createTestRebomOptions({ keepPersonalData: true }));
+        expect(nested.merge?.keepPersonalData).toBe(true);
+        expect(nested.merge).not.toHaveProperty('keepExcludedScope');
+        expect(nested.merge).not.toHaveProperty('keepLocalPaths');
+    });
+
+    it('a meta built without the three has none of the keys, and reads back without them', () => {
+        const nested = toNestedMeta(createTestRebomOptions({ mergeVersion: 19 }));
+        const back = fromNestedMeta(nested);
+        for (const key of KEEP) {
+            expect(nested.merge).not.toHaveProperty(key);
+            expect(back).not.toHaveProperty(key);
+        }
+    });
+
+    it('the meta DTO serves the three, and undefined for a row without them', () => {
+        const dto = BomMapper.toMetaDto(record(createTestRebomOptions({ keepExcludedScope: true, keepPersonalData: false, keepLocalPaths: true })));
+        expect([dto.keepExcludedScope, dto.keepPersonalData, dto.keepLocalPaths]).toStrictEqual([true, false, true]);
+
+        const without = BomMapper.toMetaDto(record(createTestRebomOptions({})));
+        expect([without.keepExcludedScope, without.keepPersonalData, without.keepLocalPaths]).toStrictEqual([undefined, undefined, undefined]);
+    });
+});
+
 /** SCORE-63 T-4: the generation-time lists are not stored. */
 describe('the release root lists in the stored meta', () => {
     it('stores neither attachedRootIds nor releaseRootIds', () => {

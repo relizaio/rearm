@@ -27,6 +27,9 @@ export interface BomMetaNested {
         tldOnly: boolean;
         ignoreDev: boolean;
         excludeFileComponents?: boolean;
+        keepExcludedScope?: boolean;
+        keepPersonalData?: boolean;
+        keepLocalPaths?: boolean;
         mergeVersion?: number;
         sourceIds?: string[];
         // Store-side records of a merge row (SCORE-69 ADR-3).
@@ -85,6 +88,9 @@ export function toNestedMeta(opts: RebomOptions): BomMetaNested {
             tldOnly: opts.tldOnly ?? false,
             ignoreDev: opts.ignoreDev ?? false,
             excludeFileComponents: opts.excludeFileComponents,
+            ...(opts.keepExcludedScope !== undefined ? { keepExcludedScope: opts.keepExcludedScope } : {}),
+            ...(opts.keepPersonalData !== undefined ? { keepPersonalData: opts.keepPersonalData } : {}),
+            ...(opts.keepLocalPaths !== undefined ? { keepLocalPaths: opts.keepLocalPaths } : {}),
             mergeVersion: opts.mergeVersion,
             ...(opts.nestedProductSerials !== undefined ? { nestedProductSerials: opts.nestedProductSerials } : {}),
             ...(opts.listedRootKeys !== undefined ? { listedRootKeys: opts.listedRootKeys } : {})
@@ -135,6 +141,9 @@ export function fromNestedMeta(nested: BomMetaNested): RebomOptions {
         tldOnly: nested.merge?.tldOnly ?? false,
         ignoreDev: nested.merge?.ignoreDev,
         excludeFileComponents: nested.merge?.excludeFileComponents,
+        ...(nested.merge?.keepExcludedScope !== undefined ? { keepExcludedScope: nested.merge.keepExcludedScope } : {}),
+        ...(nested.merge?.keepPersonalData !== undefined ? { keepPersonalData: nested.merge.keepPersonalData } : {}),
+        ...(nested.merge?.keepLocalPaths !== undefined ? { keepLocalPaths: nested.merge.keepLocalPaths } : {}),
         mergeVersion: nested.merge?.mergeVersion,
         ...(nested.merge?.nestedProductSerials !== undefined ? { nestedProductSerials: nested.merge.nestedProductSerials } : {}),
         ...(nested.merge?.listedRootKeys !== undefined ? { listedRootKeys: nested.merge.listedRootKeys } : {}),

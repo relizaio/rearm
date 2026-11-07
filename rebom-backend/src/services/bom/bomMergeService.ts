@@ -3,7 +3,7 @@ import { BomDto, BomRecord, RebomOptions, BomInput, BomStructure } from '../../t
 import type { BomOrigin } from './bomAddService';
 import { BomStorageError } from '../../types/errors';
 import { findBomObjectWithMetaById } from './bomCrudService';
-import { extractTldFromBom, dropExcludedAndDevComponents, assignMissingBomRefs, stripPurlCredentials, stripPersonalDataAndLocalPaths, linkOrphanComponents, recordMergeCounts, MergeCounts, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, extractFileFilteredBom, fileComponentsExcludedOf, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
+import { extractTldFromBom, dropExcludedAndDevComponents, assignMissingBomRefs, stripPurlCredentials, stripPersonalDataAndLocalPaths, linkOrphanComponents, recordMergeCounts, inheritedCountOf, MergeCounts, DEV_COMPONENTS_EXCLUDED_PROPERTY, EXCLUDED_SCOPE_DROPPED_PROPERTY, OPTIONAL_SCOPE_DROPPED_PROPERTY, PERSONAL_DATA_STRIPPED_PROPERTY, LOCAL_PATHS_STRIPPED_PROPERTY, CREDENTIALS_STRIPPED_PROPERTY, ORPHAN_COMPONENTS_LINKED_PROPERTY, FILE_COMPONENTS_EXCLUDED_PROPERTY, extractFileFilteredBom, dedupeBomRefs, foldReleaseRoots, listedReleaseInputs, carryServices, dropDanglingRefs, placeholderBomObjects, declareUnknownCompositions, fillReleaseNode, fillAttachedRoots, markReleaseNode, linkUnfoldedRoots, establishPurl, rekeyUnlistedInputs, mergeRootKeyRecords, MergeRowMeta, recordRekeyedNodes, attachRebomToolToBom, normalizeLicensesInBom, settleLicenseFolds, logListedLicenseDrops, recordListedLicenseDrops } from './bomProcessingService';
 import { mergeToolsFromInputs, mergeLifecyclesFromInputs } from './bomToolsMerge';
 import validateBom from '../../validateBom';
 import { createTmpFiles, deleteTmpFiles, shellExec } from '../../utils';
@@ -20,7 +20,12 @@ export async function mergeBoms(ids: string[], rebomOptions: RebomOptions, org: 
 export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: RebomOptions, org: string): Promise<{ bom: any, nestedProductSerials: string[], listedRootKeys: string[] }> {
   try {
     let mergedBom = null
-    const { bomObjs: found, rowMeta, inputCounts } = await findBomsForMerge(ids, rebomOptions.tldOnly, rebomOptions.ignoreDev || false, org)
+    // FDAW-19 3.2: only exactly true skips a pass; null, undefined and false all run it.
+    const ignoreDev = rebomOptions.ignoreDev || false
+    const keepExcludedScope = rebomOptions.keepExcludedScope === true
+    const keepPersonalData = rebomOptions.keepPersonalData === true
+    const keepLocalPaths = rebomOptions.keepLocalPaths === true
+    const { bomObjs: found, rowMeta, inputCounts } = await findBomsForMerge(ids, rebomOptions.tldOnly, ignoreDev, keepExcludedScope, org)
     // Component releases without an SBOM join as synthetic inputs, after the per-input
     // tldOnly/ignoreDev filters (they have no components to filter), so merge-boms places
     // them and lists them in the root's dependencies like every other input.
@@ -53,7 +58,7 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
     // release node is already clean and the declared facts written afterwards are never touched.
     let stripped = { personalData: 0, localPaths: 0, credentials: 0 }
     if (mergedBom) {
-      const strip = stripPersonalDataAndLocalPaths(mergedBom)
+      const strip = stripPersonalDataAndLocalPaths(mergedBom, { personalData: !keepPersonalData, localPaths: !keepLocalPaths })
       mergedBom = strip.bom
       stripped = strip
     }
@@ -79,8 +84,9 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
       // On the merged graph, not per input: merge-boms re-roots the inputs, and the
       // splice has to run on the graph the root actually has. The inputs of a product
       // merge are themselves filtered merges, so what they already left out is added to
-      // the count this merge writes.
-      const inherited = bomObjs.reduce((sum: number, b: any) => sum + fileComponentsExcludedOf(b), 0)
+      // the count this merge writes; an upload's own entry is not ReARM's count and adds nothing
+      // (FDAW-19 F-10).
+      const inherited = inheritedCountOf(FILE_COMPONENTS_EXCLUDED_PROPERTY, bomObjs, rowMeta)
       mergedBom = extractFileFilteredBom(mergedBom, inherited).bom
     }
     // Every input root that survived the merge as a top-level node (an SCE- or deliverable-attached
@@ -101,17 +107,20 @@ export async function mergeBomsWithInputRecord(ids: string[], rebomOptions: Rebo
     if (mergedBom) mergedBom = dropDanglingRefs(mergedBom).bom
     // After it: adds no dependency ref, and describes the placeholders that survived.
     if (mergedBom) mergedBom = declareUnknownCompositions(mergedBom, rebomOptions.missingSbomComponents).bom
-    // FDAW-6 3.3: the six records, always written, this merge's counts plus what the inputs recorded.
+    // FDAW-6 3.3, FDAW-19 3.2: the seven records, each only when its pass ran (the dev, credential and
+    // orphan ones always, the seventh under ignoreDev), this merge's counts plus what the merge rows
+    // among the inputs recorded.
     if (mergedBom) {
       const counts: MergeCounts = {
         [DEV_COMPONENTS_EXCLUDED_PROPERTY]: inputCounts.devExcluded,
-        [EXCLUDED_SCOPE_DROPPED_PROPERTY]: inputCounts.excludedScopeDropped,
-        [PERSONAL_DATA_STRIPPED_PROPERTY]: stripped.personalData,
-        [LOCAL_PATHS_STRIPPED_PROPERTY]: stripped.localPaths,
+        ...(keepExcludedScope ? {} : { [EXCLUDED_SCOPE_DROPPED_PROPERTY]: inputCounts.excludedScopeDropped }),
+        ...(keepPersonalData ? {} : { [PERSONAL_DATA_STRIPPED_PROPERTY]: stripped.personalData }),
+        ...(keepLocalPaths ? {} : { [LOCAL_PATHS_STRIPPED_PROPERTY]: stripped.localPaths }),
         [CREDENTIALS_STRIPPED_PROPERTY]: stripped.credentials + inputCounts.credentials,
-        [ORPHAN_COMPONENTS_LINKED_PROPERTY]: orphansLinked
+        [ORPHAN_COMPONENTS_LINKED_PROPERTY]: orphansLinked,
+        ...(ignoreDev ? { [OPTIONAL_SCOPE_DROPPED_PROPERTY]: inputCounts.optionalExcluded } : {})
       }
-      mergedBom = recordMergeCounts(mergedBom, counts, bomObjs)
+      mergedBom = recordMergeCounts(mergedBom, counts, bomObjs, rowMeta)
     }
     return { bom: mergedBom, ...records }
   } catch (e) {
@@ -151,37 +160,39 @@ export async function mergeAndStoreBoms(ids: string[], rebomOptions: RebomOption
 
 
 /** What the per-input passes of findBomsForMerge removed or edited, summed over the inputs (FDAW-6). */
-export type InputPassCounts = { devExcluded: number, excludedScopeDropped: number, credentials: number }
+export type InputPassCounts = { devExcluded: number, excludedScopeDropped: number, optionalExcluded: number, credentials: number }
 
 /**
  * The per-input passes, in order: the top-level-only extract, the dev and excluded-scope filter
- * (always; optional scope only under ignoreDev, FDAW-6 3.1), the purl credential strip (FDAW-6
+ * (always; optional scope only under ignoreDev, FDAW-6 3.1; excluded scope not under
+ * keepExcludedScope, FDAW-19 3.2), the purl credential strip (FDAW-6
  * review F-13: before the rekey and the root lookups), the bom-refs of keyless nodes (3.4a).
  */
-export function prepareMergeInput(bom: any, tldOnly: boolean, ignoreDev: boolean, counts: InputPassCounts): any {
+export function prepareMergeInput(bom: any, tldOnly: boolean, ignoreDev: boolean, keepExcludedScope: boolean, counts: InputPassCounts): any {
   let processedBom = bom
   if (tldOnly) {
     processedBom = extractTldFromBom(processedBom)
   }
-  const dev = dropExcludedAndDevComponents(processedBom, { dropOptional: ignoreDev })
+  const dev = dropExcludedAndDevComponents(processedBom, { dropOptional: ignoreDev, dropExcluded: !keepExcludedScope })
   counts.devExcluded += dev.devExcluded
   counts.excludedScopeDropped += dev.excludedScopeDropped
+  counts.optionalExcluded += dev.optionalExcluded
   const purls = stripPurlCredentials(dev.bom)
   counts.credentials += purls.credentials
   return assignMissingBomRefs(purls.bom)
 }
 
 // Each row's document and, aligned by index, its meta (SCORE-69 ADR-2): rowMeta[i] is the meta of ids[i].
-async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, org: string): Promise<{ bomObjs: any[], rowMeta: (MergeRowMeta | undefined)[], inputCounts: InputPassCounts }> {
+async function findBomsForMerge(ids: string[], tldOnly: boolean, ignoreDev: boolean, keepExcludedScope: boolean, org: string): Promise<{ bomObjs: any[], rowMeta: (MergeRowMeta | undefined)[], inputCounts: InputPassCounts }> {
   logger.info(`findBomsForMerge: ${ids}`)
   const rows = await Promise.all(ids.map(async (id) => findBomObjectWithMetaById(id, org)))
   const rowMeta: (MergeRowMeta | undefined)[] = rows.map(row => row?.meta)
   let bomRecords = rows.map(row => row?.bom)
   let bomObjs: any[] = []
-  const inputCounts: InputPassCounts = { devExcluded: 0, excludedScopeDropped: 0, credentials: 0 }
+  const inputCounts: InputPassCounts = { devExcluded: 0, excludedScopeDropped: 0, optionalExcluded: 0, credentials: 0 }
   logger.info(`bomrecords found # ${bomRecords.length}`)
   if (bomRecords && bomRecords.length) {
-    bomObjs = bomRecords.map(bomRecord => prepareMergeInput(bomRecord, tldOnly, ignoreDev, inputCounts));
+    bomObjs = bomRecords.map(bomRecord => prepareMergeInput(bomRecord, tldOnly, ignoreDev, keepExcludedScope, inputCounts));
   }
   return { bomObjs, rowMeta, inputCounts }
 }
