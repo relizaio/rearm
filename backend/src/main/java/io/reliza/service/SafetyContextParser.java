@@ -42,7 +42,7 @@ public class SafetyContextParser {
         String specVersion = root.path("specVersion").asText(null);
         if (!"2.0".equals(specVersion) && (specVersion == null || !specVersion.startsWith("2.0-"))) {
             return new SafetyContextParseResult(specVersion, json, List.of(),
-                List.of("Expected CycloneDX specVersion 2.0 or a 2.0 development version"));
+                List.of("Expected CycloneDX specVersion 2.0 or a 2.0 development version"), List.of());
         }
 
         Map<String, List<ComponentIdentity>> componentsByRef = new HashMap<>();
@@ -85,11 +85,12 @@ public class SafetyContextParser {
                 }
             }
         }
-        return new SafetyContextParseResult(specVersion, json, List.copyOf(entries), List.copyOf(warnings));
+        return new SafetyContextParseResult(specVersion, json, List.copyOf(entries),
+            List.of(), List.copyOf(warnings));
     }
 
     private SafetyContextParseResult invalid(String json, String error) {
-        return new SafetyContextParseResult(null, json, List.of(), List.of(error));
+        return new SafetyContextParseResult(null, json, List.of(), List.of(error), List.of());
     }
 
     private void collectComponents(JsonNode node,
