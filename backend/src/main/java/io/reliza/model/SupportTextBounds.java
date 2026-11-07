@@ -7,9 +7,15 @@ import java.util.List;
 
 /**
  * The bounds on every free text, key and selector of a support or justification write (FDAW-14 3.2
- * item 1, 3.8 step 1, F-9, F-11). The rule is {@code SubmissionService.normalizedReason}'s: strip, at
- * most the field's maximum measured by {@code String.length()} on the stripped value, and no character
- * below U+0020 other than TAB, LF and CR. Checked twice on purpose: in the fetcher as the first step of
+ * item 1, 3.8 step 1, F-9, F-11): strip, at most the field's maximum measured by
+ * {@code String.length()} on the stripped value, and no code point that {@code Character.isISOControl}
+ * (C0, DEL, C1) or whose type is {@code Character.FORMAT} (bidirectional controls, zero-width characters,
+ * the soft hyphen, the byte order mark, the tag characters), checked by code point; TAB, LF and CR are
+ * allowed only where the text is multi-line. The rule began as {@code SubmissionService.normalizedReason}'s
+ * (length and nothing below U+0020) and is wider since FDAW-49 (F-19 of FDAW-15), while
+ * {@code normalizedReason} keeps its own. The two zero-width joiners U+200C and U+200D are FORMAT and are
+ * refused like the rest, so a word whose spelling needs one (Persian, Urdu, Kurdish, Indic conjuncts) or
+ * an emoji joiner sequence is refused too. Checked twice on purpose: in the fetcher as the first step of
  * every verb, before authorisation and before any database access, and again in the service as the
  * invariant of what is stored, so a caller that is not the resolver is bounded too.
  *
@@ -75,8 +81,8 @@ public final class SupportTextBounds {
 
 	/**
 	 * The keys of a hash justification write: non-empty, at most {@code maxKeys}, each stripped, at most
-	 * {@link #MAX_COMPONENT_KEY_LENGTH} characters and with no character below U+0020 (no TAB, LF or CR
-	 * either: a key is one line). The offending key is not echoed: it may be 2048 characters long.
+	 * {@link #MAX_COMPONENT_KEY_LENGTH} characters and with no control or FORMAT code point (no TAB, LF
+	 * or CR either: a key is one line). The offending key is not echoed: it may be 2048 characters long.
 	 */
 	public static List<String> boundedKeys(List<String> keys, int maxKeys, String overCapText) {
 		if (null == keys || keys.isEmpty()) throw new IllegalArgumentException(KEYS_REQUIRED);
@@ -107,11 +113,15 @@ public final class SupportTextBounds {
 				boundedUnknown, r.clearEndOfSupportUnknown());
 	}
 
-	private static boolean holdsControlCharacter(String s, boolean allowWhitespaceControls) {
-		for (int i = 0; i < s.length(); i++) {
-			char c = s.charAt(i);
-			if (c < 0x20 && !(allowWhitespaceControls && (c == '\t' || c == '\n' || c == '\r'))) return true;
-		}
-		return false;
+	/**
+	 * True when {@code s} holds a code point that {@code Character.isISOControl} (U+0000 to U+001F, U+007F
+	 * to U+009F) or whose type is {@code Character.FORMAT}; TAB, LF and CR pass only when
+	 * {@code allowWhitespaceControls}. Iterated by code point, so a FORMAT character outside the BMP (the
+	 * tag characters) is classified rather than seen as two surrogates.
+	 */
+	static boolean holdsControlCharacter(String s, boolean allowWhitespaceControls) {
+		return s.codePoints().anyMatch(cp -> Character.isISOControl(cp)
+				? !(allowWhitespaceControls && (cp == '\t' || cp == '\n' || cp == '\r'))
+				: Character.FORMAT == Character.getType(cp));
 	}
 }
