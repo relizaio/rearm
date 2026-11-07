@@ -45,6 +45,9 @@ export type BomMetaDto = {
     lastUpdatedDate: Date,
     ignoreDev?: boolean,
     excludeFileComponents?: boolean,
+    keepExcludedScope?: boolean,
+    keepPersonalData?: boolean,
+    keepLocalPaths?: boolean,
     mergeVersion?: number,
     enrichmentStatus?: EnrichmentStatus,
     enrichmentTimestamp?: string,
@@ -193,6 +196,12 @@ export type RebomOptions = {
     // Merge only: components of type file were left out of the merged BOM (SCORE-11).
     // Part of the merge options, so of the cache key ReARM matches stored merges on.
     excludeFileComponents?: boolean,
+    // Merge only (FDAW-19): a profile keeps what the default merge leaves out. Only true skips the
+    // pass; its reliza:export:* record is then absent. Stored on the row when sent. No switch
+    // reaches the credential strip (S10).
+    keepExcludedScope?: boolean,
+    keepPersonalData?: boolean,
+    keepLocalPaths?: boolean,
     // Merge only: the caller's merge rule version (SCORE-13), stored verbatim, part of the
     // merge options ReARM matches stored merges on. rebom does not interpret it.
     mergeVersion?: number,

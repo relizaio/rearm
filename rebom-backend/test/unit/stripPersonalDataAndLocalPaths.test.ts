@@ -249,6 +249,119 @@ describe('stripPersonalDataAndLocalPaths negatives (FDAW-6 T4)', () => {
     });
 });
 
+/** FDAW-19 row 2 (3.2, review item F-9): the options remove rule groups from the walk, never the walk. */
+describe('stripPersonalDataAndLocalPaths under the keep options (FDAW-19)', () => {
+    const CRED = 'https://u:tok@h.example/x';
+    const CLEAN = 'https://h.example/x';
+    const ADDRESS_AUTHOR = 'Jane Doe <jane@example.com>';
+    const resultKeys = (result: any) => Object.keys(result).sort();
+    const KEYS = ['bom', 'credentials', 'localPaths', 'personalData'];
+
+    /** A component with something for every rule group, and no credential. */
+    function clean(extra: any = {}): any {
+        return doc({
+            author: ADDRESS_AUTHOR,
+            authors: [{ name: 'Jane', email: 'jane@example.com' }],
+            properties: [prop('cdx:npm:maintainerSet', 'jane'), prop('cdx:npm:binPaths', 'bin/x.js'), prop('cdx:foo:contact', 'jane@example.com')],
+            externalReferences: [{ type: 'distribution', url: 'file:///home/acme/x.tgz' }],
+            ...extra
+        });
+    }
+    const values = (properties: any[]) => Object.fromEntries(properties.map((p: any) => [p.name, p.value]));
+
+    it('{ personalData: false, localPaths: true }: the personal data stays, the local paths go', () => {
+        const result = stripPersonalDataAndLocalPaths(clean(), { personalData: false, localPaths: true });
+        const c = result.bom.components[0];
+        expect(values(c.properties)).toStrictEqual({ 'cdx:npm:maintainerSet': 'jane', 'cdx:foo:contact': 'jane@example.com' });
+        expect(c.author).toBe(ADDRESS_AUTHOR);
+        expect(c.authors).toStrictEqual([{ name: 'Jane', email: 'jane@example.com' }]);
+        expect(c.externalReferences).toStrictEqual([]);
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([0, 2, 0]);
+        expect(resultKeys(result)).toStrictEqual(KEYS);
+    });
+
+    it('{ personalData: false, localPaths: true }: a kept S1 property whose value is a credential URL loses the userinfo', () => {
+        const result = stripPersonalDataAndLocalPaths(doc({ properties: [prop('cdx:npm:maintainerSet', CRED)] }), { personalData: false, localPaths: true });
+        expect(result.bom.components[0].properties).toStrictEqual([prop('cdx:npm:maintainerSet', CLEAN)]);
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([0, 0, 1]);
+    });
+
+    it('{ personalData: false, localPaths: true }: an entity keeps its name and contact and loses the URL credential', () => {
+        const supplier = { name: 'Jane <jane@example.com>', contact: [{ name: 'Ops', email: 'ops@example.com', phone: '1' }], url: [CRED] };
+        const result = stripPersonalDataAndLocalPaths(doc({ supplier }), { personalData: false, localPaths: true });
+        expect(result.bom.components[0].supplier).toStrictEqual({ ...supplier, url: [CLEAN] });
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([0, 0, 1]);
+    });
+
+    it('{ personalData: true, localPaths: false }: the local paths stay, the personal data goes', () => {
+        const result = stripPersonalDataAndLocalPaths(clean(), { personalData: true, localPaths: false });
+        const c = result.bom.components[0];
+        expect(values(c.properties)).toStrictEqual({ 'cdx:npm:binPaths': 'bin/x.js' });
+        expect(c.author).toBe('Jane Doe');
+        expect(c.authors).toStrictEqual([{ name: 'Jane' }]);
+        expect(c.externalReferences).toStrictEqual([{ type: 'distribution', url: 'file:///home/acme/x.tgz' }]);
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([4, 0, 0]);
+        expect(resultKeys(result)).toStrictEqual(KEYS);
+    });
+
+    it('{ personalData: true, localPaths: false }: a kept file: reference and a kept cdx:npm:binPaths value carrying a credential come back edited', () => {
+        const result = stripPersonalDataAndLocalPaths(doc({
+            properties: [prop('cdx:npm:binPaths', CRED), prop('SrcFile', '/home/acme/x.js'), prop('cdx:foo:source', 'file://u:tok@h.example/x.tgz')],
+            externalReferences: [{ type: 'distribution', url: 'file://u:tok@h.example/y.tgz' }]
+        }), { personalData: true, localPaths: false });
+        const c = result.bom.components[0];
+        expect(c.properties).toStrictEqual([prop('cdx:npm:binPaths', CLEAN), prop('SrcFile', '/home/acme/x.js'), prop('cdx:foo:source', 'file://h.example/x.tgz')]);
+        expect(c.externalReferences).toStrictEqual([{ type: 'distribution', url: 'file://h.example/y.tgz' }]);
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([0, 0, 3]);
+    });
+
+    it('a service under pathRules false keeps its S8 rule on localPaths alone', () => {
+        const service = { name: 'svc', properties: [prop('cdx:foo:source', 'file:../x.tgz'), prop('cdx:npm:binPaths', 'bin/x.js')] };
+        expect(stripPersonalDataAndLocalPaths({ services: [service] }).bom.services[0].properties).toStrictEqual([prop('cdx:npm:binPaths', 'bin/x.js')]);
+        const kept = { services: [service] };
+        expect(stripPersonalDataAndLocalPaths(kept, { personalData: true, localPaths: false }).bom).toBe(kept);
+    });
+
+    it('{ false, false } (F-9): every S10 field loses its userinfo, every personal-data and local-path field stays, credentials equals the edits', () => {
+        const input = doc({
+            author: ADDRESS_AUTHOR,
+            authors: [{ name: 'Jane', email: 'jane@example.com' }],
+            properties: [prop('cdx:npm:maintainerSet', 'jane'), prop('cdx:npm:binPaths', 'bin/x.js'), prop('ResolvedUrl', CRED)],
+            externalReferences: [{ type: 'vcs', url: CRED }, { type: 'distribution', url: 'file:///home/acme/x.tgz' }],
+            licenses: [{ license: { id: 'MIT', url: CRED } }],
+            supplier: { name: 'S', url: [CRED] }
+        }, { services: [{ name: 'svc', provider: { name: 'P', url: [CRED] }, endpoints: [CRED] }] });
+
+        const result = stripPersonalDataAndLocalPaths(input, { personalData: false, localPaths: false });
+
+        const c = result.bom.components[0];
+        expect(c.properties).toStrictEqual([prop('cdx:npm:maintainerSet', 'jane'), prop('cdx:npm:binPaths', 'bin/x.js'), prop('ResolvedUrl', CLEAN)]);
+        expect(c.externalReferences).toStrictEqual([{ type: 'vcs', url: CLEAN }, { type: 'distribution', url: 'file:///home/acme/x.tgz' }]);
+        expect(c.licenses).toStrictEqual([{ license: { id: 'MIT', url: CLEAN } }]);
+        expect(c.supplier).toStrictEqual({ name: 'S', url: [CLEAN] });
+        expect(c.author).toBe(ADDRESS_AUTHOR);
+        expect(c.authors).toStrictEqual([{ name: 'Jane', email: 'jane@example.com' }]);
+        expect(result.bom.services[0]).toStrictEqual({ name: 'svc', provider: { name: 'P', url: [CLEAN] }, endpoints: [CLEAN] });
+        expect(JSON.stringify(result.bom)).not.toContain('tok');
+        expect([result.personalData, result.localPaths, result.credentials]).toStrictEqual([0, 0, 6]);
+        expect(resultKeys(result)).toStrictEqual(KEYS);
+        // pure: the input is not edited
+        expect(JSON.stringify(input)).toContain('u:tok@');
+    });
+
+    it('{ false, false } over a document with no credential returns the input itself', () => {
+        const bom = clean();
+        const result = stripPersonalDataAndLocalPaths(bom, { personalData: false, localPaths: false });
+        expect(result).toStrictEqual({ bom, personalData: 0, localPaths: 0, credentials: 0 });
+        expect(result.bom).toBe(bom);
+    });
+
+    it('a non-object document gives the three counters and no rules member (review item F-1)', () => {
+        expect(stripPersonalDataAndLocalPaths(null, { personalData: false, localPaths: false })).toStrictEqual({ bom: null, personalData: 0, localPaths: 0, credentials: 0 });
+        expect(stripPersonalDataAndLocalPaths(null)).toStrictEqual({ bom: null, personalData: 0, localPaths: 0, credentials: 0 });
+    });
+});
+
 describe('stripPurlCredentials (FDAW-6 T3, review F-12, F-13)', () => {
     it('cuts the userinfo bytes of a URL qualifier only, keeping every other byte of the purl', () => {
         expect(stripPurlQualifierCredentials('pkg:generic/x@1.0?download_url=https%3A%2F%2Fu%3Ap%40h.example%2Fx.tgz'))

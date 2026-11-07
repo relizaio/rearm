@@ -25,6 +25,7 @@ import {
     LOCAL_PATHS_STRIPPED_PROPERTY,
     CREDENTIALS_STRIPPED_PROPERTY,
     ORPHAN_COMPONENTS_LINKED_PROPERTY,
+    OPTIONAL_SCOPE_DROPPED_PROPERTY,
     DANGLING_REFS_DROPPED_PROPERTY,
     countOf
 } from '../../src/services/bom/bomProcessingService';
@@ -39,6 +40,8 @@ import { TEST_ORG_UUID, createTestRebomOptions, generateSerialNumber } from '../
 const FIXTURES = path.join(__dirname, '..', 'fixtures', 'merge');
 const PYPI = ['black', 'cryptography', 'fastapi', 'numpy', 'pydantic', 'pytest', 'python-jose', 'six', 'sqlalchemy', 'uvicorn'];
 const PRODUCT_PURL = 'pkg:generic/Example/GlucoView@2.4.0';
+/** The FDAW-6 records; none of these merges runs ignoreDev, so the seventh is absent. */
+const SIX_RECORDS = MERGE_COUNT_PROPERTIES.filter(n => n !== OPTIONAL_SCOPE_DROPPED_PROPERTY);
 
 function fixture(name: string): any {
     const bom = JSON.parse(fs.readFileSync(path.join(FIXTURES, name), 'utf8'));
@@ -129,11 +132,12 @@ describe('default merge keeps keyless components in the graph (FDAW-6 T10, T11)'
         expect(numpy.externalReferences.some((e: any) => String(e.url).startsWith('file:'))).toBe(false);
         expect(top.find((c: any) => c.name === 'black').authors).toStrictEqual([{ name: '\u0141ukasz Langa' }]);
 
-        // the six records, by rule: orphans 13 (the 10 PyPI nodes, libdosecalc, dosetables, musl: the input
+        // the six FDAW-6 records, by rule: orphans 13 (the 10 PyPI nodes, libdosecalc, dosetables, musl: the input
         // has no dependencies section; the uploaded root is linked by linkUnfoldedRoots, not counted);
         // personal data 22 (the musl publisher edit, the provider contact e-mail and phone, 19 author
         // names carrying an address); local paths 1 (the file: reference); credentials 1 (the endpoint)
-        expect(Object.fromEntries(MERGE_COUNT_PROPERTIES.map(n => [n, record(bom, n)]))).toStrictEqual({
+        expect(record(bom, OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBeUndefined();
+        expect(Object.fromEntries(SIX_RECORDS.map(n => [n, record(bom, n)]))).toStrictEqual({
             [DEV_COMPONENTS_EXCLUDED_PROPERTY]: '0',
             [EXCLUDED_SCOPE_DROPPED_PROPERTY]: '0',
             [PERSONAL_DATA_STRIPPED_PROPERTY]: '22',
@@ -166,8 +170,9 @@ describe('default merge keeps keyless components in the graph (FDAW-6 T10, T11)'
         expect(all.some((c: any) => c.scope === 'excluded' || (c.properties || []).some((p: any) => p.name === 'cdx:npm:package:development' && p.value === 'true'))).toBe(false);
 
         // the product merge itself drops, strips and links nothing: every count is the two rows' sum
-        expect(Object.fromEntries(MERGE_COUNT_PROPERTIES.map(n => [n, record(product.bom, n)]))).toStrictEqual(
-            Object.fromEntries(MERGE_COUNT_PROPERTIES.map(n => [n, String(countOf(web.bom, n) + countOf(api.bom, n))])));
+        expect(record(product.bom, OPTIONAL_SCOPE_DROPPED_PROPERTY)).toBeUndefined();
+        expect(Object.fromEntries(SIX_RECORDS.map(n => [n, record(product.bom, n)]))).toStrictEqual(
+            Object.fromEntries(SIX_RECORDS.map(n => [n, String(countOf(web.bom, n) + countOf(api.bom, n))])));
         expect(record(product.bom, DEV_COMPONENTS_EXCLUDED_PROPERTY)).toBe('12');
         expect(record(product.bom, EXCLUDED_SCOPE_DROPPED_PROPERTY)).toBe('2');
     });
